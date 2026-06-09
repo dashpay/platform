@@ -83,6 +83,9 @@ pub trait AddressProvider: Send {
     /// per sync (once per trunk/branch round), so the returned iterator
     /// should be cheap to construct — typically a view into an internal
     /// map rather than a computed list.
+    ///
+    /// Must be a superset of [`current_balances`](Self::current_balances);
+    /// see the invariant documented there.
     fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_;
 
     /// Called when an address is found in the tree with a balance.

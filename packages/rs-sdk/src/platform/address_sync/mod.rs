@@ -343,8 +343,14 @@ pub async fn sync_address_balances<P: AddressProvider>(
     // Initialize result
     let mut result: AddressSyncResult<P::Tag, P::Address> = AddressSyncResult::new();
 
-    // If no pending addresses, return early
+    // Nothing to scan when no addresses are pending. Still surface any
+    // current-balance-only address (an invariant-violating provider can
+    // expose one with an empty pending set) so its known base balance is
+    // not silently dropped by the early return.
     if !provider.has_pending() {
+        for (tag, address, funds) in provider.current_balances() {
+            result.found.entry((tag, address)).or_insert(funds);
+        }
         return Ok(result);
     }
 
@@ -905,7 +911,6 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
     // also borrow it for the inner loop.
     let mut resolved_keys: std::collections::HashSet<Vec<u8>> = std::collections::HashSet::new();
     let mut total_replay_applied: usize = 0;
-    let mut hit_iteration_cap = false;
 
     for iteration in 0..REPLAY_REFRESH_MAX_ITERATIONS {
         // Only addresses the provider can now produce AND that match a
@@ -1001,35 +1006,48 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
             // no-op; nothing for gap extension to chew on.
             break;
         }
-
-        if iteration + 1 == REPLAY_REFRESH_MAX_ITERATIONS {
-            hit_iteration_cap = true;
-        }
     }
 
-    // Split the still-unresolved tail: cap-truncated entries are wallet-owned
-    // loss (the next RangeAfter sync skips the block, so only a full rescan
-    // recovers them); the rest are genuinely foreign addresses.
-    let still_unknown = pending_unknown
-        .iter()
-        .filter(|(key, _, _)| !resolved_keys.contains(key))
-        .count();
-    if still_unknown > 0 {
-        if hit_iteration_cap {
-            warn!(
-                "Address sync: {} buffered balance change(s) remained unresolved \
-                 when the livelock guard truncated refresh+replay (recovered {} \
-                 other(s) first); these are dropped until a full rescan",
-                still_unknown, total_replay_applied
-            );
-        } else {
-            debug!(
-                "Address sync: {} platform-reported balance change(s) reference \
-                 address(es) not tracked by this wallet (refresh recovered {} \
-                 other(s)); ignoring the untracked entries",
-                still_unknown, total_replay_applied
-            );
+    // Classify the still-unresolved tail. A key the provider can still
+    // produce is wallet-owned loss the livelock guard stranded — only a
+    // full rescan recovers it, since the next RangeAfter sync skips the
+    // block. A key the provider no longer offers is a foreign (other
+    // wallet) address that a full rescan re-ignores, not lost data.
+    let provider_keys: std::collections::HashSet<Vec<u8>> = provider
+        .pending_addresses()
+        .map(|(_, address)| address.to_bytes())
+        .collect();
+    let mut wallet_owned_lost = 0usize;
+    let mut foreign = 0usize;
+    for (key, _, _) in &pending_unknown {
+        if resolved_keys.contains(key) {
+            continue;
         }
+        if provider_keys.contains(key) {
+            wallet_owned_lost += 1;
+        } else {
+            foreign += 1;
+        }
+    }
+    // Only a wallet-owned loss is worth a warning — foreign noise is
+    // expected on a shared chain and must not be reported as lost data.
+    // A wallet-owned key only survives the loop when the guard truncates
+    // it, so this fires solely on a real cap hit.
+    if wallet_owned_lost > 0 {
+        warn!(
+            "Address sync: {} wallet-owned buffered balance change(s) remained \
+             unresolved when the livelock guard truncated refresh+replay \
+             (recovered {} first); these are dropped until a full rescan \
+             ({} foreign address(es) ignored)",
+            wallet_owned_lost, total_replay_applied, foreign
+        );
+    } else if foreign > 0 {
+        debug!(
+            "Address sync: {} platform-reported balance change(s) reference \
+             address(es) not tracked by this wallet (refresh recovered {} \
+             other(s)); ignoring the untracked entries",
+            foreign, total_replay_applied
+        );
     }
 }
 
@@ -2336,6 +2354,183 @@ mod tests {
                 "on_address_found must fire for chain link {i}"
             );
         }
+    }
+
+    /// Counts `WARN`-level `tracing` events on the current thread so a
+    /// test can assert whether a wallet-owned-loss warning fired.
+    #[derive(Clone, Default)]
+    struct WarnCounter(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+    impl<S> tracing_subscriber::Layer<S> for WarnCounter
+    where
+        S: tracing::Subscriber,
+    {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            if *event.metadata().level() == tracing::Level::WARN {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// At the livelock-guard cap, the still-unresolved tail must be split:
+    /// a wallet-owned stray (still in `pending_addresses()`) raises a WARN;
+    /// foreign-only leftovers (never offered by the provider) must NOT —
+    /// they are re-ignored by a full rescan, not lost data.
+    #[tokio::test]
+    async fn cap_hit_warns_on_wallet_owned_loss_but_not_foreign_noise() {
+        use async_trait::async_trait;
+        use std::sync::atomic::Ordering;
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+
+        // Endless gap-extension drip: each `on_address_found` exposes one
+        // brand-new wallet address, so the loop never runs out of work and
+        // hits `REPLAY_REFRESH_MAX_ITERATIONS`, stranding the next exposed
+        // (still-pending) address as wallet-owned loss. A `foreign` address
+        // is buffered but never offered by the provider.
+        struct EndlessChainProvider {
+            // Deterministic per-index wallet addresses; index 0 is the head.
+            exposed: usize,
+        }
+
+        fn chain_addr(i: usize) -> PlatformAddress {
+            // Distinct from any foreign byte; high bit set to avoid clashes.
+            p2pkh(0x80u8.wrapping_add((i % 0x40) as u8))
+        }
+
+        #[async_trait]
+        impl AddressProvider for EndlessChainProvider {
+            type Tag = u32;
+            type Address = PlatformAddress;
+
+            fn gap_limit(&self) -> AddressIndex {
+                0
+            }
+
+            fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_ {
+                (0..self.exposed).map(|i| (i as u32, chain_addr(i)))
+            }
+
+            async fn on_address_found(
+                &mut self,
+                tag: Self::Tag,
+                _address: &Self::Address,
+                _funds: AddressFunds,
+            ) {
+                // Expose the next link only once the current deepest one is
+                // found, so each iteration surfaces exactly one new address.
+                if tag as usize + 1 == self.exposed {
+                    self.exposed += 1;
+                }
+            }
+
+            async fn on_address_absent(&mut self, _tag: Self::Tag, _address: &Self::Address) {}
+
+            fn current_balances(
+                &self,
+            ) -> impl Iterator<Item = (Self::Tag, Self::Address, AddressFunds)> + '_ {
+                std::iter::empty()
+            }
+        }
+
+        let foreign = p2pkh(0x01);
+
+        // One buffered miss per chain link deeper than the cap, plus the
+        // foreign one. The drip resolves the cap's worth and strands the
+        // rest — at least one strand is still in `pending_addresses()`.
+        let mut pending_unknown: Vec<PendingMiss> = (0..=REPLAY_REFRESH_MAX_ITERATIONS)
+            .map(|i| {
+                (
+                    chain_addr(i).to_bytes(),
+                    OwnedBalanceOp::Compacted(BlockAwareCreditOperation::SetCredits(
+                        1_000 + i as u64,
+                    )),
+                    0,
+                )
+            })
+            .collect();
+        pending_unknown.push((
+            foreign.to_bytes(),
+            OwnedBalanceOp::Compacted(BlockAwareCreditOperation::SetCredits(9_999)),
+            0,
+        ));
+
+        let lookup: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
+
+        // Wallet-owned cap loss present → exactly one WARN expected.
+        let warns = WarnCounter::default();
+        let collected = warns.clone();
+        {
+            let _guard = tracing_subscriber::registry().with(warns).set_default();
+            let mut provider = EndlessChainProvider { exposed: 1 };
+            let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
+            refresh_and_replay_unknown(&lookup, pending_unknown, &mut provider, &mut result).await;
+        }
+        assert_eq!(
+            collected.0.load(Ordering::Relaxed),
+            1,
+            "a stranded wallet-owned address at the cap must raise exactly one WARN"
+        );
+
+        // Foreign-only leftovers → no WARN. A provider that offers nothing
+        // means every buffered miss is foreign noise.
+        struct EmptyProvider;
+
+        #[async_trait]
+        impl AddressProvider for EmptyProvider {
+            type Tag = u32;
+            type Address = PlatformAddress;
+            fn gap_limit(&self) -> AddressIndex {
+                0
+            }
+            fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_ {
+                std::iter::empty()
+            }
+            async fn on_address_found(
+                &mut self,
+                _tag: Self::Tag,
+                _address: &Self::Address,
+                _funds: AddressFunds,
+            ) {
+            }
+            async fn on_address_absent(&mut self, _tag: Self::Tag, _address: &Self::Address) {}
+            fn current_balances(
+                &self,
+            ) -> impl Iterator<Item = (Self::Tag, Self::Address, AddressFunds)> + '_ {
+                std::iter::empty()
+            }
+        }
+
+        let foreign_only: Vec<PendingMiss> = vec![
+            (
+                p2pkh(0x11).to_bytes(),
+                OwnedBalanceOp::Compacted(BlockAwareCreditOperation::SetCredits(5_000)),
+                0,
+            ),
+            (
+                p2pkh(0x12).to_bytes(),
+                OwnedBalanceOp::Compacted(BlockAwareCreditOperation::SetCredits(6_000)),
+                0,
+            ),
+        ];
+
+        let warns = WarnCounter::default();
+        let collected = warns.clone();
+        {
+            let _guard = tracing_subscriber::registry().with(warns).set_default();
+            let mut provider = EmptyProvider;
+            let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
+            refresh_and_replay_unknown(&lookup, foreign_only, &mut provider, &mut result).await;
+        }
+        assert_eq!(
+            collected.0.load(Ordering::Relaxed),
+            0,
+            "foreign-only leftovers must not raise a wallet-owned-loss WARN"
+        );
     }
 
     /// The common ~15s incremental resync hot path drives `Recent` ops
