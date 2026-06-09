@@ -2623,10 +2623,10 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
             notes: notes
                 .into_iter()
                 .map(|n| ShieldedEncryptedNote {
-                    cmx: n.cmx,
-                    nullifier: n.nullifier,
-                    cv_net: n.cv_net,
-                    encrypted_note: n.encrypted_note,
+                    cmx: n.cmx.to_vec(),
+                    nullifier: n.nullifier.to_vec(),
+                    cv_net: n.cv_net.to_vec(),
+                    encrypted_note: n.encrypted_note.to_vec(),
                 })
                 .collect(),
             total_count,

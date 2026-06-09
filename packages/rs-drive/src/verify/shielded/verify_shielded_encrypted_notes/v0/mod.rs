@@ -94,17 +94,37 @@ impl Drive {
         for (_, _key, maybe_element) in proved_key_values {
             match maybe_element {
                 Some(Element::Item(value, _)) => {
-                    // Value format: cmx (32) || nullifier (32) || cv_net (32) || encrypted_note (rest)
-                    if value.len() <= 96 {
-                        return Err(Error::Drive(DriveError::CorruptedElementType(
-                            "encrypted note value too short: expected more than 96 bytes (cmx + nullifier + cv_net + encrypted_note)",
-                        )));
-                    }
+                    // Fixed item layout:
+                    //   cmx(32) || nullifier(32) || cv_net(32) || encrypted_note(216) = 312 bytes.
+                    // The `get(..)` + `try_into()` extractions reject any item whose length
+                    // is not exactly that (cmx/nullifier/cv_net need >= 96 bytes; the trailing
+                    // encrypted_note `try_into::<[u8; 216]>` pins the total to 312).
+                    const BAD_NOTE_ITEM: &str = "shielded note item must be exactly 312 bytes (cmx 32 | nullifier 32 | cv_net 32 | encrypted_note 216)";
                     notes.push(VerifiedShieldedEncryptedNote {
-                        cmx: value[..32].to_vec(),
-                        nullifier: value[32..64].to_vec(),
-                        cv_net: value[64..96].to_vec(),
-                        encrypted_note: value[96..].to_vec(),
+                        cmx: value
+                            .get(..32)
+                            .and_then(|s| s.try_into().ok())
+                            .ok_or_else(|| {
+                                Error::Drive(DriveError::CorruptedElementType(BAD_NOTE_ITEM))
+                            })?,
+                        nullifier: value
+                            .get(32..64)
+                            .and_then(|s| s.try_into().ok())
+                            .ok_or_else(|| {
+                                Error::Drive(DriveError::CorruptedElementType(BAD_NOTE_ITEM))
+                            })?,
+                        cv_net: value
+                            .get(64..96)
+                            .and_then(|s| s.try_into().ok())
+                            .ok_or_else(|| {
+                                Error::Drive(DriveError::CorruptedElementType(BAD_NOTE_ITEM))
+                            })?,
+                        encrypted_note: value
+                            .get(96..)
+                            .and_then(|s| s.try_into().ok())
+                            .ok_or_else(|| {
+                                Error::Drive(DriveError::CorruptedElementType(BAD_NOTE_ITEM))
+                            })?,
                     });
                 }
                 Some(_) => {
