@@ -39,6 +39,8 @@ public class PlatformWalletManager: ObservableObject {
     /// started in [`configure`].
     @Published public private(set) var spvProgress: PlatformSpvSyncProgress = .empty
 
+    @Published public private(set) var spvIsRunning: Bool = false
+
     /// Block time of the SPV header storage's current tip (if any).
     /// `nil` while SPV isn't running or hasn't stored a header yet.
     /// Useful as a "is core producing blocks?" indicator — when this
@@ -810,6 +812,9 @@ public class PlatformWalletManager: ObservableObject {
                 guard let self = self else { return }
                 if let progress = try? self.syncProgress(), progress != self.spvProgress {
                     self.spvProgress = progress
+                }
+                if let running = try? self.isSpvRunning(), running != self.spvIsRunning {
+                    self.spvIsRunning = running
                 }
                 if let isSyncing = try? self.isPlatformAddressSyncing(),
                    isSyncing != self.platformAddressSyncIsSyncing {

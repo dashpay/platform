@@ -89,7 +89,7 @@ struct CoreContentView: View {
     }
 
     private var isSpvRunning: Bool {
-        walletManager.spvProgress.overallState.isRunning
+        walletManager.spvIsRunning
     }
 
     private func heightDisplay(numerator: UInt32, denominator: UInt32) -> String {
