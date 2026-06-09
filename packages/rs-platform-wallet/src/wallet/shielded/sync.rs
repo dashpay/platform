@@ -1001,28 +1001,23 @@ mod ovk_recovery_tests {
     use dash_sdk::platform::shielded::try_recover_outgoing_note;
     use dashcore::Network;
     use drive_proof_verifier::types::ShieldedEncryptedNote;
-    use orchard::keys::OutgoingViewingKey;
-    use orchard::note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho};
-    use orchard::note_encryption::OrchardDomain;
-    use orchard::value::{NoteValue, ValueCommitTrapdoor, ValueCommitment};
-    use orchard::Address;
-    use orchard::Note;
+    // All Orchard types come from `grovedb-commitment-tree`'s re-exports of the
+    // dashpay `orchard` fork — no separate orchard dev-dependency needed.
+    use grovedb_commitment_tree::{
+        DashMemo, Domain, ExtractedNoteCommitment, Note, NoteValue, Nullifier, OrchardDomain,
+        OutgoingViewingKey, PaymentAddress as Address, RandomSeed, Rho, ValueCommitTrapdoor,
+        ValueCommitment,
+    };
     use rand::rngs::OsRng;
     use rand::RngCore;
-    // `orchard` re-exports the upstream `zcash_note_encryption`, so the
-    // generic `NoteEncryption` encryptor + the `Domain` trait (for
-    // `epk_bytes`) are reachable without a separate dev-dependency.
-    use orchard::zcash_note_encryption::{Domain, NoteEncryption};
 
     use crate::changeset::ShieldedChangeSet;
     use crate::wallet::shielded::keys::OrchardKeySet;
     use crate::wallet::shielded::store::{InMemoryShieldedStore, ShieldedStore, SubwalletId};
 
-    type DashMemo = orchard::memo::DashMemo;
-    /// `orchard::note_encryption::OrchardNoteEncryption<DashMemo>` —
-    /// spelled out here since the public alias defaults its memo param
-    /// to `ZcashMemo`.
-    type OrchardNoteEncryption = NoteEncryption<OrchardDomain<DashMemo>>;
+    /// The Orchard note encryptor with Dash's 36-byte memo (the public
+    /// `OrchardNoteEncryption` alias defaults its memo param to Zcash's).
+    type OrchardNoteEncryption = grovedb_commitment_tree::OrchardNoteEncryption<DashMemo>;
 
     const RECIPIENT_SEED: [u8; 32] = [0x42; 32];
     const OTHER_SEED: [u8; 32] = [0x99; 32];
