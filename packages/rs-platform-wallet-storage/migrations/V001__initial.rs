@@ -150,6 +150,10 @@ CREATE TABLE core_derived_addresses (
     address TEXT NOT NULL,
     derivation_path TEXT NOT NULL,
     used INTEGER NOT NULL,
+    -- TODO: PK omits account_index/pool_type, so two addresses sharing
+    -- (wallet_id, account_type, address) collapse via ON CONFLICT. Pre-existing,
+    -- practically unreachable under honest BIP32 (needs a hash collision);
+    -- tracked for future hardening.
     PRIMARY KEY (wallet_id, account_type, address),
     FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );

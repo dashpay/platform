@@ -403,8 +403,25 @@ finalized. Rows are removed when the transaction becomes confirmed.
 
 ### `core_derived_addresses`
 
-Address-to-account-index map. Written before UTXOs in the same
-transaction so the UTXO writer can resolve `account_index` by address.
+Address-to-account-index map the UTXO writer joins to resolve a UTXO's
+`account_index` by address. Populated from three sources, all routed
+through the shared `core_state::upsert_derived_address_row` helper so the
+rows are identical regardless of origin:
+
+1. **Live `addresses_derived` events** — written before UTXOs in the same
+   transaction so the writer sees fresh rows.
+2. **`apply_pools` registration mirror** — every pool-snapshot address is
+   mirrored here at registration, so a UTXO landing on a registered
+   address resolves even before its live derive event arrives
+   (genesis-rescan).
+3. **Load-time reconcile** — on load, pool snapshots fill any address the
+   table is missing, purely additively (`ON CONFLICT DO NOTHING`), so an
+   authoritative live/mirrored row is never overwritten.
+
+An unspent UTXO whose address is absent from this table cannot resolve an
+account; the writer **skips** it (with a `warn`) rather than erroring, so
+one unresolvable row never aborts a whole flush. Its balance re-warms once
+the address is later derived.
 
 - PK: `(wallet_id, account_type, address)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.

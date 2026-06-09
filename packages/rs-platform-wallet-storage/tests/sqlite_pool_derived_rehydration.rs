@@ -103,6 +103,27 @@ fn reopen(path: &std::path::Path) -> SqlitePersister {
     SqlitePersister::open(SqlitePersisterConfig::new(path)).expect("reopen")
 }
 
+/// A live `DerivedAddress` event for one pool `AddressInfo` — a valid,
+/// non-UTXO record for the blast-radius batch.
+fn derived_for(
+    pool: &AccountAddressPoolEntry,
+    info: &AddressInfo,
+) -> platform_wallet::DerivedAddress {
+    // Compressed secp256k1 generator point — a valid placeholder pubkey.
+    const PUBKEY_G: [u8; 33] = [
+        0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62, 0x95, 0xce, 0x87,
+        0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81, 0x5b, 0x16,
+        0xf8, 0x17, 0x98,
+    ];
+    platform_wallet::DerivedAddress {
+        account_type: pool.account_type,
+        pool_type: pool.pool_type,
+        derivation_index: info.index,
+        address: info.address.clone(),
+        public_key: dashcore::PublicKey::from_slice(&PUBKEY_G).expect("valid compressed pubkey"),
+    }
+}
+
 /// Genesis-rescan persist: a wallet registered with pools but with NO
 /// live `addresses_derived` event still resolves the account index of a
 /// UTXO landing on a pool address — `apply_pools` mirrored the pool into
@@ -310,6 +331,96 @@ fn load_rehydrates_derived_rows_from_pools_idempotently() {
     );
 }
 
+/// Partial-state self-heal: a wallet with SOME live-derived rows (one
+/// `used = true`) plus a pool address that was never derived is repaired
+/// on `load` — the missing address is added with its pool account_index,
+/// and every pre-existing live row is left untouched (the reconcile is
+/// purely additive, a live row is authoritative).
+#[test]
+fn load_reconciles_partial_state_without_clobbering_live_rows() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w: WalletId = wid(0xC5);
+    ensure_wallet_meta(&persister, &w);
+
+    let (snapshots, _target) = wallet_with_pools(0x55);
+    let pool = &snapshots[0];
+    assert!(
+        pool.addresses.len() >= 2,
+        "fixture needs at least two pool addresses"
+    );
+    let pool_account_index = i64::from(match pool.account_type {
+        key_wallet::account::AccountType::Standard { index, .. } => index,
+        _ => unreachable!("fixture uses a Standard account"),
+    });
+
+    // A pool address we deliberately pre-seed as a live row, with a
+    // non-pool account_index and used=true, so a clobber would be visible.
+    let live_addr = pool.addresses[0].address.to_string();
+    // A pool address left un-derived — the gap the reconcile must fill.
+    let missing_addr = pool.addresses[1].address.to_string();
+    const LIVE_ACCOUNT_INDEX: i64 = 4242;
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: snapshots.clone(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    // Recreate a partial prod DB: drop the auto-mirrored rows, then seed
+    // ONLY the live row (authoritative, used=true, off-pool index).
+    {
+        let conn = persister.lock_conn_for_test();
+        conn.execute(
+            "DELETE FROM core_derived_addresses WHERE wallet_id = ?1",
+            rusqlite::params![w.as_slice()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO core_derived_addresses \
+                (wallet_id, account_type, account_index, address, derivation_path, used) \
+             VALUES (?1, 'standard', ?2, ?3, 'live/0', 1)",
+            rusqlite::params![w.as_slice(), LIVE_ACCOUNT_INDEX, live_addr],
+        )
+        .unwrap();
+    }
+    drop(persister);
+
+    let p2 = reopen(&path);
+    PlatformWalletPersistence::load(&p2).expect("load");
+
+    let rows = {
+        let conn = p2.lock_conn_for_test();
+        core_state::list_derived_addresses_for_test(&conn, &w).unwrap()
+    };
+
+    let missing = rows
+        .iter()
+        .find(|r| r.address == missing_addr)
+        .expect("the un-derived pool address must be reconciled on load");
+    assert_eq!(
+        missing.account_index, pool_account_index,
+        "reconciled row must carry the pool account_index"
+    );
+
+    let live = rows
+        .iter()
+        .find(|r| r.address == live_addr)
+        .expect("the live row must survive");
+    assert_eq!(
+        live.account_index, LIVE_ACCOUNT_INDEX,
+        "reconcile must NOT overwrite a live row's account_index"
+    );
+    assert_eq!(
+        live.derivation_path, "live/0",
+        "reconcile must NOT overwrite a live row's derivation_path"
+    );
+    assert!(live.used, "reconcile must NOT clear a live row's used flag");
+}
+
 /// Blast-radius isolation: a batch mixing a valid pool-address UTXO, a
 /// sync-height bump, and ONE unspent UTXO at a genuinely undeclared
 /// address (not in pools, not derived) commits the valid UTXO + height
@@ -324,6 +435,11 @@ fn undeclared_unspent_utxo_is_skipped_not_fatal() {
 
     let (snapshots, good) = wallet_with_pools(0x44);
     let good_addr = good.address.clone();
+    // A second pool address for a live derive record in the same batch.
+    let extra = snapshots[0].addresses[1].clone();
+    let extra_derived = derived_for(&snapshots[0], &extra);
+    let extra_addr = extra.address.to_string();
+    assert_ne!(extra_addr, good_addr.to_string(), "fixture sanity");
 
     // A genuinely undeclared address: not in any pool, never derived.
     let undeclared = {
@@ -340,17 +456,29 @@ fn undeclared_unspent_utxo_is_skipped_not_fatal() {
         .store(
             w,
             PlatformWalletChangeSet {
-                account_address_pools: snapshots,
+                account_address_pools: snapshots.clone(),
                 ..Default::default()
             },
         )
         .unwrap();
+
+    // Wipe derived rows so the batch's own live derive is the only source
+    // of `extra_addr`, making its commit unambiguous.
+    {
+        let conn = persister.lock_conn_for_test();
+        conn.execute(
+            "DELETE FROM core_derived_addresses WHERE wallet_id = ?1 AND address = ?2",
+            rusqlite::params![w.as_slice(), extra_addr],
+        )
+        .unwrap();
+    }
 
     persister
         .store(
             w,
             PlatformWalletChangeSet {
                 core: Some(CoreChangeSet {
+                    addresses_derived: vec![extra_derived],
                     new_utxos: vec![
                         utxo_at(&good_addr, 0, 100_000),
                         utxo_at(&undeclared, 9, 200_000),
@@ -375,6 +503,14 @@ fn undeclared_unspent_utxo_is_skipped_not_fatal() {
     assert!(
         all.iter().all(|r| r.value == 100_000),
         "the committed UTXO is the good one"
+    );
+
+    // A normal valid record in the same batch (the live derive) committed —
+    // the skip isolates only the bad UTXO, not the surrounding records.
+    let derived = core_state::list_derived_addresses_for_test(&conn, &w).unwrap();
+    assert!(
+        derived.iter().any(|r| r.address == extra_addr),
+        "the live derive record in the mixed batch must commit"
     );
 
     // The sync-height bump committed in the same transaction.

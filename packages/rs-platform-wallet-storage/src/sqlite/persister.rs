@@ -901,10 +901,11 @@ impl PlatformWalletPersistence for SqlitePersister {
                 ))
             })?;
 
-            // Repair already-persisted DBs whose `core_derived_addresses` was
-            // never populated from pools: rehydrate it from the snapshots so
-            // the next sync's UTXO writer can resolve pool-address accounts.
-            // No-op when the table already has rows for this wallet.
+            // Reconcile `core_derived_addresses` against the pool snapshots:
+            // fill any pool address the derived table is missing (DBs predating
+            // the mirror, or partial state) so the next sync's UTXO writer can
+            // resolve pool-address accounts. Additive — never clobbers a live
+            // row; rows already covering the pools cost only no-op inserts.
             {
                 let tx = conn
                     .transaction()

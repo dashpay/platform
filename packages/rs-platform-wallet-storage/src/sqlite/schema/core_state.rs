@@ -162,15 +162,16 @@ fn execute_upsert_utxo(
         // Skip an unspent UTXO whose address we never derived: bucketing it
         // under account 0 would mis-file live money, and erroring would abort
         // the whole flush (genesis-rescan can match a UTXO before its derive
-        // event lands). The address re-warms its balance when it later
-        // derives — funds-safe. The spent-only arm keeps the inert fallback.
+        // event lands). Funds-safe: the balance re-warms only once the
+        // address is later derived (gap-limit dependent), not unconditionally.
+        // The spent-only arm keeps the inert fallback.
         None if !spent => {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 address = %address,
                 txid = %utxo.outpoint.txid,
                 vout = utxo.outpoint.vout,
-                "skipping unspent UTXO at an address absent from core_derived_addresses; balance re-warms when the address derives"
+                "skipping unspent UTXO at an address absent from core_derived_addresses; balance re-warms only once the address is later derived"
             );
             return Ok(());
         }
@@ -204,12 +205,22 @@ pub(crate) fn derivation_path_label(pool_type: &str, derivation_index: u32) -> S
     format!("{pool_type}/{derivation_index}")
 }
 
+// `used` is preserved on conflict (write-once): the clause refreshes
+// account_index / derivation_path but never `used`, so a later live
+// re-derive (which carries used=false) can't clear a true flag.
 const UPSERT_DERIVED_ADDRESS_SQL: &str = "INSERT INTO core_derived_addresses \
         (wallet_id, account_type, account_index, address, derivation_path, used) \
      VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
      ON CONFLICT(wallet_id, account_type, address) DO UPDATE SET \
         account_index = excluded.account_index, \
         derivation_path = excluded.derivation_path";
+
+// Additive reconcile: fill gaps only, never touch an existing row. A live
+// or already-mirrored row is authoritative.
+const INSERT_DERIVED_ADDRESS_IF_ABSENT_SQL: &str = "INSERT INTO core_derived_addresses \
+        (wallet_id, account_type, account_index, address, derivation_path, used) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+     ON CONFLICT(wallet_id, account_type, address) DO NOTHING";
 
 /// Upsert one `core_derived_addresses` row. Single writer for both the
 /// live `addresses_derived` event path and the `apply_pools` snapshot
@@ -239,31 +250,21 @@ pub(crate) fn upsert_derived_address_row(
     Ok(())
 }
 
-/// Repopulate `core_derived_addresses` for `wallet_id` from its
-/// `account_address_pools` snapshots when the derived table is empty for
-/// that wallet (already-persisted DBs predating the pool→derived mirror).
+/// Reconcile `core_derived_addresses` for `wallet_id` against its
+/// `account_address_pools` snapshots, filling any address the snapshots
+/// declare but the derived table is missing (already-persisted DBs that
+/// predate the pool→derived mirror, or partial state where some addresses
+/// derived live but others never did).
 ///
-/// A no-op when the wallet already has any derived row — no duplicates,
-/// no scan cost. Mirrors every `AddressInfo` of every pool through
-/// [`upsert_derived_address_row`], so a rehydrated row is identical to a
-/// freshly-applied one. Decoding a snapshot blob is fail-hard
-/// (corruption is never skipped).
-pub fn rehydrate_derived_addresses_from_pools(
+/// Purely additive: every insert is `ON CONFLICT DO NOTHING`, so an
+/// existing live or mirrored row (authoritative) keeps its account_index,
+/// derivation_path, and used flag untouched. A wallet whose derived rows
+/// already cover its pools incurs only no-op inserts. Decoding a snapshot
+/// blob is fail-hard (corruption is never skipped).
+pub(crate) fn rehydrate_derived_addresses_from_pools(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
 ) -> Result<(), WalletStorageError> {
-    let already_present: bool = tx
-        .query_row(
-            "SELECT 1 FROM core_derived_addresses WHERE wallet_id = ?1 LIMIT 1",
-            params![wallet_id.as_slice()],
-            |_| Ok(true),
-        )
-        .optional()?
-        .unwrap_or(false);
-    if already_present {
-        return Ok(());
-    }
-
     let snapshots: Vec<Vec<u8>> = {
         let mut stmt = tx.prepare_cached(
             "SELECT snapshot_blob FROM account_address_pools WHERE wallet_id = ?1",
@@ -278,6 +279,7 @@ pub fn rehydrate_derived_addresses_from_pools(
         out
     };
 
+    let mut insert_stmt = tx.prepare_cached(INSERT_DERIVED_ADDRESS_IF_ABSENT_SQL)?;
     for payload in snapshots {
         let entry: platform_wallet::changeset::AccountAddressPoolEntry = blob::decode(&payload)?;
         let account_type =
@@ -287,15 +289,14 @@ pub fn rehydrate_derived_addresses_from_pools(
         for info in &entry.addresses {
             let address = info.address.to_string();
             let path = derivation_path_label(pool_type, info.index);
-            upsert_derived_address_row(
-                tx,
-                wallet_id,
+            insert_stmt.execute(params![
+                wallet_id.as_slice(),
                 account_type,
                 i64::from(account_index),
-                &address,
-                &path,
+                address,
+                path,
                 info.used,
-            )?;
+            ])?;
         }
     }
     Ok(())
