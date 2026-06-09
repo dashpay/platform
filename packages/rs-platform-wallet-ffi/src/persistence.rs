@@ -1430,10 +1430,10 @@ impl PlatformWalletPersistence for FFIPersister {
                     .on_load_shielded_outgoing_notes_free_fn
                     .is_some()
             {
-                return Err("on_load_shielded_outgoing_notes_fn and \
-                     on_load_shielded_outgoing_notes_free_fn must be provided together"
-                    .to_string()
-                    .into());
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_outgoing_notes_fn and \
+                     on_load_shielded_outgoing_notes_free_fn must be provided together",
+                ));
             }
 
             // 1) notes
@@ -1508,11 +1508,10 @@ impl PlatformWalletPersistence for FFIPersister {
                 let rc =
                     unsafe { load_outgoing(self.callbacks.context, &mut out_ptr, &mut out_count) };
                 if rc != 0 {
-                    return Err(format!(
+                    return Err(PersistenceError::backend(format!(
                         "on_load_shielded_outgoing_notes_fn returned error code {}",
                         rc
-                    )
-                    .into());
+                    )));
                 }
                 struct OutgoingGuard {
                     context: *mut c_void,
