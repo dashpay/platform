@@ -50,45 +50,34 @@ pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 pub const DEFAULT_TOKEN_CONFIG_CACHE_SIZE: usize = 100;
 /// How many quorum public keys fit in the cache.
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
-/// Default initial protocol version used when the caller pins neither an explicit
-/// [`PlatformVersion`] (via [`SdkBuilder::with_version`]) nor an explicit initial
-/// protocol version (via [`SdkBuilder::with_initial_version`]).
+/// Initial protocol version when the caller pins neither a [`PlatformVersion`]
+/// (via [`SdkBuilder::with_version`]) nor an initial version (via
+/// [`SdkBuilder::with_initial_version`]).
 ///
-/// Deliberately set BELOW the latest known version: ratchet-up autodetection
-/// (`maybe_update_protocol_version`) converges upward to the network's real version,
-/// and starting low keeps requests compatible with not-yet-upgraded nodes during an
-/// upgrade window. Bump this constant when the network's supported floor advances.
+/// Set BELOW the latest version on purpose: ratchet-up autodetection
+/// (`maybe_update_protocol_version`) converges to the network's real version,
+/// so starting low keeps requests compatible with not-yet-upgraded nodes during
+/// an upgrade window. Bump this constant as the network's supported floor advances.
 ///
 /// # v3.1+-only query surfaces
 ///
-/// An unpinned SDK starts at this upgrade-safe floor (PV10, V0 documents wire).
-/// Under V0 the local query encoder rejects the v3.1+-only surfaces — `Count`
-/// (`SelectProjection::count_star`), `group_by`, and `having` — with an
-/// [`Error::Config`] *before* any network round-trip. To use them, either:
-///
-/// 1. Pin a higher initial version at build time via
-///    [`SdkBuilder::with_initial_version`], or
-/// 2. Issue one ratcheting query right after `build()`. Any normal query works
-///    at the floor and its response metadata ratchets the SDK's protocol version
-///    up to the network's actual version; subsequent `Count` / `group_by` /
-///    `having` queries then encode correctly.
-///
-/// Example of option 2 — a parameterless current-state fetch warms up the ratchet:
+/// At this floor (PV10, V0 documents wire) the local encoder rejects the
+/// v3.1+-only surfaces — `Count` (`SelectProjection::count_star`), `group_by`,
+/// and `having` — with [`Error::Config`] *before* any network round-trip. To use
+/// them either pin a higher initial version via [`SdkBuilder::with_initial_version`],
+/// or issue one floor-compatible ratcheting query (no v3.1+ surfaces) right after
+/// `build()` — e.g. the `ExtendedEpochInfo::fetch_current` current-state fetch below.
+/// Its response metadata lifts the SDK to the network's version, after which `Count` /
+/// `group_by` / `having` encode correctly.
 ///
 /// ```no_run
 /// # use dash_sdk::{Sdk, SdkBuilder};
 /// # use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 /// # use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 /// # async fn warm_up() -> Result<(), dash_sdk::Error> {
-/// // Option 1 alternative: SdkBuilder::new_mainnet(addrs)
-/// //   .with_initial_version(dpp::version::PlatformVersion::latest()).build()?;
 /// let sdk: Sdk = SdkBuilder::new_mock().build()?;
-///
-/// // One ratcheting query: works at the floor, returns metadata, and lifts the
-/// // SDK's protocol version to the network's actual version.
+/// // Ratchets the SDK up to the network's version; Count/group_by/having then encode.
 /// let _ = ExtendedEpochInfo::fetch_current(&sdk).await?;
-///
-/// // Count / group_by / having queries now encode at the ratcheted version.
 /// # Ok(())
 /// # }
 /// ```
@@ -1711,8 +1700,7 @@ mod test {
 
     #[test]
     fn test_default_builder_seeds_initial_protocol_version_floor() {
-        // A default builder (no with_version / with_initial_version) must seed the
-        // SDK at DEFAULT_INITIAL_PROTOCOL_VERSION, not at PlatformVersion::latest().
+        // A default builder must seed the SDK at the floor, not latest().
         let sdk = SdkBuilder::new_mock()
             .build()
             .expect("mock Sdk should be created");
@@ -1740,9 +1728,8 @@ mod test {
         let floor = super::DEFAULT_INITIAL_PROTOCOL_VERSION;
         assert_eq!(sdk.protocol_version_number(), floor);
 
-        // Ratchet up to a known higher version (PV12). Using a fixed known
-        // target rather than `floor + N` keeps the test correct as the floor
-        // advances; `maybe_update_protocol_version` only accepts known versions.
+        // Ratchet to a fixed known target (PV12), not `floor + N`: stays valid as the
+        // floor advances, and `maybe_update_protocol_version` only accepts known versions.
         let target = dpp::version::v12::PROTOCOL_VERSION_12;
         assert!(
             target > floor,
@@ -1768,8 +1755,7 @@ mod test {
     fn test_explicit_pin_overrides_default_floor() {
         use dpp::version::PlatformVersion;
 
-        // Pin to a version that is deliberately different from the default floor so
-        // the override is observable regardless of where the floor is set.
+        // Pin off the floor so the override is observable wherever the floor sits.
         let pinned_number = super::DEFAULT_INITIAL_PROTOCOL_VERSION - 1;
         let pinned = PlatformVersion::get(pinned_number).expect("pinned PV exists");
         let sdk = SdkBuilder::new_mock()

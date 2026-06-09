@@ -29,11 +29,8 @@
 //! explicit turbofish so the mock recorder knows which response
 //! type to register.
 //!
-//! Count / `group_by` are v3.1+-only query surfaces (V1 documents
-//! wire), so these tests build the mock SDK pinned to a v3.1+ initial
-//! protocol version via [`count_capable_mock_sdk`]. An unpinned SDK
-//! defaults to the upgrade-safe floor (V0 wire), under which the local
-//! encoder rejects these queries before any network call.
+//! Count / `group_by` need a v3.1+ initial version, so tests build via
+//! [`count_capable_mock_sdk`] (see `DEFAULT_INITIAL_PROTOCOL_VERSION`).
 
 use std::sync::Arc;
 
@@ -50,10 +47,9 @@ use drive::query::ordering::OrderClause;
 use drive::query::SelectProjection;
 use drive_proof_verifier::{DocumentCount, DocumentSplitCounts, SplitCountEntry};
 
-/// Build a mock SDK whose initial protocol version is pinned to PV12 (the
-/// first release wiring `DRIVE_ABCI_QUERY_VERSIONS_V1`, i.e. the V1 documents
-/// wire) so Count / `group_by` queries encode. Uses `with_initial_version`
-/// (keeps auto-detect) rather than `with_version`.
+/// Mock SDK seeded to PV12 — the first release wiring `DRIVE_ABCI_QUERY_VERSIONS_V1`
+/// (V1 documents wire), so Count / `group_by` encode. Uses `with_initial_version`,
+/// keeping auto-detect.
 fn count_capable_mock_sdk() -> Sdk {
     let pv = PlatformVersion::get(dpp::version::v12::PROTOCOL_VERSION_12)
         .expect("PROTOCOL_VERSION_12 is a known version");

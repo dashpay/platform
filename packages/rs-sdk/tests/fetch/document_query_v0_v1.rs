@@ -221,10 +221,9 @@ fn encoder_dispatches_v0_via_query_settings_without_sdk() {
 
 #[test]
 fn sdk_builder_with_initial_version_seeds_atomic_without_pinning() {
-    // Auto-detect default: the atomic seeds to `self.version` (which
-    // defaults to the upgrade-safe floor `DEFAULT_INITIAL_PROTOCOL_VERSION`).
-    // `version()` therefore returns the floor until the first response
-    // ratchets the atomic upward.
+    // Auto-detect default: the atomic seeds to the floor
+    // `DEFAULT_INITIAL_PROTOCOL_VERSION`, which `version()` returns until the
+    // first response ratchets it upward.
     let sdk_default = SdkBuilder::new_mock().build().expect("mock sdk");
     assert_eq!(
         sdk_default.version().protocol_version,

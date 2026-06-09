@@ -90,10 +90,8 @@ async fn test_mock_fetch_identity_not_found() {
 /// Given some data contract, when I fetch it by ID, I get it.
 #[tokio::test]
 async fn test_mock_fetch_data_contract() {
-    // `mock_data_contract` builds V2 document types (v3.1+ semantics), so the
-    // SDK must decode the round-trip at a v3.1+ initial version (PV12) for the
-    // deserialized contract to match. An unpinned SDK defaults to the V0 floor
-    // and would downgrade the document type to V1.
+    // `mock_data_contract` builds V2 document types, so the round-trip must decode
+    // at PV12; the unpinned V0 floor would downgrade the type to V1 and mismatch.
     let pv = PlatformVersion::get(dpp::version::v12::PROTOCOL_VERSION_12)
         .expect("PROTOCOL_VERSION_12 is a known version");
     let mut sdk = SdkBuilder::new_mock()
