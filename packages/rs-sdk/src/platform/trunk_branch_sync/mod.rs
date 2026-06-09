@@ -78,7 +78,6 @@ pub struct BranchQueryParams {
 pub trait TrunkBranchSyncOps {
     /// Module-specific mutable context carried through the scan.
     ///
-    /// For nullifiers: holds `(&[NullifierKey], &mut NullifierSyncResult)`.
     /// For addresses: holds `(&mut P, &mut HashMap, &mut AddressSyncResult)`.
     type Context<'a>: Send
     where

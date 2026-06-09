@@ -475,7 +475,7 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_address, unshielding_amount)
             let output_address = create_output_address();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data_v0(
                 &output_address.to_bytes(),
                 unshielding_amount,
             );
@@ -614,7 +614,7 @@ mod tests {
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
 
             // Bind transparent fields (output_address, unshielding_amount) to the sighash
-            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data_v0(
                 &output_address.to_bytes(),
                 unshielding_amount,
             );
@@ -841,7 +841,7 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_address, unshielding_amount)
             let output_address = create_output_address();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data_v0(
                 &output_address.to_bytes(),
                 unshielding_amount,
             );
@@ -1042,7 +1042,7 @@ mod tests {
 
             let output_address = create_output_address();
             let unshielding_amount = 499_995_000u64;
-            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data_v0(
                 &output_address.to_bytes(),
                 unshielding_amount,
             );

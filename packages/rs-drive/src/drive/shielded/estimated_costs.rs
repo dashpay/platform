@@ -11,10 +11,10 @@ use grovedb::EstimatedSumTrees::SomeSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::HashMap;
 
-/// Average size of a note value: 32 cmx + 32 rho + 216 encrypted note = 280 bytes
+/// Average size of a note value: 32 cmx + 32 rho + 32 cv_net + 216 encrypted note = 312 bytes
 /// (encrypted note = 32 epk + 104 enc_ciphertext + 80 out_ciphertext, using DashMemo 36-byte memos)
-/// The cmx and rho are prepended by GroveDB's commitment_tree_insert_op for client retrieval.
-const AVERAGE_NOTE_VALUE_SIZE: u32 = 280;
+/// The cmx, rho, and cv_net are prepended by GroveDB's commitment_tree_insert_op for client retrieval.
+const AVERAGE_NOTE_VALUE_SIZE: u32 = 312;
 
 /// Size of a nullifier key (32 bytes)
 const NULLIFIER_KEY_SIZE: u8 = 32;
@@ -129,7 +129,7 @@ impl Drive {
         );
 
         // Notes tree: [ShieldedBalances, "M", 128]
-        // CommitmentTree - stores notes (cmx||encrypted_note items + Sinsemilla frontier)
+        // CommitmentTree - stores notes (cmx||rho||cv_net||encrypted_note items + Sinsemilla frontier)
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_notes_path()),
             EstimatedLayerInformation {

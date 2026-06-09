@@ -95,7 +95,8 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
         required,
         core_fee_per_byte,
         pooling,
-    );
+        platform_version,
+    )?;
 
     let bundle = build_spend_bundle(
         spends,
