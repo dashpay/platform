@@ -125,8 +125,19 @@ impl PerAccountPlatformAddressState {
     /// `shielded_shield_from_account`) read `available = 0` after a
     /// restart until the first BLAST sync repopulates the in-memory
     /// `address_balances` map.
-    pub(crate) fn found(&self) -> &BTreeMap<PlatformP2PKHAddress, AddressFunds> {
+    pub fn found(&self) -> &BTreeMap<PlatformP2PKHAddress, AddressFunds> {
         &self.found
+    }
+
+    /// Read-only view of the `index <-> address` bijection this account
+    /// has derived.
+    pub fn addresses(&self) -> &BiBTreeMap<AddressIndex, PlatformP2PKHAddress> {
+        &self.addresses
+    }
+
+    /// The account xpub used to extend the gap window on demand.
+    pub fn extended_public_key(&self) -> &ExtendedPubKey {
+        &self.extended_public_key
     }
 }
 

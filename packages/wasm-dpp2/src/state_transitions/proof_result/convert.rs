@@ -15,7 +15,8 @@ use super::identity::{
     VerifiedBalanceTransferWasm, VerifiedIdentityWasm, VerifiedPartialIdentityWasm,
 };
 use super::shielded::{
-    VerifiedAssetLockConsumedWasm, VerifiedShieldedNullifiersWasm,
+    VerifiedAssetLockConsumedWasm, VerifiedAssetLockConsumedWithAddressInfosWasm,
+    VerifiedIdentityWithShieldedNullifiersWasm, VerifiedShieldedNullifiersWasm,
     VerifiedShieldedNullifiersWithAddressInfosWasm,
     VerifiedShieldedNullifiersWithWithdrawalDocumentWasm,
 };
@@ -64,9 +65,11 @@ export type StateTransitionProofResultType =
   | VerifiedIdentityFullWithAddressInfos
   | VerifiedIdentityWithAddressInfos
   | VerifiedAssetLockConsumed
+  | VerifiedAssetLockConsumedWithAddressInfos
   | VerifiedShieldedNullifiers
   | VerifiedShieldedNullifiersWithAddressInfos
-  | VerifiedShieldedNullifiersWithWithdrawalDocument;
+  | VerifiedShieldedNullifiersWithWithdrawalDocument
+  | VerifiedIdentityWithShieldedNullifiers;
 "#;
 
 #[wasm_bindgen]
@@ -255,6 +258,27 @@ pub fn convert_proof_result(
             VerifiedAssetLockConsumedWasm::new(status, initial, remaining).into()
         }
 
+        StateTransitionProofResult::VerifiedAssetLockConsumedWithAddressInfos(info, infos) => {
+            use dpp::asset_lock::StoredAssetLockInfo;
+            use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
+            let (status, initial, remaining) = match info {
+                StoredAssetLockInfo::FullyConsumed => ("FullyConsumed".to_string(), None, None),
+                StoredAssetLockInfo::PartiallyConsumed(val) => (
+                    "PartiallyConsumed".to_string(),
+                    Some(val.initial_credit_value()),
+                    Some(val.remaining_credit_value()),
+                ),
+                StoredAssetLockInfo::NotPresent => ("NotPresent".to_string(), None, None),
+            };
+            VerifiedAssetLockConsumedWithAddressInfosWasm::new(
+                status,
+                initial,
+                remaining,
+                build_address_infos_map(infos),
+            )
+            .into()
+        }
+
         StateTransitionProofResult::VerifiedShieldedNullifiers(nullifiers) => {
             VerifiedShieldedNullifiersWasm::from_map(build_nullifier_map(nullifiers)).into()
         }
@@ -286,6 +310,15 @@ pub fn convert_proof_result(
             )
             .into()
         }
+
+        StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers(
+            identity,
+            nullifiers,
+        ) => VerifiedIdentityWithShieldedNullifiersWasm::new(
+            identity.into(),
+            build_nullifier_map(nullifiers),
+        )
+        .into(),
     };
 
     Ok(js_value.into())

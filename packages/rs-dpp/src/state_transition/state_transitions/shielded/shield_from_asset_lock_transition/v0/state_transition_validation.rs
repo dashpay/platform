@@ -105,6 +105,7 @@ mod tests {
             anchor: [7u8; 32],
             proof: vec![8u8; 100],
             binding_signature: [9u8; 64],
+            surplus_output: None,
             signature: BinaryData::new(vec![10u8; 65]),
         }
     }

@@ -43,7 +43,7 @@ export default function obtainZeroSSLCertificateTaskFactory(
    * @return {Listr}
    */
   function obtainZeroSSLCertificateTask(config) {
-    return new Listr([
+    const tasks = new Listr([
       {
         title: 'Check if certificate already exists and not expiring soon',
         // Skips the check if force flag is set
@@ -311,6 +311,41 @@ and all Dash service ports listed above.`);
         showErrorMessage: true,
       },
     });
+
+    // Wrap run() to ensure the verification server is always cleaned up on failure.
+    // If a task after "Start verification server" throws (e.g. domain verification
+    // or certificate download fails), Listr aborts and the "Stop verification server"
+    // task at the end never executes — leaving an orphaned container bound to port 80.
+    // This wrapper guarantees cleanup regardless of where the pipeline fails.
+    const originalRun = tasks.run.bind(tasks);
+    tasks.run = async (context) => {
+      try {
+        return await originalRun(context);
+      } catch (error) {
+        // Best-effort cleanup — never mask the original error, but do surface a
+        // cleanup failure: a stuck verification container left bound to port 80 is
+        // exactly the condition this wrapper exists to prevent, so it must be visible.
+        try {
+          await verificationServer.stop();
+        } catch (stopError) {
+          // stop() is a no-op when no container was started; a real throw here means
+          // the verification container may still be running on port 80.
+          // eslint-disable-next-line no-console
+          console.error(`Failed to stop verification server during cleanup: ${stopError.message}`);
+        }
+        try {
+          await verificationServer.destroy();
+        } catch (destroyError) {
+          // destroy() is a no-op when the server was never set up (the pipeline
+          // failed before setup), so any throw here is a genuine cleanup failure.
+          // eslint-disable-next-line no-console
+          console.error(`Failed to destroy verification server during cleanup: ${destroyError.message}`);
+        }
+        throw error;
+      }
+    };
+
+    return tasks;
   }
 
   return obtainZeroSSLCertificateTask;

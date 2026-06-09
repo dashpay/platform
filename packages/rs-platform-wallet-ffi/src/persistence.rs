@@ -324,6 +324,18 @@ pub struct PersistenceCallbacks {
             count: usize,
         ) -> i32,
     >,
+    /// Per-subwallet outgoing (sent) note upserts, recovered via OVK.
+    /// Append-only send history keyed by `(wallet_id, account_index,
+    /// cmx)`; no spend / nullifier state.
+    #[cfg(feature = "shielded")]
+    pub on_persist_shielded_outgoing_notes_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            entries: *const crate::shielded_persistence::ShieldedOutgoingNoteFFI,
+            count: usize,
+        ) -> i32,
+    >,
     /// Per-subwallet sync watermark advances.
     #[cfg(feature = "shielded")]
     pub on_persist_shielded_synced_indices_fn: Option<
@@ -331,16 +343,6 @@ pub struct PersistenceCallbacks {
             context: *mut c_void,
             wallet_id: *const u8,
             entries: *const crate::shielded_persistence::ShieldedSyncedIndexFFI,
-            count: usize,
-        ) -> i32,
-    >,
-    /// Per-subwallet nullifier-sync checkpoint advances.
-    #[cfg(feature = "shielded")]
-    pub on_persist_shielded_nullifier_checkpoints_fn: Option<
-        unsafe extern "C" fn(
-            context: *mut c_void,
-            wallet_id: *const u8,
-            entries: *const crate::shielded_persistence::ShieldedNullifierCheckpointFFI,
             count: usize,
         ) -> i32,
     >,
@@ -364,6 +366,26 @@ pub struct PersistenceCallbacks {
         unsafe extern "C" fn(
             context: *mut c_void,
             entries: *const crate::shielded_persistence::ShieldedNoteRestoreFFI,
+            count: usize,
+        ),
+    >,
+    /// Restore-on-load: every persisted outgoing (sent) note. Same
+    /// host-allocates / Rust-frees lifetime contract as
+    /// `on_load_shielded_notes_fn`. Inlined (rather than via a type
+    /// alias) so cbindgen emits the referenced struct in the header.
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_outgoing_notes_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            out_entries: *mut *const crate::shielded_persistence::ShieldedOutgoingNoteRestoreFFI,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_outgoing_notes_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            entries: *const crate::shielded_persistence::ShieldedOutgoingNoteRestoreFFI,
             count: usize,
         ),
     >,
@@ -508,13 +530,17 @@ impl Default for PersistenceCallbacks {
             #[cfg(feature = "shielded")]
             on_persist_shielded_nullifiers_spent_fn: None,
             #[cfg(feature = "shielded")]
-            on_persist_shielded_synced_indices_fn: None,
+            on_persist_shielded_outgoing_notes_fn: None,
             #[cfg(feature = "shielded")]
-            on_persist_shielded_nullifier_checkpoints_fn: None,
+            on_persist_shielded_synced_indices_fn: None,
             #[cfg(feature = "shielded")]
             on_load_shielded_notes_fn: None,
             #[cfg(feature = "shielded")]
             on_load_shielded_notes_free_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_outgoing_notes_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_outgoing_notes_free_fn: None,
             #[cfg(feature = "shielded")]
             on_load_shielded_sync_states_fn: None,
             #[cfg(feature = "shielded")]
@@ -1158,7 +1184,67 @@ impl PlatformWalletPersistence for FFIPersister {
                 }
             }
 
-            // 3) synced_indices
+            // 3) outgoing_notes (OVK-recovered send history). Each
+            //    `memo_ptr` borrows into the changeset's owned `memo`
+            //    Vec, which lives for the whole `store()` call, so the
+            //    pointer stays valid for the callback window (same
+            //    discipline as `note_data_ptr` above).
+            if !shielded_cs.outgoing_notes.is_empty() {
+                if let Some(cb) = self.callbacks.on_persist_shielded_outgoing_notes_fn {
+                    let entries: Vec<ShieldedOutgoingNoteFFI> = shielded_cs
+                        .outgoing_notes
+                        .iter()
+                        .flat_map(|(id, notes)| {
+                            notes.iter().filter_map(|n| {
+                                // `recipient` is a 43-byte raw Orchard address
+                                // stored as a `Vec` (serde-derive only covers
+                                // arrays <= 32). It is always exactly 43 bytes
+                                // from OVK recovery; reject (skip + warn) a
+                                // malformed row rather than silently zero-padding
+                                // it into a wrong address.
+                                let recipient: [u8; 43] = match n.recipient.as_slice().try_into() {
+                                    Ok(r) => r,
+                                    Err(_) => {
+                                        tracing::warn!(
+                                            recipient_len = n.recipient.len(),
+                                            "skipping outgoing-note persist row: \
+                                                 recipient is not the expected 43 bytes"
+                                        );
+                                        return None;
+                                    }
+                                };
+                                Some(ShieldedOutgoingNoteFFI {
+                                    wallet_id: id.wallet_id,
+                                    account_index: id.account_index,
+                                    cmx: n.cmx,
+                                    recipient,
+                                    value: n.value,
+                                    block_height: n.block_height,
+                                    memo_ptr: n.memo.as_ptr(),
+                                    memo_len: n.memo.len(),
+                                })
+                            })
+                        })
+                        .collect();
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            entries.as_ptr(),
+                            entries.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Shielded outgoing-notes persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
+                }
+            }
+
+            // 4) synced_indices
             if !shielded_cs.synced_indices.is_empty() {
                 if let Some(cb) = self.callbacks.on_persist_shielded_synced_indices_fn {
                     let entries: Vec<ShieldedSyncedIndexFFI> = shielded_cs
@@ -1187,37 +1273,6 @@ impl PlatformWalletPersistence for FFIPersister {
                     }
                 }
             }
-
-            // 4) nullifier_checkpoints
-            if !shielded_cs.nullifier_checkpoints.is_empty() {
-                if let Some(cb) = self.callbacks.on_persist_shielded_nullifier_checkpoints_fn {
-                    let entries: Vec<ShieldedNullifierCheckpointFFI> = shielded_cs
-                        .nullifier_checkpoints
-                        .iter()
-                        .map(|(id, &(h, t))| ShieldedNullifierCheckpointFFI {
-                            wallet_id: id.wallet_id,
-                            account_index: id.account_index,
-                            height: h,
-                            timestamp: t,
-                        })
-                        .collect();
-                    let result = unsafe {
-                        cb(
-                            self.callbacks.context,
-                            wallet_id.as_ptr(),
-                            entries.as_ptr(),
-                            entries.len(),
-                        )
-                    };
-                    if result != 0 {
-                        eprintln!(
-                            "Shielded nullifier-checkpoint persistence callback returned error code {}",
-                            result
-                        );
-                        round_success = false;
-                    }
-                }
-            }
         }
 
         // Close the round. Clients use this to commit (if
@@ -1233,11 +1288,9 @@ impl PlatformWalletPersistence for FFIPersister {
         }
 
         if !round_success {
-            return Err(
-                "one or more persistence callbacks failed; changeset was rolled back"
-                    .to_string()
-                    .into(),
-            );
+            return Err(PersistenceError::backend(
+                "one or more persistence callbacks failed; changeset was rolled back",
+            ));
         }
 
         // Merge into pending changesets.
@@ -1251,9 +1304,10 @@ impl PlatformWalletPersistence for FFIPersister {
         if let Some(cb) = self.callbacks.on_store_fn {
             let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
             if result != 0 {
-                return Err(
-                    format!("Persistence store callback returned error code {}", result).into(),
-                );
+                return Err(PersistenceError::backend(format!(
+                    "Persistence store callback returned error code {}",
+                    result
+                )));
             }
         }
 
@@ -1261,13 +1315,19 @@ impl PlatformWalletPersistence for FFIPersister {
     }
 
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
+        // TODO: deferred — FFI callback failures are classified as
+        // `Fatal` (no transient-retry signal across the C ABI), and
+        // trailing-byte validation on decoded FFI payloads is not yet
+        // applied here. Both are tracked for a follow-up; no behavior
+        // change in this change.
         // Notify caller.
         if let Some(cb) = self.callbacks.on_flush_fn {
             let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
             if result != 0 {
-                return Err(
-                    format!("Persistence flush callback returned error code {}", result).into(),
-                );
+                return Err(PersistenceError::backend(format!(
+                    "Persistence flush callback returned error code {}",
+                    result
+                )));
             }
         }
 
@@ -1293,7 +1353,10 @@ impl PlatformWalletPersistence for FFIPersister {
         let mut count: usize = 0;
         let rc = unsafe { load_cb(self.callbacks.context, &mut entries_ptr, &mut count) };
         if rc != 0 {
-            return Err(format!("on_load_wallet_list_fn returned error code {}", rc).into());
+            return Err(PersistenceError::backend(format!(
+                "on_load_wallet_list_fn returned error code {}",
+                rc
+            )));
         }
         let _guard = LoadGuard {
             context: self.callbacks.context,
@@ -1332,7 +1395,9 @@ impl PlatformWalletPersistence for FFIPersister {
         {
             use crate::shielded_persistence::*;
             use platform_wallet::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
-            use platform_wallet::wallet::shielded::{ShieldedNote, SubwalletId};
+            use platform_wallet::wallet::shielded::{
+                ShieldedNote, ShieldedOutgoingNote, SubwalletId,
+            };
 
             let mut shielded_state = ShieldedSyncStartState::default();
 
@@ -1343,12 +1408,10 @@ impl PlatformWalletPersistence for FFIPersister {
             if self.callbacks.on_load_shielded_notes_fn.is_some()
                 != self.callbacks.on_load_shielded_notes_free_fn.is_some()
             {
-                return Err(
+                return Err(PersistenceError::backend(
                     "on_load_shielded_notes_fn and on_load_shielded_notes_free_fn must be \
-                     provided together"
-                        .to_string()
-                        .into(),
-                );
+                     provided together",
+                ));
             }
             if self.callbacks.on_load_shielded_sync_states_fn.is_some()
                 != self
@@ -1356,12 +1419,21 @@ impl PlatformWalletPersistence for FFIPersister {
                     .on_load_shielded_sync_states_free_fn
                     .is_some()
             {
-                return Err(
+                return Err(PersistenceError::backend(
                     "on_load_shielded_sync_states_fn and on_load_shielded_sync_states_free_fn \
-                     must be provided together"
-                        .to_string()
-                        .into(),
-                );
+                     must be provided together",
+                ));
+            }
+            if self.callbacks.on_load_shielded_outgoing_notes_fn.is_some()
+                != self
+                    .callbacks
+                    .on_load_shielded_outgoing_notes_free_fn
+                    .is_some()
+            {
+                return Err("on_load_shielded_outgoing_notes_fn and \
+                     on_load_shielded_outgoing_notes_free_fn must be provided together"
+                    .to_string()
+                    .into());
             }
 
             // 1) notes
@@ -1371,9 +1443,10 @@ impl PlatformWalletPersistence for FFIPersister {
                 let rc =
                     unsafe { load_notes(self.callbacks.context, &mut notes_ptr, &mut notes_count) };
                 if rc != 0 {
-                    return Err(
-                        format!("on_load_shielded_notes_fn returned error code {}", rc).into(),
-                    );
+                    return Err(PersistenceError::backend(format!(
+                        "on_load_shielded_notes_fn returned error code {}",
+                        rc
+                    )));
                 }
                 struct NotesGuard {
                     context: *mut c_void,
@@ -1428,7 +1501,71 @@ impl PlatformWalletPersistence for FFIPersister {
                 }
             }
 
-            // 2) per-subwallet sync states
+            // 2) outgoing (sent) notes recovered via OVK
+            if let Some(load_outgoing) = self.callbacks.on_load_shielded_outgoing_notes_fn {
+                let mut out_ptr: *const ShieldedOutgoingNoteRestoreFFI = std::ptr::null();
+                let mut out_count: usize = 0;
+                let rc =
+                    unsafe { load_outgoing(self.callbacks.context, &mut out_ptr, &mut out_count) };
+                if rc != 0 {
+                    return Err(format!(
+                        "on_load_shielded_outgoing_notes_fn returned error code {}",
+                        rc
+                    )
+                    .into());
+                }
+                struct OutgoingGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedOutgoingNoteRestoreFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedOutgoingNoteRestoreFFI,
+                    count: usize,
+                }
+                impl Drop for OutgoingGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _outgoing_guard = OutgoingGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_outgoing_notes_free_fn,
+                    entries: out_ptr,
+                    count: out_count,
+                };
+                if !out_ptr.is_null() && out_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(out_ptr, out_count) };
+                    for ffi in slice {
+                        let memo = if ffi.memo_ptr.is_null() || ffi.memo_len == 0 {
+                            Vec::new()
+                        } else {
+                            unsafe {
+                                std::slice::from_raw_parts(ffi.memo_ptr, ffi.memo_len).to_vec()
+                            }
+                        };
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        let entry = shielded_state
+                            .per_subwallet
+                            .entry(id)
+                            .or_insert_with(ShieldedSubwalletStartState::default);
+                        entry.outgoing_notes.push(ShieldedOutgoingNote {
+                            cmx: ffi.cmx,
+                            recipient: ffi.recipient.to_vec(),
+                            value: ffi.value,
+                            memo,
+                            block_height: ffi.block_height,
+                        });
+                    }
+                }
+            }
+
+            // 3) per-subwallet sync states
             if let Some(load_states) = self.callbacks.on_load_shielded_sync_states_fn {
                 let mut states_ptr: *const ShieldedSubwalletSyncStateFFI = std::ptr::null();
                 let mut states_count: usize = 0;
@@ -1436,11 +1573,10 @@ impl PlatformWalletPersistence for FFIPersister {
                     load_states(self.callbacks.context, &mut states_ptr, &mut states_count)
                 };
                 if rc != 0 {
-                    return Err(format!(
+                    return Err(PersistenceError::backend(format!(
                         "on_load_shielded_sync_states_fn returned error code {}",
                         rc
-                    )
-                    .into());
+                    )));
                 }
                 struct StatesGuard {
                     context: *mut c_void,
@@ -1476,12 +1612,6 @@ impl PlatformWalletPersistence for FFIPersister {
                             .entry(id)
                             .or_insert_with(ShieldedSubwalletStartState::default);
                         entry.last_synced_index = ffi.last_synced_index;
-                        if ffi.has_nullifier_checkpoint != 0 {
-                            entry.nullifier_checkpoint = Some((
-                                ffi.nullifier_checkpoint_height,
-                                ffi.nullifier_checkpoint_timestamp,
-                            ));
-                        }
                     }
                 }
             }
@@ -2267,14 +2397,17 @@ fn build_wallet_start_state(
         let xpub_bytes =
             unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
         let (account_xpub, _): (ExtendedPubKey, usize) =
-            bincode::decode_from_slice(xpub_bytes, config::standard())
-                .map_err(|e| format!("failed to decode account xpub: {}", e))?;
+            bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
+                PersistenceError::backend(format!("failed to decode account xpub: {}", e))
+            })?;
         let account =
             Account::from_xpub(Some(entry.wallet_id), account_type, account_xpub, network)
-                .map_err(|e| format!("Account::from_xpub failed: {:?}", e))?;
-        accounts
-            .insert(account)
-            .map_err(|e| format!("AccountCollection::insert failed: {}", e))?;
+                .map_err(|e| {
+                    PersistenceError::backend(format!("Account::from_xpub failed: {:?}", e))
+                })?;
+        accounts.insert(account).map_err(|e| {
+            PersistenceError::backend(format!("AccountCollection::insert failed: {}", e))
+        })?;
     }
 
     // External-signable wallet — the mnemonic / seed lives in the
@@ -2725,6 +2858,10 @@ fn build_wallet_start_state(
         }
     }
 
+    // TODO: this per-account reconstruction mirrors the SQLite backend's
+    // `platform_addrs::build_per_account`. Deferred dedup — once a shared
+    // helper crate hosts the reconstruction, both backends should call it
+    // instead of keeping parallel copies.
     let mut per_account = PerWalletPlatformAddressState::new();
     for (&account_key, account) in &wallet.accounts.platform_payment_accounts {
         per_account.entry(account_key.account).or_insert_with(|| {
@@ -2915,7 +3052,7 @@ fn build_unused_asset_locks(
     for spec in specs {
         // Decode the outpoint: 32-byte raw txid + 4-byte LE vout.
         let txid = dashcore::Txid::from_slice(&spec.out_point[..32]).map_err(|e| {
-            PersistenceError::from(format!(
+            PersistenceError::backend(format!(
                 "tracked asset lock: invalid txid in outpoint: {}",
                 e
             ))
@@ -2928,8 +3065,8 @@ fn build_unused_asset_locks(
 
         // Decode the consensus-encoded transaction.
         if spec.transaction_bytes.is_null() || spec.transaction_bytes_len == 0 {
-            return Err(PersistenceError::from(
-                "tracked asset lock: empty transaction bytes".to_string(),
+            return Err(PersistenceError::backend(
+                "tracked asset lock: empty transaction bytes",
             ));
         }
         // SAFETY: Swift guarantees the buffer is valid for the
@@ -2939,7 +3076,7 @@ fn build_unused_asset_locks(
             unsafe { slice::from_raw_parts(spec.transaction_bytes, spec.transaction_bytes_len) };
         let transaction: dashcore::Transaction = dashcore::consensus::deserialize(tx_bytes)
             .map_err(|e| {
-                PersistenceError::from(format!(
+                PersistenceError::backend(format!(
                     "tracked asset lock: failed to decode transaction: {}",
                     e
                 ))
@@ -2959,7 +3096,10 @@ fn build_unused_asset_locks(
                 config::standard(),
             )
             .map_err(|e| {
-                PersistenceError::from(format!("tracked asset lock: failed to decode proof: {}", e))
+                PersistenceError::backend(format!(
+                    "tracked asset lock: failed to decode proof: {}",
+                    e
+                ))
             })?;
             Some(proof)
         };
@@ -3010,7 +3150,7 @@ fn funding_type_from_u8(
         4 => AssetLockFundingType::AssetLockAddressTopUp,
         5 => AssetLockFundingType::AssetLockShieldedAddressTopUp,
         other => {
-            return Err(PersistenceError::from(format!(
+            return Err(PersistenceError::backend(format!(
                 "tracked asset lock: unknown funding_type discriminant {}",
                 other
             )))
@@ -3027,7 +3167,7 @@ fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, Persistence
         3 => AssetLockStatus::ChainLocked,
         4 => AssetLockStatus::Consumed,
         other => {
-            return Err(PersistenceError::from(format!(
+            return Err(PersistenceError::backend(format!(
                 "tracked asset lock: unknown status discriminant {}",
                 other
             )))
@@ -3226,7 +3366,7 @@ fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, Persiste
     // been UB for out-of-range bytes from a corrupt SwiftData row /
     // forward-versioned tag / malformed host buffer).
     let type_tag = AccountTypeTagFFI::try_from_u8(spec.type_tag).ok_or_else(|| {
-        PersistenceError::Backend(format!(
+        PersistenceError::backend(format!(
             "AccountSpecFFI carries unknown type_tag byte {} (out of declared range)",
             spec.type_tag
         ))
@@ -3235,7 +3375,7 @@ fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, Persiste
         AccountTypeTagFFI::Standard => {
             let standard_tag = StandardAccountTypeTagFFI::try_from_u8(spec.standard_tag)
                 .ok_or_else(|| {
-                    PersistenceError::Backend(format!(
+                    PersistenceError::backend(format!(
                         "AccountSpecFFI(Standard) carries unknown standard_tag byte {}",
                         spec.standard_tag
                     ))
@@ -3290,7 +3430,7 @@ fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, Persiste
         // is gone.
         AccountTypeTagFFI::IdentityAuthenticationEcdsa
         | AccountTypeTagFFI::IdentityAuthenticationBls => {
-            return Err(PersistenceError::Backend(format!(
+            return Err(PersistenceError::backend(format!(
                 "AccountTypeTagFFI {:?} is no longer mappable to a key-wallet AccountType after the upstream event-bus refactor (TODO(events))",
                 type_tag
             )));
@@ -3393,10 +3533,10 @@ fn restore_unresolved_asset_lock_tx_records(
         let context = match rec.context_raw {
             2 => {
                 let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash).map_err(|e| {
-                    format!(
+                    PersistenceError::backend(format!(
                         "load: malformed block_hash on unresolved asset-lock tx record: {}",
                         e
-                    )
+                    ))
                 })?;
                 TransactionContext::InBlock(BlockInfo::new(
                     rec.block_height,
@@ -3406,10 +3546,10 @@ fn restore_unresolved_asset_lock_tx_records(
             }
             3 => {
                 let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash).map_err(|e| {
-                    format!(
+                    PersistenceError::backend(format!(
                         "load: malformed block_hash on unresolved asset-lock tx record: {}",
                         e
-                    )
+                    ))
                 })?;
                 TransactionContext::InChainLockedBlock(BlockInfo::new(
                     rec.block_height,

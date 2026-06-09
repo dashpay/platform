@@ -119,6 +119,7 @@ async fn try_from_asset_lock_with_bundle_and_signer_produces_recoverable_compact
         anchor,
         proof,
         binding_signature,
+        None,
         PlatformVersion::latest(),
     )
     .await
@@ -150,6 +151,7 @@ async fn try_from_asset_lock_with_bundle_and_signer_via_outer_dispatcher() {
         [0u8; 32],
         vec![],
         [0u8; 64],
+        None,
         PlatformVersion::latest(),
     )
     .await
@@ -188,6 +190,7 @@ async fn outer_dispatcher_rejects_unknown_serialization_version() {
         [0u8; 32],
         vec![],
         [0u8; 64],
+        None,
         &bad_version,
     )
     .await
@@ -229,6 +232,7 @@ async fn build_shield_from_asset_lock_transition_with_signer_end_to_end() {
         &signer,
         &TestProver,
         [0u8; 36],
+        None,
         PlatformVersion::latest(),
     )
     .await

@@ -28,6 +28,7 @@
 //! )?;
 //! ```
 
+mod identity_create_from_shielded_pool;
 mod shield;
 mod shield_from_asset_lock;
 mod shielded_transfer;
@@ -35,6 +36,9 @@ mod shielded_withdrawal;
 mod unshield;
 
 pub use self::shield::build_shield_transition;
+pub use identity_create_from_shielded_pool::{
+    build_identity_create_from_shielded_pool_transition, IdentityCreateFromShieldedPoolBuildResult,
+};
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition;
 #[cfg(feature = "core_key_wallet")]
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition_with_signer;

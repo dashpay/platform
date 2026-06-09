@@ -121,7 +121,7 @@ impl PlatformWalletPersistence for StoreFailsPersister {
         _wallet_id: WalletId,
         _changeset: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
-        Err(PersistenceError::Backend(
+        Err(PersistenceError::backend(
             "Found-017 injected store failure: the registration round must \
              not be treated as best-effort"
                 .to_string(),

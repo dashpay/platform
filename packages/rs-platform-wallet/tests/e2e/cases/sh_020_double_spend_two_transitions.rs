@@ -113,7 +113,8 @@ async fn sh_020_double_spend_two_transitions() {
     );
     let one_note = vec![notes[0].clone()];
 
-    let exact_fee = compute_minimum_shielded_fee(1, PlatformVersion::latest());
+    let exact_fee = compute_minimum_shielded_fee(1, PlatformVersion::latest())
+        .expect("compute_minimum_shielded_fee");
     let dst_a = s.test_wallet.next_unused_address().await.expect("dst_a");
     let dst_b = s.test_wallet.next_unused_address().await.expect("dst_b");
 

@@ -16,6 +16,8 @@ pub mod core_bridge;
 pub mod identity_manager_start_state;
 pub mod merge;
 pub mod platform_address_sync_start_state;
+#[cfg(feature = "serde")]
+pub mod serde_adapters;
 #[cfg(feature = "shielded")]
 pub mod shielded_changeset;
 #[cfg(feature = "shielded")]
@@ -39,4 +41,4 @@ pub use platform_address_sync_start_state::PlatformAddressSyncStartState;
 pub use shielded_changeset::ShieldedChangeSet;
 #[cfg(feature = "shielded")]
 pub use shielded_sync_start_state::{ShieldedSubwalletStartState, ShieldedSyncStartState};
-pub use traits::{PersistenceError, PlatformWalletPersistence};
+pub use traits::{PersistenceError, PersistenceErrorKind, PlatformWalletPersistence};

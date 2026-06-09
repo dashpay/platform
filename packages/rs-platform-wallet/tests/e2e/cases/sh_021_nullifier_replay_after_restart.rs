@@ -120,7 +120,8 @@ async fn sh_021_nullifier_replay_after_restart() {
     // Replay: rebuild a fresh transition against the now-spent captured
     // note and broadcast. The witness still resolves (the commitment is
     // in the tree), but the nullifier is already spent on-chain.
-    let exact_fee = compute_minimum_shielded_fee(1, PlatformVersion::latest());
+    let exact_fee = compute_minimum_shielded_fee(1, PlatformVersion::latest())
+        .expect("compute_minimum_shielded_fee");
     let dst2 = s.test_wallet.next_unused_address().await.expect("dst2");
     let replay_st = build_unshield_st_against_notes(
         &s.test_wallet,

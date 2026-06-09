@@ -59,7 +59,7 @@ async fn sh_032_exact_change_boundary() {
     // A single-spend unshield is 1 action; the exact fee the wallet folds
     // into the requirement is `compute_minimum_shielded_fee(1)`.
     let version = PlatformVersion::latest();
-    let exact_fee = compute_minimum_shielded_fee(1, version);
+    let exact_fee = compute_minimum_shielded_fee(1, version).expect("compute_minimum_shielded_fee");
     let exact_note = UNSHIELD_AMOUNT + exact_fee;
 
     // ---- Exact-change arm ----
