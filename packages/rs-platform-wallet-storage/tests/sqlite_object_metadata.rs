@@ -24,11 +24,8 @@ fn id32(byte: u8) -> [u8; 32] {
     [byte; 32]
 }
 
-// ---------------------------------------------------------------------
-// 001..006 — per-scope roundtrip (get→None, put, get, overwrite,
-// delete, get→None). Parent rows seeded first.
-// ---------------------------------------------------------------------
-
+/// Full per-scope roundtrip: get→None, put, get, overwrite, delete,
+/// get→None. Parent rows must be seeded first by the caller.
 fn roundtrip(p: &impl KvStore, scope: &ObjectId) {
     assert_eq!(p.get(scope, "k").unwrap(), None);
     p.put(scope, "k", b"v1").unwrap();
@@ -111,12 +108,6 @@ fn tc_md_006_roundtrip_platform_address() {
     );
 }
 
-// ---------------------------------------------------------------------
-// 007..011 — parentless `put` SUCCEEDS for the five typed scopes
-// (no parent row seeded) and the value reads back. — Global
-// put on empty DB → Ok.
-// ---------------------------------------------------------------------
-
 /// Put `(scope, "k") = b"v"` with NO parent row present, then read it
 /// back. Asserts the soft-cascade model: writes don't require a parent.
 fn assert_parentless_put_roundtrips(p: &impl KvStore, scope: &ObjectId) {
@@ -183,11 +174,8 @@ fn tc_md_012_put_global_on_empty_db_is_ok() {
     );
 }
 
-// ---------------------------------------------------------------------
-// delete of a never-existing key is idempotent (returns Ok),
-// for the Global scope and a typed scope.
-// ---------------------------------------------------------------------
-
+/// delete of a never-existing key is idempotent for both the Global
+/// scope and a typed scope.
 #[test]
 fn delete_missing_key_is_idempotent() {
     let (p, _tmp, _path) = fresh_persister();
@@ -196,11 +184,6 @@ fn delete_missing_key_is_idempotent() {
     ensure_wallet_meta(&p, &w);
     p.delete(&ObjectId::Wallet(w), "never-existed").unwrap();
 }
-
-// ---------------------------------------------------------------------
-// list_keys returns keys in ascending order regardless of
-// insertion order.
-// ---------------------------------------------------------------------
 
 #[test]
 fn list_keys_is_ascending_regardless_of_insert_order() {
@@ -214,10 +197,8 @@ fn list_keys_is_ascending_regardless_of_insert_order() {
     );
 }
 
-// ---------------------------------------------------------------------
-// 013..016 — soft cascade via AFTER DELETE trigger: seed+put,
-// DELETE FROM the direct parent table, assert the meta row is gone.
-// ---------------------------------------------------------------------
+// Soft cascade via AFTER DELETE trigger: seed+put, DELETE FROM the
+// direct parent table, assert the meta row is gone.
 
 #[test]
 fn tc_md_013_cascade_identity() {
@@ -313,9 +294,7 @@ fn tc_md_016_cascade_platform_address() {
     assert_eq!(p.get(&scope, "k").unwrap(), None);
 }
 
-// ---------------------------------------------------------------------
-// 017 / 017b — wallet cascade (direct + transitive via identities).
-// ---------------------------------------------------------------------
+// Wallet cascade: direct, plus transitive via identities.
 
 #[test]
 fn tc_md_017_cascade_wallet() {
@@ -359,10 +338,8 @@ fn tc_md_017b_cascade_identity_via_wallet() {
     assert_eq!(p.get(&scope, "k").unwrap(), None);
 }
 
-// ---------------------------------------------------------------------
-// 018 / 019 — delete_wallet purges every meta_* for the wallet;
-// Global + other wallet's meta_wallet survive; report wiring.
-// ---------------------------------------------------------------------
+// delete_wallet purges every meta_* for the wallet; Global and another
+// wallet's meta_wallet survive.
 
 #[test]
 fn tc_md_018_delete_wallet_purges_all_meta_for_wallet() {
@@ -513,12 +490,9 @@ fn tc_md_019_delete_wallet_report_counts_meta_tables() {
     assert_eq!(global, 1, "meta_global must survive the per-wallet delete");
 }
 
-// ---------------------------------------------------------------------
-// DET scenario — write metadata before the parent exists, read it back,
-// then create the parent (metadata still present), then delete the
-// parent (the AFTER DELETE trigger removes the metadata).
-// ---------------------------------------------------------------------
-
+/// Write metadata before the parent exists, read it back, create the
+/// parent (metadata persists), then delete it (the AFTER DELETE trigger
+/// removes the metadata).
 #[test]
 fn det_write_before_parent_then_create_then_delete() {
     use rusqlite::params;
@@ -552,13 +526,9 @@ fn det_write_before_parent_then_create_then_delete() {
     assert_eq!(p.get(&scope, "alias").unwrap(), None);
 }
 
-// ---------------------------------------------------------------------
-// The meta_* triggers coexist with the pre-existing
-// `setnull_core_utxos_on_tx_delete` trigger during delete_wallet: a
-// wallet with core_transactions + core_utxos (a UTXO spent_in that tx)
-// deletes cleanly and leaves nothing behind.
-// ---------------------------------------------------------------------
-
+/// The meta_* triggers coexist with the `setnull_core_utxos_on_tx_delete`
+/// trigger during delete_wallet: a wallet with core_transactions +
+/// core_utxos (a UTXO spent_in that tx) deletes cleanly, leaving nothing.
 #[test]
 fn delete_wallet_with_core_tx_and_utxo_stays_consistent() {
     use rusqlite::params;
@@ -612,14 +582,10 @@ fn delete_wallet_with_core_tx_and_utxo_stays_consistent() {
     assert_eq!(p.get(&ObjectId::Wallet(w), "k").unwrap(), None);
 }
 
-// ---------------------------------------------------------------------
-// Trigger-on-FK-cascade proof at SQLite defaults. SQLite fires an AFTER
-// DELETE trigger for a row removed by an FK ON DELETE CASCADE natively —
-// `recursive_triggers` (off by default) does not gate this. On a RAW
-// connection at defaults, the one-hop chain wallets delete →
-// identities FK cascade → meta_identity trigger cleans up.
-// ---------------------------------------------------------------------
-
+/// SQLite fires an AFTER DELETE trigger for a row removed by FK ON DELETE
+/// CASCADE natively — `recursive_triggers` (off by default) does not gate
+/// this. On a raw connection at defaults, the one-hop chain wallets
+/// delete → identities FK cascade → meta_identity trigger cleans up.
 #[test]
 fn meta_identity_cleanup_fires_on_wallet_cascade() {
     use rusqlite::{params, Connection};
@@ -685,13 +651,9 @@ fn meta_identity_cleanup_fires_on_wallet_cascade() {
     );
 }
 
-// ---------------------------------------------------------------------
-// Two-hop trigger-on-FK-cascade proof at SQLite defaults. The meta_token
-// chain spans two FK cascades: wallets delete → identities (FK
-// cascade) → token_balances (FK cascade) → meta_token trigger. This
-// fires natively without recursive_triggers.
-// ---------------------------------------------------------------------
-
+/// The meta_token chain spans two FK cascades: wallets delete →
+/// identities → token_balances → meta_token trigger, firing natively
+/// without recursive_triggers.
 #[test]
 fn meta_token_cleanup_fires_on_wallet_cascade_two_hops() {
     use rusqlite::{params, Connection};
@@ -768,10 +730,6 @@ fn meta_token_cleanup_fires_on_wallet_cascade_two_hops() {
     );
 }
 
-// ---------------------------------------------------------------------
-// 020..022 — key bounds.
-// ---------------------------------------------------------------------
-
 #[test]
 fn tc_md_020_empty_key_rejected() {
     let (p, _tmp, _path) = fresh_persister();
@@ -814,11 +772,8 @@ fn tc_md_022_max_length_key_accepted() {
     );
 }
 
-// ---------------------------------------------------------------------
-// oversized value planted directly is rejected on `get`
-// before materialisation, across every meta_* table.
-// ---------------------------------------------------------------------
-
+/// An oversized value planted directly is rejected on `get` before
+/// materialisation, across every meta_* table.
 #[test]
 fn tc_md_023_oversized_value_rejected_before_materialising() {
     use rusqlite::params;
@@ -936,10 +891,8 @@ fn tc_md_023_oversized_value_rejected_before_materialising() {
     }
 }
 
-// ---------------------------------------------------------------------
-// list_keys prefix with literal `%`/`_`/`\` (not wildcards).
-// ---------------------------------------------------------------------
-
+/// list_keys treats `%`/`_`/`\` in the prefix as literals, not LIKE
+/// wildcards.
 #[test]
 fn tc_md_024_list_keys_escapes_like_metacharacters() {
     let (p, _tmp, _path) = fresh_persister();
@@ -971,11 +924,8 @@ fn tc_md_024_list_keys_escapes_like_metacharacters() {
     );
 }
 
-// ---------------------------------------------------------------------
-// scope isolation: same key string across Wallet(A)/Wallet(B)
-// and Global/Wallet(A) stays independent.
-// ---------------------------------------------------------------------
-
+/// The same key string across Wallet(A)/Wallet(B) and Global/Wallet(A)
+/// stays scope-independent.
 #[test]
 fn tc_md_025_scope_isolation() {
     let (p, _tmp, _path) = fresh_persister();

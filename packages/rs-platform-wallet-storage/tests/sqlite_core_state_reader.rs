@@ -1,8 +1,8 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Item B — `schema::core_state::load_state` bulk-reconstructs the
-//! keyless `CoreChangeSet` (UTXOs, records, IS-locks, sync watermarks)
-//! and the no-silent-zero balance contract holds end-to-end.
+//! `schema::core_state::load_state` bulk-reconstructs the keyless
+//! `CoreChangeSet` (UTXOs, records, IS-locks, sync watermarks), and the
+//! no-silent-zero balance contract holds end-to-end.
 
 mod common;
 
@@ -65,15 +65,12 @@ fn wallet_and_utxo(seed: [u8; 64], value: u64, height: u32, vout: u32) -> (Walle
 
 /// The `core_derived_addresses` row a real scan records before a UTXO on
 /// `address` lands. The strict UTXO writer refuses an unspent UTXO whose
-/// address was never derived (it would silent-misbucket live money), so
-/// every test paying a wallet address must seed the matching derivation.
-/// The writer's lookup keys on `(wallet_id, address)` only and the read
-/// side re-attributes by wallet topology, so the account_type/index here
-/// are inert placeholders — the address is the load-bearing field.
+/// address was never derived, so every test paying a wallet address must
+/// seed the matching derivation. The writer keys its lookup on
+/// `(wallet_id, address)` only, so account_type/index/pubkey here are
+/// inert placeholders — the address is the load-bearing field.
 fn derived_for(address: &dashcore::Address) -> platform_wallet::DerivedAddress {
     // Compressed secp256k1 generator point — a valid placeholder pubkey.
-    // The writer keys its lookup on `(wallet_id, address)` only, so the
-    // key value is inert; it just has to parse.
     const PUBKEY_G: [u8; 33] = [
         0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62, 0x95, 0xce, 0x87,
         0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81, 0x5b, 0x16,
@@ -91,8 +88,8 @@ fn derived_for(address: &dashcore::Address) -> platform_wallet::DerivedAddress {
     }
 }
 
-/// RT-2: a non-zero balance survives store → drop → reopen → load.
-/// Guards the silent-zero-balance FAIL.
+/// A non-zero balance survives store → drop → reopen → load, guarding
+/// against a silent-zero-balance reconstruction.
 #[test]
 fn rt2_nonzero_balance_survives_reopen() {
     let (persister, _tmp, path) = fresh_persister();
@@ -144,7 +141,7 @@ fn rt2_nonzero_balance_survives_reopen() {
     assert_eq!(bal.confirmed(), 1_234_500);
 }
 
-/// B-2: spent UTXOs are excluded from the reconstructed feed.
+/// Spent UTXOs are excluded from the reconstructed feed.
 #[test]
 fn b2_spent_utxo_excluded() {
     let (persister, _tmp, path) = fresh_persister();
@@ -181,7 +178,7 @@ fn b2_spent_utxo_excluded() {
     );
 }
 
-/// B-3: a corrupt `record_blob` is a typed hard error.
+/// A corrupt `record_blob` is a typed hard error.
 #[test]
 fn b3_corrupt_record_blob_is_hard_error() {
     let (persister, _tmp, path) = fresh_persister();
@@ -208,9 +205,9 @@ fn b3_corrupt_record_blob_is_hard_error() {
     );
 }
 
-/// F2 / RT-noBIP44: a CoinJoin-only wallet (no BIP44 account) with
-/// non-zero persisted UTXOs must reconstruct to the correct non-zero
-/// total — NEVER a silent `Ok` + 0.
+/// A CoinJoin-only wallet (no BIP44 account) with non-zero persisted
+/// UTXOs reconstructs to the correct non-zero total, never a silent
+/// `Ok` + 0.
 #[test]
 fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
     use std::collections::BTreeSet;
@@ -300,7 +297,7 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
     );
 }
 
-/// B-4: empty wallet → empty, no error.
+/// Empty wallet → empty core state, no error.
 #[test]
 fn b4_empty_core_state_is_ok() {
     let (persister, _tmp, path) = fresh_persister();

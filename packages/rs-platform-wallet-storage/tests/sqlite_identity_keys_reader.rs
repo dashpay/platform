@@ -1,8 +1,8 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Item G (PR-3) — `schema::identity_keys::load_state` reads the
-//! `identity_keys` rows back into a keyless `IdentityKeysChangeSet`,
-//! bit-exact, fail-hard on a corrupt blob.
+//! `schema::identity_keys::load_state` reads `identity_keys` rows back
+//! into a keyless `IdentityKeysChangeSet`, bit-exact, fail-hard on a
+//! corrupt blob.
 
 mod common;
 
@@ -48,7 +48,7 @@ fn key_entry(identity: Identifier, key_id: u32, byte: u8) -> IdentityKeyEntry {
     }
 }
 
-/// G-K1: identity-key rows round-trip bit-exact into the keyless
+/// Identity-key rows round-trip bit-exact into the keyless
 /// `IdentityKeysChangeSet`.
 #[test]
 fn gk1_identity_keys_roundtrip() {
@@ -100,7 +100,7 @@ fn gk1_identity_keys_roundtrip() {
     assert!(cs.removed.is_empty());
 }
 
-/// G-K2: an empty wallet yields an empty changeset, not an error.
+/// An empty wallet yields an empty changeset, not an error.
 #[test]
 fn gk2_empty_identity_keys_is_ok() {
     let (persister, _tmp, path) = fresh_persister();
@@ -114,8 +114,8 @@ fn gk2_empty_identity_keys_is_ok() {
     assert!(cs.upserts.is_empty());
 }
 
-/// G-K3: a corrupt `public_key_blob` is a typed hard error, never a
-/// silent skip.
+/// A corrupt `public_key_blob` is a typed hard error, never a silent
+/// skip.
 #[test]
 fn gk3_corrupt_blob_is_hard_error() {
     let (persister, _tmp, path) = fresh_persister();

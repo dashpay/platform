@@ -1,9 +1,8 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Item A2 / RT-4 — the status-filtered asset-lock reader excludes
-//! terminal `Consumed` rows so a spent one-shot lock never resurrects
-//! as actionable on rehydration, while the historical row stays on
-//! disk.
+//! The status-filtered asset-lock reader excludes terminal `Consumed`
+//! rows so a spent one-shot lock never resurrects as actionable on
+//! rehydration, while the historical row stays on disk.
 
 mod common;
 
@@ -48,10 +47,9 @@ fn op(b: u8) -> OutPoint {
     }
 }
 
-/// RT-4: store a mix incl. one terminal `Consumed`. After reopen:
-/// (a) the `Consumed` row is still on disk;
-/// (b) it is absent from the filtered rehydration feed;
-/// (c) non-terminal rows survive.
+/// Store a mix including one terminal `Consumed`. After reopen: the
+/// `Consumed` row is still on disk, is absent from the filtered
+/// rehydration feed, and non-terminal rows survive.
 #[test]
 fn rt4_consumed_excluded_from_rehydration_feed() {
     let (persister, _tmp, path) = fresh_persister();
@@ -117,8 +115,7 @@ fn rt4_consumed_excluded_from_rehydration_feed() {
     assert_eq!(feed_ops.len(), 2);
 }
 
-/// A2-2: an all-consumed wallet yields an empty rehydration feed (no
-/// error).
+/// An all-consumed wallet yields an empty rehydration feed, no error.
 #[test]
 fn a2_all_consumed_yields_empty_feed() {
     let (persister, _tmp, path) = fresh_persister();

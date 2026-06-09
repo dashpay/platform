@@ -1,19 +1,9 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! `load()` reconstruction tests.
-//!
-//! Full signing-wallet rehydration has landed: `load()` returns a
-//! keyless per-wallet payload (network, birth height, account manifest,
-//! core-state projection, identities, `Consumed`-filtered asset locks)
-//! and the manager re-derives the signing `Wallet` from the runtime
-//! `SeedProvider`. The positive-rehydration assertions live here
-//! (`tc_p4_006`/`tc_p4_007`) and in `sqlite_load_wiring.rs` /
-//! `sqlite_core_state_reader.rs` / `sqlite_asset_locks_filter.rs`; the
-//! end-to-end manager path is covered by `platform-wallet`'s
-//! `rehydration_load.rs`. Contacts + identity-keys now rehydrate too
-//! (PR-3, see `sqlite_contacts_keys_rehydration.rs`), so
-//! `persister::LOAD_UNIMPLEMENTED` lists only the single remaining
-//! deferred area (`core::last_applied_chain_lock`).
+//! `load()` reconstruction tests: `load()` returns a keyless per-wallet
+//! payload (network, birth height, account manifest, core-state
+//! projection, identities, `Consumed`-filtered asset locks, contacts,
+//! identity keys) from which the manager re-derives the signing `Wallet`.
 
 mod common;
 
@@ -317,11 +307,9 @@ fn load_all_count_excludes_unregistered_account_addresses() {
     );
 }
 
-/// TC-043: `token_balances` is still persisted-but-not-rehydrated
-/// (genuinely deferred); contacts now DO rehydrate (PR-3) and surface
-/// in `state.wallets[w].contacts`. Asserts both the unified `contacts`
-/// table (`state = 'sent'` row) and `token_balances` rows are durable on
-/// disk after a reopen (verified by direct SQL probes), the contact
+/// `token_balances` is persisted-but-not-rehydrated (deferred) while
+/// contacts rehydrate into `state.wallets[w].contacts`. Both tables are
+/// durable on disk after reopen (direct SQL probes), the contact
 /// round-trips into the keyless payload, and `state.platform_addresses`
 /// stays empty (no platform-address activity was stored).
 #[test]
@@ -390,7 +378,7 @@ fn tc043_non_wired_up_persisted_but_not_returned() {
         !state.platform_addresses.contains_key(&w),
         "no platform-address activity was stored — wallet must be absent"
     );
-    // Contacts now rehydrate into the keyless payload (PR-3).
+    // Contacts rehydrate into the keyless payload.
     let slice = state.wallets.get(&w).expect("wallet rehydrated");
     let key = SentContactRequestKey {
         owner_id: owner,
@@ -475,13 +463,9 @@ fn contact_request_entry(sender: u8, recipient: u8) -> ContactRequestEntry {
     }
 }
 
-/// identities reader round-trips per wallet, exact equality
-/// on `id`s.
-///
-/// `persister.load()` no longer surfaces the identities slot (the
-/// `ClientStartState` revert dropped it), so this exercises the
-/// hardened dormant reader `schema::identities::load_state` directly —
-/// keeping its fail-hard behaviour genuinely covered.
+/// identities reader round-trips per wallet, exact equality on `id`s.
+/// Exercises the hardened reader `schema::identities::load_state`
+/// directly (not surfaced by `load()`), covering its fail-hard behaviour.
 #[test]
 fn tc_p4_003_load_identities_two_wallets() {
     use platform_wallet_storage::sqlite::schema::identities;
@@ -1095,8 +1079,8 @@ fn tc_p4_005_load_asset_locks_bucketed() {
     assert_eq!(b_buckets[&0].len(), 1);
 }
 
-/// TC-P4-006 (flipped): every persisted wallet is rehydrated into the
-/// keyless `wallets` payload — `wallets_rehydrated = N`, none pending.
+/// Every persisted wallet is rehydrated into the keyless `wallets`
+/// payload — `wallets_rehydrated = N`, none pending.
 #[tracing_test::traced_test]
 #[test]
 fn tc_p4_006_pending_rehydration_count() {
@@ -1112,8 +1096,7 @@ fn tc_p4_006_pending_rehydration_count() {
     assert!(logs_contain("wallets_pending_rehydration=0"));
 }
 
-/// TC-P4-007 (flipped): load() summary carries the real rehydration
-/// counters.
+/// load() summary carries the real rehydration counters.
 #[tracing_test::traced_test]
 #[test]
 fn tc_p4_007_summary_log_counters() {
@@ -1196,10 +1179,10 @@ fn tc_p4_008_corruption_is_hard_error() {
     assert_eq!(b_state.wallet_identities.get(&b).map(|m| m.len()), Some(1));
 }
 
-/// 008b: `contacts::load_state` is fail-hard. A garbage
-/// `outgoing_request` blob yields a typed `BincodeDecode`; a non-32-byte
-/// id column yields a typed `BlobDecode`. Neither is silently skipped,
-/// and an intact wallet still decodes cleanly.
+/// `contacts::load_state` is fail-hard. A garbage `outgoing_request`
+/// blob yields a typed `BincodeDecode`; a non-32-byte id column yields a
+/// typed `BlobDecode`. Neither is silently skipped, and an intact wallet
+/// still decodes cleanly.
 #[test]
 fn tc_p4_008b_contacts_corruption_is_hard_error() {
     use platform_wallet_storage::sqlite::schema::contacts;
@@ -1268,10 +1251,9 @@ fn tc_p4_008b_contacts_corruption_is_hard_error() {
     assert_eq!(good_state.sent_requests.len(), 1);
 }
 
-/// 008c: `asset_locks::load_state` is fail-hard. A garbage
-/// `lifecycle_blob` yields a typed `BincodeDecode`; a malformed
-/// `outpoint` column yields a typed decode error. An intact wallet
-/// still decodes cleanly.
+/// `asset_locks::load_state` is fail-hard. A garbage `lifecycle_blob`
+/// yields a typed `BincodeDecode`; a malformed `outpoint` column yields a
+/// typed decode error. An intact wallet still decodes cleanly.
 #[test]
 fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
     use dashcore::hashes::Hash;
@@ -1364,10 +1346,9 @@ fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
     assert_eq!(good_state[&0].len(), 1);
 }
 
-/// 008d: `wallets::list_ids` is fail-hard on a malformed
-/// stored `wallet_id`. This is the code path where a non-32-byte id
-/// actually surfaces (the per-area `load_state` readers take a typed
-/// `&WalletId`, so the length check belongs here). A 10-byte
+/// `wallets::list_ids` is fail-hard on a malformed stored `wallet_id`.
+/// This is the code path where a non-32-byte id actually surfaces (the
+/// per-area `load_state` readers take a typed `&WalletId`). A 10-byte
 /// `wallets.wallet_id` yields a typed `InvalidWalletIdLength`.
 #[test]
 fn tc_p4_008d_list_ids_rejects_non_32_byte_wallet_id() {
@@ -1398,20 +1379,10 @@ fn tc_p4_008d_list_ids_rejects_non_32_byte_wallet_id() {
     );
 }
 
-/// TC-P4-012: `load()` query cost is bounded and constant per wallet.
-///
-/// Full rehydration runs a fixed set of per-wallet readers (metadata
-/// fetch, account manifest, core-state projection, identities,
-/// asset-locks, platform-address) — each a fixed, small number of
-/// statements *independent of the row count for that wallet*. This
-/// asserts the per-wallet delta is a constant (no unbounded per-row
-/// fan-out) without pinning the exact magic number, which would be
-/// brittle as readers evolve.
-///
-/// Verified by enabling `sqlite3_trace_v2` on the persister's
-/// connection, counting `Stmt` events for the duration of one
-/// `load()`. `serial_test::serial` because the trace counter is a
-/// process-wide `AtomicUsize` (`Connection::trace_v2`'s callback must
+/// `load()` query cost is constant per wallet (no unbounded per-row
+/// fan-out), without pinning a brittle magic number. Counts `Stmt`
+/// events via `sqlite3_trace_v2` over one `load()`; `serial` because the
+/// counter is a process-wide `AtomicUsize` (the `trace_v2` callback must
 /// be a `fn`, not a `Fn`).
 #[test]
 #[serial_test::serial]

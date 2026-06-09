@@ -1,7 +1,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Item G (PR-3) — contacts + identity-keys rehydrate through the
-//! keyless `load()` path: store → drop → reopen → load → assert the
+//! Contacts + identity-keys rehydrate through the keyless `load()` path:
+//! store → drop → reopen → load → assert the
 //! `ClientWalletStartState.contacts` / `.identity_keys` slots carry the
 //! persisted PUBLIC material bit-exact.
 
@@ -63,8 +63,8 @@ fn key_entry(identity: Identifier, key_id: u32, byte: u8) -> IdentityKeyEntry {
     }
 }
 
-/// G-RT1: contacts (sent + received) rehydrate bit-exact into the
-/// keyless `ClientWalletStartState.contacts` slot.
+/// Contacts (sent + received) rehydrate bit-exact into the keyless
+/// `ClientWalletStartState.contacts` slot.
 #[test]
 fn g_rt1_contacts_rehydrate_into_keyless_payload() {
     let (persister, _tmp, path) = fresh_persister();
@@ -129,7 +129,7 @@ fn g_rt1_contacts_rehydrate_into_keyless_payload() {
     assert!(slice.contacts.removed_incoming.is_empty());
 }
 
-/// G-RT2: identity-key entries rehydrate bit-exact into the keyless
+/// Identity-key entries rehydrate bit-exact into the keyless
 /// `ClientWalletStartState.identity_keys` slot.
 #[test]
 fn g_rt2_identity_keys_rehydrate_into_keyless_payload() {
@@ -169,7 +169,7 @@ fn g_rt2_identity_keys_rehydrate_into_keyless_payload() {
     assert!(slice.identity_keys.removed.is_empty());
 }
 
-/// G-RT3: a metadata-only wallet has empty (not error) contacts /
+/// A metadata-only wallet has empty (not error) contacts /
 /// identity-keys slots.
 #[test]
 fn g_rt3_empty_slots_for_bare_wallet() {

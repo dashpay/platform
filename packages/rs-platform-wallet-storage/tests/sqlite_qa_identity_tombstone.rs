@@ -1,16 +1,12 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! QA — write-path coverage for the `IdentityChangeSet.removed`
-//! tombstone path (`identities::apply` removed-set branch).
-//!
-//! The dispatcher applies `IdentityChangeSet.identities` (upsert) before
-//! `IdentityChangeSet.removed` (tombstone). The tombstone branch runs
+//! Write-path coverage for the `IdentityChangeSet.removed` tombstone
+//! branch. The tombstone runs a wallet-scoped, NULL-safe
 //! `UPDATE identities SET tombstoned = 1 WHERE identity_id = ?1 AND
-//! wallet_id IS ?2` — wallet-scoped with NULL-safe `IS`, mirroring the
-//! upsert's per-entry wallet cross-check. These tests pin that a
-//! tombstoned identity is excluded from the per-wallet `load_state` and
-//! that a foreign wallet's `removed` set cannot tombstone this wallet's
-//! identity.
+//! wallet_id IS ?2`, mirroring the upsert's per-entry wallet cross-check.
+//! These tests pin that a tombstoned identity is excluded from the
+//! per-wallet `load_state` and that a foreign wallet's `removed` set
+//! cannot tombstone this wallet's identity.
 
 mod common;
 
@@ -51,10 +47,9 @@ fn entry_for(id: u8, wallet_id: [u8; 32]) -> IdentityEntry {
     }
 }
 
-/// QA-TOMB-1: an identity routed through `IdentityChangeSet.removed`
-/// is tombstoned and disappears from the per-wallet `load_state` while
-/// a sibling, non-removed identity survives. This is the basic
-/// removed-set write-path round trip, which had no prior coverage.
+/// An identity routed through `IdentityChangeSet.removed` is tombstoned
+/// and disappears from the per-wallet `load_state` while a sibling,
+/// non-removed identity survives.
 #[test]
 fn qa_tomb1_removed_identity_excluded_from_load() {
     let (persister, _tmp, path) = fresh_persister();
@@ -140,9 +135,8 @@ fn qa_tomb1_removed_identity_excluded_from_load() {
     );
 }
 
-/// QA-TOMB-2: re-upserting a tombstoned identity clears the tombstone
-/// (the upsert sets `tombstoned = 0`). Documents the resurrection path
-/// the writer relies on.
+/// Re-upserting a tombstoned identity clears the tombstone (the upsert
+/// sets `tombstoned = 0`) — the resurrection path the writer relies on.
 #[test]
 fn qa_tomb2_reupsert_clears_tombstone() {
     let (persister, _tmp, path) = fresh_persister();
@@ -218,15 +212,11 @@ fn qa_tomb2_reupsert_clears_tombstone() {
     );
 }
 
-/// QA-TOMB-3: the tombstone UPDATE IS scoped by `wallet_id`. A `removed`
-/// entry carrying an identity_id parented to a DIFFERENT wallet is a
-/// no-op against that other wallet's row — the writer mirrors the
-/// upsert's wallet cross-check with a NULL-safe `wallet_id IS ?2`
-/// predicate. In practice an identity_id is the SHA256 of the root
-/// public key + chain code (globally unique to one identity / one
-/// wallet), so the same id never legitimately appears in two wallets'
-/// `removed` sets; this guard is defense-in-depth that enforces the
-/// isolation the data model assumes.
+/// The tombstone UPDATE is scoped by `wallet_id`: a `removed` entry
+/// naming an identity parented to a different wallet is a no-op against
+/// that wallet's row (NULL-safe `wallet_id IS ?2` predicate). An
+/// identity_id is globally unique to one wallet, so this is
+/// defense-in-depth enforcing the isolation the data model assumes.
 #[test]
 fn qa_tomb3_tombstone_update_is_wallet_scoped() {
     let (persister, _tmp, path) = fresh_persister();

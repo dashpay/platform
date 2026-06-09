@@ -1,10 +1,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! `delete_wallet` pre-flush apply failure driven by a REAL SQL error
-//! (not the test injector). Closes the blind-spot class that hid the
-//! PWS-001 BEGIN-EXCLUSIVE buffer-loss bug: the sibling apply / commit
-//! restore branches were only ever exercised by the in-memory injector,
-//! never by a genuine SQLite failure.
+//! `delete_wallet` pre-flush apply failure driven by a REAL SQL error,
+//! exercising the apply / commit restore branches a test injector cannot.
 //!
 //! Strategy: buffer a wallet's full changeset in `Manual` mode, then drop
 //! a child table the pre-flush apply needs (`core_sync_state`) via a side

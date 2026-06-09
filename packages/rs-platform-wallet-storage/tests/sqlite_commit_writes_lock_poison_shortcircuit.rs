@@ -1,21 +1,14 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! `commit_writes` continue-and-collect accounting: the LockPoisoned
-//! short-circuit branch.
+//! `commit_writes` LockPoisoned short-circuit accounting: a
+//! `PersistenceError::LockPoisoned` from any wallet's flush aborts the
+//! loop early — the offending wallet lands in `failed` and every
+//! not-yet-attempted wallet is moved to `still_pending`.
 //!
-//! `commit_writes` loops every dirty wallet and records each outcome in
-//! the `CommitReport`. The documented exception (persister.rs:555-563)
-//! is that a `PersistenceError::LockPoisoned` from any wallet's flush
-//! aborts the loop early — the offending wallet lands in `failed`, and
-//! every wallet NOT yet attempted is shovelled into `still_pending` so
-//! the caller knows what was never tried.
-//!
-//! `src/sqlite/error.rs` carries a `TODO(qa)` noting this branch had no
-//! automated end-to-end coverage. This test closes that gap
-//! deterministically via the `force_next_flush_to_fail` injector
-//! (a real panicking-thread mutex poison is non-deterministic; the
-//! injector drives the exact same `PersistenceError::LockPoisoned`
-//! through `flush_inner` -> `handle_flush_error`'s fatal branch).
+//! Driven deterministically via the `force_next_flush_to_fail` injector
+//! (a real panicking-thread mutex poison is non-deterministic), which
+//! sends the exact same `LockPoisoned` through `flush_inner` ->
+//! `handle_flush_error`'s fatal branch.
 
 mod common;
 

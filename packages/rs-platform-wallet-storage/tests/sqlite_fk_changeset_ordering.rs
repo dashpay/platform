@@ -1,27 +1,15 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! FK parent-before-child ordering for a SINGLE immediate-FK transaction.
+//! FK parent-before-child ordering inside a single immediate-FK
+//! transaction, exercised through the production `store()` -> flush path.
+//! Two contracts hold:
 //!
-//! `apply_changeset_to_tx` dispatches every sub-changeset in a fixed
-//! order inside ONE transaction opened on a connection with
-//! `PRAGMA foreign_keys = ON` (IMMEDIATE, not deferred). Two contracts
-//! must hold and are exercised here through the production `store()` ->
-//! flush -> `apply_changeset_to_tx` path (NOT raw SQL via
-//! `lock_conn_for_test`, which the existing `sqlite_foreign_keys` /
-//! `sqlite_structural_hardening` suites already cover):
-//!
-//! 1. A PARTIAL changeset carrying a child (`identity_keys`, `asset_locks`,
-//!    a `dashpay`/`token_balances` row) whose FK parent is neither in the
-//!    same payload nor already on disk aborts the whole flush with a
-//!    `Constraint`-kind `PersistenceError` — and the in-memory buffer is
-//!    WIPED (non-transient => no retry), so the data is dropped. This is
-//!    the caller contract: include the parent in the same `store()` (or
-//!    write it first) — the persister will not silently buffer-and-retry a
-//!    structurally invalid changeset.
-//!
-//! 2. A COMPLETE changeset that carries the parent and the child TOGETHER
-//!    commits — the fixed dispatch order writes the parent before the
-//!    child for every FK edge under immediate-FK semantics.
+//! 1. A child whose FK parent is neither in the same payload nor on disk
+//!    aborts the flush with a `Constraint`-kind `PersistenceError` and
+//!    wipes the buffer (non-transient => no retry): the caller must
+//!    include the parent in the same `store()` or write it first.
+//! 2. A changeset carrying parent and child together commits — the fixed
+//!    dispatch order writes the parent first for every FK edge.
 
 mod common;
 
@@ -93,13 +81,11 @@ fn identities_changeset(id: Identifier, wallet_id: Option<WalletId>) -> Identity
     }
 }
 
-/// A partial changeset carrying `identity_keys` for an identity whose
-/// `identities` parent is absent from BOTH the payload and the DB
-/// (the `wallets` parent IS present, isolating the failure to the
-/// missing identity) aborts the flush with a `Constraint`-kind error —
-/// the immediate FK fires mid-transaction. No panic, no raw-string-only
-/// surface: the typed `PersistenceError` carries the constraint class so
-/// hosts can branch on it instead of grepping the message.
+/// A changeset carrying `identity_keys` for an identity whose
+/// `identities` parent is absent from both the payload and the DB (the
+/// `wallets` parent is present, isolating the failure) aborts the flush
+/// with a `Constraint`-kind `PersistenceError` carrying the constraint
+/// class — not a panic or a raw-string-only error.
 #[test]
 fn identity_keys_without_parent_identity_aborts_with_constraint_kind() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -142,12 +128,8 @@ fn identity_keys_without_parent_identity_aborts_with_constraint_kind() {
     );
 }
 
-/// The data-loss consequence of the constraint abort, asserted
-/// explicitly: a structurally invalid changeset is classified
-/// non-transient, so the buffer is WIPED (no resurrection on the next
-/// flush). This is the documented caller contract — the persister will
-/// NOT silently retain and retry a child-without-parent payload. A
-/// follow-up `flush()` is a clean no-op and nothing reached disk.
+/// The constraint abort wipes the buffer: a follow-up `flush()` is a
+/// clean no-op and nothing reached disk for the orphaned identity.
 #[test]
 fn constraint_abort_wipes_buffer_no_silent_retry() {
     let (persister, _tmp, _path) = fresh_persister();

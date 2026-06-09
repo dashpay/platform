@@ -1,15 +1,11 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Adversarial coverage for `delete_wallet_inner`'s two-transaction
-//! shape: the pre-flush tx (drains + commits the buffered changeset)
-//! and the cascade tx (deletes the parent `wallets` row) are SEPARATE
-//! SQLite transactions.
-//!
-//! The existing suite pins the PRE-FLUSH failure window
-//! (`pre_flush_failure_preserves_buffer_and_skips_backup`). These tests
-//! probe the window the existing suite leaves uncovered: what is durable
-//! on disk, and what is left in the buffer, when the delete is aborted
-//! AFTER the pre-flush has already committed its changeset to disk.
+//! Coverage for `delete_wallet_inner`'s two-transaction shape: the
+//! pre-flush tx (drains + commits the buffered changeset) and the cascade
+//! tx (deletes the parent `wallets` row) are SEPARATE SQLite
+//! transactions. These tests probe what is durable on disk and what is
+//! left in the buffer when the delete aborts AFTER the pre-flush has
+//! already committed its changeset.
 
 mod common;
 
@@ -57,16 +53,11 @@ fn wallets_rows_for(persister: &SqlitePersister, w: &[u8; 32]) -> i64 {
     .unwrap()
 }
 
-/// PRE-FLUSH `BEGIN EXCLUSIVE` FAILURE under a real peer lock.
-///
 /// A peer holds a SQLite-native EXCLUSIVE on the same DB file, so the
-/// pre-flush's own `conn.transaction_with_behavior(Exclusive)?` fails
-/// with BUSY — the cascade is never reached. On that failure the buffered
-/// changeset MUST survive: either still in the buffer (restored) or
-/// already durable on disk. The existing
-/// `pre_flush_failure_preserves_buffer_and_skips_backup` test exercises
-/// only the test-injector branch; this test drives the real
-/// `?`-propagation path.
+/// pre-flush's own `BEGIN EXCLUSIVE` fails with BUSY (real
+/// `?`-propagation, not the injector) and the cascade is never reached.
+/// On that failure the buffered changeset must survive — either still in
+/// the buffer (restored) or already durable on disk.
 #[test]
 fn preflush_begin_exclusive_busy_preserves_buffer() {
     let tmp = tempfile::tempdir().unwrap();
@@ -123,10 +114,9 @@ fn preflush_begin_exclusive_busy_preserves_buffer() {
     }
 }
 
-/// Documents the asymmetry the docs do not: a buffered changeset that
-/// the pre-flush has already committed is DURABLE even though
-/// `delete_wallet` aborts. After a clean retry the wallet should be
-/// fully gone. This pins that a retry converges.
+/// A pre-flush-committed changeset is durable even though `delete_wallet`
+/// aborts; a clean retry once the peer lock is gone converges to a fully
+/// deleted wallet.
 #[test]
 fn delete_retry_after_transient_abort_converges_to_deleted() {
     let tmp = tempfile::tempdir().unwrap();

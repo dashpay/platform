@@ -1,9 +1,9 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Item C — `SqlitePersister::load()` returns the keyless per-wallet
-//! rehydration payload in `ClientStartState.wallets` (network, birth
-//! height, account manifest, core state, identities, filtered asset
-//! locks). Structurally carries no `Wallet`/seed.
+//! `SqlitePersister::load()` returns the keyless per-wallet rehydration
+//! payload in `ClientStartState.wallets` (network, birth height, account
+//! manifest, core state, identities, filtered asset locks), carrying no
+//! `Wallet`/seed.
 
 mod common;
 
@@ -47,8 +47,8 @@ fn derived_for(address: &dashcore::Address) -> platform_wallet::DerivedAddress {
     }
 }
 
-/// C-1: a registered wallet with UTXOs round-trips into the keyless
-/// `wallets` payload — manifest, network, birth height, core state.
+/// A registered wallet with UTXOs round-trips into the keyless `wallets`
+/// payload — manifest, network, birth height, core state.
 #[test]
 fn c1_load_populates_keyless_wallet_payload() {
     let (persister, _tmp, path) = fresh_persister();
@@ -151,8 +151,7 @@ fn c1_load_populates_keyless_wallet_payload() {
     assert_eq!(slice.core_state.last_processed_height, Some(50));
 }
 
-/// C-2: empty DB → empty `wallets`, no error (keeps the `load()`
-/// doctest contract).
+/// Empty DB → empty `wallets`, no error (the `load()` doctest contract).
 #[test]
 fn c2_empty_db_empty_wallets() {
     let (persister, _tmp, path) = fresh_persister();
@@ -163,8 +162,8 @@ fn c2_empty_db_empty_wallets() {
     assert!(state.is_empty());
 }
 
-/// C-3: a wallet with only metadata (no UTXOs) still appears, with an
-/// empty core projection — not silently dropped.
+/// A wallet with only metadata (no UTXOs) still appears, with an empty
+/// core projection — not silently dropped.
 #[test]
 fn c3_metadata_only_wallet_present() {
     let (persister, _tmp, path) = fresh_persister();

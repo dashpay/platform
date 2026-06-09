@@ -1,17 +1,10 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Per-sub-changeset round-trip tests.
-//!
-//! Now that `platform-wallet`'s `serde` feature is active, every
-//! changeset blob is a single bincode-serde payload — these tests
-//! store a non-trivial entry, reopen the persister, decode the blob,
-//! and assert structural equality (where the type allows) or
-//! field-level equality (where it doesn't, e.g. `TransactionRecord`
-//! which is `Debug + Clone` only upstream).
-//!
-//! TC-001 (CoreChangeSet records) is exercised through the trait
-//! method in `sqlite_buffer_semantics.rs::tc001_get_core_tx_record_roundtrip`.
-//! TC-015 (multi-wallet coexistence) lives there too.
+//! Per-sub-changeset round-trip tests: store a non-trivial entry, reopen
+//! the persister, decode the bincode-serde blob, and assert structural
+//! equality (or field-level equality where the type isn't `PartialEq`).
+//! CoreChangeSet records and multi-wallet coexistence are covered in
+//! `sqlite_buffer_semantics.rs`.
 
 mod common;
 
@@ -259,12 +252,9 @@ fn tc007_identity_key_entry_roundtrip() {
     let decoded =
         platform_wallet_storage::sqlite::schema::identity_keys::decode_entry(&blob_bytes).unwrap();
     assert_eq!(decoded, entry);
-    // The load-bearing NFR-10 check is `tests/secrets_scan.rs`,
-    // which greps every file under `src/sqlite/schema/` and
-    // `migrations/` for forbidden secret-material substrings —
-    // bincode wire bytes carry no field names, so any runtime
-    // substring scan against the blob would be a false-confidence
-    // smoke test.
+    // No runtime substring scan on the blob: bincode wire bytes carry no
+    // field names, so it would be false confidence. The real secret-leak
+    // guard is the source grep in `tests/secrets_scan.rs`.
     drop(tmp);
 }
 

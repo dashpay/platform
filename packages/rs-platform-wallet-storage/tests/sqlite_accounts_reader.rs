@@ -1,9 +1,8 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Item A1 — `schema::accounts::load_state` reads the
-//! `account_registrations` rows back into a keyless
-//! [`AccountRegistrationEntry`] manifest, bit-exact, fail-hard on a
-//! corrupt blob, and never mints a `Wallet`.
+//! `schema::accounts::load_state` reads `account_registrations` rows back
+//! into a keyless [`AccountRegistrationEntry`] manifest, bit-exact,
+//! fail-hard on a corrupt blob, and never mints a `Wallet`.
 
 mod common;
 
@@ -36,7 +35,7 @@ fn reopen(path: &std::path::Path) -> platform_wallet_storage::SqlitePersister {
     .expect("reopen persister")
 }
 
-/// A1-1: registrations round-trip bit-exact, in stable order.
+/// Registrations round-trip bit-exact, in stable order.
 #[test]
 fn a1_account_registrations_roundtrip() {
     let (persister, _tmp, path) = fresh_persister();
@@ -83,7 +82,7 @@ fn a1_account_registrations_roundtrip() {
     assert!(has_standard && has_idreg);
 }
 
-/// A1-2: an empty wallet yields an empty manifest, not an error.
+/// An empty wallet yields an empty manifest, not an error.
 #[test]
 fn a1_empty_manifest_is_ok() {
     let (persister, _tmp, path) = fresh_persister();
@@ -97,8 +96,8 @@ fn a1_empty_manifest_is_ok() {
     assert!(manifest.is_empty());
 }
 
-/// A1-3: a corrupt `account_xpub_bytes` blob is a typed hard error,
-/// never a silent skip.
+/// A corrupt `account_xpub_bytes` blob is a typed hard error, never a
+/// silent skip.
 #[test]
 fn a1_corrupt_blob_is_hard_error() {
     let (persister, _tmp, path) = fresh_persister();

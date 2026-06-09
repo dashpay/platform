@@ -1,20 +1,13 @@
 #![allow(clippy::field_reassign_with_default)]
 
 //! Money/balance columns: a negative `i64` stored on disk (a wrapped
-//! value from a pre-`safe_cast` build, a restored-corruption row, or a
-//! torn write that passes `PRAGMA integrity_check`) MUST abort the read
-//! with [`WalletStorageError::IntegerOverflow`] rather than
-//! sign-extending into a multi-quintillion `u64` balance.
-//!
-//! The crate-level invariant ("Every cross-boundary cast in the writer
-//! / reader paths runs through one of these helpers and produces a typed
-//! `IntegerOverflow` on out-of-range input" — `src/sqlite/util/safe_cast.rs`)
-//! is asserted for `birth_height` and `sync_height` in
-//! `sqlite_structural_hardening.rs`, but NOT for the genuine
-//! value-bearing columns. These are the casts where a silent wrap is a
-//! money-correctness corruption-on-load, so they get their own guard
-//! tests here. The `platform_addresses.balance` case rides the
-//! production `load()` path end-to-end.
+//! value, a restored-corruption row, or a torn write that passes
+//! `PRAGMA integrity_check`) MUST abort the read with
+//! [`WalletStorageError::IntegerOverflow`] rather than sign-extending
+//! into a multi-quintillion `u64` balance. `birth_height`/`sync_height`
+//! get the same guard in `sqlite_structural_hardening.rs`; here we cover
+//! the genuine value-bearing columns, with `platform_addresses.balance`
+//! riding the production `load()` path end-to-end.
 
 mod common;
 

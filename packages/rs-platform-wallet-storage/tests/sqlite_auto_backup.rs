@@ -145,16 +145,11 @@ fn tc055_auto_backups_subject_to_retention() {
     assert_eq!(report.removed.len(), 3);
 }
 
-/// TC-056: prune is content-blind and orders by the EMBEDDED filename
-/// timestamp, not mtime — proven by giving the older files NEWER mtimes.
-/// With `keep_last_n = 1`, an aggressive prune over the auto dir
-/// silently EVICTS a pre-delete safety backup when it is not the
-/// newest-by-embedded-timestamp file. This is the documented
-/// retention contract: the auto dir is not a protected vault, so
-/// operators must NOT prune it down to a count smaller than the
-/// destructive ops they still want to roll back. The test pins that
-/// behavior so a future "protect safety backups" change is a conscious
-/// decision, not an accident.
+/// Prune orders by the EMBEDDED filename timestamp, not mtime (proven by
+/// giving older files newer mtimes). With `keep_last_n = 1` it evicts even
+/// a pre-delete safety backup when that backup is not the newest by
+/// embedded timestamp: the auto dir is not a protected vault, so operators
+/// must size retention above the rollback horizon they care about.
 #[test]
 fn tc056_aggressive_prune_evicts_safety_backup_and_orders_by_embedded_ts() {
     let (persister, _tmp, _path) = fresh_persister();
