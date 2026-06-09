@@ -584,6 +584,27 @@ struct WalletInfoView: View {
                 }
             }
         }
+        // Progress overlay shown while `enableNetwork` runs
+        // (`isUpdatingNetworks`) so the add-to-network create isn't silent.
+        .overlay {
+            if isUpdatingNetworks {
+                ZStack {
+                    Color.black.opacity(0.25)
+                        .ignoresSafeArea()
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .controlSize(.large)
+                        Text("Adding to network…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isUpdatingNetworks)
     }
 
     /// Prompt the user via biometric / passcode, then pull the
@@ -639,9 +660,14 @@ struct WalletInfoView: View {
         let groupId = wallet.walletGroupId
         let rows: [PersistentWallet]
         if groupId.isEmpty {
-            // Legacy row written before the group-id column existed —
-            // fall back to this single row.
-            rows = [wallet]
+            // Legacy row (no group id): its `walletId` is the
+            // network-independent digest that siblings stamp as their
+            // `walletGroupId`, so find siblings by it instead of
+            // collapsing to this single row.
+            let siblings = (try? modelContext.fetch(FetchDescriptor<PersistentWallet>(
+                predicate: PersistentWallet.predicate(walletGroupId: wallet.walletId)
+            ))) ?? []
+            rows = [wallet] + siblings
         } else {
             let descriptor = FetchDescriptor<PersistentWallet>(
                 predicate: PersistentWallet.predicate(walletGroupId: groupId)
@@ -729,6 +755,11 @@ struct WalletInfoView: View {
     private func enableNetwork(_ network: Network) async {
         isUpdatingNetworks = true
         defer { isUpdatingNetworks = false }
+
+        // `createWallet` below is a synchronous @MainActor FFI call that
+        // blocks the main thread, so without yielding first SwiftUI never
+        // paints the overlay. Let it render one frame before we block.
+        try? await Task.sleep(nanoseconds: 50_000_000) // ~50ms, one frame
 
         // Add the existing wallet to another network by re-creating it
         // from the stored mnemonic in that network's manager. The
@@ -821,6 +852,14 @@ struct WalletInfoView: View {
             SDKLogger.error(
                 "enableNetwork(\(network.displayName)) create returned benign already-exists"
             )
+        }
+
+        // Backfill a legacy row's group id (= its walletId) so it groups
+        // with the sibling just created — in both directions and across
+        // launches. Idempotent: only fires while empty.
+        if wallet.walletGroupId.isEmpty {
+            wallet.walletGroupId = wallet.walletId
+            try? modelContext.save()
         }
 
         loadNetworkStates()
