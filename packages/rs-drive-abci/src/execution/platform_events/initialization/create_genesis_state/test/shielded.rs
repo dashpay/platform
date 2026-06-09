@@ -15,7 +15,7 @@ use drive::grovedb::Element;
 use drive::grovedb::TransactionArg;
 use drive::grovedb_path::SubtreePath;
 use drive::grovedb_storage::{Storage, StorageBatch};
-use grovedb_commitment_tree::{merkle_hash_from_bytes, CommitmentTree, DashMemo};
+use grovedb_commitment_tree::{merkle_hash_from_bytes, CommitmentEntry, CommitmentTree, DashMemo};
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
 
@@ -358,9 +358,12 @@ impl<C> Platform<C> {
                 // OVK-recovery use of cv_net never applies to them. The stored item
                 // is `cmx || rho || cv_net || payload` (matching the production
                 // commitment-tree insert path).
-                let iter = batch_notes
-                    .into_iter()
-                    .map(|n| (n.cmx, n.rho, [0u8; 32], n.encrypted_note));
+                let iter = batch_notes.into_iter().map(|n| CommitmentEntry {
+                    cmx: n.cmx,
+                    rho: n.rho,
+                    cv_net: [0u8; 32],
+                    payload: n.encrypted_note,
+                });
                 let append_result = ct.append_many_raw(iter).value.map_err(|e| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
                         format!("seed: append_many_raw (batch {batch_index}): {e}")
