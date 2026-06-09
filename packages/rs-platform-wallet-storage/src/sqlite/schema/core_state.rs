@@ -135,8 +135,8 @@ pub fn apply(
 }
 
 /// Resolve a UTXO's owning account index via the `core_derived_addresses` map.
-/// An address can be derived under multiple `account_type`s, so the `ORDER BY`
-/// + `LIMIT 1` makes the choice deterministic (SQLite would otherwise pick an
+/// An address can be derived under multiple `account_type`s, so `ORDER BY` with
+/// `LIMIT 1` makes the choice deterministic (SQLite would otherwise pick an
 /// arbitrary matching row).
 const ACCOUNT_INDEX_BY_ADDRESS_SQL: &str = "SELECT account_index FROM core_derived_addresses \
      WHERE wallet_id = ?1 AND address = ?2 \

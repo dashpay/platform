@@ -2,7 +2,7 @@
 //! signing-key bytes reach this table.
 //!
 //! `IdentityKeyEntry.public_key`'s `#[serde(tag = ...)]` enum is rejected by
-//! bincode-serde (needs `deserialize_any`), so [`IdentityKeyWire`] pre-encodes
+//! bincode-serde (needs `deserialize_any`), so `IdentityKeyWire` pre-encodes
 //! the key with bincode's native `Encode`/`Decode` and rides the surrounding
 //! fields on the serde encoder, keeping one blob per row.
 

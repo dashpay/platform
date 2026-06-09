@@ -70,7 +70,7 @@ pub fn apply(
 }
 
 /// Source of truth for the `asset_locks.status` TEXT domain, mirroring
-/// [`AssetLockStatus`](platform_wallet::wallet::asset_lock::tracked::AssetLockStatus).
+/// [`platform_wallet::wallet::asset_lock::tracked::AssetLockStatus`].
 /// `migrations/V001__initial.rs` interpolates it into a `CHECK (status IN
 /// (...))`; `asset_lock_status_labels_match_enum` keeps it in sync with
 /// [`status_str`].

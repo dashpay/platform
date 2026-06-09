@@ -25,9 +25,9 @@
 //!
 //! Per-OS: items persist `UntilDelete` everywhere. Linux/FreeBSD use
 //! Secret Service (gnome-keyring / KWallet), which needs a D-Bus session
-//! + unlocked collection. macOS Keychain ACL accepts a re-signed binary
-//! with the same code-signing identity (residual). Windows DPAPI is
-//! user-profile scoped and defends A1/A4 only, not same-user malware.
+//! and an unlocked collection. macOS Keychain ACL accepts a re-signed
+//! binary with the same code-signing identity (residual). Windows DPAPI
+//! is user-profile scoped and defends A1/A4 only, not same-user malware.
 
 use std::sync::Arc;
 
