@@ -123,9 +123,11 @@ enum ShieldedMinFeeKind {
     Unshield,
     /// `compute_shielded_withdrawal_fee` — ShieldedWithdrawal (base + the flat withdrawal-document cost).
     Withdrawal,
-    /// `compute_shielded_identity_create_fee` — IdentityCreateFromShieldedPool (base + the VARIABLE
-    /// `AddNewIdentity` write whose cost grows with the key count). Carries `num_keys` because the
-    /// fee scales with it, unlike the other (fixed) per-transition components.
+    /// `compute_shielded_identity_create_fee` — IdentityCreateFromShieldedPool (base + the consensus
+    /// identity-create floor `identity_create_base_cost + num_keys × identity_key_in_creation_cost`,
+    /// the same constants the non-shielded `IdentityCreate` predictor uses, which grows with the key
+    /// count). Carries `num_keys` because the fee scales with it, unlike the other (fixed)
+    /// per-transition components.
     IdentityCreate { num_keys: usize },
 }
 
@@ -201,10 +203,14 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                         }
                     },
                     // IdentityCreateFromShieldedPool: `denomination` is the TOTAL leaving the pool
-                    // (new-identity balance + fee). We check it against `min_fee` so the net
-                    // (`denomination - compute_shielded_identity_create_fee`) the new identity keeps
-                    // at execution is non-negative. It is NOT pure fee (`>=` model); the exact
-                    // `value_balance == denomination` equality is enforced by the proof verifier
+                    // (new-identity balance + fee). This is a CHEAP early floor — it rejects a
+                    // denomination that cannot even cover the consensus identity-create minimum
+                    // (`identity_create_base_cost + num_keys × identity_key_in_creation_cost`, the
+                    // same constants the non-shielded `IdentityCreate` predictor uses) plus the
+                    // shielded compute fee, before the expensive proof verification + metering. The
+                    // AUTHORITATIVE non-negative-balance check (`denomination >= metered + compute`)
+                    // runs later in `validate_fees_of_event`. It is NOT pure fee (`>=` model); the
+                    // exact `value_balance == denomination` equality is enforced by the proof verifier
                     // (which passes `value_balance = denomination`). The fee scales with the key
                     // count, so the `IdentityCreate` flavor carries `num_keys`.
                     StateTransition::IdentityCreateFromShieldedPool(st) => match st {
