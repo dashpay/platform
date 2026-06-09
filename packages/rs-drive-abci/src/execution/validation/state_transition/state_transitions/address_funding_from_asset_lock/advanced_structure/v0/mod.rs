@@ -59,6 +59,12 @@ impl AddressFundingFromAssetLockStateTransitionAdvancedStructureValidationV0
                 .checked_add(execution_context.fee_cost(platform_version)?.processing_fee)
                 .ok_or(ProtocolError::Overflow("processing fee overflow error"))?;
 
+            // The transition failed, so no outputs are created and the inputs' intended spend is
+            // never transferred. Charge only the penalty fee, not the spend: restore each input to
+            // its full balance before the fee is deducted, so the address keeps its funds aside from
+            // the fee instead of the spend being removed without being credited anywhere.
+            action.restore_input_spends_for_failed_transition(self.inputs());
+
             // Create a PartiallyUseAssetLockAction to deduct fees from inputs first, then asset lock
             let bump_action = StateTransitionAction::PartiallyUseAssetLockAction(
                 PartiallyUseAssetLockAction::from_address_funding_from_asset_lock_transition_action(

@@ -77,7 +77,9 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// onto the freshly-created `NetworkShieldedCoordinator` that
     /// forwards into `on_shielded_sync_progress`. Sub-managers
     /// (`SpvRuntime`, `PlatformAddressSyncManager`, etc.) hold their
-    /// own clones already.
+    /// own clones already, so `configure_shielded` is the only reader of
+    /// this retained handle — hence it is `shielded`-gated.
+    #[cfg(feature = "shielded")]
     pub(super) event_manager: Arc<PlatformEventManager>,
     pub(super) persister: Arc<P>,
     /// Cancellation token + join handle for the wallet-event adapter
@@ -159,6 +161,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
             shielded_coordinator,
+            #[cfg(feature = "shielded")]
             event_manager,
             persister,
             event_adapter_cancel,
