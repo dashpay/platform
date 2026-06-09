@@ -54,7 +54,8 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// wallet. Not auto-started — call `start` after wallets are
     /// registered. See [`IdentitySyncManager`].
     pub(super) identity_sync_manager: Arc<IdentitySyncManager<P>>,
-    /// Periodic shielded (Orchard) note + nullifier sync coordinator.
+    /// Periodic shielded (Orchard) note sync coordinator (spends are
+    /// detected during the note scan, no separate nullifier pass).
     /// Iterates every wallet that has been bound via
     /// [`PlatformWallet::bind_shielded`](crate::wallet::PlatformWallet::bind_shielded);
     /// unbound wallets are skipped silently. Not auto-started — call

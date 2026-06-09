@@ -1,5 +1,6 @@
 //! FFI bindings for the shielded spend pipeline (transitions
-//! 15/16/17/19 — shield, transfer, unshield, withdraw).
+//! 15/16/17/19/20 — shield, transfer, unshield, withdraw,
+//! identity-create-from-pool).
 //!
 //! Transitions 16/17/19 sign with the bound shielded wallet's
 //! Orchard `SpendAuthorizingKey`, which lives on the
@@ -8,6 +9,14 @@
 //! only supplies the recipient + amount (+ core fee rate for
 //! withdrawal) and the resulting Halo 2 proof + state transition
 //! is built and broadcast on the Rust side.
+//!
+//! Transition 20 (`identity_create_from_pool` — Shielded→new
+//! identity) additionally takes the new identity's public keys plus
+//! a host-supplied `Signer<IdentityPublicKey>` for the per-key
+//! proofs-of-possession (mirroring address-funded identity
+//! registration). The Orchard spend authority is still the bound
+//! wallet's own `SpendAuthorizingKey`; only the new identity keys'
+//! PoP signatures come from the host signer.
 //!
 //! Transition 15 (`shield` — Platform→Shielded) additionally
 //! takes a host-supplied `Signer<PlatformAddress>` because the
@@ -35,6 +44,7 @@ use std::os::raw::c_char;
 
 use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
@@ -43,14 +53,20 @@ use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
 use crate::handle::*;
+use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::{block_on_worker, runtime};
 
-/// Parse an optional surplus-output platform address supplied as raw
-/// `PlatformAddress` storage bytes (21 bytes: 1-byte variant tag +
-/// 20-byte hash — the encoding `PlatformAddress::to_bytes()` produces
-/// and `PlatformAddressWasm`/the Swift wrapper expose).
+/// A serialized `PlatformAddress` is exactly 21 bytes (1-byte variant tag + 20-byte hash).
+const PLATFORM_ADDRESS_LEN: usize = 21;
+
+/// Parse an optional platform address supplied as raw `PlatformAddress`
+/// storage bytes (21 bytes: 1-byte variant tag + 20-byte hash — the
+/// encoding `PlatformAddress::to_bytes()` produces and
+/// `PlatformAddressWasm`/the Swift wrapper expose). Shared by the
+/// `surplus_output` and `send_to_address_on_creation_failure` params;
+/// `field_name` names the parameter in any error message.
 ///
-/// `ptr == null` (or `len == 0`) means "no surplus output" → `Ok(None)`.
+/// `ptr == null` (or `len == 0`) means "no address" → `Ok(None)`.
 /// A non-null pointer is read for `len` bytes and decoded; a malformed
 /// address is surfaced as an `Err(PlatformWalletFFIResult)` so the
 /// caller fails fast rather than building a transition the wallet would
@@ -59,11 +75,11 @@ use crate::runtime::{block_on_worker, runtime};
 /// # Safety
 /// When `ptr` is non-null it must point to at least `len` readable
 /// bytes for the duration of this call.
-unsafe fn parse_optional_surplus_output(
+unsafe fn parse_optional_platform_address(
     ptr: *const u8,
     len: usize,
+    field_name: &str,
 ) -> Result<Option<PlatformAddress>, PlatformWalletFFIResult> {
-    const PLATFORM_ADDRESS_LEN: usize = 21;
     if ptr.is_null() || len == 0 {
         return Ok(None);
     }
@@ -75,7 +91,7 @@ unsafe fn parse_optional_surplus_output(
     if len != PLATFORM_ADDRESS_LEN {
         return Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            format!("surplus_output must be exactly {PLATFORM_ADDRESS_LEN} bytes, got {len}"),
+            format!("{field_name} must be exactly {PLATFORM_ADDRESS_LEN} bytes, got {len}"),
         ));
     }
     let bytes = std::slice::from_raw_parts(ptr, len);
@@ -83,7 +99,26 @@ unsafe fn parse_optional_surplus_output(
         Ok(addr) => Ok(Some(addr)),
         Err(e) => Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            format!("invalid surplus_output platform address: {e}"),
+            format!("invalid {field_name} platform address: {e}"),
+        )),
+    }
+}
+
+/// Decode a REQUIRED `PlatformAddress` from a raw pointer with no companion length argument over the
+/// C ABI — the caller's safety contract guarantees exactly [`PLATFORM_ADDRESS_LEN`] readable bytes.
+/// A null pointer or a malformed address is a hard error. `field_name` names the parameter in errors.
+///
+/// # Safety
+/// `ptr` must point to at least [`PLATFORM_ADDRESS_LEN`] readable bytes for the duration of the call.
+unsafe fn parse_required_platform_address(
+    ptr: *const u8,
+    field_name: &str,
+) -> Result<PlatformAddress, PlatformWalletFFIResult> {
+    match parse_optional_platform_address(ptr, PLATFORM_ADDRESS_LEN, field_name)? {
+        Some(addr) => Ok(addr),
+        None => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("{field_name} is required ({PLATFORM_ADDRESS_LEN} PlatformAddress bytes)"),
         )),
     }
 }
@@ -289,6 +324,147 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
     PlatformWalletFFIResult::ok()
 }
 
+/// IdentityCreateFromShieldedPool (Type 20): spend `account`'s shielded notes to fund a brand-new
+/// Platform identity.
+///
+/// The host supplies the new identity's public keys (`identity_pubkeys` rows, same
+/// [`IdentityPubkeyFFI`] shape as address-funded registration) and a chosen `denomination` (a
+/// member of the versioned exit-denomination set, in credits). The whole denomination leaves the
+/// pool and the metered fee is taken from it, so the new identity is created holding
+/// `denomination - total_fee`; any spent value above the denomination re-enters the pool as a
+/// change note to `account`'s default Orchard address.
+///
+/// Authorization is 100% the Orchard proof + per-action spend-auth signatures (from the bound
+/// wallet's own `SpendAuthorizingKey`) + the binding signature (which commits the derived id +
+/// denomination + full key set) + a per-key proof-of-possession produced via
+/// `signer_identity_handle`. There is NO platform identity signature.
+///
+/// On success the 32-byte new identity id (`double_sha256(sorted nullifiers)`) is written to
+/// `out_identity_id`. The id is deterministic in the spent notes, so the host can also predict it
+/// independently if needed.
+///
+/// `send_to_address_on_creation_failure_bytes` is the REQUIRED fallback platform address, supplied
+/// as raw `PlatformAddress` storage bytes (21 bytes: 1-byte variant tag + 20-byte hash — the
+/// encoding `PlatformAddress::to_bytes()` produces and `PlatformAddressWasm`/the Swift wrapper
+/// expose). If identity creation fails a stateful check (a public-key hash already registered to
+/// another identity) the spend is still finalized and the value is credited to this address minus a
+/// penalty, exactly like the asset-lock / address-funded identity-create penalties. It is bound into
+/// the transition sighash, so it cannot be redirected after signing.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `identity_pubkeys` must point to `identity_pubkeys_count` contiguous [`IdentityPubkeyFFI`]
+///   rows that outlive this call (each row's pointers per the [`IdentityPubkeyFFI`] contract).
+/// - `send_to_address_on_creation_failure_bytes` must point to exactly 21 readable bytes for the
+///   duration of this call.
+/// - `signer_identity_handle` must be a valid, non-destroyed `*mut SignerHandle` (a
+///   `VTableSigner` with the callback variant) that outlives this call; the caller retains
+///   ownership.
+/// - `out_identity_id` must point to 32 writable bytes.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_pool(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    account: u32,
+    identity_pubkeys: *const IdentityPubkeyFFI,
+    identity_pubkeys_count: usize,
+    denomination: u64,
+    send_to_address_on_creation_failure_bytes: *const u8,
+    signer_identity_handle: *mut SignerHandle,
+    out_identity_id: *mut [u8; 32],
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(identity_pubkeys);
+    check_ptr!(send_to_address_on_creation_failure_bytes);
+    check_ptr!(signer_identity_handle);
+    check_ptr!(out_identity_id);
+    if identity_pubkeys_count == 0 {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "`identity_pubkeys_count` must be >= 1",
+        );
+    }
+
+    // Decode the REQUIRED fallback failure address (raw `PlatformAddress` bytes: 1-byte variant tag +
+    // 20-byte hash). The fallback is mandatory for Type 20, so a null / malformed address is a hard
+    // error. No companion length arg crosses the C ABI — the helper enforces the 21-byte contract.
+    let send_to_address_on_creation_failure = match parse_required_platform_address(
+        send_to_address_on_creation_failure_bytes,
+        "send_to_address_on_creation_failure_bytes",
+    ) {
+        Ok(addr) => addr,
+        Err(result) => return result,
+    };
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+
+    // Decode the host-supplied identity keys into the
+    // `Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>` shape the wallet builder consumes.
+    // Reuses the shared registration decoder (key_type / purpose / security_level / contract-bounds
+    // validation) so this path can't drift from the address-funded registration path.
+    let keys_map = match decode_identity_pubkeys(identity_pubkeys, identity_pubkeys_count) {
+        Ok(m) => m,
+        Err(result) => return result,
+    };
+    let public_keys: Vec<(
+        dpp::identity::IdentityPublicKey,
+        IdentityPublicKeyInCreation,
+    )> = keys_map
+        .into_values()
+        .map(|k| {
+            let in_creation: IdentityPublicKeyInCreation = (&k).into();
+            (k, in_creation)
+        })
+        .collect();
+
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+
+    // Round-trip the signer pointer through `usize` so the worker future captures only plain
+    // `Send + 'static` data and re-materializes the borrow INSIDE the task — never a fabricated
+    // `&'static` borrow of a host-owned vtable across the FFI boundary. The caller's contract is
+    // that the handle outlives this call, and `block_on_worker` blocks the calling frame until the
+    // task completes, so the borrow is valid for the task's whole lifetime.
+    let signer_identity_addr = signer_identity_handle as usize;
+
+    // Run the proof on a worker thread (8 MB stack). Halo 2 circuit synthesis recurses past the
+    // ~512 KB iOS dispatch-thread stack and crashes with EXC_BAD_ACCESS when polled on the calling
+    // thread.
+    let result = block_on_worker(async move {
+        // SAFETY: re-materialize the borrow under the caller's documented lifetime contract; valid
+        // for the duration of this synchronously-awaited task. `VTableSigner` impls
+        // `Signer<IdentityPublicKey>`.
+        let identity_signer: &VTableSigner = &*(signer_identity_addr as *const VTableSigner);
+        let prover = CachedOrchardProver::new();
+        wallet
+            .shielded_identity_create_from_pool(
+                &coordinator,
+                account,
+                public_keys,
+                denomination,
+                send_to_address_on_creation_failure,
+                identity_signer,
+                &prover,
+            )
+            .await
+    });
+
+    match result {
+        Ok(identity_id) => {
+            *out_identity_id = identity_id.to_buffer();
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("shielded identity-create-from-pool failed: {e}"),
+        ),
+    }
+}
+
 /// Shield: spend credits from a Platform Payment account into
 /// the bound shielded sub-wallet's pool.
 ///
@@ -444,8 +620,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
         }
     };
 
-    let surplus_output = match parse_optional_surplus_output(surplus_output_ptr, surplus_output_len)
-    {
+    let surplus_output = match parse_optional_platform_address(
+        surplus_output_ptr,
+        surplus_output_len,
+        "surplus_output",
+    ) {
         Ok(s) => s,
         Err(result) => return result,
     };
@@ -580,8 +759,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
         }
     };
 
-    let surplus_output = match parse_optional_surplus_output(surplus_output_ptr, surplus_output_len)
-    {
+    let surplus_output = match parse_optional_platform_address(
+        surplus_output_ptr,
+        surplus_output_len,
+        "surplus_output",
+    ) {
         Ok(s) => s,
         Err(result) => return result,
     };

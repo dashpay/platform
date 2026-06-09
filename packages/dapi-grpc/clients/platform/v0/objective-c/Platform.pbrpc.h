@@ -42,6 +42,8 @@
 @class GetDataContractResponse;
 @class GetDataContractsRequest;
 @class GetDataContractsResponse;
+@class GetDocumentHistoryRequest;
+@class GetDocumentHistoryResponse;
 @class GetDocumentsRequest;
 @class GetDocumentsResponse;
 @class GetEpochsInfoRequest;
@@ -227,6 +229,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getDataContracts(GetDataContractsRequest) returns (GetDataContractsResponse)
 
 - (GRPCUnaryProtoCall *)getDataContractsWithMessage:(GetDataContractsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getDocumentHistory(GetDocumentHistoryRequest) returns (GetDocumentHistoryResponse)
+
+- (GRPCUnaryProtoCall *)getDocumentHistoryWithMessage:(GetDocumentHistoryRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse)
 
@@ -556,6 +562,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getDataContractsWithRequest:(GetDataContractsRequest *)request handler:(void(^)(GetDataContractsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetDataContractsWithRequest:(GetDataContractsRequest *)request handler:(void(^)(GetDataContractsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getDocumentHistory(GetDocumentHistoryRequest) returns (GetDocumentHistoryResponse)
+
+- (void)getDocumentHistoryWithRequest:(GetDocumentHistoryRequest *)request handler:(void(^)(GetDocumentHistoryResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetDocumentHistoryWithRequest:(GetDocumentHistoryRequest *)request handler:(void(^)(GetDocumentHistoryResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse)

@@ -80,10 +80,11 @@ use crate::consensus::basic::state_transition::{
     MissingStateTransitionTypeError, OutputAddressAlsoInputError, OutputBelowMinimumError,
     OutputsNotGreaterThanInputsError, ShieldedEmptyProofError,
     ShieldedEncryptedNoteSizeMismatchError, ShieldedImplicitFeeCapExceededError,
-    ShieldedInvalidValueBalanceError, ShieldedNoActionsError, ShieldedTooManyActionsError,
-    ShieldedZeroAnchorError, StateTransitionMaxSizeExceededError, StateTransitionNotActiveError,
-    TransitionNoInputsError, TransitionNoOutputsError, TransitionOverMaxInputsError,
-    TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError, WithdrawalBelowMinAmountError,
+    ShieldedInvalidDenominationError, ShieldedInvalidValueBalanceError, ShieldedNoActionsError,
+    ShieldedTooManyActionsError, ShieldedZeroAnchorError, StateTransitionMaxSizeExceededError,
+    StateTransitionNotActiveError, TransitionNoInputsError, TransitionNoOutputsError,
+    TransitionOverMaxInputsError, TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError,
+    WithdrawalBelowMinAmountError,
 };
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
@@ -688,6 +689,9 @@ pub enum BasicError {
     // (codes.rs) is independent of variant order.
     #[error(transparent)]
     ShieldedImplicitFeeCapExceededError(ShieldedImplicitFeeCapExceededError),
+
+    #[error(transparent)]
+    ShieldedInvalidDenominationError(ShieldedInvalidDenominationError),
 }
 
 impl From<BasicError> for ConsensusError {

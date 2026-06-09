@@ -324,6 +324,18 @@ pub struct PersistenceCallbacks {
             count: usize,
         ) -> i32,
     >,
+    /// Per-subwallet outgoing (sent) note upserts, recovered via OVK.
+    /// Append-only send history keyed by `(wallet_id, account_index,
+    /// cmx)`; no spend / nullifier state.
+    #[cfg(feature = "shielded")]
+    pub on_persist_shielded_outgoing_notes_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            entries: *const crate::shielded_persistence::ShieldedOutgoingNoteFFI,
+            count: usize,
+        ) -> i32,
+    >,
     /// Per-subwallet sync watermark advances.
     #[cfg(feature = "shielded")]
     pub on_persist_shielded_synced_indices_fn: Option<
@@ -331,16 +343,6 @@ pub struct PersistenceCallbacks {
             context: *mut c_void,
             wallet_id: *const u8,
             entries: *const crate::shielded_persistence::ShieldedSyncedIndexFFI,
-            count: usize,
-        ) -> i32,
-    >,
-    /// Per-subwallet nullifier-sync checkpoint advances.
-    #[cfg(feature = "shielded")]
-    pub on_persist_shielded_nullifier_checkpoints_fn: Option<
-        unsafe extern "C" fn(
-            context: *mut c_void,
-            wallet_id: *const u8,
-            entries: *const crate::shielded_persistence::ShieldedNullifierCheckpointFFI,
             count: usize,
         ) -> i32,
     >,
@@ -364,6 +366,26 @@ pub struct PersistenceCallbacks {
         unsafe extern "C" fn(
             context: *mut c_void,
             entries: *const crate::shielded_persistence::ShieldedNoteRestoreFFI,
+            count: usize,
+        ),
+    >,
+    /// Restore-on-load: every persisted outgoing (sent) note. Same
+    /// host-allocates / Rust-frees lifetime contract as
+    /// `on_load_shielded_notes_fn`. Inlined (rather than via a type
+    /// alias) so cbindgen emits the referenced struct in the header.
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_outgoing_notes_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            out_entries: *mut *const crate::shielded_persistence::ShieldedOutgoingNoteRestoreFFI,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_outgoing_notes_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            entries: *const crate::shielded_persistence::ShieldedOutgoingNoteRestoreFFI,
             count: usize,
         ),
     >,
@@ -508,13 +530,17 @@ impl Default for PersistenceCallbacks {
             #[cfg(feature = "shielded")]
             on_persist_shielded_nullifiers_spent_fn: None,
             #[cfg(feature = "shielded")]
-            on_persist_shielded_synced_indices_fn: None,
+            on_persist_shielded_outgoing_notes_fn: None,
             #[cfg(feature = "shielded")]
-            on_persist_shielded_nullifier_checkpoints_fn: None,
+            on_persist_shielded_synced_indices_fn: None,
             #[cfg(feature = "shielded")]
             on_load_shielded_notes_fn: None,
             #[cfg(feature = "shielded")]
             on_load_shielded_notes_free_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_outgoing_notes_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_outgoing_notes_free_fn: None,
             #[cfg(feature = "shielded")]
             on_load_shielded_sync_states_fn: None,
             #[cfg(feature = "shielded")]
@@ -1158,7 +1184,67 @@ impl PlatformWalletPersistence for FFIPersister {
                 }
             }
 
-            // 3) synced_indices
+            // 3) outgoing_notes (OVK-recovered send history). Each
+            //    `memo_ptr` borrows into the changeset's owned `memo`
+            //    Vec, which lives for the whole `store()` call, so the
+            //    pointer stays valid for the callback window (same
+            //    discipline as `note_data_ptr` above).
+            if !shielded_cs.outgoing_notes.is_empty() {
+                if let Some(cb) = self.callbacks.on_persist_shielded_outgoing_notes_fn {
+                    let entries: Vec<ShieldedOutgoingNoteFFI> = shielded_cs
+                        .outgoing_notes
+                        .iter()
+                        .flat_map(|(id, notes)| {
+                            notes.iter().filter_map(|n| {
+                                // `recipient` is a 43-byte raw Orchard address
+                                // stored as a `Vec` (serde-derive only covers
+                                // arrays <= 32). It is always exactly 43 bytes
+                                // from OVK recovery; reject (skip + warn) a
+                                // malformed row rather than silently zero-padding
+                                // it into a wrong address.
+                                let recipient: [u8; 43] = match n.recipient.as_slice().try_into() {
+                                    Ok(r) => r,
+                                    Err(_) => {
+                                        tracing::warn!(
+                                            recipient_len = n.recipient.len(),
+                                            "skipping outgoing-note persist row: \
+                                                 recipient is not the expected 43 bytes"
+                                        );
+                                        return None;
+                                    }
+                                };
+                                Some(ShieldedOutgoingNoteFFI {
+                                    wallet_id: id.wallet_id,
+                                    account_index: id.account_index,
+                                    cmx: n.cmx,
+                                    recipient,
+                                    value: n.value,
+                                    block_height: n.block_height,
+                                    memo_ptr: n.memo.as_ptr(),
+                                    memo_len: n.memo.len(),
+                                })
+                            })
+                        })
+                        .collect();
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            entries.as_ptr(),
+                            entries.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Shielded outgoing-notes persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
+                }
+            }
+
+            // 4) synced_indices
             if !shielded_cs.synced_indices.is_empty() {
                 if let Some(cb) = self.callbacks.on_persist_shielded_synced_indices_fn {
                     let entries: Vec<ShieldedSyncedIndexFFI> = shielded_cs
@@ -1181,37 +1267,6 @@ impl PlatformWalletPersistence for FFIPersister {
                     if result != 0 {
                         eprintln!(
                             "Shielded synced-index persistence callback returned error code {}",
-                            result
-                        );
-                        round_success = false;
-                    }
-                }
-            }
-
-            // 4) nullifier_checkpoints
-            if !shielded_cs.nullifier_checkpoints.is_empty() {
-                if let Some(cb) = self.callbacks.on_persist_shielded_nullifier_checkpoints_fn {
-                    let entries: Vec<ShieldedNullifierCheckpointFFI> = shielded_cs
-                        .nullifier_checkpoints
-                        .iter()
-                        .map(|(id, &(h, t))| ShieldedNullifierCheckpointFFI {
-                            wallet_id: id.wallet_id,
-                            account_index: id.account_index,
-                            height: h,
-                            timestamp: t,
-                        })
-                        .collect();
-                    let result = unsafe {
-                        cb(
-                            self.callbacks.context,
-                            wallet_id.as_ptr(),
-                            entries.as_ptr(),
-                            entries.len(),
-                        )
-                    };
-                    if result != 0 {
-                        eprintln!(
-                            "Shielded nullifier-checkpoint persistence callback returned error code {}",
                             result
                         );
                         round_success = false;
@@ -1340,7 +1395,9 @@ impl PlatformWalletPersistence for FFIPersister {
         {
             use crate::shielded_persistence::*;
             use platform_wallet::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
-            use platform_wallet::wallet::shielded::{ShieldedNote, SubwalletId};
+            use platform_wallet::wallet::shielded::{
+                ShieldedNote, ShieldedOutgoingNote, SubwalletId,
+            };
 
             let mut shielded_state = ShieldedSyncStartState::default();
 
@@ -1366,6 +1423,17 @@ impl PlatformWalletPersistence for FFIPersister {
                     "on_load_shielded_sync_states_fn and on_load_shielded_sync_states_free_fn \
                      must be provided together",
                 ));
+            }
+            if self.callbacks.on_load_shielded_outgoing_notes_fn.is_some()
+                != self
+                    .callbacks
+                    .on_load_shielded_outgoing_notes_free_fn
+                    .is_some()
+            {
+                return Err("on_load_shielded_outgoing_notes_fn and \
+                     on_load_shielded_outgoing_notes_free_fn must be provided together"
+                    .to_string()
+                    .into());
             }
 
             // 1) notes
@@ -1433,7 +1501,71 @@ impl PlatformWalletPersistence for FFIPersister {
                 }
             }
 
-            // 2) per-subwallet sync states
+            // 2) outgoing (sent) notes recovered via OVK
+            if let Some(load_outgoing) = self.callbacks.on_load_shielded_outgoing_notes_fn {
+                let mut out_ptr: *const ShieldedOutgoingNoteRestoreFFI = std::ptr::null();
+                let mut out_count: usize = 0;
+                let rc =
+                    unsafe { load_outgoing(self.callbacks.context, &mut out_ptr, &mut out_count) };
+                if rc != 0 {
+                    return Err(format!(
+                        "on_load_shielded_outgoing_notes_fn returned error code {}",
+                        rc
+                    )
+                    .into());
+                }
+                struct OutgoingGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedOutgoingNoteRestoreFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedOutgoingNoteRestoreFFI,
+                    count: usize,
+                }
+                impl Drop for OutgoingGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _outgoing_guard = OutgoingGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_outgoing_notes_free_fn,
+                    entries: out_ptr,
+                    count: out_count,
+                };
+                if !out_ptr.is_null() && out_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(out_ptr, out_count) };
+                    for ffi in slice {
+                        let memo = if ffi.memo_ptr.is_null() || ffi.memo_len == 0 {
+                            Vec::new()
+                        } else {
+                            unsafe {
+                                std::slice::from_raw_parts(ffi.memo_ptr, ffi.memo_len).to_vec()
+                            }
+                        };
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        let entry = shielded_state
+                            .per_subwallet
+                            .entry(id)
+                            .or_insert_with(ShieldedSubwalletStartState::default);
+                        entry.outgoing_notes.push(ShieldedOutgoingNote {
+                            cmx: ffi.cmx,
+                            recipient: ffi.recipient.to_vec(),
+                            value: ffi.value,
+                            memo,
+                            block_height: ffi.block_height,
+                        });
+                    }
+                }
+            }
+
+            // 3) per-subwallet sync states
             if let Some(load_states) = self.callbacks.on_load_shielded_sync_states_fn {
                 let mut states_ptr: *const ShieldedSubwalletSyncStateFFI = std::ptr::null();
                 let mut states_count: usize = 0;
@@ -1480,12 +1612,6 @@ impl PlatformWalletPersistence for FFIPersister {
                             .entry(id)
                             .or_insert_with(ShieldedSubwalletStartState::default);
                         entry.last_synced_index = ffi.last_synced_index;
-                        if ffi.has_nullifier_checkpoint != 0 {
-                            entry.nullifier_checkpoint = Some((
-                                ffi.nullifier_checkpoint_height,
-                                ffi.nullifier_checkpoint_timestamp,
-                            ));
-                        }
                     }
                 }
             }

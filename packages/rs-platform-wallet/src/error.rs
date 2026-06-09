@@ -211,9 +211,6 @@ pub enum PlatformWalletError {
     #[error("Shielded store error: {0}")]
     ShieldedStoreError(String),
 
-    #[error("Shielded nullifier sync failed: {0}")]
-    ShieldedNullifierSyncFailed(String),
-
     #[error("Shielded Merkle witness unavailable: {0}")]
     ShieldedMerkleWitnessUnavailable(String),
 

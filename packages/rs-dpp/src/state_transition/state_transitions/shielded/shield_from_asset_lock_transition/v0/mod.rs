@@ -230,7 +230,7 @@ mod tests {
         none_variant.surplus_output = None;
 
         let mut some_a = make_v0();
-        some_a.surplus_output = Some(addr_a.clone());
+        some_a.surplus_output = Some(addr_a);
 
         let mut some_b = make_v0();
         some_b.surplus_output = Some(addr_b);

@@ -438,7 +438,7 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_script, unshielding_amount)
             let output_script = create_output_script();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data(
+            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data_v0(
                 output_script.as_bytes(),
                 unshielding_amount,
                 1,
@@ -589,7 +589,7 @@ mod tests {
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
 
             // Bind transparent fields (output_script, unshielding_amount) to the sighash
-            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data(
+            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data_v0(
                 output_script.as_bytes(),
                 unshielding_amount,
                 1,
@@ -966,7 +966,7 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_script, unshielding_amount)
             let output_script = create_output_script();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data(
+            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data_v0(
                 output_script.as_bytes(),
                 unshielding_amount,
                 1,
@@ -1205,7 +1205,7 @@ mod tests {
 
             let output_script = create_output_script();
             let unshielding_amount = 499_995_000u64;
-            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data(
+            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data_v0(
                 output_script.as_bytes(),
                 unshielding_amount,
                 1,
@@ -1476,7 +1476,7 @@ mod tests {
 
             let output_script = create_output_script();
             let unshielding_amount = 499_995_000u64;
-            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data(
+            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data_v0(
                 output_script.as_bytes(),
                 unshielding_amount,
                 1,

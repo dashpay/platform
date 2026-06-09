@@ -84,8 +84,11 @@ pub fn build_unshield_transition<P: OrchardProver>(
     // Bind the transparent fields (output_address, unshielding_amount == required) into the
     // Orchard sighash. Shared with the consensus verifier in shielded_proof.rs so the signed
     // and verified bytes cannot diverge.
-    let extra_sighash_data =
-        crate::shielded::unshield_extra_sighash_data(&output_address.to_bytes(), required);
+    let extra_sighash_data = crate::shielded::unshield_extra_sighash_data(
+        &output_address.to_bytes(),
+        required,
+        platform_version,
+    )?;
 
     let bundle = build_spend_bundle(
         spends,

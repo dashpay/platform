@@ -133,12 +133,13 @@ impl<C> Platform<C> {
                     .map_err(|e| Error::Drive(drive::error::Error::GroveDB(Box::new(e))))?;
 
                 match maybe_value {
-                    // Stored value = cmx (32) || rho (32) || encrypted_note (rest)
-                    Some(value) if value.len() > 64 => {
+                    // Stored value = cmx (32) || rho (32) || cv_net (32) || encrypted_note (rest)
+                    Some(value) if value.len() > 96 => {
                         entries.push(EncryptedNote {
                             cmx: value[..32].to_vec(),
                             nullifier: value[32..64].to_vec(),
-                            encrypted_note: value[64..].to_vec(),
+                            cv_net: value[64..96].to_vec(),
+                            encrypted_note: value[96..].to_vec(),
                         });
                     }
                     _ => break, // past end of tree

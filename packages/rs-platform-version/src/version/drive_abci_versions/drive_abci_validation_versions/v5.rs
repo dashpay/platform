@@ -247,6 +247,15 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V5: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
+            identity_create_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: None,
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
         },
         has_nonce_validation: 1,
         has_address_witness_validation: 0,
@@ -272,5 +281,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V5: DriveAbciValidationVersions =
             shielded_proof_verification_fee: 100_000_000,
             shielded_per_action_processing_fee: 3_000_000,
             shielded_implicit_fee_cap: 20_000_000_000,
+            shielded_identity_create_denominations: &[],
         },
     };
