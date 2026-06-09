@@ -91,6 +91,7 @@ struct ContentView: View {
 
                 // Tab 3: Identities
                 IdentitiesTabView()
+                    .accessibilityIdentifier("rootTab.identities")
                     .tabItem {
                         Label("Identities", systemImage: "person.crop.circle")
                     }
@@ -112,6 +113,7 @@ struct ContentView: View {
 
                 // Tab 5: Settings (includes Platform section)
                 SettingsView()
+                    .accessibilityIdentifier("rootTab.settings")
                     .tabItem {
                         Label("Settings", systemImage: "gearshape")
                     }

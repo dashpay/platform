@@ -166,19 +166,24 @@ struct SwiftExampleAppApp: App {
     }
 
     /// Lazy-create + cache a `PlatformWalletManager` for `network`,
-    /// configured against `platformState.sdk`. No-ops on the
-    /// already-active network. Called from bootstrap and from
+    /// configured against a freshly-built per-network SDK. No-ops on
+    /// the already-active network. Called from bootstrap and from
     /// `currentNetwork.onChange`.
+    ///
+    /// The SDK is built locally rather than read from `platformState.sdk`
+    /// because the SwiftUI `.onChange` handler that calls this fires
+    /// synchronously the moment `currentNetwork` changes, while
+    /// `AppState.switchNetwork` rebuilds `platformState.sdk`
+    /// asynchronously — at this instant the shared SDK still points at
+    /// the previous network. `PlatformWalletManager` is network-locked
+    /// to its configure-time SDK for its lifetime and the cache is
+    /// never invalidated, so capturing the stale reference would
+    /// permanently bind the new network's manager to the previous
+    /// network's backend. Mirrors `WalletManagerStore.backgroundManager(for:)`.
     @MainActor
     private func activateManager(for network: Network) {
-        guard let sdk = platformState.sdk else {
-            SDKLogger.error(
-                "Cannot activate wallet manager for \(network.displayName): "
-                    + "no SDK available (still bootstrapping?)"
-            )
-            return
-        }
         do {
+            let sdk = try SDK(network: network)
             try walletManagerStore.activate(network: network, sdk: sdk)
         } catch {
             SDKLogger.error(

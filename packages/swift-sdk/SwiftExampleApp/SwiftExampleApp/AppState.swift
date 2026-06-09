@@ -9,12 +9,27 @@ class AppState: ObservableObject {
     @Published var showError = false
     @Published var errorMessage = ""
 
+    /// `true` from the moment a network change is requested until the
+    /// new SDK is bound. Spans the full async cycle (didSet → Task →
+    /// `switchNetwork` → `sdk = newSDK`), so consumers can wait on it
+    /// as a real readiness signal. UI bindings should treat
+    /// `appState.sdk != nil && !isSwitchingNetwork` as "connected on
+    /// the current network" — `appState.sdk != nil` alone is true even
+    /// while `switchNetwork` is still tearing down the previous SDK.
+    @Published var isSwitchingNetwork: Bool = false
+
+    /// Monotonic request id for in-flight switches. If two switches
+    /// overlap (user taps mainnet → testnet before the first lands), the
+    /// earlier task's completion would otherwise clear `isSwitchingNetwork`
+    /// while the later switch is still running. Each new request bumps
+    /// this counter and the spawned task only clears the flag when its
+    /// captured id still matches.
+    private var networkSwitchRequestID: UInt64 = 0
+
     @Published var currentNetwork: Network {
         didSet {
-            UserDefaults.standard.set(Int(currentNetwork.rawValue), forKey: "currentNetwork")
-            Task {
-                await switchNetwork(to: currentNetwork)
-            }
+            UserDefaults.standard.set(currentNetwork.rawValue, forKey: "currentNetwork")
+            beginNetworkSwitch()
         }
     }
 
@@ -38,8 +53,30 @@ class AppState: ObservableObject {
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostPlatform")
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostCore")
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhost")
-            Task { await switchNetwork(to: currentNetwork) }
+            beginNetworkSwitch()
         }
+    }
+
+    /// Bumps `networkSwitchRequestID`, raises `isSwitchingNetwork`, and
+    /// spawns the SDK-rebuild task. Only the task that owns the latest
+    /// request id may lower `isSwitchingNetwork` again — overlapping
+    /// switches' earlier tasks no-op on completion.
+    private func beginNetworkSwitch() {
+        networkSwitchRequestID &+= 1
+        let requestID = networkSwitchRequestID
+        isSwitchingNetwork = true
+        Task {
+            await switchNetwork(to: currentNetwork, requestID: requestID)
+            if requestID == networkSwitchRequestID {
+                isSwitchingNetwork = false
+            }
+        }
+    }
+
+    /// True if `token` is still the most recent network-switch request.
+    /// Stale tasks bail out before mutating shared state.
+    private func isCurrent(_ token: UInt64) -> Bool {
+        token == networkSwitchRequestID
     }
 
     // Identity-key signing is performed per-flow via a fresh
@@ -112,8 +149,9 @@ class AppState: ObservableObject {
         showError = true
     }
 
-    func switchNetwork(to network: Network) async {
+    func switchNetwork(to network: Network, requestID: UInt64) async {
         guard let modelContext = modelContext else { return }
+        guard isCurrent(requestID) else { return }
 
         // Identities, contracts, documents, and token balances are
         // scoped per-network inside SwiftData. `@Query` consumers
@@ -129,13 +167,16 @@ class AppState: ObservableObject {
 
             // Create new SDK instance for the network
             let newSDK = try SDK(network: network)
+            guard isCurrent(requestID) else { return }
             sdk = newSDK
 
             // Load known contracts into the SDK's trusted provider
             await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
+            guard isCurrent(requestID) else { return }
 
             isLoading = false
         } catch {
+            guard isCurrent(requestID) else { return }
             sdk = nil
             showError(message: "Failed to switch network: \(error.localizedDescription)")
             NSLog("❌ AppState.switchNetwork: \(error)")

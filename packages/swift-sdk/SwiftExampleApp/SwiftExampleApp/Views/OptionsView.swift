@@ -10,7 +10,6 @@ struct OptionsView: View {
     @State private var showingDataManagement = false
     @State private var showingAbout = false
     @State private var showingContracts = false
-    @State private var isSwitchingNetwork = false
     @State private var sdkStatus: SDKStatus?
     @State private var isLoadingStatus = false
 
@@ -155,6 +154,18 @@ struct OptionsView: View {
                                         isSwitchingNetwork = false
                                     }
                                 }
+
+                                // `currentNetwork.didSet` (in AppState) flips
+                                // `isSwitchingNetwork` for us and awaits the
+                                // SDK rebind, so the status label below stays
+                                // in the switching state across the entire
+                                // async cycle. Reset per-network services
+                                // alongside the switch — these don't gate
+                                // readiness, they just clean up stale UI.
+                                appState.currentNetwork = newNetwork
+                                try? walletManager.stopSpv()
+                                platformBalanceSyncService.reset()
+                                shieldedService.reset()
                             }
                         }
                     )) {
@@ -173,23 +184,20 @@ struct OptionsView: View {
                     .modifier(
                         NetworkPickerInFlightGate(
                             coordinator: walletManager.registrationCoordinator,
-                            isSwitching: isSwitchingNetwork
+                            isSwitching: appState.isSwitchingNetwork
                         )
                     )
+                    .accessibilityIdentifier("options.networkPicker")
 
                     NetworkInFlightFooter(
                         coordinator: walletManager.registrationCoordinator
                     )
 
                     if appState.currentNetwork == .regtest {
+                        // `useDockerSetup.didSet` (in AppState) drives the
+                        // SDK rebuild and `isSwitchingNetwork`; no view-side
+                        // onChange is needed.
                         Toggle("Use Docker Setup", isOn: $appState.useDockerSetup)
-                            .onChange(of: appState.useDockerSetup) { _, _ in
-                                isSwitchingNetwork = true
-                                Task {
-                                    await appState.switchNetwork(to: appState.currentNetwork)
-                                    await MainActor.run { isSwitchingNetwork = false }
-                                }
-                            }
                             .help("Connect to local dashmate Docker network.")
 
                         if appState.useDockerSetup {
@@ -351,23 +359,32 @@ struct OptionsView: View {
                     HStack {
                         Text("Network Status")
                         Spacer()
-                        if isSwitchingNetwork {
-                            HStack(spacing: 4) {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                Text("Switching...")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        } else if appState.sdk != nil {
-                            Label("Connected", systemImage: "checkmark.circle.fill")
+                        Group {
+                            if appState.isSwitchingNetwork {
+                                HStack(spacing: 4) {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                    Text("Switching...")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            } else if appState.sdk != nil {
+                                Label(
+                                    "Connected to \(appState.currentNetwork.displayName)",
+                                    systemImage: "checkmark.circle.fill"
+                                )
                                 .font(.caption)
                                 .foregroundColor(.green)
-                        } else {
-                            Label("Disconnected", systemImage: "xmark.circle.fill")
-                                .font(.caption)
-                                .foregroundColor(.red)
+                            } else {
+                                Label("Disconnected", systemImage: "xmark.circle.fill")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            }
                         }
+                        // Combine the icon + text into a single accessibility element
+                        // so the network status reads as one string under the shared identifier.
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("options.networkStatusLabel")
                     }
 
                 }

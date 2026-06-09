@@ -161,6 +161,7 @@ struct CreateWalletView: View {
 
             Section {
                 Toggle("Import Existing Wallet", isOn: $showImportOption)
+                    .accessibilityIdentifier("createWallet.importToggle")
             } header: {
                 Text("Options")
             }
@@ -189,6 +190,7 @@ struct CreateWalletView: View {
                         .autocorrectionDisabled()
                         .lineLimit(3...6)
                         .focused($focusedField, equals: .mnemonic)
+                        .accessibilityIdentifier("createWallet.mnemonicField")
                 } header: {
                     Text("Recovery Phrase")
                 } footer: {

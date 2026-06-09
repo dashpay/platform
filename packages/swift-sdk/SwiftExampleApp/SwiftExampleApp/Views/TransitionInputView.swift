@@ -191,6 +191,7 @@ struct TransitionInputView: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityIdentifier("transition.input.\(input.name)")
     }
 
     @ViewBuilder
@@ -539,6 +540,7 @@ struct TransitionInputView: View {
                                 .foregroundColor(.white)
                                 .cornerRadius(8)
                         }
+                        .accessibilityIdentifier("transition.input.\(input.name).manualEntryButton")
                     }
                 } else {
                     Picker("Select Identity", selection: $value) {
@@ -560,11 +562,13 @@ struct TransitionInputView: View {
                             useManualEntry = true
                         }
                     }
+                    .accessibilityIdentifier("transition.input.\(input.name).recipientPicker")
                 }
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     TextField("Enter recipient identity ID", text: $value)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .accessibilityIdentifier("transition.input.\(input.name).manualEntryField")
 
                     if !identities.isEmpty {
                         Button(action: {

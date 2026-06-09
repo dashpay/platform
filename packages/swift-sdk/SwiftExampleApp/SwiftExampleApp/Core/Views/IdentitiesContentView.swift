@@ -156,9 +156,11 @@ struct IdentitiesContentView: View {
                     } label: {
                         Label("Re-scan for Identities", systemImage: "magnifyingglass")
                     }
+                    .accessibilityIdentifier("identities.searchWalletsMenuItem")
                 } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityIdentifier("identities.addMenu")
             }
         }
         .sheet(isPresented: $showingLoadIdentity) {

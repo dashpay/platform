@@ -139,6 +139,12 @@ struct IdentityDetailView: View {
                     Text(identity.formattedBalance)
                         .foregroundColor(.blue)
                         .fontWeight(.medium)
+                        .accessibilityIdentifier("identityDetail.balanceLabel")
+                        // Display string is "%.8f DASH" — rounding hides
+                        // sub-1000-credit deltas. Expose the raw signed
+                        // credit count via accessibilityValue for tests
+                        // that need exact numbers.
+                        .accessibilityValue("\(identity.balance)")
                 }
 
                 // Top-up entry point. Hidden for purely-local rows

@@ -100,6 +100,7 @@ struct IdentityRow: View {
             }
             .padding(.vertical, 4)
         }
+        .accessibilityIdentifier("identities.row.\(identity.identityIdBase58)")
     }
 
     private func refreshBalance() async {

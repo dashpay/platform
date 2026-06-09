@@ -147,6 +147,7 @@ struct SearchWalletsForIdentitiesView: View {
                 }
                 .pickerStyle(.menu)
                 .disabled(isSearching || hdWallets.count < 1)
+                .accessibilityIdentifier("searchWallets.walletPicker")
             }
         }
     }
@@ -158,6 +159,11 @@ struct SearchWalletsForIdentitiesView: View {
                 .font(.caption.monospaced())
                 .foregroundColor(.secondary)
         }
+        // Force a deterministic space-joined accessibility label so the
+        // XCUITest BEGINSWITH-with-trailing-space predicate matches; the
+        // default HStack a11y synthesis joins child Texts with ", ".
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(wallet.label) \(labelFingerprint(wallet.walletId))")
     }
 
     @ViewBuilder
@@ -169,6 +175,7 @@ struct SearchWalletsForIdentitiesView: View {
                 Text("+\(finding.foundCount)")
                     .fontWeight(.semibold)
                     .foregroundColor(finding.foundCount > 0 ? .green : .secondary)
+                    .accessibilityIdentifier("searchWallets.foundCountLabel")
             }
             if let err = finding.error {
                 // No `.lineLimit` — identity-derivation errors can
@@ -298,6 +305,7 @@ struct SearchWalletsForIdentitiesView: View {
                     || selectedWalletId == nil
                     || selectedManagedWallet == nil
             )
+            .accessibilityIdentifier("searchWallets.searchButton")
             if selectedWalletId != nil && selectedManagedWallet == nil {
                 Text("This wallet isn't loaded in the wallet manager yet. "
                     + "Restore it from the Wallets tab and try again.")

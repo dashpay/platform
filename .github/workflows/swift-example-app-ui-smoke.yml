@@ -2,6 +2,20 @@ name: Swift Example App UI Smoke
 
 'on':
   workflow_dispatch:
+  schedule:
+    # 23:00 UTC daily. Aligns with the main `Tests` workflow's nightly
+    # cron (also 23:00 UTC) but runs on a different runner pool
+    # (self-hosted macOS), so they don't compete for compute. The Swift
+    # discovery test hits testnet DAPI; if that becomes a contention
+    # signal, shift to 02:00 UTC.
+    - cron: "0 23 * * *"
+
+concurrency:
+  # Prevents an in-flight manual dispatch from being clobbered by the
+  # cron firing (or vice versa) on the single self-hosted Mac. Cancels
+  # the older run in favor of the newer one.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -161,6 +175,12 @@ jobs:
         env:
           SIM_UDID: ${{ steps.simulator.outputs.udid }}
           RESULT_BUNDLE_PATH: ${{ runner.temp }}/SwiftExampleAppUITests.xcresult
+          # Forwarded into the XCUITest runner as `UI_TEST_MNEMONIC` —
+          # `xcodebuild test` strips the `TEST_RUNNER_` prefix before
+          # passing env vars through to the test process. Empty on PRs
+          # from forks (GitHub withholds secrets there), and the test
+          # self-skips when the value is empty.
+          TEST_RUNNER_UI_TEST_MNEMONIC: ${{ secrets.UI_TEST_MNEMONIC }}
         run: |
           set -euo pipefail
           xcodebuild test \
@@ -168,18 +188,28 @@ jobs:
             -scheme SwiftExampleApp \
             -destination "platform=iOS Simulator,id=$SIM_UDID" \
             -only-testing:SwiftExampleAppUITests/SwiftExampleAppUITests/testCreateGeneratedWalletFlow \
+            -only-testing:SwiftExampleAppUITests/WalletPersistenceTests/testWalletPersistsAcrossRelaunch \
+            -only-testing:SwiftExampleAppUITests/WalletPersistenceTests/testWalletDeletionCleanupSurvivesRelaunch \
+            -only-testing:SwiftExampleAppUITests/CreditTransferTest/testImportWalletAndDiscoverIdentity \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
             -resultBundlePath "$RESULT_BUNDLE_PATH"
 
       - name: Upload XCUITest result bundle
-        if: always()
+        # `failure()` only — xcresult bundles include the XCUITest activity
+        # log (which records `typeText` arguments) and may include failure
+        # screenshots. `importWallet` types the testnet mnemonic into a
+        # plain TextField, so a successful run's artifact would archive
+        # the mnemonic in the activity log. Restricting to failures
+        # narrows the leak surface (you only get the artifact when there's
+        # something to debug). 7-day retention also reduces exposure.
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: SwiftExampleAppUITests-xcresult
           path: ${{ runner.temp }}/SwiftExampleAppUITests.xcresult
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 7
 
       - name: Delete disposable simulator
         if: always() && steps.simulator.outputs.udid != ''
