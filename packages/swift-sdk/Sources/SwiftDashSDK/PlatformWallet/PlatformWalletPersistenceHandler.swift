@@ -2568,6 +2568,15 @@ public class PlatformWalletPersistenceHandler {
             for row in rows {
                 guard row.walletId.count == 32 else { continue }
                 guard row.cmx.count == 32 else { continue }
+                // `recipient` is a fixed 43-byte raw Orchard address.
+                // A wrong-length blob is a corrupt row — skip it (with
+                // a log) rather than zero-padding it into a wrong
+                // address. Mirrors the Rust persist side, which rejects
+                // non-43-byte recipients before they reach SwiftData.
+                guard row.recipient.count == 43 else {
+                    print("⚠️ loadShieldedOutgoingNotes: skipping row with malformed recipient length \(row.recipient.count) (expected 43)")
+                    continue
+                }
                 let memoBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: row.memo.count)
                 if row.memo.count > 0 {
                     row.memo.copyBytes(to: memoBuf, count: row.memo.count)
@@ -2579,9 +2588,9 @@ public class PlatformWalletPersistenceHandler {
                 var cmxTuple: FFIByteTuple32 = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
                 copyBytes(row.cmx, into: &cmxTuple)
                 // `recipient` is a 43-byte raw Orchard address; the C
-                // field imports as a 43-element tuple. Zero-init then
-                // copy (clamped) via the shared fixed-tuple writer so
-                // a malformed shorter row is zero-padded defensively.
+                // field imports as a 43-element tuple. The length guard
+                // above guarantees exactly 43 bytes, so this is a full
+                // copy via the shared fixed-tuple writer.
                 var recipientTuple: FFIByteTuple43 = ffiByteTuple43Zero
                 copyBytes(row.recipient, into: &recipientTuple)
                 buf[written] = ShieldedOutgoingNoteRestoreFFI(
@@ -2846,6 +2855,33 @@ public class PlatformWalletPersistenceHandler {
                     predicate: #Predicate<PersistentAssetLock> { $0.walletId == walletId }
                 )
                 for row in try backgroundContext.fetch(assetLockDescriptor) {
+                    backgroundContext.delete(row)
+                }
+
+                // Shielded (Orchard) per-wallet state. These three
+                // tables are keyed by raw `walletId` (no relationship
+                // to `PersistentWallet`), so the wallet-row delete
+                // below does not cascade them — purge them explicitly
+                // or they leak after a wipe and could resurface /
+                // mis-attribute if the same `walletId` is reimported.
+                let shieldedNoteDescriptor = FetchDescriptor<PersistentShieldedNote>(
+                    predicate: #Predicate<PersistentShieldedNote> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(shieldedNoteDescriptor) {
+                    backgroundContext.delete(row)
+                }
+
+                let shieldedOutgoingNoteDescriptor = FetchDescriptor<PersistentShieldedOutgoingNote>(
+                    predicate: #Predicate<PersistentShieldedOutgoingNote> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(shieldedOutgoingNoteDescriptor) {
+                    backgroundContext.delete(row)
+                }
+
+                let shieldedSyncStateDescriptor = FetchDescriptor<PersistentShieldedSyncState>(
+                    predicate: #Predicate<PersistentShieldedSyncState> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(shieldedSyncStateDescriptor) {
                     backgroundContext.delete(row)
                 }
 
