@@ -70,9 +70,10 @@ use crate::runtime::{block_on_worker, runtime};
 /// # Safety
 /// When `ptr` is non-null it must point to at least `len` readable
 /// bytes for the duration of this call.
-unsafe fn parse_optional_surplus_output(
+unsafe fn parse_optional_platform_address(
     ptr: *const u8,
     len: usize,
+    field_name: &str,
 ) -> Result<Option<PlatformAddress>, PlatformWalletFFIResult> {
     const PLATFORM_ADDRESS_LEN: usize = 21;
     if ptr.is_null() || len == 0 {
@@ -86,7 +87,7 @@ unsafe fn parse_optional_surplus_output(
     if len != PLATFORM_ADDRESS_LEN {
         return Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            format!("surplus_output must be exactly {PLATFORM_ADDRESS_LEN} bytes, got {len}"),
+            format!("{field_name} must be exactly {PLATFORM_ADDRESS_LEN} bytes, got {len}"),
         ));
     }
     let bytes = std::slice::from_raw_parts(ptr, len);
@@ -94,7 +95,7 @@ unsafe fn parse_optional_surplus_output(
         Ok(addr) => Ok(Some(addr)),
         Err(e) => Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            format!("invalid surplus_output platform address: {e}"),
+            format!("invalid {field_name} platform address: {e}"),
         )),
     }
 }
@@ -365,9 +366,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
     // Decode the REQUIRED fallback failure address (21 raw `PlatformAddress` bytes: 1-byte variant
     // tag + 20-byte hash). Reuses the same strict decoder as `surplus_output`, but here a null /
     // malformed address is a hard error (the fallback is mandatory for Type 20).
-    let send_to_address_on_creation_failure = match parse_optional_surplus_output(
+    let send_to_address_on_creation_failure = match parse_optional_platform_address(
         send_to_address_on_creation_failure_bytes,
         21,
+        "send_to_address_on_creation_failure_bytes",
     ) {
         Ok(Some(addr)) => addr,
         Ok(None) => {
@@ -602,8 +604,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
         }
     };
 
-    let surplus_output = match parse_optional_surplus_output(surplus_output_ptr, surplus_output_len)
-    {
+    let surplus_output = match parse_optional_platform_address(
+        surplus_output_ptr,
+        surplus_output_len,
+        "surplus_output",
+    ) {
         Ok(s) => s,
         Err(result) => return result,
     };
@@ -738,8 +743,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
         }
     };
 
-    let surplus_output = match parse_optional_surplus_output(surplus_output_ptr, surplus_output_len)
-    {
+    let surplus_output = match parse_optional_platform_address(
+        surplus_output_ptr,
+        surplus_output_len,
+        "surplus_output",
+    ) {
         Ok(s) => s,
         Err(result) => return result,
     };

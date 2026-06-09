@@ -375,6 +375,28 @@ mod tests {
                         MasternodeVoteTransitionV0::default(),
                     )),
                 ),
+                {
+                    use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+                    use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+                    (
+                        "IdentityCreateFromShieldedPool",
+                        StateTransition::IdentityCreateFromShieldedPool(
+                            IdentityCreateFromShieldedPoolTransition::V0(
+                                IdentityCreateFromShieldedPoolTransitionV0 {
+                                    public_keys: vec![],
+                                    denomination: 0,
+                                    send_to_address_on_creation_failure:
+                                        dpp::address_funds::PlatformAddress::P2pkh([0u8; 20]),
+                                    actions: vec![],
+                                    anchor: [0u8; 32],
+                                    proof: vec![],
+                                    binding_signature: [0u8; 64],
+                                    identity_id: Default::default(),
+                                },
+                            ),
+                        ),
+                    )
+                },
             ];
             for (name, st) in transitions {
                 assert!(

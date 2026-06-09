@@ -118,6 +118,20 @@ where
         ));
     }
 
+    // Reject a non-member denomination before any (expensive) proving — Type 20 exits are a
+    // protocol-versioned fixed set, so an unsupported value would be rejected at `validate_structure`
+    // after the Orchard proof anyway. Fail fast.
+    let allowed_denominations = platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants
+        .shielded_identity_create_denominations;
+    if !allowed_denominations.contains(&denomination) {
+        return Err(ProtocolError::ShieldedBuildError(format!(
+            "denomination {denomination} is not a member of the allowed exit-denomination set {allowed_denominations:?}"
+        )));
+    }
+
     // Checked: a large spend set could otherwise overflow u64 (release builds wrap silently).
     let total_spent = spends
         .iter()
@@ -145,6 +159,15 @@ where
     let num_actions = spends.len().max(2);
     let fee =
         compute_shielded_identity_create_fee(num_actions, public_keys.len(), platform_version)?;
+
+    // The metered fee is carved from the denomination at execution; if the predicted fee already
+    // meets/exceeds it, the new identity could not be created with a positive balance (consensus
+    // rejects `total_fee >= denomination`). Fail fast rather than after proving.
+    if fee >= denomination {
+        return Err(ProtocolError::ShieldedBuildError(format!(
+            "predicted fee {fee} is not less than the denomination {denomination}; the new identity would have a non-positive balance"
+        )));
+    }
 
     // The id is derived from the SORTED spend nullifiers, which must be known BEFORE signing
     // because the id is part of the Orchard sighash. The nullifier of a spend is
@@ -184,11 +207,13 @@ where
     // The consensus binding re-derives the id from the on-wire action nullifiers. Assert the
     // bundle's published nullifiers reduce to the same id we bound, so a mismatch is caught here
     // (cheap) rather than as an opaque InvalidShieldedProofError after the ~30 s proof.
-    debug_assert_eq!(
-        identity_id,
-        derive_identity_id_from_actions(&sb.actions),
-        "bound identity id must match the id re-derived from the bundle's published nullifiers"
-    );
+    if identity_id != derive_identity_id_from_actions(&sb.actions) {
+        return Err(ProtocolError::ShieldedBuildError(
+            "bound identity id does not match the id re-derived from the bundle's published \
+             nullifiers"
+                .to_string(),
+        ));
+    }
 
     // Build the transition (denomination == value_balance EXACTLY) with the unsigned key set, purely
     // to obtain the canonical signable bytes the per-key proofs-of-possession must sign.

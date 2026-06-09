@@ -188,6 +188,10 @@ fn validate_state_rejects_when_identity_already_exists_at_derived_id() {
     // The identity-exists case is a FREE rejection (no chargeable fallback): an attacker cannot
     // choose a colliding derived id, so there is no spend to finalize.
     assert!(!result.is_valid(), "expected a consensus rejection");
+    assert!(
+        !result.has_data(),
+        "an identity-id collision must stay a free rejection — no fallback action"
+    );
     assert_matches!(
         result.errors.as_slice(),
         [ConsensusError::StateError(

@@ -173,6 +173,15 @@ mod tests {
             "changing the denomination must change the signable bytes"
         );
 
+        let mut other_failure_address = base.clone();
+        other_failure_address.send_to_address_on_creation_failure =
+            PlatformAddress::P2pkh([1u8; 20]);
+        assert_ne!(
+            base_bytes,
+            other_failure_address.signable_bytes().expect("signable bytes"),
+            "changing the failure-fallback address must change the signable bytes (non-redirectable)"
+        );
+
         // identity_id is excluded from the sighash (it is derived from the nullifiers), so changing
         // it alone must NOT change the signable bytes.
         let mut other_id = base.clone();
