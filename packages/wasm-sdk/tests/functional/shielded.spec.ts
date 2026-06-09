@@ -60,6 +60,7 @@ describe('Shielded queries', function describeShielded() {
         expect(note).to.be.instanceOf(sdk.ShieldedEncryptedNote);
         expect(note.cmx).to.be.instanceOf(Uint8Array);
         expect(note.nullifier).to.be.instanceOf(Uint8Array);
+        expect(note.cvNet).to.be.instanceOf(Uint8Array);
         expect(note.encryptedNote).to.be.instanceOf(Uint8Array);
       }
     });

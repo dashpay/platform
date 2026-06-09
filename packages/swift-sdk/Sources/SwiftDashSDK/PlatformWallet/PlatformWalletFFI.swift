@@ -36,6 +36,27 @@ typealias FFIByteTuple36 = (
     UInt8, UInt8, UInt8, UInt8
 )
 
+/// 43-byte fixed tuple — the raw Orchard recipient address carried by
+/// the shielded outgoing-note (OVK send-history) FFI structs
+/// (`ShieldedOutgoingNoteFFI.recipient` /
+/// `ShieldedOutgoingNoteRestoreFFI.recipient`, both `uint8_t[43]`).
+typealias FFIByteTuple43 = (
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8
+)
+
+/// Zeroed `FFIByteTuple43` literal — spares the 43-element
+/// initializer at every `loadShieldedOutgoingNotes` call site.
+let ffiByteTuple43Zero: FFIByteTuple43 = (
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+)
+
 // MARK: - Mnemonic-resolver callback result codes
 
 /// Mirrors the Rust `mnemonic_resolver_result` constants in

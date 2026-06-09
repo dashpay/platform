@@ -120,6 +120,13 @@ struct StorageExplorerView: View {
                 ShieldedNoteStorageListView(network: network)
             }
             modelRow(
+                "Shielded Sent Notes",
+                icon: "paperplane",
+                type: PersistentShieldedOutgoingNote.self
+            ) {
+                ShieldedOutgoingNoteStorageListView(network: network)
+            }
+            modelRow(
                 "Shielded Sync State",
                 icon: "arrow.triangle.2.circlepath",
                 type: PersistentShieldedSyncState.self
@@ -263,6 +270,9 @@ struct StorageExplorerView: View {
             walletsOnNetwork.contains($0.walletId)
         }
         filteredCount(PersistentShieldedNote.self) {
+            walletsOnNetwork.contains($0.walletId)
+        }
+        filteredCount(PersistentShieldedOutgoingNote.self) {
             walletsOnNetwork.contains($0.walletId)
         }
         filteredCount(PersistentShieldedSyncState.self) {

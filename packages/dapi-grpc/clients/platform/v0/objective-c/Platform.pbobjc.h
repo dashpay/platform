@@ -90,6 +90,10 @@ CF_EXTERN_C_BEGIN
 @class GetDataContractsResponse_DataContractEntry;
 @class GetDataContractsResponse_DataContracts;
 @class GetDataContractsResponse_GetDataContractsResponseV0;
+@class GetDocumentHistoryRequest_GetDocumentHistoryRequestV0;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory;
+@class GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry;
 @class GetDocumentsRequest_DocumentFieldValue;
 @class GetDocumentsRequest_DocumentFieldValue_ValueList;
 @class GetDocumentsRequest_GetDocumentsRequestV0;
@@ -3745,6 +3749,169 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ResultData : GP
  * Clears whatever value was set for the oneof 'variant'.
  **/
 void GetDocumentsResponse_GetDocumentsResponseV1_ResultData_ClearVariantOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_ResultData *message);
+
+#pragma mark - GetDocumentHistoryRequest
+
+typedef GPB_ENUM(GetDocumentHistoryRequest_FieldNumber) {
+  GetDocumentHistoryRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetDocumentHistoryRequest_Version_OneOfCase) {
+  GetDocumentHistoryRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentHistoryRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetDocumentHistoryRequest : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentHistoryRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryRequest_GetDocumentHistoryRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetDocumentHistoryRequest_ClearVersionOneOfCase(GetDocumentHistoryRequest *message);
+
+#pragma mark - GetDocumentHistoryRequest_GetDocumentHistoryRequestV0
+
+typedef GPB_ENUM(GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber) {
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_DataContractId = 1,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_DocumentTypeName = 2,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_DocumentId = 3,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_Limit = 4,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_Offset = 5,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_StartAtMs = 6,
+  GetDocumentHistoryRequest_GetDocumentHistoryRequestV0_FieldNumber_Prove = 7,
+};
+
+GPB_FINAL @interface GetDocumentHistoryRequest_GetDocumentHistoryRequestV0 : GPBMessage
+
+/** The ID of the data contract */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
+
+/** The document type name */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
+
+/** The document ID */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *documentId;
+
+/** The maximum number of history entries to return */
+@property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *limit;
+/** Test to see if @c limit has been set. */
+@property(nonatomic, readwrite) BOOL hasLimit;
+
+/** The offset for pagination through the document history */
+@property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *offset;
+/** Test to see if @c offset has been set. */
+@property(nonatomic, readwrite) BOOL hasOffset;
+
+/** Only return results after this time in milliseconds */
+@property(nonatomic, readwrite) uint64_t startAtMs;
+
+/** Flag to request a proof as the response */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetDocumentHistoryResponse
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_FieldNumber) {
+  GetDocumentHistoryResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_Version_OneOfCase) {
+  GetDocumentHistoryResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentHistoryResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetDocumentHistoryResponse : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentHistoryResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetDocumentHistoryResponse_ClearVersionOneOfCase(GetDocumentHistoryResponse *message);
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV0
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_FieldNumber_DocumentHistory = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_FieldNumber_Proof = 2,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase_DocumentHistory = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_Result_OneOfCase resultOneOfCase;
+
+/** The actual history of the document */
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory *documentHistory;
+
+/** Cryptographic proof of the document history, if requested */
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/** Metadata about the blockchain state */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_ClearResultOneOfCase(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0 *message);
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry_FieldNumber_Date = 1,
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry_FieldNumber_Value = 2,
+};
+
+/**
+ * Represents a single entry in a document's history
+ **/
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry : GPBMessage
+
+/** The date of the history entry */
+@property(nonatomic, readwrite) uint64_t date;
+
+/** The value of the document at this point in history */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *value;
+
+@end
+
+#pragma mark - GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory
+
+typedef GPB_ENUM(GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory_FieldNumber) {
+  GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory_FieldNumber_DocumentEntriesArray = 1,
+};
+
+/**
+ * Collection of document history entries
+ **/
+GPB_FINAL @interface GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistory : GPBMessage
+
+/** List of history entries */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentHistoryResponse_GetDocumentHistoryResponseV0_DocumentHistoryEntry*> *documentEntriesArray;
+/** The number of items in @c documentEntriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger documentEntriesArray_Count;
+
+@end
 
 #pragma mark - GetIdentityByPublicKeyHashRequest
 
@@ -10030,6 +10197,7 @@ typedef GPB_ENUM(GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResp
   GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_Nullifier = 1,
   GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_Cmx = 2,
   GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_EncryptedNote = 3,
+  GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote_FieldNumber_CvNet = 4,
 };
 
 GPB_FINAL @interface GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote : GPBMessage
@@ -10042,6 +10210,9 @@ GPB_FINAL @interface GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotes
 
 /** encrypted note payload (epk + enc_ciphertext + out_ciphertext) */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *encryptedNote;
+
+/** 32-byte value commitment (stored unencrypted, for OVK recovery of outgoing notes) */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *cvNet;
 
 @end
 

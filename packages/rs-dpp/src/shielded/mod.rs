@@ -26,10 +26,11 @@ pub use sighash::{
     unshield_extra_sighash_data_v0,
 };
 
-/// Permanent storage bytes per shielded action: 312 bytes total.
+/// Permanent storage bytes per shielded action: 344 bytes total.
 ///
-/// - 280 bytes in the BulkAppendTree: 32 (`cmx`, the note commitment) + 32
-///   (`rho`) + 216 (the encrypted note ciphertext).
+/// - 312 bytes in the BulkAppendTree: 32 (`cmx`, the note commitment) + 32
+///   (`rho`) + 32 (`cv_net`, the value commitment, stored unencrypted for OVK
+///   recovery) + 216 (the encrypted note ciphertext).
 /// - 32 bytes in the nullifier tree.
 ///
 /// The 216-byte encrypted note is Orchard's `TransmittedNoteCiphertext`, laid
@@ -51,7 +52,7 @@ pub use sighash::{
 /// instead of Zcash's 512 — the dashpay `orchard` fork makes the memo size a
 /// type parameter (`MemoSize`) — which is why each note is 216 bytes
 /// (`ENCRYPTED_NOTE_SIZE`) rather than Zcash Orchard's ~692.
-pub const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 312;
+pub const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 344;
 
 /// Calibrated effective storage-byte cost of the Core withdrawal document a
 /// `ShieldedWithdrawal` creates.

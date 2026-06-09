@@ -124,8 +124,10 @@ mod tests {
             cmx[0] = i + 1;
             let mut rho = [0u8; 32];
             rho[0] = i + 100;
+            let mut cv_net = [0u8; 32];
+            cv_net[0] = i + 200;
 
-            let ops = Drive::insert_note_op(rho, cmx, vec![i; 216], platform_version)
+            let ops = Drive::insert_note_op(rho, cmx, cv_net, vec![i; 216], platform_version)
                 .expect("build note op");
             let grove_ops =
                 crate::fees::op::LowLevelDriveOperation::grovedb_operations_batch_consume(ops);

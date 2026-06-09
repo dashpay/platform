@@ -552,6 +552,7 @@ fn converter_ops_preserve_sum_tree_credit_conservation() {
             notes: vec![ShieldedActionNote {
                 nullifier: [0x10; 32],
                 cmx: [0x20; 32],
+                cv_net: [0x30; 32],
                 encrypted_note: vec![0x77; 216],
             }],
             anchor: [0x07; 32],

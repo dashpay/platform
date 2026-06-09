@@ -29,11 +29,10 @@ use dapi_grpc::platform::v0::{
     GetTotalCreditsInPlatformRequest, KeyRequestType,
 };
 use dapi_grpc::platform::v0::{
-    get_most_recent_shielded_anchor_request, get_nullifiers_trunk_state_request,
-    get_shielded_anchors_request, get_shielded_encrypted_notes_request,
-    get_shielded_notes_count_request, get_shielded_nullifiers_request,
-    get_shielded_pool_state_request, get_status_request, GetContestedResourceIdentityVotesRequest,
-    GetMostRecentShieldedAnchorRequest, GetNullifiersTrunkStateRequest,
+    get_most_recent_shielded_anchor_request, get_shielded_anchors_request,
+    get_shielded_encrypted_notes_request, get_shielded_notes_count_request,
+    get_shielded_nullifiers_request, get_shielded_pool_state_request, get_status_request,
+    GetContestedResourceIdentityVotesRequest, GetMostRecentShieldedAnchorRequest,
     GetPrefundedSpecializedBalanceRequest, GetShieldedAnchorsRequest,
     GetShieldedEncryptedNotesRequest, GetShieldedNotesCountRequest, GetShieldedNullifiersRequest,
     GetShieldedPoolStateRequest, GetStatusRequest, GetTokenDirectPurchasePricesRequest,
@@ -51,8 +50,7 @@ use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuer
 use drive::query::{DriveDocumentQuery, VotePollsByEndDateDriveQuery};
 use drive_proof_verifier::from_request::TryFromRequest;
 use drive_proof_verifier::types::{
-    KeysInPath, NoParamQuery, NullifiersTrunkQuery, ShieldedEncryptedNotesQuery,
-    ShieldedNullifiersQuery,
+    KeysInPath, NoParamQuery, ShieldedEncryptedNotesQuery, ShieldedNullifiersQuery,
 };
 use rs_dapi_client::transport::TransportRequest;
 use std::collections::BTreeSet;
@@ -1308,30 +1306,6 @@ impl Query<GetShieldedNullifiersRequest> for ShieldedNullifiersQuery {
                 get_shielded_nullifiers_request::GetShieldedNullifiersRequestV0 {
                     nullifiers: self.0.iter().map(|n| n.to_vec()).collect(),
                     prove,
-                },
-            )),
-        })
-    }
-}
-
-impl Query<GetNullifiersTrunkStateRequest> for NullifiersTrunkQuery {
-    fn query(
-        &self,
-        settings: &crate::platform::QuerySettings<'_>,
-    ) -> Result<GetNullifiersTrunkStateRequest, Error> {
-        let prove = settings.prove;
-        if !prove {
-            unimplemented!("queries without proofs are not supported yet");
-        }
-
-        Ok(GetNullifiersTrunkStateRequest {
-            version: Some(get_nullifiers_trunk_state_request::Version::V0(
-                get_nullifiers_trunk_state_request::GetNullifiersTrunkStateRequestV0 {
-                    pool_type: self.pool_type,
-                    pool_identifier: self
-                        .pool_identifier
-                        .map(|id| id.to_vec())
-                        .unwrap_or_default(),
                 },
             )),
         })

@@ -91213,6 +91213,7 @@ $root.org = (function() {
                                  * @property {Uint8Array|null} [nullifier] EncryptedNote nullifier
                                  * @property {Uint8Array|null} [cmx] EncryptedNote cmx
                                  * @property {Uint8Array|null} [encryptedNote] EncryptedNote encryptedNote
+                                 * @property {Uint8Array|null} [cvNet] EncryptedNote cvNet
                                  */
 
                                 /**
@@ -91255,6 +91256,14 @@ $root.org = (function() {
                                 EncryptedNote.prototype.encryptedNote = $util.newBuffer([]);
 
                                 /**
+                                 * EncryptedNote cvNet.
+                                 * @member {Uint8Array} cvNet
+                                 * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote
+                                 * @instance
+                                 */
+                                EncryptedNote.prototype.cvNet = $util.newBuffer([]);
+
+                                /**
                                  * Creates a new EncryptedNote instance using the specified properties.
                                  * @function create
                                  * @memberof org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote
@@ -91284,6 +91293,8 @@ $root.org = (function() {
                                         writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.cmx);
                                     if (message.encryptedNote != null && Object.hasOwnProperty.call(message, "encryptedNote"))
                                         writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.encryptedNote);
+                                    if (message.cvNet != null && Object.hasOwnProperty.call(message, "cvNet"))
+                                        writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.cvNet);
                                     return writer;
                                 };
 
@@ -91326,6 +91337,9 @@ $root.org = (function() {
                                             break;
                                         case 3:
                                             message.encryptedNote = reader.bytes();
+                                            break;
+                                        case 4:
+                                            message.cvNet = reader.bytes();
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -91371,6 +91385,9 @@ $root.org = (function() {
                                     if (message.encryptedNote != null && message.hasOwnProperty("encryptedNote"))
                                         if (!(message.encryptedNote && typeof message.encryptedNote.length === "number" || $util.isString(message.encryptedNote)))
                                             return "encryptedNote: buffer expected";
+                                    if (message.cvNet != null && message.hasOwnProperty("cvNet"))
+                                        if (!(message.cvNet && typeof message.cvNet.length === "number" || $util.isString(message.cvNet)))
+                                            return "cvNet: buffer expected";
                                     return null;
                                 };
 
@@ -91401,6 +91418,11 @@ $root.org = (function() {
                                             $util.base64.decode(object.encryptedNote, message.encryptedNote = $util.newBuffer($util.base64.length(object.encryptedNote)), 0);
                                         else if (object.encryptedNote.length >= 0)
                                             message.encryptedNote = object.encryptedNote;
+                                    if (object.cvNet != null)
+                                        if (typeof object.cvNet === "string")
+                                            $util.base64.decode(object.cvNet, message.cvNet = $util.newBuffer($util.base64.length(object.cvNet)), 0);
+                                        else if (object.cvNet.length >= 0)
+                                            message.cvNet = object.cvNet;
                                     return message;
                                 };
 
@@ -91439,6 +91461,13 @@ $root.org = (function() {
                                             if (options.bytes !== Array)
                                                 object.encryptedNote = $util.newBuffer(object.encryptedNote);
                                         }
+                                        if (options.bytes === String)
+                                            object.cvNet = "";
+                                        else {
+                                            object.cvNet = [];
+                                            if (options.bytes !== Array)
+                                                object.cvNet = $util.newBuffer(object.cvNet);
+                                        }
                                     }
                                     if (message.nullifier != null && message.hasOwnProperty("nullifier"))
                                         object.nullifier = options.bytes === String ? $util.base64.encode(message.nullifier, 0, message.nullifier.length) : options.bytes === Array ? Array.prototype.slice.call(message.nullifier) : message.nullifier;
@@ -91446,6 +91475,8 @@ $root.org = (function() {
                                         object.cmx = options.bytes === String ? $util.base64.encode(message.cmx, 0, message.cmx.length) : options.bytes === Array ? Array.prototype.slice.call(message.cmx) : message.cmx;
                                     if (message.encryptedNote != null && message.hasOwnProperty("encryptedNote"))
                                         object.encryptedNote = options.bytes === String ? $util.base64.encode(message.encryptedNote, 0, message.encryptedNote.length) : options.bytes === Array ? Array.prototype.slice.call(message.encryptedNote) : message.encryptedNote;
+                                    if (message.cvNet != null && message.hasOwnProperty("cvNet"))
+                                        object.cvNet = options.bytes === String ? $util.base64.encode(message.cvNet, 0, message.cvNet.length) : options.bytes === Array ? Array.prototype.slice.call(message.cvNet) : message.cvNet;
                                     return object;
                                 };
 
