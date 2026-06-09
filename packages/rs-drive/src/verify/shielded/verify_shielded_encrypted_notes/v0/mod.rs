@@ -1,3 +1,4 @@
+use super::VerifiedShieldedEncryptedNote;
 use crate::drive::shielded::paths::{shielded_credit_pool_path_vec, SHIELDED_NOTES_KEY};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -27,7 +28,6 @@ impl Drive {
     /// ..)` — field 0. This reuses the exact `PathQuery` + decode the
     /// standalone `GetShieldedNotesCount` verifier would use, but against
     /// the note-fetch proof we already have.
-    #[allow(clippy::type_complexity)]
     pub(super) fn verify_shielded_encrypted_notes_v0(
         proof: &[u8],
         start_index: u64,
@@ -35,7 +35,7 @@ impl Drive {
         max_elements: u32,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>, u64), Error> {
+    ) -> Result<(RootHash, Vec<VerifiedShieldedEncryptedNote>, u64), Error> {
         if max_elements == 0 {
             return Err(Error::Drive(DriveError::CorruptedElementType(
                 "max_elements must be greater than zero",
@@ -100,13 +100,12 @@ impl Drive {
                             "encrypted note value too short: expected more than 96 bytes (cmx + nullifier + cv_net + encrypted_note)",
                         )));
                     }
-                    // Return (cmx, nullifier, cv_net, encrypted_note)
-                    notes.push((
-                        value[..32].to_vec(),
-                        value[32..64].to_vec(),
-                        value[64..96].to_vec(),
-                        value[96..].to_vec(),
-                    ));
+                    notes.push(VerifiedShieldedEncryptedNote {
+                        cmx: value[..32].to_vec(),
+                        nullifier: value[32..64].to_vec(),
+                        cv_net: value[64..96].to_vec(),
+                        encrypted_note: value[96..].to_vec(),
+                    });
                 }
                 Some(_) => {
                     return Err(Error::Drive(DriveError::CorruptedElementType(
@@ -310,17 +309,17 @@ mod tests {
         // cv_net must round-trip end-to-end (insert → store → prove → verify).
         // Notes come back in tree order, so note at output index `i` is the
         // one inserted with `cv_net_for(i)`.
-        for (i, (cmx, _nullifier, cv_net, _encrypted_note)) in notes.iter().enumerate() {
+        for (i, note) in notes.iter().enumerate() {
             let expected_cv_net = cv_net_for(i as u64);
             assert_eq!(
-                cv_net.as_slice(),
+                note.cv_net.as_slice(),
                 expected_cv_net.as_slice(),
                 "cv_net for note {i} must round-trip through prove→verify"
             );
             // cv_net is a distinct field, not an alias of cmx.
             assert_ne!(
-                cv_net.as_slice(),
-                cmx.as_slice(),
+                note.cv_net.as_slice(),
+                note.cmx.as_slice(),
                 "cv_net must be a separate field from cmx"
             );
         }
