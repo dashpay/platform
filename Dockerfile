@@ -409,6 +409,7 @@ COPY --parents \
     packages/rs-context-provider \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
+    packages/rs-platform-wallet-storage \
     packages/wasm-dpp \
     packages/wasm-dpp2 \
     packages/wasm-drive-verify \
@@ -533,6 +534,7 @@ COPY --parents \
     packages/rs-context-provider \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
+    packages/rs-platform-wallet-storage \
     packages/wasm-dpp \
     packages/wasm-dpp2 \
     packages/wasm-drive-verify \
@@ -944,6 +946,7 @@ COPY --parents \
     packages/rs-sdk-ffi \
     packages/rs-unified-sdk-ffi \
     packages/rs-platform-wallet \
+    packages/rs-platform-wallet-storage \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
