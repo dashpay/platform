@@ -92,6 +92,13 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         operations: Vec<DriveOperation<'a>>,
         /// fees derived from value_balance to add to the fee pool
         fees_to_add_to_pool: Credits,
+        /// `true` ONLY for the `IdentityCreateFromShieldedPool` chargeable-failure fallback. It
+        /// authorizes the executor to apply `operations` even when consensus errors are attached
+        /// (the spend is finalized to the fallback address minus the penalty). For every ordinary
+        /// shielded spend (Unshield / ShieldedTransfer / ShieldedWithdrawal) this is `false`, so an
+        /// error-bearing event of those types is NEVER applied — the apply-despite-errors contract
+        /// is type-enforced here, not just by convention.
+        chargeable_failure: bool,
     },
     /// A drive event that is paid from an asset lock
     PaidFromAssetLock {
@@ -537,15 +544,20 @@ impl ExecutionEvent<'_> {
                 Ok(ExecutionEvent::PaidFromShieldedPool {
                     operations,
                     fees_to_add_to_pool: fee_amount,
+                    chargeable_failure: false,
                 })
             }
             StateTransitionAction::UnshieldAction(ref unshield_action) => {
                 let fee_amount = unshield_action.fee_amount();
+                // An ordinary Unshield is always `false`; only the IdentityCreateFromShieldedPool
+                // duplicate-key fallback (which also surfaces as an UnshieldAction) sets it `true`.
+                let chargeable_failure = unshield_action.chargeable_failure();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(ExecutionEvent::PaidFromShieldedPool {
                     operations,
                     fees_to_add_to_pool: fee_amount,
+                    chargeable_failure,
                 })
             }
             StateTransitionAction::ShieldFromAssetLockAction(ref shield_from_asset_lock_action) => {
@@ -581,6 +593,7 @@ impl ExecutionEvent<'_> {
                 Ok(ExecutionEvent::PaidFromShieldedPool {
                     operations,
                     fees_to_add_to_pool: fee_amount,
+                    chargeable_failure: false,
                 })
             }
             StateTransitionAction::IdentityCreateFromShieldedPoolAction(ref action_ref) => {

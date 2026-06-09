@@ -217,27 +217,29 @@ impl StateTransitionStateValidation for StateTransition {
                 // the success action to `validate_state`, which branches success-vs-Unshield-fallback
                 // on the identity-creation state checks.
                 // Type 20 keeps `has_advanced_structure_validation_with_state() == false`, so the
-                // processor never pre-builds the action — it always arrives `None`. Assert that
-                // invariant so a future change that starts pre-building it fails loudly in tests
-                // rather than silently routing around `transform`'s pool/anchor/nullifier checks.
-                debug_assert!(
-                    action.is_none(),
-                    "IdentityCreateFromShieldedPool must not be pre-built by the processor \
-                     (advanced_structure_with_state is false)"
-                );
-                let action = if let Some(action) = action {
-                    action
-                } else {
-                    let transform_result = st
-                        .transform_into_action_for_identity_create_from_shielded_pool_transition(
-                            platform,
-                            execution_context,
-                            tx,
-                        )?;
-                    if !transform_result.is_valid_with_data() {
-                        return Ok(transform_result);
+                // processor never pre-builds the action — it always arrives `None`, and we build the
+                // optimistic success action here via `transform` (which runs the pool/anchor/
+                // nullifier/balance checks). Fail CLOSED at runtime if that invariant is ever broken:
+                // using a pre-built action would silently route around those checks.
+                let action = match action {
+                    Some(_) => {
+                        return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "IdentityCreateFromShieldedPool must not be pre-built by the processor \
+                             (advanced_structure_with_state is false)",
+                        )));
                     }
-                    transform_result.into_data()?
+                    None => {
+                        let transform_result = st
+                            .transform_into_action_for_identity_create_from_shielded_pool_transition(
+                                platform,
+                                execution_context,
+                                tx,
+                            )?;
+                        if !transform_result.is_valid_with_data() {
+                            return Ok(transform_result);
+                        }
+                        transform_result.into_data()?
+                    }
                 };
                 let StateTransitionAction::IdentityCreateFromShieldedPoolAction(action) = action
                 else {

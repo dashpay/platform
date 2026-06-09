@@ -56,6 +56,9 @@ use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::{block_on_worker, runtime};
 
+/// A serialized `PlatformAddress` is exactly 21 bytes (1-byte variant tag + 20-byte hash).
+const PLATFORM_ADDRESS_LEN: usize = 21;
+
 /// Parse an optional platform address supplied as raw `PlatformAddress`
 /// storage bytes (21 bytes: 1-byte variant tag + 20-byte hash — the
 /// encoding `PlatformAddress::to_bytes()` produces and
@@ -77,7 +80,6 @@ unsafe fn parse_optional_platform_address(
     len: usize,
     field_name: &str,
 ) -> Result<Option<PlatformAddress>, PlatformWalletFFIResult> {
-    const PLATFORM_ADDRESS_LEN: usize = 21;
     if ptr.is_null() || len == 0 {
         return Ok(None);
     }
@@ -98,6 +100,25 @@ unsafe fn parse_optional_platform_address(
         Err(e) => Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!("invalid {field_name} platform address: {e}"),
+        )),
+    }
+}
+
+/// Decode a REQUIRED `PlatformAddress` from a raw pointer with no companion length argument over the
+/// C ABI — the caller's safety contract guarantees exactly [`PLATFORM_ADDRESS_LEN`] readable bytes.
+/// A null pointer or a malformed address is a hard error. `field_name` names the parameter in errors.
+///
+/// # Safety
+/// `ptr` must point to at least [`PLATFORM_ADDRESS_LEN`] readable bytes for the duration of the call.
+unsafe fn parse_required_platform_address(
+    ptr: *const u8,
+    field_name: &str,
+) -> Result<PlatformAddress, PlatformWalletFFIResult> {
+    match parse_optional_platform_address(ptr, PLATFORM_ADDRESS_LEN, field_name)? {
+        Some(addr) => Ok(addr),
+        None => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("{field_name} is required ({PLATFORM_ADDRESS_LEN} PlatformAddress bytes)"),
         )),
     }
 }
@@ -365,21 +386,14 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         );
     }
 
-    // Decode the REQUIRED fallback failure address (21 raw `PlatformAddress` bytes: 1-byte variant
-    // tag + 20-byte hash). Reuses the same strict decoder as `surplus_output`, but here a null /
-    // malformed address is a hard error (the fallback is mandatory for Type 20).
-    let send_to_address_on_creation_failure = match parse_optional_platform_address(
+    // Decode the REQUIRED fallback failure address (raw `PlatformAddress` bytes: 1-byte variant tag +
+    // 20-byte hash). The fallback is mandatory for Type 20, so a null / malformed address is a hard
+    // error. No companion length arg crosses the C ABI — the helper enforces the 21-byte contract.
+    let send_to_address_on_creation_failure = match parse_required_platform_address(
         send_to_address_on_creation_failure_bytes,
-        21,
         "send_to_address_on_creation_failure_bytes",
     ) {
-        Ok(Some(addr)) => addr,
-        Ok(None) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                "`send_to_address_on_creation_failure_bytes` is required (21 PlatformAddress bytes)",
-            );
-        }
+        Ok(addr) => addr,
         Err(result) => return result,
     };
 

@@ -474,6 +474,7 @@ mod tests {
             ExecutionEvent::PaidFromShieldedPool {
                 operations: vec![],
                 fees_to_add_to_pool: 0,
+                chargeable_failure: false,
             },
             ExecutionEvent::Free { operations: vec![] },
             ExecutionEvent::PaidFromAssetLockWithoutIdentity {

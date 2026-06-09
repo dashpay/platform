@@ -116,6 +116,10 @@ impl IdentityCreateFromShieldedPoolStateTransitionStateValidationV0
                 anchor: *action.anchor(),
                 fee_amount: penalty,
                 current_total_balance: action.current_total_balance(),
+                // This is the chargeable failure of an identity create: the `PaidFromShieldedPool`
+                // execution event reads this flag to apply its ops despite the attached collision
+                // errors (so the apply-despite-errors path is type-enforced, not comment-enforced).
+                chargeable_failure: true,
             });
 
             Ok(ConsensusValidationResult::new_with_data_and_errors(

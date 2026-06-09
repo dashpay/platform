@@ -548,19 +548,30 @@ where
             ExecutionEvent::PaidFromShieldedPool {
                 operations,
                 fees_to_add_to_pool,
-                ..
+                chargeable_failure,
             } => {
-                // Apply the ops REGARDLESS of attached consensus errors. The ordinary shielded
-                // spends (Unshield / ShieldedTransfer / ShieldedWithdrawal) only ever reach here
-                // with NO errors (they are data-only on success, error-only on rejection, so they
-                // never carry data+errors). The IdentityCreateFromShieldedPool FALLBACK is the only
-                // event that arrives WITH errors, and it is a CHARGEABLE failure: the spend must
-                // still be finalized (nullifiers consumed, pool debited, fallback address credited)
-                // and the penalty booked to the fee pools — exactly like `PaidFromAddressInputs`'
-                // `UnsuccessfulPaidExecution` path for the `BumpAddressInputNonces` penalty. If the
-                // ops were skipped (the previous `errors.is_empty()` gate), the nullifiers would NOT
-                // be consumed, letting an attacker force repeated (expensive) Halo 2 verification of
-                // the same valid-proof-but-colliding-key transition for free.
+                // An error-bearing `PaidFromShieldedPool` is legitimate ONLY for the
+                // `IdentityCreateFromShieldedPool` chargeable fallback (`chargeable_failure == true`):
+                // the spend must still be finalized (nullifiers consumed, pool debited, fallback
+                // address credited) and the penalty booked — exactly like `PaidFromAddressInputs`'
+                // `UnsuccessfulPaidExecution` path for the `BumpAddressInputNonces` penalty. If those
+                // ops were skipped, the nullifiers would NOT be consumed, letting an attacker force
+                // repeated (expensive) Halo 2 verification of the same valid-proof-but-colliding-key
+                // transition for free.
+                //
+                // Every ordinary shielded spend (Unshield / ShieldedTransfer / ShieldedWithdrawal) is
+                // data-only on success and error-only on rejection, so it NEVER carries data+errors
+                // here and always has `chargeable_failure == false`. If one ever did (a future misuse
+                // of `new_with_data_and_errors`), fail SAFE — do NOT commit a side-effectful spend or
+                // pay the proposer for a rejected transition — and surface the divergence in tests.
+                if !consensus_errors.is_empty() && !chargeable_failure {
+                    debug_assert!(
+                        false,
+                        "a non-fallback PaidFromShieldedPool must not carry consensus errors"
+                    );
+                    return Ok(UnpaidConsensusExecutionError(consensus_errors));
+                }
+
                 let applied_fees = self
                     .drive
                     .apply_drive_operations(
