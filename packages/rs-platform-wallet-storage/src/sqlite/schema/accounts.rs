@@ -152,6 +152,24 @@ pub fn apply_pools(
             pool_type,
             payload,
         ])?;
+        // Mirror every snapshot address into `core_derived_addresses` (same
+        // tx) so a UTXO landing on a pool address resolves its account even
+        // when no live derive event preceded it (genesis-rescan). The shared
+        // helper keeps these rows identical to the live derive path.
+        for info in &entry.addresses {
+            let address = info.address.to_string();
+            let path =
+                crate::sqlite::schema::core_state::derivation_path_label(pool_type, info.index);
+            crate::sqlite::schema::core_state::upsert_derived_address_row(
+                tx,
+                wallet_id,
+                account_type,
+                i64::from(account_index),
+                &address,
+                &path,
+                info.used,
+            )?;
+        }
     }
     Ok(())
 }

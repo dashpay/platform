@@ -219,9 +219,11 @@ pub enum WalletStorageError {
     },
 
     /// An unspent UTXO named an address absent from
-    /// `core_derived_addresses`, so its account index can't be resolved;
-    /// persisting it would mis-file live funds, so the write is refused.
-    /// Spent-only placeholder rows tolerate a missing mapping.
+    /// `core_derived_addresses`, so its account index can't be resolved.
+    /// Retained as a fatal-classified typed marker; the apply path no
+    /// longer raises it — it skips such a UTXO (logged) so one
+    /// unresolvable row never aborts a whole flush, and the balance
+    /// re-warms when the address later derives.
     #[error("unspent utxo address {address} is not in core_derived_addresses")]
     UtxoAddressNotDerived { address: String },
 

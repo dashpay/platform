@@ -861,7 +861,7 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// # }
     /// ```
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
-        let conn = self.conn().map_err(PersistenceError::from)?;
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
         let mut state = ClientStartState::default();
 
         let addrs_all = schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
@@ -900,6 +900,22 @@ impl PlatformWalletPersistence for SqlitePersister {
                     hex::encode(wallet_id)
                 ))
             })?;
+
+            // Repair already-persisted DBs whose `core_derived_addresses` was
+            // never populated from pools: rehydrate it from the snapshots so
+            // the next sync's UTXO writer can resolve pool-address accounts.
+            // No-op when the table already has rows for this wallet.
+            {
+                let tx = conn
+                    .transaction()
+                    .map_err(WalletStorageError::from)
+                    .map_err(PersistenceError::from)?;
+                schema::core_state::rehydrate_derived_addresses_from_pools(&tx, &wallet_id)
+                    .map_err(PersistenceError::from)?;
+                tx.commit()
+                    .map_err(WalletStorageError::from)
+                    .map_err(PersistenceError::from)?;
+            }
 
             let account_manifest =
                 schema::accounts::load_state(&conn, &wallet_id).map_err(PersistenceError::from)?;

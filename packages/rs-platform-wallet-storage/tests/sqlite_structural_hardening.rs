@@ -170,11 +170,14 @@ fn multi_account_utxos_bucket_to_real_account() {
 }
 
 /// A NEW unspent UTXO whose address is absent from
-/// `core_derived_addresses` cannot resolve an owning account, so the
-/// write is refused with the typed `UtxoAddressNotDerived` instead of
-/// silently mis-filing live funds under account 0.
+/// `core_derived_addresses` cannot resolve an owning account. Rather than
+/// mis-filing live funds under account 0 (corruption) or aborting the
+/// whole flush (the genesis-rescan fatal loop), the writer SKIPS just
+/// that row: `apply` returns `Ok`, no `core_utxos` row is written, and
+/// the surrounding records still commit. The address re-warms its
+/// balance once it later derives — funds-safe.
 #[test]
-fn unspent_utxo_on_undeclared_address_is_rejected() {
+fn unspent_utxo_on_undeclared_address_is_skipped() {
     use platform_wallet_storage::sqlite::schema::core_state;
 
     let (persister, _tmp, _path) = fresh_persister();
@@ -182,17 +185,23 @@ fn unspent_utxo_on_undeclared_address_is_rejected() {
     ensure_wallet_meta(&persister, &w);
 
     let addr_unknown = p2pkh(0xEE);
-    let mut conn = persister.lock_conn_for_test();
-    let cs = CoreChangeSet {
-        new_utxos: vec![make_utxo(&addr_unknown, 0, 3000)],
-        ..Default::default()
-    };
-    let tx = conn.transaction().unwrap();
-    let err = core_state::apply(&tx, &w, &cs)
-        .expect_err("unspent UTXO on an undeclared address must error");
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let cs = CoreChangeSet {
+            new_utxos: vec![make_utxo(&addr_unknown, 0, 3000)],
+            ..Default::default()
+        };
+        let tx = conn.transaction().unwrap();
+        core_state::apply(&tx, &w, &cs)
+            .expect("an undeclared-address unspent UTXO must be skipped, not error");
+        tx.commit().unwrap();
+    }
+
+    let conn = persister.lock_conn_for_test();
+    let by_account = core_state::list_unspent_utxos(&conn, &w).unwrap();
     assert!(
-        matches!(err, WalletStorageError::UtxoAddressNotDerived { .. }),
-        "expected UtxoAddressNotDerived, got {err:?}"
+        by_account.is_empty(),
+        "the unresolvable unspent UTXO must be skipped, leaving no core_utxos row"
     );
 }
 
