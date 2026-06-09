@@ -45,7 +45,7 @@ async fn sh_026_anchor_mismatch() {
     if !adversarial_enabled() {
         tracing::info!(
             target: "platform_wallet::e2e::cases::sh_026",
-            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL unset — abuse case skipped (no-op pass)"
+            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL set to a falsy value — abuse case opted out (no-op pass)"
         );
         return;
     }

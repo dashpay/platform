@@ -23,7 +23,11 @@ use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
 
-const FUNDING_CREDITS: u64 = 1_700_000_000;
+// `select_shield_inputs` claims greedily from the smallest-key address,
+// so all NUM_NOTES sequential shields concentrate on one funded address.
+// Size every funded address to survive all of them:
+// `NUM_NOTES × (SHIELD_EACH + ~1.63e8 fee) + 1e9 reserve` (see `sh_010`).
+const FUNDING_CREDITS: u64 = 3_288_553_600;
 const SHIELD_EACH: u64 = 600_000_000;
 const NUM_NOTES: u64 = 3;
 /// Above any single note (600M) yet `+ fee` below the 3-note sum (1.8e9) —

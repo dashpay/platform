@@ -60,7 +60,7 @@ async fn sh_020_double_spend_two_transitions() {
     if !adversarial_enabled() {
         tracing::info!(
             target: "platform_wallet::e2e::cases::sh_020",
-            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL unset — abuse case skipped (no-op pass)"
+            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL set to a falsy value — abuse case opted out (no-op pass)"
         );
         return;
     }

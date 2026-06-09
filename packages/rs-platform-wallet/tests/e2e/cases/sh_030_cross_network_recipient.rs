@@ -39,7 +39,7 @@ async fn sh_030_cross_network_recipient() {
     if !adversarial_enabled() {
         tracing::info!(
             target: "platform_wallet::e2e::cases::sh_030",
-            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL unset — abuse case skipped (no-op pass)"
+            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL set to a falsy value — abuse case opted out (no-op pass)"
         );
         return;
     }

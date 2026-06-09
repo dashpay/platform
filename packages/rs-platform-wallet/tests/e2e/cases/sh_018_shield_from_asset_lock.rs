@@ -32,12 +32,14 @@ use crate::framework::signer::SeedBackedCoreSigner;
 /// Core (Layer-1) duffs to fund the test wallet with (gated behind
 /// `PLATFORM_WALLET_E2E_BANK_CORE_GATE`). Must cover the asset lock plus
 /// its L1 tx fee.
-const TEST_WALLET_CORE_FUNDING: u64 = 1_400_000;
-/// Duffs locked into the asset lock (the shielded note value, modulo the
-/// duff→credit conversion the protocol applies). 1.2M duffs = 1.2e9 credits
-/// — above Drive's 100k-duff asset-lock floor AND the ~1e9 shielded fee, so
-/// the shield-from-asset-lock reaches the backend instead of bouncing.
-const ASSET_LOCK_DUFFS: u64 = 1_200_000;
+const TEST_WALLET_CORE_FUNDING: u64 = 1_750_000;
+/// Duffs locked into the asset lock. Must exceed `SHIELD_DUFFS` by more
+/// than Type 18's ~2.13e8-credit asset-lock shield fee — shielding the
+/// full lock value is rejected because the fee has nowhere to come from.
+const ASSET_LOCK_DUFFS: u64 = 1_500_000;
+/// Duffs actually shielded into the pool — strictly below the lock so the
+/// 3e8-credit remainder (3e5 duffs) covers the asset-lock processing fee.
+const SHIELD_DUFFS: u64 = 1_200_000;
 const SHIELDED_ACCOUNT: u32 = 0;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -88,8 +90,10 @@ async fn sh_018_shield_from_asset_lock() {
     let one_time_key = derive_asset_lock_private_key(&seed_bytes, network, &path)
         .expect("derive one-time asset-lock private key");
 
-    // Shield from the asset lock via the public wrapper (Type 18).
-    let credits = dpp::balances::credits::CREDITS_PER_DUFF * ASSET_LOCK_DUFFS;
+    // Shield from the asset lock via the public wrapper (Type 18). Shield
+    // strictly less than the lock value so the remainder covers Type 18's
+    // asset-lock processing fee.
+    let credits = dpp::balances::credits::CREDITS_PER_DUFF * SHIELD_DUFFS;
     s.test_wallet
         .platform_wallet()
         .shielded_shield_from_asset_lock(SHIELDED_ACCOUNT, proof, &one_time_key, credits, prover)
@@ -104,10 +108,10 @@ async fn sh_018_shield_from_asset_lock() {
         STEP_TIMEOUT,
     )
     .await
-    .expect("shielded balance never reached the asset-lock amount");
+    .expect("shielded balance never reached the shielded amount");
     assert_eq!(
         shielded, credits,
-        "shielded_balances[{SHIELDED_ACCOUNT}] must equal the asset-lock credits exactly; \
+        "shielded_balances[{SHIELDED_ACCOUNT}] must equal the shielded credits exactly; \
          observed {shielded}"
     );
 

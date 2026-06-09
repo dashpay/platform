@@ -47,7 +47,7 @@ async fn sh_025_forged_proof() {
     if !adversarial_enabled() {
         tracing::info!(
             target: "platform_wallet::e2e::cases::sh_025",
-            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL unset — abuse case skipped (no-op pass)"
+            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL set to a falsy value — abuse case opted out (no-op pass)"
         );
         return;
     }

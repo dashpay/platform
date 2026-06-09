@@ -44,7 +44,7 @@ async fn sh_027_malformed_note_serde() {
     if !adversarial_enabled() {
         tracing::info!(
             target: "platform_wallet::e2e::cases::sh_027",
-            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL unset — abuse case skipped (no-op pass)"
+            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL set to a falsy value — abuse case opted out (no-op pass)"
         );
         return;
     }

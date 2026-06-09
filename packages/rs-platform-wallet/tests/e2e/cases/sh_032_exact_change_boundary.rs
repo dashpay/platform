@@ -2,13 +2,13 @@
 //! below — exact-change correctness.
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 → SH-032. Priority: P1. MEDIUM-if-fails.
 //!
-//! Attack: fund a single note to EXACTLY `amount + compute_minimum_shielded_fee(1)`,
-//! spend `amount` (exact change → ZERO change, value conserved); then
-//! off-by-one: a note of `amount + fee - 1` must be rejected
-//! (`ShieldedInsufficientBalance`).
+//! Attack: fund a single note to EXACTLY `amount + compute_shielded_unshield_fee(2)`
+//! (the builder pads to the 2-action floor), spend `amount` (exact change
+//! → ZERO change, value conserved); then off-by-one: a note of
+//! `amount + fee - 1` must be rejected (`ShieldedInsufficientBalance`).
 //!
 //! Achievable through the public API (precise shield + public
-//! `compute_minimum_shielded_fee`) — the spend reaches the backend so the
+//! `compute_shielded_unshield_fee`) — the spend reaches the backend so the
 //! BACKEND's fee/value check is exercised, not just the client's. The
 //! backend off-by-one INJECT arm needs the raw seam (flagged elsewhere);
 //! the client off-by-one arm is asserted here.
@@ -17,7 +17,7 @@
 
 use std::time::Duration;
 
-use dpp::shielded::compute_minimum_shielded_fee;
+use dpp::shielded::compute_shielded_unshield_fee;
 use dpp::version::PlatformVersion;
 use platform_wallet::error::PlatformWalletError;
 
@@ -30,8 +30,8 @@ use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
 
-// The shield funds a single note of `UNSHIELD_AMOUNT + compute_minimum_shielded_fee(1)`
-// (~1e9); funding must cover that note PLUS the shield's own fee, so ~2.3e9.
+// The shield funds a single note of `UNSHIELD_AMOUNT + compute_shielded_unshield_fee(2)`
+// (~1.9e8); funding must cover that note PLUS the shield's own fee, so ~2.3e9.
 // UNSHIELD_AMOUNT stays modest — the boundary note size is derived from the
 // REAL fee at runtime, so this case is already fee-floor-correct by construction.
 const FUNDING_CREDITS: u64 = 2_300_000_000;
@@ -51,15 +51,18 @@ async fn sh_032_exact_change_boundary() {
     if !adversarial_enabled() {
         tracing::info!(
             target: "platform_wallet::e2e::cases::sh_032",
-            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL unset — abuse case skipped (no-op pass)"
+            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL set to a falsy value — abuse case opted out (no-op pass)"
         );
         return;
     }
 
-    // A single-spend unshield is 1 action; the exact fee the wallet folds
-    // into the requirement is `compute_minimum_shielded_fee(1)`.
+    // The unshield builder pads to the 2-action floor and prices the fee
+    // with `compute_shielded_unshield_fee(2)` — the base shielded minimum
+    // PLUS the flat `AddBalanceToAddress` output-write cost — so the exact
+    // note must cover `UNSHIELD_AMOUNT + compute_shielded_unshield_fee(2)`.
     let version = PlatformVersion::latest();
-    let exact_fee = compute_minimum_shielded_fee(1, version).expect("compute_minimum_shielded_fee");
+    let exact_fee =
+        compute_shielded_unshield_fee(2, version).expect("compute_shielded_unshield_fee");
     let exact_note = UNSHIELD_AMOUNT + exact_fee;
 
     // ---- Exact-change arm ----

@@ -27,13 +27,13 @@ use crate::framework::signer::SeedBackedCoreSigner;
 // for only `SHIELD_DUFFS` (< lock). Type 18 requires the lock to hold
 // `shield_amount + asset-lock processing fee`; the production fund path
 // derives `shield = lock_value - min_fee` for exactly this reason. The
-// 100_000-duff (1e8-credit) gap is the fee headroom — shielding the full
-// lock value is rejected before the shield commits, so the REPLAY leg would
-// never reach Drive's single-use outpoint check. Core funding covers the
-// lock plus its L1 tx fee (+200_000 duffs headroom; an asset-lock tx fee is
-// a few hundred duffs).
-const TEST_WALLET_CORE_FUNDING: u64 = 1_700_000;
-const ASSET_LOCK_DUFFS: u64 = 1_500_000;
+// 350_000-duff (3.5e8-credit) gap exceeds Type 18's ~2.13e8-credit
+// asset-lock shield fee — shielding the full lock value is rejected before
+// the shield commits, so the REPLAY leg would never reach Drive's
+// single-use outpoint check. Core funding covers the lock plus its L1 tx
+// fee (+200_000 duffs headroom; an asset-lock tx fee is a few hundred duffs).
+const TEST_WALLET_CORE_FUNDING: u64 = 1_950_000;
+const ASSET_LOCK_DUFFS: u64 = 1_750_000;
 const SHIELD_DUFFS: u64 = 1_400_000;
 const SHIELDED_ACCOUNT: u32 = 0;
 #[allow(dead_code)]
@@ -52,7 +52,7 @@ async fn sh_035_replayed_asset_lock_proof() {
     if !adversarial_enabled() {
         tracing::info!(
             target: "platform_wallet::e2e::cases::sh_035",
-            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL unset — abuse case skipped (no-op pass)"
+            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL set to a falsy value — abuse case opted out (no-op pass)"
         );
         return;
     }

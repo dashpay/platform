@@ -366,6 +366,28 @@ impl E2eContext {
 
         let (sdk, context_provider) = sdk::build_sdk(&config)?;
 
+        // Register the withdrawals system contract on the context
+        // provider's known-contracts cache. The shielded-withdrawal (SH-019,
+        // Type 19) proof verifier resolves `withdrawals_contract::ID` to
+        // build the expected withdrawal document; without it the verifier
+        // errors `UnknownContract("withdrawals contract not available for
+        // shielded withdrawal verification")`. Mirrors the token-contract
+        // registration in `tokens.rs`. Fail-soft: a load error WARNs and
+        // leaves SH-019 to surface the deployment gap rather than aborting
+        // the whole suite.
+        match dpp::system_data_contracts::load_system_data_contract(
+            dpp::system_data_contracts::SystemDataContract::Withdrawals,
+            dpp::version::PlatformVersion::latest(),
+        ) {
+            Ok(withdrawals) => context_provider.add_known_contract(withdrawals),
+            Err(err) => tracing::warn!(
+                target: "platform_wallet::e2e::harness",
+                error = %err,
+                "could not load the withdrawals system contract; shielded-withdrawal \
+                 (SH-019) proof verification may fail with UnknownContract"
+            ),
+        }
+
         // Persister discards changesets (testnet re-sync is fast).
         // App handlers: the shared [`WaitEventHub`] so test helpers
         // await on real events instead of fixed polling, plus the

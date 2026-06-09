@@ -749,11 +749,18 @@ pub async fn build_unshield_st<S: ShieldedStore, P: OrchardProver>(
         sdk.version(),
     )
     .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-    // Both come from compute_shielded_unshield_fee with the same action count; lock agreement.
-    debug_assert_eq!(
-        fee_used, exact_fee,
-        "builder fee must match the reserved unshield fee"
-    );
+    // The builder's fee is authoritative; `exact_fee` is the caller's
+    // reserved estimate. The production wrappers reserve the same
+    // unshield fee, but the build-against-a-chosen-note seam lets a
+    // caller pass an arbitrary fee, so a mismatch is informational, not
+    // an invariant violation.
+    if fee_used != exact_fee {
+        trace!(
+            fee_used,
+            exact_fee,
+            "unshield builder fee differs from caller's reserved fee"
+        );
+    }
     Ok(state_transition)
 }
 
@@ -787,11 +794,16 @@ pub async fn build_transfer_st<S: ShieldedStore, P: OrchardProver>(
         sdk.version(),
     )
     .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-    // Both come from compute_minimum_shielded_fee with the same action count; lock agreement.
-    debug_assert_eq!(
-        fee_used, exact_fee,
-        "builder fee must match the reserved minimum fee"
-    );
+    // Authoritative builder fee vs the caller's reserved estimate — a
+    // mismatch is informational (the seam permits arbitrary fees), not an
+    // invariant violation. See `build_unshield_st`.
+    if fee_used != exact_fee {
+        trace!(
+            fee_used,
+            exact_fee,
+            "transfer builder fee differs from caller's reserved fee"
+        );
+    }
     Ok(state_transition)
 }
 
@@ -829,11 +841,16 @@ pub async fn build_withdraw_st<S: ShieldedStore, P: OrchardProver>(
         sdk.version(),
     )
     .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-    // Both come from compute_shielded_withdrawal_fee with the same action count; lock agreement.
-    debug_assert_eq!(
-        fee_used, exact_fee,
-        "builder fee must match the reserved withdrawal fee"
-    );
+    // Authoritative builder fee vs the caller's reserved estimate — a
+    // mismatch is informational (the seam permits arbitrary fees), not an
+    // invariant violation. See `build_unshield_st`.
+    if fee_used != exact_fee {
+        trace!(
+            fee_used,
+            exact_fee,
+            "withdrawal builder fee differs from caller's reserved fee"
+        );
+    }
     Ok(state_transition)
 }
 

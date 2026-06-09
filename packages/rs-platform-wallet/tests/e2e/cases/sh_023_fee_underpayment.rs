@@ -32,7 +32,9 @@ use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
 
-const FUNDING_CREDITS: u64 = 1_200_000_000;
+// Clears `SHIELD_AMOUNT + 1e9 reserve + ~1.63e8 shield fee` (see `sh_010`),
+// with 1e8 headroom.
+const FUNDING_CREDITS: u64 = 1_312_851_200;
 const SHIELD_AMOUNT: u64 = 50_000_000;
 const UNSHIELD_AMOUNT: u64 = 20_000_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -50,7 +52,7 @@ async fn sh_023_fee_underpayment() {
     if !adversarial_enabled() {
         tracing::info!(
             target: "platform_wallet::e2e::cases::sh_023",
-            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL unset — abuse case skipped (no-op pass)"
+            "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL set to a falsy value — abuse case opted out (no-op pass)"
         );
         return;
     }

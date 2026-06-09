@@ -21,9 +21,14 @@ use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
 
-// Each note must independently cover one UNSHIELD_EACH plus the shielded
-// fee (~1e9), since the two concurrent unshields take disjoint single notes.
-const FUNDING_CREDITS: u64 = 2_210_000_000;
+// `select_shield_inputs` claims greedily from the smallest-key address,
+// so BOTH sequential shields concentrate on one funded address before
+// moving on. Each shield reserves `FEE_RESERVE_CREDITS` (1e9,
+// `platform_wallet.rs`) on its input plus the ~1.63e8 protocol fee, so a
+// single address must survive both shields: `2 × (SHIELD_EACH + 1.63e8)
+// + 1e9`. Two addresses are funded (one per loop iteration); each carries
+// the full two-shield budget so whichever sorts smallest can absorb both.
+const FUNDING_CREDITS: u64 = 3_545_702_400;
 const SHIELD_EACH: u64 = 1_110_000_000;
 const UNSHIELD_EACH: u64 = 10_000_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);

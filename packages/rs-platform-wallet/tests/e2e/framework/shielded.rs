@@ -59,23 +59,23 @@ use super::wallet_factory::TestWallet;
 use super::{FrameworkError, FrameworkResult};
 
 /// Env gate for the adversarial / abuse cases (SH-020..SH-035). The
-/// hooks below that broadcast malformed transitions are no-ops unless
-/// this is set, so the functional tier never accidentally hammers Drive
-/// with garbage. Mirrors the `PLATFORM_WALLET_E2E_BANK_CORE_GATE`
-/// convention.
+/// hooks below broadcast malformed transitions and assert the backend
+/// rejects them — that IS the deliverable, so the abuse pass runs by
+/// DEFAULT. Set this to a falsy value (`0`/`false`/`no`/`off`) to opt
+/// out (e.g. to keep a smoke run from spending the extra proof time).
 pub const ADVERSARIAL_GATE_ENV: &str = "PLATFORM_WALLET_E2E_SHIELDED_ADVERSARIAL";
 
-/// Whether the adversarial abuse pass is enabled this run. Accepts the
-/// same truthy aliases the rest of the harness uses (`1`/`true`/`yes`/`on`,
-/// case-insensitive).
+/// Whether the adversarial abuse pass runs this run. Enabled by default;
+/// only an explicit falsy value (`0`/`false`/`no`/`off`, case-insensitive)
+/// disables it. Any other value (including unset) keeps it on.
 pub fn adversarial_enabled() -> bool {
-    matches!(
+    !matches!(
         std::env::var(ADVERSARIAL_GATE_ENV)
             .unwrap_or_default()
             .trim()
             .to_ascii_lowercase()
             .as_str(),
-        "1" | "true" | "yes" | "on"
+        "0" | "false" | "no" | "off"
     )
 }
 
