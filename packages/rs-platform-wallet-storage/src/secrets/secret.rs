@@ -9,25 +9,20 @@ use std::fmt;
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
-/// Pre-allocation capacity for [`SecretString`] buffers.
-///
-/// `mlock` is page-granular, so a sub-page buffer locks a whole page
-/// regardless; 4096 bytes also makes `String` reallocation (which
-/// leaves an un-zeroed freed buffer the allocator owns) virtually
-/// impossible for any human-entered passphrase or mnemonic.
+/// Pre-allocation capacity for [`SecretString`] buffers. `mlock` is
+/// page-granular (a sub-page buffer locks a whole page anyway), and 4096
+/// bytes makes a reallocation — which would leave an un-zeroed freed
+/// buffer behind — virtually impossible for any human-entered secret.
 const DEFAULT_CAPACITY: usize = 4096;
 
 /// Zeroize-on-drop wrapper for secret UTF-8 strings (BIP-39 mnemonic,
 /// `EncryptedFileStore` passphrase).
 ///
-/// `Display`, `Deref`, `DerefMut`, `Serialize`, `PartialEq`, `Eq` are
-/// intentionally **not** implemented; read access is the explicit
-/// [`expose_secret`] only, and equality goes through
-/// [`subtle::ConstantTimeEq`] (`==` on secret bytes is forbidden, no
-/// exception, so future bridge code cannot inherit a non-constant-time
-/// path). `Debug` is redacted. `Zeroizing<String>`
-/// wipes the buffer over its full capacity on drop; the buffer is
-/// best-effort `mlock`ed against swap.
+/// Read access is [`expose_secret`] only; equality goes through
+/// [`subtle::ConstantTimeEq`] (`==` is forbidden so bridge code cannot
+/// inherit a non-constant-time path). `Display`/`Deref`/`Serialize`/`Eq`
+/// are deliberately absent, `Debug` is redacted, and the buffer wipes
+/// over its full capacity on drop and is best-effort `mlock`ed.
 ///
 /// [`expose_secret`]: SecretString::expose_secret
 ///
@@ -38,9 +33,8 @@ const DEFAULT_CAPACITY: usize = 4096;
 /// let _ = a == b; // `==` on SecretString is forbidden; use ConstantTimeEq::ct_eq
 /// ```
 pub struct SecretString {
-    // Field order is load-bearing: `inner` drops (and `Zeroizing` wipes
-    // it) before `_lock` releases the page, so the buffer is wiped while
-    // still mlock'ed.
+    // Field order is load-bearing: `inner` drops (Zeroizing wipes it)
+    // before `_lock` releases the page, so the wipe runs while mlock'ed.
     inner: Zeroizing<String>,
     _lock: Option<region::LockGuard>,
 }
@@ -120,9 +114,8 @@ impl fmt::Debug for SecretString {
 }
 
 impl ConstantTimeEq for SecretString {
-    /// Constant-time compare over the equal-length region. Unequal
-    /// lengths return `0` without revealing where they differ; the
-    /// only observable is the (non-secret) length difference.
+    /// Constant-time compare. Unequal lengths return `0` without
+    /// revealing where they differ; the only leak is the non-secret length.
     fn ct_eq(&self, other: &Self) -> subtle::Choice {
         self.expose_secret()
             .as_bytes()
@@ -151,17 +144,14 @@ impl From<&str> for SecretString {
 }
 
 /// Zeroize-on-drop wrapper for secret **bytes**: BIP-32 seed
-/// (`[u8; 64]`), xpriv, Argon2 output, AEAD key, decrypted plaintext,
-/// ciphertext-in-flight.
+/// (`[u8; 64]`), xpriv, Argon2 output, AEAD key, decrypted plaintext.
 ///
-/// Not `Copy`; `Clone` is intentionally absent to enforce copy
-/// minimization — move it, or `expose_secret()` and copy
-/// deliberately into another wrapper. `Display`, `Deref`, `Serialize`,
-/// `PartialEq`, `Eq` are intentionally **not** implemented; equality
-/// goes through [`subtle::ConstantTimeEq`] only (`==` on secret bytes is
-/// forbidden, no exception, so future bridge code cannot inherit a
-/// non-constant-time path). `Debug` is redacted; the
-/// buffer is wiped on drop and best-effort `mlock`ed.
+/// `Clone` is absent to force deliberate copies (move it, or
+/// `expose_secret()` into another wrapper). Equality goes through
+/// [`subtle::ConstantTimeEq`] only (`==` is forbidden so bridge code
+/// cannot inherit a non-constant-time path). `Display`/`Deref`/`Serialize`
+/// /`Eq` are absent, `Debug` is redacted, and the buffer wipes on drop
+/// and is best-effort `mlock`ed.
 ///
 /// ```compile_fail
 /// use platform_wallet_storage::secrets::SecretBytes;
@@ -170,9 +160,8 @@ impl From<&str> for SecretString {
 /// let _ = a == b; // `==` on SecretBytes is forbidden; use ConstantTimeEq::ct_eq
 /// ```
 pub struct SecretBytes {
-    // Field order is load-bearing: `inner` drops (and `Zeroizing` wipes
-    // it) before `_lock` releases the page, so the buffer is wiped while
-    // still mlock'ed.
+    // Field order is load-bearing: `inner` drops (Zeroizing wipes it)
+    // before `_lock` releases the page, so the wipe runs while mlock'ed.
     inner: Zeroizing<Vec<u8>>,
     _lock: Option<region::LockGuard>,
 }
@@ -181,8 +170,8 @@ impl SecretBytes {
     /// Wrap a byte vector, moving it into the wrapper and best-effort
     /// `mlock`ing the buffer.
     pub fn new(bytes: Vec<u8>) -> Self {
-        // Lock only a non-empty allocation: an empty `Vec`'s `as_ptr()`
-        // is dangling, and `region::lock` rejects a 0-length region.
+        // Skip an empty allocation: an empty `Vec`'s `as_ptr()` is
+        // dangling and `region::lock` rejects a 0-length region.
         let lock = if bytes.capacity() > 0 {
             region::lock(bytes.as_ptr(), bytes.capacity())
                 .map_err(|e| {
@@ -195,9 +184,6 @@ impl SecretBytes {
         } else {
             None
         };
-        // The move transfers ownership of the allocation into
-        // `Zeroizing`; the source buffer is not copied, so there is
-        // nothing left behind to wipe.
         Self {
             inner: Zeroizing::new(bytes),
             _lock: lock,
@@ -238,10 +224,9 @@ impl SecretBytes {
 }
 
 impl ConstantTimeEq for SecretBytes {
-    /// Fixed-width constant-time compare over the byte region — no
-    /// length early-return. `subtle::ConstantTimeEq` on
-    /// unequal-length slices yields `0` without leaking *where* they
-    /// differ; the only observable is the (non-secret) length.
+    /// Constant-time compare, no length early-return. Unequal lengths
+    /// yield `0` without leaking *where* they differ; only the non-secret
+    /// length is observable.
     fn ct_eq(&self, other: &Self) -> subtle::Choice {
         self.inner.as_slice().ct_eq(other.inner.as_slice())
     }
@@ -317,8 +302,7 @@ mod tests {
     #[test]
     fn empty_secret_bytes_constructs_without_mlocking_dangling_ptr() {
         // A capacity-0 `Vec` has a dangling `as_ptr()`; `new` must not
-        // pass it to `region::lock`. Constructing must not panic and the
-        // wrapper must round-trip as empty.
+        // pass it to `region::lock` or panic.
         let b = SecretBytes::new(Vec::new());
         assert!(b.is_empty());
         assert_eq!(b.len(), 0);
@@ -352,16 +336,11 @@ mod tests {
         assert!(std::mem::needs_drop::<SecretBytes>());
     };
 
-    /// Sound check that the zeroize machinery actually wipes the buffer.
-    /// Every read is on a STILL-LIVE value — no post-free pointer
-    /// dereference (that is UB and was the flaw in the old `#[ignore]`'d
-    /// canaries). For `SecretBytes` the in-place slice wipe also proves
-    /// the bytes themselves go to zero with the length preserved, not
-    /// merely that the length is cleared.
+    /// Proves zeroize wipes the buffer. Every read is on a STILL-LIVE
+    /// value (no post-free deref / UB); the in-place slice wipe also
+    /// proves the bytes go to zero with the length preserved.
     #[test]
     fn manual_zeroize_wipes_live_buffer() {
-        // SecretBytes: wipe the exposed buffer in place; bytes go to zero
-        // while the length stays put.
         let mut b = SecretBytes::from_slice(&[0xABu8; 64]);
         assert!(b.expose_secret().iter().any(|&x| x != 0));
         b.expose_secret_mut().zeroize();

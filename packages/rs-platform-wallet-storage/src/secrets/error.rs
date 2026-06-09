@@ -1,24 +1,10 @@
 //! Secret-store error taxonomy and its `keyring_core::Error` projection.
 //!
-//! One concrete `thiserror` enum shared by both
-//! [`SecretStore`](crate::secrets::SecretStore) backends (the encrypted
-//! file vault and the OS keyring), no `#[non_exhaustive]`, **no** secret
-//! byte, passphrase, plaintext, or stringified source that could carry
-//! one in any variant. `#[error]` strings are static + structural; only
-//! non-secret diagnostics (POSIX mode bits, header version int, vault
-//! path) are carried as typed fields (CWE-209/CWE-532).
-//!
-//! The `EncryptedFileStore` surfaces this enum at its construction /
-//! `rekey` API; its `keyring_core::api::CredentialApi` /
-//! `CredentialStoreApi` impls project it into `keyring_core::Error` via
-//! [`From`] so SPI callers see a uniform error. The `WrongPassphrase` /
-//! `AlreadyLocked` variants box the typed `SecretStoreError` as the
-//! `NoStorageAccess` source, so an SPI consumer can recover them
-//! losslessly via `source().downcast_ref::<SecretStoreError>()`; the
-//! `BadStoreFormat` group has no box slot and carries only a secret-free
-//! string. Either way, the fully typed path is the public
-//! [`SecretStore`](crate::secrets::SecretStore) API, which returns
-//! `SecretStoreError` directly.
+//! Variants carry only non-secret diagnostics (POSIX mode bits, header
+//! version, vault path) — never a secret byte, passphrase, plaintext, or
+//! stringified source (CWE-209/CWE-532). The public, fully-typed path is
+//! the [`SecretStore`](crate::secrets::SecretStore) API; the SPI
+//! projection into `keyring_core::Error` is lossy (see the [`From`] impl).
 
 use std::path::Path;
 
@@ -34,16 +20,14 @@ pub enum SecretStoreError {
     #[error("wrong passphrase")]
     WrongPassphrase,
 
-    /// AEAD tag failure on a stored entry (or a rekey re-encrypt) *after*
-    /// the header verify-token already passed: the entry ciphertext is
-    /// corrupt or tampered, **not** a wrong passphrase. Carries no
-    /// plaintext (CWE-347).
+    /// AEAD tag failure on a stored entry (or rekey re-encrypt) *after*
+    /// the header verify-token passed: the entry ciphertext is corrupt or
+    /// tampered, **not** a wrong passphrase. No plaintext (CWE-347).
     #[error("vault entry failed integrity check (corruption or tampering)")]
     Corruption,
 
-    /// Argon2 key derivation failed. The upstream error carries no
-    /// useful non-secret diagnostic, so it is intentionally not
-    /// embedded.
+    /// Argon2 key derivation failed. The upstream error carries no useful
+    /// non-secret diagnostic, so it is not embedded.
     #[error("key derivation failed")]
     KdfFailure,
 
@@ -74,11 +58,10 @@ pub enum SecretStoreError {
     },
 
     /// The vault file's parent directory was group/other WRITABLE
-    /// (`mode & 0o022 != 0`). Directory write access governs
-    /// rename/unlink/replace, so a writable parent lets another local
-    /// user swap the vault despite the file's own `0600` — refuse rather
-    /// than trust it. (Read-only group access, e.g. `0o750`, is fine: it
-    /// leaks filenames, not the 0600-protected contents.)
+    /// (`mode & 0o022 != 0`). Directory write governs rename/unlink, so a
+    /// writable parent lets another local user swap the vault despite its
+    /// own `0600`. Read-only group access (`0o750`) is fine — it leaks
+    /// filenames, not the 0600-protected contents.
     #[error("vault parent directory has insecure permissions")]
     InsecureParentDir {
         /// The offending POSIX mode bits on the parent directory (not
@@ -89,8 +72,7 @@ pub enum SecretStoreError {
     /// A secret offered for storage exceeded the per-secret write cap
     /// ([`MAX_SECRET_LEN`](crate::secrets::MAX_SECRET_LEN)). Rejected at
     /// the write boundary so an oversized entry never inflates the shared
-    /// vault past the read-side ceiling and bricks every wallet on the
-    /// next open.
+    /// vault past the read-side ceiling and bricks every wallet on reopen.
     #[error("secret exceeds maximum size of {max} bytes (got {found})")]
     SecretTooLarge {
         /// The offered secret length (bytes).
@@ -99,13 +81,11 @@ pub enum SecretStoreError {
         max: usize,
     },
 
-    /// The vault sidecar (`<vault-path>.lock`) is already held by
-    /// another `EncryptedFileStore` handle — in this process or in
-    /// another process. The resident-vault model requires exclusive
-    /// ownership of the vault file for the store's lifetime, so the
-    /// second `open()` fails fast (no retry, no wait budget). Drop the
-    /// other handle, or wait for the other process to exit, and retry.
-    /// A recoverable runtime state, not a logic bug.
+    /// The vault sidecar (`<vault-path>.lock`) is already held by another
+    /// `EncryptedFileStore` handle in this or another process. The
+    /// resident-vault model needs exclusive ownership for the store's
+    /// lifetime, so a second `open()` fails fast (no retry). Recoverable:
+    /// drop the other handle and retry.
     #[error("vault is already locked by another store handle")]
     AlreadyLocked,
 
@@ -121,41 +101,35 @@ pub enum SecretStoreError {
         max: u64,
     },
 
-    /// Internal AEAD tag failure with no vault context yet attached. The
-    /// crypto seam (`crypto::open`) cannot tell *why* a tag failed, so it
-    /// returns this; callers translate it to [`WrongPassphrase`] (in the
-    /// verify-token context) or [`Corruption`] (in an entry context).
-    /// Never escapes to the SPI / public surface.
+    /// Internal AEAD tag failure with no vault context attached:
+    /// `crypto::open` cannot tell *why* a tag failed, so callers translate
+    /// this to [`WrongPassphrase`] (verify-token context) or
+    /// [`Corruption`] (entry context). Never escapes to the SPI surface.
     ///
     /// [`WrongPassphrase`]: SecretStoreError::WrongPassphrase
     /// [`Corruption`]: SecretStoreError::Corruption
     #[error("decryption/integrity check failed")]
     Decrypt,
 
-    /// AEAD encrypt-side failure: cipher construction (`new_from_slice`)
-    /// or `encrypt` itself failed on the write path. Distinct from
-    /// [`KdfFailure`] (genuine key derivation) and from [`Decrypt`] (tag
-    /// failure on read). Effectively unreachable in practice — the key is
-    /// always 32 bytes and the plaintext never approaches XChaCha20's
-    /// ~256 GiB limit — but kept typed so a write failure is never
-    /// mislabeled a key-derivation error. Carries no plaintext.
+    /// AEAD encrypt-side failure (cipher construction or `encrypt`).
+    /// Effectively unreachable — the key is always 32 bytes and plaintext
+    /// never approaches XChaCha20's ~256 GiB limit — but kept typed so a
+    /// write failure is never mislabeled a [`KdfFailure`].
     ///
     /// [`KdfFailure`]: SecretStoreError::KdfFailure
-    /// [`Decrypt`]: SecretStoreError::Decrypt
     #[error("encryption failed")]
     Encrypt,
 
     /// Filesystem error (open / write / rename / fsync). The inner
-    /// [`IoError`] carries an OS code and, when the failing operation
-    /// knew it, the *non-secret* path it was operating on — a
-    /// caller-supplied filesystem path, never a secret byte.
+    /// [`IoError`] carries an OS code and, when known, the *non-secret*
+    /// caller-supplied path — never a secret byte.
     #[error("{0}")]
     Io(#[from] IoError),
 
-    /// An OS-keyring backend (the [`SecretStore::Os`] arm) failure,
-    /// projected to a non-secret discriminant. Keyring variants that
-    /// carry raw bytes (`BadEncoding`, `BadDataFormat`) are collapsed to
-    /// [`OsKeyringErrorKind::BadStoreFormat`] — their bytes never enter
+    /// An OS-keyring backend ([`SecretStore::Os`] arm) failure, projected
+    /// to a non-secret discriminant. Byte-bearing keyring variants
+    /// (`BadEncoding`, `BadDataFormat`) collapse to
+    /// [`OsKeyringErrorKind::BadStoreFormat`]; their bytes never enter
     /// this type (CWE-209/CWE-532).
     ///
     /// [`SecretStore::Os`]: crate::secrets::SecretStore::Os
@@ -167,11 +141,9 @@ pub enum SecretStoreError {
 }
 
 impl SecretStoreError {
-    /// Build an [`Io`](SecretStoreError::Io) error that names the
-    /// non-secret filesystem `path` the failing operation touched.
-    /// Use at the vault read / write / lock seams where the path is
-    /// known; the bare `?`/`From<std::io::Error>` conversion (path
-    /// unknown) stays available for the deep helpers.
+    /// Build an [`Io`](SecretStoreError::Io) error naming the non-secret
+    /// `path` the failing operation touched. Use at the read/write/lock
+    /// seams; deep helpers can still use the bare `?` (path unknown).
     pub(crate) fn io_at(path: &Path, source: std::io::Error) -> Self {
         Self::Io(IoError {
             path: Some(path.to_path_buf()),
@@ -181,14 +153,12 @@ impl SecretStoreError {
 }
 
 /// Filesystem-error payload for [`SecretStoreError::Io`]. Wraps the OS
-/// [`std::io::Error`] and, when the failing operation knew it, the
-/// non-secret path it was operating on. `From<std::io::Error>` is
-/// derived so a bare `?` still works (path defaults to `None`); the
-/// path-aware seams attach it via [`SecretStoreError::io_at`].
+/// [`std::io::Error`] plus the non-secret path, when known. A bare `?`
+/// works (path `None`); path-aware seams use [`SecretStoreError::io_at`].
 #[derive(Debug, thiserror::Error)]
 pub struct IoError {
-    /// The non-secret filesystem path, when the failing operation knew
-    /// it. A caller-supplied path, never a secret.
+    /// The non-secret caller-supplied path, when the failing operation
+    /// knew it.
     pub path: Option<std::path::PathBuf>,
     /// The underlying OS error.
     pub source: std::io::Error,
@@ -210,8 +180,8 @@ impl From<std::io::Error> for IoError {
 }
 
 /// Non-secret discriminant for an OS-keyring backend failure, projected
-/// from `keyring_core::Error` for the [`SecretStore::Os`] arm. Carries no
-/// payload, so no secret byte, path, or attribute value can ride along.
+/// from `keyring_core::Error` for the [`SecretStore::Os`] arm. Payload-
+/// less, so no secret byte / path / attribute value can ride along.
 ///
 /// [`SecretStore::Os`]: crate::secrets::SecretStore::Os
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,47 +219,30 @@ impl From<super::validate::InvalidLabel> for SecretStoreError {
     }
 }
 
-/// Bare `?` on a [`std::io::Error`] inside a function returning
-/// [`SecretStoreError`] threads through [`IoError`] (path `None`); the
-/// path-aware seams call [`SecretStoreError::io_at`] instead.
+/// Bare `?` on an [`std::io::Error`] threads through [`IoError`] with
+/// path `None`; path-aware seams call [`SecretStoreError::io_at`].
 impl From<std::io::Error> for SecretStoreError {
     fn from(source: std::io::Error) -> Self {
         Self::Io(IoError::from(source))
     }
 }
 
-/// Project a [`SecretStoreError`] into `keyring_core::Error` for the
-/// `CredentialApi` / `CredentialStoreApi` SPI seam.
+/// Project a [`SecretStoreError`] into `keyring_core::Error` for the SPI
+/// seam. Lossy by design — the lossless typed path is the
+/// [`SecretStore`](crate::secrets::SecretStore) API.
 ///
-/// - [`WrongPassphrase`] and [`AlreadyLocked`] ride in
-///   [`KeyringError::NoStorageAccess`] (operator UX: "ask the operator to
-///   unlock / retry") with the typed `SecretStoreError` boxed as the
-///   source, so an SPI consumer can losslessly recover the variant via
+/// - [`WrongPassphrase`] / [`AlreadyLocked`] ride in
+///   [`KeyringError::NoStorageAccess`] with the typed error boxed as the
+///   source, recoverable via
 ///   `err.source().and_then(|s| s.downcast_ref::<SecretStoreError>())`.
-/// - [`Corruption`], [`KdfFailure`], [`VersionUnsupported`],
-///   [`MalformedVault`], [`InsecurePermissions`], [`InsecureParentDir`],
-///   [`SecretTooLarge`], [`VaultTooLarge`], the internal [`Decrypt`] /
-///   [`Encrypt`], and [`OsKeyring`] collapse into
-///   [`KeyringError::BadStoreFormat`], whose `String` payload has no box
-///   slot, so they carry only a static secret-free string (never secret
-///   data in a format error). They remain losslessly typed on the
-///   [`SecretStore`](crate::secrets::SecretStore) path.
-/// - [`InvalidLabel`] becomes `KeyringError::Invalid("user", _)`.
-/// - [`Io`] becomes [`KeyringError::PlatformFailure`].
+/// - The format/crypto group collapses into
+///   [`KeyringError::BadStoreFormat`] (a static secret-free string — that
+///   variant has no box slot).
+/// - [`InvalidLabel`] → `KeyringError::Invalid("user", _)`;
+///   [`Io`] → [`KeyringError::PlatformFailure`].
 ///
 /// [`WrongPassphrase`]: SecretStoreError::WrongPassphrase
 /// [`AlreadyLocked`]: SecretStoreError::AlreadyLocked
-/// [`Corruption`]: SecretStoreError::Corruption
-/// [`KdfFailure`]: SecretStoreError::KdfFailure
-/// [`VersionUnsupported`]: SecretStoreError::VersionUnsupported
-/// [`MalformedVault`]: SecretStoreError::MalformedVault
-/// [`InsecurePermissions`]: SecretStoreError::InsecurePermissions
-/// [`InsecureParentDir`]: SecretStoreError::InsecureParentDir
-/// [`SecretTooLarge`]: SecretStoreError::SecretTooLarge
-/// [`VaultTooLarge`]: SecretStoreError::VaultTooLarge
-/// [`Decrypt`]: SecretStoreError::Decrypt
-/// [`Encrypt`]: SecretStoreError::Encrypt
-/// [`OsKeyring`]: SecretStoreError::OsKeyring
 /// [`InvalidLabel`]: SecretStoreError::InvalidLabel
 /// [`Io`]: SecretStoreError::Io
 impl From<SecretStoreError> for KeyringError {
@@ -373,9 +326,6 @@ mod tests {
 
     #[test]
     fn io_at_names_path_in_display_without_leaking_secret() {
-        // The path-aware Io error renders the offending path so operators
-        // can see which file failed; the source message rides along, but
-        // no secret byte does (the path is caller-supplied).
         let err = SecretStoreError::io_at(
             std::path::Path::new("/var/lib/wallet/vault.pwsvault"),
             std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
@@ -408,9 +358,6 @@ mod tests {
 
     #[test]
     fn wrong_passphrase_is_recoverable_from_no_storage_access_source() {
-        // WrongPassphrase / AlreadyLocked box the typed SecretStoreError
-        // as the NoStorageAccess source, so an SPI consumer recovers the
-        // variant losslessly via `source().downcast_ref::<SecretStoreError>()`.
         use std::error::Error as _;
         for original in [
             SecretStoreError::WrongPassphrase,

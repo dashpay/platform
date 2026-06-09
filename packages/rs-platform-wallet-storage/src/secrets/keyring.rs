@@ -1,85 +1,49 @@
 //! OS-keyring construction helper.
 //!
-//! Built on `keyring-core 1.0.0` (the SPI library) plus the
-//! per-platform credential-store crates; the `keyring` 4.x sample CLI
-//! crate itself is intentionally not a dependency.
+//! Built on `keyring-core 1.0.0` (the SPI) plus the per-platform
+//! credential-store crates; the `keyring` 4.x sample CLI crate is
+//! deliberately not a dependency. There is no crate-local wrapper —
+//! [`default_credential_store`]'s return value is used directly via
+//! [`keyring_core::api::CredentialStoreApi`] or installed as the process
+//! default via [`keyring_core::set_default_store`].
 //!
-//! There is no crate-local wrapper around the per-platform store: a
-//! caller takes [`default_credential_store`]'s return value and either
-//! uses it directly via [`keyring_core::api::CredentialStoreApi`] or
-//! installs it as the process default via
-//! [`keyring_core::set_default_store`].
+//! Threat coverage: protects **A1** (other local user) and **A4** (lost
+//! laptop) where the platform encrypts items at rest and scopes them to
+//! the user. Does **not** cover **A2/A3** same-user malware (most OS
+//! keyrings hand the secret to any same-user process) or **A5** keyring
+//! scraping; headless Linux without Secret Service fails closed
+//! ([`keyring_core::Error::NoDefaultStore`]), never degrading to plaintext.
 //!
-//! ## Threat coverage
+//! Metadata is enumerable plaintext: entries are keyed by `service =
+//! SERVICE_PREFIX + hex(wallet_id)` and `user = label`, stored as
+//! plaintext keyring metadata. Same-user list-only tooling can enumerate
+//! which wallet ids and slot kinds exist without unlocking a secret —
+//! dominated by the accepted A2/A3 residual, with no portable knob to
+//! redact it. Operators wanting metadata hiding should prefer
+//! [`EncryptedFileStore`](super::EncryptedFileStore), whose
+//! `(wallet_id, label)` map lives only inside the sealed vault.
 //!
-//! Covers **A1** (other local user) and **A4** (lost laptop) where the
-//! platform encrypts keyring items at rest and scopes them to the user.
-//! Does **not** cover **A2/A3** same-user malware (most OS keyrings
-//! hand the secret to any same-user process that asks), **A5** if the
-//! keyring daemon itself is scraped, or **headless Linux** with no
-//! Secret Service — that fails closed
-//! ([`keyring_core::Error::NoDefaultStore`]), never degrades to
-//! plaintext.
-//!
-//! ### Metadata is enumerable plaintext
-//!
-//! On every OS arm the entry is keyed by `service = SERVICE_PREFIX +
-//! hex(wallet_id)` and `user = label`. Those two strings are stored as
-//! **plaintext, enumerable** keyring metadata: same-user list-only
-//! tooling can see *which wallet ids exist* and *which slot kinds*
-//! (labels) each has, without ever unlocking a secret. This is strictly
-//! weaker than — and dominated by — the already-accepted A2/A3 same-user
-//! residual (most OS keyrings hand the secret itself to any same-user
-//! process). The `keyring-core` 1.0.0 `build` modifiers are vendor-
-//! specific creation hints that do NOT replace the `(service, user)`
-//! identity, so they cannot hide this pair; there is no portable knob to
-//! redact it. Operators who want metadata hiding (or non-descriptive
-//! labels) should prefer the
-//! [`EncryptedFileStore`](super::EncryptedFileStore), whose `(wallet_id,
-//! label)` map lives only inside the AEAD-sealed vault.
-//!
-//! ### Per-OS reality
-//!
-//! - **Linux/FreeBSD:** Secret Service (gnome-keyring / KWallet) is the
-//!   sole backend. It requires a D-Bus session + unlocked collection;
-//!   headless / SSH / CI boxes frequently lack it, in which case the
-//!   store fails closed with `NoDefaultStore` and the operator selects
-//!   [`EncryptedFileStore`](super::EncryptedFileStore) explicitly.
-//!   Items persist `UntilDelete`. Callers that need durable storage on
-//!   a headless host should pin
-//!   [`EncryptedFileStore`](super::EncryptedFileStore) instead.
-//! - **macOS:** Keychain ACL — a re-signed binary with the same
-//!   code-signing identity is an accepted residual risk. Items persist
-//!   `UntilDelete`.
-//! - **Windows:** Credential Manager / DPAPI is user-profile scoped; a
-//!   same-user process can unprotect it. DPAPI is **not** a defense
-//!   against same-user malware, only A1/A4. Items persist
-//!   `UntilDelete`.
+//! Per-OS: items persist `UntilDelete` everywhere. Linux/FreeBSD use
+//! Secret Service (gnome-keyring / KWallet), which needs a D-Bus session
+//! + unlocked collection. macOS Keychain ACL accepts a re-signed binary
+//! with the same code-signing identity (residual). Windows DPAPI is
+//! user-profile scoped and defends A1/A4 only, not same-user malware.
 
 use std::sync::Arc;
 
 use keyring_core::api::CredentialStoreApi;
 use keyring_core::Error as KeyringError;
 
-/// Open the platform's default credential store, failing closed
-/// (typed [`KeyringError::NoDefaultStore`]) when none is reachable
-/// (headless / no Secret Service / no D-Bus). Never panics, never
-/// falls back to a weaker store.
+/// Open the platform's default credential store, failing closed (typed
+/// [`KeyringError::NoDefaultStore`]) when none is reachable (headless / no
+/// Secret Service / no D-Bus). Never panics, never falls back to a weaker
+/// store. The returned `Arc` works with
+/// [`keyring_core::set_default_store`] or builds entries directly.
 ///
-/// The returned `Arc` may be passed straight to
-/// [`keyring_core::set_default_store`] or used directly to build
-/// entries.
-///
-/// # Error formatting (SPI-direct consumers)
-///
-/// A consumer driving the raw `keyring_core` SPI through this store holds
-/// upstream [`keyring_core::Error`] values. Always format them with
-/// `Display` (`{}`), **never** `Debug` (`{:?}`): the upstream
-/// `BadEncoding(Vec<u8>)` / `BadDataFormat(Vec<u8>, _)` variants embed
-/// raw bytes in their `Debug` output (CWE-209/CWE-532). This crate's own
-/// backends never construct those variants with secret bytes, and the
-/// typed [`SecretStore`](super::SecretStore) path avoids the SPI error
-/// entirely.
+/// SPI-direct consumers: format the returned [`KeyringError`] with
+/// `Display` (`{}`), **never** `Debug` — upstream `BadEncoding` /
+/// `BadDataFormat` variants embed raw bytes in `Debug` (CWE-209/CWE-532).
+/// The typed [`SecretStore`](super::SecretStore) path avoids the SPI error.
 pub fn default_credential_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError>
 {
     platform_default_store()
@@ -87,10 +51,8 @@ pub fn default_credential_store() -> Result<Arc<dyn CredentialStoreApi + Send + 
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 fn platform_default_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError> {
-    // Secret Service (gnome-keyring / KWallet) is the only OS backend.
-    // No reachable D-Bus session / unlocked collection (headless, SSH,
-    // CI) is fail-closed by design — the operator selects
-    // EncryptedFileStore explicitly instead.
+    // Secret Service is the only backend; an unreachable D-Bus session
+    // (headless / SSH / CI) is fail-closed by design.
     match dbus_secret_service_keyring_store::Store::new() {
         Ok(s) => Ok(s),
         Err(_) => Err(KeyringError::NoDefaultStore),
@@ -99,11 +61,8 @@ fn platform_default_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>,
 
 #[cfg(target_os = "macos")]
 fn platform_default_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError> {
-    // `apple-native-keyring-store` >= 1.0 with the `keychain` feature
-    // exposes `Store` under the `keychain` module, not at the crate
-    // root (sibling backends — `dbus-secret-service-keyring-store`,
-    // `windows-native-keyring-store` — do put `Store` at the root, hence
-    // the asymmetric path).
+    // `apple-native-keyring-store` >= 1.0 exposes `Store` under the
+    // `keychain` module, not the crate root like the sibling backends.
     match apple_native_keyring_store::keychain::Store::new() {
         Ok(s) => Ok(s),
         Err(_) => Err(KeyringError::NoDefaultStore),

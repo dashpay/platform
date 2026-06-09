@@ -1,17 +1,11 @@
 //! [`SecretStore`] — the public, never-leaking secrets entry point.
 //!
-//! Consumers use this enum, not the `keyring_core` SPI. Its read path
-//! ([`SecretStore::get`]) yields a zeroizing [`SecretBytes`]; a raw
-//! `Vec<u8>` never crosses this boundary, and the write path
-//! ([`SecretStore::set`]) takes `&SecretBytes` so a caller cannot pass an
-//! unwrapped buffer (M-STRONG-TYPES).
-//!
-//! Errors surface as the typed [`SecretStoreError`] — losslessly for the
-//! [`SecretStore::File`] arm (so `WrongPassphrase` vs `Corruption` vs
-//! `AlreadyLocked` stay distinct), and as a best-effort projection of
-//! `keyring_core::Error` for the [`SecretStore::Os`] arm. The internal
-//! `keyring_core::api::CredentialApi` / `CredentialStoreApi` impls remain
-//! the backend SPI; `SecretStore` delegates through them.
+//! Consumers use this enum, not the `keyring_core` SPI it delegates to.
+//! Reads yield a zeroizing [`SecretBytes`] and writes take `&SecretBytes`
+//! so a raw buffer never crosses the boundary. Errors are the typed
+//! [`SecretStoreError`] — lossless on the [`SecretStore::File`] arm, a
+//! best-effort projection of `keyring_core::Error` on the
+//! [`SecretStore::Os`] arm.
 
 use std::sync::Arc;
 
@@ -66,9 +60,7 @@ impl SecretStore {
         secret: &SecretBytes,
     ) -> Result<(), SecretStoreError> {
         match self {
-            // File arm: the inherent typed path — no lossy SPI seam.
-            // `put_bytes` takes `&SecretBytes` directly, so the
-            // bare-buffer view never crosses this boundary.
+            // Inherent typed path — no lossy SPI seam, no bare buffer.
             Self::File(s) => s.put_bytes(service, label, secret),
             Self::Os(store) => {
                 let entry = build_os(store, service, label)?;
@@ -87,9 +79,8 @@ impl SecretStore {
         label: &str,
     ) -> Result<Option<SecretBytes>, SecretStoreError> {
         match self {
-            // File arm: the inherent typed path keeps `WrongPassphrase`
-            // vs `Corruption` distinct (lossless). Plaintext rides as
-            // `SecretBytes` all the way; no rewrap needed.
+            // Inherent typed path: keeps WrongPassphrase vs Corruption
+            // distinct; plaintext rides as SecretBytes, no rewrap.
             Self::File(s) => s.get_bytes(service, label),
             Self::Os(store) => {
                 let entry = build_os(store, service, label)?;
@@ -123,12 +114,10 @@ impl SecretStore {
 
 /// Build the SPI [`Entry`] for `(service, label)` on the OS-keyring arm.
 ///
-/// The reject-not-sanitize label allowlist (`^[A-Za-z0-9._-]{1,64}$`)
-/// is enforced here before the call crosses into the OS backend.
-/// Different OS keyrings accept, normalize, or reject non-allowlisted
-/// bytes inconsistently; enforcing the allowlist at
-/// this shim keeps `(service, label)` invariants identical to the
-/// `File` arm and across every OS backend.
+/// Enforces the label allowlist (`^[A-Za-z0-9._-]{1,64}$`) before the
+/// call crosses into the OS backend, so the `(service, label)` invariant
+/// stays identical to the `File` arm and across every OS keyring (each
+/// accepts / normalizes / rejects non-allowlisted bytes differently).
 fn build_os(
     store: &Arc<dyn CredentialStoreApi + Send + Sync>,
     service: &WalletId,
@@ -140,12 +129,9 @@ fn build_os(
 }
 
 impl std::fmt::Debug for SecretStore {
-    /// Surfaces the backend engine/service identity without exposing any
-    /// secret material. The `Os` arm reports the SPI
-    /// `vendor()`/`id()` — non-secret backend tags (e.g. which OS keyring
-    /// is wired up) — rather than an opaque `Os(..)`. The `File` arm
-    /// delegates to [`EncryptedFileStore`]'s redacting `Debug` (path
-    /// only, no key/passphrase).
+    /// Surfaces the backend identity without any secret material: the `Os`
+    /// arm reports the SPI `vendor()`/`id()` tags; the `File` arm delegates
+    /// to [`EncryptedFileStore`]'s redacting `Debug` (path only).
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::File(s) => f.debug_tuple("SecretStore::File").field(s).finish(),
@@ -159,15 +145,11 @@ impl std::fmt::Debug for SecretStore {
 }
 
 /// Project an OS-keyring SPI [`KeyringError`] into the typed
-/// [`SecretStoreError`] for the [`Os`](SecretStore::Os) arm.
-///
-/// The OS keyring has no typed `SecretStoreError` origin, so its variants
-/// map best-effort into [`SecretStoreError::OsKeyring`] (carrying only a
-/// non-secret discriminant) or the closest existing variant. Secret-
-/// bearing keyring variants (`BadEncoding`, `BadDataFormat`) are
-/// collapsed to a discriminant — their raw bytes never enter
-/// `SecretStoreError`. (The [`File`](SecretStore::File) arm never reaches
-/// this projection: it uses the inherent typed path.)
+/// [`SecretStoreError`] for the [`Os`](SecretStore::Os) arm. Best-effort:
+/// variants map into [`SecretStoreError::OsKeyring`] (non-secret
+/// discriminant only) or the closest existing variant; byte-bearing
+/// keyring variants are collapsed so their bytes never enter the type.
+/// The [`File`](SecretStore::File) arm never reaches this projection.
 fn map_spi(e: KeyringError) -> SecretStoreError {
     match e {
         KeyringError::NoEntry => SecretStoreError::OsKeyring {
@@ -200,9 +182,8 @@ mod tests {
         SecretStore::file(secure_vault_path(dir), SecretString::new("pw-correct")).unwrap()
     }
 
-    /// The parent-dir perm check refuses a group/other-writable parent; a
-    /// umask-0002 tempdir lands at 0o775, so tighten it to 0o700 before
-    /// returning the vault path inside it.
+    /// Tighten the umask-0002 tempdir (0o775) to 0o700 so it passes the
+    /// parent-dir perm check, then return a vault path inside it.
     fn secure_vault_path(dir: &std::path::Path) -> std::path::PathBuf {
         #[cfg(unix)]
         {
@@ -253,10 +234,8 @@ mod tests {
 
     #[test]
     fn wrong_passphrase_surfaces_typed_lossless() {
-        // Resident-vault model: the passphrase is verified at open()
-        // time (header verify-token), so a wrong-pass reopen fails at
-        // open() rather than on the first get(). The typed distinction
-        // still survives losslessly on the public path.
+        // Resident-vault model verifies the passphrase at open() (header
+        // verify-token), so a wrong-pass reopen fails at open(), losslessly.
         let dir = tempfile::tempdir().unwrap();
         file_store(dir.path())
             .set(&wid(1), "seed", &SecretBytes::from_slice(b"orig"))
@@ -275,9 +254,8 @@ mod tests {
         let s = file_store(dir.path());
         s.set(&wid(1), "seed", &SecretBytes::from_slice(b"value"))
             .unwrap();
-        // Corrupt the entry ciphertext while leaving the verify-token
-        // intact: the passphrase is still correct, so this is corruption,
-        // not a wrong passphrase. The lossless typed path keeps them apart.
+        // Corrupt the entry ciphertext but leave the verify-token intact:
+        // passphrase still correct, so this is Corruption, not WrongPassphrase.
         let SecretStore::File(ref fs) = s else {
             unreachable!()
         };
@@ -300,9 +278,8 @@ mod tests {
 
     #[test]
     fn already_locked_surfaces_typed_lossless() {
-        // Resident-vault model: a second open() of the same path while
-        // the first store is alive returns AlreadyLocked. The typed
-        // distinction survives losslessly on the public path.
+        // A second open() of a path the first store still holds returns
+        // AlreadyLocked, losslessly on the public path.
         let dir = tempfile::tempdir().unwrap();
         let path = secure_vault_path(dir.path());
         let _s1 = SecretStore::file(&path, SecretString::new("pw")).unwrap();
@@ -321,16 +298,10 @@ mod tests {
         assert!(!dbg.contains("pw-correct"));
     }
 
-    /// The OS-keyring shim must enforce the label allowlist BEFORE
-    /// handing the value to the OS backend. The per-backend label
-    /// policies (macOS Keychain vs Windows
-    /// Credential Manager vs Secret Service) differ in what they accept,
-    /// normalize, or reject; the shim must keep the `(service, label)`
-    /// invariant uniform across every arm.
-    ///
-    /// A mock `CredentialStoreApi` that panics if its `build()` is
-    /// invoked proves the bad label never crosses the SPI seam — the
-    /// shim rejects with `SecretStoreError::InvalidLabel` first.
+    /// The shim must enforce the label allowlist before reaching the OS
+    /// backend (per-backend policies differ). A `CredentialStoreApi` that
+    /// panics on `build()` proves a bad label is rejected with
+    /// `InvalidLabel` before it ever crosses the SPI seam.
     #[test]
     fn build_os_rejects_invalid_label_before_spi() {
         use std::any::Any;
@@ -364,9 +335,8 @@ mod tests {
 
         let store: Arc<dyn CredentialStoreApi + Send + Sync> = Arc::new(PanickingStore);
         let os = SecretStore::Os(store);
-        // Every operation on the OS arm goes through `build_os`; the
-        // allowlist rejection MUST fire here, so the panicking SPI is
-        // never reached.
+        // Every OS-arm op goes through `build_os`, so the allowlist
+        // rejection fires before the panicking SPI is reached.
         for bad in ["lab el", "../escape", "", "a:b", "a/b", "lab\0el"] {
             let err = os
                 .set(&wid(1), bad, &SecretBytes::from_slice(b"x"))
