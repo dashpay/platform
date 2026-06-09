@@ -216,6 +216,15 @@ impl StateTransitionStateValidation for StateTransition {
                 // balance checks). If that already rejects, forward the rejection; otherwise hand
                 // the success action to `validate_state`, which branches success-vs-Unshield-fallback
                 // on the identity-creation state checks.
+                // Type 20 keeps `has_advanced_structure_validation_with_state() == false`, so the
+                // processor never pre-builds the action — it always arrives `None`. Assert that
+                // invariant so a future change that starts pre-building it fails loudly in tests
+                // rather than silently routing around `transform`'s pool/anchor/nullifier checks.
+                debug_assert!(
+                    action.is_none(),
+                    "IdentityCreateFromShieldedPool must not be pre-built by the processor \
+                     (advanced_structure_with_state is false)"
+                );
                 let action = if let Some(action) = action {
                     action
                 } else {

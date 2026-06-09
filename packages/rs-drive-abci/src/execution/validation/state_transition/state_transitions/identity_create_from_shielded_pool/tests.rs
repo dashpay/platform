@@ -340,6 +340,163 @@ fn validate_state_returns_unshield_fallback_on_duplicate_key_hash() {
     );
 }
 
+/// BLOCKING regression: the fallback charge must EXECUTE through `execute_event` despite the
+/// attached collision errors.
+///
+/// `validate_state` returns the fallback `UnshieldAction` WITH the unique-key-hash collision errors
+/// (`new_with_data_and_errors`). That routes to `ExecutionEvent::PaidFromShieldedPool`, whose
+/// execution arm MUST apply the ops (consume nullifiers, debit the pool, credit the fallback, book
+/// the penalty) and report `UnsuccessfulPaidExecution` — NOT skip the ops and return
+/// `UnpaidConsensusExecutionError`. If the ops were skipped (the old `errors.is_empty()` gate), the
+/// nullifiers would never be consumed, letting an attacker force repeated (expensive) Halo 2
+/// verification of a valid-proof-but-colliding-key transition for free. This drives the REAL
+/// `execute_event` path (the prior conservation test bypassed it by applying converter ops directly).
+#[test]
+fn failure_path_charge_executes_through_execute_event() {
+    use crate::execution::validation::state_transition::state_transitions::shielded_common::read_pool_total_balance;
+    use crate::platform_types::event_execution_result::EventExecutionResult;
+    use dpp::block::epoch::Epoch;
+    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+    use dpp::identity::accessors::IdentitySettersV0;
+
+    let platform_version = PlatformVersion::latest();
+    let platform = setup_platform();
+    let block_info = BlockInfo::default();
+    let seed = DENOMINATION * 10;
+
+    set_pool_total_balance(&platform, seed);
+    insert_anchor_into_state(&platform, &ANCHOR);
+    let min_notes = platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants
+        .minimum_pool_notes_for_outgoing;
+    insert_dummy_encrypted_notes(&platform, min_notes.max(1));
+
+    // Pre-register a colliding identity (balance 0 so it doesn't perturb anything we read).
+    let (mut existing_identity, keys_with_private): (Identity, Vec<(IdentityPublicKey, [u8; 32])>) =
+        Identity::random_identity_with_main_keys_with_private_key(
+            3,
+            &mut rand::rngs::StdRng::seed_from_u64(77),
+            platform_version,
+        )
+        .expect("random identity");
+    existing_identity.set_balance(0);
+    let existing_key = keys_with_private
+        .iter()
+        .find(|(k, _)| k.key_type() == KeyType::ECDSA_SECP256K1)
+        .map(|(k, _)| k.clone())
+        .expect("an ECDSA_SECP256K1 key");
+    platform
+        .drive
+        .add_new_identity(
+            existing_identity,
+            false,
+            &block_info,
+            true,
+            None,
+            platform_version,
+        )
+        .expect("add identity");
+    let dup_key = IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+        id: 0,
+        key_type: existing_key.key_type(),
+        purpose: existing_key.purpose(),
+        security_level: existing_key.security_level(),
+        contract_bounds: None,
+        read_only: false,
+        data: existing_key.data().clone(),
+        signature: BinaryData::default(),
+    });
+
+    // Run validate_state to obtain the real fallback UnshieldAction + the collision errors.
+    let st = transition(vec![dup_key], vec![action(30), action(31)]);
+    let mut execution_context =
+        StateTransitionExecutionContext::default_for_platform_version(platform_version)
+            .expect("execution context");
+    let success_action =
+        build_success_action(&platform, &st, &mut execution_context, platform_version);
+    let platform_state = platform.state.load();
+    let platform_ref = PlatformRef {
+        drive: &platform.drive,
+        state: &platform_state,
+        config: &platform.config,
+        core_rpc: &platform.core_rpc,
+    };
+    let result = st
+        .validate_state_v0(
+            &platform_ref,
+            success_action,
+            &mut execution_context,
+            None,
+            platform_version,
+        )
+        .expect("validate_state");
+    let errors = result.errors.clone();
+    assert!(
+        !errors.is_empty(),
+        "the fallback must carry the collision errors"
+    );
+    let fallback_action = result.into_data().expect("fallback action");
+
+    // Build the execution event from the fallback action and EXECUTE it through the real path.
+    let event =
+        crate::execution::types::execution_event::ExecutionEvent::create_from_state_transition_action(
+            fallback_action,
+            None,
+            &Epoch::new(0).unwrap(),
+            execution_context,
+            platform_version,
+        )
+        .expect("create execution event");
+
+    let transaction = platform.drive.grove.start_transaction();
+    let fee_versions = CachedEpochIndexFeeVersions::new();
+    let exec_result = platform
+        .platform
+        .execute_event(
+            event,
+            errors,
+            &block_info,
+            &transaction,
+            None,
+            platform_version,
+            &fee_versions,
+        )
+        .expect("execute_event should not error");
+
+    // THE FIX: the charge executes (`UnsuccessfulPaidExecution`), NOT `UnpaidConsensusExecutionError`.
+    let booked_fee = match exec_result {
+        EventExecutionResult::UnsuccessfulPaidExecution(_, fee_result, _) => {
+            fee_result.total_base_fee()
+        }
+        other => panic!(
+            "the fallback charge must execute despite the collision errors; expected \
+             UnsuccessfulPaidExecution, got {other:?}"
+        ),
+    };
+    assert!(
+        booked_fee > 0,
+        "the penalty fee must be booked into the fee pools"
+    );
+
+    // The ops were APPLIED: the pool is debited by the full denomination (nullifiers/notes inserted,
+    // pool decremented) — proving the spend was finalized, not skipped.
+    let mut ops = vec![];
+    let pool_after = read_pool_total_balance(
+        &platform.drive,
+        Some(&transaction),
+        &mut ops,
+        platform_version,
+    )
+    .expect("read pool balance");
+    assert_eq!(
+        pool_after,
+        seed - DENOMINATION,
+        "the pool must be debited by the full denomination when the fallback charge executes"
+    );
+}
+
 /// Sum-tree credit-conservation regression for the pool->new-identity exit.
 ///
 /// Applies the converter's high-level drive operations through a REAL Drive and asserts the

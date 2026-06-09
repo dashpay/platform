@@ -84,17 +84,26 @@ impl IdentityCreateFromShieldedPoolStateTransitionStateValidationV0
         } else {
             // A unique-key-hash collision: finalize the spend and credit the fallback address minus a
             // penalty. The penalty is the flat `unique_key_already_present` amount plus the metered
-            // processing fee accumulated so far, exactly like `IdentityCreateFromAddresses`'s
-            // `BumpAddressInputNonces` penalty. We then CAP it at the denomination so the Unshield
-            // converter's `amount.checked_sub(fee)` cannot underflow (a net-zero credit is the worst
-            // case: the whole spend is consumed by the penalty and flows to the fee pools).
+            // processing fee accumulated so far (like `IdentityCreateFromAddresses`'s
+            // `BumpAddressInputNonces` penalty) PLUS the flat shielded compute fee
+            // (`compute_shielded_verification_fee`): the proposer ran the same Halo 2 verification on
+            // the failure path that the success path charges via `additional_fixed_fee_cost`, so the
+            // penalty floor must cover it too (fee parity with the success / other shielded paths). We
+            // then CAP it at the denomination so the Unshield converter's `amount.checked_sub(fee)`
+            // cannot underflow (a net-zero credit is the worst case: the whole spend is consumed by
+            // the penalty and flows to the fee pools).
             let denomination = action.denomination();
+            let compute_fee = dpp::shielded::compute_shielded_verification_fee(
+                action.notes().len(),
+                platform_version,
+            )?;
             let penalty = platform_version
                 .drive_abci
                 .validation_and_processing
                 .penalties
                 .unique_key_already_present
                 .checked_add(execution_context.fee_cost(platform_version)?.processing_fee)
+                .and_then(|v| v.checked_add(compute_fee))
                 .ok_or(ProtocolError::Overflow(
                     "identity create from shielded pool failure penalty overflow",
                 ))?

@@ -550,35 +550,50 @@ where
                 fees_to_add_to_pool,
                 ..
             } => {
+                // Apply the ops REGARDLESS of attached consensus errors. The ordinary shielded
+                // spends (Unshield / ShieldedTransfer / ShieldedWithdrawal) only ever reach here
+                // with NO errors (they are data-only on success, error-only on rejection, so they
+                // never carry data+errors). The IdentityCreateFromShieldedPool FALLBACK is the only
+                // event that arrives WITH errors, and it is a CHARGEABLE failure: the spend must
+                // still be finalized (nullifiers consumed, pool debited, fallback address credited)
+                // and the penalty booked to the fee pools — exactly like `PaidFromAddressInputs`'
+                // `UnsuccessfulPaidExecution` path for the `BumpAddressInputNonces` penalty. If the
+                // ops were skipped (the previous `errors.is_empty()` gate), the nullifiers would NOT
+                // be consumed, letting an attacker force repeated (expensive) Halo 2 verification of
+                // the same valid-proof-but-colliding-key transition for free.
+                let applied_fees = self
+                    .drive
+                    .apply_drive_operations(
+                        operations,
+                        true,
+                        block_info,
+                        Some(transaction),
+                        platform_version,
+                        Some(previous_fee_versions),
+                    )
+                    .map_err(Error::Drive)?;
+
+                // Split the carved fee like every other transition: the real storage
+                // cost of the (permanent) shielded writes goes to the storage pool, so it
+                // is amortised to the validators that store it over time and picks up the
+                // epoch fee multiplier at payout; the remainder (proof verification +
+                // per-action processing) is the processing fee paid to the current
+                // proposer. Conservation: storage + processing == fees_to_add_to_pool
+                // (what was carved from the shielded pool).
+                let storage_fee = applied_fees.storage_fee.min(fees_to_add_to_pool);
+                let processing_fee = fees_to_add_to_pool - storage_fee;
+                let fee_result = FeeResult::default_with_fees(storage_fee, processing_fee);
+
                 if consensus_errors.is_empty() {
-                    let applied_fees = self
-                        .drive
-                        .apply_drive_operations(
-                            operations,
-                            true,
-                            block_info,
-                            Some(transaction),
-                            platform_version,
-                            Some(previous_fee_versions),
-                        )
-                        .map_err(Error::Drive)?;
-
-                    // Split the carved fee like every other transition: the real storage
-                    // cost of the (permanent) shielded writes goes to the storage pool, so it
-                    // is amortised to the validators that store it over time and picks up the
-                    // epoch fee multiplier at payout; the remainder (proof verification +
-                    // per-action processing) is the processing fee paid to the current
-                    // proposer. Conservation: storage + processing == fees_to_add_to_pool
-                    // (what was carved from the shielded pool).
-                    let storage_fee = applied_fees.storage_fee.min(fees_to_add_to_pool);
-                    let processing_fee = fees_to_add_to_pool - storage_fee;
-
-                    Ok(SuccessfulPaidExecution(
-                        None,
-                        FeeResult::default_with_fees(storage_fee, processing_fee),
-                    ))
+                    Ok(SuccessfulPaidExecution(None, fee_result))
                 } else {
-                    Ok(UnpaidConsensusExecutionError(consensus_errors))
+                    // The fallback charged its penalty but the identity was NOT created — report it
+                    // as a chargeable consensus failure (the ops above are committed regardless).
+                    Ok(UnsuccessfulPaidExecution(
+                        None,
+                        fee_result,
+                        consensus_errors,
+                    ))
                 }
             }
             ExecutionEvent::PaidFromAssetLockToPool {
