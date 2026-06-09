@@ -3,6 +3,8 @@ use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
 use bincode::{Decode, Encode};
 use platform_value::BinaryData;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +24,7 @@ pub const MAX_P2SH_SIGNATURES: usize = 17;
 /// load-bearing wire format). The serde JSON/Value deserialize path does not
 /// enforce it; downstream consumers must validate signature counts before
 /// re-serializing for storage.
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, PartialEq, Ord, PartialOrd, Eq)]
 #[cfg_attr(
     feature = "serde-conversion",

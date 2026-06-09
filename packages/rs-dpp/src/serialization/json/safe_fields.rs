@@ -97,7 +97,8 @@ impl JsonSafeFields for crate::identity::identity_public_key::IdentityPublicKey 
 impl JsonSafeFields for crate::identity::state_transition::asset_lock_proof::AssetLockProof {}
 impl JsonSafeFields for crate::address_funds::PlatformAddress {}
 impl JsonSafeFields for crate::address_funds::AddressFundsFeeStrategy {}
-impl JsonSafeFields for crate::address_funds::AddressWitness {}
+// `AddressWitness` is verified via `#[json_safe_fields]` on the type itself
+// (named-field variants of `BinaryData`), so no manual marker is needed here.
 impl JsonSafeFields for crate::withdrawal::Pooling {}
 impl JsonSafeFields for crate::identity::core_script::CoreScript {}
 impl JsonSafeFields for crate::voting::votes::Vote {}
@@ -112,8 +113,8 @@ impl JsonSafeFields
 impl JsonSafeFields for crate::tokens::token_payment_info::TokenPaymentInfo {}
 // `GasFeesPaidBy` is a unit-variant enum (no u64).
 impl JsonSafeFields for crate::tokens::gas_fees_paid_by::GasFeesPaidBy {}
-// `GroupStateTransitionInfo` has only `u16` / `Identifier` / `bool` fields.
-impl JsonSafeFields for crate::group::GroupStateTransitionInfo {}
+// `GroupStateTransitionInfo` is verified via `#[json_safe_fields]` on the type
+// itself (named `u16` / `Identifier` / `bool` fields) — no manual marker needed.
 // `TokenBaseTransition` wraps `TokenBaseTransitionV0` which is
 // `#[json_safe_fields]`-annotated, so the wrapper is safe by induction.
 impl JsonSafeFields

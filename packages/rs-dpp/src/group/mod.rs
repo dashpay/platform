@@ -1,5 +1,7 @@
 use crate::data_contract::group::{Group, GroupMemberPower};
 use crate::data_contract::GroupContractPosition;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use bincode::{Decode, Encode};
 use derive_more::Display;
 use platform_value::Identifier;
@@ -32,6 +34,7 @@ impl From<GroupStateTransitionInfoStatus> for GroupStateTransitionInfo {
     }
 }
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display)]
 #[cfg_attr(
     feature = "serde-conversion",
