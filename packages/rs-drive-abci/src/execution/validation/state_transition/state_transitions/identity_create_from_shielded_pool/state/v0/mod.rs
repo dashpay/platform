@@ -101,7 +101,7 @@ impl IdentityCreateFromShieldedPoolStateTransitionStateValidationV0
                 .min(denomination);
 
             let failure_action = UnshieldTransitionAction::V0(UnshieldTransitionActionV0 {
-                output_address: self.send_to_address_on_creation_failure().clone(),
+                output_address: *self.send_to_address_on_creation_failure(),
                 amount: denomination,
                 notes: action.notes().to_vec(),
                 anchor: *action.anchor(),
