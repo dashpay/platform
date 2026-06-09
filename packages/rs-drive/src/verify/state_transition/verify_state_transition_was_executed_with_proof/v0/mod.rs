@@ -1133,18 +1133,100 @@ impl Drive {
                 Ok((root_hash, VerifiedAddressInfos(balances)))
             }
             StateTransition::Unshield(st) => {
+                use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
                 use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos;
                 use dpp::state_transition::unshield_transition::accessors::UnshieldTransitionAccessorsV0;
+                use grovedb::Element;
 
                 let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
 
-                let (root_hash_nf, statuses) = Drive::verify_shielded_nullifiers(
+                // Reconstruct the prove side's merged query — nullifier spend-status ∪
+                // output-address balance — and verify it strictly. See
+                // `verify_merged_query_strict` for why a single strict merged verify is
+                // sound and rejects proofs padded with extra subtree branches.
+                let mut nf_query = grovedb::Query::new();
+                nf_query.insert_keys(nullifier_keys);
+                let nullifier_pq = grovedb::PathQuery::new(
+                    shielded_credit_pool_nullifiers_path_vec(),
+                    grovedb::SizedQuery::new(nf_query, None, None),
+                );
+
+                let address_pq =
+                    Drive::balances_for_clear_addresses_query(std::iter::once(st.output_address()));
+
+                let (root_hash, proved_key_values) = Self::verify_merged_query_strict(
                     proof,
-                    &nullifier_keys,
-                    true,
+                    vec![nullifier_pq, address_pq],
                     platform_version,
                 )?;
 
+                // Partition the proved key/values by path: entries under the nullifiers tree are
+                // spend statuses, entries under the clear-address pool are address balances.
+                let nullifiers_path = shielded_credit_pool_nullifiers_path_vec();
+                let addresses_path = Drive::clear_addresses_path();
+
+                let mut statuses: Vec<(Vec<u8>, bool)> = Vec::new();
+                let mut balances: BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>> =
+                    BTreeMap::new();
+
+                for (path, key, element) in proved_key_values {
+                    if path == nullifiers_path {
+                        // A present element means the nullifier is spent; absence means unspent.
+                        statuses.push((key, element.is_some()));
+                    } else if path == addresses_path {
+                        // Mirror `verify_addresses_infos_v0`: reconstruct the address from the key
+                        // and decode the `ItemWithSumItem` (nonce, balance) element.
+                        let address = PlatformAddress::from_bytes(&key).map_err(|e| {
+                            Error::Proof(ProofError::CorruptedProof(format!(
+                                "failed to deserialize output PlatformAddress: {}",
+                                e
+                            )))
+                        })?;
+
+                        let balance_info = element
+                            .map(|element| {
+                                let Element::ItemWithSumItem(nonce_vec, balance_i64, _) = element
+                                else {
+                                    return Err(Error::Proof(ProofError::CorruptedProof(
+                                        "expected an item with sum item element".to_string(),
+                                    )));
+                                };
+
+                                let nonce_bytes: [u8; 4] = nonce_vec.try_into().map_err(|_| {
+                                    Error::Proof(ProofError::IncorrectValueSize(
+                                        "nonce should be 4 bytes",
+                                    ))
+                                })?;
+                                let nonce = AddressNonce::from_be_bytes(nonce_bytes);
+
+                                if balance_i64 < 0 {
+                                    return Err(Error::Proof(ProofError::CorruptedProof(
+                                        "balance cannot be negative".to_string(),
+                                    )));
+                                }
+
+                                Ok((nonce, balance_i64 as Credits))
+                            })
+                            .transpose()?;
+
+                        // Mirror ShieldedWithdrawal's singleton-subtree invariant: the
+                        // address sub-query targets exactly one key, so a second entry under
+                        // the clear-address pool is a malformed proof, not last-write-wins.
+                        if balances.contains_key(&address) {
+                            return Err(Error::Proof(ProofError::CorruptedProof(
+                                "unshield proof contained more than one output-address entry"
+                                    .to_string(),
+                            )));
+                        }
+                        balances.insert(address, balance_info);
+                    } else {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "unshield proof contained an entry outside the nullifier and address subtrees".to_string(),
+                        )));
+                    }
+                }
+
+                // Every nullifier must be present and marked spent.
                 for (nf, is_spent) in &statuses {
                     if !is_spent {
                         return Err(Error::Proof(ProofError::IncorrectProof(format!(
@@ -1154,25 +1236,8 @@ impl Drive {
                     }
                 }
 
-                let (root_hash_addr, balances): (
-                    RootHash,
-                    BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
-                ) = Drive::verify_addresses_infos(
-                    proof,
-                    std::iter::once(st.output_address()),
-                    true,
-                    platform_version,
-                )?;
-
-                if root_hash_nf != root_hash_addr {
-                    return Err(Error::Proof(ProofError::CorruptedProof(
-                        "unshield proof root hashes do not match between nullifiers and address"
-                            .to_string(),
-                    )));
-                }
-
                 Ok((
-                    root_hash_nf,
+                    root_hash,
                     VerifiedShieldedNullifiersWithAddressInfos(statuses, balances),
                 ))
             }
@@ -1202,31 +1267,18 @@ impl Drive {
                 Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
             }
             StateTransition::ShieldedWithdrawal(st) => {
+                use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
                 use dpp::data_contracts::withdrawals_contract;
                 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
+                use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
                 use dpp::document::Document;
                 use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedShieldedNullifiersWithWithdrawalDocument;
                 use dpp::state_transition::shielded_withdrawal_transition::accessors::ShieldedWithdrawalTransitionAccessorsV0;
+                use grovedb::Element;
 
                 let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
 
-                let (root_hash_nf, statuses) = Drive::verify_shielded_nullifiers(
-                    proof,
-                    &nullifier_keys,
-                    true,
-                    platform_version,
-                )?;
-
-                for (nf, is_spent) in &statuses {
-                    if !is_spent {
-                        return Err(Error::Proof(ProofError::IncorrectProof(format!(
-                            "nullifier {} was not found as spent in the shielded withdrawal proof",
-                            hex::encode(nf)
-                        ))));
-                    }
-                }
-
-                // Compute withdrawal document ID deterministically (same as prove side)
+                // Compute withdrawal document ID deterministically (same as prove side).
                 let first_nullifier = nullifier_keys.first().ok_or_else(|| {
                     Error::Proof(ProofError::InvalidTransition(
                         "shielded withdrawal has no nullifiers".to_string(),
@@ -1268,25 +1320,88 @@ impl Drive {
                     contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
                 };
 
-                let (root_hash_doc, maybe_doc) =
-                    doc_query.verify_proof(true, proof, document_type, platform_version)?;
+                // Reconstruct the prove side's merged query — nullifier spend-status ∪
+                // withdrawal document — and verify it strictly. See
+                // `verify_merged_query_strict` for why a single strict merged verify is
+                // sound and rejects proofs padded with extra subtree branches.
+                let mut nf_query = grovedb::Query::new();
+                nf_query.insert_keys(nullifier_keys);
+                let nullifier_pq = grovedb::PathQuery::new(
+                    shielded_credit_pool_nullifiers_path_vec(),
+                    grovedb::SizedQuery::new(nf_query, None, None),
+                );
 
-                if root_hash_nf != root_hash_doc {
-                    return Err(Error::Proof(ProofError::CorruptedProof(
-                        "shielded withdrawal proof root hashes do not match between nullifiers and document"
-                            .to_string(),
-                    )));
+                let doc_pq = doc_query.construct_path_query(platform_version)?;
+                let document_path = doc_pq.path.clone();
+
+                let (root_hash, proved_key_values) = Self::verify_merged_query_strict(
+                    proof,
+                    vec![nullifier_pq, doc_pq],
+                    platform_version,
+                )?;
+
+                // Partition the proved key/values by path: entries under the nullifiers tree are
+                // spend statuses; the single entry under the withdrawal-document tree is the
+                // proven document.
+                let nullifiers_path = shielded_credit_pool_nullifiers_path_vec();
+
+                let mut statuses: Vec<(Vec<u8>, bool)> = Vec::new();
+                let mut document_element: Option<Option<Element>> = None;
+
+                for (path, key, element) in proved_key_values {
+                    if path == nullifiers_path {
+                        statuses.push((key, element.is_some()));
+                    } else if path == document_path {
+                        if document_element.is_some() {
+                            return Err(Error::Proof(ProofError::CorruptedProof(
+                                "shielded withdrawal proof contained more than one withdrawal document".to_string(),
+                            )));
+                        }
+                        document_element = Some(element);
+                    } else {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "shielded withdrawal proof contained an entry outside the nullifier and document subtrees".to_string(),
+                        )));
+                    }
                 }
 
-                let doc = maybe_doc.ok_or_else(|| {
+                // Every nullifier must be present and marked spent.
+                for (nf, is_spent) in &statuses {
+                    if !is_spent {
+                        return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                            "nullifier {} was not found as spent in the shielded withdrawal proof",
+                            hex::encode(nf)
+                        ))));
+                    }
+                }
+
+                let document_element = document_element.ok_or_else(|| {
                     Error::Proof(ProofError::CorruptedProof(
-                        "shielded withdrawal was executed but withdrawal document is missing from proof".to_string(),
+                        "shielded withdrawal document key absent from proof".to_string(),
                     ))
                 })?;
+
+                let doc = match document_element {
+                    Some(Element::Item(serialized, _)) => Document::from_bytes(
+                        serialized.as_slice(),
+                        document_type,
+                        platform_version,
+                    )?,
+                    Some(_) => {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "expected an item element for withdrawal document".to_string(),
+                        )));
+                    }
+                    None => {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "shielded withdrawal was executed but withdrawal document is missing from proof".to_string(),
+                        )));
+                    }
+                };
                 let documents = BTreeMap::from([(document_id, Some(doc))]);
 
                 Ok((
-                    root_hash_nf,
+                    root_hash,
                     VerifiedShieldedNullifiersWithWithdrawalDocument(statuses, documents),
                 ))
             }
@@ -1323,46 +1438,19 @@ impl Drive {
 
                 match surplus_output {
                     Some(surplus_address) => {
-                        // The prove side merged the outpoint sub-query with the surplus-address
-                        // balance sub-query into a SINGLE multi-root proof (clearing each sub-query
-                        // limit before the merge, because `PathQuery::merge` rejects limited
-                        // sub-queries). Reconstruct the byte-identical merged query here and verify
-                        // it STRICTLY: the strict verifier accepts a proof that matches the merged
-                        // query exactly and REJECTS any proof carrying extra branches, so a
-                        // malicious/buggy prover cannot pad the proof with unrelated data.
-                        let mut outpoint_pq = outpoint_pq;
-                        outpoint_pq.query.limit = None;
-
-                        let mut address_pq = Drive::balances_for_clear_addresses_query(
+                        // Reconstruct the prove side's merged query — asset-lock outpoint ∪
+                        // surplus-address balance — and verify it strictly. See
+                        // `verify_merged_query_strict` for why a single strict merged verify
+                        // is sound and rejects proofs padded with extra subtree branches.
+                        let address_pq = Drive::balances_for_clear_addresses_query(
                             std::iter::once(surplus_address),
                         );
-                        address_pq.query.limit = None;
 
-                        let mut merged_pq = grovedb::PathQuery::merge(
-                            vec![&outpoint_pq, &address_pq],
-                            &platform_version.drive.grove_version,
+                        let (root_hash, proved_key_values) = Self::verify_merged_query_strict(
+                            proof,
+                            vec![outpoint_pq, address_pq],
+                            platform_version,
                         )?;
-
-                        // `verify_query_with_absence_proof` (the STRICT verifier) requires a limit
-                        // to be set, but `PathQuery::merge` leaves the merged limit at `None`. The
-                        // merged query targets a fixed, tiny set of explicit keys ({outpoint} ∪
-                        // {surplus address}), so we set a limit that can never be exhausted by the
-                        // legitimate result set. This is load-bearing for soundness: the succinctness
-                        // check that rejects extra proof layers runs per-layer AFTER that layer's
-                        // result loop, and the result loop only breaks early once the limit hits 0.
-                        // A limit smaller than the real result count could break before every layer's
-                        // succinctness check runs (falsely rejecting honest proofs); an unreachable
-                        // limit guarantees every layer is fully traversed and every extra branch is
-                        // caught. The limit does NOT relax the extra-data rejection — that is the
-                        // succinctness check, which is independent of the limit value.
-                        merged_pq.query.limit = Some(u16::MAX);
-
-                        let (root_hash, proved_key_values) =
-                            grovedb::GroveDb::verify_query_with_absence_proof(
-                                proof,
-                                &merged_pq,
-                                &platform_version.drive.grove_version,
-                            )?;
 
                         // Partition the proved key/values: exactly one entry is the asset-lock
                         // outpoint (36-byte key), every other entry is a surplus-address balance
@@ -1690,6 +1778,53 @@ impl Drive {
                 ))
             }
         }
+    }
+
+    /// Reconstruct the prove side's merged multi-root query and verify it STRICTLY.
+    ///
+    /// The shielded prove paths merge several sub-queries into a SINGLE multi-root
+    /// proof. [`grovedb::PathQuery::merge`] rejects sub-queries that still carry a
+    /// limit, so every sub-query's limit is cleared here before the merge. The strict
+    /// [`grovedb::GroveDb::verify_query_with_absence_proof`] in turn *requires* a
+    /// limit, but it must never be exhausted by the legitimate result set: the
+    /// per-layer succinctness check that rejects extra proof branches runs AFTER that
+    /// layer's result loop, and the result loop only breaks early once the limit hits
+    /// 0 — so a limit smaller than the real result count could break before a layer's
+    /// succinctness check runs and falsely reject an honest proof. Every shielded
+    /// merged query targets a fixed, tiny set of explicit keys ({nullifiers} plus one
+    /// address/document/outpoint), so an unreachable `u16::MAX` limit is sound: it
+    /// guarantees every layer is fully traversed while the (limit-independent)
+    /// succinctness check still rejects any proof padded with extra subtree branches.
+    ///
+    /// Returns the proof root hash and every proved `(path, key, element)` trio, left
+    /// for the caller to partition against the sub-query paths.
+    #[allow(clippy::type_complexity)]
+    fn verify_merged_query_strict(
+        proof: &[u8],
+        mut sub_queries: Vec<grovedb::PathQuery>,
+        platform_version: &PlatformVersion,
+    ) -> Result<
+        (
+            RootHash,
+            Vec<grovedb::query_result_type::PathKeyOptionalElementTrio>,
+        ),
+        Error,
+    > {
+        for sub_query in &mut sub_queries {
+            sub_query.query.limit = None;
+        }
+
+        let mut merged_pq = grovedb::PathQuery::merge(
+            sub_queries.iter().collect(),
+            &platform_version.drive.grove_version,
+        )?;
+        merged_pq.query.limit = Some(u16::MAX);
+
+        Ok(grovedb::GroveDb::verify_query_with_absence_proof(
+            proof,
+            &merged_pq,
+            &platform_version.drive.grove_version,
+        )?)
     }
 }
 
