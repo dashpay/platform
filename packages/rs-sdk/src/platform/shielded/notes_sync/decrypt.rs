@@ -17,19 +17,11 @@
 
 use drive_proof_verifier::types::ShieldedEncryptedNote;
 use grovedb_commitment_tree::{
-    try_compact_note_decryption, CompactAction, DashMemo, EphemeralKeyBytes,
-    ExtractedNoteCommitment, Note, NoteBytes, NoteBytesData, Nullifier, OrchardDomain,
-    OutgoingViewingKey, PaymentAddress, PreparedIncomingViewingKey, ValueCommitment,
+    try_compact_note_decryption, try_output_recovery_with_ovk, CompactAction, DashMemo,
+    EphemeralKeyBytes, ExtractedNoteCommitment, Note, NoteBytes, NoteBytesData, Nullifier,
+    OrchardDomain, OutgoingViewingKey, PaymentAddress, PreparedIncomingViewingKey, ValueCommitment,
     COMPACT_NOTE_SIZE,
 };
-// `try_output_recovery_with_ovk` is the one decryption entry point the
-// commitment-tree facade does NOT re-export (it forwards only the two
-// *incoming* trial-decryption fns), so it is pulled from the direct
-// `orchard` dep. Same crate instance as everything imported from
-// `grovedb_commitment_tree` above — both resolve to the pinned
-// `dashified-0.14.0` fork — so the `OrchardDomain` / `ShieldedOutput` /
-// `ValueCommitment` types line up across the two import paths.
-use orchard::zcash_note_encryption::try_output_recovery_with_ovk;
 
 /// Minimum length of the `encrypted_note` field for compact trial decryption.
 ///

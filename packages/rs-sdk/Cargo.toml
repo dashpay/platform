@@ -18,21 +18,9 @@ drive = { path = "../rs-drive", default-features = false, features = [
 ] }
 
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "3606ec60861750df69f019a93cac7fb4a78d564c", features = [
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "fc814983d4d36c6ea049642556b9a31ab8d4dfaa", features = [
   "client",
   "sqlite",
-], optional = true }
-# Direct dependency on the same dashpay `orchard` fork that
-# `grovedb-commitment-tree` pins (tag `dashified-0.14.0`). The commitment-tree
-# crate re-exports the incoming trial-decryption surface
-# (`try_compact_note_decryption` / `try_note_decryption`) but NOT
-# `zcash_note_encryption::try_output_recovery_with_ovk`, which the OVK
-# outgoing-note recovery path needs. The git source / tag / feature set match
-# the commitment-tree declaration exactly so Cargo unifies both onto a single
-# `orchard` instance (a divergent feature set would split it and break the
-# shared `OrchardDomain` / `ShieldedOutput` types). Gated behind `shielded`.
-orchard = { git = "https://github.com/dashpay/orchard.git", tag = "dashified-0.14.0", features = [
-  "circuit",
 ], optional = true }
 dash-async = { path = "../rs-dash-async" }
 dash-context-provider = { path = "../rs-context-provider", default-features = false }
@@ -167,7 +155,7 @@ core_key_wallet_manager = ["dpp/core_key_wallet_manager"]
 core_key_wallet_bip38 = ["dpp/core_key_wallet_bip_38"]
 core_spv = ["dpp/core_spv"]
 core_rpc_client = ["dpp/core_rpc_client"]
-shielded = ["dep:grovedb-commitment-tree", "dep:orchard", "dpp/shielded-client"]
+shielded = ["dep:grovedb-commitment-tree", "dpp/shielded-client"]
 
 # Platform wallet support
 wallet = ["core_key_wallet_manager", "core_key_wallet"]
