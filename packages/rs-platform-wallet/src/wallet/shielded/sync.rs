@@ -419,9 +419,14 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         //    later pass), since `mark_spent` is an idempotent no-op for
         //    nullifiers the wallet doesn't own or already marked spent.
         for (i, raw_note) in batch.notes.iter().enumerate() {
-            if let Ok(nf_bytes) = <[u8; 32]>::try_from(raw_note.nullifier.as_slice()) {
-                scanned_nullifiers.push(nf_bytes);
-            }
+            // A malformed nullifier length means the proven note item is corrupt;
+            // fail fast (consistent with the cmx check below) rather than silently
+            // dropping it — a dropped nullifier would leave a spent note marked
+            // unspent.
+            let nf_bytes = <[u8; 32]>::try_from(raw_note.nullifier.as_slice()).map_err(|_| {
+                PlatformWalletError::ShieldedSyncFailed("Invalid nullifier length".into())
+            })?;
+            scanned_nullifiers.push(nf_bytes);
             let global_pos = batch.start_index + i as u64;
             if global_pos < tree_size {
                 continue;

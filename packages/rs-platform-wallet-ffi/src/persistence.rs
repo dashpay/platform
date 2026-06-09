@@ -1195,24 +1195,34 @@ impl PlatformWalletPersistence for FFIPersister {
                         .outgoing_notes
                         .iter()
                         .flat_map(|(id, notes)| {
-                            notes.iter().map(|n| ShieldedOutgoingNoteFFI {
-                                wallet_id: id.wallet_id,
-                                account_index: id.account_index,
-                                cmx: n.cmx,
-                                // `recipient` is a 43-byte raw Orchard
-                                // address stored as a `Vec`; copy into the
-                                // fixed FFI array, zero-padding defensively
-                                // if a malformed row is ever shorter.
-                                recipient: {
-                                    let mut r = [0u8; 43];
-                                    let len = n.recipient.len().min(43);
-                                    r[..len].copy_from_slice(&n.recipient[..len]);
-                                    r
-                                },
-                                value: n.value,
-                                block_height: n.block_height,
-                                memo_ptr: n.memo.as_ptr(),
-                                memo_len: n.memo.len(),
+                            notes.iter().filter_map(|n| {
+                                // `recipient` is a 43-byte raw Orchard address
+                                // stored as a `Vec` (serde-derive only covers
+                                // arrays <= 32). It is always exactly 43 bytes
+                                // from OVK recovery; reject (skip + warn) a
+                                // malformed row rather than silently zero-padding
+                                // it into a wrong address.
+                                let recipient: [u8; 43] = match n.recipient.as_slice().try_into() {
+                                    Ok(r) => r,
+                                    Err(_) => {
+                                        tracing::warn!(
+                                            recipient_len = n.recipient.len(),
+                                            "skipping outgoing-note persist row: \
+                                                 recipient is not the expected 43 bytes"
+                                        );
+                                        return None;
+                                    }
+                                };
+                                Some(ShieldedOutgoingNoteFFI {
+                                    wallet_id: id.wallet_id,
+                                    account_index: id.account_index,
+                                    cmx: n.cmx,
+                                    recipient,
+                                    value: n.value,
+                                    block_height: n.block_height,
+                                    memo_ptr: n.memo.as_ptr(),
+                                    memo_len: n.memo.len(),
+                                })
                             })
                         })
                         .collect();
