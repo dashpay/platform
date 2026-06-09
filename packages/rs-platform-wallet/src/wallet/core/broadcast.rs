@@ -238,7 +238,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                             account_index
                         ))
                     })?;
-                (acct.account_xpub, acct.account_type.clone(), acct.network)
+                (acct.account_xpub, acct.account_type, acct.network)
             };
 
             let current_height = info.core_wallet.synced_height();
@@ -522,7 +522,9 @@ mod sweep_chunking_tests {
                 "every UTXO consumed exactly once for {total}"
             );
             assert!(
-                sizes.iter().all(|&n| n >= 1 && n <= MAX_INPUTS_PER_SWEEP),
+                sizes
+                    .iter()
+                    .all(|&n| (1..=MAX_INPUTS_PER_SWEEP).contains(&n)),
                 "every chunk within [1, {MAX_INPUTS_PER_SWEEP}] for {total}: {sizes:?}"
             );
         }
