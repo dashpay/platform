@@ -945,11 +945,12 @@ public class PlatformWalletPersistenceHandler {
         cb.on_persist_contacts_fn = persistContactsCallback
         cb.on_persist_shielded_notes_fn = persistShieldedNotesCallback
         cb.on_persist_shielded_nullifiers_spent_fn = persistShieldedNullifiersSpentCallback
+        cb.on_persist_shielded_outgoing_notes_fn = persistShieldedOutgoingNotesCallback
         cb.on_persist_shielded_synced_indices_fn = persistShieldedSyncedIndicesCallback
-        cb.on_persist_shielded_nullifier_checkpoints_fn =
-            persistShieldedNullifierCheckpointsCallback
         cb.on_load_shielded_notes_fn = loadShieldedNotesCallback
         cb.on_load_shielded_notes_free_fn = loadShieldedNotesFreeCallback
+        cb.on_load_shielded_outgoing_notes_fn = loadShieldedOutgoingNotesCallback
+        cb.on_load_shielded_outgoing_notes_free_fn = loadShieldedOutgoingNotesFreeCallback
         cb.on_load_shielded_sync_states_fn = loadShieldedSyncStatesCallback
         cb.on_load_shielded_sync_states_free_fn = loadShieldedSyncStatesFreeCallback
         cb.on_persist_asset_locks_fn = persistAssetLocksCallback
@@ -2273,6 +2274,62 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
+    /// One outgoing (sent) shielded-note row from
+    /// `ShieldedChangeSet::outgoing_notes`. Decoupled from
+    /// `ShieldedOutgoingNoteFFI` so the trampoline can copy the
+    /// `recipient` / `memo` bytes out before this method runs on
+    /// `onQueue` (the Rust pointers are only valid for the callback
+    /// window).
+    struct ShieldedOutgoingNoteSnapshot {
+        let walletId: Data
+        let accountIndex: UInt32
+        let cmx: Data
+        let recipient: Data
+        let value: UInt64
+        let memo: Data
+        let blockHeight: UInt64
+    }
+
+    /// Upsert a batch of OVK-recovered outgoing (sent) notes by
+    /// `(walletId, accountIndex, cmx)`. Append-only send history with
+    /// no spend / nullifier state; re-persisting the same `cmx`
+    /// (a re-scan) overwrites the existing row in place.
+    func persistShieldedOutgoingNotes(walletId: Data, snapshots: [ShieldedOutgoingNoteSnapshot]) {
+        onQueue {
+            for snap in snapshots {
+                let wid = snap.walletId
+                let acct = snap.accountIndex
+                let cmx = snap.cmx
+                let predicate = #Predicate<PersistentShieldedOutgoingNote> {
+                    $0.walletId == wid && $0.accountIndex == acct && $0.cmx == cmx
+                }
+                var descriptor = FetchDescriptor<PersistentShieldedOutgoingNote>(
+                    predicate: predicate
+                )
+                descriptor.fetchLimit = 1
+                if let existing = try? backgroundContext.fetch(descriptor).first {
+                    existing.recipient = snap.recipient
+                    existing.value = snap.value
+                    existing.memo = snap.memo
+                    existing.blockHeight = snap.blockHeight
+                    existing.lastUpdated = Date()
+                } else {
+                    let row = PersistentShieldedOutgoingNote(
+                        walletId: snap.walletId,
+                        accountIndex: snap.accountIndex,
+                        cmx: snap.cmx,
+                        recipient: snap.recipient,
+                        value: snap.value,
+                        memo: snap.memo,
+                        blockHeight: snap.blockHeight
+                    )
+                    backgroundContext.insert(row)
+                }
+            }
+            if !self.inChangeset { try? backgroundContext.save() }
+        }
+    }
+
     /// Mark notes as spent by nullifier.
     func persistShieldedNullifiersSpent(
         walletId: Data,
@@ -2309,26 +2366,6 @@ public class PlatformWalletPersistenceHandler {
                 if entry.lastSyncedIndex > row.lastSyncedIndex {
                     row.lastSyncedIndex = entry.lastSyncedIndex
                 }
-                row.lastUpdated = Date()
-            }
-            if !self.inChangeset { try? backgroundContext.save() }
-        }
-    }
-
-    /// Upsert per-subwallet nullifier-sync checkpoints.
-    func persistShieldedNullifierCheckpoints(
-        walletId: Data,
-        entries: [(walletId: Data, accountIndex: UInt32, height: UInt64, timestamp: UInt64)]
-    ) {
-        onQueue {
-            for entry in entries {
-                let row = ensureShieldedSyncStateRow(
-                    walletId: entry.walletId,
-                    accountIndex: entry.accountIndex
-                )
-                row.hasNullifierCheckpoint = true
-                row.nullifierCheckpointHeight = entry.height
-                row.nullifierCheckpointTimestamp = entry.timestamp
                 row.lastUpdated = Date()
             }
             if !self.inChangeset { try? backgroundContext.save() }
@@ -2483,6 +2520,111 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
+    /// Build the host-allocated `ShieldedOutgoingNoteRestoreFFI`
+    /// array Rust reads at boot. Same allocation pattern as
+    /// `loadShieldedNotes` — the entries buffer plus a per-row
+    /// heap `memo` byte buffer each entry's `memo_ptr` references.
+    /// Tracked in `shieldedOutgoingNoteLoadAllocations` and freed by
+    /// `loadShieldedOutgoingNotesFree` once Rust hands the pointer
+    /// back.
+    func loadShieldedOutgoingNotes() -> (
+        entries: UnsafePointer<ShieldedOutgoingNoteRestoreFFI>?,
+        count: Int,
+        errored: Bool
+    ) {
+        var resultEntries: UnsafePointer<ShieldedOutgoingNoteRestoreFFI>?
+        var resultCount: Int = 0
+        var resultErrored = false
+        onQueue {
+            let descriptor = FetchDescriptor<PersistentShieldedOutgoingNote>()
+            var rows: [PersistentShieldedOutgoingNote]
+            do {
+                rows = try backgroundContext.fetch(descriptor)
+            } catch {
+                resultErrored = true
+                return
+            }
+            // Scope to the handler's bound network so a per-network
+            // manager never rehydrates another network's send history
+            // (the commitment tree DB is network-scoped). `nil` ids =>
+            // no in-network wallets => nothing to restore.
+            if let inNetworkIds = self.inNetworkWalletIds() {
+                rows = rows.filter { inNetworkIds.contains($0.walletId) }
+            }
+            if rows.isEmpty {
+                return
+            }
+            let allocation = ShieldedOutgoingNoteLoadAllocation()
+            let buf = UnsafeMutablePointer<ShieldedOutgoingNoteRestoreFFI>.allocate(
+                capacity: rows.count
+            )
+            allocation.entries = buf
+            allocation.entriesCount = rows.count
+            // Same `written`-counter discipline as `loadShieldedNotes`:
+            // increment only after a slot is fully populated so the
+            // returned prefix `[0..written)` is contiguous initialized
+            // memory even when malformed rows are skipped.
+            var written = 0
+            for row in rows {
+                guard row.walletId.count == 32 else { continue }
+                guard row.cmx.count == 32 else { continue }
+                // `recipient` is a fixed 43-byte raw Orchard address.
+                // A wrong-length blob is a corrupt row — skip it (with
+                // a log) rather than zero-padding it into a wrong
+                // address. Mirrors the Rust persist side, which rejects
+                // non-43-byte recipients before they reach SwiftData.
+                guard row.recipient.count == 43 else {
+                    print("⚠️ loadShieldedOutgoingNotes: skipping row with malformed recipient length \(row.recipient.count) (expected 43)")
+                    continue
+                }
+                let memoBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: row.memo.count)
+                if row.memo.count > 0 {
+                    row.memo.copyBytes(to: memoBuf, count: row.memo.count)
+                }
+                allocation.scalarBuffers.append((memoBuf, row.memo.count))
+
+                var walletIdTuple: FFIByteTuple32 = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+                copyBytes(row.walletId, into: &walletIdTuple)
+                var cmxTuple: FFIByteTuple32 = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+                copyBytes(row.cmx, into: &cmxTuple)
+                // `recipient` is a 43-byte raw Orchard address; the C
+                // field imports as a 43-element tuple. The length guard
+                // above guarantees exactly 43 bytes, so this is a full
+                // copy via the shared fixed-tuple writer.
+                var recipientTuple: FFIByteTuple43 = ffiByteTuple43Zero
+                copyBytes(row.recipient, into: &recipientTuple)
+                buf[written] = ShieldedOutgoingNoteRestoreFFI(
+                    wallet_id: walletIdTuple,
+                    account_index: row.accountIndex,
+                    cmx: cmxTuple,
+                    recipient: recipientTuple,
+                    value: row.value,
+                    block_height: row.blockHeight,
+                    memo_ptr: UnsafePointer(memoBuf),
+                    memo_len: UInt(row.memo.count)
+                )
+                written += 1
+                allocation.entriesInitialized = written
+            }
+            let entriesPtr = UnsafePointer(buf)
+            shieldedOutgoingNoteLoadAllocations[UnsafeRawPointer(entriesPtr)] = allocation
+            resultEntries = entriesPtr
+            resultCount = written
+        }
+        return (resultEntries, resultCount, resultErrored)
+    }
+
+    func loadShieldedOutgoingNotesFree(entries: UnsafeRawPointer?) {
+        onQueue {
+            guard let entries = entries,
+                  let allocation = shieldedOutgoingNoteLoadAllocations.removeValue(forKey: entries)
+            else {
+                return
+            }
+            allocation.release()
+        }
+    }
+
     /// Build the host-allocated `ShieldedSubwalletSyncStateFFI`
     /// array Rust reads at boot. Same allocation pattern as
     /// `loadShieldedNotes`.
@@ -2533,10 +2675,7 @@ public class PlatformWalletPersistenceHandler {
                 buf[written] = ShieldedSubwalletSyncStateFFI(
                     wallet_id: walletIdTuple,
                     account_index: row.accountIndex,
-                    last_synced_index: row.lastSyncedIndex,
-                    has_nullifier_checkpoint: row.hasNullifierCheckpoint ? 1 : 0,
-                    nullifier_checkpoint_height: row.nullifierCheckpointHeight,
-                    nullifier_checkpoint_timestamp: row.nullifierCheckpointTimestamp
+                    last_synced_index: row.lastSyncedIndex
                 )
                 written += 1
                 allocation.entriesInitialized = written
@@ -2563,6 +2702,8 @@ public class PlatformWalletPersistenceHandler {
     /// Outstanding shielded-load allocations keyed by the entries
     /// pointer we handed Rust. Drained by `loadShieldedNotesFree`.
     private var shieldedLoadAllocations: [UnsafeRawPointer: ShieldedLoadAllocation] = [:]
+    private var shieldedOutgoingNoteLoadAllocations:
+        [UnsafeRawPointer: ShieldedOutgoingNoteLoadAllocation] = [:]
     private var shieldedSyncStateLoadAllocations:
         [UnsafeRawPointer: ShieldedSyncStateLoadAllocation] = [:]
 
@@ -2714,6 +2855,33 @@ public class PlatformWalletPersistenceHandler {
                     predicate: #Predicate<PersistentAssetLock> { $0.walletId == walletId }
                 )
                 for row in try backgroundContext.fetch(assetLockDescriptor) {
+                    backgroundContext.delete(row)
+                }
+
+                // Shielded (Orchard) per-wallet state. These three
+                // tables are keyed by raw `walletId` (no relationship
+                // to `PersistentWallet`), so the wallet-row delete
+                // below does not cascade them — purge them explicitly
+                // or they leak after a wipe and could resurface /
+                // mis-attribute if the same `walletId` is reimported.
+                let shieldedNoteDescriptor = FetchDescriptor<PersistentShieldedNote>(
+                    predicate: #Predicate<PersistentShieldedNote> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(shieldedNoteDescriptor) {
+                    backgroundContext.delete(row)
+                }
+
+                let shieldedOutgoingNoteDescriptor = FetchDescriptor<PersistentShieldedOutgoingNote>(
+                    predicate: #Predicate<PersistentShieldedOutgoingNote> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(shieldedOutgoingNoteDescriptor) {
+                    backgroundContext.delete(row)
+                }
+
+                let shieldedSyncStateDescriptor = FetchDescriptor<PersistentShieldedSyncState>(
+                    predicate: #Predicate<PersistentShieldedSyncState> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(shieldedSyncStateDescriptor) {
                     backgroundContext.delete(row)
                 }
 
@@ -4186,6 +4354,31 @@ private final class ShieldedLoadAllocation {
     }
 }
 
+/// Allocation tracker for `loadShieldedOutgoingNotes` — the entries
+/// buffer plus per-row `memo` byte buffers. Same shape as
+/// `ShieldedLoadAllocation`; each entry's `memo_ptr` references one
+/// of the `scalarBuffers`.
+private final class ShieldedOutgoingNoteLoadAllocation {
+    var entries: UnsafeMutablePointer<ShieldedOutgoingNoteRestoreFFI>?
+    var entriesCount: Int = 0
+    var entriesInitialized: Int = 0
+    /// Per-row `memo` byte buffers; each entry's `memo_ptr`
+    /// references one of these.
+    var scalarBuffers: [(UnsafeMutablePointer<UInt8>, Int)] = []
+
+    func release() {
+        if let entries = entries {
+            if entriesInitialized > 0 {
+                entries.deinitialize(count: entriesInitialized)
+            }
+            entries.deallocate()
+        }
+        for (ptr, _) in scalarBuffers {
+            ptr.deallocate()
+        }
+    }
+}
+
 /// Allocation tracker for `loadShieldedSyncStates`. No nested
 /// buffers — every field is plain-data — so this is just the
 /// entries buffer.
@@ -5058,6 +5251,48 @@ private func persistShieldedNullifiersSpentCallback(
     return 0
 }
 
+private func persistShieldedOutgoingNotesCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    entriesPtr: UnsafePointer<ShieldedOutgoingNoteFFI>?,
+    count: UInt
+) -> Int32 {
+    guard let context = context, let walletIdPtr = walletIdPtr else { return 0 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var snapshots: [PlatformWalletPersistenceHandler.ShieldedOutgoingNoteSnapshot] = []
+    if count > 0, let entriesPtr = entriesPtr {
+        snapshots.reserveCapacity(Int(count))
+        for i in 0..<Int(count) {
+            let e = entriesPtr[i]
+            // Copy the `recipient` (43-byte fixed tuple) and `memo`
+            // (Rust-owned heap buffer) out now — both pointers are
+            // only valid for this callback window.
+            let recipient = Swift.withUnsafeBytes(of: e.recipient) { Data($0) }
+            let memo: Data
+            if let memoPtr = e.memo_ptr, e.memo_len > 0 {
+                memo = Data(bytes: memoPtr, count: Int(e.memo_len))
+            } else {
+                memo = Data()
+            }
+            snapshots.append(.init(
+                walletId: dataFromTuple32(e.wallet_id),
+                accountIndex: e.account_index,
+                cmx: dataFromTuple32(e.cmx),
+                recipient: recipient,
+                value: e.value,
+                memo: memo,
+                blockHeight: e.block_height
+            ))
+        }
+    }
+    handler.persistShieldedOutgoingNotes(walletId: walletId, snapshots: snapshots)
+    return 0
+}
+
 private func persistShieldedSyncedIndicesCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
@@ -5083,35 +5318,6 @@ private func persistShieldedSyncedIndicesCallback(
         }
     }
     handler.persistShieldedSyncedIndices(walletId: walletId, entries: entries)
-    return 0
-}
-
-private func persistShieldedNullifierCheckpointsCallback(
-    context: UnsafeMutableRawPointer?,
-    walletIdPtr: UnsafePointer<UInt8>?,
-    entriesPtr: UnsafePointer<ShieldedNullifierCheckpointFFI>?,
-    count: UInt
-) -> Int32 {
-    guard let context = context, let walletIdPtr = walletIdPtr else { return 0 }
-    let handler = Unmanaged<PlatformWalletPersistenceHandler>
-        .fromOpaque(context)
-        .takeUnretainedValue()
-    let walletId = Data(bytes: walletIdPtr, count: 32)
-
-    var entries: [(walletId: Data, accountIndex: UInt32, height: UInt64, timestamp: UInt64)] = []
-    if count > 0, let entriesPtr = entriesPtr {
-        entries.reserveCapacity(Int(count))
-        for i in 0..<Int(count) {
-            let e = entriesPtr[i]
-            entries.append((
-                walletId: dataFromTuple32(e.wallet_id),
-                accountIndex: e.account_index,
-                height: e.height,
-                timestamp: e.timestamp
-            ))
-        }
-    }
-    handler.persistShieldedNullifierCheckpoints(walletId: walletId, entries: entries)
     return 0
 }
 
@@ -5142,6 +5348,35 @@ private func loadShieldedNotesFreeCallback(
         .fromOpaque(context)
         .takeUnretainedValue()
     handler.loadShieldedNotesFree(entries: entries.map(UnsafeRawPointer.init))
+}
+
+private func loadShieldedOutgoingNotesCallback(
+    context: UnsafeMutableRawPointer?,
+    outEntries: UnsafeMutablePointer<UnsafePointer<ShieldedOutgoingNoteRestoreFFI>?>?,
+    outCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context = context, let outEntries = outEntries, let outCount = outCount else {
+        return 1
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let (entries, count, errored) = handler.loadShieldedOutgoingNotes()
+    outEntries.pointee = entries
+    outCount.pointee = UInt(count)
+    return errored ? 1 : 0
+}
+
+private func loadShieldedOutgoingNotesFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    entries: UnsafePointer<ShieldedOutgoingNoteRestoreFFI>?,
+    _ count: UInt
+) {
+    guard let context = context else { return }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    handler.loadShieldedOutgoingNotesFree(entries: entries.map(UnsafeRawPointer.init))
 }
 
 private func loadShieldedSyncStatesCallback(

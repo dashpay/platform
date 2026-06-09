@@ -1,7 +1,7 @@
 import { expect } from './helpers/chai.ts';
 import init, * as sdk from '../../dist/sdk.compressed.js';
 
-// `cmx`, `nullifier`, `encryptedNote` use `bytes_b64` which emits raw bytes
+// `cmx`, `nullifier`, `cvNet`, `encryptedNote` use `bytes_b64` which emits raw bytes
 // in non-human-readable mode (Object) and base64 strings in human-readable
 // mode (JSON). These tests pin both representations so the round-trip stays
 // correct if the helper is ever refactored.
@@ -13,22 +13,25 @@ describe('ShieldedEncryptedNote', () => {
 
   const cmxBytes = new Uint8Array(32).fill(0xa1);
   const nullifierBytes = new Uint8Array(32).fill(0xb2);
+  const cvNetBytes = new Uint8Array(32).fill(0xd4);
   const encryptedNoteBytes = new Uint8Array(216).fill(0xc3);
 
   // Same bytes encoded as base64 for the JSON form.
   const objectFixture = {
     cmx: cmxBytes,
     nullifier: nullifierBytes,
+    cvNet: cvNetBytes,
     encryptedNote: encryptedNoteBytes,
   };
 
   describe('fromObject() and getters', () => {
-    it('should expose the three byte fields via getters', () => {
+    it('should expose the four byte fields via getters', () => {
       const note = sdk.ShieldedEncryptedNote.fromObject(objectFixture);
 
       expect(note.cmx).to.be.instanceOf(Uint8Array);
       expect(note.cmx).to.deep.equal(cmxBytes);
       expect(note.nullifier).to.deep.equal(nullifierBytes);
+      expect(note.cvNet).to.deep.equal(cvNetBytes);
       expect(note.encryptedNote).to.deep.equal(encryptedNoteBytes);
     });
   });
@@ -40,6 +43,7 @@ describe('ShieldedEncryptedNote', () => {
 
       expect(obj.cmx).to.deep.equal(cmxBytes);
       expect(obj.nullifier).to.deep.equal(nullifierBytes);
+      expect(obj.cvNet).to.deep.equal(cvNetBytes);
       expect(obj.encryptedNote).to.deep.equal(encryptedNoteBytes);
     });
   });
@@ -51,6 +55,7 @@ describe('ShieldedEncryptedNote', () => {
 
       expect(json.cmx).to.be.a('string');
       expect(json.nullifier).to.be.a('string');
+      expect(json.cvNet).to.be.a('string');
       expect(json.encryptedNote).to.be.a('string');
     });
 
@@ -61,6 +66,7 @@ describe('ShieldedEncryptedNote', () => {
 
       expect(restored.cmx).to.deep.equal(cmxBytes);
       expect(restored.nullifier).to.deep.equal(nullifierBytes);
+      expect(restored.cvNet).to.deep.equal(cvNetBytes);
       expect(restored.encryptedNote).to.deep.equal(encryptedNoteBytes);
     });
   });

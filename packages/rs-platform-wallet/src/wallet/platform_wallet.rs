@@ -701,6 +701,61 @@ impl PlatformWallet {
         .await
     }
 
+    /// Create a brand-new Platform identity funded directly from `account`'s shielded notes.
+    ///
+    /// Spends notes covering a fixed `denomination` (a member of the versioned exit-denomination
+    /// set); the whole denomination leaves the pool and the metered fee is taken from it, so the
+    /// new identity is created holding `denomination - total_fee`. Any excess re-enters the pool as
+    /// a change note to `account`'s default Orchard address.
+    ///
+    /// `public_keys` is the new identity's key set (each entry pairs the `IdentityPublicKey` with
+    /// its `IdentityPublicKeyInCreation` form); `identity_signer` produces each key's
+    /// proof-of-possession signature. The Orchard spend authority comes from the wallet's own
+    /// `OrchardKeySet` (the ASK never crosses to the coordinator). Returns the new identity's id.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_identity_create_from_pool<P, IS>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        account: u32,
+        public_keys: Vec<(
+            dpp::identity::IdentityPublicKey,
+            dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation,
+        )>,
+        denomination: u64,
+        send_to_address_on_creation_failure: dpp::address_funds::PlatformAddress,
+        identity_signer: &IS,
+        prover: P,
+    ) -> Result<dpp::prelude::Identifier, PlatformWalletError>
+    where
+        P: dpp::shielded::builder::OrchardProver,
+        IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
+    {
+        let guard = self.shielded_keys.read().await;
+        let keys = guard
+            .as_ref()
+            .ok_or(PlatformWalletError::ShieldedNotBound)?;
+        let keyset = keys.get(&account).ok_or_else(|| {
+            PlatformWalletError::ShieldedKeyDerivation(format!(
+                "shielded account {account} not bound"
+            ))
+        })?;
+        super::shielded::operations::identity_create_from_shielded_pool(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            keyset,
+            account,
+            public_keys,
+            denomination,
+            send_to_address_on_creation_failure,
+            identity_signer,
+            &prover,
+        )
+        .await
+    }
+
     /// Shield credits from a Platform Payment account into the
     /// wallet's shielded pool, with the resulting note assigned
     /// to `shielded_account`'s default Orchard address.
@@ -770,9 +825,12 @@ impl PlatformWallet {
         //     unclaimed balance specifically on input 0 (the
         //     BTreeMap-smallest address).
         //
-        // Empty-mempool fees on Type 15 transitions land at ~20M
-        // credits (~0.0002 DASH). Reserve 1e9 credits (0.01 DASH) —
-        // 50× headroom, still trivial relative to typical balances.
+        // The flat shielded fee `F = compute_minimum_shielded_fee(2)`
+        // on a Type 15 transition lands at ~1.23e8 credits (~0.0012
+        // DASH); `operations::shield` loads exactly `F` onto input 0's
+        // claim from this reserved headroom. Reserve 1e9 credits
+        // (0.01 DASH) — ~8× headroom over `F`, still trivial relative
+        // to typical balances.
         const FEE_RESERVE_CREDITS: u64 = 1_000_000_000;
 
         // Build the inputs map under the wallet-manager read lock,

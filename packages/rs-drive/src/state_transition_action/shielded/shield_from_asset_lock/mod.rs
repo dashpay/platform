@@ -6,6 +6,7 @@ pub mod v0;
 use crate::state_transition_action::shielded::shield_from_asset_lock::v0::ShieldFromAssetLockTransitionActionV0;
 use crate::state_transition_action::shielded::ShieldedActionNote;
 use derive_more::From;
+use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 
 /// Shield from asset lock transition action
@@ -50,6 +51,18 @@ impl ShieldFromAssetLockTransitionAction {
             ShieldFromAssetLockTransitionAction::V0(transition) => &transition.notes,
         }
     }
+    /// Get the optional surplus-output platform address (receives the asset-lock surplus).
+    pub fn surplus_output(&self) -> &Option<PlatformAddress> {
+        match self {
+            ShieldFromAssetLockTransitionAction::V0(transition) => &transition.surplus_output,
+        }
+    }
+    /// Get the surplus credits routed to `surplus_output` (0 when `surplus_output` is `None`).
+    pub fn surplus_amount(&self) -> Credits {
+        match self {
+            ShieldFromAssetLockTransitionAction::V0(transition) => transition.surplus_amount,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -60,6 +73,7 @@ mod tests {
         ShieldedActionNote {
             nullifier: [0x55; 32],
             cmx: [0x66; 32],
+            cv_net: [0x22; 32],
             encrypted_note: vec![0xDE, 0xAD],
         }
     }
@@ -72,6 +86,8 @@ mod tests {
             shield_amount: 45000,
             notes: vec![make_note()],
             current_total_balance: 200000,
+            surplus_output: None,
+            surplus_amount: 0,
         };
         ShieldFromAssetLockTransitionAction::from(v0)
     }
@@ -125,6 +141,8 @@ mod tests {
             shield_amount: 0,
             notes: vec![],
             current_total_balance: 0,
+            surplus_output: None,
+            surplus_amount: 0,
         };
         let action = ShieldFromAssetLockTransitionAction::from(v0);
         assert_eq!(action.asset_lock_value_to_be_consumed(), 0);

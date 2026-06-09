@@ -2,15 +2,15 @@
 //!
 //! Buffered into [`PlatformWalletChangeSet::shielded`] from the
 //! `FileBackedShieldedStore` whenever a sync pass discovers a new
-//! note, marks one spent, advances a per-subwallet sync watermark,
-//! or records a nullifier-sync checkpoint. The host persister
+//! note, marks one spent (via scan-based nullifier matching), or
+//! advances a per-subwallet sync watermark. The host persister
 //! flushes these to its durable store (SwiftData on iOS) so cold
 //! starts can rehydrate the in-memory `SubwalletState` without
 //! re-decrypting the chain from genesis.
 //!
 //! Scope:
 //! - **In** this changeset: per-subwallet decrypted notes, spent
-//!   marks, sync watermarks, nullifier checkpoints.
+//!   marks, sync watermarks.
 //! - **Out** of this changeset: the commitment tree itself
 //!   (already persisted in `ClientPersistentCommitmentTree`'s
 //!   SQLite file at the host-supplied `db_path`).
@@ -18,7 +18,7 @@
 use std::collections::BTreeMap;
 
 use crate::changeset::merge::Merge;
-use crate::wallet::shielded::{ShieldedNote, SubwalletId};
+use crate::wallet::shielded::{ShieldedNote, ShieldedOutgoingNote, SubwalletId};
 
 /// Aggregated delta of shielded state for one persister flush.
 #[derive(Debug, Clone, Default)]
@@ -33,12 +33,14 @@ pub struct ShieldedChangeSet {
     /// the subwallet that owns the corresponding note. The
     /// persister flips that note's `is_spent` row to true.
     pub nullifiers_spent: BTreeMap<SubwalletId, Vec<[u8; 32]>>,
+    /// Outgoing (sent) notes recovered via OVK during the scan, per
+    /// subwallet. Keyed by `(wallet_id, account_index)`; the persister
+    /// upserts by `(SubwalletId, cmx)` (append-only send history, no
+    /// mutation).
+    pub outgoing_notes: BTreeMap<SubwalletId, Vec<ShieldedOutgoingNote>>,
     /// Latest per-subwallet `last_synced_note_index`. Last write
     /// wins on merge (sync only ever advances this monotonically).
     pub synced_indices: BTreeMap<SubwalletId, u64>,
-    /// Latest per-subwallet `(height, timestamp)` nullifier sync
-    /// checkpoint. Last write wins on merge.
-    pub nullifier_checkpoints: BTreeMap<SubwalletId, (u64, u64)>,
 }
 
 impl ShieldedChangeSet {
@@ -46,8 +48,8 @@ impl ShieldedChangeSet {
     pub fn is_empty(&self) -> bool {
         self.notes_saved.is_empty()
             && self.nullifiers_spent.is_empty()
+            && self.outgoing_notes.is_empty()
             && self.synced_indices.is_empty()
-            && self.nullifier_checkpoints.is_empty()
     }
 
     /// Accumulator helper: record a saved note for `id`.
@@ -60,6 +62,11 @@ impl ShieldedChangeSet {
         self.nullifiers_spent.entry(id).or_default().push(nullifier);
     }
 
+    /// Accumulator helper: record an outgoing (sent) note for `id`.
+    pub fn record_outgoing_note(&mut self, id: SubwalletId, note: ShieldedOutgoingNote) {
+        self.outgoing_notes.entry(id).or_default().push(note);
+    }
+
     /// Accumulator helper: advance the per-subwallet sync watermark.
     pub fn record_synced_index(&mut self, id: SubwalletId, index: u64) {
         let entry = self.synced_indices.entry(id).or_insert(index);
@@ -68,28 +75,23 @@ impl ShieldedChangeSet {
         }
     }
 
-    /// Accumulator helper: record the latest nullifier sync checkpoint.
-    pub fn record_nullifier_checkpoint(&mut self, id: SubwalletId, height: u64, timestamp: u64) {
-        self.nullifier_checkpoints.insert(id, (height, timestamp));
-    }
-
     /// Split a consolidated shielded changeset into one
     /// `ShieldedChangeSet` per `WalletId`. Used by the
     /// network-scoped coordinator's sync path: the free
-    /// functions (`sync_notes_across`, `check_nullifiers_across`)
-    /// build a single `ShieldedChangeSet` spanning every
-    /// touched subwallet; the caller splits it here so each
-    /// per-wallet `WalletPersister.store(...)` only sees its
-    /// own `wallet_id`'s deltas. Empty per-wallet entries are
-    /// skipped so callers don't queue no-op changesets.
+    /// function `sync_notes_across` builds a single
+    /// `ShieldedChangeSet` spanning every touched subwallet
+    /// (saves, spends, and synced indices); the caller splits it
+    /// here so each per-wallet `WalletPersister.store(...)` only
+    /// sees its own `wallet_id`'s deltas. Empty per-wallet entries
+    /// are skipped so callers don't queue no-op changesets.
     pub fn split_by_wallet_id(
         self,
     ) -> BTreeMap<crate::wallet::platform_wallet::WalletId, ShieldedChangeSet> {
         let ShieldedChangeSet {
             notes_saved,
             nullifiers_spent,
+            outgoing_notes,
             synced_indices,
-            nullifier_checkpoints,
         } = self;
         let mut out: BTreeMap<crate::wallet::platform_wallet::WalletId, ShieldedChangeSet> =
             BTreeMap::new();
@@ -105,17 +107,17 @@ impl ShieldedChangeSet {
                 .nullifiers_spent
                 .insert(id, nfs);
         }
+        for (id, outs) in outgoing_notes {
+            out.entry(id.wallet_id)
+                .or_default()
+                .outgoing_notes
+                .insert(id, outs);
+        }
         for (id, idx) in synced_indices {
             out.entry(id.wallet_id)
                 .or_default()
                 .synced_indices
                 .insert(id, idx);
-        }
-        for (id, cp) in nullifier_checkpoints {
-            out.entry(id.wallet_id)
-                .or_default()
-                .nullifier_checkpoints
-                .insert(id, cp);
         }
         // Defensive: drop empty entries so the persister doesn't
         // see noise. `split_by_wallet_id` is called on the result
@@ -136,15 +138,15 @@ impl Merge for ShieldedChangeSet {
         for (id, nfs) in other.nullifiers_spent {
             self.nullifiers_spent.entry(id).or_default().extend(nfs);
         }
+        for (id, outs) in other.outgoing_notes {
+            self.outgoing_notes.entry(id).or_default().extend(outs);
+        }
         for (id, idx) in other.synced_indices {
             let entry = self.synced_indices.entry(id).or_insert(idx);
             if *entry < idx {
                 *entry = idx;
             }
         }
-        // Last write wins for nullifier checkpoints.
-        self.nullifier_checkpoints
-            .extend(other.nullifier_checkpoints);
     }
 
     fn is_empty(&self) -> bool {

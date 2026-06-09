@@ -43,6 +43,7 @@ indexmap = "2.7"
 # corrupt rows so operators can detect snapshot drift without a
 # native debugger attached.
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # anyhow surfaces from `KeyType::try_from` / `Purpose::try_from`
 # / `SecurityLevel::try_from` in dpp; we need the From impl in

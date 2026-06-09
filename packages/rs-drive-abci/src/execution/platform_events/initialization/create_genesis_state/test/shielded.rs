@@ -15,7 +15,7 @@ use drive::grovedb::Element;
 use drive::grovedb::TransactionArg;
 use drive::grovedb_path::SubtreePath;
 use drive::grovedb_storage::{Storage, StorageBatch};
-use grovedb_commitment_tree::{merkle_hash_from_bytes, CommitmentTree, DashMemo};
+use grovedb_commitment_tree::{merkle_hash_from_bytes, CommitmentEntry, CommitmentTree, DashMemo};
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
 
@@ -353,9 +353,17 @@ impl<C> Platform<C> {
                 let batch_notes = generate_filler_batch(&mut rng, this_batch);
                 let gen_elapsed = batch_start.elapsed();
 
-                let iter = batch_notes
-                    .into_iter()
-                    .map(|n| (n.cmx, n.rho, n.encrypted_note));
+                // Filler notes carry a dummy all-zero cv_net: they are not
+                // decryptable by any wallet (ρ is not a valid Nullifier), so the
+                // OVK-recovery use of cv_net never applies to them. The stored item
+                // is `cmx || rho || cv_net || payload` (matching the production
+                // commitment-tree insert path).
+                let iter = batch_notes.into_iter().map(|n| CommitmentEntry {
+                    cmx: n.cmx,
+                    rho: n.rho,
+                    cv_net: [0u8; 32],
+                    payload: n.encrypted_note,
+                });
                 let append_result = ct.append_many_raw(iter).value.map_err(|e| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
                         format!("seed: append_many_raw (batch {batch_index}): {e}")
@@ -437,8 +445,7 @@ impl<C> Platform<C> {
 
             // Commit the subtree's data_batch through the transaction —
             // makes all the BulkAppendTree / frontier writes visible to
-            // subsequent reads (including replace_commitment_tree_subtree_root's
-            // own batch).
+            // subsequent reads (including replace_subtree_root's own batch).
             self.drive
                 .grove
                 .raw_storage()
@@ -451,14 +458,17 @@ impl<C> Platform<C> {
                 })?;
 
             // --- Update parent Merk leaf with the new state ---
+            let new_element = drive::grovedb::Element::new_commitment_tree(
+                u64::from(cfg.total_notes),
+                chunk_power,
+                flags,
+            );
             self.drive
                 .grove
-                .replace_commitment_tree_subtree_root(
+                .replace_subtree_root(
                     parent_path,
                     leaf_key,
-                    u64::from(cfg.total_notes),
-                    chunk_power,
-                    flags,
+                    new_element,
                     combined_root,
                     Some(tx),
                     &platform_version.drive.grove_version,
@@ -466,7 +476,7 @@ impl<C> Platform<C> {
                 .value
                 .map_err(|e| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                        format!("seed: replace_commitment_tree_subtree_root: {e}").into_boxed_str(),
+                        format!("seed: replace_subtree_root: {e}").into_boxed_str(),
                     )))
                 })?;
 
@@ -1038,7 +1048,6 @@ mod platform_tests {
     /// `commit_mmr` to the end) is what makes multi-batch work; this test
     /// pins that contract.
     #[test]
-    #[ignore = "snapshot dump+apply roundtrip; needs the new grovedb branch"]
     fn snapshot_dump_apply_preserves_anchor() {
         let platform_version = PlatformVersion::latest();
 

@@ -1,3 +1,77 @@
+## [4.0.0-beta.4](///compare/v4.0.0-beta.3...v4.0.0-beta.4) (2026-06-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform-wallet:** add platform-wallet-storage crate (sqlite persister) (#3625)
+
+### Features
+
+* add IdentityCreateFromShieldedPool state transition (shielded-pool-funded identity creation) ([#3816](undefined/undefined/undefined/issues/3816))
+* **drive:** shielded fees for Shield/ShieldFromAssetLock + shield credit conservation ([#3793](undefined/undefined/undefined/issues/3793))
+* **platform-wallet:** add platform-wallet-storage crate (sqlite persister) ([#3625](undefined/undefined/undefined/issues/3625))
+* shielded scan-based spend detection and OVK outgoing-note history ([#3819](undefined/undefined/undefined/issues/3819))
+* **swift-sdk:** iOS simluator writes logs to disk ([#3785](undefined/undefined/undefined/issues/3785))
+
+
+### Bug Fixes
+
+* **dpp:** return error instead of panicking on storage-fee refund div-by-zero ([#3799](undefined/undefined/undefined/issues/3799))
+* **drive:** charge fees for unshield and shielded withdrawal ([#3800](undefined/undefined/undefined/issues/3800))
+* **drive:** correct fee/credit accounting on the address-funding asset-lock penalty path ([#3818](undefined/undefined/undefined/issues/3818))
+* **drive:** strict merged-query verification for unshield & shielded withdrawal proofs ([#3814](undefined/undefined/undefined/issues/3814))
+* **drive:** unify shielded pool genesis/upgrade construction to prevent state divergence ([#3801](undefined/undefined/undefined/issues/3801))
+* **platform-wallet:** zeroize private keys when freeing preview rows ([#3797](undefined/undefined/undefined/issues/3797))
+* **rs-sdk-ffi:** shrink signature allocation to len before leaking (capacity UB) ([#3798](undefined/undefined/undefined/issues/3798))
+
+
+### Miscellaneous Chores
+
+* tidy follow-ups from the shielded withdrawal fee review ([#3802](undefined/undefined/undefined/issues/3802))
+
+## [4.0.0-beta.3](https://github.com/dashpay/platform/compare/v4.0.0-beta.2...v4.0.0-beta.3) (2026-06-04)
+
+
+### Bug Fixes
+
+* **dashmate:** bump Envoy gateway to 1.35.11 for HTTP/2 DoS (CVE-2026-47774) ([#3794](https://github.com/dashpay/platform/issues/3794))
+* grovedb incompatibilty issues ([#3789](https://github.com/dashpay/platform/issues/3789))
+
+
+## [4.0.0-beta.2](https://github.com/dashpay/platform/compare/v4.0.0-beta.1...v4.0.0-beta.2) (2026-06-02)
+
+
+### Bug Fixes
+
+* **platform-version:** gate shielded-pool block methods to protocol v12 ([#3782](https://github.com/dashpay/platform/issues/3782))
+
+## [4.0.0-beta.1](///compare/v3.1.0-dev.8...v4.0.0-beta.1) (2026-06-02)
+
+
+### Features
+
+* add register-contract script to rs-scripts ([#3744](undefined/undefined/undefined/issues/3744))
+* **dashmate:** configure docker build args via config ([#3764](undefined/undefined/undefined/issues/3764))
+* **drive-abci:** gate shielded-pool seeding behind `shielded_test_data` feature ([#3774](undefined/undefined/undefined/issues/3774))
+* **drive:** add document history retrieval ([#3725](undefined/undefined/undefined/issues/3725))
+* **platform:** add GetShieldedNotesCount query for sync progress ([#3769](undefined/undefined/undefined/issues/3769))
+* seed Orchard shielded pool at genesis with fast, observable sync ([#3732](undefined/undefined/undefined/issues/3732))
+
+
+### Bug Fixes
+
+* **dashmate:** prevent orphaned verification container blocking SSL renewal ([#3162](undefined/undefined/undefined/issues/3162))
+* **dpp:** block pre-programmed distribution changes on token update ([#3461](undefined/undefined/undefined/issues/3461))
+* **drive:** consolidate historical contract proof verification retry logic ([#3165](undefined/undefined/undefined/issues/3165))
+* **platform-wallet:** fix spv client deadlocking himself when trying to stop ([#3742](undefined/undefined/undefined/issues/3742))
+* **platform-wallet:** satisfy accessors clippy lints ([#3596](undefined/undefined/undefined/issues/3596))
+
+
+### Tests
+
+* **swift-sdk:** swift-sdk test updated and added to CI ([#3479](undefined/undefined/undefined/issues/3479))
+* **wasm-sdk:** fix flaky tokenPaymentInfo document balance assertions ([#3771](undefined/undefined/undefined/issues/3771))
+
 ## [3.1.0-dev.8](https://github.com/dashpay/platform/compare/v3.1.0-dev.7...v3.1.0-dev.8) (2026-05-28)
 
 

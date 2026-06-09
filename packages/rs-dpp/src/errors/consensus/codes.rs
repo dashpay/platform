@@ -233,13 +233,15 @@ impl ErrorWithCode for BasicError {
             Self::OutputAddressAlsoInputError(_) => 10816,
             Self::InvalidRemainderOutputCountError(_) => 10817,
             Self::WithdrawalBelowMinAmountError(_) => 10818,
-            // Shielded transition errors (10819-10825)
+            // Shielded transition errors (10819-10827)
             Self::ShieldedNoActionsError(_) => 10819,
             Self::ShieldedEmptyProofError(_) => 10820,
             Self::ShieldedZeroAnchorError(_) => 10821,
             Self::ShieldedInvalidValueBalanceError(_) => 10822,
             Self::ShieldedEncryptedNoteSizeMismatchError(_) => 10823,
             Self::ShieldedTooManyActionsError(_) => 10825,
+            Self::ShieldedImplicitFeeCapExceededError(_) => 10826,
+            Self::ShieldedInvalidDenominationError(_) => 10827,
         }
     }
 }

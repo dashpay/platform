@@ -1830,6 +1830,46 @@ struct ShieldedNoteStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentShieldedOutgoingNote
+
+struct ShieldedOutgoingNoteStorageDetailView: View {
+    let record: PersistentShieldedOutgoingNote
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Account Index", value: "\(record.accountIndex)")
+            }
+            Section("Commitment") {
+                FieldRow(label: "cmx", value: hexString(record.cmx))
+            }
+            Section("Send") {
+                FieldRow(label: "Recipient", value: hexString(record.recipient))
+                FieldRow(label: "Value", value: "\(record.value) credits")
+                FieldRow(label: "Block Height", value: "\(record.blockHeight)")
+            }
+            Section("Memo") {
+                if record.memo.isEmpty {
+                    Text("(empty)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text(hexString(record.memo))
+                        .font(.system(.caption2, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Shielded Sent Note")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentShieldedSyncState
 
 struct ShieldedSyncStateStorageDetailView: View {
@@ -1843,13 +1883,6 @@ struct ShieldedSyncStateStorageDetailView: View {
             }
             Section("Sync") {
                 FieldRow(label: "Last Synced Index", value: "\(record.lastSyncedIndex)")
-            }
-            Section("Nullifier Checkpoint") {
-                FieldRow(label: "Present", value: record.hasNullifierCheckpoint ? "Yes" : "No")
-                if record.hasNullifierCheckpoint {
-                    FieldRow(label: "Height", value: "\(record.nullifierCheckpointHeight)")
-                    FieldRow(label: "Timestamp", value: "\(record.nullifierCheckpointTimestamp)")
-                }
             }
             Section("Timestamps") {
                 FieldRow(label: "Updated", value: dateString(record.lastUpdated))

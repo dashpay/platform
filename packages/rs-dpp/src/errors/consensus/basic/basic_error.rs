@@ -79,11 +79,12 @@ use crate::consensus::basic::state_transition::{
     InvalidRemainderOutputCountError, InvalidStateTransitionTypeError,
     MissingStateTransitionTypeError, OutputAddressAlsoInputError, OutputBelowMinimumError,
     OutputsNotGreaterThanInputsError, ShieldedEmptyProofError,
-    ShieldedEncryptedNoteSizeMismatchError, ShieldedInvalidValueBalanceError,
-    ShieldedNoActionsError, ShieldedTooManyActionsError, ShieldedZeroAnchorError,
-    StateTransitionMaxSizeExceededError, StateTransitionNotActiveError, TransitionNoInputsError,
-    TransitionNoOutputsError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError,
-    WithdrawalBalanceMismatchError, WithdrawalBelowMinAmountError,
+    ShieldedEncryptedNoteSizeMismatchError, ShieldedImplicitFeeCapExceededError,
+    ShieldedInvalidDenominationError, ShieldedInvalidValueBalanceError, ShieldedNoActionsError,
+    ShieldedTooManyActionsError, ShieldedZeroAnchorError, StateTransitionMaxSizeExceededError,
+    StateTransitionNotActiveError, TransitionNoInputsError, TransitionNoOutputsError,
+    TransitionOverMaxInputsError, TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError,
+    WithdrawalBelowMinAmountError,
 };
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
@@ -681,6 +682,16 @@ pub enum BasicError {
 
     #[error(transparent)]
     IdentityAssetLockTransactionTooManyInputsError(IdentityAssetLockTransactionTooManyInputsError),
+
+    // NOTE: `BasicError` is bincode-encoded positionally (no explicit discriminants), so new
+    // variants MUST be appended at the tail — inserting mid-enum would shift the wire discriminants
+    // of every following variant and mis-decode previously-encoded errors. The error-code integer
+    // (codes.rs) is independent of variant order.
+    #[error(transparent)]
+    ShieldedImplicitFeeCapExceededError(ShieldedImplicitFeeCapExceededError),
+
+    #[error(transparent)]
+    ShieldedInvalidDenominationError(ShieldedInvalidDenominationError),
 }
 
 impl From<BasicError> for ConsensusError {

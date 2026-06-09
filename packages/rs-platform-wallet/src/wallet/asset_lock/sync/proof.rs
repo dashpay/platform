@@ -656,9 +656,7 @@ mod tests {
             _wallet_id: WalletId,
             _txid: &Txid,
         ) -> Result<Option<TransactionRecord>, PersistenceError> {
-            Err(PersistenceError::Backend(
-                "simulated backend failure".into(),
-            ))
+            Err(PersistenceError::backend("simulated backend failure"))
         }
     }
 

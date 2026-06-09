@@ -42,6 +42,7 @@ members = [
     "packages/rs-dash-event-bus",
     "packages/rs-platform-wallet",
     "packages/rs-platform-wallet-ffi",
+    "packages/rs-platform-wallet-storage",
     "packages/rs-platform-encryption",
     "packages/wasm-sdk",
     "packages/rs-unified-sdk-ffi",
@@ -89,5 +90,5 @@ opt-level = 3
 
 [workspace.package]
 
-version = "3.1.0-dev.8"
+version = "4.0.0-beta.4"
 rust-version = "1.92"

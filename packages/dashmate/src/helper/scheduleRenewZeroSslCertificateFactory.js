@@ -25,13 +25,31 @@ export default function scheduleRenewZeroSslCertificateFactory(
    * @return {Promise<void>}
    */
   async function scheduleRenewZeroSslCertificate(config) {
-    const certificate = await getCertificate(
-      config.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey', false),
-      config.get('platform.gateway.ssl.providerConfigs.zerossl.id', false),
-    );
+    let certificate;
+    try {
+      certificate = await getCertificate(
+        config.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey', false),
+        config.get('platform.gateway.ssl.providerConfigs.zerossl.id', false),
+      );
 
-    if (!certificate) {
-      throw new Error('Invalid ZeroSSL certificate ID: certificate not found');
+      if (!certificate) {
+        throw new Error('Invalid ZeroSSL certificate ID: certificate not found');
+      }
+    } catch (e) {
+      // Reading the current certificate hits the ZeroSSL API. If that API is down
+      // — the exact failure behind the December mass-expiration — this previously
+      // rejected, and because the scheduler re-invokes itself fire-and-forget from
+      // the cron completion callback, the rejection went unhandled and crashed the
+      // helper instead of backing off. Mirror the Let's Encrypt scheduler, which
+      // already wraps its certificate read: log and retry in 1 hour.
+      // eslint-disable-next-line no-console
+      console.error(`Failed to read ZeroSSL certificate, retrying in 1 hour: ${e.message}`);
+
+      setTimeout(() => {
+        scheduleRenewZeroSslCertificate(config);
+      }, 60 * 60 * 1000);
+
+      return;
     }
 
     let expiresAt;
@@ -50,28 +68,53 @@ export default function scheduleRenewZeroSslCertificateFactory(
       console.log(`SSL certificate ${certificate.id} will expire at ${certificate.expires}. Schedule to obtain at ${expiresAt}.`);
     }
 
+    let renewalSucceeded = false;
+
     const job = new CronJob(expiresAt, async () => {
-      const tasks = obtainZeroSSLCertificateTask(config);
+      try {
+        const tasks = obtainZeroSSLCertificateTask(config);
 
-      await tasks.run({
-        expirationDays: Certificate.EXPIRATION_LIMIT_DAYS,
-        noRetry: true,
-      });
+        await tasks.run({
+          expirationDays: Certificate.EXPIRATION_LIMIT_DAYS,
+          noRetry: true,
+        });
 
-      // Write config files
-      configFileRepository.write(configFile);
-      writeConfigTemplates(config);
+        // Write config files
+        configFileRepository.write(configFile);
+        writeConfigTemplates(config);
 
-      // TODO: We can use https://www.envoyproxy.io/docs/envoy/v1.30.1/start/quick-start/configuration-dynamic-filesystem.html#start-quick-start-dynamic-fs-dynamic-lds
-      //  to dynamically update envoy configuration without restarting it
+        // TODO: We can use https://www.envoyproxy.io/docs/envoy/v1.30.1/start/quick-start/configuration-dynamic-filesystem.html#start-quick-start-dynamic-fs-dynamic-lds
+        //  to dynamically update envoy configuration without restarting it
 
-      // Restart Gateway to catch up new SSL certificates
-      await dockerCompose.execCommand(config, 'gateway', 'kill -SIGHUP 1');
+        // Restart Gateway to catch up new SSL certificates
+        await dockerCompose.execCommand(config, 'gateway', 'kill -SIGHUP 1');
 
-      return job.stop();
+        // eslint-disable-next-line no-console
+        console.log('ZeroSSL certificate renewed successfully');
+
+        renewalSucceeded = true;
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error(`Failed to renew ZeroSSL certificate: ${e.message}`);
+
+        renewalSucceeded = false;
+      }
+
+      job.stop();
     }, async () => {
-      // Schedule new cron task
-      process.nextTick(() => scheduleRenewZeroSslCertificate(config));
+      // Schedule new cron task after completion
+      if (renewalSucceeded) {
+        // Success: reschedule immediately to read new cert expiry
+        process.nextTick(() => scheduleRenewZeroSslCertificate(config));
+      } else {
+        // Failure: wait 1 hour before retrying to avoid tight failure loops
+        // eslint-disable-next-line no-console
+        console.log('Scheduling ZeroSSL renewal retry in 1 hour');
+
+        setTimeout(() => {
+          scheduleRenewZeroSslCertificate(config);
+        }, 60 * 60 * 1000);
+      }
     });
 
     job.start();
