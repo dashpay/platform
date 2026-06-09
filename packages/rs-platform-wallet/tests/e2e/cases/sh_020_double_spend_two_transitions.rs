@@ -249,18 +249,23 @@ async fn sh_020_double_spend_two_transitions() {
          did not leave the pool — investigate)"
     );
 
-    // Secondary corroboration: the spend that did NOT materialise must have
-    // been rejected nullifier-already-spent (code 40901), not by a generic
-    // failure — evidence the backend caught the replay for the right reason.
-    // Skipped if the chain surfaced no consensus error (e.g. check_tx
-    // dropped the duplicate silently); the STATE delta above is the verdict.
+    // Secondary corroboration (best-effort): when the chain surfaces a
+    // CONSENSUS error for the spend that did NOT materialise, it should be
+    // nullifier-already-spent (code 40901) — evidence the replay was caught
+    // for the right reason. The STATE delta above is the authoritative
+    // verdict; this is skipped when no consensus error surfaced — the
+    // duplicate was dropped silently at check_tx, OR (common on a quiet
+    // devnet) the rejected tx simply never committed and `wait_commit_raw`
+    // returned a timeout rather than a coded rejection. A timeout is NOT a
+    // wrong-reason rejection, so it must not fail the test.
     let rejected_err = if !credited_a {
         format!("{commit_a:?}")
     } else {
         format!("{commit_b:?}")
     };
     let err_s = rejected_err.to_lowercase();
-    if err_s.contains("error") || err_s.contains("err(") {
+    let is_timeout = err_s.contains("timeout") || err_s.contains("elapsed");
+    if !is_timeout && (err_s.contains("error") || err_s.contains("err(")) {
         assert!(
             err_s.contains("nullifier")
                 || err_s.contains("alreadyspent")

@@ -24,9 +24,14 @@ use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
 
-const FUNDING_CREDITS: u64 = 1_400_000_000;
+// Two binding-signature mutations each consume one note via
+// `capture_unshield_st` (which reserves and never releases), so fund +
+// shield one note PER probe: `2 × (SHIELD_AMOUNT + 1.63e8) + 1e9`
+// (see `sh_024`).
+const FUNDING_CREDITS: u64 = 1_725_702_400;
 const SHIELD_AMOUNT: u64 = 200_000_000;
 const UNSHIELD_AMOUNT: u64 = 20_000_000;
+const NUM_PROBES: u64 = 2;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 /// Consensus commit needs block production + proof — longer than a per-step gate.
 const COMMIT_TIMEOUT: Duration = Duration::from_secs(120);
@@ -78,14 +83,30 @@ async fn sh_034_tampered_binding_signature() {
         .sync_balances()
         .await
         .expect("pre-shield sync");
-    s.test_wallet
-        .platform_wallet()
-        .shielded_shield_from_account(0, 0, SHIELD_AMOUNT, s.test_wallet.address_signer(), prover)
-        .await
-        .expect("shield_from_account");
-    wait_for_shielded_balance(&s.test_wallet, &handle, 0, SHIELD_AMOUNT, STEP_TIMEOUT)
-        .await
-        .expect("shielded balance never reached SHIELD_AMOUNT");
+    // One note per probe: `capture_unshield_st` reserves a note and never
+    // releases it, so a single note would starve the second probe.
+    for _ in 0..NUM_PROBES {
+        s.test_wallet
+            .platform_wallet()
+            .shielded_shield_from_account(
+                0,
+                0,
+                SHIELD_AMOUNT,
+                s.test_wallet.address_signer(),
+                prover,
+            )
+            .await
+            .expect("shield_from_account");
+    }
+    wait_for_shielded_balance(
+        &s.test_wallet,
+        &handle,
+        0,
+        SHIELD_AMOUNT * NUM_PROBES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("shielded balance never reached the probe-note total");
 
     let dst = s.test_wallet.next_unused_address().await.expect("dst");
 
