@@ -177,11 +177,18 @@ pub struct PersistenceCallbacks {
         ),
     >,
     /// Called once per registration round with the wallet's
-    /// network tag + birth height. `network` uses the same
-    /// discriminant as `WalletRestoreEntryFFI.network` (0 = Mainnet,
-    /// 1 = Testnet, 2 = Devnet, 3 = Regtest). `birth_height` is the
-    /// best estimate of the block at which the wallet started; zero
-    /// means "scan from genesis / unknown".
+    /// network tag, network-independent group id + birth height.
+    /// `network` uses the same discriminant as
+    /// `WalletRestoreEntryFFI.network` (0 = Mainnet, 1 = Testnet,
+    /// 2 = Devnet, 3 = Regtest). `wallet_group_id` points to 32
+    /// readable bytes (same shape as `wallet_id`) — the
+    /// NETWORK-INDEPENDENT id shared by every network's wallet derived
+    /// from the same seed, so a consumer can group a seed's
+    /// sibling-network rows by it (the per-network `wallet_id` differs
+    /// per network for the same seed). For watch-only /
+    /// external-signable wallets it equals `wallet_id` (a group of
+    /// one). `birth_height` is the best estimate of the block at which
+    /// the wallet started; zero means "scan from genesis / unknown".
     ///
     /// Returns 0 on success. A non-zero return flips the round's
     /// `success` flag to `false` so [`Self::on_changeset_end_fn`]
@@ -191,6 +198,7 @@ pub struct PersistenceCallbacks {
             context: *mut c_void,
             wallet_id: *const u8,
             network: FFINetwork,
+            wallet_group_id: *const u8,
             birth_height: u32,
         ) -> i32,
     >,
@@ -596,6 +604,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         self.callbacks.context,
                         wallet_id.as_ptr(),
                         meta.network.into(),
+                        meta.wallet_group_id.as_ptr(),
                         meta.birth_height,
                     )
                 };

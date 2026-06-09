@@ -90,7 +90,7 @@ struct ContentView: View {
                     .tag(RootTab.wallets)
 
                 // Tab 3: Identities
-                IdentitiesTabView()
+                IdentitiesTabView(network: platformState.currentNetwork)
                     .tabItem {
                         Label("Identities", systemImage: "person.crop.circle")
                     }
@@ -638,9 +638,11 @@ struct WalletsTabView: View {
 }
 
 struct IdentitiesTabView: View {
+    let network: Network
+
     var body: some View {
         NavigationStack {
-            IdentitiesContentView()
+            IdentitiesContentView(network: network)
         }
     }
 }
