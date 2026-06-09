@@ -723,6 +723,7 @@ impl PlatformWallet {
             dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation,
         )>,
         denomination: u64,
+        send_to_address_on_creation_failure: dpp::address_funds::PlatformAddress,
         identity_signer: &IS,
         prover: P,
     ) -> Result<dpp::prelude::Identifier, PlatformWalletError>
@@ -748,6 +749,7 @@ impl PlatformWallet {
             account,
             public_keys,
             denomination,
+            send_to_address_on_creation_failure,
             identity_signer,
             &prover,
         )

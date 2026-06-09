@@ -4,6 +4,7 @@ mod types;
 pub(super) mod v0_methods;
 mod version;
 
+use crate::address_funds::PlatformAddress;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
 use crate::shielded::SerializedAction;
@@ -46,6 +47,14 @@ pub struct IdentityCreateFromShieldedPoolTransitionV0 {
     pub proof: Vec<u8>,
     /// RedPallas binding signature
     pub binding_signature: [u8; 64],
+    /// Fallback platform address credited if identity creation FAILS a stateful check (a
+    /// public-key hash already registered to another identity). On failure the spend is still final
+    /// — the denomination leaves the pool — and is credited here minus a penalty, exactly like the
+    /// `PartiallyUseAssetLock` / `BumpAddressInputNonces` penalty the asset-lock and address-funded
+    /// identity creates use. It IS part of the platform sighash (so each key's proof-of-possession
+    /// signs it) and is additionally committed into the Orchard `extra_sighash_data`, so a relayer
+    /// cannot redirect the fallback.
+    pub send_to_address_on_creation_failure: PlatformAddress,
     /// The id of the new identity, derived as `double_sha256(sorted nullifiers)`. It is committed
     /// into the Orchard `extra_sighash_data` (so the bundle cannot be redirected to a different id)
     /// and re-derived + checked at consensus. Excluded from the platform sighash because it is fully
@@ -97,6 +106,9 @@ mod tests {
             anchor: [7u8; 32],
             proof: vec![8u8; 100],
             binding_signature: [9u8; 64],
+            send_to_address_on_creation_failure: crate::address_funds::PlatformAddress::P2pkh(
+                [0u8; 20],
+            ),
             identity_id,
         }
     }

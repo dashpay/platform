@@ -246,6 +246,9 @@ mod tests {
                     anchor: [0u8; 32],
                     proof: vec![],
                     binding_signature: [0u8; 64],
+                    send_to_address_on_creation_failure: dpp::address_funds::PlatformAddress::P2pkh(
+                        [0u8; 20],
+                    ),
                     identity_id: Default::default(),
                 },
             ),

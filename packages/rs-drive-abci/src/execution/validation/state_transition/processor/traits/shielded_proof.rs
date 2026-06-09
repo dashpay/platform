@@ -486,6 +486,7 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                                 dpp::shielded::identity_create_from_shielded_extra_sighash_data(
                                     &identity_id,
                                     v0.denomination,
+                                    &v0.send_to_address_on_creation_failure,
                                     &v0.public_keys,
                                 );
                             // value_balance = denomination EXACTLY (the ShieldedTransfer exact-equality
@@ -627,6 +628,9 @@ mod tests {
                     anchor: [0u8; 32],
                     proof: vec![],
                     binding_signature: [0u8; 64],
+                    send_to_address_on_creation_failure: dpp::address_funds::PlatformAddress::P2pkh(
+                        [0u8; 20],
+                    ),
                     identity_id: Default::default(),
                 },
             ),
@@ -923,6 +927,8 @@ mod tests {
                         anchor: [0u8; 32],
                         proof: vec![],
                         binding_signature: [0u8; 64],
+                        send_to_address_on_creation_failure:
+                            dpp::address_funds::PlatformAddress::P2pkh([0u8; 20]),
                         identity_id: Default::default(),
                     },
                 ),

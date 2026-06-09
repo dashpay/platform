@@ -18,6 +18,7 @@ pub use compute_minimum_shielded_fee::{
     compute_shielded_withdrawal_fee,
 };
 
+use crate::address_funds::PlatformAddress;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
@@ -189,7 +190,9 @@ pub fn unshield_extra_sighash_data(output_address: &[u8], unshielding_amount: u6
 
 /// Builds the transparent `extra_data` bound into an `IdentityCreateFromShieldedPool`'s platform
 /// sighash, with the byte layout
-/// `identity_id (32) || denomination (u64 LE) || num_keys (u16 LE)
+/// `identity_id (32) || denomination (u64 LE)
+///   || send_to_address_on_creation_failure (tag u8: 0=P2pkh, 1=P2sh || hash 20)
+///   || num_keys (u16 LE)
 ///   || for each key in supplied order: key_id (u32 LE) || purpose (u8) || security_level (u8)
 ///   || key_type (u8) || key_data_len (u16 LE) || key_data || read_only (u8)
 ///   || contract_bounds (tag u8: 0=None, 1=SingleContract id(32), 2=SingleContractDocumentType
@@ -213,11 +216,24 @@ pub fn unshield_extra_sighash_data(output_address: &[u8], unshielding_amount: u6
 pub fn identity_create_from_shielded_extra_sighash_data(
     identity_id: &[u8; 32],
     denomination: u64,
+    send_to_address_on_creation_failure: &PlatformAddress,
     public_keys: &[IdentityPublicKeyInCreation],
 ) -> Vec<u8> {
-    let mut data = Vec::with_capacity(32 + 8 + 2 + public_keys.len() * 44);
+    let mut data = Vec::with_capacity(32 + 8 + 21 + 2 + public_keys.len() * 44);
     data.extend_from_slice(identity_id);
     data.extend_from_slice(&denomination.to_le_bytes());
+    // Bind the fallback address (type tag || 20-byte hash) so a relayer cannot redirect the
+    // failure credit. Mirrors the way `unshield`/`withdrawal` bind their output address.
+    match send_to_address_on_creation_failure {
+        PlatformAddress::P2pkh(hash) => {
+            data.push(0u8);
+            data.extend_from_slice(hash);
+        }
+        PlatformAddress::P2sh(hash) => {
+            data.push(1u8);
+            data.extend_from_slice(hash);
+        }
+    }
     data.extend_from_slice(&(public_keys.len() as u16).to_le_bytes());
     for key in public_keys {
         data.extend_from_slice(&key.id().to_le_bytes());
@@ -421,23 +437,34 @@ mod tests {
 
         #[test]
         fn layout_is_length_prefixed() {
-            // identity_id(32) || denomination(8) || num_keys(2)
+            // identity_id(32) || denomination(8)
+            //   || send_to_address_on_creation_failure (tag(1) || hash(20))
+            //   || num_keys(2)
             //   || [key_id(4)|purpose|sec|type|len(2)|data|read_only(1)|contract_bounds_tag(1)]
             let id = [0x11u8; 32];
             let keys = vec![mk_key(7, 0xAB)];
-            let d = identity_create_from_shielded_extra_sighash_data(&id, 10_000_000_000, &keys);
+            let fallback = PlatformAddress::P2pkh([0x5Cu8; 20]);
+            let d = identity_create_from_shielded_extra_sighash_data(
+                &id,
+                10_000_000_000,
+                &fallback,
+                &keys,
+            );
             assert_eq!(&d[0..32], &id);
             assert_eq!(&d[32..40], &10_000_000_000u64.to_le_bytes());
-            assert_eq!(&d[40..42], &1u16.to_le_bytes());
-            assert_eq!(&d[42..46], &7u32.to_le_bytes());
-            assert_eq!(d[46], Purpose::AUTHENTICATION as u8);
-            assert_eq!(d[47], SecurityLevel::MASTER as u8);
-            assert_eq!(d[48], KeyType::ECDSA_SECP256K1 as u8);
-            assert_eq!(&d[49..51], &33u16.to_le_bytes());
-            assert_eq!(&d[51..84], &[0xAB; 33]);
-            assert_eq!(d[84], 0u8, "read_only=false");
-            assert_eq!(d[85], 0u8, "contract_bounds=None tag");
-            assert_eq!(d.len(), 32 + 8 + 2 + (4 + 1 + 1 + 1 + 2 + 33 + 1 + 1));
+            // Fallback address: tag(0=P2pkh) at offset 40, 20-byte hash at 41..61.
+            assert_eq!(d[40], 0u8, "fallback address P2pkh tag");
+            assert_eq!(&d[41..61], &[0x5Cu8; 20], "fallback address hash");
+            assert_eq!(&d[61..63], &1u16.to_le_bytes());
+            assert_eq!(&d[63..67], &7u32.to_le_bytes());
+            assert_eq!(d[67], Purpose::AUTHENTICATION as u8);
+            assert_eq!(d[68], SecurityLevel::MASTER as u8);
+            assert_eq!(d[69], KeyType::ECDSA_SECP256K1 as u8);
+            assert_eq!(&d[70..72], &33u16.to_le_bytes());
+            assert_eq!(&d[72..105], &[0xAB; 33]);
+            assert_eq!(d[105], 0u8, "read_only=false");
+            assert_eq!(d[106], 0u8, "contract_bounds=None tag");
+            assert_eq!(d.len(), 32 + 8 + 21 + 2 + (4 + 1 + 1 + 1 + 2 + 33 + 1 + 1));
         }
 
         #[test]
@@ -445,20 +472,60 @@ mod tests {
             let id_a = [0x11u8; 32];
             let id_b = [0x22u8; 32];
             let keys = vec![mk_key(0, 0xAA)];
-            let base =
-                identity_create_from_shielded_extra_sighash_data(&id_a, 10_000_000_000, &keys);
+            let fallback = PlatformAddress::P2pkh([0x01u8; 20]);
+            let base = identity_create_from_shielded_extra_sighash_data(
+                &id_a,
+                10_000_000_000,
+                &fallback,
+                &keys,
+            );
 
             // Changing the identity id changes the preimage (anti-redirection to a different id).
             assert_ne!(
                 base,
-                identity_create_from_shielded_extra_sighash_data(&id_b, 10_000_000_000, &keys),
+                identity_create_from_shielded_extra_sighash_data(
+                    &id_b,
+                    10_000_000_000,
+                    &fallback,
+                    &keys
+                ),
                 "identity id must be bound"
             );
             // Changing the denomination changes the preimage.
             assert_ne!(
                 base,
-                identity_create_from_shielded_extra_sighash_data(&id_a, 30_000_000_000, &keys),
+                identity_create_from_shielded_extra_sighash_data(
+                    &id_a,
+                    30_000_000_000,
+                    &fallback,
+                    &keys
+                ),
                 "denomination must be bound"
+            );
+            // Changing the fallback failure address changes the preimage (anti-redirection of the
+            // failure credit: a relayer cannot point the penalty-charged spend at a different
+            // address than the one each key's proof-of-possession signed).
+            assert_ne!(
+                base,
+                identity_create_from_shielded_extra_sighash_data(
+                    &id_a,
+                    10_000_000_000,
+                    &PlatformAddress::P2pkh([0x02u8; 20]),
+                    &keys
+                ),
+                "fallback failure address hash must be bound"
+            );
+            // Changing only the fallback address TYPE (P2pkh -> P2sh, same hash) changes the
+            // preimage too (the type tag is bound, not just the hash).
+            assert_ne!(
+                base,
+                identity_create_from_shielded_extra_sighash_data(
+                    &id_a,
+                    10_000_000_000,
+                    &PlatformAddress::P2sh([0x01u8; 20]),
+                    &keys
+                ),
+                "fallback failure address type tag must be bound"
             );
             // Swapping in a different key changes the preimage (anti-key-swap).
             assert_ne!(
@@ -466,6 +533,7 @@ mod tests {
                 identity_create_from_shielded_extra_sighash_data(
                     &id_a,
                     10_000_000_000,
+                    &fallback,
                     &[mk_key(0, 0xBB)]
                 ),
                 "key data must be bound"
@@ -476,6 +544,7 @@ mod tests {
                 identity_create_from_shielded_extra_sighash_data(
                     &id_a,
                     10_000_000_000,
+                    &fallback,
                     &[mk_key(0, 0xAA), mk_key(1, 0xCC)]
                 ),
                 "the full key set must be bound"
@@ -487,9 +556,11 @@ mod tests {
             use crate::identity::identity_public_key::contract_bounds::ContractBounds;
             use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
             let id = [0x11u8; 32];
+            let fallback = PlatformAddress::P2pkh([0x01u8; 20]);
             let base = identity_create_from_shielded_extra_sighash_data(
                 &id,
                 10_000_000_000,
+                &fallback,
                 &[mk_key(0, 0xAA)],
             );
 
@@ -498,7 +569,12 @@ mod tests {
             ro_key.set_read_only(true);
             assert_ne!(
                 base,
-                identity_create_from_shielded_extra_sighash_data(&id, 10_000_000_000, &[ro_key]),
+                identity_create_from_shielded_extra_sighash_data(
+                    &id,
+                    10_000_000_000,
+                    &fallback,
+                    &[ro_key]
+                ),
                 "read_only must be bound"
             );
 
@@ -509,7 +585,12 @@ mod tests {
             }));
             assert_ne!(
                 base,
-                identity_create_from_shielded_extra_sighash_data(&id, 10_000_000_000, &[cb_key]),
+                identity_create_from_shielded_extra_sighash_data(
+                    &id,
+                    10_000_000_000,
+                    &fallback,
+                    &[cb_key]
+                ),
                 "contract_bounds must be bound"
             );
         }

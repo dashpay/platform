@@ -2,24 +2,28 @@
 //! covered in the dpp `validate_structure` tests and op-level checks in the drive converter tests.
 //!
 //! Covered here:
-//! - The two consensus-facing early-out branches in `transform_into_action_v0` (mirroring
-//!   `IdentityCreate::validate_state`): an identity already existing at the derived id, and a
-//!   public-key hash already registered to another identity — both convert what would otherwise be
-//!   an internal Drive error during `AddNewIdentity` execution into a clean consensus rejection.
-//! - Sum-tree credit conservation: the converter ops applied through a real Drive keep
-//!   `calculate_total_credits_balance().ok()` balanced (the end-of-block invariant that halts the
-//!   chain) — the regression guard for the `AddToSystemCredits` over-mint.
+//! - The two identity-creation state checks in `validate_state` (the success/failure branch that
+//!   mirrors `IdentityCreateFromAddresses`): an identity already existing at the derived id is a
+//!   free rejection, while a public-key hash already registered to another identity is NOT a free
+//!   reject — the spend is finalized and the value is credited to
+//!   `send_to_address_on_creation_failure` minus a penalty via a fallback `UnshieldAction`.
+//! - Sum-tree credit conservation on BOTH the success path (pool->new-identity) and the failure
+//!   path (the fallback Unshield, pool->address minus penalty): the converter ops applied through a
+//!   real Drive keep `calculate_total_credits_balance().ok()` balanced (the end-of-block invariant
+//!   that halts the chain) — the regression guard for the `AddToSystemCredits` over-mint.
 //!
 //! The full build->prove->execute->prove/verify happy path (real Orchard proof + the strict merged
 //! nullifier+identity proof roundtrip) is deferred to the shared shielded-strategy harness, a
 //! pre-existing repo-wide TODO that is disabled for every shielded transition (the shielded
 //! `OperationType` build handlers are commented out in `strategy.rs`).
 
+use super::state::v0::IdentityCreateFromShieldedPoolStateTransitionStateValidationV0;
 use super::transform_into_action::v0::IdentityCreateFromShieldedPoolStateTransitionTransformIntoActionValidationV0;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::state_transitions::test_helpers::{
     insert_anchor_into_state, insert_dummy_encrypted_notes, set_pool_total_balance, setup_platform,
 };
+use crate::platform_types::platform::PlatformRef;
 use assert_matches::assert_matches;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::state_error::StateError;
@@ -35,10 +39,15 @@ use dpp::state_transition::state_transitions::shielded::identity_create_from_shi
 use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
 use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
+use drive::state_transition_action::StateTransitionAction;
 use rand::SeedableRng;
 
 const DENOMINATION: u64 = 10_000_000_000;
 const ANCHOR: [u8; 32] = [7u8; 32];
+/// Fallback platform address credited (minus a penalty) when the unique-public-key-hash state
+/// check fails. On that failure the transition produces an `UnshieldAction` paying this address.
+const FALLBACK_ADDRESS: dpp::address_funds::PlatformAddress =
+    dpp::address_funds::PlatformAddress::P2pkh([0x5C; 20]);
 
 fn action(nullifier_seed: u8) -> SerializedAction {
     SerializedAction {
@@ -76,17 +85,44 @@ fn transition(
         anchor: ANCHOR,
         proof: vec![0u8; 100],
         binding_signature: [0u8; 64],
+        send_to_address_on_creation_failure: FALLBACK_ADDRESS,
         identity_id,
     })
 }
 
+/// Build the optimistic SUCCESS action via `transform_into_action_v0` (the stateless + pool/anchor/
+/// nullifier/balance checks). Used by the `validate_state` tests, which then run the success/failure
+/// identity-creation branch against it. Requires the pool state to already be seeded so the
+/// transform succeeds.
+fn build_success_action(
+    platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+    st: &IdentityCreateFromShieldedPoolTransition,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> drive::state_transition_action::shielded::identity_create_from_shielded_pool::IdentityCreateFromShieldedPoolTransitionAction
+{
+    let result = st
+        .transform_into_action_v0(&platform.drive, execution_context, None, platform_version)
+        .expect("transform should not error");
+    assert!(
+        result.is_valid_with_data(),
+        "transform should build a valid success action; got {:?}",
+        result.errors
+    );
+    match result.into_data().expect("success action data") {
+        StateTransitionAction::IdentityCreateFromShieldedPoolAction(action) => action,
+        other => panic!("expected IdentityCreateFromShieldedPoolAction, got {other:?}"),
+    }
+}
+
 #[test]
-fn transform_rejects_when_identity_already_exists_at_derived_id() {
+fn validate_state_rejects_when_identity_already_exists_at_derived_id() {
     let platform_version = PlatformVersion::latest();
     let platform = setup_platform();
 
-    // Seed enough pool state (balance, the anchor, the minimum note count) that the transformer
-    // gets past the pool/anchor/nullifier/balance checks and reaches the identity-creation checks.
+    // Seed enough pool state (balance, the anchor, the minimum note count) that `transform` gets past
+    // the pool/anchor/nullifier/balance checks and builds the success action; `validate_state` then
+    // runs the identity-creation state checks.
     set_pool_total_balance(&platform, DENOMINATION * 10);
     insert_anchor_into_state(&platform, &ANCHOR);
     let min_notes = platform_version
@@ -130,15 +166,27 @@ fn transform_rejects_when_identity_already_exists_at_derived_id() {
     let mut execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)
             .expect("execution context");
+    let action = build_success_action(&platform, &st, &mut execution_context, platform_version);
+
+    let platform_state = platform.state.load();
+    let platform_ref = PlatformRef {
+        drive: &platform.drive,
+        state: &platform_state,
+        config: &platform.config,
+        core_rpc: &platform.core_rpc,
+    };
     let result = st
-        .transform_into_action_v0(
-            &platform.drive,
+        .validate_state_v0(
+            &platform_ref,
+            action,
             &mut execution_context,
             None,
             platform_version,
         )
-        .expect("transform should not error");
+        .expect("validate_state should not error");
 
+    // The identity-exists case is a FREE rejection (no chargeable fallback): an attacker cannot
+    // choose a colliding derived id, so there is no spend to finalize.
     assert!(!result.is_valid(), "expected a consensus rejection");
     assert_matches!(
         result.errors.as_slice(),
@@ -151,7 +199,7 @@ fn transform_rejects_when_identity_already_exists_at_derived_id() {
 }
 
 #[test]
-fn transform_rejects_when_a_public_key_hash_is_already_registered() {
+fn validate_state_returns_unshield_fallback_on_duplicate_key_hash() {
     let platform_version = PlatformVersion::latest();
     let platform = setup_platform();
 
@@ -191,7 +239,7 @@ fn transform_rejects_when_a_public_key_hash_is_already_registered() {
 
     // The new identity's key DUPLICATES that already-registered key's hash. Its derived id (from
     // these nullifiers) is free, so the identity-absence check passes and the unique-key-hash check
-    // is the one that must reject.
+    // is the one that fails — triggering the chargeable fallback rather than a free rejection.
     let dup_key = IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
         id: 0,
         key_type: existing_key.key_type(),
@@ -207,16 +255,40 @@ fn transform_rejects_when_a_public_key_hash_is_already_registered() {
     let mut execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)
             .expect("execution context");
+    let action = build_success_action(&platform, &st, &mut execution_context, platform_version);
+    let expected_current_total_balance = action.current_total_balance();
+
+    let platform_state = platform.state.load();
+    let platform_ref = PlatformRef {
+        drive: &platform.drive,
+        state: &platform_state,
+        config: &platform.config,
+        core_rpc: &platform.core_rpc,
+    };
     let result = st
-        .transform_into_action_v0(
-            &platform.drive,
+        .validate_state_v0(
+            &platform_ref,
+            action,
             &mut execution_context,
             None,
             platform_version,
         )
-        .expect("transform should not error");
+        .expect("validate_state should not error");
 
-    assert!(!result.is_valid(), "expected a consensus rejection");
+    // The fallback path is NOT a free rejection: it returns a result that CARRIES an action (the
+    // chargeable `UnshieldAction` — the spend is finalized, crediting the fallback address minus a
+    // penalty) WITH the unique-key-hash collision errors attached for surfacing to the submitter.
+    // (Errors-present means `is_valid()` is false, exactly like `IdentityCreateFromAddresses`'s
+    // `new_with_data_and_errors` bump action; the processor still books the carried action.)
+    assert!(
+        result.has_data(),
+        "duplicate-key-hash must return a chargeable fallback action, not a free reject; got {:?}",
+        result.errors
+    );
+    assert!(
+        !result.is_valid(),
+        "the fallback action must still carry the collision errors for the submitter"
+    );
     // The latest platform version dispatches the v1 unique-key-hash check, which reports the
     // collision as a StateError (v0 reported it as a BasicError).
     assert_matches!(
@@ -224,8 +296,43 @@ fn transform_rejects_when_a_public_key_hash_is_already_registered() {
         [ConsensusError::StateError(
             StateError::DuplicatedIdentityPublicKeyIdStateError(_)
         )],
-        "got: {:?}",
+        "expected the collision errors attached to the fallback action; got: {:?}",
         result.errors
+    );
+
+    let fallback = result.into_data().expect("fallback action data");
+    let StateTransitionAction::UnshieldAction(unshield) = fallback else {
+        panic!("expected a fallback UnshieldAction, got {fallback:?}");
+    };
+
+    use drive::state_transition_action::shielded::unshield::UnshieldTransitionAction;
+    let UnshieldTransitionAction::V0(unshield_v0) = unshield;
+    // The fallback Unshield is topologically identical to the would-be success exit: it spends the
+    // full denomination from the pool, credits the bound fallback address (the recipient receives
+    // `denomination - penalty`), reuses the same notes/anchor, and reads the same pool balance.
+    assert_eq!(unshield_v0.output_address, FALLBACK_ADDRESS);
+    assert_eq!(unshield_v0.amount, DENOMINATION);
+    assert_eq!(unshield_v0.anchor, ANCHOR);
+    assert_eq!(
+        unshield_v0.current_total_balance,
+        expected_current_total_balance
+    );
+    assert_eq!(
+        unshield_v0.notes.len(),
+        2,
+        "the fallback must carry the original 2 spend notes"
+    );
+    // The penalty is the flat `unique_key_already_present` plus metered processing, capped at the
+    // denomination so the converter's `amount - fee` can never underflow.
+    let penalty_floor = platform_version
+        .drive_abci
+        .validation_and_processing
+        .penalties
+        .unique_key_already_present;
+    assert!(
+        unshield_v0.fee_amount >= penalty_floor && unshield_v0.fee_amount <= DENOMINATION,
+        "penalty {} must be >= the flat floor {penalty_floor} and capped at the denomination {DENOMINATION}",
+        unshield_v0.fee_amount
     );
 }
 
@@ -308,5 +415,158 @@ fn converter_ops_preserve_sum_tree_credit_conservation() {
     assert!(
         balance.ok().expect("ok"),
         "credit supply must be conserved after a pool->identity exit; got {balance}"
+    );
+}
+
+/// Sum-tree credit-conservation regression for the FAILURE path (the fallback `UnshieldAction`).
+///
+/// On a unique-public-key-hash collision, `validate_state` finalizes the spend as an
+/// `UnshieldAction` that decrements the pool by `denomination` and credits the fallback address with
+/// `denomination - penalty`; the `penalty` is reconciled into the fee (storage) pool at block
+/// finalization (the `PaidFromShieldedPool` execution event). This test exercises the whole booking:
+/// it runs `validate_state` with a pre-registered colliding key to obtain the real fallback action,
+/// applies that action's converter ops through a REAL Drive, books the penalty into the storage fee
+/// pool (standing in for the end-of-block fee distribution), and asserts the end-of-block invariant
+/// `calculate_total_credits_balance().ok()` — the exact check that halts the chain — still balances:
+/// pool −denom, address +(denom−penalty), pools +penalty nets to zero against the unchanged system
+/// credits. Mirrors `converter_ops_preserve_sum_tree_credit_conservation` (the success path).
+#[test]
+fn failure_path_unshield_converter_ops_preserve_sum_tree_credit_conservation() {
+    use dpp::block::epoch::Epoch;
+    use drive::drive::credit_pools::operations::update_storage_fee_distribution_pool_operation;
+    use drive::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
+    use drive::state_transition_action::shielded::unshield::UnshieldTransitionAction;
+    use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use drive::util::batch::GroveDbOpBatch;
+
+    let platform_version = PlatformVersion::latest();
+    let platform = setup_platform();
+    let drive = &platform.drive;
+    let block_info = BlockInfo::default();
+    // The pool must hold at least the denomination plus the minimum-notes headroom; seed generously.
+    let seed = DENOMINATION * 10;
+
+    // Seed a BALANCED funded pool (raises the shielded pool AND system credits by `seed` together).
+    set_pool_total_balance(&platform, seed);
+    insert_anchor_into_state(&platform, &ANCHOR);
+    let min_notes = platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants
+        .minimum_pool_notes_for_outgoing;
+    insert_dummy_encrypted_notes(&platform, min_notes.max(1));
+
+    // Pre-register a different identity that owns an ECDSA_SECP256K1 key, then make the new
+    // identity's key DUPLICATE that key's hash so the unique-key-hash state check fails and
+    // `validate_state` returns the fallback Unshield. The pre-registered identity is added with a
+    // ZERO balance so it doesn't perturb the credit-conservation precondition (a non-zero identity
+    // balance would write to the Balances sum tree without a matching system-credit increment).
+    use dpp::identity::accessors::IdentitySettersV0;
+    let (mut existing_identity, keys_with_private): (Identity, Vec<(IdentityPublicKey, [u8; 32])>) =
+        Identity::random_identity_with_main_keys_with_private_key(
+            3,
+            &mut rand::rngs::StdRng::seed_from_u64(99),
+            platform_version,
+        )
+        .expect("random identity");
+    existing_identity.set_balance(0);
+    let existing_key = keys_with_private
+        .iter()
+        .find(|(k, _)| k.key_type() == KeyType::ECDSA_SECP256K1)
+        .map(|(k, _)| k.clone())
+        .expect("an ECDSA_SECP256K1 key");
+    platform
+        .drive
+        .add_new_identity(
+            existing_identity,
+            false,
+            &block_info,
+            true,
+            None,
+            platform_version,
+        )
+        .expect("should add the key-owning identity");
+    let dup_key = IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+        id: 0,
+        key_type: existing_key.key_type(),
+        purpose: existing_key.purpose(),
+        security_level: existing_key.security_level(),
+        contract_bounds: None,
+        read_only: false,
+        data: existing_key.data().clone(),
+        signature: BinaryData::default(),
+    });
+
+    // Precondition: the seeded pool + system-credits + the pre-registered identity are balanced.
+    assert!(
+        drive
+            .calculate_total_credits_balance(None, &platform_version.drive)
+            .expect("calc")
+            .ok()
+            .expect("ok"),
+        "precondition: the seeded state must be balanced"
+    );
+
+    let st = transition(vec![dup_key], vec![action(20), action(21)]);
+    let mut execution_context =
+        StateTransitionExecutionContext::default_for_platform_version(platform_version)
+            .expect("execution context");
+    let action = build_success_action(&platform, &st, &mut execution_context, platform_version);
+
+    let platform_state = platform.state.load();
+    let platform_ref = PlatformRef {
+        drive: &platform.drive,
+        state: &platform_state,
+        config: &platform.config,
+        core_rpc: &platform.core_rpc,
+    };
+    let result = st
+        .validate_state_v0(
+            &platform_ref,
+            action,
+            &mut execution_context,
+            None,
+            platform_version,
+        )
+        .expect("validate_state should not error");
+    let fallback = result
+        .into_data()
+        .expect("fallback action data on the failure path");
+    let StateTransitionAction::UnshieldAction(unshield) = fallback else {
+        panic!("expected a fallback UnshieldAction");
+    };
+    let penalty = unshield.fee_amount();
+
+    // Apply the fallback Unshield's converter ops (pool −denom, address +(denom−penalty)).
+    let ops = unshield
+        .into_high_level_drive_operations(&Epoch::new(0).unwrap(), platform_version)
+        .expect("converter ops");
+    drive
+        .apply_drive_operations(ops, true, &block_info, None, platform_version, None)
+        .expect("apply converter ops");
+
+    // Book the penalty into the storage fee (Pools) tree — the end-of-block reconciliation the
+    // `PaidFromShieldedPool` execution event performs (`fees_to_add_to_pool`). Without this the
+    // total is short by exactly `penalty` (the carved fee), which is the point: the fee is conserved
+    // into the pools, not burned.
+    let existing_pool = drive
+        .get_storage_fees_from_distribution_pool(None, platform_version)
+        .expect("read storage fee pool");
+    let mut batch = GroveDbOpBatch::new();
+    batch.push(
+        update_storage_fee_distribution_pool_operation(existing_pool + penalty)
+            .expect("storage fee pool op"),
+    );
+    drive
+        .grove_apply_batch(batch, false, None, &platform_version.drive)
+        .expect("apply storage fee pool booking");
+
+    // The end-of-block conservation invariant must still hold for the failure path.
+    let balance = drive
+        .calculate_total_credits_balance(None, &platform_version.drive)
+        .expect("calc");
+    assert!(
+        balance.ok().expect("ok"),
+        "credit supply must be conserved after the fallback pool->address unshield; got {balance}"
     );
 }

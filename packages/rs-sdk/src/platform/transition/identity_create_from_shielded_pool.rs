@@ -2,6 +2,7 @@ use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use crate::{Error, Sdk};
+use dpp::address_funds::PlatformAddress;
 use dpp::shielded::OrchardBundleParams;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
@@ -31,6 +32,7 @@ pub trait IdentityCreateFromShieldedPool {
         &self,
         public_keys: Vec<IdentityPublicKeyInCreation>,
         denomination: u64,
+        send_to_address_on_creation_failure: PlatformAddress,
         bundle: OrchardBundleParams,
         settings: Option<PutSettings>,
     ) -> Result<StateTransitionProofResult, Error>;
@@ -42,6 +44,7 @@ impl IdentityCreateFromShieldedPool for Sdk {
         &self,
         public_keys: Vec<IdentityPublicKeyInCreation>,
         denomination: u64,
+        send_to_address_on_creation_failure: PlatformAddress,
         bundle: OrchardBundleParams,
         settings: Option<PutSettings>,
     ) -> Result<StateTransitionProofResult, Error> {
@@ -55,6 +58,7 @@ impl IdentityCreateFromShieldedPool for Sdk {
         let state_transition = IdentityCreateFromShieldedPoolTransition::try_from_bundle(
             public_keys,
             denomination,
+            send_to_address_on_creation_failure,
             actions,
             anchor,
             proof,

@@ -625,6 +625,15 @@ extension PlatformWalletManager {
     /// the bound wallet's own key. Returns the 32-byte new identity id
     /// (`double_sha256(sorted nullifiers)`).
     ///
+    /// `sendToAddressOnCreationFailure` is the REQUIRED fallback
+    /// platform address as raw `PlatformAddress` storage bytes (21
+    /// bytes: 1-byte variant tag + 20-byte hash, the encoding
+    /// `PlatformAddress.toBytes()` produces). If creation fails a
+    /// stateful check (a public-key hash already registered to another
+    /// identity) the spend is still finalized and the value is credited
+    /// to this address minus a penalty. It is bound into the transition
+    /// sighash, so it cannot be redirected after signing.
+    ///
     /// Heavy CPU work (Halo 2 proof + per-key signing) runs on a
     /// detached task so the caller's actor isn't blocked.
     public func shieldedIdentityCreateFromPool(
@@ -632,6 +641,7 @@ extension PlatformWalletManager {
         account: UInt32 = 0,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
         denomination: UInt64,
+        sendToAddressOnCreationFailure: Data,
         identitySigner: KeychainSigner
     ) async throws -> Data {
         guard isConfigured, handle != NULL_HANDLE else {
@@ -649,9 +659,15 @@ extension PlatformWalletManager {
                 "identityPubkeys is empty"
             )
         }
+        guard sendToAddressOnCreationFailure.count == 21 else {
+            throw PlatformWalletError.invalidParameter(
+                "sendToAddressOnCreationFailure must be exactly 21 PlatformAddress bytes"
+            )
+        }
 
         let handle = self.handle
         let identitySignerHandle = identitySigner.handle
+        let fallbackAddressBytes = sendToAddressOnCreationFailure
 
         return try await Task.detached(priority: .userInitiated) { () -> Data in
             var outIdentityId: (
@@ -682,20 +698,33 @@ extension PlatformWalletManager {
                     else {
                         throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
                     }
-                    return ManagedPlatformWallet.withPubkeyFFIArray(
-                        identityPubkeys,
-                        buffers: pubkeyBuffers
-                    ) { ffiRowsPtr, ffiRowsCount in
-                        platform_wallet_manager_shielded_identity_create_from_pool(
-                            handle,
-                            widPtr,
-                            account,
-                            ffiRowsPtr,
-                            UInt(ffiRowsCount),
-                            denomination,
-                            identitySignerHandle,
-                            &outIdentityId
-                        )
+                    // Pin the 21-byte fallback `PlatformAddress` bytes for the whole FFI call so the
+                    // pointer handed to Rust stays valid (validated `== 21` above).
+                    return try fallbackAddressBytes.withUnsafeBytes {
+                        fallbackRaw -> PlatformWalletFFIResult in
+                        guard let fallbackPtr = fallbackRaw.baseAddress?.assumingMemoryBound(
+                            to: UInt8.self
+                        ) else {
+                            throw PlatformWalletError.invalidParameter(
+                                "sendToAddressOnCreationFailure baseAddress is nil"
+                            )
+                        }
+                        return ManagedPlatformWallet.withPubkeyFFIArray(
+                            identityPubkeys,
+                            buffers: pubkeyBuffers
+                        ) { ffiRowsPtr, ffiRowsCount in
+                            platform_wallet_manager_shielded_identity_create_from_pool(
+                                handle,
+                                widPtr,
+                                account,
+                                ffiRowsPtr,
+                                UInt(ffiRowsCount),
+                                denomination,
+                                fallbackPtr,
+                                identitySignerHandle,
+                                &outIdentityId
+                            )
+                        }
                     }
                 }
             }

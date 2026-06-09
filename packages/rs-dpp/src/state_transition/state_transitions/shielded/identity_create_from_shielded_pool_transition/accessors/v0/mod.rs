@@ -1,3 +1,4 @@
+use crate::address_funds::PlatformAddress;
 use crate::shielded::SerializedAction;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_value::Identifier;
@@ -11,6 +12,9 @@ pub trait IdentityCreateFromShieldedPoolTransitionAccessorsV0 {
 
     /// Get the fixed exit denomination (in credits).
     fn denomination(&self) -> u64;
+
+    /// Get the fallback address credited (minus penalty) if identity creation fails a stateful check.
+    fn send_to_address_on_creation_failure(&self) -> &PlatformAddress;
 
     /// Get the id of the new identity (derived from the spend nullifiers).
     fn identity_id(&self) -> Identifier;

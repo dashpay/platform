@@ -163,6 +163,9 @@ mod tests {
                 anchor: [7u8; 32],
                 proof: vec![8u8; 100],
                 binding_signature: [9u8; 64],
+                send_to_address_on_creation_failure: crate::address_funds::PlatformAddress::P2pkh(
+                    [0u8; 20],
+                ),
                 identity_id,
             }
             .into();

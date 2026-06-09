@@ -1,6 +1,7 @@
 use grovedb_commitment_tree::{Anchor, FullViewingKey, SpendAuthorizingKey};
 
 use crate::address_funds::OrchardAddress;
+use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
@@ -89,6 +90,7 @@ pub struct IdentityCreateFromShieldedPoolBuildResult {
 pub async fn build_identity_create_from_shielded_pool_transition<P, S>(
     public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>,
     denomination: u64,
+    send_to_address_on_creation_failure: PlatformAddress,
     spends: Vec<SpendableNote>,
     change_address: &OrchardAddress,
     fvk: &FullViewingKey,
@@ -161,6 +163,7 @@ where
     let extra_sighash_data = crate::shielded::identity_create_from_shielded_extra_sighash_data(
         &identity_id.to_buffer(),
         denomination,
+        &send_to_address_on_creation_failure,
         &in_creation_keys,
     );
 
@@ -192,6 +195,7 @@ where
     let mut state_transition = IdentityCreateFromShieldedPoolTransition::try_from_bundle(
         in_creation_keys,
         denomination,
+        send_to_address_on_creation_failure,
         sb.actions.clone(),
         sb.anchor,
         sb.proof.clone(),

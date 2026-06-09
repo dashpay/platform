@@ -2,6 +2,7 @@ mod v0;
 
 pub use v0::*;
 
+use crate::address_funds::PlatformAddress;
 use crate::shielded::SerializedAction;
 use crate::state_transition::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
@@ -25,6 +26,14 @@ impl IdentityCreateFromShieldedPoolTransitionAccessorsV0
     fn denomination(&self) -> u64 {
         match self {
             IdentityCreateFromShieldedPoolTransition::V0(v0) => v0.denomination,
+        }
+    }
+
+    fn send_to_address_on_creation_failure(&self) -> &PlatformAddress {
+        match self {
+            IdentityCreateFromShieldedPoolTransition::V0(v0) => {
+                &v0.send_to_address_on_creation_failure
+            }
         }
     }
 

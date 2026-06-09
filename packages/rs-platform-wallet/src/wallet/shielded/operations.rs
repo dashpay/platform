@@ -679,6 +679,7 @@ pub async fn identity_create_from_shielded_pool<S, P, IS>(
     account: u32,
     public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>,
     denomination: u64,
+    send_to_address_on_creation_failure: PlatformAddress,
     identity_signer: &IS,
     prover: &P,
 ) -> Result<Identifier, PlatformWalletError>
@@ -720,6 +721,7 @@ where
         let build = build_identity_create_from_shielded_pool_transition(
             public_keys,
             denomination,
+            send_to_address_on_creation_failure,
             spends,
             &change_addr,
             &keys.full_viewing_key,
@@ -738,9 +740,15 @@ where
         trace!("IdentityCreateFromShieldedPool: built, broadcasting via SDK helper...");
         // Broadcast through the SDK helper, which re-assembles the transition from the PoP-signed
         // keys + bundle params (preserving the per-key signatures) and waits for proven execution.
-        sdk.identity_create_from_shielded_pool(build.public_keys, denomination, build.bundle, None)
-            .await
-            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
+        sdk.identity_create_from_shielded_pool(
+            build.public_keys,
+            denomination,
+            send_to_address_on_creation_failure,
+            build.bundle,
+            None,
+        )
+        .await
+        .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
 
         Ok::<Identifier, PlatformWalletError>(identity_id)
     }

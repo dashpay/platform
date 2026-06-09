@@ -3,6 +3,8 @@ mod v0;
 pub use v0::*;
 
 #[cfg(feature = "state-transition-signing")]
+use crate::address_funds::PlatformAddress;
+#[cfg(feature = "state-transition-signing")]
 use crate::shielded::SerializedAction;
 use crate::state_transition::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
 #[cfg(feature = "state-transition-signing")]
@@ -22,6 +24,7 @@ impl IdentityCreateFromShieldedPoolTransitionMethodsV0
     fn try_from_bundle(
         public_keys: Vec<IdentityPublicKeyInCreation>,
         denomination: u64,
+        send_to_address_on_creation_failure: PlatformAddress,
         actions: Vec<SerializedAction>,
         anchor: [u8; 32],
         proof: Vec<u8>,
@@ -37,6 +40,7 @@ impl IdentityCreateFromShieldedPoolTransitionMethodsV0
             0 => IdentityCreateFromShieldedPoolTransitionV0::try_from_bundle(
                 public_keys,
                 denomination,
+                send_to_address_on_creation_failure,
                 actions,
                 anchor,
                 proof,

@@ -3,6 +3,8 @@ use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::identity_create::StateTransitionStateValidationForIdentityCreateTransitionV0;
 use crate::execution::validation::state_transition::identity_create_from_addresses::StateTransitionStateValidationForIdentityCreateFromAddressesTransitionV0;
+use crate::execution::validation::state_transition::identity_create_from_shielded_pool::StateTransitionIdentityCreateFromShieldedPoolTransitionActionTransformer;
+use crate::execution::validation::state_transition::identity_create_from_shielded_pool::StateTransitionStateValidationForIdentityCreateFromShieldedPoolTransitionV0;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
@@ -206,10 +208,40 @@ impl StateTransitionStateValidation for StateTransition {
                     "shielded withdrawal should not have state validation",
                 )))
             }
-            StateTransition::IdentityCreateFromShieldedPool(_) => {
-                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "identity create from shielded pool should not have state validation",
-                )))
+            StateTransition::IdentityCreateFromShieldedPool(st) => {
+                // Type 20 does NOT use `has_advanced_structure_validation_with_state` (the cheap
+                // PoP/key-structure checks stay in `validate_shielded_proof`, ahead of Halo 2), so
+                // the processor does not pre-build the action — it always arrives here as `None`.
+                // Build the optimistic SUCCESS action now (the stateless + pool/anchor/nullifier/
+                // balance checks). If that already rejects, forward the rejection; otherwise hand
+                // the success action to `validate_state`, which branches success-vs-Unshield-fallback
+                // on the identity-creation state checks.
+                let action = if let Some(action) = action {
+                    action
+                } else {
+                    let transform_result = st
+                        .transform_into_action_for_identity_create_from_shielded_pool_transition(
+                            platform,
+                            execution_context,
+                            tx,
+                        )?;
+                    if !transform_result.is_valid_with_data() {
+                        return Ok(transform_result);
+                    }
+                    transform_result.into_data()?
+                };
+                let StateTransitionAction::IdentityCreateFromShieldedPoolAction(action) = action
+                else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "action must be an identity create from shielded pool transition action",
+                    )));
+                };
+                st.validate_state_for_identity_create_from_shielded_pool_transition(
+                    action,
+                    platform,
+                    execution_context,
+                    tx,
+                )
             }
         }
     }
@@ -217,6 +249,7 @@ impl StateTransitionStateValidation for StateTransition {
     fn has_state_validation(&self) -> bool {
         match self {
             StateTransition::IdentityCreateFromAddresses(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_)
             | StateTransition::DataContractCreate(_)
             | StateTransition::IdentityCreate(_)
             | StateTransition::DataContractUpdate(_)
@@ -235,8 +268,7 @@ impl StateTransitionStateValidation for StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_)
-            | StateTransition::IdentityCreateFromShieldedPool(_) => false,
+            | StateTransition::ShieldedWithdrawal(_) => false,
         }
     }
 }

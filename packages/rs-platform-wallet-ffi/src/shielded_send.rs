@@ -319,10 +319,20 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 /// `out_identity_id`. The id is deterministic in the spent notes, so the host can also predict it
 /// independently if needed.
 ///
+/// `send_to_address_on_creation_failure_bytes` is the REQUIRED fallback platform address, supplied
+/// as raw `PlatformAddress` storage bytes (21 bytes: 1-byte variant tag + 20-byte hash — the
+/// encoding `PlatformAddress::to_bytes()` produces and `PlatformAddressWasm`/the Swift wrapper
+/// expose). If identity creation fails a stateful check (a public-key hash already registered to
+/// another identity) the spend is still finalized and the value is credited to this address minus a
+/// penalty, exactly like the asset-lock / address-funded identity-create penalties. It is bound into
+/// the transition sighash, so it cannot be redirected after signing.
+///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
 /// - `identity_pubkeys` must point to `identity_pubkeys_count` contiguous [`IdentityPubkeyFFI`]
 ///   rows that outlive this call (each row's pointers per the [`IdentityPubkeyFFI`] contract).
+/// - `send_to_address_on_creation_failure_bytes` must point to exactly 21 readable bytes for the
+///   duration of this call.
 /// - `signer_identity_handle` must be a valid, non-destroyed `*mut SignerHandle` (a
 ///   `VTableSigner` with the callback variant) that outlives this call; the caller retains
 ///   ownership.
@@ -336,11 +346,13 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
     identity_pubkeys: *const IdentityPubkeyFFI,
     identity_pubkeys_count: usize,
     denomination: u64,
+    send_to_address_on_creation_failure_bytes: *const u8,
     signer_identity_handle: *mut SignerHandle,
     out_identity_id: *mut [u8; 32],
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(identity_pubkeys);
+    check_ptr!(send_to_address_on_creation_failure_bytes);
     check_ptr!(signer_identity_handle);
     check_ptr!(out_identity_id);
     if identity_pubkeys_count == 0 {
@@ -349,6 +361,23 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
             "`identity_pubkeys_count` must be >= 1",
         );
     }
+
+    // Decode the REQUIRED fallback failure address (21 raw `PlatformAddress` bytes: 1-byte variant
+    // tag + 20-byte hash). Reuses the same strict decoder as `surplus_output`, but here a null /
+    // malformed address is a hard error (the fallback is mandatory for Type 20).
+    let send_to_address_on_creation_failure = match parse_optional_surplus_output(
+        send_to_address_on_creation_failure_bytes,
+        21,
+    ) {
+        Ok(Some(addr)) => addr,
+        Ok(None) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "`send_to_address_on_creation_failure_bytes` is required (21 PlatformAddress bytes)",
+            );
+        }
+        Err(result) => return result,
+    };
 
     let mut wallet_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
@@ -399,6 +428,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
                 account,
                 public_keys,
                 denomination,
+                send_to_address_on_creation_failure,
                 identity_signer,
                 &prover,
             )
