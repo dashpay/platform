@@ -351,11 +351,19 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     .await
                     .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
-                debug_assert_eq!(
-                    signed.input.len(),
-                    input_count,
-                    "CoinJoin sweep chunk must consume every UTXO in the chunk"
-                );
+                // Fund-safety invariant: the single output is `total_input -
+                // fee`, which is only correct if the signer consumed every UTXO
+                // in the chunk. Enforce at runtime (not debug_assert, which is
+                // compiled out in release) so a signer that ever drops an input
+                // aborts the chunk instead of broadcasting an under-consuming tx.
+                if signed.input.len() != input_count {
+                    return Err(PlatformWalletError::TransactionBuild(format!(
+                        "CoinJoin sweep chunk must consume every UTXO in the chunk: \
+                         signed {} inputs, expected {}",
+                        signed.input.len(),
+                        input_count
+                    )));
+                }
                 signed_txs.push(signed);
             }
 
@@ -372,7 +380,16 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         for tx in signed_txs {
             match self.broadcast_transaction(&tx).await {
                 Ok(_) => broadcast.push(tx),
-                Err(e) => last_err = Some(e),
+                Err(e) => {
+                    // Partial failure is tolerated (caller re-runs to sweep the
+                    // remainder), but never silent: log each dropped chunk error.
+                    tracing::warn!(
+                        "CoinJoin sweep: a chunk failed to broadcast, continuing \
+                         with remaining chunks (caller can re-run): {}",
+                        e
+                    );
+                    last_err = Some(e);
+                }
             }
         }
 
@@ -449,9 +466,16 @@ fn coinjoin_sweep_path_map(
                 .generate_addresses(BATCH, key_source, true)
                 .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))?;
             for addr in &batch {
-                if needed.remove(addr) {
+                // Only drop from `needed` once the path is actually recorded, so
+                // "removed from needed ⇒ inserted into path_map" holds by
+                // construction. If `address_info` ever returned None for a
+                // freshly generated address (an AddressPool invariant break), the
+                // address stays in `needed` and the check below errors loudly
+                // rather than silently dropping it into a mid-sign failure.
+                if needed.contains(addr) {
                     if let Some(info) = pool.address_info(addr) {
                         path_map.insert(addr.clone(), info.path.clone());
+                        needed.remove(addr);
                     }
                 }
             }

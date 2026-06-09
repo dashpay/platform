@@ -93,7 +93,17 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     )
                 })?;
 
-            pool.gap_limit = gap_limit.min(MAX_GAP_LIMIT);
+            // Reject a zero gap limit before touching the pool. key-wallet's
+            // `maintain_gap_limit` computes `gap_limit - 1` when no address has
+            // been used yet, which underflows at 0 (debug panic / release wrap
+            // to u32::MAX → ~4B address generations under the write lock).
+            let gap_limit = gap_limit.min(MAX_GAP_LIMIT);
+            if gap_limit == 0 {
+                return Err(PlatformWalletError::AddressOperation(
+                    "CoinJoin gap limit must be greater than zero".to_string(),
+                ));
+            }
+            pool.gap_limit = gap_limit;
             pool.maintain_gap_limit(&key_source)
                 .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))?;
             pool.highest_generated.unwrap_or(0)
