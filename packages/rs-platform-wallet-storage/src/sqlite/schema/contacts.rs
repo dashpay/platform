@@ -1,11 +1,9 @@
 //! Unified `contacts` table writer and per-wallet reader.
 //!
-//! One row per `(wallet_id, owner_id, contact_id)` relationship. The
-//! `state` column records which lifecycle stage the relationship is in
-//! (`sent` / `received` / `established`), collapsing what used to be
-//! three sibling tables into one. A pending relationship is `sent` XOR
-//! `received` and carries only the matching request blob; an
-//! `established` relationship carries both request blobs plus the four
+//! One row per `(wallet_id, owner_id, contact_id)` relationship; the `state`
+//! column records its lifecycle stage (`sent` / `received` / `established`). A
+//! pending relationship is `sent` XOR `received` and carries only the matching
+//! request blob; an `established` one carries both request blobs plus the four
 //! metadata columns (`alias`, `note`, `is_hidden`, `accepted_accounts`).
 
 use std::collections::BTreeMap;
@@ -28,17 +26,11 @@ use crate::sqlite::schema::blob::impl_persistable_blob;
 // public keys/refs; accepted_accounts is a list of account indices).
 impl_persistable_blob!(ContactRequest, Vec<u32>);
 
-/// Single source of truth for the `contacts.state` TEXT-column domain.
-///
-/// One label per lifecycle stage of a DashPay contact relationship
-/// (writer side: [`contact_state_db_label`]). The migration in
-/// `migrations/V001__initial.rs` interpolates this array into the
-/// `CHECK (state IN (...))` clause so an unknown label is rejected at
-/// insert time rather than landing as silent garbage. The
-/// `contact_state_labels_match_enum` unit test below enforces
-/// set-equality between this array and the writer's output — drift (a
-/// renamed/added stage) becomes a failing test, not a runtime
-/// divergence between Rust and SQLite.
+/// Source of truth for the `contacts.state` TEXT domain, one label per
+/// contact-relationship lifecycle stage. `migrations/V001__initial.rs`
+/// interpolates it into a `CHECK (state IN (...))`;
+/// `contact_state_labels_match_enum` keeps it in sync with
+/// [`contact_state_db_label`].
 pub(crate) const CONTACT_STATE_LABELS: &[&str] = &["sent", "received", "established"];
 
 /// Lifecycle stage of a `contacts` row.
@@ -77,16 +69,12 @@ fn contact_state_from_label(label: &str) -> Result<ContactState, WalletStorageEr
     }
 }
 
-/// Storage-internal snapshot of one wallet's `contacts` rows.
-///
-/// Mirrors the populated-only subset of
-/// [`ContactChangeSet`](platform_wallet::changeset::ContactChangeSet);
-/// `removed_*` are absent because deletes never reach storage as rows
-/// (the writer applies them as `DELETE`s). Crate-internal on purpose —
-/// the public rehydration feed is the [`ContactChangeSet`] produced by
-/// [`load_changeset`], so this intermediate snapshot stays `pub(crate)`.
-/// Promoted to `pub` only under `__test-helpers` so this crate's own
-/// integration tests can assert on the hardened reader directly.
+/// Storage-internal snapshot of one wallet's `contacts` rows: the
+/// populated-only subset of
+/// [`ContactChangeSet`](platform_wallet::changeset::ContactChangeSet)
+/// (`removed_*` absent — deletes reach storage as `DELETE`s). `pub(crate)`;
+/// the public feed is [`load_changeset`]. Promoted to `pub` under
+/// `__test-helpers` for this crate's integration tests.
 #[derive(Debug, Default, PartialEq)]
 #[cfg(not(feature = "__test-helpers"))]
 pub(crate) struct ContactsRecords {
@@ -104,26 +92,20 @@ pub struct ContactsRecords {
     pub established: BTreeMap<SentContactRequestKey, EstablishedContact>,
 }
 
-/// Apply a [`ContactChangeSet`] onto the unified `contacts` table.
-///
-/// Ordering matches the previous three-table writer: inserts before
-/// removes. The auto-establishment contract is honoured by `state`
-/// precedence — a pending upsert (`sent` / `received`) never downgrades
-/// an already-`established` row, and an `established` upsert collapses
-/// any prior pending row for the same pair (both request blobs + the
-/// four metadata columns are set, `state = 'established'`).
+/// Apply a [`ContactChangeSet`] onto the `contacts` table (inserts before
+/// removes). Auto-establishment is honoured by `state` precedence: a pending
+/// upsert never downgrades an already-`established` row, and an `established`
+/// upsert collapses any prior pending row for the pair (both request blobs +
+/// the four metadata columns, `state = 'established'`).
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     cs: &ContactChangeSet,
 ) -> Result<(), WalletStorageError> {
     if !cs.sent_requests.is_empty() {
-        // Pending-sent upsert. `outgoing_request` is set; `state` becomes
-        // 'sent' UNLESS the row is already established (don't downgrade)
-        // or an incoming request blob is already stored — in which case
-        // both sides are present and the row promotes to 'established' in
-        // the same statement. The inserted label flows through
-        // `contact_state_db_label` so it stays the writer's codomain.
+        // Pending-sent upsert: `state` becomes 'sent' unless the row is
+        // already established or an incoming blob is present, in which case
+        // both sides exist and it promotes to 'established' in one statement.
         let sent = contact_state_db_label(ContactState::Sent);
         let mut stmt = tx.prepare_cached(
             "INSERT INTO contacts (wallet_id, owner_id, contact_id, state, outgoing_request) \
@@ -159,11 +141,7 @@ pub fn apply(
         }
     }
     if !cs.incoming_requests.is_empty() {
-        // Pending-received upsert. Symmetric to the sent path:
-        // `incoming_request` is set, `state` becomes 'received' unless the
-        // row is already established or an outgoing request blob is already
-        // stored — in which case both sides are present and the row
-        // promotes to 'established' in the same statement.
+        // Pending-received upsert, symmetric to the sent path.
         let received = contact_state_db_label(ContactState::Received);
         let mut stmt = tx.prepare_cached(
             "INSERT INTO contacts (wallet_id, owner_id, contact_id, state, incoming_request) \
@@ -199,9 +177,8 @@ pub fn apply(
         }
     }
     if !cs.established.is_empty() {
-        // Establishment collapses any prior pending row for the pair: set
-        // both request blobs + the four metadata columns and force the
-        // `established` state.
+        // Collapse any prior pending row: both request blobs + the four
+        // metadata columns, forcing the `established` state.
         let established_label = contact_state_db_label(ContactState::Established);
         let mut stmt = tx.prepare_cached(
             "INSERT INTO contacts \
@@ -361,9 +338,8 @@ fn decode_pair_key(a: &[u8], b: &[u8]) -> Result<(Identifier, Identifier), Walle
     Ok((Identifier::from(a32), Identifier::from(b32)))
 }
 
-/// Test-helper wrapper over [`load_state`] so this crate's integration
-/// tests can assert on the hardened (fail-hard) contacts reader without
-/// promoting the production surface beyond `pub(crate)`.
+/// Test-helper wrapper over [`load_state`] without promoting the production
+/// surface beyond `pub(crate)`.
 #[cfg(feature = "__test-helpers")]
 pub fn load_state_for_test(
     conn: &Connection,
@@ -377,10 +353,8 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    /// Exhaustive sample of every [`ContactState`] variant. The match
-    /// arm uses no wildcard, so an added variant becomes a compile error
-    /// here and forces the sample list, `contact_state_db_label`, and
-    /// [`CONTACT_STATE_LABELS`] to be updated together.
+    /// Every [`ContactState`] variant; the wildcard-free match below fails to
+    /// compile if one is added.
     fn all_contact_state_variants() -> Vec<ContactState> {
         let variants = vec![
             ContactState::Sent,

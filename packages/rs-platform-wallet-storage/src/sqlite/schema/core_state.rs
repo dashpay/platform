@@ -54,9 +54,8 @@ pub fn apply(
             ])?;
         }
     }
-    // Derived addresses are written BEFORE UTXOs (within the same
-    // transaction) so the UTXO writer's address→account_index lookup
-    // sees the freshly recorded rows.
+    // Derived addresses are written before UTXOs (same tx) so the UTXO
+    // writer's address→account_index lookup sees the fresh rows.
     if !cs.addresses_derived.is_empty() {
         let mut stmt = tx.prepare_cached(
             "INSERT INTO core_derived_addresses \
@@ -107,11 +106,9 @@ pub fn apply(
             if exists {
                 mark_spent_stmt.execute(params![wallet_id.as_slice(), &op[..]])?;
             } else {
-                // Spent-only synthetic row: best-effort account_index
-                // from the derived-address map. A spend of an
-                // externally-funded address we never derived defaults
-                // to 0 (logged) — harmless, since spent rows are
-                // excluded from `list_unspent_utxos`.
+                // Spent-only synthetic row: best-effort account_index. A wrong
+                // index is inert since spent rows are excluded from
+                // `list_unspent_utxos`.
                 execute_upsert_utxo(&mut upsert_stmt, &mut lookup_stmt, wallet_id, utxo, true)?;
             }
         }
@@ -137,14 +134,10 @@ pub fn apply(
     Ok(())
 }
 
-/// Resolve the owning account index for a UTXO by its rendered address,
-/// joining against the `core_derived_addresses` map written earlier in
-/// the same transaction.
-///
-/// An address can be derived under multiple `account_type`s (the PK is
-/// `(wallet_id, account_type, address)`), so order deterministically and
-/// take the first — without `ORDER BY` SQLite would pick an arbitrary
-/// matching row, making the bucketed account_index unstable across runs.
+/// Resolve a UTXO's owning account index via the `core_derived_addresses` map.
+/// An address can be derived under multiple `account_type`s, so the `ORDER BY`
+/// + `LIMIT 1` makes the choice deterministic (SQLite would otherwise pick an
+/// arbitrary matching row).
 const ACCOUNT_INDEX_BY_ADDRESS_SQL: &str = "SELECT account_index FROM core_derived_addresses \
      WHERE wallet_id = ?1 AND address = ?2 \
      ORDER BY account_type, account_index LIMIT 1";
@@ -168,19 +161,15 @@ fn execute_upsert_utxo(
 ) -> Result<(), WalletStorageError> {
     let op = blob::encode_outpoint(&utxo.outpoint)?;
     let address = utxo.address.to_string();
-    // `Utxo` carries no account index; recover it from the
-    // derived-address map written earlier in this transaction.
+    // `Utxo` carries no account index; recover it from the derived-address map.
     let looked_up: Option<i64> = lookup_stmt
         .query_row(params![wallet_id.as_slice(), &address], |row| row.get(0))
         .optional()?;
     let account_index: i64 = match looked_up {
         Some(idx) => idx,
-        // An unspent UTXO whose address we never derived would land in
-        // the wallet's funds under account 0 and never re-derive — silent
-        // mis-bucketing of live money. Refuse it. The spent-only
-        // placeholder path tolerates the fallback because spent rows are
-        // excluded from `list_unspent_utxos`, so a wrong index there is
-        // inert.
+        // Refuse an unspent UTXO whose address we never derived — it would
+        // mis-bucket live money under account 0 and never re-derive. The
+        // spent-only path below tolerates the fallback (a wrong index is inert).
         None if !spent => {
             return Err(WalletStorageError::UtxoAddressNotDerived {
                 address: address.clone(),
@@ -245,46 +234,25 @@ fn upsert_sync_state(
     Ok(())
 }
 
-/// Bulk-reconstruct the keyless [`CoreChangeSet`] projection for one
-/// wallet from the `core_*` tables.
-///
-/// The manager applies this onto a freshly-minted `ManagedWalletInfo`
-/// (built from the re-derived wallet that already passed the
-/// wrong-account gate). It mints no `Wallet` (PUBLIC material only).
+/// Bulk-reconstruct the keyless [`CoreChangeSet`] projection for one wallet
+/// from the `core_*` tables. PUBLIC material only; mints no `Wallet`. `network`
+/// (from `wallets`) turns a persisted `script` back into an `Address`.
 ///
 /// # Reconstructed (safety-critical-correct)
 ///
-/// - **Unspent UTXOs** (`new_utxos`): every `spent = 0` row, with the
-///   address recovered from the persisted `script` + `network`. These
-///   drive the wallet-balance recompute downstream — the no-silent-zero
-///   guarantee. A row carrying a block `height` is marked confirmed so
-///   it lands in the `confirmed` bucket; the wallet total is exact
-///   either way.
-/// - **Transaction records** (`records`): every `record_blob`,
-///   decoded bit-exact. Fail-hard on a corrupt blob.
-/// - **IS-locks** (`instant_locks_for_non_final_records`): every
-///   `core_instant_locks` row.
-/// - **Sync watermarks**: `synced_height` / `last_processed_height`
-///   from `core_sync_state`.
+/// - **Unspent UTXOs** (`new_utxos`): every `spent = 0` row — the balance
+///   source (no-silent-zero); a row with a block `height` is confirmed.
+/// - **Transaction records** / **IS-locks** / **sync watermarks**: decoded
+///   bit-exact, fail-hard on a corrupt blob.
 ///
 /// # Deferred to the first post-load `sync` (safe re-warm)
 ///
-/// - **`last_applied_chain_lock`**: NOT a V001 column and never written
-///   by [`apply`]; left `None`. SPV re-applies a fresh chainlock on the
-///   first post-restart sync, at which point the asset-lock
-///   proof-resume metadata fallback can fire. (This is the documented
-///   deviation from the dev-plan §5: persisting the chainlock would
-///   require a schema migration + write-path change, both outside the
-///   no-migration constraint and the read-only scope of this reader.)
-/// - **Per-account UTXO attribution / `is_coinbase` / `is_instantlocked`
-///   / `is_trusted` flags**: `core_utxos` does not carry them;
-///   conservatively defaulted and refreshed on the next scan. The
-///   wallet *total* balance is unaffected.
-/// - **`core_derived_addresses` `used` flags**: not part of the
-///   balance projection; the gap-limit re-warms on the next scan.
-///
-/// `network` is the wallet's network (from `wallets`), needed
-/// to turn a persisted `script` back into an `Address`.
+/// - **`last_applied_chain_lock`**: left `None` — not a V001 column; SPV
+///   re-applies a fresh chainlock on the next sync. Persisting it would need a
+///   schema migration (outside this reader's no-migration scope).
+/// - **Per-account UTXO attribution / `is_coinbase` / `is_instantlocked` /
+///   `is_trusted` / `used` flags**: not carried by `core_utxos`; defaulted and
+///   refreshed on the next scan. The wallet *total* balance is unaffected.
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -292,7 +260,7 @@ pub fn load_state(
 ) -> Result<CoreChangeSet, WalletStorageError> {
     let mut cs = CoreChangeSet::default();
 
-    // --- Unspent UTXOs → new_utxos (balance source) ---
+    // Unspent UTXOs → new_utxos (the balance source).
     {
         let mut stmt = conn.prepare(
             "SELECT outpoint, value, script, height FROM core_utxos \
@@ -335,7 +303,6 @@ pub fn load_state(
         }
     }
 
-    // --- Transaction records (fail-hard on corrupt blob) ---
     {
         let mut stmt =
             conn.prepare("SELECT record_blob FROM core_transactions WHERE wallet_id = ?1")?;
@@ -349,7 +316,6 @@ pub fn load_state(
         }
     }
 
-    // --- IS-locks ---
     {
         let mut stmt =
             conn.prepare("SELECT txid, islock_blob FROM core_instant_locks WHERE wallet_id = ?1")?;
@@ -369,7 +335,7 @@ pub fn load_state(
         }
     }
 
-    // --- Sync watermarks ---
+    // Sync watermarks.
     if let Some((lp, sy)) = conn
         .query_row(
             "SELECT last_processed_height, synced_height FROM core_sync_state WHERE wallet_id = ?1",
@@ -382,9 +348,7 @@ pub fn load_state(
         )
         .optional()?
     {
-        // Fail-hard on an out-of-range watermark rather than silently
-        // discarding it — honors the load() corruption-is-never-skipped
-        // invariant (the upsert path uses the same helper).
+        // Fail-hard on an out-of-range watermark (corruption is never skipped).
         cs.last_processed_height = sync_height_u32("core_sync_state.last_processed_height", lp)?;
         cs.synced_height = sync_height_u32("core_sync_state.synced_height", sy)?;
     }

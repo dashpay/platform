@@ -69,19 +69,11 @@ pub fn apply(
     Ok(())
 }
 
-/// Single source of truth for the `asset_locks.status` TEXT-column
-/// domain.
-///
-/// Mirrors every variant of
-/// [`platform_wallet::wallet::asset_lock::tracked::AssetLockStatus`]
-/// (writer side: [`status_str`]). The migration in
-/// `migrations/V001__initial.rs` interpolates this array into the
-/// `CHECK (status IN (...))` clause so an unknown label is rejected at
-/// insert time rather than landing as silent garbage. The
-/// `asset_lock_status_labels_match_enum` unit test below enforces
-/// set-equality between this array and the writer's output — drift (a
-/// renamed/added variant) becomes a failing test, not a runtime
-/// divergence between Rust and SQLite.
+/// Source of truth for the `asset_locks.status` TEXT domain, mirroring
+/// [`AssetLockStatus`](platform_wallet::wallet::asset_lock::tracked::AssetLockStatus).
+/// `migrations/V001__initial.rs` interpolates it into a `CHECK (status IN
+/// (...))`; `asset_lock_status_labels_match_enum` keeps it in sync with
+/// [`status_str`].
 pub(crate) const ASSET_LOCK_STATUS_LABELS: &[&str] = &[
     "built",
     "broadcast",
@@ -120,12 +112,9 @@ fn decode_row(
     let entry: AssetLockEntry = blob::decode(blob_bytes)?;
     let account_index =
         crate::sqlite::util::safe_cast::i64_to_u32("asset_locks.account_index", account_index)?;
-    // Typed-column vs blob cross-check, symmetric with
-    // IdentityKeyEntryMismatch. A torn write / partial migration /
-    // restored corruption that passes PRAGMA integrity_check would
-    // otherwise silently mis-bucket the lock into the wrong account or
-    // report a different outpoint than the indexed column it was
-    // selected by.
+    // Typed-column vs blob cross-check: corruption that passes PRAGMA
+    // integrity_check would otherwise mis-bucket the lock or report a
+    // different outpoint than the indexed column it was selected by.
     if entry.out_point != outpoint || entry.account_index != account_index {
         return Err(WalletStorageError::AssetLockEntryMismatch {
             typed_outpoint: outpoint.to_string(),
@@ -147,16 +136,10 @@ fn decode_row(
     Ok((account_index, outpoint, tracked))
 }
 
-/// Build the per-wallet asset-lock slice for `ClientStartState` from
-/// the `asset_locks` table, bucketed by account index — including
-/// terminal `Consumed` rows. Consumed locks are RETAINED permanently
-/// with `status='consumed'` (they are never deleted), so this reader
-/// returns the full history. The rehydration feed
-/// [`load_unconsumed`](Self::load_unconsumed) filters `Consumed` rows at
-/// the SQL layer so a spent lock is never resurrected into the live set.
-/// Any row that fails to read or decode is a hard error — corruption is
-/// never silently dropped. Retained as the full-history inspection
-/// reader for this crate's integration tests.
+/// Full-history asset-lock slice bucketed by account index, **including**
+/// terminal `Consumed` rows (inspection reader for this crate's tests). Use
+/// [`load_unconsumed`] for the rehydration feed. A row that fails to decode is
+/// a hard error.
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn load_state(
     conn: &Connection,
@@ -181,21 +164,12 @@ pub fn load_state(
     Ok(out)
 }
 
-/// The status-filtered rehydration feed: every asset lock for the
-/// wallet **except** terminal `Consumed` rows, bucketed by account
-/// index.
-///
-/// `consume_asset_lock` upserts a row with `status = 'consumed'` and
-/// never `DELETE`s it (post-#3634 the row persists forever for
-/// history). Feeding `Consumed` rows back into `unused_asset_locks`
-/// would resurrect a spent one-shot lock as actionable (A04/A08), so
-/// rehydration must read through this filter. The exclusion is at the
-/// SQL level (`status NOT IN ('consumed')`, `status` indexed — no
-/// full-scan regression); the historical rows stay on disk and remain
-/// visible via [`load_state`].
-///
-/// Hard-fail on the first decode error — like [`load_state`], a
-/// corrupt row aborts the read with a typed [`WalletStorageError`].
+/// Status-filtered rehydration feed: every asset lock **except** terminal
+/// `Consumed` rows, bucketed by account index. Feeding `Consumed` locks back
+/// into the live set would resurrect a spent one-shot lock as actionable
+/// (A04/A08), so the exclusion is at the SQL level (`status NOT IN
+/// ('consumed')`, `status` indexed); history stays visible via [`load_state`].
+/// A row that fails to decode is a hard [`WalletStorageError`].
 pub fn load_unconsumed(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -219,17 +193,10 @@ pub fn load_unconsumed(
     Ok(out)
 }
 
-/// Return every asset lock for the wallet, bucketed by account index,
-/// **including** terminal `Consumed`.
-///
-/// Use [`load_unconsumed`] for the rehydration feed — this unfiltered
-/// view is for history / inspection only. (A `Consumed` lock survives
-/// consumption permanently on disk: `consume_asset_lock` upserts
-/// `status = 'consumed'` and does *not* route the entry through
-/// `AssetLockChangeSet::removed`, so it is never `DELETE`d.)
-///
-/// Hard-fail on the first decode error — like [`load_state`], a
-/// corrupt row aborts the read with a typed [`WalletStorageError`].
+/// Every asset lock bucketed by account index, **including** terminal
+/// `Consumed` — history/inspection only; use [`load_unconsumed`] for the
+/// rehydration feed. A row that fails to decode is a hard
+/// [`WalletStorageError`].
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn list_active(
     conn: &Connection,
@@ -259,10 +226,8 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    /// Exhaustive sample of every [`AssetLockStatus`] variant. The
-    /// trailing match arm in the loop fails to compile if upstream
-    /// adds a variant — forcing the developer to extend the list,
-    /// `status_str`, and [`ASSET_LOCK_STATUS_LABELS`] together.
+    /// Every [`AssetLockStatus`] variant; the wildcard-free match below fails
+    /// to compile if upstream adds one.
     fn all_asset_lock_status_variants() -> Vec<AssetLockStatus> {
         let variants = vec![
             AssetLockStatus::Built,

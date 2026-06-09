@@ -2,28 +2,18 @@
 //!
 //! # Write-only indexed overlay (NOT a rehydration source)
 //!
-//! These two tables are a **write-only indexed overlay**: the dedicated
-//! `dashpay_*` changeset slots are honored on write, but `load()` does
-//! NOT read them back. DashPay state is rehydrated from the identities
-//! `entry_blob` (each `IdentityEntry` carries its `dashpay_profile` /
-//! `dashpay_payments`), so the identities blob — not these tables — is
-//! the authoritative load source. The tables exist for future
-//! per-profile / per-payment indexed queries; until a reader is wired
-//! into `load()`, treat data written via the `dashpay_*` slots as
-//! reconstructable only through the owning identity. The round-trip is
-//! pinned by `tests/sqlite_dashpay_overlay_contract.rs`.
+//! These tables are honored on write but `load()` does NOT read them back:
+//! DashPay state is rehydrated from the identities `entry_blob`, which is the
+//! authoritative load source. They exist for future per-profile/per-payment
+//! indexed queries. Round-trip pinned by
+//! `tests/sqlite_dashpay_overlay_contract.rs`.
 //!
 //! # Precondition
 //!
-//! Every `identity_id` in the supplied profile / payment maps MUST
-//! already exist in the `identities` table and belong to the flush's
-//! `wallet_id`. The writer relies on the
-//! `identities(identity_id, wallet_id)` row produced by
-//! [`super::identities::apply`] (in the same transaction or earlier)
-//! for parenting; the FK to `identities(identity_id)` enforces the
-//! existence half, but not the wallet match. The precondition check
-//! below runs in every build and propagates
-//! [`WalletStorageError::WalletIdMismatch`] on a mis-attributed caller.
+//! Every `identity_id` MUST already exist in `identities` and belong to the
+//! flush's `wallet_id`. The FK enforces existence; the wallet match is checked
+//! here and propagates [`WalletStorageError::WalletIdMismatch`] on a
+//! mis-attributed caller.
 
 use std::collections::BTreeMap;
 
@@ -40,22 +30,15 @@ use crate::sqlite::schema::blob::impl_persistable_blob;
 // PUBLIC material only: DashPay overlay types reaching `_blob` columns.
 impl_persistable_blob!(DashPayProfile, PaymentEntry);
 
-/// Both dashpay tables are keyed by identity only; their FK targets
-/// `identities(identity_id)` so cascade flows through the
-/// `wallets → identities` chain.
-///
-/// The `wallet_id` parameter is kept on the signature for symmetry
-/// with the persister's `write_changeset_in_one_tx` dispatch table,
-/// and feeds the precondition check; it does not feed any column.
+/// Both tables are keyed by identity only; their FK to
+/// `identities(identity_id)` cascades via the `wallets → identities` chain.
+/// `wallet_id` feeds the precondition check only — no column.
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     profiles: Option<&BTreeMap<Identifier, Option<DashPayProfile>>>,
     payments: Option<&BTreeMap<Identifier, BTreeMap<String, PaymentEntry>>>,
 ) -> Result<(), WalletStorageError> {
-    // Precondition: every identity_id we touch must already belong to
-    // the flush-scope wallet (or to no wallet if scope is the
-    // sentinel). Cheap SELECT inside the same tx, run in every build.
     let touched: std::collections::BTreeSet<Identifier> = profiles
         .iter()
         .flat_map(|m| m.keys().copied())

@@ -33,11 +33,8 @@ pub fn apply(
                 nonce = excluded.nonce",
         )?;
         for entry in &cs.addresses {
-            // The row is keyed by the outer `wallet_id`; an entry that
-            // names a different wallet would otherwise be mis-filed. The
-            // native FK also rejects an unknown parent, but this typed
-            // error pinpoints the mismatch instead of surfacing a raw
-            // FOREIGN KEY failure.
+            // Reject an entry naming a different wallet; the typed error
+            // pinpoints the mismatch instead of a raw FOREIGN KEY failure.
             if entry.wallet_id != *wallet_id {
                 return Err(WalletStorageError::WalletIdMismatch {
                     expected: *wallet_id,
@@ -141,17 +138,11 @@ pub fn list_per_wallet(
     Ok(out)
 }
 
-/// Reassemble the per-account committed state for one wallet from its
-/// `platform_payment` registrations (xpub per account index) and its
-/// `platform_addresses` rows (the derived address set + known balances).
-///
-/// Each registration becomes one [`PerAccountPlatformAddressState`]; the
-/// address rows whose `account_index` matches populate its `addresses`
-/// bijection and `found` balance map via
-/// [`PerAccountPlatformAddressState::insert_persisted_entry`]. Address
-/// rows for an account with no registration are skipped — without the
-/// xpub the provider can't extend that account's gap window, so there's
-/// nothing to restore.
+/// Reassemble the per-account committed state from `platform_payment`
+/// registrations (one [`PerAccountPlatformAddressState`] each) plus the
+/// `platform_addresses` rows whose `account_index` matches. Address rows for an
+/// unregistered account are skipped — without the xpub there's nothing to
+/// restore.
 fn build_per_account(
     registrations: &[accounts::PlatformPaymentRegistration],
     address_rows: &[PlatformAddressRow],
@@ -187,12 +178,9 @@ fn account_state_from_rows(
     state
 }
 
-/// Build `PlatformAddressSyncStartState` for one wallet: the
-/// network-scoped sync watermark plus the per-account committed state
-/// reconstructed from registrations + address rows.
-///
-/// `load()` uses the grouped [`load_all`] path; this per-wallet form is
-/// retained for this crate's integration tests.
+/// Build `PlatformAddressSyncStartState` for one wallet: the sync watermark
+/// plus the per-account state from registrations + address rows. `load()` uses
+/// the grouped [`load_all`] path; this per-wallet form is for tests.
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn load_state(
     conn: &Connection,
@@ -240,27 +228,19 @@ pub fn count_per_wallet(
     Ok(usize::try_from(n).unwrap_or(usize::MAX))
 }
 
-/// One row of [`load_all`] aggregated state per wallet:
-/// `(sync_state, reconstructed_address_count)`.
-///
-/// `reconstructed_address_count` counts only the `platform_addresses`
-/// rows that were actually rebuilt into `sync_state.per_account` — i.e.
-/// rows whose `account_index` has a matching `platform_payment`
-/// registration. Rows for an unregistered account are skipped during
-/// reconstruction (no xpub, nothing to restore) and are excluded here so
-/// the count never claims state that `load()` did not surface.
+/// One [`load_all`] row per wallet: `(sync_state,
+/// reconstructed_address_count)`. The count includes only address rows
+/// actually rebuilt into `sync_state.per_account` (those with a matching
+/// registration), so it never claims state `load()` did not surface.
 pub type LoadAllEntry = (PlatformAddressSyncStartState, usize);
 
-/// Bulk reader for `load()`. Cost is a fixed number of grouped scans —
-/// one over `platform_address_sync`, one over `platform_addresses`, and
-/// one over the `platform_payment` `account_registrations` — regardless
-/// of wallet count, rather than a per-wallet fan-out.
+/// Bulk reader for `load()`: three grouped scans (over `platform_address_sync`,
+/// `platform_addresses`, and the `platform_payment` `account_registrations`)
+/// regardless of wallet count, instead of a per-wallet fan-out.
 ///
-/// Driven by [`wallets::list_ids`](crate::sqlite::schema::wallets::list_ids):
-/// orphaned `platform_addresses` / `platform_address_sync` rows whose
-/// `wallet_id` is absent from `wallets` are intentionally NOT
-/// surfaced. Native foreign keys prevent such orphans; a future re-wire
-/// that needs them must restore the id-union over the area tables.
+/// Driven by [`wallets::list_ids`](crate::sqlite::schema::wallets::list_ids), so
+/// rows whose `wallet_id` is absent from `wallets` are not surfaced (native FKs
+/// prevent such orphans anyway).
 pub fn load_all(conn: &Connection) -> Result<BTreeMap<WalletId, LoadAllEntry>, WalletStorageError> {
     let sync_by_wallet = all_sync_state(conn)?;
     let addresses_by_wallet = all_address_rows(conn)?;
@@ -288,10 +268,9 @@ pub fn load_all(conn: &Connection) -> Result<BTreeMap<WalletId, LoadAllEntry>, W
     Ok(out)
 }
 
-/// Count the `platform_addresses` rows that [`build_per_account`] rebuilds
-/// for one wallet: rows whose `account_index` has a matching registration.
-/// Rows for an unregistered account are skipped during reconstruction, so
-/// excluding them keeps the surfaced count aligned with `per_account`.
+/// Count the `platform_addresses` rows [`build_per_account`] rebuilds: those
+/// whose `account_index` has a matching registration, keeping the count aligned
+/// with `per_account`.
 fn reconstructed_address_count(
     registrations: &[accounts::PlatformPaymentRegistration],
     address_rows: &[PlatformAddressRow],

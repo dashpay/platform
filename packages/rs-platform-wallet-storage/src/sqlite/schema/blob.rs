@@ -1,45 +1,32 @@
-//! BLOB-column codec helpers.
+//! BLOB-column codec helpers: thin `bincode::serde` wrappers so every
+//! `_blob` column uses one encoding path. Schema evolution is gated by the
+//! refinery migration version — no per-blob revision tag.
 //!
-//! Thin error-mapping wrappers around `bincode::serde` so every
-//! `_blob` column in the SQLite schema uses one encoding path. Schema
-//! evolution is gated by the refinery migration version on the
-//! database as a whole — there is no per-blob revision tag.
-//!
-//! [`encode_outpoint`] / [`decode_outpoint`] encode a `dashcore::OutPoint`
-//! the same way — via bincode-serde — for the `outpoint` PRIMARY KEY
-//! columns (`core_utxos`, `asset_locks`). The bytes are a stable but not
-//! fixed-length key; both columns are used for exact-match PK lookups, so
-//! variable width is fine (no range scans or byte-order dependence).
+//! [`encode_outpoint`] / [`decode_outpoint`] encode `dashcore::OutPoint`
+//! the same way for the `outpoint` PK columns. The key is variable-width,
+//! which is fine for the exact-match PK lookups (no range scans).
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::sqlite::error::WalletStorageError;
 
-/// Sealed-trait machinery enforcing the no-key-material-in-DB invariant
-/// at the type level: only types that explicitly opt in via
-/// [`impl_persistable_blob!`] can reach [`encode`]. A brand-new
-/// key-bearing type cannot be persisted without a reviewable `impl`,
-/// which the schema naming-scan guard would also flag by name.
+/// Sealed-trait machinery enforcing the no-key-material-in-DB invariant at
+/// the type level: only types opting in via [`impl_persistable_blob!`] can
+/// reach [`encode`].
 pub(crate) mod sealed {
-    /// Crate-internal supertrait of [`PersistableBlob`]. It is only
-    /// `pub(crate)`, so downstream crates cannot name it and therefore
-    /// cannot satisfy the `PersistableBlob` bound — the trait is sealed.
+    /// `pub(crate)` supertrait of [`PersistableBlob`] — downstream cannot
+    /// name it, so the trait is sealed.
     pub trait Sealed {}
 }
 
-/// Marker for changeset/entry types allowed into a `_blob` column.
-///
-/// Sealed via the `pub(crate)` [`sealed::Sealed`] supertrait: downstream
-/// cannot implement it. Every concrete type passed to [`encode`] carries
-/// a one-line `impl_persistable_blob!` in its schema module, so adding a
-/// new (potentially key-bearing) type to the persistence path is an
-/// explicit, reviewable change rather than a silent `T: Serialize` slip.
+/// Marker for types allowed into a `_blob` column. Sealed via
+/// [`sealed::Sealed`] so adding a (possibly key-bearing) type to the
+/// persistence path is an explicit, reviewable `impl` rather than a silent
+/// `T: Serialize` slip.
 pub trait PersistableBlob: Serialize + sealed::Sealed {}
 
-/// Seal-and-mark a type for [`blob::encode`](encode): implements both the
-/// crate-internal `Sealed` supertrait and the public `PersistableBlob`
-/// marker.
+/// Seal-and-mark a type for [`blob::encode`](encode).
 macro_rules! impl_persistable_blob {
     ($($t:ty),+ $(,)?) => {
         $(
@@ -50,13 +37,9 @@ macro_rules! impl_persistable_blob {
 }
 pub(crate) use impl_persistable_blob;
 
-/// Hard cap on bincode-serde decode allocations. 16 MiB is two orders
-/// of magnitude above any legitimate per-row payload we ship — a
-/// hostile or corrupted backup with an inflated length prefix is
-/// rejected before the allocator wakes up. Applied symmetrically to
-/// encode + decode so we can't write a payload we'd then refuse. Shares
-/// the crate-root [`SIZE_LIMIT_BYTES`](crate::SIZE_LIMIT_BYTES) ceiling
-/// with the KV value cap.
+/// Hard cap on bincode-serde allocations, applied symmetrically to encode +
+/// decode so a crafted length prefix can't OOM the host. Shares the crate-root
+/// [`SIZE_LIMIT_BYTES`](crate::SIZE_LIMIT_BYTES) with the KV value cap.
 pub const BLOB_SIZE_LIMIT_BYTES: usize = crate::SIZE_LIMIT_BYTES;
 
 fn bounded_config() -> bincode::config::Configuration<
@@ -67,10 +50,9 @@ fn bounded_config() -> bincode::config::Configuration<
     bincode::config::standard().with_limit::<BLOB_SIZE_LIMIT_BYTES>()
 }
 
-/// Encode a [`PersistableBlob`] value into a `BLOB` payload. The sealed
-/// trait bound (instead of a bare `T: Serialize`) is the type-level guard
-/// that no unreviewed, possibly key-bearing type reaches a `_blob`
-/// column.
+/// Encode a [`PersistableBlob`] value into a `BLOB` payload. The sealed bound
+/// (not a bare `T: Serialize`) guards against unreviewed types reaching a
+/// `_blob` column.
 pub fn encode<T: PersistableBlob>(value: &T) -> Result<Vec<u8>, WalletStorageError> {
     Ok(bincode::serde::encode_to_vec(value, bounded_config())?)
 }
@@ -105,13 +87,11 @@ pub fn decode<T: DeserializeOwned>(blob: &[u8]) -> Result<T, WalletStorageError>
     Ok(value)
 }
 
-// The outpoint PK key rides the same `encode` path, so seal it too. An
-// outpoint is a PUBLIC (txid, vout) reference — never key material.
+// An outpoint is a PUBLIC (txid, vout) reference — never key material.
 impl_persistable_blob!(dashcore::OutPoint);
 
-/// Encode a `dashcore::OutPoint` for an `outpoint` PRIMARY KEY column.
-/// Uses the same bincode-serde path as every other column — a stable
-/// (not fixed-length) key, which the exact-match PK lookups don't mind.
+/// Encode a `dashcore::OutPoint` for an `outpoint` PRIMARY KEY column via the
+/// shared [`encode`] path.
 pub fn encode_outpoint(op: &dashcore::OutPoint) -> Result<Vec<u8>, WalletStorageError> {
     encode(op)
 }
@@ -204,11 +184,9 @@ mod tests {
         assert_eq!(decode_outpoint(&bytes).unwrap(), op);
     }
 
-    /// A truncated / malformed outpoint key is a typed decode error, not
-    /// a panic — replaces the old fixed-36-byte length check. A 4-byte
-    /// input is too short for the 32-byte txid prefix, so bincode fails
-    /// deterministically with `BincodeDecode` (UnexpectedEnd) before the
-    /// trailing-bytes check.
+    /// A truncated outpoint key is a typed decode error, not a panic: a
+    /// 4-byte input is too short for the 32-byte txid prefix, so bincode
+    /// fails deterministically with `BincodeDecode` (UnexpectedEnd).
     #[test]
     fn decode_outpoint_rejects_malformed_bytes() {
         let res = decode_outpoint(&[0x01u8; 4]);

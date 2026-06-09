@@ -24,12 +24,8 @@ pub fn upsert(
     Ok(())
 }
 
-/// Ensure a `wallets` parent row exists for the given id. Used
-/// by tests that exercise persistence without going through registration.
-///
-/// Idempotent — silently a no-op when the row already exists. Defaults
-/// `network = "testnet"`, `birth_height = 0` (the same fall-back the
-/// SPV scan uses when the chain tip is unknown).
+/// Ensure a `wallets` parent row exists for the given id (test helper).
+/// Idempotent; defaults `network = "testnet"`, `birth_height = 0`.
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn ensure_exists(conn: &Connection, wallet_id: &WalletId) -> Result<(), WalletStorageError> {
     conn.execute(
@@ -84,17 +80,10 @@ pub fn delete(tx: &Transaction<'_>, wallet_id: &WalletId) -> Result<usize, Walle
     Ok(n)
 }
 
-/// Single source of truth for the `wallets.network` TEXT-column
-/// domain.
-///
-/// Mirrors every variant of [`key_wallet::Network`] (writer side:
-/// [`network_to_str`]). The migration in `migrations/V001__initial.rs`
-/// interpolates this array into a `CHECK (network IN (...))` clause so
-/// an unknown label is rejected at insert time rather than landing as
-/// silent garbage. The `network_labels_match_enum` unit test below
-/// enforces set-equality between this array and the writer's output —
-/// drift (a renamed/added variant) becomes a failing test, not a
-/// runtime divergence between Rust and SQLite.
+/// Source of truth for the `wallets.network` TEXT domain, mirroring
+/// [`key_wallet::Network`]. `migrations/V001__initial.rs` interpolates it into
+/// a `CHECK (network IN (...))` clause; `network_labels_match_enum` keeps it in
+/// sync with [`network_to_str`].
 pub(crate) const NETWORK_LABELS: &[&str] = &["mainnet", "testnet", "devnet", "regtest"];
 
 fn network_to_str(net: key_wallet::Network) -> &'static str {
@@ -122,13 +111,9 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    /// Every [`key_wallet::Network`] variant — kept exhaustive by the
-    /// `match` arm below, which the compiler's exhaustiveness check
-    /// turns into a build failure if upstream adds a variant.
+    /// Every [`key_wallet::Network`] variant; the `match` below fails to
+    /// compile if upstream adds one, keeping the list in lockstep.
     fn all_network_variants() -> Vec<key_wallet::Network> {
-        // The match's exhaustiveness fails to compile on a new variant.
-        // Mapping every existing variant to itself keeps the list and the
-        // enum in lockstep.
         let variants = [
             key_wallet::Network::Mainnet,
             key_wallet::Network::Testnet,

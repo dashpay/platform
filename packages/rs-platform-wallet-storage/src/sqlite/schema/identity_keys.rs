@@ -1,15 +1,10 @@
 //! `identity_keys` table writer. Stores PUBLIC key material only — no
-//! signing-key bytes ever reach this table.
+//! signing-key bytes reach this table.
 //!
-//! `IdentityKeyEntry`'s `public_key: dpp::IdentityPublicKey` uses
-//! `#[serde(tag = "$formatVersion")]` on the parent enum, which
-//! bincode-serde rejects (it requires `deserialize_any`). The other
-//! fields are plain serde-compatible types. To keep the
-//! "one blob per row" property we transcribe the entry into a wire
-//! shape where the public key is bincode-2-native-encoded (the dpp
-//! types derive `Encode`/`Decode`) and the surrounding fields ride
-//! the bincode-serde encoder. The shape is documented on the
-//! `IdentityKeyWire` struct below.
+//! `IdentityKeyEntry.public_key`'s `#[serde(tag = ...)]` enum is rejected by
+//! bincode-serde (needs `deserialize_any`), so [`IdentityKeyWire`] pre-encodes
+//! the key with bincode's native `Encode`/`Decode` and rides the surrounding
+//! fields on the serde encoder, keeping one blob per row.
 
 use rusqlite::{params, Connection, Transaction};
 use serde::{Deserialize, Serialize};
@@ -25,10 +20,8 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
-/// On-disk wire shape for `IdentityKeyEntry`. The `public_key` field
-/// is pre-encoded via bincode 2's native `Encode/Decode` impls on
-/// `dpp::IdentityPublicKey` so bincode-serde doesn't trip on dpp's
-/// `serde(tag = ...)` representation.
+/// On-disk wire shape for `IdentityKeyEntry`, with `public_key_bincode`
+/// holding the natively-encoded key (see module docs).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct IdentityKeyWire {
     identity_id: Identifier,
@@ -59,10 +52,8 @@ impl IdentityKeyWire {
     fn into_entry(self) -> Result<IdentityKeyEntry, WalletStorageError> {
         let (public_key, consumed): (IdentityPublicKey, usize) =
             bincode::decode_from_slice(&self.public_key_bincode, bincode::config::standard())?;
-        // Consistent with the outer blob::decode trailing-byte guard: a
-        // valid-prefix + trailing-garbage payload that bincode's decoder
-        // happily accepts (it stops after the typed length) is corruption
-        // or forward-schema drift — refuse it.
+        // Reject a valid-prefix + trailing-garbage payload (bincode stops
+        // after the typed length); mirrors the outer blob::decode guard.
         if consumed != self.public_key_bincode.len() {
             return Err(WalletStorageError::blob_decode(
                 "unexpected trailing bytes in identity_keys.public_key_bincode",
@@ -79,21 +70,18 @@ impl IdentityKeyWire {
     }
 }
 
-/// `identity_keys` is keyed by `(wallet_id, identity_id, key_id)`; the
-/// `wallet_id` FK targets `wallets(wallet_id)` and the
-/// `identity_id` FK targets `identities(identity_id)`. The typed
-/// `wallet_id` column is always bound from the caller-supplied flush
-/// scope; the entry's own `wallet_id` field (when set) is cross-checked
-/// against it so the typed columns and the serialized blob stay aligned.
+/// Keyed by `(wallet_id, identity_id, key_id)` with FKs to `wallets` and
+/// `identities`. The typed `wallet_id` column comes from the flush scope; the
+/// entry's own `wallet_id` (when set) is cross-checked against it so the typed
+/// columns and the blob stay aligned.
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     cs: &IdentityKeysChangeSet,
 ) -> Result<(), WalletStorageError> {
     if !cs.upserts.is_empty() {
-        // `derivation_blob` is reserved for a future typed projection and
-        // is always written NULL: derivation_indices ride inside
-        // public_key_blob (the IdentityKeyWire blob is the source of truth).
+        // `derivation_blob` is always NULL (reserved); derivation_indices ride
+        // inside the IdentityKeyWire blob, the source of truth.
         let mut stmt = tx.prepare_cached(
             "INSERT INTO identity_keys \
                 (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) \
@@ -104,10 +92,8 @@ pub fn apply(
                 derivation_blob = NULL",
         )?;
         for ((identity_id, key_id), entry) in &cs.upserts {
-            // Reject any disagreement between the map key / outer
-            // wallet_id (what the typed columns are bound from) and the
-            // entry fields (what the serialized blob carries) so the two
-            // representations of a row can never diverge on disk.
+            // Typed columns and blob fields must agree so a row can never
+            // diverge on disk.
             if entry.identity_id != *identity_id || entry.key_id != *key_id {
                 return Err(WalletStorageError::IdentityKeyEntryMismatch);
             }
