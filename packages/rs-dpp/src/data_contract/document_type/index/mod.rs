@@ -57,7 +57,18 @@ impl TryFrom<u8> for ContestedIndexResolution {
 )]
 pub enum ContestedIndexFieldMatch {
     Regex(LazyRegex),
-    PositiveIntegerMatch(u128),
+    // `u128` in a tuple variant — `#[json_safe_fields]` can't auto-annotate it,
+    // and a bare `u128` is never JS-safe once it exceeds `MAX_SAFE_INTEGER`, so
+    // serialize it as a string in human-readable JSON (native `u128` in binary /
+    // `Value`). See the manual `JsonSafeFields` marker in
+    // `serialization/json/safe_fields.rs`.
+    PositiveIntegerMatch(
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json_safe_u128")
+        )]
+        u128,
+    ),
 }
 
 #[derive(Debug, Clone)]

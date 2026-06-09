@@ -26,9 +26,27 @@ use crate::ProtocolError;
 #[platform_serialize(unversioned)]
 pub enum RewardDistributionMoment {
     /// The reward was distributed at a block height
-    BlockBasedMoment(BlockHeight),
+    //
+    // `BlockHeight`/`TimestampMillis` are `u64` carried in tuple variants, which
+    // `#[json_safe_fields]` cannot auto-annotate. Apply the JS-safe helper
+    // directly so values above `Number.MAX_SAFE_INTEGER` serialize as strings in
+    // human-readable JSON (no effect on bincode / `Value`). See the manual
+    // `JsonSafeFields` marker in `serialization/json/safe_fields.rs`.
+    BlockBasedMoment(
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json_safe_u64")
+        )]
+        BlockHeight,
+    ),
     /// The reward was distributed at a time
-    TimeBasedMoment(TimestampMillis),
+    TimeBasedMoment(
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json_safe_u64")
+        )]
+        TimestampMillis,
+    ),
     /// The reward was distributed at an epoch
     EpochBasedMoment(EpochIndex),
 }

@@ -67,6 +67,62 @@ pub mod json_safe_u64 {
     }
 }
 
+/// Serde `with` module for `u128` fields.
+///
+/// `u128` is never JS-safe as a bare number once it exceeds
+/// `Number.MAX_SAFE_INTEGER`, so the human-readable (JSON) path stringifies
+/// large values. The binary / `Value` path keeps the native `u128`.
+pub mod json_safe_u128 {
+    use serde::de::{self, Deserializer, Visitor};
+    use serde::ser::Serializer;
+
+    use super::JS_MAX_SAFE_INTEGER;
+
+    pub fn serialize<S: Serializer>(value: &u128, serializer: S) -> Result<S::Ok, S::Error> {
+        if serializer.is_human_readable() && *value > JS_MAX_SAFE_INTEGER as u128 {
+            serializer.serialize_str(&value.to_string())
+        } else {
+            serializer.serialize_u128(*value)
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u128, D::Error> {
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_any(U128OrStringVisitor)
+        } else {
+            serde::Deserialize::deserialize(deserializer)
+        }
+    }
+
+    struct U128OrStringVisitor;
+
+    impl<'de> Visitor<'de> for U128OrStringVisitor {
+        type Value = u128;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a u128 or a string containing a u128")
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+            Ok(v as u128)
+        }
+
+        fn visit_u128<E: de::Error>(self, v: u128) -> Result<Self::Value, E> {
+            Ok(v)
+        }
+
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+            u128::try_from(v)
+                .map_err(|_| de::Error::custom(format!("i64 value {v} out of u128 range")))
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            v.parse::<u128>()
+                .map_err(|_| de::Error::custom(format!("invalid u128 string: {v}")))
+        }
+    }
+}
+
 /// Serde `with` module for `i64` fields.
 pub mod json_safe_i64 {
     use serde::de::{self, Deserializer, Visitor};
@@ -477,6 +533,12 @@ mod tests {
     }
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct TestU128 {
+        #[serde(with = "json_safe_u128")]
+        value: u128,
+    }
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct TestI64 {
         #[serde(with = "json_safe_i64")]
         value: i64,
@@ -513,6 +575,42 @@ mod tests {
         assert_eq!(json["value"].as_str().unwrap(), "18446744073709551615");
 
         let restored: TestU64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn u128_small_value_stays_number() {
+        let t = TestU128 { value: 42 };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_number());
+        assert_eq!(json["value"].as_u64().unwrap(), 42);
+
+        let restored: TestU128 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn u128_large_value_becomes_string() {
+        // Above u64::MAX — only representable as a string in JS-safe JSON.
+        let t = TestU128 {
+            value: (u64::MAX as u128) + 1,
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_string());
+        assert_eq!(json["value"].as_str().unwrap(), "18446744073709551616");
+
+        let restored: TestU128 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn u128_value_round_trips_through_non_human_readable() {
+        // platform_value is non-human-readable → native u128, no stringification.
+        let t = TestU128 {
+            value: (u64::MAX as u128) + 12345,
+        };
+        let value = platform_value::to_value(&t).unwrap();
+        let restored: TestU128 = platform_value::from_value(value).unwrap();
         assert_eq!(t, restored);
     }
 

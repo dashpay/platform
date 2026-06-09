@@ -13,7 +13,7 @@ pub use dpp_json_convertible_derive::JsonConvertible;
 pub use dpp_json_convertible_derive::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 pub use json::safe_integer::{
-    json_safe_i64, json_safe_option_i64, json_safe_option_u64, json_safe_u64,
+    json_safe_i64, json_safe_option_i64, json_safe_option_u64, json_safe_u64, json_safe_u128,
 };
 #[cfg(feature = "json-conversion")]
 pub use json::JsonSafeFields;

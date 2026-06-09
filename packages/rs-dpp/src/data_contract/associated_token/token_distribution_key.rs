@@ -46,7 +46,19 @@ pub enum TokenDistributionTypeWithResolvedRecipient {
 pub enum TokenDistributionInfo {
     /// A pre-programmed token distribution set for a specific time.
     /// Contains the scheduled timestamp and the recipient’s identifier.
-    PreProgrammed(TimestampMillis, Identifier),
+    //
+    // `TimestampMillis` is a `u64` in a tuple variant that `#[json_safe_fields]`
+    // can't auto-annotate; apply the JS-safe helper directly (string in HR JSON
+    // above `MAX_SAFE_INTEGER`). `RewardDistributionMoment` in `Perpetual` is
+    // already JS-safe via its own `#[serde(with)]`.
+    PreProgrammed(
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json_safe_u64")
+        )]
+        TimestampMillis,
+        Identifier,
+    ),
 
     /// A perpetual token distribution with moment for distribution.
     /// The moment is the beginning of the perpetual distribution cycle

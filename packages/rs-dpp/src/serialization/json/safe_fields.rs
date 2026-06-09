@@ -161,3 +161,22 @@ impl JsonSafeFields
     for crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem
 {
 }
+// `RewardDistributionMoment` carries `BlockHeight`/`TimestampMillis` (u64) in
+// tuple variants. Unlike the bare escape-hatches above, its u64 fields are
+// *actually* JS-safe: `#[serde(with = "json_safe_u64")]` is applied directly on
+// the variant fields (see reward_distribution_moment/mod.rs).
+impl JsonSafeFields
+    for crate::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment
+{
+}
+// `ContestedIndexFieldMatch::PositiveIntegerMatch(u128)` is made JS-safe via
+// `#[serde(with = "json_safe_u128")]` on the variant field (see
+// document_type/index/mod.rs); `Regex(LazyRegex)` round-trips as a string.
+impl JsonSafeFields for crate::data_contract::document_type::ContestedIndexFieldMatch {}
+// `TokenDistributionInfo::PreProgrammed` carries a `TimestampMillis` (u64) made
+// JS-safe via `#[serde(with = "json_safe_u64")]`; `Perpetual`'s
+// `RewardDistributionMoment` is JS-safe via its own annotation.
+impl JsonSafeFields
+    for crate::data_contract::associated_token::token_distribution_key::TokenDistributionInfo
+{
+}
