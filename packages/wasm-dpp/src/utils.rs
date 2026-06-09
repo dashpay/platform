@@ -105,9 +105,9 @@ pub fn with_serde_to_json_value(data: &JsValue) -> Result<JsonValue, JsValue> {
 }
 
 pub fn with_serde_to_platform_value(data: &JsValue) -> Result<Value, JsValue> {
-    Ok(json_value_to_platform_value_lenient(with_serde_to_json_value(
-        data,
-    )?))
+    Ok(json_value_to_platform_value_lenient(
+        with_serde_to_json_value(data)?,
+    ))
 }
 
 /// Converts a `serde_json::Value` into a `platform_value::Value`, restoring the

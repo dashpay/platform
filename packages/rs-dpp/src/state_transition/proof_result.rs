@@ -76,24 +76,36 @@ pub enum StateTransitionProofResult {
     VerifiedMasternodeVote(Vote),
     VerifiedNextDistribution(Vote),
     VerifiedAddressInfos(
-        #[cfg_attr(feature = "json-conversion", serde(with = "json_safe_address_info_map"))]
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "json_safe_address_info_map")
+        )]
         BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
     ),
     VerifiedIdentityFullWithAddressInfos(
         Identity,
-        #[cfg_attr(feature = "json-conversion", serde(with = "json_safe_address_info_map"))]
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "json_safe_address_info_map")
+        )]
         BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
     ),
     VerifiedIdentityWithAddressInfos(
         PartialIdentity,
-        #[cfg_attr(feature = "json-conversion", serde(with = "json_safe_address_info_map"))]
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "json_safe_address_info_map")
+        )]
         BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
     ),
     VerifiedAssetLockConsumed(StoredAssetLockInfo),
     VerifiedShieldedNullifiers(Vec<(Vec<u8>, bool)>),
     VerifiedShieldedNullifiersWithAddressInfos(
         Vec<(Vec<u8>, bool)>,
-        #[cfg_attr(feature = "json-conversion", serde(with = "json_safe_address_info_map"))]
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "json_safe_address_info_map")
+        )]
         BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
     ),
     VerifiedShieldedNullifiersWithWithdrawalDocument(
@@ -149,8 +161,7 @@ mod json_safe_address_info_map {
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>, D::Error> {
-        let raw: BTreeMap<PlatformAddress, Option<Entry>> =
-            BTreeMap::deserialize(deserializer)?;
+        let raw: BTreeMap<PlatformAddress, Option<Entry>> = BTreeMap::deserialize(deserializer)?;
         Ok(raw
             .into_iter()
             .map(|(k, v)| (k, v.map(|Entry(nonce, credits)| (nonce, credits))))
@@ -260,10 +271,16 @@ mod json_convertible_tests {
         // Human-readable JSON: credits string, nonce number, null preserved.
         let json = original.to_json().expect("to_json");
         let map = json["VerifiedAddressInfos"].as_object().expect("object");
-        let non_null = map.values().find(|v| !v.is_null()).expect("one populated entry");
+        let non_null = map
+            .values()
+            .find(|v| !v.is_null())
+            .expect("one populated entry");
         assert_eq!(non_null[0], json!(7));
         assert_eq!(non_null[1], json!("9007199254740993"));
-        assert!(map.values().any(|v| v.is_null()), "the None entry must survive");
+        assert!(
+            map.values().any(|v| v.is_null()),
+            "the None entry must survive"
+        );
         let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
 
