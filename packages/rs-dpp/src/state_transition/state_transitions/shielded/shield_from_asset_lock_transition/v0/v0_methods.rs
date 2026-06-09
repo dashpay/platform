@@ -1,4 +1,6 @@
 #[cfg(feature = "state-transition-signing")]
+use crate::address_funds::PlatformAddress;
+#[cfg(feature = "state-transition-signing")]
 use crate::prelude::AssetLockProof;
 #[cfg(feature = "state-transition-signing")]
 use crate::serialization::Signable;
@@ -23,6 +25,7 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransitionV0 
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],
+        surplus_output: Option<PlatformAddress>,
         _platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
         // Create the unsigned transition
@@ -33,6 +36,7 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransitionV0 
             anchor,
             proof,
             binding_signature,
+            surplus_output,
             signature: Default::default(),
         };
 
@@ -57,6 +61,7 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransitionV0 
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],
+        surplus_output: Option<PlatformAddress>,
         _platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError>
     where
@@ -73,6 +78,7 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransitionV0 
             anchor,
             proof,
             binding_signature,
+            surplus_output,
             signature: Default::default(),
         };
 

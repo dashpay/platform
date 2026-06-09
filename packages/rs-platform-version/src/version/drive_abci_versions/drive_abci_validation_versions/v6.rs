@@ -274,5 +274,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V6: DriveAbciValidationVersions =
             shielded_anchor_pruning_interval: 100,
             shielded_proof_verification_fee: 100_000_000,
             shielded_per_action_processing_fee: 3_000_000,
+            shielded_implicit_fee_cap: 20_000_000_000,
         },
     };

@@ -82,7 +82,9 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// handler onto the freshly-created `NetworkShieldedCoordinator`
     /// that forwards into `on_shielded_sync_progress`. Sub-managers
     /// (`SpvRuntime`, `PlatformAddressSyncManager`, etc.) hold their
-    /// own clones already.
+    /// own clones already. Retained unconditionally because
+    /// `load_from_persistor` reads it regardless of the `shielded`
+    /// feature.
     pub(super) event_manager: Arc<PlatformEventManager>,
     pub(super) persister: Arc<P>,
     /// Cancellation token + join handle for the wallet-event adapter

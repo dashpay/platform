@@ -249,19 +249,12 @@ impl StateTransitionActionTransformer for StateTransition {
                     tx,
                 )
             }
-            StateTransition::ShieldedTransfer(st) => st
-                .transform_into_action_for_shielded_transfer_transition(
-                    platform,
-                    block_info,
-                    execution_context,
-                    tx,
-                ),
-            StateTransition::Unshield(st) => st.transform_into_action_for_unshield_transition(
-                platform,
-                block_info,
-                execution_context,
-                tx,
-            ),
+            StateTransition::ShieldedTransfer(st) => {
+                st.transform_into_action_for_shielded_transfer_transition(platform, tx)
+            }
+            StateTransition::Unshield(st) => {
+                st.transform_into_action_for_unshield_transition(platform, tx)
+            }
             StateTransition::ShieldFromAssetLock(st) => {
                 let signable_bytes = self.signable_bytes()?;
                 st.transform_into_action_for_shield_from_asset_lock_transition(
@@ -274,12 +267,7 @@ impl StateTransitionActionTransformer for StateTransition {
                 )
             }
             StateTransition::ShieldedWithdrawal(st) => st
-                .transform_into_action_for_shielded_withdrawal_transition(
-                    platform,
-                    block_info,
-                    execution_context,
-                    tx,
-                ),
+                .transform_into_action_for_shielded_withdrawal_transition(platform, block_info, tx),
         }
     }
 }

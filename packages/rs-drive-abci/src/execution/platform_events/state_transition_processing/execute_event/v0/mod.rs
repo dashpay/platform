@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::execution_operation::ValidationOperation;
@@ -144,7 +145,25 @@ where
                     .saturating_add(additional_fixed_fee_cost);
             }
 
-            // Get the total fee to deduct
+            // Address-input events have no identity to attribute storage refunds to, so their
+            // metered ops must not free identity-attributed storage (`Shield` /
+            // `IdentityCreateFromAddresses` only insert or overwrite). A non-empty `fee_refunds`
+            // here would have no owner to refund at block fee distribution; assert it in debug/test
+            // builds so any future op that frees such storage is caught before it can misbook.
+            debug_assert!(
+                individual_fee_result.fee_refunds.0.is_empty(),
+                "PaidFromAddressInputs ops must not free identity-attributed storage (fee_refunds must be empty)"
+            );
+
+            // The total fee to deduct is the metered base fee (storage + processing), where
+            // processing already includes any `additional_fixed_fee_cost` added just above. For the
+            // transparent `Shield` that fixed cost is the shielded COMPUTE fee
+            // (`compute_shielded_verification_fee`), so the fee is `metered_storage + metered_processing +
+            // compute_fee` — storage comes entirely from GroveDB metering of the note/nullifier
+            // writes, never double-counted. This is identical to every other `PaidFromAddressInputs`
+            // event (e.g. `IdentityCreateFromAddresses`), so conservation (deduct == book) holds by
+            // the standard machinery: the same `total_fee` is deducted from inputs and booked to the
+            // pools. `validate_fees_of_event` rejects an under-funded transition before execution.
             let total_fee = individual_fee_result.total_base_fee();
 
             // Deduct fee from outputs or remaining balance of inputs according to strategy
@@ -155,6 +174,20 @@ where
                 total_fee,
                 platform_version,
             )?;
+
+            // Defense in depth: the deduction min-caps each step, so an under-funded input set would
+            // remove < `total_fee` from the inputs while the full `total_fee` is still booked to the
+            // fee pools — minting the difference (`CorruptedCreditsNotBalanced` -> chain halt).
+            // `validate_fees_of_event` is re-run on this exact state immediately before execution and
+            // already rejects an under-funded transition, so this cannot trigger today. Guard anyway:
+            // if those two paths ever diverged, fail closed at the source with an actionable error
+            // rather than committing a mint that only surfaces as an opaque end-of-block sum-tree
+            // imbalance.
+            if !fee_deduction_result.fee_fully_covered {
+                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "address-input fee not fully covered at execution; validate_fees_of_event should have rejected the under-funded transition",
+                )));
+            }
 
             let adjusted_inputs = fee_deduction_result.remaining_input_balances;
             let adjusted_outputs = fee_deduction_result.adjusted_outputs;
@@ -435,7 +468,6 @@ where
                 execution_operations,
                 additional_fixed_fee_cost,
                 user_fee_increase,
-                ..
             } => {
                 // We can unwrap here because we have the match right above
                 let fee_validation_result = maybe_fee_validation_result.unwrap();
@@ -516,7 +548,8 @@ where
                 ..
             } => {
                 if consensus_errors.is_empty() {
-                    self.drive
+                    let applied_fees = self
+                        .drive
                         .apply_drive_operations(
                             operations,
                             true,
@@ -527,9 +560,19 @@ where
                         )
                         .map_err(Error::Drive)?;
 
+                    // Split the carved fee like every other transition: the real storage
+                    // cost of the (permanent) shielded writes goes to the storage pool, so it
+                    // is amortised to the validators that store it over time and picks up the
+                    // epoch fee multiplier at payout; the remainder (proof verification +
+                    // per-action processing) is the processing fee paid to the current
+                    // proposer. Conservation: storage + processing == fees_to_add_to_pool
+                    // (what was carved from the shielded pool).
+                    let storage_fee = applied_fees.storage_fee.min(fees_to_add_to_pool);
+                    let processing_fee = fees_to_add_to_pool - storage_fee;
+
                     Ok(SuccessfulPaidExecution(
                         None,
-                        FeeResult::default_with_fees(0, fees_to_add_to_pool),
+                        FeeResult::default_with_fees(storage_fee, processing_fee),
                     ))
                 } else {
                     Ok(UnpaidConsensusExecutionError(consensus_errors))
@@ -546,7 +589,8 @@ where
                 all_errors.extend(consensus_errors);
 
                 if all_errors.is_empty() {
-                    self.drive
+                    let applied_fees = self
+                        .drive
                         .apply_drive_operations(
                             operations,
                             true,
@@ -557,9 +601,22 @@ where
                         )
                         .map_err(Error::Drive)?;
 
+                    // Route the real storage cost of the shielded writes to the storage pool
+                    // (amortised over time, epoch fee multiplier applied at payout); the
+                    // remainder is the processing fee paid to the proposer. Conservation:
+                    // storage + processing == fees_to_add_to_pool.
+                    //
+                    // `fees_to_add_to_pool` is `pool_fee = compute_minimum_shielded_fee + albc`
+                    // (plus any surplus folded in when no surplus_output is set). Since that flat
+                    // fee includes the 100M proof-verification fee, it comfortably exceeds the
+                    // per-action storage cost, so `processing_fee` is strictly positive — the
+                    // proposer is always paid for the proof verification it ran.
+                    let storage_fee = applied_fees.storage_fee.min(fees_to_add_to_pool);
+                    let processing_fee = fees_to_add_to_pool - storage_fee;
+
                     Ok(SuccessfulPaidExecution(
                         None,
-                        FeeResult::default_with_fees(0, fees_to_add_to_pool),
+                        FeeResult::default_with_fees(storage_fee, processing_fee),
                     ))
                 } else {
                     Ok(UnpaidConsensusExecutionError(all_errors))

@@ -13,12 +13,19 @@ pub trait ShieldFromAssetLock {
     /// Shield funds from an L1 asset lock into the shielded pool.
     /// The asset lock proof proves ownership of L1 funds, and the ECDSA signature
     /// binds those funds to this specific Orchard bundle.
+    ///
+    /// `surplus_output` optionally routes the asset-lock remainder (lock value minus
+    /// the shielded amount and the pool fee) to a platform address. When `None`, the
+    /// surplus is implicitly donated to the fee pools, which consensus only permits up
+    /// to `shielded_implicit_fee_cap` — supply an address to receive a larger remainder.
+    #[allow(clippy::too_many_arguments)]
     async fn shield_from_asset_lock(
         &self,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
         bundle: OrchardBundleParams,
         value_balance: u64,
+        surplus_output: Option<dpp::address_funds::PlatformAddress>,
         settings: Option<PutSettings>,
     ) -> Result<(), Error>;
 }
@@ -31,6 +38,7 @@ impl ShieldFromAssetLock for Sdk {
         asset_lock_proof_private_key: &[u8],
         bundle: OrchardBundleParams,
         value_balance: u64,
+        surplus_output: Option<dpp::address_funds::PlatformAddress>,
         settings: Option<PutSettings>,
     ) -> Result<(), Error> {
         let OrchardBundleParams {
@@ -48,6 +56,7 @@ impl ShieldFromAssetLock for Sdk {
             anchor,
             proof,
             binding_signature,
+            surplus_output,
             self.version(),
         )?;
         ensure_valid_state_transition_structure(&state_transition, self.version())?;
