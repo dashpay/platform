@@ -980,7 +980,7 @@ mod tests {
             apply_scanned_nullifier_spends(&mut store, &[a, b], &scanned, &mut changeset).unwrap();
 
         assert_eq!(newly_spent.get(&a).copied(), Some(1));
-        assert!(newly_spent.get(&b).is_none());
+        assert!(!newly_spent.contains_key(&b));
         assert!(store.get_unspent_notes(a).unwrap().is_empty());
         assert_eq!(store.get_unspent_notes(b).unwrap().len(), 1);
     }
