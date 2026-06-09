@@ -87,11 +87,8 @@ impl Drive {
 
         // Shielded credit pool: [ShieldedBalances, "M"]
         // SumTree containing: notes (CommitmentTree), permanent nullifiers (ProvableCountTree),
-        // total balance (SumItem), anchors (NormalTree), anchors-by-height (NormalTree),
-        // recent nullifiers (NotSummed CountSumTree — contributes 0 to pool sum),
-        // compacted nullifiers (NormalTree),
-        // expiration time (NormalTree).
-        // 8 elements total (7 subtrees + 1 item) → balanced Merk depth = ceil(log2(8)) = 3.
+        // total balance (SumItem), anchors (NormalTree), anchors-by-height (NormalTree).
+        // 5 elements total (4 subtrees + 1 item) → balanced Merk depth = ceil(log2(5)) = 3.
         //
         // The retired `SHIELDED_MOST_RECENT_ANCHOR_KEY = 7` slot used
         // to add a second `Item` entry; the most-recent anchor is
@@ -110,15 +107,15 @@ impl Drive {
                             sum_trees_weight: 0,
                             big_sum_trees_weight: 0,
                             count_trees_weight: 1, // permanent nullifiers (ProvableCountTree)
-                            count_sum_trees_weight: 1, // recent nullifiers (NotSummed-wrapped CountSumTree)
-                            non_sum_trees_weight: 5, // notes (CommitmentTree), anchors, anchors-by-height, compacted nullifiers, expiration time
+                            count_sum_trees_weight: 0,
+                            non_sum_trees_weight: 3, // notes (CommitmentTree), anchors, anchors-by-height
                             provable_sum_trees_weight: 0,
                             provable_count_trees_weight: 0,
                             provable_count_sum_trees_weight: 0,
                             provable_count_provable_sum_trees_weight: 0,
                         },
                         None,
-                        7, // 7 subtrees: notes, permanent nullifiers, anchors, anchors-by-height, recent nullifiers, compacted nullifiers, expiration time
+                        4, // 4 subtrees: notes, permanent nullifiers, anchors, anchors-by-height
                     )),
                     items_size: Some((1, 8, None, 1)), // 1 item: total balance (SumItem, i64 = 8 bytes)
                     references_size: None,
