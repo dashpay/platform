@@ -563,11 +563,14 @@ where
                 // data-only on success and error-only on rejection, so it NEVER carries data+errors
                 // here and always has `chargeable_failure == false`. If one ever did (a future misuse
                 // of `new_with_data_and_errors`), fail SAFE — do NOT commit a side-effectful spend or
-                // pay the proposer for a rejected transition — and surface the divergence in tests.
+                // pay the proposer for a rejected transition. This is consensus-execution code, so we
+                // must behave identically in debug and release (a `debug_assert!` would panic in debug
+                // but silently fall through in release — a non-deterministic divergence): log the
+                // unexpected state at `error` and return the unpaid rejection in BOTH builds.
                 if !consensus_errors.is_empty() && !chargeable_failure {
-                    debug_assert!(
-                        false,
-                        "a non-fallback PaidFromShieldedPool must not carry consensus errors"
+                    tracing::error!(
+                        "a non-fallback PaidFromShieldedPool carried consensus errors; rejecting \
+                         unpaid (no spend committed, proposer not paid)"
                     );
                     return Ok(UnpaidConsensusExecutionError(consensus_errors));
                 }

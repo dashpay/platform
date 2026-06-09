@@ -446,7 +446,8 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                             let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
                                 &v0.output_address.to_bytes(),
                                 v0.unshielding_amount,
-                            );
+                                platform_version,
+                            )?;
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
                                 FLAGS_SPENDS_AND_OUTPUTS,
@@ -466,7 +467,8 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                                     v0.unshielding_amount,
                                     v0.core_fee_per_byte,
                                     v0.pooling,
-                                );
+                                    platform_version,
+                                )?;
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
                                 FLAGS_SPENDS_AND_OUTPUTS,
@@ -494,7 +496,8 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                                     v0.denomination,
                                     &v0.send_to_address_on_creation_failure,
                                     &v0.public_keys,
-                                );
+                                    platform_version,
+                                )?;
                             // value_balance = denomination EXACTLY (the ShieldedTransfer exact-equality
                             // model): the binding signature proves the value commitments sum to exactly
                             // the denomination leaving the pool.

@@ -208,10 +208,14 @@ pub fn compute_shielded_unshield_fee_v0(
 /// the identity write against the new identity's balance and adds only the compute fee on top). It
 /// is the **client-side predictor** — so a client can size its bundle and pick a denomination that
 /// covers the fee — and the **cheap floor** the `denomination >= min_fee` gate uses to reject
-/// obviously-underfunded denominations before metering. Any residual on-chain under-funding (if the
-/// metered write exceeds this floor) is absorbed by the transition's fallback-on-failure path, which
-/// credits the fallback address minus a penalty — exactly the risk the non-shielded identity-create
-/// predictor already accepts by using the same floor.
+/// obviously-underfunded denominations before metering. If the later metered affordability check
+/// inside `validate_fees_of_event` finds `denomination < total_fee`, execution returns
+/// `IdentityInsufficientBalanceError` through the standard unpaid-rejection path (the spend is not
+/// finalized and no nullifier is consumed). Only the unique-public-key-hash collision branch in
+/// state validation uses the fallback-address-minus-penalty path — the same residual-risk window the
+/// non-shielded identity-create predictor relies on by using this floor. (In practice the smallest
+/// legal denomination, 10^10 credits, far exceeds the max-key floor, so neither rejection arises for
+/// well-formed transitions.)
 ///
 /// All arithmetic is checked: an overflow (only reachable via pathological fee constants or key
 /// counts) surfaces as `ProtocolError::Overflow` instead of silently wrapping.

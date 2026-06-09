@@ -188,7 +188,8 @@ where
         denomination,
         &send_to_address_on_creation_failure,
         &in_creation_keys,
-    );
+        platform_version,
+    )?;
 
     let bundle = build_spend_bundle(
         spends,

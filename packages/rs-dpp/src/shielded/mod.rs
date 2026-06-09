@@ -22,6 +22,8 @@ use crate::address_funds::PlatformAddress;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
 
 /// Permanent storage bytes per shielded action: 312 bytes total.
 ///
@@ -143,7 +145,36 @@ pub fn compute_platform_sighash(bundle_commitment: &[u8; 32], extra_data: &[u8])
 /// `output_script` to a canonical, fixed-length P2PKH (25 bytes) or P2SH (23 bytes); the
 /// remaining fields are fixed-width, so the preimage is well-defined for every accepted
 /// transition. If that script-shape restriction is ever relaxed, add a length prefix here.
+/// Dispatches on the platform-versioned `dpp.methods.shielded_extra_sighash_data` so the
+/// consensus-critical byte layout can evolve across protocol versions without breaking older
+/// transitions — the same versioning the sibling shielded fee methods use. The signing
+/// (client/builder) and verifying (consensus) sides both call this single function with the same
+/// `platform_version`, so they can never produce divergent preimages.
 pub fn shielded_withdrawal_extra_sighash_data(
+    output_script: &[u8],
+    unshielding_amount: u64,
+    core_fee_per_byte: u32,
+    pooling: Pooling,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.shielded_extra_sighash_data {
+        0 => Ok(shielded_withdrawal_extra_sighash_data_v0(
+            output_script,
+            unshielding_amount,
+            core_fee_per_byte,
+            pooling,
+        )),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "shielded_withdrawal_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// v0 byte layout of [`shielded_withdrawal_extra_sighash_data`] (see that function's doc comment for
+/// the layout and rationale). Frozen: never mutate; a layout change requires a new `_v1` + version.
+pub fn shielded_withdrawal_extra_sighash_data_v0(
     output_script: &[u8],
     unshielding_amount: u64,
     core_fee_per_byte: u32,
@@ -164,7 +195,27 @@ pub fn shielded_withdrawal_extra_sighash_data(
 /// verifying (consensus) sides MUST produce identical bytes, so both call this single
 /// function. Unshield credits a transparent platform address (not a Core asset-unlock
 /// `TxOut`), so it carries no `core_fee_per_byte`/`pooling` to bind.
-pub fn unshield_extra_sighash_data(output_address: &[u8], unshielding_amount: u64) -> Vec<u8> {
+pub fn unshield_extra_sighash_data(
+    output_address: &[u8],
+    unshielding_amount: u64,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.shielded_extra_sighash_data {
+        0 => Ok(unshield_extra_sighash_data_v0(
+            output_address,
+            unshielding_amount,
+        )),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "unshield_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// v0 byte layout of [`unshield_extra_sighash_data`] (see that function's doc comment for the layout
+/// and rationale). Frozen: never mutate; a layout change requires a new `_v1` + version bump.
+pub fn unshield_extra_sighash_data_v0(output_address: &[u8], unshielding_amount: u64) -> Vec<u8> {
     let mut data = Vec::with_capacity(output_address.len() + 8);
     data.extend_from_slice(output_address);
     data.extend_from_slice(&unshielding_amount.to_le_bytes());
@@ -197,6 +248,31 @@ pub fn unshield_extra_sighash_data(output_address: &[u8], unshielding_amount: u6
 /// variable-length key list is fully length-prefixed (both the key count and each key's data) so
 /// the preimage is unambiguous for any key set.
 pub fn identity_create_from_shielded_extra_sighash_data(
+    identity_id: &[u8; 32],
+    denomination: u64,
+    send_to_address_on_creation_failure: &PlatformAddress,
+    public_keys: &[IdentityPublicKeyInCreation],
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.shielded_extra_sighash_data {
+        0 => Ok(identity_create_from_shielded_extra_sighash_data_v0(
+            identity_id,
+            denomination,
+            send_to_address_on_creation_failure,
+            public_keys,
+        )),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "identity_create_from_shielded_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// v0 byte layout of [`identity_create_from_shielded_extra_sighash_data`] (see that function's doc
+/// comment for the layout and rationale). Frozen: never mutate; a layout change requires a new `_v1`
+/// + version bump.
+pub fn identity_create_from_shielded_extra_sighash_data_v0(
     identity_id: &[u8; 32],
     denomination: u64,
     send_to_address_on_creation_failure: &PlatformAddress,
@@ -350,6 +426,10 @@ mod tests {
     use super::*;
     use crate::identity::core_script::CoreScript;
     use crate::withdrawal::Pooling;
+    // These tests pin the v0 preimage directly (they assert exact bytes), so resolve the bare helper
+    // names to the `_v0` impls rather than the version-dispatching public wrappers.
+    use crate::shielded::shielded_withdrawal_extra_sighash_data_v0 as shielded_withdrawal_extra_sighash_data;
+    use crate::shielded::unshield_extra_sighash_data_v0 as unshield_extra_sighash_data;
 
     #[test]
     fn withdrawal_sighash_data_binds_core_fee_per_byte() {
@@ -400,7 +480,9 @@ mod tests {
 
     mod identity_create_sighash {
         use super::*;
+        // Pin the v0 preimage directly (see the note in the parent test module).
         use crate::identity::{KeyType, Purpose, SecurityLevel};
+        use crate::shielded::identity_create_from_shielded_extra_sighash_data_v0 as identity_create_from_shielded_extra_sighash_data;
         use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
         use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
         use platform_value::BinaryData;
