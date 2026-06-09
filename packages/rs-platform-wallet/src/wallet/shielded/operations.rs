@@ -1,4 +1,4 @@
-//! Shielded transaction operations (5 transition types), multi-account.
+//! Shielded transaction operations (6 transition types), multi-account.
 //!
 //! Each operation is a free function taking the
 //! (sdk, store, persister, wallet_id, keys, account, …) tuple
@@ -10,15 +10,19 @@
 //! Spends never cross account boundaries — note selection reads
 //! only the given account's unspent notes.
 //!
-//! The five transition types are:
+//! The six transition types are:
 //! - **Shield** (Type 15): transparent platform addresses → shielded pool
 //! - **ShieldFromAssetLock** (Type 18): Core L1 asset lock → shielded pool
 //! - **Unshield** (Type 17): shielded pool → transparent platform address
 //! - **Transfer** (Type 16): shielded pool → shielded pool (private)
 //! - **Withdraw** (Type 19): shielded pool → Core L1 address
+//! - **IdentityCreateFromShieldedPool** (Type 20): shielded pool → a brand-new Platform identity
+//!   funded by a fixed denomination leaving the pool (any excess re-enters as a change note)
 
 use super::keys::OrchardKeySet;
-use super::note_selection::{select_notes_with_fee, ShieldedFeeKind};
+use super::note_selection::{
+    select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind,
+};
 use super::store::{ShieldedNote, ShieldedStore, SubwalletId};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::PlatformWalletError;
@@ -29,18 +33,23 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use dash_sdk::platform::transition::identity_create_from_shielded_pool::IdentityCreateFromShieldedPool;
 use dpp::address_funds::{
     AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, OrchardAddress, PlatformAddress,
 };
 use dpp::fee::Credits;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::signer::Signer;
+use dpp::identity::IdentityPublicKey;
+use dpp::prelude::Identifier;
 use dpp::shielded::builder::{
-    build_shield_transition, build_shielded_transfer_transition,
-    build_shielded_withdrawal_transition, build_unshield_transition, OrchardProver, SpendableNote,
+    build_identity_create_from_shielded_pool_transition, build_shield_transition,
+    build_shielded_transfer_transition, build_shielded_withdrawal_transition,
+    build_unshield_transition, OrchardProver, SpendableNote,
 };
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::withdrawal::Pooling;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
@@ -641,6 +650,141 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
 }
 
 // -------------------------------------------------------------------------
+// IdentityCreateFromShieldedPool: shielded pool -> brand-new identity (Type 20)
+// -------------------------------------------------------------------------
+
+/// Create a brand-new Platform identity funded directly from `account`'s shielded notes.
+///
+/// Spends notes covering `denomination` (a member of the versioned exit-denomination set); the whole
+/// denomination leaves the pool (`value_balance == denomination` EXACTLY, the ShieldedTransfer
+/// exact-equality model) and the metered fee is taken FROM the denomination at execution, so the new
+/// identity is created holding `denomination - total_fee`. Any spent value above the denomination
+/// re-enters the pool as a single change note to `account`'s default Orchard address.
+///
+/// `public_keys` is the new identity's key set (each entry is the `IdentityPublicKey` and its
+/// `IdentityPublicKeyInCreation` form); `identity_signer` produces each key's proof-of-possession
+/// signature over the transition's signable bytes. Authorization is 100% the Orchard proof +
+/// per-action spend-auth signatures + binding signature (which commits the derived id + denomination
+/// + full key set) + the per-key PoP — there is NO platform identity signature.
+///
+/// Returns the new identity's id (`double_sha256(sorted nullifiers)`), derived deterministically
+/// from the spent notes' nullifiers.
+#[allow(clippy::too_many_arguments)]
+pub async fn identity_create_from_shielded_pool<S, P, IS>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>,
+    denomination: u64,
+    send_to_address_on_creation_failure: PlatformAddress,
+    identity_signer: &IS,
+    prover: &P,
+) -> Result<Identifier, PlatformWalletError>
+where
+    S: ShieldedStore,
+    P: OrchardProver,
+    IS: Signer<IdentityPublicKey>,
+{
+    if public_keys.is_empty() {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "identity-create-from-shielded-pool requires at least one public key".to_string(),
+        ));
+    }
+    let change_addr = default_orchard_address(keys)?;
+    let id = SubwalletId::new(wallet_id, account);
+    let num_keys = public_keys.len();
+
+    // Exact-equality model: reserve notes covering the denomination itself (NOT denomination + fee
+    // — the fee is metered FROM the denomination at execution). The reservation also gates on
+    // `denomination > predicted_fee` so the new identity can't be created with a non-positive
+    // balance. Orchard's BundleType::DEFAULT pads single-spend bundles to a 2-action floor.
+    let (selected_notes, total_input, predicted_fee) =
+        reserve_unspent_notes_for_denomination(sdk, store, id, denomination, 2, num_keys).await?;
+
+    info!(
+        account,
+        denomination,
+        predicted_fee,
+        inputs = selected_notes.len(),
+        total_input,
+        keys = num_keys,
+        "IdentityCreateFromShieldedPool"
+    );
+
+    // From here on every error path must release the reservation taken above.
+    let result = async {
+        let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
+
+        let build = build_identity_create_from_shielded_pool_transition(
+            public_keys,
+            denomination,
+            send_to_address_on_creation_failure,
+            spends,
+            &change_addr,
+            &keys.full_viewing_key,
+            &keys.spend_auth_key,
+            anchor,
+            prover,
+            identity_signer,
+            [0u8; 36],
+            sdk.version(),
+        )
+        .await
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+
+        let identity_id = build.identity_id;
+
+        trace!("IdentityCreateFromShieldedPool: built, broadcasting via SDK helper...");
+        // Broadcast through the SDK helper, which re-assembles the transition from the PoP-signed
+        // keys + bundle params (preserving the per-key signatures) and waits for proven execution.
+        sdk.identity_create_from_shielded_pool(
+            build.public_keys,
+            denomination,
+            send_to_address_on_creation_failure,
+            build.bundle,
+            None,
+        )
+        .await
+        .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
+
+        Ok::<Identifier, PlatformWalletError>(identity_id)
+    }
+    .await;
+
+    match result {
+        Ok(identity_id) => {
+            // Best-effort post-broadcast bookkeeping (see `unshield`): mark the spent notes so the
+            // local balance reflects the exit immediately; any drift heals on the next nullifier
+            // sync. The on-chain nullifier set — not this local mark — is the authoritative
+            // no-reuse guarantee.
+            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
+            {
+                warn!(
+                    account,
+                    error = %e,
+                    "IdentityCreateFromShieldedPool broadcast succeeded but local spent-state \
+                     update failed; will heal on next sync"
+                );
+            }
+            info!(
+                account,
+                denomination,
+                identity_id = %identity_id,
+                "IdentityCreateFromShieldedPool broadcast succeeded"
+            );
+            Ok(identity_id)
+        }
+        Err(e) => {
+            cancel_pending(store, id, &selected_notes).await;
+            Err(e)
+        }
+    }
+}
+
+// -------------------------------------------------------------------------
 // Internal helpers (free fns)
 // -------------------------------------------------------------------------
 
@@ -798,6 +942,40 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
             .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
     }
     Ok((selected, total_input, exact_fee))
+}
+
+/// Exact-equality sibling of [`reserve_unspent_notes`] for
+/// `IdentityCreateFromShieldedPool`: select + reserve notes covering exactly `denomination`
+/// (the fee is metered FROM the denomination, not added to the target) in one write-locked
+/// critical section, gating on `denomination > predicted_fee` via
+/// [`select_notes_for_denomination`]. Returns the selected notes, total input value, and the
+/// predicted fee. Callers must pair this with [`finalize_pending`] / [`cancel_pending`].
+async fn reserve_unspent_notes_for_denomination<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    denomination: u64,
+    min_actions: usize,
+    num_keys: usize,
+) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
+    let mut store = store.write().await;
+    let unspent = store
+        .get_unspent_notes(id)
+        .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+    let (selected, total_input, predicted_fee) = select_notes_for_denomination(
+        &unspent,
+        denomination,
+        min_actions,
+        num_keys,
+        sdk.version(),
+    )?
+    .into_owned();
+    for note in &selected {
+        store
+            .mark_pending(id, &note.nullifier)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+    }
+    Ok((selected, total_input, predicted_fee))
 }
 
 /// Promote a successful broadcast: mark the notes spent (which

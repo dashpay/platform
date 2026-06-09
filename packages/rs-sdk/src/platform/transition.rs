@@ -8,6 +8,8 @@ pub use address_inputs::fetch_inputs_with_nonce;
 pub mod broadcast;
 pub(crate) mod broadcast_identity;
 pub mod broadcast_request;
+#[cfg(feature = "shielded")]
+pub mod identity_create_from_shielded_pool;
 pub mod purchase_document;
 pub mod put_contract;
 pub mod put_document;

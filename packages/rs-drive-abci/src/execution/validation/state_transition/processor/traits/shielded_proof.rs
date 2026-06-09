@@ -10,6 +10,10 @@ use dpp::consensus::basic::state_transition::{
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::serialization::{PlatformMessageSignable, Signable};
+use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -52,6 +56,7 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 | StateTransition::ShieldedTransfer(_)
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
+                | StateTransition::IdentityCreateFromShieldedPool(_)
         )
     }
 
@@ -63,6 +68,7 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
             StateTransition::ShieldedTransfer(_)
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
+                | StateTransition::IdentityCreateFromShieldedPool(_)
         )
     }
 }
@@ -117,6 +123,12 @@ enum ShieldedMinFeeKind {
     Unshield,
     /// `compute_shielded_withdrawal_fee` — ShieldedWithdrawal (base + the flat withdrawal-document cost).
     Withdrawal,
+    /// `compute_shielded_identity_create_fee` — IdentityCreateFromShieldedPool (base + the consensus
+    /// identity-create floor `identity_create_base_cost + num_keys × identity_key_in_creation_cost`,
+    /// the same constants the non-shielded `IdentityCreate` predictor uses, which grows with the key
+    /// count). Carries `num_keys` because the fee scales with it, unlike the other (fixed)
+    /// per-transition components.
+    IdentityCreate { num_keys: usize },
 }
 
 impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
@@ -190,6 +202,29 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                             )
                         }
                     },
+                    // IdentityCreateFromShieldedPool: `denomination` is the TOTAL leaving the pool
+                    // (new-identity balance + fee). This is a CHEAP early floor — it rejects a
+                    // denomination that cannot even cover the consensus identity-create minimum
+                    // (`identity_create_base_cost + num_keys × identity_key_in_creation_cost`, the
+                    // same constants the non-shielded `IdentityCreate` predictor uses) plus the
+                    // shielded compute fee, before the expensive proof verification + metering. The
+                    // AUTHORITATIVE non-negative-balance check (`denomination >= metered + compute`)
+                    // runs later in `validate_fees_of_event`. It is NOT pure fee (`>=` model); the
+                    // exact `value_balance == denomination` equality is enforced by the proof verifier
+                    // (which passes `value_balance = denomination`). The fee scales with the key
+                    // count, so the `IdentityCreate` flavor carries `num_keys`.
+                    StateTransition::IdentityCreateFromShieldedPool(st) => match st {
+                        dpp::state_transition::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition::V0(v0) => {
+                            (
+                                v0.denomination as i64,
+                                v0.actions.len(),
+                                0,
+                                u64::MAX,
+                                false,
+                                ShieldedMinFeeKind::IdentityCreate { num_keys: v0.public_keys.len() },
+                            )
+                        }
+                    },
                     // Other transitions don't go through shielded fee validation.
                     _ => return Ok(SimpleConsensusValidationResult::new()),
                 };
@@ -240,6 +275,13 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                     ShieldedMinFeeKind::Withdrawal => {
                         dpp::shielded::compute_shielded_withdrawal_fee(
                             num_actions,
+                            platform_version,
+                        )?
+                    }
+                    ShieldedMinFeeKind::IdentityCreate { num_keys } => {
+                        dpp::shielded::compute_shielded_identity_create_fee(
+                            num_actions,
+                            num_keys,
                             platform_version,
                         )?
                     }
@@ -339,6 +381,39 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
             .validate_shielded_proof
         {
             0 => {
+                // `IdentityCreateFromShieldedPool` is the only shielded transition carrying separate
+                // per-key proof-of-possession signatures that are NOT covered by the Orchard proof
+                // (they sign the platform signable bytes, and only id+denomination+keys — not the PoP
+                // sigs — are bound into `extra_sighash_data`). Validate the CHEAP key structure +
+                // per-key PoP here, BEFORE the expensive Halo 2 bundle verification, so a relayer
+                // who flips a PoP byte on an observed transition is rejected without the node paying
+                // for proof verification (DoS hardening). Same `signable_bytes` the transformer uses.
+                if let StateTransition::IdentityCreateFromShieldedPool(st) = self {
+                    let IdentityCreateFromShieldedPoolTransition::V0(v0) = st;
+
+                    let key_structure_result =
+                        IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
+                            &v0.public_keys,
+                            true,
+                            platform_version,
+                        )?;
+                    if !key_structure_result.is_valid() {
+                        return Ok(key_structure_result);
+                    }
+
+                    let signable_bytes = self.signable_bytes()?;
+                    for key in v0.public_keys.iter() {
+                        let pop_result = signable_bytes.as_slice().verify_signature(
+                            key.key_type(),
+                            key.data().as_slice(),
+                            key.signature().as_slice(),
+                        );
+                        if !pop_result.is_valid() {
+                            return Ok(pop_result);
+                        }
+                    }
+                }
+
                 let result = match self {
                     StateTransition::Shield(st) => match st {
                         dpp::state_transition::shield_transition::ShieldTransition::V0(v0) => {
@@ -371,7 +446,8 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                             let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
                                 &v0.output_address.to_bytes(),
                                 v0.unshielding_amount,
-                            );
+                                platform_version,
+                            )?;
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
                                 FLAGS_SPENDS_AND_OUTPUTS,
@@ -391,11 +467,44 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                                     v0.unshielding_amount,
                                     v0.core_fee_per_byte,
                                     v0.pooling,
-                                );
+                                    platform_version,
+                                )?;
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
                                 FLAGS_SPENDS_AND_OUTPUTS,
                                 v0.unshielding_amount as i64,
+                                &v0.anchor,
+                                v0.proof.as_slice(),
+                                &v0.binding_signature,
+                                &extra_sighash_data,
+                            )
+                        }
+                    },
+                    StateTransition::IdentityCreateFromShieldedPool(st) => match st {
+                        dpp::state_transition::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition::V0(v0) => {
+                            // Bind the new identity id + denomination + FULL public-key set into the
+                            // Orchard sighash so the bundle cannot be redirected to a different
+                            // identity/keys (the surplus_output binding analog). The id is re-derived
+                            // from the spend nullifiers — the canonical value — so the binding holds
+                            // regardless of any (separately-validated) wire `identity_id`.
+                            let identity_id =
+                                dpp::state_transition::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions(&v0.actions)
+                                    .to_buffer();
+                            let extra_sighash_data =
+                                dpp::shielded::identity_create_from_shielded_extra_sighash_data(
+                                    &identity_id,
+                                    v0.denomination,
+                                    &v0.send_to_address_on_creation_failure,
+                                    &v0.public_keys,
+                                    platform_version,
+                                )?;
+                            // value_balance = denomination EXACTLY (the ShieldedTransfer exact-equality
+                            // model): the binding signature proves the value commitments sum to exactly
+                            // the denomination leaving the pool.
+                            reconstruct_and_verify_bundle(
+                                &v0.actions,
+                                FLAGS_SPENDS_AND_OUTPUTS,
+                                v0.denomination as i64,
                                 &v0.anchor,
                                 v0.proof.as_slice(),
                                 &v0.binding_signature,
@@ -516,6 +625,26 @@ mod tests {
             },
         ))
     }
+    fn make_identity_create_from_shielded_pool() -> StateTransition {
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+        StateTransition::IdentityCreateFromShieldedPool(
+            IdentityCreateFromShieldedPoolTransition::V0(
+                IdentityCreateFromShieldedPoolTransitionV0 {
+                    public_keys: vec![],
+                    denomination: 0,
+                    actions: vec![],
+                    anchor: [0u8; 32],
+                    proof: vec![],
+                    binding_signature: [0u8; 64],
+                    send_to_address_on_creation_failure: dpp::address_funds::PlatformAddress::P2pkh(
+                        [0u8; 20],
+                    ),
+                    identity_id: Default::default(),
+                },
+            ),
+        )
+    }
 
     mod has_shielded_proof_validation {
         use super::*;
@@ -527,6 +656,10 @@ mod tests {
                 ("ShieldedTransfer", make_shielded_transfer()),
                 ("Unshield", make_unshield()),
                 ("ShieldedWithdrawal", make_shielded_withdrawal()),
+                (
+                    "IdentityCreateFromShieldedPool",
+                    make_identity_create_from_shielded_pool(),
+                ),
             ];
             for (name, st) in transitions {
                 assert!(
@@ -572,6 +705,10 @@ mod tests {
                 ("ShieldedTransfer", make_shielded_transfer()),
                 ("Unshield", make_unshield()),
                 ("ShieldedWithdrawal", make_shielded_withdrawal()),
+                (
+                    "IdentityCreateFromShieldedPool",
+                    make_identity_create_from_shielded_pool(),
+                ),
             ];
             for (name, st) in transitions {
                 assert!(
@@ -750,6 +887,140 @@ mod tests {
                 "amount > i64::MAX must be rejected by the fee<0 guard; got {:?}",
                 result.errors
             );
+        }
+
+        /// Build an `IdentityCreateFromShieldedPool` with `num_actions` actions, `num_keys` keys, and
+        /// the given `denomination` (the min-fee gate only reads those three).
+        fn identity_create_from_shielded_pool(
+            denomination: u64,
+            num_actions: usize,
+            num_keys: usize,
+        ) -> StateTransition {
+            use dpp::identity::{KeyType, Purpose, SecurityLevel};
+            use dpp::platform_value::BinaryData;
+            use dpp::shielded::SerializedAction;
+            use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+            use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+            use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+            use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+            let actions = (0..num_actions as u8)
+                .map(|i| SerializedAction {
+                    nullifier: [i; 32],
+                    rk: [0u8; 32],
+                    cmx: [0u8; 32],
+                    encrypted_note: vec![0u8; 216],
+                    cv_net: [0u8; 32],
+                    spend_auth_sig: [0u8; 64],
+                })
+                .collect();
+            let public_keys = (0..num_keys as u32)
+                .map(|i| {
+                    IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+                        id: i,
+                        key_type: KeyType::ECDSA_SECP256K1,
+                        purpose: Purpose::AUTHENTICATION,
+                        security_level: SecurityLevel::MASTER,
+                        contract_bounds: None,
+                        read_only: false,
+                        data: BinaryData::new(vec![i as u8; 33]),
+                        signature: BinaryData::new(vec![]),
+                    })
+                })
+                .collect();
+            StateTransition::IdentityCreateFromShieldedPool(
+                IdentityCreateFromShieldedPoolTransition::V0(
+                    IdentityCreateFromShieldedPoolTransitionV0 {
+                        public_keys,
+                        denomination,
+                        actions,
+                        anchor: [0u8; 32],
+                        proof: vec![],
+                        binding_signature: [0u8; 64],
+                        send_to_address_on_creation_failure:
+                            dpp::address_funds::PlatformAddress::P2pkh([0u8; 20]),
+                        identity_id: Default::default(),
+                    },
+                ),
+            )
+        }
+
+        #[test]
+        fn should_reject_identity_create_denomination_below_min_fee() {
+            let platform_version = PlatformVersion::latest();
+            let (num_actions, num_keys) = (2usize, 1usize);
+            let min_fee = dpp::shielded::compute_shielded_identity_create_fee(
+                num_actions,
+                num_keys,
+                platform_version,
+            )
+            .expect("fee");
+            let st = identity_create_from_shielded_pool(min_fee - 1, num_actions, num_keys);
+            let result = st
+                .validate_minimum_shielded_fee(platform_version)
+                .expect("no error");
+            assert!(!result.is_valid());
+            assert!(
+                matches!(
+                    result.errors.first(),
+                    Some(ConsensusError::StateError(
+                        StateError::InsufficientShieldedFeeError(_)
+                    ))
+                ),
+                "a denomination below the min fee must reject with InsufficientShieldedFeeError; got {:?}",
+                result.errors
+            );
+        }
+
+        #[test]
+        fn should_accept_identity_create_denomination_at_min_fee() {
+            let platform_version = PlatformVersion::latest();
+            let (num_actions, num_keys) = (2usize, 1usize);
+            let min_fee = dpp::shielded::compute_shielded_identity_create_fee(
+                num_actions,
+                num_keys,
+                platform_version,
+            )
+            .expect("fee");
+            let st = identity_create_from_shielded_pool(min_fee, num_actions, num_keys);
+            assert!(
+                st.validate_minimum_shielded_fee(platform_version)
+                    .expect("no error")
+                    .is_valid(),
+                "a denomination equal to the min fee must be accepted"
+            );
+        }
+
+        #[test]
+        fn should_scale_identity_create_min_fee_with_key_count() {
+            let platform_version = PlatformVersion::latest();
+            let num_actions = 2usize;
+            let one_key_fee = dpp::shielded::compute_shielded_identity_create_fee(
+                num_actions,
+                1,
+                platform_version,
+            )
+            .expect("fee");
+            let five_key_fee = dpp::shielded::compute_shielded_identity_create_fee(
+                num_actions,
+                5,
+                platform_version,
+            )
+            .expect("fee");
+            assert!(five_key_fee > one_key_fee, "more keys must cost more");
+            // A 1-key-sized denomination must be REJECTED for a 5-key identity (the fee scaled up).
+            let st = identity_create_from_shielded_pool(one_key_fee, num_actions, 5);
+            assert!(
+                !st.validate_minimum_shielded_fee(platform_version)
+                    .expect("no error")
+                    .is_valid(),
+                "a 1-key-sized denomination must be rejected once the identity has 5 keys"
+            );
+            // ...and accepted once the denomination covers the scaled fee.
+            let st_ok = identity_create_from_shielded_pool(five_key_fee, num_actions, 5);
+            assert!(st_ok
+                .validate_minimum_shielded_fee(platform_version)
+                .expect("no error")
+                .is_valid());
         }
     }
 

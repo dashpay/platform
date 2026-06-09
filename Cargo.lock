@@ -5081,7 +5081,7 @@ dependencies = [
 
 [[package]]
 name = "platform-wallet-storage"
-version = "4.0.0-beta.2"
+version = "4.0.0-beta.3"
 dependencies = [
  "apple-native-keyring-store",
  "argon2",
