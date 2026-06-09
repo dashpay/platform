@@ -662,13 +662,14 @@ where
                 ..
             } => {
                 // Reuse the create-then-deduct machinery: `paid_from_identity_function` applies the
-                // ops (which create the identity holding the full `denomination`, credit the system
-                // total, and debit the pool), then deducts the metered fee + the
-                // `additional_fixed_fee_cost` (the shielded compute fee) from the new identity's
-                // balance and books it to the fee pools — so the identity ends with
-                // `denomination - total_fee`. Conservation holds by the standard machinery, exactly
-                // as for `PaidFromAssetLock`. Shielded transitions have no fee bidding, so
-                // `user_fee_increase` is 0.
+                // ops (which create the identity holding the full `denomination` and debit the
+                // shielded pool — the credits move within the RHS balance trees, so no
+                // `AddToSystemCredits`/`RemoveFromSystemCredits` is emitted), then deducts the
+                // metered fee + the `additional_fixed_fee_cost` (the shielded compute fee) from the
+                // new identity's balance and books it to the fee pools — so the identity ends with
+                // `denomination - total_fee`. Conservation holds because the pool-to-identity move
+                // stays within the right-hand-side balance trees. Shielded transitions have no fee
+                // bidding, so `user_fee_increase` is 0.
                 let fee_validation_result = maybe_fee_validation_result.unwrap();
                 self.paid_from_identity_function(
                     fee_validation_result,
