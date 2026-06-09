@@ -3,6 +3,7 @@ use crate::state_transition_action::shielded::shielded_withdrawal::ShieldedWithd
 use dpp::fee::Credits;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
+use dpp::version::PlatformVersion;
 
 impl ShieldedWithdrawalTransitionAction {
     /// Transforms the state transition into an action
@@ -10,6 +11,8 @@ impl ShieldedWithdrawalTransitionAction {
         value: &ShieldedWithdrawalTransition,
         current_total_balance: Credits,
         creation_time_ms: u64,
+        fee_amount: Credits,
+        platform_version: &PlatformVersion,
     ) -> ConsensusValidationResult<Self> {
         match value {
             ShieldedWithdrawalTransition::V0(v0) => {
@@ -17,6 +20,8 @@ impl ShieldedWithdrawalTransitionAction {
                     v0,
                     current_total_balance,
                     creation_time_ms,
+                    fee_amount,
+                    platform_version,
                 );
                 result.map(|action| action.into())
             }

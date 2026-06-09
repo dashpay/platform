@@ -110,6 +110,7 @@ pub(crate) mod json_convertible_tests {
             anchor: [0x77; 32],
             proof: vec![0x88; 192],
             binding_signature: [0x99; 64],
+            surplus_output: None,
             signature: BinaryData::new(vec![0xab; 65]),
         })
     }

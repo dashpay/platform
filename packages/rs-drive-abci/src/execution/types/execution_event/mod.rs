@@ -55,7 +55,13 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for
         execution_operations: Vec<ValidationOperation>,
-        /// Additional fee cost, these are processing fees where the user fee increase does not apply
+        /// Additional fee cost, these are processing fees where the user fee increase does not apply.
+        ///
+        /// `Shield` (transparent shield) sets this to the shielded COMPUTE fee
+        /// (`compute_shielded_verification_fee`: proof verification + per-action processing), which is
+        /// added to the metered processing fee on top of the metered GroveDB storage of the
+        /// note/nullifier writes — exactly like `IdentityCreateFromAddresses` adds its registration
+        /// cost. No storage term is added here; storage comes entirely from metering.
         additional_fixed_fee_cost: Option<Credits>,
         /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
         user_fee_increase: UserFeeIncrease,
@@ -71,6 +77,16 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
     /// The fee is embedded in the ZK-proven value_balance and validated
     /// at the processor level (validate_minimum_shielded_fee).
     /// Nullifiers are stored to recent block storage as part of the drive operations.
+    ///
+    /// This variant deliberately carries no `user_fee_increase`. Shielded transitions
+    /// have no fee-bidding or priority market: the fee is pinned to the flat,
+    /// client-predictable `compute_minimum_shielded_fee` (transfers must set
+    /// `value_balance` to exactly that minimum, while unshields and withdrawals derive it
+    /// from the action count), so every shielded transition of a given size pays an
+    /// identical fee and no fee fingerprint can distinguish senders. It likewise carries
+    /// no `execution_operations`: shielded transitions are not charged the per-operation
+    /// GroveDB cost (the flat fee subsumes it), so the execution context is intentionally
+    /// not threaded through here.
     PaidFromShieldedPool {
         /// the operations that should be performed
         operations: Vec<DriveOperation<'a>>,
@@ -466,6 +482,20 @@ impl ExecutionEvent<'_> {
                 let input_current_balances = shield_action.inputs_with_remaining_balance().clone();
                 let added_to_balance_outputs = BTreeMap::new();
                 let fee_strategy = shield_action.fee_strategy().clone();
+                // Transparent shield is metered + compute: GroveDB meters the real storage and
+                // processing of the note/nullifier writes (via `into_high_level_drive_operations`),
+                // and we add ONLY the shielded COMPUTE fee
+                // `compute_shielded_verification_fee(num_actions)` (Halo 2 proof verification +
+                // per-action processing) that GroveDB cannot see, as `additional_fixed_fee_cost`.
+                // This is exactly the `IdentityCreateFromAddresses` model: a fixed cost added to
+                // processing on top of the metered fee. No storage term is added here, so storage is
+                // never double-counted. `notes` are built 1:1 from the on-wire Orchard `actions`
+                // (see the shield action transformer), so `notes().len()` is the on-wire action
+                // count that the structure-validation floor also prices the compute fee against.
+                let shielded_verification_fee = dpp::shielded::compute_shielded_verification_fee(
+                    shield_action.notes().len(),
+                    platform_version,
+                )?;
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(ExecutionEvent::PaidFromAddressInputs {
@@ -474,7 +504,7 @@ impl ExecutionEvent<'_> {
                     fee_strategy,
                     operations,
                     execution_operations: execution_context.operations_consume(),
-                    additional_fixed_fee_cost: None,
+                    additional_fixed_fee_cost: Some(shielded_verification_fee),
                     user_fee_increase,
                 })
             }
@@ -497,13 +527,21 @@ impl ExecutionEvent<'_> {
                 })
             }
             StateTransitionAction::ShieldFromAssetLockAction(ref shield_from_asset_lock_action) => {
-                // Fee = asset_lock_value - shield_amount (excess from asset lock)
+                // The fully-consumed asset lock (added to system credits by the converter) is
+                // distributed three ways: `shield_amount` -> shielded pool, `surplus_amount` ->
+                // the `surplus_output` address (via the converter, when set), and the remainder ->
+                // the fee pools (this value). Computing the fee by subtraction from the single
+                // source of truth (the action) keeps conservation by construction:
+                //   AddToSystemCredits(consumed) == shield_amount + surplus_amount + fee_amount.
+                // When `surplus_output` is unset, `surplus_amount == 0` and the surplus folds into
+                // the fee here (bounded by the implicit-fee cap enforced in the transform).
                 let fee_amount = shield_from_asset_lock_action
                     .asset_lock_value_to_be_consumed()
                     .checked_sub(shield_from_asset_lock_action.shield_amount())
+                    .and_then(|v| v.checked_sub(shield_from_asset_lock_action.surplus_amount()))
                     .ok_or(Error::Execution(
                         ExecutionError::CorruptedCodeExecution(
-                            "shield amount exceeds asset lock value to be consumed in ShieldFromAssetLock fee computation",
+                            "shield amount + surplus exceeds asset lock value to be consumed in ShieldFromAssetLock fee computation",
                         ),
                     ))?;
                 let operations =

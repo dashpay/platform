@@ -57,10 +57,13 @@ mod tests {
         create_unshield_transition(
             create_output_address(),
             vec![create_dummy_serialized_action()],
-            111_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
-            [42u8; 32],  // non-zero anchor
+            // unshielding_amount: recipient amount + unshield fee for 1 action. The fee gate runs
+            // before proof verification, so this must clear `compute_shielded_unshield_fee(1)`
+            // (136,631,600) for these tests to reach the proof-verification stage they assert on.
+            136_632_600,
+            [42u8; 32],     // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
-            [0u8; 64],   // dummy binding signature
+            [0u8; 64],      // dummy binding signature
         )
     }
 
@@ -111,7 +114,7 @@ mod tests {
             let transition = UnshieldTransitionV0 {
                 output_address: create_output_address(),
                 actions,
-                unshielding_amount: 111_549_800,
+                unshielding_amount: 130_549_800,
                 anchor: [42u8; 32],
                 proof: vec![0u8; 100],
                 binding_signature: [0u8; 64],
@@ -314,6 +317,80 @@ mod tests {
     }
 
     // ==========================================
+    // FEE VALIDATION TESTS (InsufficientShieldedFeeError)
+    // ==========================================
+    //
+    // The Unshield fee gate (`validate_minimum_shielded_fee`) enforces
+    // `unshielding_amount >= compute_shielded_unshield_fee(num_actions)`, NOT the base
+    // `compute_minimum_shielded_fee(num_actions)`. The unshield fee is the base PLUS the flat
+    // 222-byte `AddBalanceToAddress` output-write storage cost, so there is a non-empty half-open
+    // range `[compute_minimum_shielded_fee(n), compute_shielded_unshield_fee(n))` of amounts that
+    // cover the base but NOT the unshield fee. Any amount in that range must be rejected with
+    // `InsufficientShieldedFeeError` — this pins that the gate uses `compute_shielded_unshield_fee`.
+
+    mod fee_validation {
+        use super::*;
+
+        /// An `unshielding_amount` strictly inside `[base_fee, unshield_fee)` — enough for the BASE
+        /// shielded fee but NOT the Unshield fee (which adds the flat 222-byte address-write cost) —
+        /// must be rejected with `InsufficientShieldedFeeError`. This is the boundary that proves the
+        /// gate uses `compute_shielded_unshield_fee`, not `compute_minimum_shielded_fee`.
+        ///
+        /// Mirrors the equivalent ShieldedTransfer (Base) and ShieldedWithdrawal boundary tests.
+        #[test]
+        fn test_fee_meets_base_but_below_unshield_fee_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            // One action, matching `create_dummy_serialized_action()` below.
+            let num_actions = 1usize;
+            let base_fee =
+                dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)
+                    .expect("base shielded fee should not overflow");
+            let unshield_fee =
+                dpp::shielded::compute_shielded_unshield_fee(num_actions, platform_version)
+                    .expect("unshield fee should not overflow");
+
+            // The unshield fee MUST strictly exceed the base (the flat 222-byte address-write cost),
+            // otherwise the half-open range this test exercises would be empty.
+            assert!(
+                unshield_fee > base_fee,
+                "unshield fee ({unshield_fee}) must exceed the base fee ({base_fee}) so the \
+                 [base, unshield) range is non-empty"
+            );
+
+            // Pick an amount strictly inside `[base_fee, unshield_fee)`: it clears the base fee but
+            // falls one credit short of the Unshield fee. If the gate (incorrectly) used the base
+            // fee, this would pass; because it uses `compute_shielded_unshield_fee`, it is rejected.
+            let unshielding_amount = unshield_fee - 1;
+            assert!(
+                unshielding_amount >= base_fee,
+                "the chosen amount must still cover the base fee"
+            );
+
+            let transition = create_unshield_transition(
+                create_output_address(),
+                vec![create_dummy_serialized_action()],
+                unshielding_amount,
+                [42u8; 32],     // non-zero anchor (structurally valid)
+                vec![0u8; 100], // dummy proof bytes (fee gate runs before proof verification)
+                [0u8; 64],
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            // The fee gate runs before proof verification, so the insufficient fee is caught here
+            // (not the dummy proof).
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InsufficientShieldedFeeError(_))
+                )]
+            );
+        }
+    }
+
+    // ==========================================
     // ZK PROOF VERIFICATION TESTS (InvalidShieldedProofError)
     // ==========================================
 
@@ -324,7 +401,8 @@ mod tests {
             ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue, Position,
             RandomSeed, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         #[test]
         fn test_invalid_proof_returns_shielded_proof_error() {
@@ -357,7 +435,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, 250);
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             // --- Create keys ---
@@ -397,8 +475,10 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_address, unshielding_amount)
             let output_address = create_output_address();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let mut extra_sighash_data = output_address.to_bytes();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                &output_address.to_bytes(),
+                unshielding_amount,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -455,7 +535,9 @@ mod tests {
             let transition = create_unshield_transition(
                 create_output_address(),
                 vec![bad_action],
-                111_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
+                // unshielding_amount is not load-bearing here: the bad 100-byte encrypted note
+                // fails basic structure validation, which runs before the fee gate.
+                136_632_600,
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -486,7 +568,8 @@ mod tests {
             ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue, Position,
             RandomSeed, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         /// Build a valid Orchard bundle for unshield tests (spend > output).
         /// The `output_address` and `unshielding_amount` are bound to the sighash so that
@@ -496,7 +579,7 @@ mod tests {
             output_address: &PlatformAddress,
             unshielding_amount: u64,
         ) -> (Vec<SerializedAction>, i64, [u8; 32], Vec<u8>, [u8; 64]) {
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
@@ -531,8 +614,10 @@ mod tests {
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
 
             // Bind transparent fields (output_address, unshielding_amount) to the sighash
-            let mut extra_sighash_data = output_address.to_bytes();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                &output_address.to_bytes(),
+                unshielding_amount,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -661,7 +746,11 @@ mod tests {
             let transition = create_unshield_transition(
                 create_output_address(),
                 vec![action1, action2], // Both have nullifier [1u8; 32]
-                123_098_600, // unshielding_amount: recipient amount + minimum fee for 2 actions
+                // unshielding_amount: recipient amount + unshield fee for 2 actions. The fee gate
+                // runs before proof verification, so this must clear
+                // `compute_shielded_unshield_fee(2)` (167,180,400) for this test to reach the
+                // proof-verification stage it asserts on.
+                167_181_400,
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -696,14 +785,15 @@ mod tests {
             FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
             SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         #[test]
         fn test_unshield_prove_and_verify_nullifiers_and_address() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, 250);
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             let spend_amount = 500_000_000u64;
@@ -751,8 +841,10 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_address, unshielding_amount)
             let output_address = create_output_address();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let mut extra_sighash_data = output_address.to_bytes();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                &output_address.to_bytes(),
+                unshielding_amount,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -874,6 +966,250 @@ mod tests {
                 balances.contains_key(&output_address),
                 "output address {:?} should be present in address balances",
                 output_address
+            );
+        }
+
+        /// NEGATIVE test for the strict-merged tightening (mirrors
+        /// `test_shield_from_asset_lock_padded_proof_is_rejected_by_strict_verify`): a proof
+        /// that carries EXTRA data beyond `{nullifiers, output-address}` MUST be rejected by the
+        /// production verifier.
+        ///
+        /// The production verify path rebuilds the merged `{nullifiers, output-address}` query
+        /// and verifies it with the STRICT `verify_query_with_absence_proof`, whose succinctness
+        /// check rejects any proof that descends into a subtree (a lower layer) the query did not
+        /// require. Here we execute a real unshield, then have the (honest, but over-broad)
+        /// prover generate a SUPERSET proof for `{nullifiers, output-address, + the
+        /// genesis-populated Pools subtree}` and verify it against the production merged query.
+        /// The strict verifier must reject it because the proof carries an extra root-level lower
+        /// layer (`Pools`) the production query never touches.
+        ///
+        /// For contrast we also confirm the SUBSET verifier (the looser primitive this change
+        /// replaced) would have ACCEPTED the same padded proof — demonstrating exactly the hole
+        /// the strict merged verification closes.
+        #[test]
+        fn test_unshield_padded_proof_is_rejected_by_strict_verify() {
+            use drive::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
+            use drive::drive::RootTree;
+            use drive::grovedb::{GroveDb, PathQuery, Query, SizedQuery};
+
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
+            let mut rng = StdRng::seed_from_u64(0);
+            let pk = get_proving_key();
+
+            let spend_amount = 500_000_000u64;
+            let output_amount = 5_000u64;
+
+            // --- Create keys ---
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let ask = SpendAuthorizingKey::from(&sk);
+
+            // --- Create a spendable note ---
+            let rho_bytes: [u8; 32] = {
+                let mut b = [0u8; 32];
+                b[0] = 1;
+                b
+            };
+            let rho = Rho::from_bytes(&rho_bytes).unwrap();
+            let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+            let note =
+                Note::from_parts(recipient, NoteValue::from_raw(spend_amount), rho, rseed).unwrap();
+
+            // --- Build commitment tree and get anchor + merkle path ---
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            let mut tree = ClientMemoryCommitmentTree::new(100);
+            tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
+            tree.checkpoint(0u32).unwrap();
+            let anchor = tree.anchor().unwrap();
+            let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
+
+            // --- Build bundle: spend 500M -> output 5K (value_balance = 499,995,000) ---
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+            builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(output_amount),
+                    [0u8; 36],
+                )
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+
+            let output_address = create_output_address();
+            let unshielding_amount = 499_995_000u64;
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                &output_address.to_bytes(),
+                unshielding_amount,
+            );
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
+
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
+
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle_i64(&bundle);
+            assert_eq!(value_balance, 499_995_000);
+
+            insert_anchor_into_state(&platform, &anchor_bytes);
+            set_pool_total_balance(&platform, 500_000_000);
+
+            let transition = create_unshield_transition(
+                output_address.clone(),
+                actions,
+                value_balance as u64,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+            );
+
+            let transition_bytes = transition
+                .serialize_to_bytes()
+                .expect("should serialize transition");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // --- Reconstruct the PRODUCTION merged query exactly as the verifier does ---
+            // {nullifiers} ∪ {output address}, each with cleared limits, then a limit that can
+            // never truncate the legitimate result set.
+            let StateTransition::Unshield(ref st) = transition else {
+                unreachable!();
+            };
+            let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
+
+            let mut nf_query = Query::new();
+            nf_query.insert_keys(nullifier_keys);
+            let nullifier_pq = PathQuery::new(
+                shielded_credit_pool_nullifiers_path_vec(),
+                SizedQuery::new(nf_query, None, None),
+            );
+
+            let mut address_pq =
+                Drive::balances_for_clear_addresses_query(std::iter::once(&output_address));
+            address_pq.query.limit = None;
+
+            let mut production_pq = PathQuery::merge(
+                vec![&nullifier_pq, &address_pq],
+                &platform_version.drive.grove_version,
+            )
+            .expect("merge production query");
+            production_pq.query.limit = Some(u16::MAX);
+
+            // Sanity: an HONEST proof for the production query verifies strictly (liveness).
+            let honest_proof = platform
+                .drive
+                .grove_get_proved_path_query(
+                    &production_pq,
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("honest production proof");
+            GroveDb::verify_query_with_absence_proof(
+                &honest_proof,
+                &production_pq,
+                &platform_version.drive.grove_version,
+            )
+            .expect("strict verify of honest production proof must succeed");
+
+            // --- Build a SUPERSET (padded) proof: {nullifiers, address, + an extra subtree} ---
+            // Pad by ALSO descending the genesis-populated `Pools` root subtree, which the
+            // production query never touches; the padded proof carries an extra root-level layer.
+            let mut pools_top = Query::new();
+            pools_top.insert_key(vec![RootTree::Pools as u8]);
+            pools_top.set_subquery(Query::new_range_full());
+            let pools_pq = PathQuery::new(vec![], SizedQuery::new(pools_top, None, None));
+
+            let mut superset_pq = PathQuery::merge(
+                vec![&nullifier_pq, &address_pq, &pools_pq],
+                &platform_version.drive.grove_version,
+            )
+            .expect("merge superset query");
+            superset_pq.query.limit = Some(u16::MAX);
+
+            let padded_proof = platform
+                .drive
+                .grove_get_proved_path_query(
+                    &superset_pq,
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("padded superset proof");
+
+            // The STRICT verifier (production behavior) MUST reject the padded proof.
+            let strict_result = GroveDb::verify_query_with_absence_proof(
+                &padded_proof,
+                &production_pq,
+                &platform_version.drive.grove_version,
+            );
+            assert!(
+                strict_result.is_err(),
+                "strict verifier must reject a proof padded with an extra subtree layer, got {:?}",
+                strict_result
+            );
+
+            // And the PRODUCTION entry point — the dispatch site this change actually
+            // rewrote — MUST reject the padded proof too. Asserting only against the GroveDB
+            // primitive above would stay green if the Unshield arm regressed to rebuild a
+            // different merged query or fall back to the subset verifier; routing the padded
+            // proof through `Drive::verify_state_transition_was_executed_with_proof` locks the
+            // real code path into the test.
+            let production_result = Drive::verify_state_transition_was_executed_with_proof(
+                &transition,
+                &BlockInfo::default(),
+                &padded_proof,
+                &|_| Ok(None),
+                platform_version,
+            );
+            assert!(
+                production_result.is_err(),
+                "production unshield verifier must reject a padded proof, got {:?}",
+                production_result
+            );
+
+            // Contrast: the SUBSET verifier (the looser primitive this change replaced) tolerates
+            // the extra layer and ACCEPTS the same padded proof — the exact hole now closed.
+            let subset_result = GroveDb::verify_subset_query_with_absence_proof(
+                &padded_proof,
+                &production_pq,
+                &platform_version.drive.grove_version,
+            );
+            assert!(
+                subset_result.is_ok(),
+                "subset verifier was expected to tolerate the padded proof, got {:?}",
+                subset_result
             );
         }
     }

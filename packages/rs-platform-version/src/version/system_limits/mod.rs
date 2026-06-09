@@ -1,4 +1,5 @@
 pub mod v1;
+pub mod v2;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
@@ -12,6 +13,11 @@ pub struct SystemLimits {
     pub withdrawal_transactions_per_block_limit: u16,
     pub retry_signing_expired_withdrawal_documents_per_block_limit: u16,
     pub max_withdrawal_amount: u64,
+    /// Minimum net amount (in credits) a withdrawal may send to Core, shared by the
+    /// transparent (identity + address) and shielded withdrawal paths. The dust floor that
+    /// keeps Core from rejecting the resulting `TxOut`. Versioned: see `min_withdrawal_amount`
+    /// in each `SYSTEM_LIMITS_V*`.
+    pub min_withdrawal_amount: u64,
     pub max_contract_group_size: u16,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication

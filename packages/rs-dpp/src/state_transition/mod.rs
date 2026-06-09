@@ -3213,6 +3213,7 @@ mod tests {
                 anchor: [0u8; 32],
                 proof: vec![],
                 binding_signature: [0u8; 64],
+                surplus_output: None,
                 signature: BinaryData::new(vec![0x55; 65]),
             },
         ))
