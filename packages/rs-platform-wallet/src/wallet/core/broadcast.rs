@@ -306,8 +306,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 // varint + output-varint + 34) and the selector's 148 B/input,
                 // so `total_input - fee` yields a single output with zero
                 // change for this chunk.
-                let fee = fee_rate
-                    .calculate_fee(BASE_SIZE_1_OUTPUT_NO_CHANGE + input_count * INPUT_SIZE);
+                let fee =
+                    fee_rate.calculate_fee(BASE_SIZE_1_OUTPUT_NO_CHANGE + input_count * INPUT_SIZE);
 
                 if total_input <= fee {
                     return Err(PlatformWalletError::TransactionBuild(format!(
@@ -544,7 +544,10 @@ mod coinjoin_sweep_path_map_tests {
             .derivation_path(network)
             .unwrap();
         let account_xpriv = master.derive_priv(&secp, &account_path).unwrap();
-        (ExtendedPubKey::from_priv(&secp, &account_xpriv), account_path)
+        (
+            ExtendedPubKey::from_priv(&secp, &account_xpriv),
+            account_path,
+        )
     }
 
     /// Derive `<account_path>/<chain>/<index>` the way the resolver does, to get

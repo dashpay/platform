@@ -166,13 +166,23 @@ pub unsafe extern "C" fn core_wallet_sweep_coinjoin(
     check_ptr!(out_count);
 
     let dest_str = unwrap_result_or_return!(std::ffi::CStr::from_ptr(dest_address).to_str());
-    let dest = unwrap_result_or_return!(dashcore::Address::from_str(dest_str)).assume_checked();
+    // Parse without committing to a network; the destination is validated
+    // against the wallet's own network inside the storage closure below so a
+    // wrong-network address fails before any tx is built. This is the all-funds
+    // sweep, so the destination script must be spendable on this chain.
+    let dest_unchecked = unwrap_result_or_return!(dashcore::Address::from_str(dest_str));
 
     let signer_addr = core_signer_handle as usize;
 
     let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
         let wallet_id = wallet.wallet_id();
         let network = wallet.network();
+        // Reject a wrong-network destination before building/broadcasting the
+        // all-funds sweep — the resulting script would be unspendable on this
+        // chain and the sweep is irreversible. Mirrors the withdrawal FFI.
+        let dest = dest_unchecked
+            .require_network(network)
+            .map_err(|e| platform_wallet::PlatformWalletError::AddressOperation(e.to_string()))?;
         // SAFETY: the resolver handle is pinned alive for the duration of
         // this FFI call (see fn-level safety doc). The
         // `MnemonicResolverCoreSigner` lives on this stack frame and is

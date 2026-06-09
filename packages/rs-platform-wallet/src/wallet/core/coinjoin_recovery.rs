@@ -45,9 +45,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     ) -> Result<u32, PlatformWalletError> {
         let mut wm = self.wallet_manager.write().await;
         let (wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id).ok_or_else(|| {
-            PlatformWalletError::WalletNotFound(
-                "Wallet not found in wallet manager".to_string(),
-            )
+            PlatformWalletError::WalletNotFound("Wallet not found in wallet manager".to_string())
         })?;
 
         // Watch-only account xpub for deriving the CoinJoin pool's addresses.
