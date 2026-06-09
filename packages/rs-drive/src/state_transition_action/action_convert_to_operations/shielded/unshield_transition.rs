@@ -114,6 +114,7 @@ mod tests {
             anchor: [0xAA; 32],
             fee_amount: 500,
             current_total_balance: 10000,
+            chargeable_failure: false,
         })
     }
 
@@ -233,6 +234,7 @@ mod tests {
             anchor: [0x00; 32],
             fee_amount: 500, // fee > amount
             current_total_balance: 10000,
+            chargeable_failure: false,
         });
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();
@@ -250,6 +252,7 @@ mod tests {
             anchor: [0x00; 32],
             fee_amount: 500,
             current_total_balance: 4000, // 4000 < 5000 (amount)
+            chargeable_failure: false,
         });
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();
@@ -305,6 +308,7 @@ mod tests {
                 anchor: [0xAA; 32],
                 fee_amount,
                 current_total_balance: amount + 1_000_000,
+                chargeable_failure: false,
             });
 
             let ops = action
@@ -358,6 +362,7 @@ mod tests {
             anchor: [0xAA; 32],
             fee_amount: 500, // net = amount - fee = 0
             current_total_balance: 10000,
+            chargeable_failure: false,
         });
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();

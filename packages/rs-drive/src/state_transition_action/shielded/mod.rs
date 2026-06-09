@@ -1,3 +1,5 @@
+/// IdentityCreateFromShieldedPool transition action
+pub mod identity_create_from_shielded_pool;
 /// Shield transition action
 pub mod shield;
 /// Shield from asset lock transition action

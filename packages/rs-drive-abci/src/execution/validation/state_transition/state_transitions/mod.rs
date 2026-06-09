@@ -41,6 +41,8 @@ pub mod address_credit_withdrawal;
 pub mod address_funds_transfer;
 mod identity_top_up_from_addresses;
 
+/// Module for identity-create-from-shielded-pool transition validation
+pub mod identity_create_from_shielded_pool;
 /// Module for shield transition validation
 pub mod shield;
 /// Module for shield from asset lock transition validation

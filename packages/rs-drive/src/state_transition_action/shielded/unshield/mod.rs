@@ -47,6 +47,13 @@ impl UnshieldTransitionAction {
             UnshieldTransitionAction::V0(transition) => transition.fee_amount,
         }
     }
+    /// `true` only when this action is the chargeable failure of an
+    /// `IdentityCreateFromShieldedPool` (see `UnshieldTransitionActionV0::chargeable_failure`).
+    pub fn chargeable_failure(&self) -> bool {
+        match self {
+            UnshieldTransitionAction::V0(transition) => transition.chargeable_failure,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -70,6 +77,7 @@ mod tests {
             anchor: [0x55; 32],
             fee_amount: 250,
             current_total_balance: 100000,
+            chargeable_failure: false,
         };
         UnshieldTransitionAction::from(v0)
     }
@@ -122,6 +130,7 @@ mod tests {
             anchor: [0x00; 32],
             fee_amount: 0,
             current_total_balance: 0,
+            chargeable_failure: false,
         };
         let action = UnshieldTransitionAction::from(v0);
         assert_eq!(action.amount(), 0);

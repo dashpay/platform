@@ -6,6 +6,7 @@ use crate::execution::validation::state_transition::address_funding_from_asset_l
 use crate::execution::validation::state_transition::address_funds_transfer::StateTransitionAddressFundsTransferTransitionActionTransformer;
 use crate::execution::validation::state_transition::identity_create::StateTransitionActionTransformerForIdentityCreateTransitionV0;
 use crate::execution::validation::state_transition::identity_create_from_addresses::StateTransitionActionTransformerForIdentityCreateFromAddressesTransitionV0;
+use crate::execution::validation::state_transition::identity_create_from_shielded_pool::StateTransitionIdentityCreateFromShieldedPoolTransitionActionTransformer;
 use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
 use crate::execution::validation::state_transition::shield::StateTransitionShieldTransitionActionTransformer;
 use crate::execution::validation::state_transition::shield_from_asset_lock::StateTransitionShieldFromAssetLockTransitionActionTransformer;
@@ -268,6 +269,16 @@ impl StateTransitionActionTransformer for StateTransition {
             }
             StateTransition::ShieldedWithdrawal(st) => st
                 .transform_into_action_for_shielded_withdrawal_transition(platform, block_info, tx),
+            StateTransition::IdentityCreateFromShieldedPool(st) => {
+                // Key structure + per-key proof-of-possession are *verified* earlier (in
+                // `validate_shielded_proof`, ahead of Halo 2); the transformer does the stateful
+                // pool checks and records the per-key signature-verification ops for fee accounting.
+                st.transform_into_action_for_identity_create_from_shielded_pool_transition(
+                    platform,
+                    execution_context,
+                    tx,
+                )
+            }
         }
     }
 }

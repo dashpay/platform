@@ -1,3 +1,4 @@
+mod identity_create_from_shielded_pool_transition;
 mod shield_from_asset_lock_transition;
 mod shield_transition;
 mod shielded_transfer_transition;
