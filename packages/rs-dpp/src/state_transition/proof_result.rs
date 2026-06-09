@@ -140,6 +140,11 @@ mod json_safe_address_info_map {
     use serde::{Deserialize, Serialize};
     use std::collections::BTreeMap;
 
+    /// The address-info map shape shared by several `StateTransitionProofResult`
+    /// variants. Aliased to keep the helper signatures below under clippy's
+    /// `type_complexity` threshold.
+    type AddressInfoMap = BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>;
+
     #[derive(Serialize, Deserialize)]
     struct Entry(
         AddressNonce,
@@ -147,7 +152,7 @@ mod json_safe_address_info_map {
     );
 
     pub fn serialize<S: Serializer>(
-        map: &BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+        map: &AddressInfoMap,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
         let mut s = serializer.serialize_map(Some(map.len()))?;
@@ -160,7 +165,7 @@ mod json_safe_address_info_map {
 
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
-    ) -> Result<BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>, D::Error> {
+    ) -> Result<AddressInfoMap, D::Error> {
         let raw: BTreeMap<PlatformAddress, Option<Entry>> = BTreeMap::deserialize(deserializer)?;
         Ok(raw
             .into_iter()
