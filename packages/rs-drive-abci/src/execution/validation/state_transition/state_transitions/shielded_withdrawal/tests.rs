@@ -29,6 +29,15 @@ mod tests {
         CoreScript::new_p2pkh([7u8; 20])
     }
 
+    /// Minimum ShieldedWithdrawal fee for `num_actions` (base + flat withdrawal-document storage
+    /// cost), sourced from the canonical `dpp::shielded::compute_shielded_withdrawal_fee` (against
+    /// `PlatformVersion::latest()`, which is what every test in this module uses) so the test
+    /// fixtures track the fee constants and can never go stale relative to the consensus fee gate.
+    fn withdrawal_fee(num_actions: usize) -> u64 {
+        dpp::shielded::compute_shielded_withdrawal_fee(num_actions, PlatformVersion::latest())
+            .expect("withdrawal fee computation")
+    }
+
     /// Builds a `ShieldedWithdrawalTransition` state transition.
     /// No signing needed since shielded withdrawal transitions have no ECDSA witnesses
     /// (authenticated purely via Orchard ZK proof + signatures).
@@ -128,7 +137,10 @@ mod tests {
 
             let transition = ShieldedWithdrawalTransitionV0 {
                 actions,
-                unshielding_amount: 130_549_800,
+                // Any valid positive amount: this test asserts a structure-validation error
+                // (ShieldedTooManyActionsError) that fires before the fee gate. Sourced from the
+                // canonical fee fn so it carries no stale literal.
+                unshielding_amount: withdrawal_fee(1),
                 anchor: [42u8; 32],
                 proof: vec![0u8; 100],
                 binding_signature: [0u8; 64],
@@ -504,7 +516,10 @@ mod tests {
 
             let transition = create_shielded_withdrawal_transition(
                 vec![bad_action],
-                130_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
+                // unshielding_amount is not load-bearing here: the bad 100-byte encrypted note fails
+                // basic structure validation, which runs before the fee gate. Sourced from the
+                // canonical fee fn so it carries no stale literal.
+                withdrawal_fee(1),
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],

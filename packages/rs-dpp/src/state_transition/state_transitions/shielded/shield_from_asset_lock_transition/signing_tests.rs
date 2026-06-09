@@ -10,10 +10,15 @@
 //! in `state_transition::mod` pins `sign_with_core_signer` against
 //! `sign_by_private_key` — we don't re-derive that contract here.
 
+// `crate::shielded::builder` (the high-level bundle builder these tests drive) only
+// exists under `shielded-client`, so this module must require it too — otherwise the
+// `--all-targets` feature-unified lib-test target (which enables `state-transition-signing`
+// + `core_key_wallet` without `shielded-client`) fails to resolve the builder import.
 #![cfg(all(
     test,
     feature = "state-transition-signing",
-    feature = "core_key_wallet"
+    feature = "core_key_wallet",
+    feature = "shielded-client"
 ))]
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
