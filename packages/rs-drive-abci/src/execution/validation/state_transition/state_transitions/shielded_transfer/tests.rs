@@ -42,13 +42,22 @@ mod tests {
         ))
     }
 
+    /// Minimum shielded fee for `num_actions`, sourced from the canonical
+    /// `dpp::shielded::compute_minimum_shielded_fee` (against `PlatformVersion::latest()`, which is
+    /// what every test in this module uses) so the test fixtures track the per-action fee constants
+    /// and can never go stale relative to consensus.
+    fn minimum_fee(num_actions: usize) -> u64 {
+        dpp::shielded::compute_minimum_shielded_fee(num_actions, PlatformVersion::latest())
+            .expect("minimum shielded fee computation")
+    }
+
     /// Shorthand for creating a structurally valid (but cryptographically invalid) shielded
     /// transfer transition. Has a non-zero anchor, valid field sizes, but random data.
-    /// Includes sufficient fee to pass the minimum shielded fee check (1 action = 111,548,800).
+    /// Includes sufficient fee to pass the minimum shielded fee check (the 1-action minimum).
     fn create_default_shielded_transfer_transition() -> StateTransition {
         create_shielded_transfer_transition(
             vec![create_dummy_serialized_action()],
-            130_548_800,    // minimum fee for 1 action
+            minimum_fee(1),
             [42u8; 32],     // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
             [0u8; 64],      // dummy binding signature
@@ -100,7 +109,7 @@ mod tests {
 
             let transition = ShieldedTransferTransitionV0 {
                 actions,
-                value_balance: 130_548_800,
+                value_balance: minimum_fee(1),
                 anchor: [42u8; 32],
                 proof: vec![0u8; 100],
                 binding_signature: [0u8; 64],
@@ -289,9 +298,6 @@ mod tests {
             );
         }
 
-        /// Minimum fee for 2 actions (Orchard builder always produces ≥2).
-        const MINIMUM_FEE_2_ACTIONS: u64 = 161_097_600;
-
         #[test]
         fn test_valid_shielded_transfer_proof_succeeds() {
             let platform_version = PlatformVersion::latest();
@@ -299,8 +305,10 @@ mod tests {
             let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
+            // Minimum fee for 2 actions (Orchard builder always produces ≥2).
+            let minimum_fee_2_actions = minimum_fee(2);
             let spend_amount = 200_000_000u64;
-            let output_amount = spend_amount - MINIMUM_FEE_2_ACTIONS;
+            let output_amount = spend_amount - minimum_fee_2_actions;
 
             // --- Create keys ---
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
@@ -349,7 +357,7 @@ mod tests {
             let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 serialize_authorized_bundle_u64(&bundle);
 
-            assert_eq!(value_balance, MINIMUM_FEE_2_ACTIONS);
+            assert_eq!(value_balance, minimum_fee_2_actions);
 
             // --- Set pool balance and insert anchor ---
             set_pool_total_balance(&platform, 500_000_000);
@@ -388,7 +396,7 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 vec![bad_action],
-                130_548_800, // minimum fee for 1 action (fee check runs before proof reconstruction)
+                minimum_fee(1), // minimum fee for 1 action (fee check runs before proof reconstruction)
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -415,16 +423,12 @@ mod tests {
     // The minimum shielded fee is:
     //   min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)
     //
-    // With current constants:
-    //   proof_verification_fee     = 100_000_000
-    //   per_action_processing_fee  =  22_000_000
-    //   per_action_storage_fee     = 312 × (27_000 + 400) = 8_548_800
-    //   per_action_total           = 30_548_800
-    //
-    // Minimum fees by action count:
-    //   2 actions: 100_000_000 + 2 × 30_548_800 = 161_097_600
-    //   3 actions: 100_000_000 + 3 × 30_548_800 = 191_646_400
-    //   4 actions: 100_000_000 + 4 × 30_548_800 = 222_195_200
+    // The exact per-action / per-bundle constants live in `dpp` and evolve across protocol versions
+    // (e.g. `SHIELDED_STORAGE_BYTES_PER_ACTION` changed when `cv_net` was added). Rather than
+    // hardcode the resulting numbers (which silently go stale when a constant changes), these tests
+    // source the threshold from the canonical `dpp::shielded::compute_minimum_shielded_fee` via the
+    // module-level `minimum_fee(num_actions)` helper, so the fixture fee always matches the consensus
+    // gate.
 
     mod fee_validation {
         use super::*;
@@ -435,10 +439,6 @@ mod tests {
         };
         use rand::rngs::StdRng;
         use rand::SeedableRng;
-
-        const MINIMUM_FEE_2_ACTIONS: u64 = 161_097_600;
-        const MINIMUM_FEE_3_ACTIONS: u64 = 191_646_400;
-        const MINIMUM_FEE_4_ACTIONS: u64 = 222_195_200;
 
         /// Helper to create a dummy action with a unique seed (avoids duplicate nullifiers).
         fn create_dummy_action(seed: u8) -> SerializedAction {
@@ -487,7 +487,7 @@ mod tests {
             // 2 actions with fee one credit below minimum
             let transition = create_shielded_transfer_transition(
                 vec![create_dummy_action(1), create_dummy_action(2)],
-                MINIMUM_FEE_2_ACTIONS - 1, // one credit below the 2-action minimum
+                minimum_fee(2) - 1, // one credit below the 2-action minimum
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
@@ -515,7 +515,7 @@ mod tests {
                     create_dummy_action(2),
                     create_dummy_action(3),
                 ],
-                MINIMUM_FEE_3_ACTIONS - 1, // one credit below the 3-action minimum
+                minimum_fee(3) - 1, // one credit below the 3-action minimum
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
@@ -544,7 +544,7 @@ mod tests {
                     create_dummy_action(3),
                     create_dummy_action(4),
                 ],
-                MINIMUM_FEE_4_ACTIONS - 1, // one credit below the 4-action minimum
+                minimum_fee(4) - 1, // one credit below the 4-action minimum
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
@@ -621,11 +621,11 @@ mod tests {
             let platform = setup_platform();
 
             let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
-                build_bundle_with_fee(MINIMUM_FEE_2_ACTIONS);
+                build_bundle_with_fee(minimum_fee(2));
 
             // Verify the bundle has exactly 2 actions and the expected fee
             assert_eq!(actions.len(), 2);
-            assert_eq!(value_balance, MINIMUM_FEE_2_ACTIONS);
+            assert_eq!(value_balance, minimum_fee(2));
 
             // Set pool balance large enough to cover the fee deduction
             set_pool_total_balance(&platform, 500_000_000);
@@ -657,10 +657,10 @@ mod tests {
 
             // Pay 1 credit more than the minimum
             let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
-                build_bundle_with_fee(MINIMUM_FEE_2_ACTIONS + 1);
+                build_bundle_with_fee(minimum_fee(2) + 1);
 
             assert_eq!(actions.len(), 2);
-            assert_eq!(value_balance, MINIMUM_FEE_2_ACTIONS + 1);
+            assert_eq!(value_balance, minimum_fee(2) + 1);
 
             set_pool_total_balance(&platform, 500_000_000);
             insert_anchor_into_state(&platform, &anchor_bytes);
@@ -843,19 +843,17 @@ mod tests {
         use rand::rngs::StdRng;
         use rand::SeedableRng;
 
-        /// Minimum fee for 2 actions (Orchard builder always produces ≥2).
-        const MINIMUM_FEE_2_ACTIONS: u64 = 161_097_600;
-
         /// Build a valid Orchard bundle for shielded transfer tests.
-        /// Includes sufficient fee (value_balance = MINIMUM_FEE_2_ACTIONS).
+        /// Includes sufficient fee (value_balance = the 2-action minimum fee).
         /// Returns (actions, value_balance, anchor_bytes, proof_bytes, binding_sig).
         fn build_valid_shielded_transfer_bundle(
         ) -> (Vec<SerializedAction>, u64, [u8; 32], Vec<u8>, [u8; 64]) {
             let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
+            // Minimum fee for 2 actions (Orchard builder always produces ≥2).
             let spend_amount = 200_000_000u64;
-            let output_amount = spend_amount - MINIMUM_FEE_2_ACTIONS;
+            let output_amount = spend_amount - minimum_fee(2);
 
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
             let fvk = FullViewingKey::from(&sk);
@@ -916,7 +914,7 @@ mod tests {
 
             let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
                 build_valid_shielded_transfer_bundle();
-            assert_eq!(value_balance, MINIMUM_FEE_2_ACTIONS);
+            assert_eq!(value_balance, minimum_fee(2));
 
             // ATTACK: Mutate value_balance (increase by 5000 so it still passes fee check)
             let mutated_value_balance = value_balance + 5000;
@@ -1037,7 +1035,7 @@ mod tests {
 
             let transition = create_shielded_transfer_transition(
                 vec![action1, action2], // Both have nullifier [1u8; 32]
-                MINIMUM_FEE_2_ACTIONS,  // sufficient fee so we reach proof verification
+                minimum_fee(2),         // sufficient fee so we reach proof verification
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -1075,8 +1073,6 @@ mod tests {
         use rand::rngs::StdRng;
         use rand::SeedableRng;
 
-        const MINIMUM_FEE_2_ACTIONS: u64 = 161_097_600;
-
         #[test]
         fn test_shielded_transfer_prove_and_verify_nullifiers() {
             let platform_version = PlatformVersion::latest();
@@ -1085,7 +1081,7 @@ mod tests {
             let pk = get_proving_key();
 
             let spend_amount = 200_000_000u64;
-            let output_amount = spend_amount - MINIMUM_FEE_2_ACTIONS;
+            let output_amount = spend_amount - minimum_fee(2);
 
             // --- Create keys ---
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
