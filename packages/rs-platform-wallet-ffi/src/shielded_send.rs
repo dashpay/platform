@@ -56,12 +56,14 @@ use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::{block_on_worker, runtime};
 
-/// Parse an optional surplus-output platform address supplied as raw
-/// `PlatformAddress` storage bytes (21 bytes: 1-byte variant tag +
-/// 20-byte hash — the encoding `PlatformAddress::to_bytes()` produces
-/// and `PlatformAddressWasm`/the Swift wrapper expose).
+/// Parse an optional platform address supplied as raw `PlatformAddress`
+/// storage bytes (21 bytes: 1-byte variant tag + 20-byte hash — the
+/// encoding `PlatformAddress::to_bytes()` produces and
+/// `PlatformAddressWasm`/the Swift wrapper expose). Shared by the
+/// `surplus_output` and `send_to_address_on_creation_failure` params;
+/// `field_name` names the parameter in any error message.
 ///
-/// `ptr == null` (or `len == 0`) means "no surplus output" → `Ok(None)`.
+/// `ptr == null` (or `len == 0`) means "no address" → `Ok(None)`.
 /// A non-null pointer is read for `len` bytes and decoded; a malformed
 /// address is surfaced as an `Err(PlatformWalletFFIResult)` so the
 /// caller fails fast rather than building a transition the wallet would
