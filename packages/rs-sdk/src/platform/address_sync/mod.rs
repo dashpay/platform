@@ -2476,19 +2476,26 @@ mod tests {
             "a stranded wallet-owned address at the cap must raise exactly one WARN"
         );
 
-        // Foreign-only leftovers → no WARN. A provider that offers nothing
-        // means every buffered miss is foreign noise.
-        struct EmptyProvider;
+        // Foreign-leftover branch → no WARN, but the classifier MUST run.
+        // The provider offers one resolvable wallet-owned address, so the
+        // replay loop runs past the `extras.is_empty()` early-return; a
+        // foreign miss it never offers then survives as `foreign`, exercising
+        // the foreign-counting branch with `wallet_owned_lost == 0`.
+        let owned = p2pkh(0x70);
+
+        struct OneOwnedProvider {
+            owned: PlatformAddress,
+        }
 
         #[async_trait]
-        impl AddressProvider for EmptyProvider {
+        impl AddressProvider for OneOwnedProvider {
             type Tag = u32;
             type Address = PlatformAddress;
             fn gap_limit(&self) -> AddressIndex {
                 0
             }
             fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_ {
-                std::iter::empty()
+                std::iter::once((7u32, self.owned))
             }
             async fn on_address_found(
                 &mut self,
@@ -2505,9 +2512,9 @@ mod tests {
             }
         }
 
-        let foreign_only: Vec<PendingMiss> = vec![
+        let foreign_with_owned: Vec<PendingMiss> = vec![
             (
-                p2pkh(0x11).to_bytes(),
+                owned.to_bytes(),
                 OwnedBalanceOp::Compacted(BlockAwareCreditOperation::SetCredits(5_000)),
                 0,
             ),
@@ -2520,16 +2527,25 @@ mod tests {
 
         let warns = WarnCounter::default();
         let collected = warns.clone();
+        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
         {
             let _guard = tracing_subscriber::registry().with(warns).set_default();
-            let mut provider = EmptyProvider;
-            let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
-            refresh_and_replay_unknown(&lookup, foreign_only, &mut provider, &mut result).await;
+            let mut provider = OneOwnedProvider { owned };
+            refresh_and_replay_unknown(&lookup, foreign_with_owned, &mut provider, &mut result)
+                .await;
         }
         assert_eq!(
             collected.0.load(Ordering::Relaxed),
             0,
-            "foreign-only leftovers must not raise a wallet-owned-loss WARN"
+            "a surviving foreign leftover must not raise a wallet-owned-loss WARN"
+        );
+        // Proves the loop ran past the `extras.is_empty()` early-return and
+        // the classifier actually executed its foreign branch — the owned
+        // address could only resolve via the replay the early-return skips.
+        assert_eq!(
+            result.found.get(&(7u32, owned)).map(|f| f.balance),
+            Some(5_000),
+            "the wallet-owned address must resolve, proving the classifier ran"
         );
     }
 
