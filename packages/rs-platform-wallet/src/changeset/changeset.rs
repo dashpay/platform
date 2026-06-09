@@ -136,6 +136,14 @@ pub struct CoreChangeSet {
     /// upstream `project_derived_addresses` uses, so two records in
     /// the same flush both pushing the same gap-limit boundary
     /// collapse to one entry.
+    ///
+    /// `#[serde(skip)]`: persisters that need the breadcrumb write
+    /// it to a dedicated typed table (see
+    /// `platform_wallet_storage::sqlite::schema::core_state`) rather
+    /// than serialising the parent changeset wholesale, so excluding
+    /// it from the serde round-trip has no functional cost even now
+    /// that `key-wallet-manager/serde` would make it serializable.
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub addresses_derived: Vec<key_wallet_manager::DerivedAddress>,
 
     /// Highest chainlock the wallet has applied (mirrors
@@ -645,6 +653,10 @@ pub struct PlatformAddressBalanceEntry {
     pub account_index: u32,
     pub address_index: u32,
     pub address: PlatformP2PKHAddress,
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "crate::changeset::serde_adapters::address_funds")
+    )]
     pub funds: AddressFunds,
 }
 
@@ -732,6 +744,10 @@ pub struct AssetLockEntry {
     /// BIP44 account index that funded this asset lock (UTXO source).
     pub account_index: u32,
     /// Which funding account to derive the one-time key from.
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "crate::changeset::serde_adapters::asset_lock_funding_type")
+    )]
     pub funding_type: AssetLockFundingType,
     /// Identity index used during creation.
     pub identity_index: u32,

@@ -968,5 +968,249 @@ mod tests {
                 output_address
             );
         }
+
+        /// NEGATIVE test for the strict-merged tightening (mirrors
+        /// `test_shield_from_asset_lock_padded_proof_is_rejected_by_strict_verify`): a proof
+        /// that carries EXTRA data beyond `{nullifiers, output-address}` MUST be rejected by the
+        /// production verifier.
+        ///
+        /// The production verify path rebuilds the merged `{nullifiers, output-address}` query
+        /// and verifies it with the STRICT `verify_query_with_absence_proof`, whose succinctness
+        /// check rejects any proof that descends into a subtree (a lower layer) the query did not
+        /// require. Here we execute a real unshield, then have the (honest, but over-broad)
+        /// prover generate a SUPERSET proof for `{nullifiers, output-address, + the
+        /// genesis-populated Pools subtree}` and verify it against the production merged query.
+        /// The strict verifier must reject it because the proof carries an extra root-level lower
+        /// layer (`Pools`) the production query never touches.
+        ///
+        /// For contrast we also confirm the SUBSET verifier (the looser primitive this change
+        /// replaced) would have ACCEPTED the same padded proof — demonstrating exactly the hole
+        /// the strict merged verification closes.
+        #[test]
+        fn test_unshield_padded_proof_is_rejected_by_strict_verify() {
+            use drive::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
+            use drive::drive::RootTree;
+            use drive::grovedb::{GroveDb, PathQuery, Query, SizedQuery};
+
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
+            let mut rng = StdRng::seed_from_u64(0);
+            let pk = get_proving_key();
+
+            let spend_amount = 500_000_000u64;
+            let output_amount = 5_000u64;
+
+            // --- Create keys ---
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let ask = SpendAuthorizingKey::from(&sk);
+
+            // --- Create a spendable note ---
+            let rho_bytes: [u8; 32] = {
+                let mut b = [0u8; 32];
+                b[0] = 1;
+                b
+            };
+            let rho = Rho::from_bytes(&rho_bytes).unwrap();
+            let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+            let note =
+                Note::from_parts(recipient, NoteValue::from_raw(spend_amount), rho, rseed).unwrap();
+
+            // --- Build commitment tree and get anchor + merkle path ---
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            let mut tree = ClientMemoryCommitmentTree::new(100);
+            tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
+            tree.checkpoint(0u32).unwrap();
+            let anchor = tree.anchor().unwrap();
+            let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
+
+            // --- Build bundle: spend 500M -> output 5K (value_balance = 499,995,000) ---
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+            builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(output_amount),
+                    [0u8; 36],
+                )
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+
+            let output_address = create_output_address();
+            let unshielding_amount = 499_995_000u64;
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                &output_address.to_bytes(),
+                unshielding_amount,
+            );
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
+
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
+
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle_i64(&bundle);
+            assert_eq!(value_balance, 499_995_000);
+
+            insert_anchor_into_state(&platform, &anchor_bytes);
+            set_pool_total_balance(&platform, 500_000_000);
+
+            let transition = create_unshield_transition(
+                output_address.clone(),
+                actions,
+                value_balance as u64,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+            );
+
+            let transition_bytes = transition
+                .serialize_to_bytes()
+                .expect("should serialize transition");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // --- Reconstruct the PRODUCTION merged query exactly as the verifier does ---
+            // {nullifiers} ∪ {output address}, each with cleared limits, then a limit that can
+            // never truncate the legitimate result set.
+            let StateTransition::Unshield(ref st) = transition else {
+                unreachable!();
+            };
+            let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
+
+            let mut nf_query = Query::new();
+            nf_query.insert_keys(nullifier_keys);
+            let nullifier_pq = PathQuery::new(
+                shielded_credit_pool_nullifiers_path_vec(),
+                SizedQuery::new(nf_query, None, None),
+            );
+
+            let mut address_pq =
+                Drive::balances_for_clear_addresses_query(std::iter::once(&output_address));
+            address_pq.query.limit = None;
+
+            let mut production_pq = PathQuery::merge(
+                vec![&nullifier_pq, &address_pq],
+                &platform_version.drive.grove_version,
+            )
+            .expect("merge production query");
+            production_pq.query.limit = Some(u16::MAX);
+
+            // Sanity: an HONEST proof for the production query verifies strictly (liveness).
+            let honest_proof = platform
+                .drive
+                .grove_get_proved_path_query(
+                    &production_pq,
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("honest production proof");
+            GroveDb::verify_query_with_absence_proof(
+                &honest_proof,
+                &production_pq,
+                &platform_version.drive.grove_version,
+            )
+            .expect("strict verify of honest production proof must succeed");
+
+            // --- Build a SUPERSET (padded) proof: {nullifiers, address, + an extra subtree} ---
+            // Pad by ALSO descending the genesis-populated `Pools` root subtree, which the
+            // production query never touches; the padded proof carries an extra root-level layer.
+            let mut pools_top = Query::new();
+            pools_top.insert_key(vec![RootTree::Pools as u8]);
+            pools_top.set_subquery(Query::new_range_full());
+            let pools_pq = PathQuery::new(vec![], SizedQuery::new(pools_top, None, None));
+
+            let mut superset_pq = PathQuery::merge(
+                vec![&nullifier_pq, &address_pq, &pools_pq],
+                &platform_version.drive.grove_version,
+            )
+            .expect("merge superset query");
+            superset_pq.query.limit = Some(u16::MAX);
+
+            let padded_proof = platform
+                .drive
+                .grove_get_proved_path_query(
+                    &superset_pq,
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("padded superset proof");
+
+            // The STRICT verifier (production behavior) MUST reject the padded proof.
+            let strict_result = GroveDb::verify_query_with_absence_proof(
+                &padded_proof,
+                &production_pq,
+                &platform_version.drive.grove_version,
+            );
+            assert!(
+                strict_result.is_err(),
+                "strict verifier must reject a proof padded with an extra subtree layer, got {:?}",
+                strict_result
+            );
+
+            // And the PRODUCTION entry point — the dispatch site this change actually
+            // rewrote — MUST reject the padded proof too. Asserting only against the GroveDB
+            // primitive above would stay green if the Unshield arm regressed to rebuild a
+            // different merged query or fall back to the subset verifier; routing the padded
+            // proof through `Drive::verify_state_transition_was_executed_with_proof` locks the
+            // real code path into the test.
+            let production_result = Drive::verify_state_transition_was_executed_with_proof(
+                &transition,
+                &BlockInfo::default(),
+                &padded_proof,
+                &|_| Ok(None),
+                platform_version,
+            );
+            assert!(
+                production_result.is_err(),
+                "production unshield verifier must reject a padded proof, got {:?}",
+                production_result
+            );
+
+            // Contrast: the SUBSET verifier (the looser primitive this change replaced) tolerates
+            // the extra layer and ACCEPTS the same padded proof — the exact hole now closed.
+            let subset_result = GroveDb::verify_subset_query_with_absence_proof(
+                &padded_proof,
+                &production_pq,
+                &platform_version.drive.grove_version,
+            );
+            assert!(
+                subset_result.is_ok(),
+                "subset verifier was expected to tolerate the padded proof, got {:?}",
+                subset_result
+            );
+        }
     }
 }

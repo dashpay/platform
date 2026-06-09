@@ -29,6 +29,18 @@ use crate::changeset::AssetLockEntry;
 /// caught — at every status_to_u8 / status_from_u8 / serializer call.
 /// Marking the enum `#[non_exhaustive]` would force wildcard arms
 /// and silently lose that signal.
+///
+/// # Schema coupling
+///
+/// Variants of this enum are persisted as TEXT in the
+/// `platform-wallet-storage` SQLite schema (column `asset_locks.status`
+/// — see `migrations/V001__initial.rs`). Any change to this enum
+/// (added or renamed variant) MUST also update:
+///   - `sqlite::schema::asset_locks::status_str` (writer mapping)
+///   - `sqlite::schema::asset_locks::ASSET_LOCK_STATUS_LABELS`
+///     (`CHECK` constraint domain)
+/// Verified by the `asset_lock_status_labels_match_enum` unit test in
+/// that same module.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AssetLockStatus {
