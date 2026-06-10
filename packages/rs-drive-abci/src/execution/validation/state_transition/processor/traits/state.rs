@@ -209,18 +209,15 @@ impl StateTransitionStateValidation for StateTransition {
                 )))
             }
             StateTransition::IdentityCreateFromShieldedPool(st) => {
-                // Type 20 does NOT use `has_advanced_structure_validation_with_state` (the cheap
-                // PoP/key-structure checks stay in `validate_shielded_proof`, ahead of Halo 2), so
-                // the processor does not pre-build the action — it always arrives here as `None`.
-                // Build the optimistic SUCCESS action now (the stateless + pool/anchor/nullifier/
-                // balance checks). If that already rejects, forward the rejection; otherwise hand
-                // the success action to `validate_state`, which branches success-vs-Unshield-fallback
-                // on the identity-creation state checks.
-                // Type 20 keeps `has_advanced_structure_validation_with_state() == false`, so the
-                // processor never pre-builds the action — it always arrives `None`, and we build the
-                // optimistic success action here via `transform` (which runs the pool/anchor/
-                // nullifier/balance checks). Fail CLOSED at runtime if that invariant is ever broken:
-                // using a pre-built action would silently route around those checks.
+                // Type 20 keeps `has_advanced_structure_validation_with_state() == false` (the
+                // cheap PoP/key-structure checks stay in `validate_shielded_proof`, ahead of
+                // Halo 2), so the processor never pre-builds the action — it always arrives here
+                // as `None`. Build the optimistic SUCCESS action now via `transform` (the
+                // pool/anchor/nullifier/balance checks); if that already rejects, forward the
+                // rejection, otherwise hand the success action to `validate_state`, which branches
+                // success-vs-Unshield-fallback on the identity-creation state checks. Fail CLOSED
+                // at runtime if the no-pre-build invariant is ever broken: using a pre-built
+                // action would silently route around those checks.
                 let action = match action {
                     Some(_) => {
                         return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(

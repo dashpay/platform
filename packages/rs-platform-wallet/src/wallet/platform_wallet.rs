@@ -634,7 +634,11 @@ impl PlatformWallet {
                         "invalid platform address: {e}"
                     ))
                 })?;
-        if addr_network != self.sdk.network {
+        // Compare HRPs, not raw networks: testnet/devnet/regtest all share
+        // the "tdash" HRP, so a parsed address can never carry Devnet.
+        if dpp::address_funds::PlatformAddress::hrp_for_network(addr_network)
+            != dpp::address_funds::PlatformAddress::hrp_for_network(self.sdk.network)
+        {
             return Err(PlatformWalletError::ShieldedBuildError(format!(
                 "platform address network mismatch: address {addr_network:?}, wallet {:?}",
                 self.sdk.network

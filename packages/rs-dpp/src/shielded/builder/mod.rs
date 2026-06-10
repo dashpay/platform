@@ -203,6 +203,44 @@ pub(crate) fn build_spend_bundle<P: OrchardProver>(
     prover: &P,
     extra_sighash_data: &[u8],
 ) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError> {
+    let data = extra_sighash_data.to_vec();
+    build_spend_bundle_with(
+        spends,
+        recipient,
+        output_amount,
+        memo,
+        fvk,
+        ask,
+        anchor,
+        prover,
+        move |_| Ok(data),
+    )
+}
+
+/// Like [`build_spend_bundle`], but the extra sighash data is computed by a
+/// closure that receives the built bundle's published action nullifiers (in
+/// on-wire order, INCLUDING any padding actions' dummy nullifiers).
+///
+/// `IdentityCreateFromShieldedPool` needs this: its identity id is
+/// `double_sha256(sorted published nullifiers)`, and `BundleType::DEFAULT`
+/// pads single-spend bundles with a dummy action whose random nullifier only
+/// exists once the bundle is built — deriving the id from the real spends
+/// alone would diverge from the consensus re-derivation.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_spend_bundle_with<P: OrchardProver, F>(
+    spends: Vec<SpendableNote>,
+    recipient: &OrchardAddress,
+    output_amount: u64,
+    memo: [u8; 36],
+    fvk: &FullViewingKey,
+    ask: &SpendAuthorizingKey,
+    anchor: Anchor,
+    prover: &P,
+    extra_sighash_data: F,
+) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError>
+where
+    F: FnOnce(&[[u8; 32]]) -> Result<Vec<u8>, ProtocolError>,
+{
     let payment_address = PaymentAddress::from(recipient);
 
     let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
@@ -224,7 +262,7 @@ pub(crate) fn build_spend_bundle<P: OrchardProver>(
         )
         .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to add output: {:?}", e)))?;
 
-    prove_and_sign_bundle(
+    prove_and_sign_bundle_with(
         builder,
         prover,
         std::slice::from_ref(ask),
@@ -240,6 +278,23 @@ pub(crate) fn prove_and_sign_bundle<P: OrchardProver>(
     signing_keys: &[SpendAuthorizingKey],
     extra_sighash_data: &[u8],
 ) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError> {
+    let data = extra_sighash_data.to_vec();
+    prove_and_sign_bundle_with(builder, prover, signing_keys, move |_| Ok(data))
+}
+
+/// Like [`prove_and_sign_bundle`], but the extra sighash data is computed by
+/// a closure receiving the built bundle's published action nullifiers (see
+/// [`build_spend_bundle_with`]). The closure runs after `Builder::build`
+/// fixes the action set (padding included) and before the sighash is bound.
+pub(crate) fn prove_and_sign_bundle_with<P: OrchardProver, F>(
+    builder: Builder<DashMemo>,
+    prover: &P,
+    signing_keys: &[SpendAuthorizingKey],
+    extra_sighash_data: F,
+) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError>
+where
+    F: FnOnce(&[[u8; 32]]) -> Result<Vec<u8>, ProtocolError>,
+{
     let mut rng = OsRng;
 
     let (unauthorized, _) = builder
@@ -249,8 +304,15 @@ pub(crate) fn prove_and_sign_bundle<P: OrchardProver>(
             ProtocolError::ShieldedBuildError("bundle was empty after build".to_string())
         })?;
 
+    let nullifiers: Vec<[u8; 32]> = unauthorized
+        .actions()
+        .iter()
+        .map(|action| action.nullifier().to_bytes())
+        .collect();
+    let extra_sighash_data = extra_sighash_data(&nullifiers)?;
+
     let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-    let sighash = compute_platform_sighash(&bundle_commitment, extra_sighash_data);
+    let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
     let proven = unauthorized
         .create_proof(prover.proving_key(), &mut rng)
@@ -548,6 +610,92 @@ mod mod_tests {
             Ok(_) => {}
             Err(ProtocolError::ShieldedBuildError(_)) => {}
             Err(e) => panic!("unexpected error kind: {:?}", e),
+        }
+    }
+
+    /// Builds an output-only builder the way `build_output_only_bundle` does (no merkle
+    /// witness needed): a single output, padded by `BundleType` to the 2-action minimum.
+    fn output_only_builder(amount: u64) -> Builder<DashMemo> {
+        let recipient = test_orchard_address();
+        let payment_address = PaymentAddress::from(&recipient);
+        let mut builder = Builder::<DashMemo>::new(
+            BundleType::Transactional {
+                flags: OrchardFlags::SPENDS_DISABLED,
+                bundle_required: false,
+            },
+            Anchor::empty_tree(),
+        );
+        builder
+            .add_output(
+                None,
+                payment_address,
+                NoteValue::from_raw(amount),
+                [0u8; 36],
+            )
+            .expect("add output");
+        builder
+    }
+
+    // ------------------------------------------------------------------
+    // `prove_and_sign_bundle_with` — the closure contract. The closure MUST
+    // receive the BUILT bundle's published action nullifiers (padding
+    // actions' dummy nullifiers included), in on-wire order: this is what
+    // lets `IdentityCreateFromShieldedPool` derive its identity id from the
+    // same nullifier set consensus re-derives it from. Deriving from the
+    // requested spends alone would diverge whenever the bundle is padded.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn prove_and_sign_bundle_with_closure_receives_published_nullifiers() {
+        let builder = output_only_builder(10_000);
+
+        let mut recorded: Option<Vec<[u8; 32]>> = None;
+        let bundle = prove_and_sign_bundle_with(builder, &TestProver, &[], |nullifiers| {
+            recorded = Some(nullifiers.to_vec());
+            Ok(vec![])
+        })
+        .expect("output-only bundle should prove");
+
+        let recorded = recorded.expect("the extra-sighash closure must run");
+        // A single output is padded to the 2-action minimum; every padded action
+        // publishes a (dummy) nullifier on the wire.
+        assert_eq!(
+            recorded.len(),
+            2,
+            "closure must see one nullifier per PUBLISHED action (incl. padding)"
+        );
+        assert_ne!(
+            recorded[0], recorded[1],
+            "padding dummy nullifiers are randomized per action"
+        );
+        // The recorded set must be exactly the authorized bundle's published
+        // nullifiers, in the same on-wire order.
+        let published: Vec<[u8; 32]> = bundle
+            .actions()
+            .iter()
+            .map(|action| action.nullifier().to_bytes())
+            .collect();
+        assert_eq!(
+            recorded, published,
+            "closure must receive the bundle's published nullifiers in on-wire order"
+        );
+    }
+
+    #[test]
+    fn prove_and_sign_bundle_with_closure_error_short_circuits_before_proving() {
+        let builder = output_only_builder(10_000);
+
+        let result = prove_and_sign_bundle_with(builder, &TestProver, &[], |_| {
+            Err(ProtocolError::ShieldedBuildError(
+                "closure rejected".to_string(),
+            ))
+        });
+
+        match result {
+            Err(ProtocolError::ShieldedBuildError(msg)) => {
+                assert_eq!(msg, "closure rejected", "closure error must pass through");
+            }
+            other => panic!("expected the closure's error to propagate, got {:?}", other),
         }
     }
 }
