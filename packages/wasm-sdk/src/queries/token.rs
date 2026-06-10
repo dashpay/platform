@@ -846,8 +846,7 @@ impl WasmSdk {
 
         // Fetch token contract info with proof
         let (info_result, metadata, proof) =
-            TokenContractInfo::fetch_with_metadata_and_proof(self.as_ref(), token_id, None)
-                .await?;
+            TokenContractInfo::fetch_with_metadata_and_proof(self.as_ref(), token_id, None).await?;
 
         let data = info_result
             .map(|info| JsValue::from(TokenContractInfoWasm::from(info)))
