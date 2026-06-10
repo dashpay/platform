@@ -585,17 +585,27 @@ fn standard_account() -> key_wallet::account::AccountType {
     }
 }
 
-/// Assert a storage error is a SQLite UNIQUE-constraint violation.
+/// Assert a storage error is specifically a SQLite UNIQUE-constraint
+/// violation (`SQLITE_CONSTRAINT_UNIQUE`, 2067) — not merely some generic
+/// constraint, so a PK/CHECK/NOT-NULL failure cannot satisfy it.
 fn assert_unique_violation(err: platform_wallet_storage::WalletStorageError) {
     match err {
         platform_wallet_storage::WalletStorageError::Sqlite(rusqlite::Error::SqliteFailure(
             e,
             _,
-        )) => assert_eq!(
-            e.code,
-            rusqlite::ErrorCode::ConstraintViolation,
-            "expected a UNIQUE constraint violation, got {e:?}"
-        ),
+        )) => {
+            assert_eq!(
+                e.code,
+                rusqlite::ErrorCode::ConstraintViolation,
+                "expected a constraint violation, got {e:?}"
+            );
+            assert_eq!(
+                e.extended_code,
+                rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE,
+                "expected SQLITE_CONSTRAINT_UNIQUE (2067), got extended_code={}",
+                e.extended_code
+            );
+        }
         other => panic!("expected a SQLite constraint error, got {other:?}"),
     }
 }
@@ -709,6 +719,68 @@ fn cross_pool_address_collision_is_loud() {
     .expect_err("the same address in a different pool must violate UNIQUE(address)");
 
     assert_unique_violation(err);
+}
+
+/// `used` is write-once on the AUTHORITATIVE path: a live re-derive of the
+/// same leaf carries `used=false` and must NOT clear a stored `used=true`.
+/// The `DO NOTHING` conflict clause is what preserves it — a `DO UPDATE SET
+/// used = excluded.used` regression would clobber the flag, and this test
+/// is the guard.
+#[test]
+fn authoritative_redrive_preserves_used_true() {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF4);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = addr_from(0x74);
+    let acct = standard_account();
+
+    // Seed the leaf with used=true (the snapshot's real flag).
+    {
+        let conn = persister.lock_conn_for_test();
+        conn.execute(
+            "INSERT INTO core_derived_addresses \
+                (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
+             VALUES (?1, 'standard', 0, 'external', 0, ?2, 1)",
+            rusqlite::params![w.as_slice(), addr.to_string()],
+        )
+        .unwrap();
+    }
+
+    // Live re-derive of the SAME leaf — the apply path hardcodes used=false.
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        core_state::apply(
+            &tx,
+            &w,
+            &CoreChangeSet {
+                addresses_derived: vec![derived_at(
+                    acct,
+                    AddressPoolType::External,
+                    0,
+                    addr.clone(),
+                )],
+                ..Default::default()
+            },
+        )
+        .expect("same-leaf re-derive must be a no-op, not an error");
+        tx.commit().unwrap();
+    }
+
+    let conn = persister.lock_conn_for_test();
+    let rows = core_state::list_derived_addresses_for_test(&conn, &w).unwrap();
+    let at_addr: Vec<_> = rows
+        .iter()
+        .filter(|r| r.address == addr.to_string())
+        .collect();
+    assert_eq!(at_addr.len(), 1, "re-derive must not insert a second row");
+    assert!(
+        at_addr[0].used,
+        "a live re-derive (used=false) must NOT clear a stored used=true"
+    );
 }
 
 /// Reconcile stays non-fatal: a pre-existing live row holds an address at
