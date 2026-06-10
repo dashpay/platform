@@ -7,4 +7,9 @@
 /packages/js-dash-sdk/ @QuantumExplorer @shumkov
 /packages/js-evo-sdk/ @QuantumExplorer @shumkov
 /packages/wasm-sdk/ @QuantumExplorer @shumkov
-/packages/swift-sdk/ @QuantumExplorer @shumkov
+/packages/swift-sdk/ @QuantumExplorer @shumkov @llbartekll
+
+# Platform wallet stack
+/packages/rs-platform-wallet/ @QuantumExplorer @llbartekll
+/packages/rs-platform-wallet-ffi/ @QuantumExplorer @llbartekll
+/packages/rs-platform-wallet-storage/ @QuantumExplorer @llbartekll
