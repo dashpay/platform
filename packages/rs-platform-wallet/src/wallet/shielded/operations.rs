@@ -38,9 +38,11 @@ use dpp::address_funds::{
     AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, OrchardAddress, PlatformAddress,
 };
 use dpp::fee::Credits;
+use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::core_script::CoreScript;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::IdentityPublicKey;
+use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
 use dpp::shielded::builder::{
     build_identity_create_from_shielded_pool_transition, build_shield_transition,
@@ -668,8 +670,10 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
 /// per-action spend-auth signatures + binding signature (which commits the derived id + denomination
 /// + full key set) + the per-key PoP — there is NO platform identity signature.
 ///
-/// Returns the new identity's id (`double_sha256(sorted nullifiers)`), derived deterministically
-/// from the spent notes' nullifiers.
+/// Returns the new identity's id (`double_sha256(sorted nullifiers)`, derived deterministically
+/// from the spent notes' nullifiers) together with the proof-verified [`Identity`] returned by the
+/// SDK broadcast. The caller registers that `Identity` in its local `IdentityManager` so the host
+/// persister emits the row, mirroring the address-funded registration path.
 #[allow(clippy::too_many_arguments)]
 pub async fn identity_create_from_shielded_pool<S, P, IS>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -683,7 +687,7 @@ pub async fn identity_create_from_shielded_pool<S, P, IS>(
     send_to_address_on_creation_failure: PlatformAddress,
     identity_signer: &IS,
     prover: &P,
-) -> Result<Identifier, PlatformWalletError>
+) -> Result<(Identifier, Identity), PlatformWalletError>
 where
     S: ShieldedStore,
     P: OrchardProver,
@@ -715,6 +719,16 @@ where
         "IdentityCreateFromShieldedPool"
     );
 
+    // Snapshot the submitted `IdentityPublicKey` halves keyed by their `KeyID` BEFORE the build
+    // consumes `public_keys`. This is the canonical record of the key set the transition commits to
+    // (the binding signature covers it), so it's the defensive fallback if the proof-verified
+    // identity comes back with an empty `public_keys()` map — same pattern register_from_addresses
+    // uses for its address-funded `put_*` stub.
+    let submitted_public_keys: BTreeMap<u32, IdentityPublicKey> = public_keys
+        .iter()
+        .map(|(key, _)| (key.id(), key.clone()))
+        .collect();
+
     // From here on every error path must release the reservation taken above.
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
@@ -741,22 +755,71 @@ where
         trace!("IdentityCreateFromShieldedPool: built, broadcasting via SDK helper...");
         // Broadcast through the SDK helper, which re-assembles the transition from the PoP-signed
         // keys + bundle params (preserving the per-key signatures) and waits for proven execution.
-        sdk.identity_create_from_shielded_pool(
-            build.public_keys,
-            denomination,
-            send_to_address_on_creation_failure,
-            build.bundle,
-            None,
-        )
-        .await
-        .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
+        // It returns a `VerifiedIdentityWithShieldedNullifiers` proof result carrying the
+        // proof-verified `Identity` (and the consumed nullifiers).
+        let proof_result = sdk
+            .identity_create_from_shielded_pool(
+                build.public_keys,
+                denomination,
+                send_to_address_on_creation_failure,
+                build.bundle,
+                None,
+            )
+            .await
+            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
 
-        Ok::<Identifier, PlatformWalletError>(identity_id)
+        // Pull the verified `Identity` out of the proof result. The expected variant is
+        // `VerifiedIdentityWithShieldedNullifiers`; if drive-abci ever returns a different one the
+        // broadcast still SUCCEEDED, so we don't turn it into an error — we synthesize the identity
+        // from the derived id + submitted keys (the binding signature committed both) and warn, so
+        // the local row is still created.
+        let identity = match proof_result {
+            StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers(
+                mut identity,
+                _nullifiers,
+            ) => {
+                // The proof-verified id is authoritative: it's recomputed from the proven nullifier
+                // set, while `identity_id` was derived pre-broadcast. They should match (the derived
+                // id is committed in the sighash), but trust the verified one.
+                if identity.id() != identity_id {
+                    warn!(
+                        derived_id = %identity_id,
+                        verified_id = %identity.id(),
+                        "IdentityCreateFromShieldedPool: derived id differs from proof-verified id; \
+                         using the proof-verified id"
+                    );
+                }
+                // Defensive: a proof result can hand back an identity whose `public_keys` map is
+                // empty. Fill it from the submitted set so downstream auth-key checks see the keys
+                // immediately without waiting for the next identity-fetch round (the transition
+                // committed exactly these keys, so id reproducibility is preserved).
+                if identity.public_keys().is_empty() {
+                    identity.set_public_keys(submitted_public_keys);
+                }
+                identity
+            }
+            other => {
+                warn!(
+                    derived_id = %identity_id,
+                    result = %other,
+                    "IdentityCreateFromShieldedPool: unexpected proof-result variant; synthesizing \
+                     the identity from the derived id + submitted keys so the local row still lands"
+                );
+                Identity::new_with_id_and_keys(
+                    identity_id,
+                    submitted_public_keys,
+                    sdk.version(),
+                )
+                .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?
+            }
+        };
+
+        Ok::<(Identifier, Identity), PlatformWalletError>((identity.id(), identity))
     }
     .await;
 
     match result {
-        Ok(identity_id) => {
+        Ok((identity_id, identity)) => {
             // Best-effort post-broadcast bookkeeping (see `unshield`): mark the spent notes so the
             // local balance reflects the exit immediately; any drift heals on the next nullifier
             // sync. The on-chain nullifier set — not this local mark — is the authoritative
@@ -776,7 +839,7 @@ where
                 identity_id = %identity_id,
                 "IdentityCreateFromShieldedPool broadcast succeeded"
             );
-            Ok(identity_id)
+            Ok((identity_id, identity))
         }
         Err(e) => {
             cancel_pending(store, id, &selected_notes).await;
