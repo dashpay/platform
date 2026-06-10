@@ -2,7 +2,10 @@
 pub mod builder;
 
 mod compute_minimum_shielded_fee;
+pub mod memo;
 mod sighash;
+
+pub use memo::{ShieldedMemo, MEMO_PAYLOAD_SIZE, MEMO_SIZE};
 
 use bincode::{Decode, Encode};
 #[cfg(feature = "serde-conversion")]

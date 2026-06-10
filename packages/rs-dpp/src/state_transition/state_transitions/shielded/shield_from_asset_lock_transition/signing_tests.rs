@@ -237,7 +237,8 @@ async fn build_shield_from_asset_lock_transition_with_signer_end_to_end() {
         &signer,
         &TestProver,
         [0u8; 36],
-        None,
+        None, // sender_ovk
+        None, // surplus_output
         PlatformVersion::latest(),
     )
     .await

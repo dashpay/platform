@@ -101,6 +101,10 @@ async fn shield_built_note_is_trial_decryptable_by_own_ivk() {
         0,
         &&prover,
         [0u8; 36],
+        // Production config (`operations::shield`): the output's
+        // out_ciphertext is keyed to the wallet's own OVK. Irrelevant to
+        // the IVK trial-decryption under test, but kept in lockstep.
+        Some(keys.outgoing_viewing_key.clone()),
         PlatformVersion::latest(),
     )
     .await

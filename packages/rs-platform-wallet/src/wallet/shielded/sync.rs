@@ -1004,3 +1004,16 @@ mod ovk_recovery_tests;
 /// (the chain stores them verbatim, so this covers the full path).
 #[cfg(test)]
 mod shield_decrypt_tests;
+
+/// Sender-side mirror of `shield_decrypt_tests`: the shield builder's
+/// serialized actions must OVK-recover (recipient, value, memo) under
+/// the same keyset's outgoing viewing key and persist as an outgoing
+/// note — the wallet's own send history reconstructed from chain data.
+#[cfg(test)]
+mod ovk_builder_roundtrip_tests;
+
+/// Round-trip guard for the shielded note memo: a `ShieldedMemo` attached
+/// to an output survives encryption and comes back out of both the IVK
+/// full-decryption and the OVK send-history recovery primitives.
+#[cfg(test)]
+mod memo_roundtrip_tests;
