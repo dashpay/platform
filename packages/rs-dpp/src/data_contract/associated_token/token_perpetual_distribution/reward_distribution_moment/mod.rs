@@ -51,6 +51,81 @@ pub enum RewardDistributionMoment {
     EpochBasedMoment(EpochIndex),
 }
 
+// Manual impls because RewardDistributionMoment is a flat enum (not versioned
+// V0/V1). Externally-tagged tuple-variant shape (`{"BlockBasedMoment": 123}`)
+// is kept — consistent with its sibling output types
+// (`TokenDistributionInfo`, `TokenDistributionTypeWithResolvedRecipient`).
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for RewardDistributionMoment {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for RewardDistributionMoment {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use crate::serialization::{JsonConvertible, ValueConvertible};
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    /// Per-variant wire-shape coverage. `BlockHeight`/`TimestampMillis` are
+    /// u64 behind `json_safe_u64` (numbers below 2^53, strings above); JSON
+    /// erases the size — the value-path assertions lock the typed variants
+    /// (`u64` for block/time, `u16` for `EpochIndex`).
+    #[test]
+    fn json_round_trip_with_full_wire_shape_all_variants() {
+        let cases = vec![
+            (
+                RewardDistributionMoment::BlockBasedMoment(123_456),
+                json!({"BlockBasedMoment": 123_456}),
+            ),
+            (
+                RewardDistributionMoment::TimeBasedMoment(1_700_000_000_000u64),
+                json!({"TimeBasedMoment": 1_700_000_000_000u64}),
+            ),
+            (
+                RewardDistributionMoment::EpochBasedMoment(42),
+                json!({"EpochBasedMoment": 42}),
+            ),
+        ];
+        for (original, expected) in cases {
+            let json_v = original.to_json().expect("to_json");
+            assert_eq!(json_v, expected, "json wire shape for {original:?}");
+            let recovered = RewardDistributionMoment::from_json(json_v).expect("from_json");
+            assert_eq!(original, recovered);
+        }
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape_all_variants() {
+        let cases = vec![
+            (
+                RewardDistributionMoment::BlockBasedMoment(123_456),
+                platform_value!({"BlockBasedMoment": 123_456u64}),
+            ),
+            (
+                RewardDistributionMoment::TimeBasedMoment(1_700_000_000_000u64),
+                platform_value!({"TimeBasedMoment": 1_700_000_000_000u64}),
+            ),
+            (
+                RewardDistributionMoment::EpochBasedMoment(42),
+                platform_value!({"EpochBasedMoment": 42u16}),
+            ),
+        ];
+        for (original, expected) in cases {
+            let value = original.to_object().expect("to_object");
+            assert_eq!(value, expected, "value wire shape for {original:?}");
+            let recovered = RewardDistributionMoment::from_object(value).expect("from_object");
+            assert_eq!(original, recovered);
+        }
+    }
+}
+
 impl RewardDistributionMoment {
     /// Checks if two `RewardDistributionMoment`s are of the same type.
     pub fn same_type(&self, other: &Self) -> bool {

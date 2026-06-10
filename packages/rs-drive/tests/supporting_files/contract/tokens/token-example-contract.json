@@ -24,32 +24,32 @@
       "keepsHistory": false,
       "freezeRules": {
         "$formatVersion": "0",
-        "authorizedToMakeChange": "ContractOwner",
-        "adminActionTakers": "ContractOwner",
+        "authorizedToMakeChange": {"type": "contractOwner"},
+        "adminActionTakers": {"type": "contractOwner"},
         "changingAuthorizedActionTakersToNoOneAllowed": false,
         "changingAdminActionTakersToNoOneAllowed": false,
         "selfChangingAdminActionTakersAllowed": false
       },
       "unfreezeRules": {
         "$formatVersion": "0",
-        "authorizedToMakeChange": "ContractOwner",
-        "adminActionTakers": "ContractOwner",
+        "authorizedToMakeChange": {"type": "contractOwner"},
+        "adminActionTakers": {"type": "contractOwner"},
         "changingAuthorizedActionTakersToNoOneAllowed": false,
         "changingAdminActionTakersToNoOneAllowed": false,
         "selfChangingAdminActionTakersAllowed": false
       },
       "destroyFrozenFundsRules": {
         "$formatVersion": "0",
-        "authorizedToMakeChange": "ContractOwner",
-        "adminActionTakers": "ContractOwner",
+        "authorizedToMakeChange": {"type": "contractOwner"},
+        "adminActionTakers": {"type": "contractOwner"},
         "changingAuthorizedActionTakersToNoOneAllowed": false,
         "changingAdminActionTakersToNoOneAllowed": false,
         "selfChangingAdminActionTakersAllowed": false
       },
       "emergencyActionRules": {
         "$formatVersion": "0",
-        "authorizedToMakeChange": "ContractOwner",
-        "adminActionTakers": "ContractOwner",
+        "authorizedToMakeChange": {"type": "contractOwner"},
+        "adminActionTakers": {"type": "contractOwner"},
         "changingAuthorizedActionTakersToNoOneAllowed": false,
         "changingAdminActionTakersToNoOneAllowed": false,
         "selfChangingAdminActionTakersAllowed": false

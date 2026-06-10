@@ -80,8 +80,8 @@ mod json_convertible_tests {
                 "tradeMode": "NotTradeable",
                 "tradeModeChangeRules": {
                     "$formatVersion": "0",
-                    "authorizedToMakeChange": "ContractOwner",
-                    "adminActionTakers": "MainGroup",
+                    "authorizedToMakeChange": {"type": "contractOwner"},
+                    "adminActionTakers": {"type": "mainGroup"},
                     "changingAuthorizedActionTakersToNoOneAllowed": true,
                     "changingAdminActionTakersToNoOneAllowed": false,
                     "selfChangingAdminActionTakersAllowed": true,
@@ -105,8 +105,8 @@ mod json_convertible_tests {
                 "tradeMode": "NotTradeable",
                 "tradeModeChangeRules": {
                     "$formatVersion": "0",
-                    "authorizedToMakeChange": "ContractOwner",
-                    "adminActionTakers": "MainGroup",
+                    "authorizedToMakeChange": {"type": "contractOwner"},
+                    "adminActionTakers": {"type": "mainGroup"},
                     "changingAuthorizedActionTakersToNoOneAllowed": true,
                     "changingAdminActionTakersToNoOneAllowed": false,
                     "selfChangingAdminActionTakersAllowed": true,

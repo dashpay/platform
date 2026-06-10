@@ -18,6 +18,15 @@ pub enum TokenTradeMode {
     NotTradeable,
 }
 
+// Manual impls because TokenTradeMode is a flat enum (not versioned V0/V1).
+// Unit-only enum — serde default emits the bare "NotTradeable" string on both
+// wire formats (pinned by TokenMarketplaceRules' wire-shape tests).
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenTradeMode {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenTradeMode {}
+
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

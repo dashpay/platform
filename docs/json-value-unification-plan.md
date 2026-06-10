@@ -178,22 +178,25 @@ tests. The tuple-variant enums also get custom internal-tagging serde per the
 downstream wire-shape assertions (`TokenConfiguration`, `ChangeControlRules`, …) updated in
 the same commit.
 
-- [ ] `AuthorizedActionTakers` (custom serde — `Identity(Identifier)` / `Group(u16)` tuple variants)
-- [ ] `TokenDistributionRecipient` / `TokenDistributionResolvedRecipient` (custom serde — Identifier tuple variants)
-- [ ] `TokenDistributionType`, `TokenDistributionKey` (clears the in-file `TODO(unification pass 2)`)
-- [ ] `RewardDistributionMoment` (already has `json_safe_u64` fields — only impls + tests missing)
-- [ ] `IndexCountability` (manual empty impls like its `index/mod.rs` siblings)
-- [ ] `TokenConfigurationPreset` / `TokenConfigurationPresetFeatures`
-- [ ] `Metadata` (+ `json_safe_fields` — raw u64s reachable via `ExtendedDocument` `$metadata`)
-- [ ] `TokenTradeMode` (trivial, consistency)
+- [x] `AuthorizedActionTakers` (custom serde — `Identity(Identifier)` / `Group(u16)` tuple variants)
+- [x] `TokenDistributionRecipient` / `TokenDistributionResolvedRecipient` (custom serde — Identifier tuple variants)
+- [x] `TokenDistributionType`, `TokenDistributionKey` (clears the in-file `TODO(unification pass 2)`)
+- [x] `RewardDistributionMoment` (already has `json_safe_u64` fields — only impls + tests missing;
+      externally-tagged shape kept, consistent with its sibling output types)
+- [x] `IndexCountability` (manual empty impls like its `index/mod.rs` siblings)
+- [x] `TokenConfigurationPreset` / `TokenConfigurationPresetFeatures` (+ `rename_all = "camelCase"`
+      on the struct — `action_taker` → `actionTaker`; type was rs-dpp-internal, zero external users)
+- [x] `Metadata` (+ `json_safe_fields` — raw u64s reachable via `ExtendedDocument` `$metadata`)
+- [x] `TokenTradeMode` (trivial, consistency)
 - Skipped deliberately: `FeeRefunds` (fee-module internal, no J/V callers), `LazyRegex`
   (string-newtype primitive, covered via `ContestedIndexFieldMatch` tests).
 
 ### P3 — `Index` drift from base (#3623 count + #3661 sum fields)
 
-- [ ] `#[serde(default)]` on `countable`, `range_countable`, `summable`, `range_summable`
-      (red test first: pre-#3623 JSON must deserialize).
-- [ ] `Index` + `IndexProperty` wire-shape round-trip tests (none exist crate-wide).
+- [x] `#[serde(default)]` on `countable`, `range_countable`, `summable`, `range_summable`
+      (red test first: pre-#3623 JSON must deserialize — observed RED with
+      `missing field 'countable'`, GREEN after the fix).
+- [x] `Index` + `IndexProperty` wire-shape round-trip tests (none existed crate-wide).
 
 ### P4 — wasm-dpp2 fixes
 

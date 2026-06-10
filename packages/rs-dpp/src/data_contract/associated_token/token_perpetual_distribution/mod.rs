@@ -100,7 +100,7 @@ mod json_convertible_tests {
                         },
                     },
                 },
-                "distributionRecipient": "ContractOwner",
+                "distributionRecipient": {"type": "contractOwner"},
             })
         );
         let recovered = TokenPerpetualDistribution::from_json(json).expect("from_json");
@@ -126,7 +126,7 @@ mod json_convertible_tests {
                         },
                     },
                 },
-                "distributionRecipient": "ContractOwner",
+                "distributionRecipient": {"type": "contractOwner"},
             })
         );
         let recovered = TokenPerpetualDistribution::from_object(value).expect("from_object");

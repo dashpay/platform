@@ -65,8 +65,8 @@ mod json_convertible_tests {
     fn default_ccr_json() -> serde_json::Value {
         json!({
             "$formatVersion": "0",
-            "authorizedToMakeChange": "NoOne",
-            "adminActionTakers": "NoOne",
+            "authorizedToMakeChange": {"type": "noOne"},
+            "adminActionTakers": {"type": "noOne"},
             "changingAuthorizedActionTakersToNoOneAllowed": false,
             "changingAdminActionTakersToNoOneAllowed": false,
             "selfChangingAdminActionTakersAllowed": false,
@@ -76,8 +76,8 @@ mod json_convertible_tests {
     fn default_ccr_value() -> Value {
         platform_value!({
             "$formatVersion": "0",
-            "authorizedToMakeChange": "NoOne",
-            "adminActionTakers": "NoOne",
+            "authorizedToMakeChange": {"type": "noOne"},
+            "adminActionTakers": {"type": "noOne"},
             "changingAuthorizedActionTakersToNoOneAllowed": false,
             "changingAdminActionTakersToNoOneAllowed": false,
             "selfChangingAdminActionTakersAllowed": false,

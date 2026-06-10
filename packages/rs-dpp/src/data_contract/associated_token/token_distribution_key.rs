@@ -133,9 +133,107 @@ impl crate::serialization::JsonConvertible for TokenDistributionInfo {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for TokenDistributionInfo {}
 
-// TODO(unification pass 2): TokenDistributionType has Default but no canonical-trait impl
-// (the impls are on TokenDistributionTypeWithResolvedRecipient and TokenDistributionInfo,
-// neither of which has Default). Add tests once explicit fixtures are written.
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenDistributionType {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenDistributionType {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for TokenDistributionKey {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for TokenDistributionKey {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests_token_distribution_type_and_key {
+    use super::*;
+    use crate::serialization::{JsonConvertible, ValueConvertible};
+    use platform_value::{platform_value, Value};
+    use serde_json::json;
+
+    #[test]
+    fn token_distribution_type_round_trips_all_variants() {
+        // Unit-only enum: serde default emits bare PascalCase strings on both
+        // wire formats.
+        let cases = [
+            (TokenDistributionType::PreProgrammed, "PreProgrammed"),
+            (TokenDistributionType::Perpetual, "Perpetual"),
+        ];
+        for (original, expected) in cases {
+            let json_v = original.to_json().expect("to_json");
+            assert_eq!(json_v, json!(expected));
+            assert_eq!(
+                TokenDistributionType::from_json(json_v).expect("from_json"),
+                original
+            );
+            let value = original.to_object().expect("to_object");
+            assert_eq!(value, platform_value!(expected));
+            assert_eq!(
+                TokenDistributionType::from_object(value).expect("from_object"),
+                original
+            );
+        }
+    }
+
+    fn key_fixture() -> TokenDistributionKey {
+        TokenDistributionKey {
+            token_id: Identifier::new([0x42; 32]),
+            recipient: TokenDistributionRecipient::EvonodesByParticipation,
+            distribution_type: TokenDistributionType::Perpetual,
+        }
+    }
+
+    #[test]
+    fn token_distribution_key_json_round_trip_with_full_wire_shape() {
+        let original = key_fixture();
+        let json = original.to_json().expect("to_json");
+        // `recipient` uses TokenDistributionRecipient's custom internally-tagged
+        // shape; `token_id` renders as base58. Field names are snake_case (no
+        // rename_all on this struct — internal key type, not user-authored JSON).
+        assert_eq!(
+            json,
+            json!({
+                "token_id": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
+                "recipient": {"type": "evonodesByParticipation"},
+                "distribution_type": "Perpetual",
+            })
+        );
+        let recovered = TokenDistributionKey::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn token_distribution_key_value_round_trip_with_full_wire_shape() {
+        let original = key_fixture();
+        let value = original.to_object().expect("to_object");
+        let expected = Value::Map(vec![
+            (
+                Value::Text("token_id".to_string()),
+                Value::Identifier([0x42; 32]),
+            ),
+            (
+                Value::Text("recipient".to_string()),
+                Value::Map(vec![(
+                    Value::Text("type".to_string()),
+                    Value::Text("evonodesByParticipation".to_string()),
+                )]),
+            ),
+            (
+                Value::Text("distribution_type".to_string()),
+                Value::Text("Perpetual".to_string()),
+            ),
+        ]);
+        assert_eq!(value, expected);
+        let recovered = TokenDistributionKey::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
 
 #[cfg(all(
     test,
