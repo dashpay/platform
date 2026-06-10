@@ -642,7 +642,11 @@ mod register_wallet_duplicate_tests {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(NoopPersister);
         let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-        Arc::new(PlatformWalletManager::new(sdk, persister, vec![event_handler]))
+        Arc::new(PlatformWalletManager::new(
+            sdk,
+            persister,
+            vec![event_handler],
+        ))
     }
 
     /// Registering the SAME wallet (same mnemonic/seed + network) twice
