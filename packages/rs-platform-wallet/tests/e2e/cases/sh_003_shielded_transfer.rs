@@ -87,7 +87,7 @@ async fn sh_003_shielded_transfer() {
         .expect("account 1 default Orchard address");
     s.test_wallet
         .platform_wallet()
-        .shielded_transfer_to(&handle.coordinator, 0, &acct1_addr, TRANSFER_AMOUNT, prover)
+        .shielded_transfer_to(&handle.coordinator, 0, &acct1_addr, TRANSFER_AMOUNT, [0u8; 36], prover)
         .await
         .expect("shielded_transfer_to");
 

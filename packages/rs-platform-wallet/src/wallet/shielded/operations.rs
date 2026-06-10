@@ -448,6 +448,9 @@ pub fn build_shield_from_asset_lock_st<P: OrchardProver>(
         private_key,
         prover,
         [0u8; 36],
+        // Encrypt the output under the account's own OVK so the wallet's
+        // shielded sync can recover this shield from chain data alone.
+        Some(keys.outgoing_viewing_key.clone()),
         // No separate surplus recipient: any asset-lock surplus folds into the
         // fee pools (capped at `shielded_implicit_fee_cap`).
         None,

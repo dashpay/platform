@@ -59,7 +59,7 @@ async fn sh_009_zero_amount_rejected() {
         .expect("account 1 default Orchard address");
     let t1 = Instant::now();
     let transfer = pw
-        .shielded_transfer_to(&handle.coordinator, 0, &acct1_addr, 0, prover)
+        .shielded_transfer_to(&handle.coordinator, 0, &acct1_addr, 0, [0u8; 36], prover)
         .await;
     assert!(
         transfer.is_err(),

@@ -120,7 +120,7 @@ async fn sh_007_pre_bind_note_witnessable() {
     // mark-every-position policy.
     a.test_wallet
         .platform_wallet()
-        .shielded_transfer_to(&coordinator, 0, &b_addr_43, NOTE_TO_B, prover)
+        .shielded_transfer_to(&coordinator, 0, &b_addr_43, NOTE_TO_B, [0u8; 36], prover)
         .await
         .expect("A → B private transfer");
     let _ = coordinator.sync(true).await;
