@@ -642,6 +642,13 @@ extension PlatformWalletManager {
     /// the bound wallet's own key. Returns the 32-byte new identity id
     /// (`double_sha256(sorted nullifiers)`).
     ///
+    /// `identityIndex` is the DIP-9 identity-registration slot the new
+    /// identity occupies. On a successful broadcast the Rust wallet
+    /// registers the proof-verified identity at this slot in its local
+    /// `IdentityManager` (mirroring address-funded registration), which
+    /// drives the persister callbacks that create the app's identity
+    /// row. This wrapper only marshals it across the FFI.
+    ///
     /// `sendToAddressOnCreationFailure` is the REQUIRED fallback
     /// platform address as raw `PlatformAddress` storage bytes (21
     /// bytes: 1-byte variant tag + 20-byte hash, the encoding
@@ -656,6 +663,7 @@ extension PlatformWalletManager {
     public func shieldedIdentityCreateFromPool(
         walletId: Data,
         account: UInt32 = 0,
+        identityIndex: UInt32,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
         denomination: UInt64,
         sendToAddressOnCreationFailure: Data,
@@ -734,6 +742,7 @@ extension PlatformWalletManager {
                                 handle,
                                 widPtr,
                                 account,
+                                identityIndex,
                                 ffiRowsPtr,
                                 UInt(ffiRowsCount),
                                 denomination,

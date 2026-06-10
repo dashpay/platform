@@ -397,6 +397,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 /// denomination + full key set) + a per-key proof-of-possession produced via
 /// `signer_identity_handle`. There is NO platform identity signature.
 ///
+/// `identity_index` is the DIP-9 identity-registration slot the new identity occupies. On a
+/// successful broadcast the wallet registers the proof-verified identity at this slot in its local
+/// `IdentityManager` (mirroring address-funded registration), which drives the host persister's
+/// identity-row emit. It carries no decision here — it is marshalled straight through to the wallet.
+///
 /// On success the 32-byte new identity id (`double_sha256(sorted nullifiers)`) is written to
 /// `out_identity_id`. The id is deterministic in the spent notes, so the host can also predict it
 /// independently if needed.
@@ -425,6 +430,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
     handle: Handle,
     wallet_id_bytes: *const u8,
     account: u32,
+    identity_index: u32,
     identity_pubkeys: *const IdentityPubkeyFFI,
     identity_pubkeys_count: usize,
     denomination: u64,
@@ -502,6 +508,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
             .shielded_identity_create_from_pool(
                 &coordinator,
                 account,
+                identity_index,
                 public_keys,
                 denomination,
                 send_to_address_on_creation_failure,
