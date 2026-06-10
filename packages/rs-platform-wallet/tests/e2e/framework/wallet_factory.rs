@@ -248,6 +248,29 @@ impl TestWallet {
             .map_err(wallet_err)
     }
 
+    /// Like [`Self::transfer`] but with `[DeductFromInput(0)]` — the fee is
+    /// drawn from the fee target's *remaining* input balance, so the recipient
+    /// receives the exact output amount. This is the fee strategy whose
+    /// input-headroom reservation the #3040 safety multiplier widens; PA-3040
+    /// drives it to prove the workaround clears Drive's chain-time fee.
+    pub async fn transfer_deduct_from_input(
+        &self,
+        outputs: BTreeMap<PlatformAddress, Credits>,
+    ) -> FrameworkResult<PlatformAddressChangeSet> {
+        self.wallet
+            .platform()
+            .transfer(
+                DEFAULT_ACCOUNT_INDEX_PUB,
+                InputSelection::Auto,
+                outputs.into_iter().collect(),
+                bank_fee_strategy(),
+                Some(PlatformVersion::latest()),
+                &self.signer,
+            )
+            .await
+            .map_err(wallet_err)
+    }
+
     /// Like [`Self::transfer`] but with an explicit input list
     /// (`InputSelection::Explicit`). Used by tests that need to
     /// drive the SDK's address-funds path without the wallet's
@@ -831,6 +854,14 @@ impl SetupGuard {
         if result.is_ok() {
             self.teardown_called = true;
         }
+
+        // Universal shielded-registry bound: drop this wallet from the
+        // process-shared coordinator so its SubwalletIds don't linger and
+        // tax every later case's per-batch trial-decrypt. Idempotent and a
+        // no-op for non-shielded cases (the shared coordinator was never
+        // built) and for cases that already swept-and-unregistered.
+        #[cfg(feature = "shielded")]
+        super::shielded::unregister_shared_coordinator(self.test_wallet.id()).await;
 
         // Post-sweep Core top-up: the sweep just returned this test's
         // funds to the bank, so this is the cheapest point to refill

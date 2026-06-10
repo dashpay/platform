@@ -48,19 +48,22 @@
 //! `foreign_platform_address` helper) wires the test body in without
 //! re-discovering the bug class.
 //!
-//! ## FAILS UNTIL
+//! ## Blocked on
 //!
-//! Either:
-//! - The harness gains a foreign-address builder (then this test
-//!   should drive `transfer` / `withdraw` with the foreign address
-//!   and pin the changeset shape from the spec's assertion list); OR
+//! This scaffold is `#[ignore]`d (it has no assertions yet, so without the
+//! ignore it would report a meaningless PASS). It is unblocked when either:
+//! - The harness gains a foreign-address builder (then this test should drive
+//!   `transfer` / `withdraw` with the foreign address and pin the changeset
+//!   shape from the spec's assertion list); OR
 //! - The bug is fixed (then this test inverts to assert the typed
 //!   `AddressNotInPool` error).
 
-/// Placeholder test that documents the scaffold. Kept under
-/// a clear unblocker description so the next pass
-/// can drop the ignore and fill in the body.
+/// Ignored scaffold for the Found-004 bug class — no assertions yet. The
+/// `#[ignore]` keeps it visible in the suite summary as explicitly skipped
+/// rather than a silent green; the next harness extension drops the ignore and
+/// fills in the body per the TODO below.
 #[test]
+#[ignore = "scaffold — blocked on a foreign-address harness builder; see module docs"]
 fn found_004_fund_from_asset_lock_silent_fallback_scaffold() {
     // TODO(harness): once a `foreign_platform_address` builder lands
     // in `framework/wallet_factory.rs`, port the spec's scenario into

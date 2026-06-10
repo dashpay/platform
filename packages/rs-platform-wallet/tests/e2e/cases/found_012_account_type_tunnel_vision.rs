@@ -35,16 +35,20 @@
 //! - A way to track an `AssetLockBuilder` build that draws from the
 //!   CoinJoin account.
 //!
-//! ## FAILS UNTIL
+//! ## Blocked on
 //!
-//! Harness gains a CoinJoin-funded test wallet helper. Once that
-//! lands, the scenario in TEST_SPEC.md Found-012 wires straight into
-//! this file's body — wire the harness extension and fill in the
-//! `TODO(harness)` block below.
+//! This scaffold is `#[ignore]`d (no assertions yet, so without the ignore it
+//! would report a meaningless PASS). It is unblocked when the harness gains a
+//! CoinJoin-funded test wallet helper. Once that lands, the scenario in
+//! TEST_SPEC.md Found-012 wires straight into this file's body — wire the
+//! harness extension and fill in the `TODO(harness)` block below.
 
-/// Placeholder bug pin for Found-012. Gated behind the `e2e` cargo feature until the
-/// harness gains a CoinJoin-funded wallet builder.
+/// Ignored scaffold for the Found-012 bug class — no assertions yet. The
+/// `#[ignore]` keeps it visible in the suite summary as explicitly skipped
+/// rather than a silent green; the next harness extension drops the ignore and
+/// fills in the body per the TODO below.
 #[test]
+#[ignore = "scaffold — blocked on a CoinJoin-funded wallet harness builder; see module docs"]
 fn found_012_account_type_tunnel_vision_scaffold() {
     // TODO(harness): once a CoinJoin-funded test wallet helper lands,
     // port the spec's scenario into this body:

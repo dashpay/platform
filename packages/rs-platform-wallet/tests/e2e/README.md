@@ -117,7 +117,7 @@ cp packages/rs-platform-wallet/tests/.env.example \
 | `PLATFORM_WALLET_E2E_DEVNET_GENESIS_TIME` | no | built-in `1417713337` | Devnet genesis block time (unix seconds). |
 | `PLATFORM_WALLET_E2E_DEVNET_GENESIS_BITS` | no | built-in `207fffff` | Devnet genesis compact target `nBits` (hex). |
 | `PLATFORM_WALLET_E2E_DEVNET_GENESIS_NONCE` | no | built-in `1096447` | Devnet genesis block nonce (decimal). |
-| `RUST_LOG` | no | `info,rs_platform_wallet=debug` | Tracing filter passed to `tracing-subscriber`. Increase to `debug` or `trace` for detailed sync output. |
+| `RUST_LOG` | no | `info,platform_wallet=debug` | Tracing filter passed to `tracing-subscriber`. Increase to `debug` or `trace` for detailed sync output. |
 
 Shell-exported variables take precedence — `dotenvy::from_path` does NOT overwrite
 variables already set in the process environment. The workspace `.gitignore` covers
@@ -235,6 +235,25 @@ cargo test --test e2e --features e2e -- --nocapture transfer_between_two_platfor
 
 Tracing output (SPV sync events, balance polls, sweep results) is written to stderr.
 `--nocapture` keeps it visible in the terminal.
+
+### Logging on a live devnet
+
+A blanket `RUST_LOG=trace` against a **live devnet** is a footgun. During SPV sync
+the Orchard `shardtree` and the `h2` HTTP/2 crates emit trace at hot-loop volume —
+we measured **~8.4 GB of log output in ~4 minutes** of sync. That can fill the disk
+and stall or kill the run before a single case completes.
+
+Suppress those two crates while keeping trace everywhere else:
+
+```bash
+RUST_LOG=trace,shardtree=warn,h2=warn cargo test --test e2e --features e2e -- --nocapture
+```
+
+Or scope trace narrowly to the code you actually care about:
+
+```bash
+RUST_LOG=warn,platform_wallet=trace,dash_spv=info cargo test --test e2e --features e2e -- --nocapture
+```
 
 ---
 

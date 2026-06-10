@@ -50,14 +50,14 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", branch = "fix/sml-extnetinfo-v3-decode" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", branch = "fix/sml-extnetinfo-v3-decode" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", branch = "fix/sml-extnetinfo-v3-decode" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", branch = "fix/sml-extnetinfo-v3-decode" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", branch = "fix/sml-extnetinfo-v3-decode" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", branch = "fix/sml-extnetinfo-v3-decode" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", branch = "fix/sml-extnetinfo-v3-decode" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", branch = "fix/sml-extnetinfo-v3-decode" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
 
 # Optimize heavy crypto crates even in dev/test builds so that
 # Halo 2 proof generation and verification run at near-release speed.

@@ -732,9 +732,10 @@ pub async fn shield_from_platform(bank: &BankWallet, credits: Credits, config: &
         tracing::warn!(
             target: "platform_wallet::e2e::bank_rebalance",
             credits,
-            "E4 shield skipped: shielded pool not configured/bound (prover \
-             warm-up unavailable). Set PLATFORM_WALLET_E2E_MIN_SHIELDED_CREDITS=0 \
-             to disable shielded pre-funding, or configure shielded support."
+            "E4 shield skipped: the bank does not bind a shielded pool at \
+             setup (unimplemented — SH cases self-fund their own per-test \
+             shielded pool). Set PLATFORM_WALLET_E2E_MIN_SHIELDED_CREDITS=0 \
+             to silence this floor check."
         );
         return;
     }

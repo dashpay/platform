@@ -41,15 +41,16 @@ use dpp::fee::Credits;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
-use dpp::prelude::Identifier;
+use dpp::prelude::{AssetLockProof, Identifier};
 use dpp::shielded::builder::{
-    build_identity_create_from_shielded_pool_transition, build_shield_transition,
-    build_shielded_transfer_transition, build_shielded_withdrawal_transition,
-    build_unshield_transition, OrchardProver, SpendableNote,
+    build_identity_create_from_shielded_pool_transition, build_shield_from_asset_lock_transition,
+    build_shield_transition, build_shielded_transfer_transition,
+    build_shielded_withdrawal_transition, build_unshield_transition, OrchardProver, SpendableNote,
 };
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::StateTransition;
 use dpp::withdrawal::Pooling;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
@@ -199,6 +200,10 @@ fn reserve_shield_fee_on_input_0(
 /// Shield credits from transparent platform addresses into the
 /// shielded pool, with the resulting note assigned to `account`'s
 /// default Orchard payment address derived from `keys`.
+///
+/// Thin wrapper over [`build_shield_st`] + broadcast — retained for
+/// backward compatibility so existing callers
+/// (`PlatformWallet::shielded_shield_from_account`) are unchanged.
 #[allow(clippy::too_many_arguments)]
 pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
@@ -209,6 +214,35 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
     signer: &Sig,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
+    let (state_transition, claimed_inputs) =
+        build_shield_st(sdk, keys, account, inputs, amount, signer, prover).await?;
+
+    trace!("Shield credits: state transition built, broadcasting...");
+    broadcast_shield_st(sdk, &state_transition, &claimed_inputs).await?;
+
+    info!(account, credits = amount, "Shield broadcast succeeded");
+    Ok(())
+}
+
+/// Build (fetch nonces + prove + sign) a Type-15 shield state transition
+/// WITHOUT broadcasting it. Returns the signed transition plus the
+/// claimed-inputs map (the latter enriches the broadcast-time
+/// `AddressesNotEnoughFunds` diagnostic).
+///
+/// This is the capture seam: callers that need the serialized transition
+/// (e.g. adversarial byte-mutation tests, custom broadcast policies) take
+/// it here and broadcast separately. [`shield`] is the build-then-broadcast
+/// wrapper.
+#[allow(clippy::too_many_arguments)]
+pub async fn build_shield_st<Sig: Signer<PlatformAddress>, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    keys: &OrchardKeySet,
+    account: u32,
+    inputs: BTreeMap<PlatformAddress, Credits>,
+    amount: u64,
+    signer: &Sig,
+    prover: &P,
+) -> Result<(StateTransition, BTreeMap<PlatformAddress, (u32, Credits)>), PlatformWalletError> {
     let recipient_addr = default_orchard_address(keys)?;
 
     // Reserve the flat shielded fee `F` on top of `amount` in the input
@@ -223,8 +257,9 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
     // The fee is loaded onto the smallest-key input — the `DeductFromInput(0)`
     // fee-strategy payer (input 0 == BTreeMap-smallest address). The caller
     // (`shielded_shield_from_account`) reserves ~1e9 credits of unclaimed
-    // headroom on input 0 specifically for this, and `F` (~1.2e8 credits)
-    // fits well within it. Inflating the claim BEFORE the fetch lets the
+    // headroom on input 0 specifically for this, and `F` (162,851,200 credits
+    // ≈ 1.63e8 at protocol V8: 100M proof-verification + 2×22M per-action +
+    // ~18.85M storage) fits well within it. Inflating the claim BEFORE the fetch lets the
     // single hard balance check below validate the fee-inclusive claim
     // against the on-chain balance in one shot — no second round-trip and
     // no claim that outruns its balance check.
@@ -292,14 +327,19 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
     .await
     .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
-    trace!("Shield credits: state transition built, broadcasting...");
+    Ok((state_transition, claimed_inputs))
+}
+
+/// Broadcast a built shield transition with the rich
+/// `AddressesNotEnoughFunds` diagnostic. Waits for proven execution (not
+/// just relay-ACK) so the host only sees success once Platform has
+/// included the transition.
+async fn broadcast_shield_st(
+    sdk: &Arc<dash_sdk::Sdk>,
+    state_transition: &StateTransition,
+    claimed_inputs: &BTreeMap<PlatformAddress, (u32, Credits)>,
+) -> Result<(), PlatformWalletError> {
     let network = sdk.network;
-    // Wait for proven execution (not just relay-ACK) so the host only
-    // sees success once Platform has actually included the transition —
-    // matching the spend-side flows (unshield/transfer/withdraw). A
-    // DAPI-level ACK alone could otherwise mask a later Platform
-    // rejection. The proven result is discarded; we only need the
-    // confirmation.
     state_transition
         .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
         .await
@@ -326,15 +366,89 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
                 PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
             }
         })?;
-
-    info!(account, credits = amount, "Shield broadcast succeeded");
     Ok(())
 }
 
 // -------------------------------------------------------------------------
 // ShieldFromAssetLock: Core L1 asset lock -> shielded pool (Type 18)
-// (orchestrated entry point lives in `wallet/shielded/fund_from_asset_lock.rs`)
 // -------------------------------------------------------------------------
+
+/// Shield credits from a Core L1 asset lock into the shielded
+/// pool, with the resulting note assigned to `account`'s default
+/// Orchard payment address derived from `keys`.
+///
+/// Thin wrapper over [`build_shield_from_asset_lock_st`] + broadcast.
+pub async fn shield_from_asset_lock<P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    keys: &OrchardKeySet,
+    account: u32,
+    asset_lock_proof: AssetLockProof,
+    private_key: &[u8],
+    amount: u64,
+    prover: &P,
+) -> Result<(), PlatformWalletError> {
+    let state_transition = build_shield_from_asset_lock_st(
+        sdk,
+        keys,
+        account,
+        asset_lock_proof,
+        private_key,
+        amount,
+        prover,
+    )?;
+
+    trace!("Shield from asset lock: state transition built, broadcasting...");
+    // Wait for proven execution rather than relay-ACK. This matters most
+    // for Type 18: the asset-lock proof is single-use, so a false-
+    // positive success on a transition Platform later rejects would
+    // strand the user's L1 outpoint with no in-app signal. The proven
+    // result is discarded; we only need the confirmation.
+    broadcast_st(sdk, &state_transition).await?;
+
+    info!(
+        account,
+        credits = amount,
+        "Shield from asset lock broadcast succeeded"
+    );
+    Ok(())
+}
+
+/// Build a Type-18 shield-from-asset-lock state transition WITHOUT
+/// broadcasting. The capture seam for the single-use asset-lock proof —
+/// callers that need to control broadcast (e.g. the SH-035 replay test)
+/// take the transition here. [`shield_from_asset_lock`] is the
+/// build-then-broadcast wrapper.
+pub fn build_shield_from_asset_lock_st<P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    keys: &OrchardKeySet,
+    account: u32,
+    asset_lock_proof: AssetLockProof,
+    private_key: &[u8],
+    amount: u64,
+    prover: &P,
+) -> Result<StateTransition, PlatformWalletError> {
+    let recipient_addr = default_orchard_address(keys)?;
+
+    info!(
+        account,
+        credits = amount,
+        "Shield from asset lock: building state transition"
+    );
+
+    build_shield_from_asset_lock_transition(
+        &recipient_addr,
+        amount,
+        asset_lock_proof,
+        private_key,
+        prover,
+        [0u8; 36],
+        // No separate surplus recipient: any asset-lock surplus folds into the
+        // fee pools (capped at `shielded_implicit_fee_cap`).
+        None,
+        sdk.version(),
+    )
+    .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))
+}
 
 // -------------------------------------------------------------------------
 // Unshield: shielded pool -> platform address (Type 17)
@@ -354,7 +468,6 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     amount: u64,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
-    let change_addr = default_orchard_address(keys)?;
     let id = SubwalletId::new(wallet_id, account);
 
     // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
@@ -380,36 +493,20 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     // From here on every error path must release the reservation
     // taken by `reserve_unspent_notes`.
     let result = async {
-        let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
-
-        // The builder computes and returns the fee authoritatively; `exact_fee` (== the
-        // minimum) was already used above for note reservation.
-        let (state_transition, fee_used) = build_unshield_transition(
-            spends,
-            *to_address,
+        let state_transition = build_unshield_st(
+            sdk,
+            store,
+            keys,
+            to_address,
             amount,
-            &change_addr,
-            &keys.full_viewing_key,
-            &keys.spend_auth_key,
-            anchor,
+            exact_fee,
+            &selected_notes,
             prover,
-            [0u8; 36],
-            sdk.version(),
         )
-        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-        // The builder's fee and the wallet's reserved `exact_fee` both come from
-        // compute_shielded_unshield_fee with the same action count; lock that they agree.
-        debug_assert_eq!(
-            fee_used, exact_fee,
-            "builder fee must match the reserved unshield fee"
-        );
+        .await?;
 
         trace!("Unshield: state transition built, broadcasting...");
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
-            .await
-            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
-        Ok::<(), PlatformWalletError>(())
+        broadcast_st(sdk, &state_transition).await
     }
     .await;
 
@@ -468,7 +565,6 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
     let recipient_addr = payment_address_to_orchard(to_address)?;
-    let change_addr = default_orchard_address(keys)?;
     let id = SubwalletId::new(wallet_id, account);
 
     // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so reserve
@@ -486,36 +582,20 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     );
 
     let result = async {
-        let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
-
-        // The builder computes and returns the fee authoritatively; `exact_fee` (== the
-        // minimum) was already used above for note reservation.
-        let (state_transition, fee_used) = build_shielded_transfer_transition(
-            spends,
+        let state_transition = build_transfer_st(
+            sdk,
+            store,
+            keys,
             &recipient_addr,
             amount,
-            &change_addr,
-            &keys.full_viewing_key,
-            &keys.spend_auth_key,
-            anchor,
+            exact_fee,
+            &selected_notes,
             prover,
-            [0u8; 36],
-            sdk.version(),
         )
-        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-        // The builder's fee and the wallet's reserved `exact_fee` both come from
-        // compute_minimum_shielded_fee with the same action count; lock that they agree.
-        debug_assert_eq!(
-            fee_used, exact_fee,
-            "builder fee must match the reserved minimum fee"
-        );
+        .await?;
 
         trace!("Shielded transfer: state transition built, broadcasting...");
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
-            .await
-            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
-        Ok::<(), PlatformWalletError>(())
+        broadcast_st(sdk, &state_transition).await
     }
     .await;
 
@@ -563,7 +643,6 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     core_fee_per_byte: u32,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
-    let change_addr = default_orchard_address(keys)?;
     let id = SubwalletId::new(wallet_id, account);
     let output_script = CoreScript::from_bytes(to_address.script_pubkey().to_bytes());
 
@@ -588,39 +667,21 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     );
 
     let result = async {
-        let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
-
-        // The builder computes and returns the fee authoritatively; `exact_fee` (== the
-        // minimum) was already used above for note reservation.
-        let (state_transition, fee_used) = build_shielded_withdrawal_transition(
-            spends,
-            amount,
+        let state_transition = build_withdraw_st(
+            sdk,
+            store,
+            keys,
             output_script,
+            amount,
             core_fee_per_byte,
-            // Consensus pins shielded-withdrawal pooling to Never (validate_structure).
-            Pooling::Never,
-            &change_addr,
-            &keys.full_viewing_key,
-            &keys.spend_auth_key,
-            anchor,
+            exact_fee,
+            &selected_notes,
             prover,
-            [0u8; 36],
-            sdk.version(),
         )
-        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-        // The builder's fee and the wallet's reserved `exact_fee` both come from
-        // compute_shielded_withdrawal_fee with the same action count; lock that they agree.
-        debug_assert_eq!(
-            fee_used, exact_fee,
-            "builder fee must match the reserved withdrawal fee"
-        );
+        .await?;
 
         trace!("Shielded withdrawal: state transition built, broadcasting...");
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
-            .await
-            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
-        Ok::<(), PlatformWalletError>(())
+        broadcast_st(sdk, &state_transition).await
     }
     .await;
 
@@ -648,6 +709,164 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             Err(e)
         }
     }
+}
+
+// -------------------------------------------------------------------------
+// Build seams (no broadcast)
+// -------------------------------------------------------------------------
+
+/// Build (extract witnesses + prove + sign) a Type-17 unshield state
+/// transition WITHOUT broadcasting. `selected_notes` are the already-
+/// reserved spend inputs and `exact_fee` the fee folded into the spend.
+///
+/// The capture seam for unshield: callers that need the serialized
+/// transition take it here. The combined [`unshield`] wrapper handles
+/// reservation + finalize/cancel around this build.
+#[allow(clippy::too_many_arguments)]
+pub async fn build_unshield_st<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    keys: &OrchardKeySet,
+    to_address: &PlatformAddress,
+    amount: u64,
+    exact_fee: u64,
+    selected_notes: &[ShieldedNote],
+    prover: &P,
+) -> Result<StateTransition, PlatformWalletError> {
+    let change_addr = default_orchard_address(keys)?;
+    let (spends, anchor) = extract_spends_and_anchor(store, selected_notes).await?;
+    // The builder computes and returns the fee authoritatively; `exact_fee` (== the
+    // minimum) was already used upstream for note reservation.
+    let (state_transition, fee_used) = build_unshield_transition(
+        spends,
+        *to_address,
+        amount,
+        &change_addr,
+        &keys.full_viewing_key,
+        &keys.spend_auth_key,
+        anchor,
+        prover,
+        [0u8; 36],
+        sdk.version(),
+    )
+    .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+    // The builder's fee is authoritative; `exact_fee` is the caller's
+    // reserved estimate. The production wrappers reserve the same
+    // unshield fee, but the build-against-a-chosen-note seam lets a
+    // caller pass an arbitrary fee, so a mismatch is informational, not
+    // an invariant violation.
+    if fee_used != exact_fee {
+        trace!(
+            fee_used,
+            exact_fee,
+            "unshield builder fee differs from caller's reserved fee"
+        );
+    }
+    Ok(state_transition)
+}
+
+/// Build a Type-16 shielded-transfer state transition WITHOUT
+/// broadcasting. Capture seam paralleling [`build_unshield_st`].
+#[allow(clippy::too_many_arguments)]
+pub async fn build_transfer_st<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    keys: &OrchardKeySet,
+    recipient_addr: &OrchardAddress,
+    amount: u64,
+    exact_fee: u64,
+    selected_notes: &[ShieldedNote],
+    prover: &P,
+) -> Result<StateTransition, PlatformWalletError> {
+    let change_addr = default_orchard_address(keys)?;
+    let (spends, anchor) = extract_spends_and_anchor(store, selected_notes).await?;
+    // The builder computes and returns the fee authoritatively; `exact_fee` (== the
+    // minimum) was already used upstream for note reservation.
+    let (state_transition, fee_used) = build_shielded_transfer_transition(
+        spends,
+        recipient_addr,
+        amount,
+        &change_addr,
+        &keys.full_viewing_key,
+        &keys.spend_auth_key,
+        anchor,
+        prover,
+        [0u8; 36],
+        sdk.version(),
+    )
+    .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+    // Authoritative builder fee vs the caller's reserved estimate — a
+    // mismatch is informational (the seam permits arbitrary fees), not an
+    // invariant violation. See `build_unshield_st`.
+    if fee_used != exact_fee {
+        trace!(
+            fee_used,
+            exact_fee,
+            "transfer builder fee differs from caller's reserved fee"
+        );
+    }
+    Ok(state_transition)
+}
+
+/// Build a Type-19 shielded-withdrawal state transition WITHOUT
+/// broadcasting. Capture seam paralleling [`build_unshield_st`].
+#[allow(clippy::too_many_arguments)]
+pub async fn build_withdraw_st<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    keys: &OrchardKeySet,
+    output_script: CoreScript,
+    amount: u64,
+    core_fee_per_byte: u32,
+    exact_fee: u64,
+    selected_notes: &[ShieldedNote],
+    prover: &P,
+) -> Result<StateTransition, PlatformWalletError> {
+    let change_addr = default_orchard_address(keys)?;
+    let (spends, anchor) = extract_spends_and_anchor(store, selected_notes).await?;
+    // The builder computes and returns the fee authoritatively; `exact_fee` (== the
+    // minimum) was already used upstream for note reservation.
+    let (state_transition, fee_used) = build_shielded_withdrawal_transition(
+        spends,
+        amount,
+        output_script,
+        core_fee_per_byte,
+        // Consensus pins shielded-withdrawal pooling to Never (validate_structure).
+        Pooling::Never,
+        &change_addr,
+        &keys.full_viewing_key,
+        &keys.spend_auth_key,
+        anchor,
+        prover,
+        [0u8; 36],
+        sdk.version(),
+    )
+    .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+    // Authoritative builder fee vs the caller's reserved estimate — a
+    // mismatch is informational (the seam permits arbitrary fees), not an
+    // invariant violation. See `build_unshield_st`.
+    if fee_used != exact_fee {
+        trace!(
+            fee_used,
+            exact_fee,
+            "withdrawal builder fee differs from caller's reserved fee"
+        );
+    }
+    Ok(state_transition)
+}
+
+/// Broadcast a built shielded spend transition and wait for proven
+/// execution. Shared by the unshield/transfer/withdraw/asset-lock
+/// wrappers; maps the broadcast error to `ShieldedBroadcastFailed`.
+pub async fn broadcast_st(
+    sdk: &Arc<dash_sdk::Sdk>,
+    state_transition: &StateTransition,
+) -> Result<(), PlatformWalletError> {
+    state_transition
+        .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
+        .await
+        .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
+    Ok(())
 }
 
 // -------------------------------------------------------------------------
@@ -1064,6 +1283,93 @@ fn deserialize_note(data: &[u8]) -> Option<grovedb_commitment_tree::Note> {
     let rseed = RandomSeed::from_bytes(rseed_bytes, &rho).into_option()?;
 
     Note::from_parts(recipient, value, rho, rseed).into_option()
+}
+
+// -------------------------------------------------------------------------
+// Test-only spend-assembly seams (`test-utils` feature)
+// -------------------------------------------------------------------------
+
+/// Test-only re-exports of the spend-assembly internals the adversarial
+/// e2e cases drive directly. Gated behind `test-utils` (pulled in by
+/// `e2e`), NEVER in production builds — these bypass the wallet's spend
+/// guards (reservation, balance, fee) by design so a test can build a
+/// transition against a CHOSEN note (double-spend, replay,
+/// intra-bundle-dup) and reach Drive.
+#[cfg(feature = "test-utils")]
+pub mod test_utils {
+    use super::*;
+
+    /// Reserve+select unspent notes for an unshield (the production
+    /// reservation path). Exposed so a test can observe / drive the
+    /// reservation contract. Reserves against `ShieldedFeeKind::Unshield`
+    /// to match the unshield capture seam (`capture_unshield_st`).
+    pub async fn reserve_unspent_notes_for_test<S: ShieldedStore>(
+        sdk: &Arc<dash_sdk::Sdk>,
+        store: &Arc<RwLock<S>>,
+        id: SubwalletId,
+        amount: u64,
+        outputs: usize,
+    ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
+        super::reserve_unspent_notes(sdk, store, id, amount, outputs, ShieldedFeeKind::Unshield)
+            .await
+    }
+
+    /// Extract `SpendableNote`s + the tree anchor for a chosen note set,
+    /// WITHOUT reserving. The skip-reservation seam: a test passes an
+    /// already-spent or duplicated note to build a transition the wallet
+    /// would never assemble, then broadcasts it to prove the BACKEND
+    /// rejects (double-spend SH-020, replay SH-021, intra-bundle-dup
+    /// SH-033).
+    pub async fn extract_spends_and_anchor_for_test<S: ShieldedStore>(
+        store: &Arc<RwLock<S>>,
+        notes: &[ShieldedNote],
+    ) -> Result<(Vec<SpendableNote>, Anchor), PlatformWalletError> {
+        super::extract_spends_and_anchor(store, notes).await
+    }
+
+    /// All unspent notes for `id`, so a test can capture a note to build
+    /// a second (double-spend / replay) transition against.
+    pub async fn unspent_notes_for_test<S: ShieldedStore>(
+        store: &Arc<RwLock<S>>,
+        id: SubwalletId,
+    ) -> Result<Vec<ShieldedNote>, PlatformWalletError> {
+        let store = store.read().await;
+        store
+            .get_unspent_notes(id)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))
+    }
+
+    /// Derive the one-time asset-lock private key (32 secret bytes) from
+    /// `(seed, path)`, where `path` is the `DerivationPath` the asset-lock
+    /// builder returned alongside the proof.
+    ///
+    /// `shield_from_asset_lock` takes the key as `&[u8]`; the builder
+    /// returns only the proof + path, so this mirrors the production
+    /// seed → master xpriv → `derive_priv` derivation (see
+    /// `core/broadcast.rs`) to materialize the key test-side for SH-018 /
+    /// SH-035. Test-only — never materialize spend keys in production.
+    pub fn derive_asset_lock_private_key(
+        seed: &[u8],
+        network: dashcore::Network,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<[u8; 32], PlatformWalletError> {
+        use key_wallet::dashcore::secp256k1::Secp256k1;
+        use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
+
+        let root_priv = RootExtendedPrivKey::new_master(seed).map_err(|e| {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "derive_asset_lock_private_key: invalid seed: {e}"
+            ))
+        })?;
+        let master = root_priv.to_extended_priv_key(network);
+        let secp = Secp256k1::new();
+        let derived = master.derive_priv(&secp, path).map_err(|e| {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "derive_asset_lock_private_key: derive_priv: {e}"
+            ))
+        })?;
+        Ok(derived.private_key.secret_bytes())
+    }
 }
 
 #[cfg(test)]

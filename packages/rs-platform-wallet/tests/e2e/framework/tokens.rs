@@ -39,7 +39,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use dash_sdk::platform::transition::put_contract::PutContract;
 use dash_sdk::platform::{Fetch, FetchMany};
@@ -802,32 +802,34 @@ pub async fn mint_to(
     // different proof path than the per-identity balance and may lag
     // it across replicas; TK-006 reads supply directly after this
     // helper returns and was the failing call site without this gate.
-    let deadline = Instant::now() + MINT_POST_BROADCAST_WAIT;
-    loop {
-        match token_supply_raw(ctx.sdk(), contract_id, position).await {
-            Ok(current) if current >= supply_target => break,
-            Ok(current) => tracing::debug!(
-                target: "platform_wallet::e2e::tokens",
-                ?contract_id,
-                position,
-                current,
-                expected = supply_target,
-                "token supply below post-mint target; retrying"
-            ),
-            Err(err) => tracing::debug!(
-                target: "platform_wallet::e2e::tokens",
-                error = %err,
-                "token supply fetch failed during mint_to post-wait; retrying"
-            ),
-        }
-        if Instant::now() >= deadline {
-            return Err(FrameworkError::Cleanup(format!(
-                "mint_to: token supply never reached pre+amount ({supply_target}) within {MINT_POST_BROADCAST_WAIT:?} \
-                 (contract={contract_id} position={position})"
-            )));
-        }
-        tokio::time::sleep(super::wait::DEFAULT_POLL_INTERVAL).await;
-    }
+    // Streak-gated for the same round-robin-replica reason as
+    // `wait_for_token_balance`: a single supply hit only proves one
+    // replica caught up, and TK-006's follow-up read can hit a laggard.
+    let description =
+        format!("token supply >= {supply_target} (contract={contract_id} position={position})");
+    super::wait::wait_for_token_predicate(
+        &description,
+        || async {
+            match token_supply_raw(ctx.sdk(), contract_id, position).await {
+                Ok(current) if current >= supply_target => Ok(Some(current)),
+                Ok(current) => {
+                    tracing::debug!(
+                        target: "platform_wallet::e2e::tokens",
+                        ?contract_id,
+                        position,
+                        current,
+                        expected = supply_target,
+                        "token supply below post-mint target; retrying"
+                    );
+                    Ok(None)
+                }
+                Err(err) => Err(err),
+            }
+        },
+        super::wait::CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        MINT_POST_BROADCAST_WAIT,
+    )
+    .await?;
 
     Ok(())
 }
@@ -841,10 +843,18 @@ const MINT_POST_BROADCAST_WAIT: Duration = Duration::from_secs(30);
 // 17. wait_for_token_balance — poll-until-target
 // ---------------------------------------------------------------------------
 
-/// Poll [`token_balance_of`] every
-/// [`super::wait::DEFAULT_POLL_INTERVAL`] until the cached balance
-/// reaches `expected`, then return the observed value. Mirrors PA's
-/// `wait_for_balance` shape.
+/// Poll [`token_balance_of`] until the chain-side balance reaches
+/// `expected` on [`CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES`] back-to-back
+/// fetches, then return the observed value. Mirrors PA's `wait_for_balance`
+/// shape.
+///
+/// The streak gate is load-bearing, not cosmetic: the SDK round-robins
+/// across DAPI replicas, so a single `current >= expected` hit only proves
+/// the value is visible on whichever node answered — the caller's next fetch
+/// (or its next state transition) can land on a still-lagging sibling and
+/// read a stale balance. Requiring two consecutive distinct-replica hits is
+/// the same defense the address/identity/contract waiters use (see
+/// `wait.rs`'s `*_chain_confirmed_n` family) and that TK-010/TK-011 needed.
 pub async fn wait_for_token_balance(
     ctx: &E2eContext,
     identity_id: Identifier,
@@ -853,39 +863,32 @@ pub async fn wait_for_token_balance(
     expected: TokenAmount,
     timeout: Duration,
 ) -> FrameworkResult<TokenAmount> {
-    let deadline = Instant::now() + timeout;
-    loop {
-        match token_balance_raw(ctx.sdk(), identity_id, contract_id, position).await {
-            Ok(current) if current >= expected => return Ok(current),
-            Ok(current) => {
-                tracing::debug!(
-                    target: "platform_wallet::e2e::tokens",
-                    ?identity_id,
-                    ?contract_id,
-                    position,
-                    current,
-                    expected,
-                    "token balance below target"
-                );
+    let description =
+        format!("token balance >= {expected} (identity={identity_id} contract={contract_id} position={position})");
+    super::wait::wait_for_token_predicate(
+        &description,
+        || async {
+            match token_balance_raw(ctx.sdk(), identity_id, contract_id, position).await {
+                Ok(current) if current >= expected => Ok(Some(current)),
+                Ok(current) => {
+                    tracing::debug!(
+                        target: "platform_wallet::e2e::tokens",
+                        ?identity_id,
+                        ?contract_id,
+                        position,
+                        current,
+                        expected,
+                        "token balance below target"
+                    );
+                    Ok(None)
+                }
+                Err(err) => Err(err),
             }
-            Err(err) => {
-                tracing::debug!(
-                    target: "platform_wallet::e2e::tokens",
-                    ?identity_id,
-                    error = %err,
-                    "token balance fetch failed; retrying"
-                );
-            }
-        }
-
-        if Instant::now() >= deadline {
-            return Err(FrameworkError::Cleanup(format!(
-                "wait_for_token_balance timed out after {timeout:?} \
-                 (identity={identity_id} contract={contract_id} position={position} expected={expected})"
-            )));
-        }
-        tokio::time::sleep(super::wait::DEFAULT_POLL_INTERVAL).await;
-    }
+        },
+        super::wait::CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        timeout,
+    )
+    .await
 }
 
 // ---------------------------------------------------------------------------

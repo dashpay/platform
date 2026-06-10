@@ -632,7 +632,17 @@ impl PlatformWallet {
                         "invalid platform address: {e}"
                     ))
                 })?;
-        if addr_network != self.sdk.network {
+        // Interim unblock: the bech32m decoder lossily maps `tdash` → Testnet,
+        // so a devnet recipient decodes as Testnet. Accept a Testnet-decoded
+        // address on a Devnet/Regtest wallet. Superseded by #3781 (a
+        // network-agnostic decoder + HRP-class guard).
+        let networks_match = addr_network == self.sdk.network
+            || (addr_network == dashcore::Network::Testnet
+                && matches!(
+                    self.sdk.network,
+                    dashcore::Network::Devnet | dashcore::Network::Regtest
+                ));
+        if !networks_match {
             return Err(PlatformWalletError::ShieldedBuildError(format!(
                 "platform address network mismatch: address {addr_network:?}, wallet {:?}",
                 self.sdk.network
@@ -826,11 +836,11 @@ impl PlatformWallet {
         //     BTreeMap-smallest address).
         //
         // The flat shielded fee `F = compute_minimum_shielded_fee(2)`
-        // on a Type 15 transition lands at ~1.23e8 credits (~0.0012
-        // DASH); `operations::shield` loads exactly `F` onto input 0's
-        // claim from this reserved headroom. Reserve 1e9 credits
-        // (0.01 DASH) — ~8× headroom over `F`, still trivial relative
-        // to typical balances.
+        // on a Type 15 transition lands at 162,851,200 credits (~1.63e8,
+        // ~0.0016 DASH) at protocol V8; `operations::shield` loads exactly
+        // `F` onto input 0's claim from this reserved headroom. Reserve 1e9
+        // credits (0.01 DASH) — ~6× headroom over `F`, still trivial
+        // relative to typical balances.
         const FEE_RESERVE_CREDITS: u64 = 1_000_000_000;
 
         // Build the inputs map under the wallet-manager read lock,
@@ -898,6 +908,55 @@ impl PlatformWallet {
             inputs,
             amount,
             signer,
+            &prover,
+        )
+        .await
+    }
+
+    /// Shield credits from a Core L1 asset lock into the wallet's
+    /// shielded pool (Type 18), with the resulting note assigned to
+    /// `shielded_account`'s default Orchard address.
+    ///
+    /// `asset_lock_proof` is the single-use proof of the locked L1
+    /// outpoint and `private_key` the one-time key authorizing it (the
+    /// caller derives both via the asset-lock builder). `amount` is the
+    /// shielded value. Uses `broadcast_and_wait` for proven inclusion —
+    /// important because the proof is single-use, so a false-positive on
+    /// a later-rejected transition would strand the L1 outpoint.
+    ///
+    /// Mirrors the other four spend wrappers
+    /// ([`shielded_shield_from_account`](Self::shielded_shield_from_account),
+    /// [`shielded_transfer_to`](Self::shielded_transfer_to),
+    /// [`shielded_unshield_to`](Self::shielded_unshield_to),
+    /// [`shielded_withdraw_to`](Self::shielded_withdraw_to)) and delegates
+    /// to `operations::shield_from_asset_lock`. Returns `ShieldedNotBound`
+    /// if no shielded sub-wallet is bound, or `ShieldedKeyDerivation` if
+    /// `shielded_account` isn't bound on it.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_shield_from_asset_lock<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        shielded_account: u32,
+        asset_lock_proof: dpp::prelude::AssetLockProof,
+        private_key: &[u8],
+        amount: u64,
+        prover: P,
+    ) -> Result<(), PlatformWalletError> {
+        let guard = self.shielded_keys.read().await;
+        let keys = guard
+            .as_ref()
+            .ok_or(PlatformWalletError::ShieldedNotBound)?;
+        let keyset = keys.get(&shielded_account).ok_or_else(|| {
+            PlatformWalletError::ShieldedKeyDerivation(format!(
+                "shielded account {shielded_account} not bound"
+            ))
+        })?;
+        super::shielded::operations::shield_from_asset_lock(
+            &self.sdk,
+            keyset,
+            shielded_account,
+            asset_lock_proof,
+            private_key,
+            amount,
             &prover,
         )
         .await

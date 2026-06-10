@@ -2,9 +2,9 @@
 //! `#[tokio_shared_rt::test(shared)]` entries that share the
 //! process-wide [`super::framework::E2eContext`].
 //!
-//! P0 platform-address (PA) cases land here first; the remaining
-//! TEST_SPEC.md priorities (P1, P2, ID-, DP-, DPNS-, TK-, …) follow
-//! in subsequent PRs.
+//! Hosts the platform-address (PA), identity (ID), asset-lock (AL/CR),
+//! DPNS, token (TK), shielded (SH) and Found-bug-pin cases; see
+//! `TEST_SPEC.md` for the priority matrix.
 
 // Asset-lock manager cases (Wave AL — see TEST_SPEC.md ### Asset Lock (AL))
 pub mod al_001_concurrent_asset_lock_builds;
@@ -51,6 +51,69 @@ pub mod pa_009_min_input_amount;
 pub mod pa_3040_bug_pin;
 pub mod print_bank_address;
 pub mod print_bank_address_offline;
+// Shielded (Orchard) cases (Wave H — see TEST_SPEC.md ### Shielded (SH))
+#[cfg(feature = "shielded")]
+pub mod sh_001_shield_from_account;
+#[cfg(feature = "shielded")]
+pub mod sh_002_shield_unshield_round_trip;
+#[cfg(feature = "shielded")]
+pub mod sh_003_shielded_transfer;
+#[cfg(feature = "shielded")]
+pub mod sh_004_balance_after_sync;
+#[cfg(feature = "shielded")]
+pub mod sh_005_inmemory_witness_split;
+#[cfg(feature = "shielded")]
+pub mod sh_006_add_account_never_syncs;
+#[cfg(feature = "shielded")]
+pub mod sh_007_pre_bind_note_witnessable;
+#[cfg(feature = "shielded")]
+pub mod sh_008_unshield_insufficient_balance;
+#[cfg(feature = "shielded")]
+pub mod sh_009_zero_amount_rejected;
+#[cfg(feature = "shielded")]
+pub mod sh_010_double_spend_reservation;
+#[cfg(feature = "shielded")]
+pub mod sh_011_note_selection_convergence;
+#[cfg(feature = "shielded")]
+pub mod sh_012_sync_watermark_idempotency;
+#[cfg(feature = "shielded")]
+pub mod sh_013_bind_empty_accounts;
+#[cfg(feature = "shielded")]
+pub mod sh_014_spend_before_bind;
+#[cfg(feature = "shielded")]
+pub mod sh_018_shield_from_asset_lock;
+#[cfg(feature = "shielded")]
+pub mod sh_019_shielded_withdraw_l1;
+// Shielded adversarial / abuse cases (Wave H follow-up — SH-020..SH-035)
+#[cfg(feature = "shielded")]
+pub mod sh_020_double_spend_two_transitions;
+#[cfg(feature = "shielded")]
+pub mod sh_021_nullifier_replay_after_restart;
+#[cfg(feature = "shielded")]
+pub mod sh_022_value_not_conserved;
+#[cfg(feature = "shielded")]
+pub mod sh_023_fee_underpayment;
+#[cfg(feature = "shielded")]
+pub mod sh_024_value_boundary_overflow;
+#[cfg(feature = "shielded")]
+pub mod sh_025_forged_proof;
+#[cfg(feature = "shielded")]
+pub mod sh_026_anchor_mismatch;
+#[cfg(feature = "shielded")]
+pub mod sh_027_malformed_note_serde;
+// SH-028 / SH-029 BLOCKED — no injectable sync-source seam (see TEST_SPEC.md).
+#[cfg(feature = "shielded")]
+pub mod sh_030_cross_network_recipient;
+#[cfg(feature = "shielded")]
+pub mod sh_031_rebind_different_seed;
+#[cfg(feature = "shielded")]
+pub mod sh_032_exact_change_boundary;
+#[cfg(feature = "shielded")]
+pub mod sh_033_duplicate_nullifier_in_bundle;
+#[cfg(feature = "shielded")]
+pub mod sh_034_tampered_binding_signature;
+#[cfg(feature = "shielded")]
+pub mod sh_035_replayed_asset_lock_proof;
 // Token tests (Wave 2 — per TEST_SPEC.md ### Tokens (TK))
 pub mod tk_001_token_transfer;
 pub mod tk_001b_token_transfer_zero;
