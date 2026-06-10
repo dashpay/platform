@@ -20,6 +20,7 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorUtf8Conversion = 12
     case errorArithmeticOverflow = 13
     case errorNoSelectableInputs = 14
+    case errorWalletAlreadyExists = 15
     case notFound = 98
     case errorUnknown = 99
 
@@ -55,6 +56,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorArithmeticOverflow
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_NO_SELECTABLE_INPUTS:
             self = .errorNoSelectableInputs
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_ALREADY_EXISTS:
+            self = .errorWalletAlreadyExists
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -132,6 +135,7 @@ public enum PlatformWalletError: LocalizedError {
     case memoryAllocation(String)
     case arithmeticOverflow(String)
     case noSelectableInputs(String)
+    case walletAlreadyExists(String)
     case notFound(String)
     case unknown(String)
 
@@ -145,6 +149,7 @@ public enum PlatformWalletError: LocalizedError {
              .identityNotFound(let m), .contactNotFound(let m), .utf8Conversion(let m),
              .serialization(let m), .deserialization(let m), .memoryAllocation(let m),
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
+             .walletAlreadyExists(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -171,6 +176,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorUtf8Conversion:    self = .utf8Conversion(detail)
         case .errorArithmeticOverflow: self = .arithmeticOverflow(detail)
         case .errorNoSelectableInputs: self = .noSelectableInputs(detail)
+        case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

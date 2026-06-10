@@ -563,7 +563,10 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// pre-extracted `[Data]` of the same `pubkeyBytes` values, kept
     /// separately so the recursive helper doesn't need to see the
     /// full Swift wrapper struct).
-    fileprivate static func withPubkeyFFIArray<R>(
+    // `internal` (not `fileprivate`) so the shielded identity-create-from-pool wrapper in
+    // `PlatformWalletManagerShieldedSync.swift` can reuse this exact `[IdentityPubkeyFFI]` pinning
+    // helper rather than duplicating the recursive lifetime dance.
+    static func withPubkeyFFIArray<R>(
         _ pubkeys: [IdentityPubkey],
         buffers: [Data],
         _ body: (UnsafePointer<IdentityPubkeyFFI>?, Int) -> R

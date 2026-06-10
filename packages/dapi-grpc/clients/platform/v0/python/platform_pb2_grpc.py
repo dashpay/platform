@@ -84,6 +84,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetDataContractsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetDataContractsResponse.FromString,
                 )
+        self.getDocumentHistory = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getDocumentHistory',
+                request_serializer=platform__pb2.GetDocumentHistoryRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetDocumentHistoryResponse.FromString,
+                )
         self.getDocuments = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getDocuments',
                 request_serializer=platform__pb2.GetDocumentsRequest.SerializeToString,
@@ -414,6 +419,12 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getDataContracts(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getDocumentHistory(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -791,6 +802,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getDataContracts,
                     request_deserializer=platform__pb2.GetDataContractsRequest.FromString,
                     response_serializer=platform__pb2.GetDataContractsResponse.SerializeToString,
+            ),
+            'getDocumentHistory': grpc.unary_unary_rpc_method_handler(
+                    servicer.getDocumentHistory,
+                    request_deserializer=platform__pb2.GetDocumentHistoryRequest.FromString,
+                    response_serializer=platform__pb2.GetDocumentHistoryResponse.SerializeToString,
             ),
             'getDocuments': grpc.unary_unary_rpc_method_handler(
                     servicer.getDocuments,
@@ -1282,6 +1298,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDataContracts',
             platform__pb2.GetDataContractsRequest.SerializeToString,
             platform__pb2.GetDataContractsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getDocumentHistory(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDocumentHistory',
+            platform__pb2.GetDocumentHistoryRequest.SerializeToString,
+            platform__pb2.GetDocumentHistoryResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

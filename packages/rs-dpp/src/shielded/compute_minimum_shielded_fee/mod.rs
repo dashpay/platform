@@ -4,6 +4,7 @@ use crate::fee::Credits;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 use v0::compute_minimum_shielded_fee_v0;
+use v0::compute_shielded_identity_create_fee_v0;
 use v0::compute_shielded_unshield_fee_v0;
 use v0::compute_shielded_verification_fee_v0;
 use v0::compute_shielded_withdrawal_fee_v0;
@@ -139,6 +140,38 @@ pub fn compute_shielded_verification_fee(
         0 => compute_shielded_verification_fee_v0(num_actions, platform_version),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "compute_shielded_verification_fee".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// Computes the **IdentityCreateFromShieldedPool** fee (in credits): [`compute_minimum_shielded_fee`]
+/// PLUS the variable storage cost of the `AddNewIdentity` write (identity record + balance +
+/// revision + N key subtrees), which scales with the number of public keys.
+///
+/// Unlike the flat per-transition components of [`compute_shielded_unshield_fee`] /
+/// [`compute_shielded_withdrawal_fee`], the identity write grows monotonically with the key count.
+/// This is the **client-side predictor** + the **cheap floor** the `denomination >= min_fee` gate
+/// uses; the authoritative consensus fee is METERED by GroveDB at execution (the transition's
+/// `ExecutionEvent` meters its ops and adds only the compute fee via `additional_fixed_fee_cost`).
+///
+/// Dispatches on the SAME version key (`dpp.methods.compute_minimum_shielded_fee`) as
+/// [`compute_minimum_shielded_fee`] so the formulas evolve together across protocol versions.
+///
+/// # Parameters
+/// - `num_actions` — number of Orchard actions in the bundle
+/// - `num_keys` — number of public keys the new identity is created with
+/// - `platform_version` — protocol version (determines the formula version and fee constants)
+pub fn compute_shielded_identity_create_fee(
+    num_actions: usize,
+    num_keys: usize,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    match platform_version.dpp.methods.compute_minimum_shielded_fee {
+        0 => compute_shielded_identity_create_fee_v0(num_actions, num_keys, platform_version),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "compute_shielded_identity_create_fee".to_string(),
             known_versions: vec![0],
             received: version,
         }),

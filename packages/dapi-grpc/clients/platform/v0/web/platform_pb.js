@@ -89324,7 +89324,8 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
   var f, obj = {
     nullifier: msg.getNullifier_asB64(),
     cmx: msg.getCmx_asB64(),
-    encryptedNote: msg.getEncryptedNote_asB64()
+    encryptedNote: msg.getEncryptedNote_asB64(),
+    cvNet: msg.getCvNet_asB64()
   };
 
   if (includeInstance) {
@@ -89373,6 +89374,10 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
       msg.setEncryptedNote(value);
       break;
+    case 4:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setCvNet(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -89420,6 +89425,13 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
   if (f.length > 0) {
     writer.writeBytes(
       3,
+      f
+    );
+  }
+  f = message.getCvNet_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      4,
       f
     );
   }
@@ -89549,6 +89561,48 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
  */
 proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.setEncryptedNote = function(value) {
   return jspb.Message.setProto3BytesField(this, 3, value);
+};
+
+
+/**
+ * optional bytes cv_net = 4;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.getCvNet = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 4, ""));
+};
+
+
+/**
+ * optional bytes cv_net = 4;
+ * This is a type-conversion wrapper around `getCvNet()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.getCvNet_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getCvNet()));
+};
+
+
+/**
+ * optional bytes cv_net = 4;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getCvNet()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.getCvNet_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getCvNet()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.setCvNet = function(value) {
+  return jspb.Message.setProto3BytesField(this, 4, value);
 };
 
 

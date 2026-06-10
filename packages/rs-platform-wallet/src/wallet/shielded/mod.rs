@@ -45,7 +45,9 @@ pub use coordinator::NetworkShieldedCoordinator;
 pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
 pub use keys::{AccountViewingKeys, OrchardKeySet};
 pub use prover::CachedOrchardProver;
-pub use store::{InMemoryShieldedStore, ShieldedNote, ShieldedStore, SubwalletId};
+pub use store::{
+    InMemoryShieldedStore, ShieldedNote, ShieldedOutgoingNote, ShieldedStore, SubwalletId,
+};
 pub use sync::{ShieldedSyncSummary, SyncNotesResult};
 
 /// How long after a no-op sync the background loop should skip

@@ -1,3 +1,34 @@
+## [4.0.0-beta.4](///compare/v4.0.0-beta.3...v4.0.0-beta.4) (2026-06-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform-wallet:** add platform-wallet-storage crate (sqlite persister) (#3625)
+
+### Features
+
+* add IdentityCreateFromShieldedPool state transition (shielded-pool-funded identity creation) ([#3816](undefined/undefined/undefined/issues/3816))
+* **drive:** shielded fees for Shield/ShieldFromAssetLock + shield credit conservation ([#3793](undefined/undefined/undefined/issues/3793))
+* **platform-wallet:** add platform-wallet-storage crate (sqlite persister) ([#3625](undefined/undefined/undefined/issues/3625))
+* shielded scan-based spend detection and OVK outgoing-note history ([#3819](undefined/undefined/undefined/issues/3819))
+* **swift-sdk:** iOS simluator writes logs to disk ([#3785](undefined/undefined/undefined/issues/3785))
+
+
+### Bug Fixes
+
+* **dpp:** return error instead of panicking on storage-fee refund div-by-zero ([#3799](undefined/undefined/undefined/issues/3799))
+* **drive:** charge fees for unshield and shielded withdrawal ([#3800](undefined/undefined/undefined/issues/3800))
+* **drive:** correct fee/credit accounting on the address-funding asset-lock penalty path ([#3818](undefined/undefined/undefined/issues/3818))
+* **drive:** strict merged-query verification for unshield & shielded withdrawal proofs ([#3814](undefined/undefined/undefined/issues/3814))
+* **drive:** unify shielded pool genesis/upgrade construction to prevent state divergence ([#3801](undefined/undefined/undefined/issues/3801))
+* **platform-wallet:** zeroize private keys when freeing preview rows ([#3797](undefined/undefined/undefined/issues/3797))
+* **rs-sdk-ffi:** shrink signature allocation to len before leaking (capacity UB) ([#3798](undefined/undefined/undefined/issues/3798))
+
+
+### Miscellaneous Chores
+
+* tidy follow-ups from the shielded withdrawal fee review ([#3802](undefined/undefined/undefined/issues/3802))
+
 ## [4.0.0-beta.3](https://github.com/dashpay/platform/compare/v4.0.0-beta.2...v4.0.0-beta.3) (2026-06-04)
 
 

@@ -123,6 +123,11 @@ pub enum StateTransitionProofResult {
         StoredAssetLockInfo,
         BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
     ),
+    /// Returned by `IdentityCreateFromShieldedPool`. Carries the newly-created [`Identity`] AND the
+    /// presence of each spent nullifier (`(nullifier_bytes, present)`), proven together in a single
+    /// STRICT merged multi-root GroveDB proof. A light/SDK client can cryptographically confirm both
+    /// that the identity was created and that the funding nullifiers were consumed.
+    VerifiedIdentityWithShieldedNullifiers(Identity, Vec<(Vec<u8>, bool)>),
 }
 
 /// Serde `with` module for `BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>`.

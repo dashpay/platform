@@ -1593,6 +1593,190 @@ impl Drive {
                     }
                 }
             }
+            StateTransition::IdentityCreateFromShieldedPool(st) => {
+                use crate::drive::balances::balance_path;
+                use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
+                use crate::drive::identity::{identity_key_tree_path, identity_path};
+                use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
+                use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+                use dpp::identity::{IdentityPublicKey, IdentityV0, KeyID};
+                use dpp::prelude::Revision;
+                use dpp::serialization::PlatformDeserializable;
+                use dpp::state_transition::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+                use dpp::state_transition::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions;
+                use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers;
+                use std::collections::BTreeMap;
+
+                // Recompute the id from the actions (the canonical value) instead of trusting the
+                // wire field, and reject a tampered transition whose wire id doesn't match — so a
+                // client verifying a proof cannot be fed a transition that reuses these nullifiers
+                // while pointing `identity_id` at a different identity. (Consensus enforces the same
+                // equality in `validate_structure`; this independently re-checks it here so the
+                // SDK proof path is sound even on a hand-constructed transition object.)
+                let derived_id = derive_identity_id_from_actions(st.actions());
+                if st.identity_id() != derived_id {
+                    return Err(Error::Proof(ProofError::IncorrectProof(
+                        "identity create from shielded pool: identity_id does not match the value derived from the spend nullifiers".to_string(),
+                    )));
+                }
+                let identity_id = derived_id.to_buffer();
+                let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
+
+                // Rebuild the BYTE-IDENTICAL merged query the prove side built: the nullifier
+                // sub-query over the nullifier tree + the full-identity sub-query, each with its
+                // limit cleared (PathQuery::merge rejects limited sub-queries).
+                let mut nf_query = grovedb::Query::new();
+                nf_query.insert_keys(nullifier_keys.clone());
+                let nullifier_pq = grovedb::PathQuery::new(
+                    shielded_credit_pool_nullifiers_path_vec(),
+                    grovedb::SizedQuery::new(nf_query, None, None),
+                );
+
+                let mut identity_pq = Drive::full_identity_query(
+                    &identity_id,
+                    &platform_version.drive.grove_version,
+                )?;
+                identity_pq.query.limit = None;
+
+                let mut merged_pq = grovedb::PathQuery::merge(
+                    vec![&nullifier_pq, &identity_pq],
+                    &platform_version.drive.grove_version,
+                )?;
+
+                // STRICT verification: `verify_query_with_absence_proof` requires a limit, but
+                // `merge` leaves it None. Use an unreachable `u16::MAX` so the per-layer succinctness
+                // check (which rejects extra proof branches — the whole point of building this strict
+                // from day one, cf. #3812) runs fully on every layer; a smaller limit could break the
+                // result loop early and falsely reject honest proofs. The limit does NOT relax
+                // extra-data rejection.
+                merged_pq.query.limit = Some(u16::MAX);
+
+                let (root_hash, proved_key_values) =
+                    grovedb::GroveDb::verify_query_with_absence_proof(
+                        proof,
+                        &merged_pq,
+                        &platform_version.drive.grove_version,
+                    )?;
+
+                // Partition the proved key/values by PATH (NOT key length — nullifier keys and the
+                // identity id are both 32 bytes): nullifier-tree entries vs the identity subtrees
+                // (balance / revision / keys). Reconstruct the identity exactly as
+                // `verify_full_identity_by_identity_id_v0` does.
+                let nullifier_path = shielded_credit_pool_nullifiers_path_vec();
+                let balance_path = balance_path();
+                let identity_path = identity_path(identity_id.as_slice());
+                let identity_keys_path = identity_key_tree_path(identity_id.as_slice());
+
+                let mut statuses: Vec<(Vec<u8>, bool)> = Vec::new();
+                let mut balance: Option<Credits> = None;
+                let mut revision: Option<Revision> = None;
+                let mut keys = BTreeMap::<KeyID, IdentityPublicKey>::new();
+
+                for (path, key, maybe_element) in proved_key_values {
+                    if path == nullifier_path {
+                        statuses.push((key, maybe_element.is_some()));
+                    } else if path == balance_path && key == identity_id {
+                        let element = maybe_element.ok_or_else(|| {
+                            Error::Proof(ProofError::IncompleteProof(
+                                "balance wasn't provided for the created identity",
+                            ))
+                        })?;
+                        let signed_balance = element.as_sum_item_value().map_err(Error::from)?;
+                        if signed_balance < 0 {
+                            return Err(Error::Proof(ProofError::Overflow(
+                                "balance can't be negative",
+                            )));
+                        }
+                        balance = Some(signed_balance as Credits);
+                    } else if path == identity_path && key == vec![IdentityTreeRevision as u8] {
+                        let element = maybe_element.ok_or_else(|| {
+                            Error::Proof(ProofError::IncompleteProof(
+                                "revision wasn't provided for the created identity",
+                            ))
+                        })?;
+                        let item_bytes = element.into_item_bytes().map_err(Error::from)?;
+                        revision = Some(Revision::from_be_bytes(item_bytes.try_into().map_err(
+                            |_| {
+                                Error::Proof(ProofError::IncorrectValueSize(
+                                    "revision should be 8 bytes",
+                                ))
+                            },
+                        )?));
+                    } else if path == identity_keys_path {
+                        let element = maybe_element.ok_or_else(|| {
+                            Error::Proof(ProofError::CorruptedProof(
+                                "received an absence proof for a key but didn't request one"
+                                    .to_string(),
+                            ))
+                        })?;
+                        let item_bytes = element.into_item_bytes().map_err(Error::from)?;
+                        let public_key = IdentityPublicKey::deserialize_from_bytes(&item_bytes)?;
+                        keys.insert(public_key.id(), public_key);
+                    } else {
+                        return Err(Error::Proof(ProofError::TooManyElements(
+                            "identity create from shielded pool proof contains an element outside \
+                             the nullifier tree and the created identity",
+                        )));
+                    }
+                }
+
+                // Every funding nullifier must be present (spent) in the post-execution state.
+                for (nf, is_spent) in &statuses {
+                    if !is_spent {
+                        return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                            "nullifier {} was not found as spent in the identity-create-from-shielded-pool proof",
+                            hex::encode(nf)
+                        ))));
+                    }
+                }
+
+                // The created identity MUST be fully present.
+                let (balance, revision) = match (balance, revision, keys.is_empty()) {
+                    (Some(balance), Some(revision), false) => (balance, revision),
+                    _ => {
+                        return Err(Error::Proof(ProofError::IncompleteProof(
+                            "identity create from shielded pool was executed but the created identity is absent or incomplete in the proof",
+                        )))
+                    }
+                };
+
+                // Bind the proof to the transition's declared key set: the proven identity must hold
+                // EXACTLY the keys the transition created (the same conversion the action transformer
+                // used to build the identity). This stops a tampered transition from swapping in a
+                // different key set while reusing a valid {nullifiers, identity} proof.
+                //
+                // The balance is deliberately NOT checked against `denomination`: the identity holds
+                // `denomination - total_fee`, and `total_fee` is metered at execution and not
+                // recoverable here, so a balance/denomination equality check would reject every
+                // honest proof. (`denomination` is bound into the Orchard `extra_sighash_data` at
+                // consensus, which is where that binding is enforced.)
+                let expected_keys: BTreeMap<KeyID, IdentityPublicKey> = st
+                    .public_keys()
+                    .iter()
+                    .map(|key| {
+                        let public_key: IdentityPublicKey = key.into();
+                        (public_key.id(), public_key)
+                    })
+                    .collect();
+                if keys != expected_keys {
+                    return Err(Error::Proof(ProofError::IncorrectProof(
+                        "identity create from shielded pool: the proven identity's keys do not match the transition's declared public keys".to_string(),
+                    )));
+                }
+
+                let identity: dpp::prelude::Identity = IdentityV0 {
+                    id: Identifier::from(identity_id),
+                    public_keys: keys,
+                    balance,
+                    revision,
+                }
+                .into();
+
+                Ok((
+                    root_hash,
+                    VerifiedIdentityWithShieldedNullifiers(identity, statuses),
+                ))
+            }
         }
     }
 
@@ -3022,6 +3206,65 @@ mod tests {
                 Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
             ),
             "expected error for unshield with empty proof, got: {:?}",
+            result
+        );
+    }
+
+    // --- IdentityCreateFromShieldedPool: empty proof returns error.
+    //
+    // Exercises the STRICT merged-query verify arm: an empty proof cannot satisfy
+    // `verify_query_with_absence_proof` over the merged {nullifier-tree, identity} query, so the
+    // verifier must reject (rather than silently accepting). The positive prove→verify roundtrip and
+    // the padded-proof (extra-branch) rejection are covered by the full-block integration suite.
+    #[test]
+    fn verify_identity_create_from_shielded_pool_empty_proof_returns_error() {
+        let platform_version = PlatformVersion::latest();
+        use dpp::shielded::SerializedAction;
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions;
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+
+        let actions = vec![SerializedAction {
+            nullifier: [0x11; 32],
+            rk: [0x22; 32],
+            cmx: [0x33; 32],
+            encrypted_note: vec![0x44; 216],
+            cv_net: [0x55; 32],
+            spend_auth_sig: [0x66; 64],
+        }];
+        let identity_id = derive_identity_id_from_actions(&actions);
+
+        let st = StateTransition::IdentityCreateFromShieldedPool(
+            IdentityCreateFromShieldedPoolTransition::V0(
+                IdentityCreateFromShieldedPoolTransitionV0 {
+                    public_keys: vec![],
+                    denomination: 10_000_000_000,
+                    actions,
+                    anchor: [0u8; 32],
+                    proof: vec![],
+                    binding_signature: [0u8; 64],
+                    send_to_address_on_creation_failure: PlatformAddress::P2pkh([0u8; 20]),
+                    identity_id,
+                },
+            ),
+        );
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected error for identity create from shielded pool with empty proof, got: {:?}",
             result
         );
     }

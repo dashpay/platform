@@ -112,6 +112,7 @@ mod tests {
         ShieldedActionNote {
             nullifier: [0x11; 32],
             cmx: [0x22; 32],
+            cv_net: [0x22; 32],
             encrypted_note: vec![1, 2, 3],
         }
     }
@@ -174,15 +175,17 @@ mod tests {
             other => panic!("expected InsertNullifiers, got {:?}", other),
         }
 
-        // Verify InsertNote carries nullifier, cmx, and encrypted_note from our note
+        // Verify InsertNote carries nullifier, cmx, cv_net, and encrypted_note from our note
         match &ops[1] {
             DriveOperation::ShieldedPoolOperation(ShieldedPoolOperationType::InsertNote {
                 nullifier,
                 cmx,
+                cv_net,
                 encrypted_note,
             }) => {
                 assert_eq!(*nullifier, [0x11; 32]);
                 assert_eq!(*cmx, [0x22; 32]);
+                assert_eq!(*cv_net, [0x22; 32]);
                 assert_eq!(*encrypted_note, vec![1, 2, 3]);
             }
             other => panic!("expected InsertNote, got {:?}", other),
