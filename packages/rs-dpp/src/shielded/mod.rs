@@ -2,25 +2,35 @@
 pub mod builder;
 
 mod compute_minimum_shielded_fee;
+mod sighash;
 
 use bincode::{Decode, Encode};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-
-use crate::withdrawal::Pooling;
 
 // Re-exported so the public path stays `dpp::shielded::compute_minimum_shielded_fee` (the
 // module and the function share a name but live in different namespaces).
 pub use compute_minimum_shielded_fee::{
-    compute_minimum_shielded_fee, compute_shielded_unshield_fee, compute_shielded_verification_fee,
+    compute_minimum_shielded_fee, compute_shielded_identity_create_fee,
+    compute_shielded_unshield_fee, compute_shielded_verification_fee,
     compute_shielded_withdrawal_fee,
 };
 
-/// Permanent storage bytes per shielded action: 312 bytes total.
+// Re-exported so the public paths stay `dpp::shielded::<name>` after moving the sighash preimage
+// builders into their own file. Both the version-dispatching wrappers and their `_v0` impls are
+// re-exported (callers use the wrappers; byte-layout tests use the `_v0` impls).
+pub use sighash::{
+    compute_platform_sighash, identity_create_from_shielded_extra_sighash_data,
+    identity_create_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
+    shielded_withdrawal_extra_sighash_data_v0, unshield_extra_sighash_data,
+    unshield_extra_sighash_data_v0,
+};
+
+/// Permanent storage bytes per shielded action: 344 bytes total.
 ///
-/// - 280 bytes in the BulkAppendTree: 32 (`cmx`, the note commitment) + 32
-///   (`rho`) + 216 (the encrypted note ciphertext).
+/// - 312 bytes in the BulkAppendTree: 32 (`cmx`, the note commitment) + 32
+///   (`rho`) + 32 (`cv_net`, the value commitment, stored unencrypted for OVK
+///   recovery) + 216 (the encrypted note ciphertext).
 /// - 32 bytes in the nullifier tree.
 ///
 /// The 216-byte encrypted note is Orchard's `TransmittedNoteCiphertext`, laid
@@ -42,7 +52,7 @@ pub use compute_minimum_shielded_fee::{
 /// instead of Zcash's 512 — the dashpay `orchard` fork makes the memo size a
 /// type parameter (`MemoSize`) — which is why each note is 216 bytes
 /// (`ENCRYPTED_NOTE_SIZE`) rather than Zcash Orchard's ~692.
-pub const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 312;
+pub const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 344;
 
 /// Calibrated effective storage-byte cost of the Core withdrawal document a
 /// `ShieldedWithdrawal` creates.
@@ -90,80 +100,6 @@ pub const SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES: u64 = 4100;
 /// evolves, exactly like the per-action note storage does. See
 /// [`compute_minimum_shielded_fee::compute_shielded_unshield_fee`].
 pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 222;
-
-/// Domain separator for Platform sighash computation.
-const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";
-
-/// Computes the platform sighash from an Orchard bundle commitment and optional
-/// transparent field data.
-///
-/// The sighash is computed as:
-///   `SHA-256(SIGHASH_DOMAIN || bundle_commitment || extra_data)`
-///
-/// This binds transparent state transition fields (like `output_address` in unshield
-/// or `output_script` in shielded withdrawal) to the Orchard signatures, preventing
-/// replay attacks where an attacker substitutes transparent fields while reusing a
-/// valid Orchard bundle.
-///
-/// The same computation must be used on both the signing (client) and verification
-/// (platform) sides. For transitions without transparent fields (shield and
-/// shielded_transfer), `extra_data` is empty.
-pub fn compute_platform_sighash(bundle_commitment: &[u8; 32], extra_data: &[u8]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(SIGHASH_DOMAIN);
-    hasher.update(bundle_commitment);
-    hasher.update(extra_data);
-    hasher.finalize().into()
-}
-
-/// Builds the transparent `extra_data` bound into a ShieldedWithdrawal's platform
-/// sighash, with the byte layout
-/// `output_script || unshielding_amount (u64 LE) || core_fee_per_byte (u32 LE) || pooling (u8)`.
-///
-/// Every field here is written verbatim by the transformer into the queued withdrawal
-/// document that constructs the Core asset-unlock TxOut. Binding all of them into the
-/// Orchard sighash means the binding signature authorizes them: since ShieldedWithdrawal
-/// has no identity-key signature and no address-witness check, the Orchard signature is
-/// the only authorization boundary, so a relay or block proposer cannot malleate
-/// `core_fee_per_byte` (or `pooling`, were it ever unpinned from `Never`) — e.g. flip a
-/// user's `core_fee_per_byte = 1` to a much larger Fibonacci value to redirect the
-/// withdrawn amount into L1 miner fees — without invalidating the proof.
-///
-/// The signing (client/builder) and verifying (consensus) sides MUST produce identical
-/// bytes, so both call this single function.
-///
-/// The layout places the variable-length `output_script` first with no length prefix. This
-/// is unambiguous only because `validate_structure` runs before proof verification and pins
-/// `output_script` to a canonical, fixed-length P2PKH (25 bytes) or P2SH (23 bytes); the
-/// remaining fields are fixed-width, so the preimage is well-defined for every accepted
-/// transition. If that script-shape restriction is ever relaxed, add a length prefix here.
-pub fn shielded_withdrawal_extra_sighash_data(
-    output_script: &[u8],
-    unshielding_amount: u64,
-    core_fee_per_byte: u32,
-    pooling: Pooling,
-) -> Vec<u8> {
-    let mut data = Vec::with_capacity(output_script.len() + 8 + 4 + 1);
-    data.extend_from_slice(output_script);
-    data.extend_from_slice(&unshielding_amount.to_le_bytes());
-    data.extend_from_slice(&core_fee_per_byte.to_le_bytes());
-    data.push(pooling as u8);
-    data
-}
-
-/// Builds the transparent `extra_data` bound into an Unshield's platform sighash, with the
-/// byte layout `output_address || unshielding_amount (u64 LE)`.
-///
-/// As with [`shielded_withdrawal_extra_sighash_data`], the signing (client/builder) and
-/// verifying (consensus) sides MUST produce identical bytes, so both call this single
-/// function. Unshield credits a transparent platform address (not a Core asset-unlock
-/// `TxOut`), so it carries no `core_fee_per_byte`/`pooling` to bind.
-pub fn unshield_extra_sighash_data(output_address: &[u8], unshielding_amount: u64) -> Vec<u8> {
-    let mut data = Vec::with_capacity(output_address.len() + 8);
-    data.extend_from_slice(output_address);
-    data.extend_from_slice(&unshielding_amount.to_le_bytes());
-    data
-}
 
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///
@@ -255,58 +191,4 @@ pub struct SerializedAction {
     /// `rk` during batch validation. This prevents replay attacks — a valid
     /// signature from one transition cannot be reused in another.
     pub spend_auth_sig: [u8; 64],
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::identity::core_script::CoreScript;
-    use crate::withdrawal::Pooling;
-
-    #[test]
-    fn withdrawal_sighash_data_binds_core_fee_per_byte() {
-        let script = CoreScript::new_p2pkh([1u8; 20]);
-        let a = shielded_withdrawal_extra_sighash_data(script.as_bytes(), 1000, 1, Pooling::Never);
-        let b = shielded_withdrawal_extra_sighash_data(script.as_bytes(), 1000, 2, Pooling::Never);
-        assert_ne!(
-            a, b,
-            "changing core_fee_per_byte must change the sighash preimage"
-        );
-    }
-
-    #[test]
-    fn withdrawal_sighash_data_binds_pooling() {
-        // `pooling` is pinned to `Never` by `validate_structure`, so this binding is currently
-        // dead defense-in-depth; assert it is nonetheless mixed into the preimage so a future
-        // unpinning would still be authorized by the Orchard binding signature.
-        let script = CoreScript::new_p2pkh([1u8; 20]);
-        let a = shielded_withdrawal_extra_sighash_data(script.as_bytes(), 1000, 1, Pooling::Never);
-        let b = shielded_withdrawal_extra_sighash_data(
-            script.as_bytes(),
-            1000,
-            1,
-            Pooling::IfAvailable,
-        );
-        assert_ne!(a, b, "changing pooling must change the sighash preimage");
-    }
-
-    #[test]
-    fn withdrawal_sighash_data_layout() {
-        // output_script(2) || unshielding_amount(8) || core_fee_per_byte(4) || pooling(1)
-        let d = shielded_withdrawal_extra_sighash_data(&[0xAA, 0xBB], 1, 2, Pooling::Never);
-        assert_eq!(d.len(), 2 + 8 + 4 + 1);
-        assert_eq!(&d[0..2], &[0xAA, 0xBB]);
-        assert_eq!(&d[2..10], &1u64.to_le_bytes());
-        assert_eq!(&d[10..14], &2u32.to_le_bytes());
-        assert_eq!(d[14], Pooling::Never as u8);
-    }
-
-    #[test]
-    fn unshield_sighash_data_layout() {
-        // output_address || unshielding_amount(8)
-        let d = unshield_extra_sighash_data(&[0xAA, 0xBB, 0xCC], 5);
-        assert_eq!(d.len(), 3 + 8);
-        assert_eq!(&d[0..3], &[0xAA, 0xBB, 0xCC]);
-        assert_eq!(&d[3..11], &5u64.to_le_bytes());
-    }
 }

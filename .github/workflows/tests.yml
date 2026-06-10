@@ -55,25 +55,25 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter-js
         if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/package-filters/js-packages-no-workflows.yml
 
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter-js-direct
         if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/package-filters/js-packages-direct.yml
 
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter-rs
         if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/package-filters/rs-packages-no-workflows.yml
 
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter-rs-workflows
         if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
@@ -116,7 +116,7 @@ jobs:
       - name: Check for Swift SDK changes
         id: filter-swift-sdk
         if: ${{ github.event_name != 'workflow_dispatch' }}
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             swift-sdk-changed:

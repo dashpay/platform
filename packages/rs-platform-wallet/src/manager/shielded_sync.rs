@@ -1,4 +1,6 @@
-//! Periodic shielded (Orchard) note + nullifier sync coordinator.
+//! Periodic shielded (Orchard) note sync coordinator. Spends are
+//! detected during the note scan (scan-based nullifier matching),
+//! so there is no separate nullifier-sync pass.
 //!
 //! Mirrors [`PlatformAddressSyncManager`](super::platform_address_sync::PlatformAddressSyncManager):
 //! drives a single

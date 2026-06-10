@@ -55,5 +55,6 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2: DriveStateTransitionMethodV
                 shielded_transfer_transition: 0,
                 unshield_transition: 0,
                 shielded_withdrawal_transition: 0,
+                identity_create_from_shielded_pool_transition: 0,
             },
     };

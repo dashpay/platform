@@ -188,6 +188,65 @@ pub fn compute_shielded_unshield_fee_v0(
         .ok_or(ProtocolError::Overflow("shielded unshield fee overflow"))
 }
 
+/// v0 of the shielded **identity-create** fee formula:
+///
+///   `identity_create_fee = compute_minimum_shielded_fee_v0(num_actions)
+///       + identity_create_base_cost + num_keys × identity_key_in_creation_cost`
+///
+/// This is [`compute_minimum_shielded_fee_v0`] (the per-action note/nullifier storage estimate +
+/// the per-bundle ZK compute) PLUS the consensus identity-create cost floor for the `AddNewIdentity`
+/// write an `IdentityCreateFromShieldedPool` performs (the identity record + balance + revision + N
+/// keys). Rather than a bespoke storage-byte estimate, this reuses the SAME
+/// `identity_create_base_cost` + `identity_key_in_creation_cost` constants
+/// (`platform_version.fee_version.state_transition_min_fees`) that the non-shielded
+/// `IdentityCreate` / `IdentityCreateFromAddresses` transitions use in their
+/// `StateTransitionEstimatedFeeValidation::calculate_min_required_fee` — one source of truth for
+/// the cost of creating an identity, so the shielded predictor cannot drift from the consensus
+/// minimum the create is actually subject to. Like those constants, it grows with the key count.
+///
+/// This function is NOT the authoritative consensus fee (execution meters the real GroveDB cost of
+/// the identity write against the new identity's balance and adds only the compute fee on top). It
+/// is the **client-side predictor** — so a client can size its bundle and pick a denomination that
+/// covers the fee — and the **cheap floor** the `denomination >= min_fee` gate uses to reject
+/// obviously-underfunded denominations before metering. If the later metered affordability check
+/// inside `validate_fees_of_event` finds `denomination < total_fee`, execution returns
+/// `IdentityInsufficientBalanceError` through the standard unpaid-rejection path (the spend is not
+/// finalized and no nullifier is consumed). Only the unique-public-key-hash collision branch in
+/// state validation uses the fallback-address-minus-penalty path — the same residual-risk window the
+/// non-shielded identity-create predictor relies on by using this floor. (In practice the smallest
+/// legal denomination, 10^10 credits, far exceeds the max-key floor, so neither rejection arises for
+/// well-formed transitions.)
+///
+/// All arithmetic is checked: an overflow (only reachable via pathological fee constants or key
+/// counts) surfaces as `ProtocolError::Overflow` instead of silently wrapping.
+pub fn compute_shielded_identity_create_fee_v0(
+    num_actions: usize,
+    num_keys: usize,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    let min_fees = &platform_version.fee_version.state_transition_min_fees;
+
+    let base_fee = compute_minimum_shielded_fee_v0(num_actions, platform_version)?;
+
+    let keys_fee = min_fees
+        .identity_key_in_creation_cost
+        .checked_mul(num_keys as u64)
+        .ok_or(ProtocolError::Overflow(
+            "shielded identity create per-key fee overflow",
+        ))?;
+    let identity_create_floor = min_fees
+        .identity_create_base_cost
+        .checked_add(keys_fee)
+        .ok_or(ProtocolError::Overflow(
+            "shielded identity create floor overflow",
+        ))?;
+    base_fee
+        .checked_add(identity_create_floor)
+        .ok_or(ProtocolError::Overflow(
+            "shielded identity create fee overflow",
+        ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,6 +324,47 @@ mod tests {
                 document_cost,
                 "the withdrawal-document component must be flat (independent of action count)"
             );
+        }
+    }
+
+    /// The identity-create fee MUST equal the base shielded fee plus the consensus identity-create
+    /// floor `identity_create_base_cost + num_keys × identity_key_in_creation_cost`, and it MUST grow
+    /// strictly with the key count (a larger key set is a larger `AddNewIdentity` write). This pins
+    /// the formula to the SAME constants the non-shielded `IdentityCreate` predictor uses, so the
+    /// `denomination >= min_fee` gate stays aligned with the consensus minimum and cannot drift into
+    /// a second, divergent calibration.
+    #[test]
+    fn compute_shielded_identity_create_fee_v0_scales_with_keys() {
+        let platform_version = PlatformVersion::latest();
+        let min_fees = &platform_version.fee_version.state_transition_min_fees;
+
+        for num_actions in [1usize, 2, 5] {
+            let base = compute_minimum_shielded_fee_v0(num_actions, platform_version)
+                .expect("minimum shielded fee");
+            let mut previous = None;
+            for num_keys in [1usize, 2, 5, 10] {
+                let fee = compute_shielded_identity_create_fee_v0(
+                    num_actions,
+                    num_keys,
+                    platform_version,
+                )
+                .expect("identity create fee");
+                let expected_floor = min_fees.identity_create_base_cost
+                    + num_keys as u64 * min_fees.identity_key_in_creation_cost;
+                assert_eq!(
+                    fee,
+                    base + expected_floor,
+                    "identity create fee must equal base + identity_create_base_cost + \
+                     num_keys×identity_key_in_creation_cost"
+                );
+                if let Some(prev) = previous {
+                    assert!(
+                        fee > prev,
+                        "identity create fee must grow strictly with the key count"
+                    );
+                }
+                previous = Some(fee);
+            }
         }
     }
 

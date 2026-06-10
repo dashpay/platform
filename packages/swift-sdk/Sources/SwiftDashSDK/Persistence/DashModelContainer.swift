@@ -30,6 +30,7 @@ public enum DashModelContainer {
             PersistentPendingInput.self,
             PersistentWalletManagerMetadata.self,
             PersistentShieldedNote.self,
+            PersistentShieldedOutgoingNote.self,
             PersistentShieldedSyncState.self,
             PersistentAssetLock.self
         ]

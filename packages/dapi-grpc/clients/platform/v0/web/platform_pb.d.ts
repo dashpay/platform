@@ -11704,6 +11704,11 @@ export namespace GetShieldedEncryptedNotesResponse {
       getEncryptedNote_asB64(): string;
       setEncryptedNote(value: Uint8Array | string): void;
 
+      getCvNet(): Uint8Array | string;
+      getCvNet_asU8(): Uint8Array;
+      getCvNet_asB64(): string;
+      setCvNet(value: Uint8Array | string): void;
+
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): EncryptedNote.AsObject;
       static toObject(includeInstance: boolean, msg: EncryptedNote): EncryptedNote.AsObject;
@@ -11719,6 +11724,7 @@ export namespace GetShieldedEncryptedNotesResponse {
         nullifier: Uint8Array | string,
         cmx: Uint8Array | string,
         encryptedNote: Uint8Array | string,
+        cvNet: Uint8Array | string,
       }
     }
 

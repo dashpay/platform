@@ -11,6 +11,9 @@ struct SendTransactionView: View {
 
     @StateObject private var viewModel: SendViewModel
 
+    /// Drives the camera QR scanner sheet launched from the recipient row.
+    @State private var showQRScanner = false
+
     @Environment(\.modelContext) private var modelContext
 
     /// BLAST-synced platform-address balances for this wallet —
@@ -55,9 +58,23 @@ struct SendTransactionView: View {
             Form {
                 // Recipient
                 Section("Recipient") {
-                    TextField("Recipient Address", text: $viewModel.recipientAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                    HStack(spacing: 8) {
+                        TextField("Recipient Address", text: $viewModel.recipientAddress)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        Button {
+                            showQRScanner = true
+                        } label: {
+                            Image(systemName: "qrcode.viewfinder")
+                                .font(.title3)
+                                .foregroundColor(.accentColor)
+                        }
+                        // `.borderless` is REQUIRED: the default button
+                        // style inside a Form makes the whole row tappable,
+                        // which would swallow taps on the text field.
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Scan recipient address QR code")
+                    }
 
                     if !viewModel.recipientAddress.isEmpty {
                         AddressTypeBadge(type: viewModel.detectedAddressType)
@@ -235,6 +252,20 @@ struct SendTransactionView: View {
             }
             .onChange(of: viewModel.detectedAddressType) { _, _ in
                 autoSelectSource()
+            }
+            .sheet(isPresented: $showQRScanner) {
+                // Same network the view model was built with
+                // (`wallet.network ?? .testnet`) so the scanner validates
+                // against the wallet's chain. Assigning `recipientAddress`
+                // triggers the view model's `didSet` address-type
+                // detection; the amount is only adopted when the user
+                // hasn't already typed one.
+                QRScannerView(network: wallet.network ?? .testnet) { payment in
+                    viewModel.recipientAddress = payment.address
+                    if let amount = payment.amount, viewModel.amountString.isEmpty {
+                        viewModel.amountString = amount
+                    }
+                }
             }
         }
     }

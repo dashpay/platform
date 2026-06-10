@@ -101,6 +101,7 @@ mod tests {
         ShieldedActionNote {
             nullifier: [0x11; 32],
             cmx: [0x22; 32],
+            cv_net: [0x22; 32],
             encrypted_note: vec![1, 2, 3],
         }
     }
@@ -113,6 +114,7 @@ mod tests {
             anchor: [0xAA; 32],
             fee_amount: 500,
             current_total_balance: 10000,
+            chargeable_failure: false,
         })
     }
 
@@ -232,6 +234,7 @@ mod tests {
             anchor: [0x00; 32],
             fee_amount: 500, // fee > amount
             current_total_balance: 10000,
+            chargeable_failure: false,
         });
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();
@@ -249,6 +252,7 @@ mod tests {
             anchor: [0x00; 32],
             fee_amount: 500,
             current_total_balance: 4000, // 4000 < 5000 (amount)
+            chargeable_failure: false,
         });
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();
@@ -286,6 +290,7 @@ mod tests {
         let realistic_note = |i: u8| ShieldedActionNote {
             nullifier: [i.wrapping_add(1); 32],
             cmx: [i.wrapping_add(101); 32],
+            cv_net: [i.wrapping_add(201); 32],
             encrypted_note: vec![0x77; 216],
         };
 
@@ -303,6 +308,7 @@ mod tests {
                 anchor: [0xAA; 32],
                 fee_amount,
                 current_total_balance: amount + 1_000_000,
+                chargeable_failure: false,
             });
 
             let ops = action
@@ -356,6 +362,7 @@ mod tests {
             anchor: [0xAA; 32],
             fee_amount: 500, // net = amount - fee = 0
             current_total_balance: 10000,
+            chargeable_failure: false,
         });
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();

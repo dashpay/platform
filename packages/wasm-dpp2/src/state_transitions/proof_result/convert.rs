@@ -16,7 +16,8 @@ use super::identity::{
 };
 use super::shielded::{
     VerifiedAssetLockConsumedWasm, VerifiedAssetLockConsumedWithAddressInfosWasm,
-    VerifiedShieldedNullifiersWasm, VerifiedShieldedNullifiersWithAddressInfosWasm,
+    VerifiedIdentityWithShieldedNullifiersWasm, VerifiedShieldedNullifiersWasm,
+    VerifiedShieldedNullifiersWithAddressInfosWasm,
     VerifiedShieldedNullifiersWithWithdrawalDocumentWasm,
 };
 use super::token::{
@@ -67,7 +68,8 @@ export type StateTransitionProofResultType =
   | VerifiedAssetLockConsumedWithAddressInfos
   | VerifiedShieldedNullifiers
   | VerifiedShieldedNullifiersWithAddressInfos
-  | VerifiedShieldedNullifiersWithWithdrawalDocument;
+  | VerifiedShieldedNullifiersWithWithdrawalDocument
+  | VerifiedIdentityWithShieldedNullifiers;
 "#;
 
 #[wasm_bindgen]
@@ -308,6 +310,15 @@ pub fn convert_proof_result(
             )
             .into()
         }
+
+        StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers(
+            identity,
+            nullifiers,
+        ) => VerifiedIdentityWithShieldedNullifiersWasm::new(
+            identity.into(),
+            build_nullifier_map(nullifiers),
+        )
+        .into(),
     };
 
     Ok(js_value.into())
