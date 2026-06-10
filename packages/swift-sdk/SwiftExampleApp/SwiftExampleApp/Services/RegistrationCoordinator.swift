@@ -90,6 +90,7 @@ final class RegistrationCoordinator: ObservableObject {
     func startRegistration(
         walletId: Data,
         identityIndex: UInt32,
+        fundingKind: IdentityRegistrationController.FundingKind = .assetLock,
         body: @escaping () async throws -> Data
     ) -> IdentityRegistrationController {
         let key = SlotKey(walletId: walletId, identityIndex: identityIndex)
@@ -113,7 +114,8 @@ final class RegistrationCoordinator: ObservableObject {
         }
         let controller = IdentityRegistrationController(
             walletId: walletId,
-            identityIndex: identityIndex
+            identityIndex: identityIndex,
+            fundingKind: fundingKind
         )
         controllers[key] = controller
         controller.enterPreparingKeys()

@@ -423,6 +423,38 @@ extension PlatformWalletManager {
         platform_wallet_shielded_prover_is_ready()
     }
 
+    /// Which consensus fee formula a pool-paid shielded transition is
+    /// charged under. Mirrors the `kind` byte the Rust FFI
+    /// `platform_wallet_shielded_estimate_fee` dispatches on.
+    public enum ShieldedFeeKind: UInt8 {
+        /// ShieldedTransfer / Shield base (`compute_minimum_shielded_fee`).
+        case transfer = 0
+        /// Unshield (`compute_shielded_unshield_fee`).
+        case unshield = 1
+        /// ShieldedWithdrawal (`compute_shielded_withdrawal_fee`).
+        case withdrawal = 2
+    }
+
+    /// Consensus-pinned flat shielded fee (in credits) for a pool-paid
+    /// shielded transition with `numActions` Orchard actions. Pure
+    /// computation on the Rust side (no handle, no network) against
+    /// `PlatformVersion::latest()` — the same version the builders pin —
+    /// so the estimate can't drift from the carved fee. A single-note
+    /// spend with change is `numActions: 2`.
+    public static func estimateShieldedFee(
+        kind: ShieldedFeeKind,
+        numActions: Int = 2
+    ) throws -> UInt64 {
+        var fee: UInt64 = 0
+        // `num_actions` is `usize` on the Rust side → imported as `UInt`.
+        try platform_wallet_shielded_estimate_fee(
+            kind.rawValue,
+            UInt(numActions),
+            &fee
+        ).check()
+        return fee
+    }
+
     /// Shielded → Shielded transfer. Spends notes from `account`
     /// on `walletId` and creates a new note for `recipientRaw43`
     /// (the recipient's raw 43-byte Orchard payment address).
