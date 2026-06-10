@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// untagged is needed here
 #[derive(Debug, Clone, PartialEq, From)]
 #[cfg_attr(
-   any( feature = "serde-conversion" ,feature = "serde-conversion",),
+   feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize),
     serde(tag = "$formatVersion"),
     // platform_version_path("dpp.identity_versions.identity_structure_version")

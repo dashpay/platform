@@ -56,7 +56,7 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 #[cfg(feature = "value-conversion")]
 use platform_value::Error;
 use platform_value::{Identifier, Value};
-#[cfg(any(feature = "serde-conversion", feature = "serde-conversion",))]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -76,7 +76,7 @@ pub mod v0;
     From,
 )]
 #[cfg_attr(
-    any(feature = "serde-conversion", feature = "serde-conversion",),
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(tag = "$formatVersion")
 )]
@@ -91,10 +91,7 @@ pub mod v0;
 /// See [`v0::TokenPaymentInfoV0`] for the current set of fields and semantics.
 pub enum TokenPaymentInfo {
     #[display("V0({})", "_0")]
-    #[cfg_attr(
-        any(feature = "serde-conversion", feature = "serde-conversion",),
-        serde(rename = "0")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(TokenPaymentInfoV0),
 }
 

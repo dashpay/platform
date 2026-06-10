@@ -2329,6 +2329,23 @@ mod json_convertible_tests {
     }
 
     #[test]
+    fn index_property_value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
+        let original = IndexProperty {
+            name: "ownerId".to_string(),
+            ascending: false,
+        };
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({"name": "ownerId", "ascending": false})
+        );
+        let recovered = IndexProperty::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
     fn index_countability_round_trips_all_variants() {
         use crate::serialization::{JsonConvertible, ValueConvertible};
         let cases = [

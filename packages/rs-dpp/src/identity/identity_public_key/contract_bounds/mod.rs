@@ -332,5 +332,3 @@ mod tests {
         assert_eq!(bounds, restored);
     }
 }
-
-// TODO(unification pass 2): add round-trip tests for contractboundspecification — needs explicit fixture (no Default).

@@ -94,6 +94,136 @@ mod json_convertible_tests {
         let recovered = GroupActionEvent::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
+
+    // The two tests below pin the deepest custom-serde composition in the
+    // crate: GroupActionEvent (`tag = "kind"`, derive — buffers inner content
+    // through serde's ContentDeserializer) → TokenEvent (custom impl) →
+    // externally-tagged TokenConfigurationChangeItem /
+    // TokenDistributionTypeWithResolvedRecipient → the custom
+    // internally-tagged AuthorizedActionTakers /
+    // TokenDistributionResolvedRecipient. The Identity-carrying variants
+    // specifically exercise the Identifier dual-shape path (HR base58 string
+    // vs buffered bytes) under the ContentDeserializer HR-quirk. A one-sided
+    // edit to any custom Serialize/Deserialize pair in the chain fails here.
+
+    fn change_item_fixture() -> GroupActionEvent {
+        use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+        use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+        GroupActionEvent::TokenEvent(TokenEvent::ConfigUpdate(
+            TokenConfigurationChangeItem::ConventionsControlGroup(
+                AuthorizedActionTakers::Identity(platform_value::Identifier::from([0x42u8; 32])),
+            ),
+            Some("rotate control".to_string()),
+        ))
+    }
+
+    fn claim_fixture() -> GroupActionEvent {
+        use crate::data_contract::associated_token::token_distribution_key::TokenDistributionTypeWithResolvedRecipient;
+        use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionResolvedRecipient;
+        GroupActionEvent::TokenEvent(TokenEvent::Claim(
+            TokenDistributionTypeWithResolvedRecipient::Perpetual(
+                TokenDistributionResolvedRecipient::Evonode(platform_value::Identifier::from(
+                    [0x42u8; 32],
+                )),
+            ),
+            750,
+            Some("payout".to_string()),
+        ))
+    }
+
+    #[test]
+    fn json_round_trip_config_update_with_identity_action_taker() {
+        use crate::serialization::JsonConvertible;
+        let original = change_item_fixture();
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "kind": "tokenEvent",
+                "type": "configUpdate",
+                "configurationChange": {
+                    "conventionsControlGroup": {
+                        "type": "identity",
+                        "identity": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
+                    },
+                },
+                "publicNote": "rotate control",
+            })
+        );
+        let recovered = GroupActionEvent::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_config_update_with_identity_action_taker() {
+        use crate::serialization::ValueConvertible;
+        let original = change_item_fixture();
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({
+                "kind": "tokenEvent",
+                "type": "configUpdate",
+                "configurationChange": {
+                    "conventionsControlGroup": {
+                        "type": "identity",
+                        "identity": platform_value::Identifier::from([0x42u8; 32]),
+                    },
+                },
+                "publicNote": "rotate control",
+            })
+        );
+        let recovered = GroupActionEvent::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_claim_with_resolved_recipient() {
+        use crate::serialization::JsonConvertible;
+        let original = claim_fixture();
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "kind": "tokenEvent",
+                "type": "claim",
+                "distributionType": {
+                    "Perpetual": {
+                        "type": "evonode",
+                        "identity": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
+                    },
+                },
+                "amount": 750,
+                "publicNote": "payout",
+            })
+        );
+        let recovered = GroupActionEvent::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_claim_with_resolved_recipient() {
+        use crate::serialization::ValueConvertible;
+        let original = claim_fixture();
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({
+                "kind": "tokenEvent",
+                "type": "claim",
+                "distributionType": {
+                    "Perpetual": {
+                        "type": "evonode",
+                        "identity": platform_value::Identifier::from([0x42u8; 32]),
+                    },
+                },
+                "amount": 750u64,
+                "publicNote": "payout",
+            })
+        );
+        let recovered = GroupActionEvent::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
 }
 
 use std::fmt;

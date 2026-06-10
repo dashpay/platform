@@ -189,7 +189,35 @@ the same commit.
 - [x] `Metadata` (+ `json_safe_fields` — raw u64s reachable via `ExtendedDocument` `$metadata`)
 - [x] `TokenTradeMode` (trivial, consistency)
 - Skipped deliberately: `FeeRefunds` (fee-module internal, no J/V callers), `LazyRegex`
-  (string-newtype primitive, covered via `ContestedIndexFieldMatch` tests).
+  (string-newtype primitive, covered via `ContestedIndexFieldMatch` tests), `CoreScript`
+  (bytes-newtype primitive with its own dual-shape manual serde — same class as LazyRegex).
+
+### Re-review pass (2026-06-10, post-push @ `64f8077fd4`)
+
+A second adversarial + gap-sweep pass over the five commits found no blockers and three
+fix-ups, landed as a follow-up commit:
+
+- [x] The P5 duplicate-predicate collapse was incomplete — `any(A, all(A, A))` shapes in
+      `gas_fees_paid_by.rs` / `token_payment_info/{mod,v0}` collapsed only the inner `all`,
+      leaving `any(A, A)` (rustfmt split them across lines, which hid them from the
+      single-line verification grep), plus one odd-spacing site in `identity.rs`. All 8
+      now collapsed to the single predicate (verified with a multiline-aware search).
+- [x] Composed-chain round-trip tests for the new custom serde impls: `GroupActionEvent`
+      (`tag = "kind"`) → `TokenEvent::ConfigUpdate` → `TokenConfigurationChangeItem` →
+      `AuthorizedActionTakers::Identity`, and `TokenEvent::Claim` →
+      `TokenDistributionTypeWithResolvedRecipient` → `TokenDistributionResolvedRecipient::Evonode`
+      (JSON + Value each). These pin the ContentDeserializer buffering path — the deepest
+      custom-serde composition in the crate — which no test exercised end-to-end.
+- [x] `IndexProperty` Value-path round-trip (was JSON-only); dead TODO referencing a
+      nonexistent type removed from `contract_bounds/mod.rs`.
+
+Known-remaining (out of scope, pre-existing): `GroupAction` and `PartialIdentity` have
+J+V impls but no rs-dpp round-trip tests (`GroupAction` carries an in-file TODO; both are
+covered indirectly by wasm-dpp2 specs). Adversarial-review residuals accepted as-is:
+contract JSON authored against ≤beta.3 fails token-config ingest with a low-context serde
+error (intentional pre-4.0 break); `read_map_property`'s shallow normalization means
+`fromJSON`-ingested proof-result DTOs carry JSON-erased value types (pre-existing,
+matches shielded-module behavior).
 
 ### P3 — `Index` drift from base (#3623 count + #3661 sum fields)
 
