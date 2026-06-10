@@ -1018,8 +1018,10 @@ struct BalanceCardView: View {
                 // Shielded Balance row — mirrors the Platform
                 // Balance row's trailing `+` affordance. When
                 // `onFundShielded` is wired the user can open the
-                // Core L1 → shielded-pool funding sheet (Type 18,
-                // `ShieldFromAssetLockTransition`).
+                // shielding sheet, which now lets them choose the
+                // source: Core L1 → pool (Type 18,
+                // `ShieldFromAssetLockTransition`) or Platform credits
+                // → pool (Type 15, `shieldedShield`).
                 WalletBalanceRow(
                     label: "Shielded Balance",
                     amount: shieldedService.shieldedBalance,
@@ -1029,7 +1031,7 @@ struct BalanceCardView: View {
                     trailingAction: onFundShielded.map { fund in
                         WalletBalanceRow.TrailingAction(
                             systemImage: "plus.circle.fill",
-                            accessibilityLabel: "Shield from Core Asset Lock",
+                            accessibilityLabel: "Add to Shielded Balance",
                             action: fund
                         )
                     }

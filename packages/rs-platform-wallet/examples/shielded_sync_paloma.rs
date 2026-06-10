@@ -1,7 +1,7 @@
 //! Remote-devnet variant of the `shielded_sync` example. Binds wallet A
 //! (raw ZIP-32 seed `[0x73; 32]`) against a live devnet that's been
 //! deployed from a `SDK_TEST_DATA=true` image, drives one shielded sync
-//! pass, and asserts the recovered balance.
+//! pass, and asserts the pass walks the seeded note pool cleanly.
 //!
 //! This is an opt-in example (NOT a test) because it performs real network
 //! I/O against a live devnet; cargo examples are compiled but never run by
@@ -46,14 +46,22 @@
 //!
 //! # What this proves
 //!
-//! Green: ZIP-32 derivation + bind + decryption + persistence work
-//! end-to-end against paloma. If the iOS SwiftExampleApp shows balance
-//! = 0 against the same devnet, the bug is iOS-side (persister
-//! callback, SwiftData write, UI aggregation).
+//! Green: ZIP-32 derivation + bind + chunked note fetch + trial
+//! decryption + persistence work end-to-end against paloma — the pass
+//! finishes with no per-wallet errors and a non-zero scan count. If the
+//! iOS SwiftExampleApp can't sync against the same devnet, the bug is
+//! iOS-side (persister callback, SwiftData write, UI aggregation).
 //!
-//! Red on "decrypted 0 notes": paloma was built without
+//! No balance is expected: paloma's seeded notes are filler-only. The
+//! genesis test-wallet note seeding was removed (see
+//! `packages/rs-drive-abci/.../create_genesis_state/test/shielded.rs::
+//! sdk_test_data`), so wallet A decrypts nothing and a 0 balance is
+//! correct. The balance is printed for information only; decryptable
+//! balances need real shielded-fund transitions post-genesis.
+//!
+//! Red on "scanned 0 notes": paloma was built without
 //! `SDK_TEST_DATA=true`, or from a commit predating the snapshot
-//! machinery — its 1M notes are filler-only.
+//! machinery — there's no seeded pool to walk.
 //!
 //! Red on proof / network errors: quorum URL or DAPI addresses are
 //! wrong or unreachable.
@@ -70,18 +78,16 @@ use platform_wallet::changeset::{
     ClientStartState, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::events::{EventHandler, PlatformEventHandler};
+use platform_wallet::manager::shielded_sync::WalletShieldedOutcome;
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::PlatformWalletManager;
 use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
 
-/// Wallet A seed — must stay byte-identical to
-/// `packages/rs-drive-abci/.../shielded_test_wallets.rs::SEED_A`.
+/// Wallet A seed — the historical SDK test-wallet seed. The genesis
+/// test-wallet note seeding was removed, so no seeded note decrypts to
+/// this (or any) seed; any fixed seed would do. Kept byte-identical to
+/// the `shielded_sync` example so runs stay comparable.
 const SEED_A: [u8; 32] = [0x73; 32];
-
-/// Per-wallet bake config (mirror of `ShieldedSeedConfig::sdk_test_data`).
-const COUNT_A: u32 = 4;
-const OWNED_VALUE: u64 = 100_000;
-const EXPECTED_BALANCE_A: u64 = COUNT_A as u64 * OWNED_VALUE; // 400_000
 
 /// Default quorum-list service URL for paloma. Override with
 /// `PALOMA_QUORUM_URL`.
@@ -178,8 +184,8 @@ async fn main() {
     let quorum = quorum_url();
     let live_count = addresses.get_live_addresses().len();
     eprintln!(
-        "paloma config: quorum_url={} dapi_node_count={} expected_balance={}",
-        quorum, live_count, EXPECTED_BALANCE_A,
+        "paloma config: quorum_url={} dapi_node_count={}",
+        quorum, live_count,
     );
 
     // --- 1. Build SDK pointing at all paloma masternodes, with the
@@ -256,21 +262,38 @@ async fn main() {
     let summary = coordinator.sync(true).await;
     eprintln!("sync summary: {:?}", summary);
 
-    // --- 6. Read the per-account balance + assert. ---
+    // --- 6. Assert the pass ran cleanly and actually walked the
+    //        seeded pool. Paloma's notes are filler-only (the genesis
+    //        test-wallet seeding was removed), so balance is printed
+    //        for information, not asserted. ---
+    assert_eq!(
+        summary.error_count(),
+        0,
+        "shielded sync pass reported per-wallet errors: {:?}",
+        summary.wallet_results,
+    );
+    let wallet_summary = match summary.wallet_results.get(&platform_wallet.wallet_id()) {
+        Some(WalletShieldedOutcome::Ok(s)) => s,
+        other => panic!("expected a successful sync outcome for wallet A, got {other:?}"),
+    };
+    assert!(
+        !wallet_summary.is_cooldown_skip,
+        "sync(force = true) must not be short-circuited by the caught-up cooldown",
+    );
+    assert!(
+        wallet_summary.notes_result.total_scanned > 0,
+        "scanned 0 notes — paloma built without SDK_TEST_DATA=true, or \
+         from a commit predating the snapshot machinery?",
+    );
+
     let balances = platform_wallet
         .shielded_balances(&coordinator)
         .await
         .expect("shielded_balances");
     let total_balance: u64 = balances.values().sum();
     eprintln!(
-        "paloma wallet A balances = {:?} (total {})",
-        balances, total_balance,
-    );
-
-    assert_eq!(
-        total_balance, EXPECTED_BALANCE_A,
-        "wallet A balance mismatch on paloma (expected {} = {} × {}, got {})",
-        EXPECTED_BALANCE_A, COUNT_A, OWNED_VALUE, total_balance,
+        "paloma wallet A: scanned {} notes, balances = {:?} (total {}, informational)",
+        wallet_summary.notes_result.total_scanned, balances, total_balance,
     );
 
     let _ = std::fs::remove_dir_all(&shielded_db_dir);
