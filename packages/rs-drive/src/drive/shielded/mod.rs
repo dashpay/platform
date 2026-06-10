@@ -47,11 +47,3 @@ mod read_total_balance;
 /// Count the notes in the shielded pool commitment tree
 #[cfg(feature = "server")]
 mod notes_count;
-
-/// Prove methods for shielded pool queries
-#[cfg(feature = "server")]
-pub mod prove;
-
-/// Per-block nullifier storage for catch-up sync
-#[cfg(any(feature = "server", feature = "verify"))]
-pub mod nullifiers;
