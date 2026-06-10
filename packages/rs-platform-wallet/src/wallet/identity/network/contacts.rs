@@ -443,14 +443,38 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 ))
             })?;
 
-        // --- 6. Reconstruct the ExtendedPubKey from the raw encoded bytes. ---
-        let contact_xpub = key_wallet::bip32::ExtendedPubKey::decode(&decrypted_xpub_bytes)
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to decode contact xpub: {}",
-                    e
-                ))
-            })?;
+        // --- 6. Reconstruct the ExtendedPubKey from the decrypted plaintext. ---
+        //
+        // DIP-15 + both reference clients (iOS dash-shared-core, Android dashj)
+        // use the 69-byte COMPACT form (fingerprint ‖ chaincode ‖ pubkey) —
+        // the version/depth/child-number metadata is omitted on the wire and
+        // reconstructed here from the known friendship-path context. Only
+        // chain_code + public_key feed non-hardened ckd_pub, so reconstruction
+        // yields identical payment addresses (pinned by
+        // `reconstructed_xpub_derives_identical_addresses` in crypto::dip14).
+        //
+        // Backward-compat: a locally-stored legacy plaintext could be the old
+        // 78/107-byte BIP32/DIP-14 serialization. Desk-check (research/06)
+        // confirms nothing nonconforming reached chain, but we keep one cheap
+        // fallback branch as insurance.
+        let contact_xpub = match platform_encryption::parse_compact_xpub(&decrypted_xpub_bytes) {
+            Ok((parent_fingerprint, chain_code, public_key)) => {
+                crate::wallet::identity::crypto::dip14::reconstruct_contact_xpub(
+                    parent_fingerprint,
+                    chain_code,
+                    public_key,
+                    self.sdk.network,
+                )?
+            }
+            Err(_) => {
+                key_wallet::bip32::ExtendedPubKey::decode(&decrypted_xpub_bytes).map_err(|e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Decrypted contact xpub is neither a 69-byte DIP-15 compact form \
+                         nor a 78/107-byte BIP32/DIP-14 serialization: {e}"
+                    ))
+                })?
+            }
+        };
 
         // --- 7. Build the watch-only Account and register it. ---
         //

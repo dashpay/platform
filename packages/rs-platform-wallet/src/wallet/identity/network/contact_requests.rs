@@ -1,7 +1,5 @@
 //! DashPay contact request lifecycle: send, sync, accept, reject.
 
-use async_trait::async_trait;
-use dpp::address_funds::AddressWitness;
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -11,52 +9,15 @@ use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyType;
 use dpp::identity::SecurityLevel;
-use dpp::platform_value::BinaryData;
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
-use dpp::ProtocolError;
-use key_wallet::account::AccountType;
 
-use dash_sdk::platform::dashpay::EcdhProvider;
-
+use super::sdk_writer::SendContactRequestParams;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
-use dash_sdk::platform::dashpay::SendContactRequestInput;
-
-// Borrowed-signer adapter — see `dpns.rs` for the pattern.
-struct SignerRef<'a, S: ?Sized>(&'a S);
-
-impl<'a, S: ?Sized> std::fmt::Debug for SignerRef<'a, S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("SignerRef")
-    }
-}
-
-#[async_trait]
-impl<'a, K, S> Signer<K> for SignerRef<'a, S>
-where
-    K: Send + Sync,
-    S: Signer<K> + ?Sized + Send + Sync,
-{
-    async fn sign(&self, key: &K, data: &[u8]) -> Result<BinaryData, ProtocolError> {
-        self.0.sign(key, data).await
-    }
-
-    async fn sign_create_witness(
-        &self,
-        key: &K,
-        data: &[u8],
-    ) -> Result<AddressWitness, ProtocolError> {
-        self.0.sign_create_witness(key, data).await
-    }
-
-    fn can_sign_with(&self, key: &K) -> bool {
-        self.0.can_sign_with(key)
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Send contact request
@@ -69,8 +30,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// All parameters that can be resolved internally are resolved
     /// automatically:
     /// - **identity_index**: looked up from the local `ManagedIdentity`
-    /// - **sender_key_index**: first key with `Purpose::ENCRYPTION` on the sender
-    /// - **recipient_key_index**: first key with `Purpose::DECRYPTION` on the recipient
+    /// - **sender_key_index**: first `ECDSA_SECP256K1` `Purpose::ENCRYPTION`
+    ///   key on the sender
+    /// - **recipient_key_index**: first `ECDSA_SECP256K1` `Purpose::DECRYPTION`
+    ///   key on the recipient, falling back to the first ENCRYPTION key when
+    ///   the recipient has no DECRYPTION key (G15 mobile cohort) — see
+    ///   [`select_recipient_key_index`]
     /// - **account_index**: defaults to `0`
     /// - **ECDH**: performed SDK-side using the sender's derived
     ///   encryption private key.
@@ -132,29 +97,25 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .ok_or_else(|| PlatformWalletError::IdentityNotFound(*recipient_identity_id))?
         };
 
-        // 3. Resolve key indices.
+        // 3. Resolve key indices. The sender selects its own ENCRYPTION key
+        //    (the live convention for both cohorts); ECDSA_SECP256K1 is
+        //    required for ECDH.
         let sender_encryption_key = sender_identity
             .public_keys()
             .iter()
-            .find(|(_, k)| k.purpose() == Purpose::ENCRYPTION)
+            .find(|(_, k)| {
+                k.purpose() == Purpose::ENCRYPTION
+                    && k.key_type() == KeyType::ECDSA_SECP256K1
+            })
             .map(|(_, k)| k.clone())
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(
-                    "Sender identity has no encryption key".to_string(),
+                    "Sender identity has no ECDSA_SECP256K1 encryption key".to_string(),
                 )
             })?;
         let sender_key_index = sender_encryption_key.id();
 
-        let recipient_key_index = recipient_identity
-            .public_keys()
-            .iter()
-            .find(|(_, k)| k.purpose() == Purpose::DECRYPTION)
-            .map(|(id, _)| *id)
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(
-                    "Recipient identity has no decryption key".to_string(),
-                )
-            })?;
+        let recipient_key_index = select_recipient_key_index(&recipient_identity)?;
 
         // 4. Derive the DashPay receiving xpub + ECDH private key from
         //    the wallet seed. NOTE: this step still requires the seed
@@ -166,26 +127,21 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .get_wallet(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
 
-            let account_type = AccountType::DashpayReceivingFunds {
-                index: account_index,
-                user_identity_id: sender_identity_id.to_buffer(),
-                friend_identity_id: recipient_identity_id.to_buffer(),
-            };
-            let account_path = account_type
-                .derivation_path(self.sdk.network)
-                .map_err(|err| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to derive DashPay receiving account path: {err}"
-                    ))
-                })?;
-            let account_xpub = wallet
-                .derive_extended_public_key(&account_path)
-                .map_err(|err| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to derive DashPay receiving account xpub: {err}"
-                    ))
-                })?;
-            let xpub = account_xpub.encode();
+            // Build the DIP-15 *compact* 69-byte plaintext
+            // (parentFingerprint ‖ chainCode ‖ pubKey) — NOT
+            // `ExtendedPubKey::encode()`. The DashPay receiving path ends in a
+            // Normal256 child, so `encode()` is the 107-byte DIP-14
+            // serialization → 128-byte ciphertext → fails the contract's
+            // `maxItems: 96` and both reference clients' hard `len == 69`
+            // receive checks. See G14 / research/06-interop-desk-check.md.
+            let contact_xpub = crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+                wallet,
+                self.sdk.network,
+                account_index,
+                sender_identity_id,
+                recipient_identity_id,
+            )?;
+            let xpub = contact_xpub.compact_xpub().to_vec();
 
             let ecdh_key = Self::derive_encryption_private_key(
                 wallet,
@@ -217,61 +173,28 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 )
             })?;
 
-        // 6. Build SDK input. Wrap the borrowed signer in `SignerRef`
-        //    so it satisfies the owned-by-bound `Signer<IdentityPublicKey>`
-        //    requirement on `SendContactRequestInput`.
-        let contact_request_input = dash_sdk::platform::dashpay::ContactRequestInput {
-            sender_identity: sender_identity.clone(),
-            recipient: dash_sdk::platform::dashpay::RecipientIdentity::Identity(recipient_identity),
-            sender_key_index,
-            recipient_key_index,
-            account_reference: account_index,
-            account_label,
-            auto_accept_proof,
-        };
-
-        let send_input = SendContactRequestInput {
-            contact_request: contact_request_input,
-            identity_public_key,
-            signer: SignerRef(signer),
-        };
-
-        let expected_key_id = sender_key_index;
-        let ecdh_provider: EcdhProvider<
-            _,
-            _,
-            fn(
-                &dashcore::secp256k1::PublicKey,
-            ) -> std::future::Ready<Result<[u8; 32], dash_sdk::Error>>,
-            _,
-        > = EcdhProvider::SdkSide {
-            get_private_key: move |key: &IdentityPublicKey, _index: u32| {
-                let pk = ecdh_private_key;
-                let actual_key_id = key.id();
-                async move {
-                    if actual_key_id != expected_key_id {
-                        return Err(dash_sdk::Error::Generic(format!(
-                            "ECDH key mismatch: expected key {}, got {}",
-                            expected_key_id, actual_key_id
-                        )));
-                    }
-                    Ok(pk)
-                }
-            },
-        };
-
-        let xpub_bytes_clone = xpub_bytes.clone();
+        // 6. Broadcast through the write seam. All inputs are resolved
+        //    above; the seam assembles the SDK `EcdhProvider` + xpub
+        //    closure and dispatches `Sdk::send_contact_request`. Routing
+        //    the broadcast through `sdk_writer` (rather than calling the
+        //    seven-generic SDK method inline) is what makes this path
+        //    testable without a live network — see `sdk_writer.rs`.
         let result = self
-            .sdk
-            .send_contact_request(send_input, ecdh_provider, |_account_ref: u32| async move {
-                Ok::<Vec<u8>, dash_sdk::Error>(xpub_bytes_clone)
+            .sdk_writer
+            .send_contact_request(SendContactRequestParams {
+                sender_identity: sender_identity.clone(),
+                recipient_identity,
+                sender_key_index,
+                recipient_key_index,
+                account_reference: account_index,
+                account_label,
+                auto_accept_proof,
+                ecdh_private_key,
+                xpub_bytes,
+                signing_public_key: identity_public_key,
+                signer: signer as &(dyn Signer<IdentityPublicKey> + Send + Sync),
             })
-            .await
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to send contact request: {e}"
-                ))
-            })?;
+            .await?;
 
         // 7. Mirror the local-state bookkeeping in `send_contact_request`.
         let contact_request = ContactRequest::new(
@@ -304,6 +227,39 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     }
 }
 
+/// Select the recipient identity's key id to reference in
+/// `recipientKeyIndex` for an outgoing contact request (G15).
+///
+/// Verified testnet reality (research/06 §G15): the newest cohort uses a
+/// recipient **DECRYPTION** key (our original convention), but the dominant
+/// 126-owner mobile population has **no DECRYPTION key at all** and references
+/// its **ENCRYPTION** key for `recipientKeyIndex`. To send to either cohort:
+///
+/// 1. Prefer the recipient's first `ECDSA_SECP256K1` **DECRYPTION** key.
+/// 2. Fall back to the recipient's first `ECDSA_SECP256K1` **ENCRYPTION** key.
+/// 3. Error only if the recipient has neither.
+///
+/// No AUTHENTICATION fallback: no live client population needs it, and reusing
+/// signing keys for ECDH is poor key separation. `ECDSA_SECP256K1` is required
+/// either way (every observed key is that type, and ECDH needs the full key).
+fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, PlatformWalletError> {
+    // Prefer a DECRYPTION key.
+    if let Some((id, _)) = recipient_identity.public_keys().iter().find(|(_, k)| {
+        k.purpose() == Purpose::DECRYPTION && k.key_type() == KeyType::ECDSA_SECP256K1
+    }) {
+        return Ok(*id);
+    }
+    // Fall back to an ENCRYPTION key (mobile cohort).
+    if let Some((id, _)) = recipient_identity.public_keys().iter().find(|(_, k)| {
+        k.purpose() == Purpose::ENCRYPTION && k.key_type() == KeyType::ECDSA_SECP256K1
+    }) {
+        return Ok(*id);
+    }
+    Err(PlatformWalletError::InvalidIdentityData(
+        "Recipient identity has no ECDSA_SECP256K1 DECRYPTION or ENCRYPTION key".to_string(),
+    ))
+}
+
 // ---------------------------------------------------------------------------
 // Sync contact requests from platform
 // ---------------------------------------------------------------------------
@@ -311,12 +267,32 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Fetch and process contact requests from the platform for all local identities.
     ///
-    /// For every identity in the local manager this method:
-    /// 1. Fetches received contact-request documents from Platform.
-    /// 2. Converts them into [`ContactRequest`] structs.
-    /// 3. Adds each as an incoming request to the corresponding
-    ///    `ManagedIdentity` (which may auto-establish a contact when a
-    ///    matching outgoing request already exists).
+    /// For every identity in the local manager this method, per sweep:
+    /// 1. Fetches both **received** and **own sent** contact-request
+    ///    documents from Platform (G13).
+    /// 2. Ingests received requests via `add_incoming_contact_request` —
+    ///    **including reciprocal requests from senders we already sent to**
+    ///    (G1a: the old guard dropped those, so contacts never established
+    ///    via sync). Dedup is preserved for requests already tracked as
+    ///    incoming or established, and for requests suppressed by the
+    ///    rejected-request tombstone (G5 stage 1).
+    /// 3. Ingests own sent requests via `add_sent_contact_request`, which
+    ///    carries its own sent-side guard (G13) so a recurring re-ingest
+    ///    creates no phantom pending rows and preserves contact metadata.
+    /// 4. For **every** established contact missing a sending account
+    ///    (not only newly-established ones — this also repairs
+    ///    restore-from-seed and best-effort-accept gaps), rebuilds both
+    ///    the `DashpayReceivingFunds` and `DashpayExternalAccount`
+    ///    accounts (G1b), with the transient/permanent failure policy
+    ///    (G1c).
+    ///
+    /// **Lock ordering (critical).** The account-building registrations
+    /// (`register_contact_account`, `register_external_contact_account`)
+    /// re-acquire the wallet-manager lock, which is a **non-reentrant**
+    /// tokio `RwLock`. Candidates are therefore collected while the write
+    /// guard is held, the guard is **dropped**, and only then are the
+    /// register functions called — mirroring the accept path. Calling
+    /// them inline under the guard would deadlock on first execution.
     ///
     /// Returns all newly discovered incoming contact requests.
     pub async fn sync_contact_requests(&self) -> Result<Vec<ContactRequest>, PlatformWalletError> {
@@ -335,120 +311,473 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let mut all_requests = Vec::new();
 
         for identity_id in identity_ids {
-            let received_docs = self
+            // --- Fetch (no guard held during the awaits). ---
+            //
+            // Log-and-continue per identity: a fetch failure for one
+            // identity must NOT abort the sweep across the others. This
+            // is load-bearing for the recurring loop (G12) — a single
+            // identity's transient DAPI error shouldn't stall DashPay
+            // sync for every other identity on the wallet.
+            let received_docs = match self
                 .sdk
                 .fetch_received_contact_requests(identity_id, None)
                 .await
-                .map_err(|e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to fetch received contact requests: {e}"
-                    ))
-                })?;
-
-            let mut wm = self.wallet_manager.write().await;
-            let info = match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(i) => i,
-                None => continue,
+            {
+                Ok(docs) => docs,
+                Err(e) => {
+                    tracing::warn!(
+                        identity = %identity_id,
+                        error = %e,
+                        "Failed to fetch received contact requests; skipping this identity"
+                    );
+                    continue;
+                }
             };
-            let managed = match info.identity_manager.managed_identity_mut(&identity_id) {
-                Some(m) => m,
-                None => continue,
+            // G13: also fetch our own sent requests so a restored / second
+            // device reconciles established contacts instead of rendering
+            // them as bare incoming requests. A failure here is logged but
+            // does not skip the received-side ingest already fetched above.
+            let sent_docs = match self
+                .sdk
+                .fetch_sent_contact_requests(identity_id, None)
+                .await
+            {
+                Ok(docs) => docs,
+                Err(e) => {
+                    tracing::warn!(
+                        identity = %identity_id,
+                        error = %e,
+                        "Failed to fetch sent contact requests; reconciling received side only"
+                    );
+                    Default::default()
+                }
             };
 
-            for (_doc_id, maybe_doc) in received_docs.iter() {
-                let doc = match maybe_doc {
-                    Some(d) => d,
+            // --- Ingest under the write guard; collect account-building
+            //     candidates; then DROP the guard before registering. ---
+            let candidates = {
+                let mut wm = self.wallet_manager.write().await;
+                let info = match wm.get_wallet_info_mut(&self.wallet_id) {
+                    Some(i) => i,
+                    None => continue,
+                };
+                let managed = match info.identity_manager.managed_identity_mut(&identity_id) {
+                    Some(m) => m,
                     None => continue,
                 };
 
-                let sender_id = doc.owner_id();
+                // (1) Ingest received requests.
+                for (doc_id, maybe_doc) in received_docs.iter() {
+                    let doc = match maybe_doc {
+                        Some(d) => d,
+                        None => continue,
+                    };
+                    let sender_id = doc.owner_id();
 
-                // Skip if already tracked (sent, incoming, or established).
-                if managed.sent_contact_requests.contains_key(&sender_id)
-                    || managed.incoming_contact_requests.contains_key(&sender_id)
-                    || managed.established_contacts.contains_key(&sender_id)
-                {
-                    continue;
+                    let Some(contact_request) =
+                        Self::parse_contact_request_doc(doc, sender_id, identity_id)
+                    else {
+                        continue;
+                    };
+
+                    // G1a: do NOT skip just because the sender is in
+                    // `sent_contact_requests` — that is the reciprocal we
+                    // need to let through to auto-establish. Skip only when
+                    // already tracked as incoming or established (true
+                    // dedup), or suppressed by a rejected-request tombstone.
+                    if managed.incoming_contact_requests.contains_key(&sender_id)
+                        || managed.established_contacts.contains_key(&sender_id)
+                    {
+                        continue;
+                    }
+                    // G5 stage 1: a rejected request (same sender +
+                    // accountReference) must not be resurrected. A rotated
+                    // request (bumped accountReference) is NOT suppressed.
+                    if managed.is_request_rejected(&sender_id, contact_request.account_reference) {
+                        tracing::debug!(
+                            sender = %sender_id,
+                            recipient = %identity_id,
+                            account_reference = contact_request.account_reference,
+                            "Skipping rejected contact request (tombstoned); doc {doc_id}"
+                        );
+                        continue;
+                    }
+
+                    managed.add_incoming_contact_request(contact_request.clone(), &self.persister);
+                    all_requests.push(contact_request);
                 }
 
-                let props = doc.properties();
+                // (2) Ingest our own sent requests (G13). `add_sent_contact_request`
+                //     guards itself against duplicates / metadata loss.
+                for (_doc_id, maybe_doc) in sent_docs.iter() {
+                    let doc = match maybe_doc {
+                        Some(d) => d,
+                        None => continue,
+                    };
+                    // For a sent request the recipient is `toUserId`.
+                    let recipient_id = match doc
+                        .properties()
+                        .get("toUserId")
+                        .and_then(|v: &Value| v.to_identifier().ok())
+                    {
+                        Some(v) => v,
+                        None => continue,
+                    };
+                    let Some(contact_request) =
+                        Self::parse_sent_contact_request_doc(doc, identity_id, recipient_id)
+                    else {
+                        continue;
+                    };
+                    managed.add_sent_contact_request(contact_request, &self.persister);
+                }
 
-                let sender_key_index = match props
-                    .get("senderKeyIndex")
-                    .and_then(|v: &Value| v.to_integer::<u32>().ok())
-                {
-                    Some(v) => v,
-                    None => {
-                        tracing::warn!(
-                            sender = %sender_id,
-                            recipient = %identity_id,
-                            "Skipping contact request document: missing senderKeyIndex"
-                        );
-                        continue;
-                    }
-                };
-                let recipient_key_index = match props
-                    .get("recipientKeyIndex")
-                    .and_then(|v: &Value| v.to_integer::<u32>().ok())
-                {
-                    Some(v) => v,
-                    None => {
-                        tracing::warn!(
-                            sender = %sender_id,
-                            recipient = %identity_id,
-                            "Skipping contact request document: missing recipientKeyIndex"
-                        );
-                        continue;
-                    }
-                };
-                let account_reference = match props
-                    .get("accountReference")
-                    .and_then(|v: &Value| v.to_integer::<u32>().ok())
-                {
-                    Some(v) => v,
-                    None => {
-                        tracing::warn!(
-                            sender = %sender_id,
-                            recipient = %identity_id,
-                            "Skipping contact request document: missing accountReference"
-                        );
-                        continue;
-                    }
-                };
-                let encrypted_public_key = match props
-                    .get("encryptedPublicKey")
-                    .and_then(|v: &Value| v.as_bytes())
-                    .cloned()
-                {
-                    Some(v) => v,
-                    None => {
-                        tracing::warn!(
-                            sender = %sender_id,
-                            recipient = %identity_id,
-                            "Skipping contact request document: missing encryptedPublicKey"
-                        );
-                        continue;
-                    }
-                };
+                // (3) Collect account-building candidates: every established
+                //     contact missing a sending (external) account, skipping
+                //     contacts whose payment channel is already marked
+                //     permanently broken (G1c — no unbounded retry).
+                Self::collect_account_build_candidates(info, &identity_id)
+            };
 
-                let contact_request = ContactRequest::new(
-                    sender_id,
-                    identity_id,
-                    sender_key_index,
-                    recipient_key_index,
-                    account_reference,
-                    encrypted_public_key,
-                    doc.created_at_core_block_height().unwrap_or(0),
-                    doc.created_at().unwrap_or(0),
-                );
-
-                managed.add_incoming_contact_request(contact_request.clone(), &self.persister);
-                all_requests.push(contact_request);
+            // --- Build accounts AFTER dropping the write guard. ---
+            for candidate in candidates {
+                self.build_contact_accounts(&identity_id, candidate).await;
             }
         }
 
         Ok(all_requests)
     }
+
+    /// Parse a received `contactRequest` document into a [`ContactRequest`],
+    /// logging + returning `None` on any missing required field.
+    fn parse_contact_request_doc(
+        doc: &dpp::document::Document,
+        sender_id: Identifier,
+        recipient_id: Identifier,
+    ) -> Option<ContactRequest> {
+        let props = doc.properties();
+        let sender_key_index = props
+            .get("senderKeyIndex")
+            .and_then(|v: &Value| v.to_integer::<u32>().ok());
+        let recipient_key_index = props
+            .get("recipientKeyIndex")
+            .and_then(|v: &Value| v.to_integer::<u32>().ok());
+        let account_reference = props
+            .get("accountReference")
+            .and_then(|v: &Value| v.to_integer::<u32>().ok());
+        let encrypted_public_key = props
+            .get("encryptedPublicKey")
+            .and_then(|v: &Value| v.as_bytes())
+            .cloned();
+
+        match (
+            sender_key_index,
+            recipient_key_index,
+            account_reference,
+            encrypted_public_key,
+        ) {
+            (Some(ski), Some(rki), Some(ar), Some(epk)) => Some(ContactRequest::new(
+                sender_id,
+                recipient_id,
+                ski,
+                rki,
+                ar,
+                epk,
+                doc.created_at_core_block_height().unwrap_or(0),
+                doc.created_at().unwrap_or(0),
+            )),
+            _ => {
+                tracing::warn!(
+                    sender = %sender_id,
+                    recipient = %recipient_id,
+                    "Skipping contact request document: missing required field"
+                );
+                None
+            }
+        }
+    }
+
+    /// Parse our own sent `contactRequest` document into a [`ContactRequest`]
+    /// (owner is us, recipient is `toUserId`).
+    fn parse_sent_contact_request_doc(
+        doc: &dpp::document::Document,
+        owner_id: Identifier,
+        recipient_id: Identifier,
+    ) -> Option<ContactRequest> {
+        // Same field set as the received side; the only difference is which
+        // identity is owner vs recipient.
+        Self::parse_contact_request_doc(doc, owner_id, recipient_id)
+    }
+
+    /// Collect every established contact (for `identity_id`) that is
+    /// missing its `DashpayExternalAccount` and is NOT already marked
+    /// permanently broken — the account-building candidates for this
+    /// sweep (G1b). Runs under the caller's write guard; performs no
+    /// awaits and no lock re-acquisition.
+    fn collect_account_build_candidates(
+        info: &crate::wallet::platform_wallet::PlatformWalletInfo,
+        identity_id: &Identifier,
+    ) -> Vec<AccountBuildCandidate> {
+        use key_wallet::account::account_collection::DashpayAccountKey;
+
+        let Some(managed) = info.identity_manager.managed_identity(identity_id) else {
+            return Vec::new();
+        };
+
+        let mut out = Vec::new();
+        for (contact_id, contact) in &managed.established_contacts {
+            // G1c: never retry a permanently-broken channel — wait for a
+            // superseding request (which clears the flag on re-establish).
+            if contact.payment_channel_broken {
+                continue;
+            }
+            let key = DashpayAccountKey {
+                index: 0,
+                user_identity_id: identity_id.to_buffer(),
+                friend_identity_id: contact_id.to_buffer(),
+            };
+            let has_external = info
+                .core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .contains_key(&key);
+            if has_external {
+                continue;
+            }
+            // The incoming request carries the counterparty's encrypted
+            // xpub + the key indices needed for ECDH.
+            let incoming = &contact.incoming_request;
+            out.push(AccountBuildCandidate {
+                contact_id: *contact_id,
+                encrypted_public_key: incoming.encrypted_public_key.clone(),
+                our_decryption_key_index: incoming.recipient_key_index,
+                contact_encryption_key_index: incoming.sender_key_index,
+            });
+        }
+        out
+    }
+
+    /// Build the two DashPay accounts for one established contact (G1b),
+    /// applying the transient/permanent failure policy (G1c).
+    ///
+    /// Order:
+    /// 1. Register the `DashpayReceivingFunds` account — derivable from our
+    ///    own seed, no decryption needed. This is what makes *incoming*
+    ///    contact payments visible to SPV; restore-from-seed leaves it
+    ///    unbuilt, so the sweep rebuilds it for every established contact.
+    /// 2. Fetch the counterparty identity and **validate** the request's
+    ///    key indices via [`validate_contact_request`] BEFORE any ECDH —
+    ///    an attacker-crafted index pointing at an AUTHENTICATION key would
+    ///    otherwise derive a wrong shared secret and poison the account.
+    /// 3. Register the `DashpayExternalAccount` (decrypt + ECDH).
+    ///
+    /// Failure policy:
+    /// - **Transient** (identity fetch / network): logged, left for the
+    ///   next sweep to retry. The broken flag stays clear.
+    /// - **Permanent** (validation failure, decrypt/decode failure): the
+    ///   contact is marked `payment_channel_broken` so subsequent sweeps
+    ///   skip it until a superseding request arrives.
+    ///
+    /// Watch-only / seedless wallets (no `identity_index`) are skipped and
+    /// logged — G4 lands the watch-only ECDH path later.
+    ///
+    /// Called **after** the sync write guard is dropped: the register
+    /// functions re-acquire the non-reentrant wallet-manager lock.
+    async fn build_contact_accounts(
+        &self,
+        identity_id: &Identifier,
+        candidate: AccountBuildCandidate,
+    ) {
+        let contact_id = candidate.contact_id;
+
+        // Seed-awareness: an out-of-wallet / watch-only identity has no HD
+        // slot to derive ECDH from. Skip + log (G4).
+        let is_seedless = {
+            let wm = self.wallet_manager.read().await;
+            match wm
+                .get_wallet_info(&self.wallet_id)
+                .and_then(|info| info.identity_manager.managed_identity(identity_id).cloned())
+            {
+                Some(managed) => managed.identity_index.is_none(),
+                None => true,
+            }
+        };
+        if is_seedless {
+            tracing::info!(
+                identity = %identity_id,
+                contact = %contact_id,
+                "Skipping DashPay account build for watch-only/seedless identity (G4 pending)"
+            );
+            return;
+        }
+
+        // (1) Receiving account — derivable from our seed, no decryption.
+        if let Err(e) = self
+            .register_contact_account(identity_id, &contact_id, 0)
+            .await
+        {
+            // Treated as transient: a derivation/insert hiccup here doesn't
+            // poison the channel, and the receiving account is rebuilt on
+            // the next sweep. Do NOT mark broken.
+            tracing::warn!(
+                identity = %identity_id,
+                contact = %contact_id,
+                error = %e,
+                "Failed to register DashPay receiving account; will retry next sweep"
+            );
+        }
+
+        // (2) Fetch counterparty identity (transient on failure) + validate
+        //     key indices BEFORE any ECDH (permanent on failure).
+        let contact_identity = {
+            use dash_sdk::platform::Fetch;
+            match Identity::fetch(&self.sdk, contact_id).await {
+                Ok(Some(id)) => id,
+                Ok(None) => {
+                    // The contact identity isn't on Platform — treat as
+                    // transient (it may appear later); leave for retry.
+                    tracing::warn!(
+                        identity = %identity_id,
+                        contact = %contact_id,
+                        "Contact identity not found on Platform; deferring account build"
+                    );
+                    return;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        identity = %identity_id,
+                        contact = %contact_id,
+                        error = %e,
+                        "Transient failure fetching contact identity; will retry next sweep"
+                    );
+                    return;
+                }
+            }
+        };
+
+        // Our identity for the validation (in-memory; cloned under a read lock).
+        let our_identity = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .and_then(|info| info.identity_manager.managed_identity(identity_id))
+                .map(|m| m.identity.clone())
+        };
+        let Some(our_identity) = our_identity else {
+            tracing::warn!(
+                identity = %identity_id,
+                contact = %contact_id,
+                "Our identity vanished during account build; deferring"
+            );
+            return;
+        };
+
+        // Validate the request's key indices (purpose ENCRYPTION/DECRYPTION
+        // + ECDSA type) BEFORE deriving the shared secret. A failure is
+        // PERMANENT — the request is malformed and re-deriving won't help.
+        let validation = crate::wallet::identity::crypto::validation::validate_contact_request(
+            &contact_identity,
+            candidate.contact_encryption_key_index,
+            &our_identity,
+            candidate.our_decryption_key_index,
+        );
+        if !validation.is_valid {
+            // G15: a PURPOSE-only mismatch (e.g. a legacy 2024 doc
+            // referencing an AUTHENTICATION key) is NOT permanent — the
+            // immutable request can't change but our acceptance policy might,
+            // and on-chain history contains nonconforming-but-honest docs.
+            // Skip + log; the next sweep retries. Reserve the permanent
+            // broken mark for key-TYPE / missing-key / disabled-key failures.
+            if validation.purpose_mismatch {
+                tracing::warn!(
+                    identity = %identity_id,
+                    contact = %contact_id,
+                    errors = ?validation.errors,
+                    "Contact request key-purpose mismatch; skipping account build (not marking broken — will retry)"
+                );
+                return;
+            }
+            tracing::warn!(
+                identity = %identity_id,
+                contact = %contact_id,
+                errors = ?validation.errors,
+                "Contact request failed key-index validation; marking payment channel broken (permanent)"
+            );
+            self.mark_contact_channel_broken(identity_id, &contact_id)
+                .await;
+            return;
+        }
+
+        // (3) Register the external (sending) account — decrypt + ECDH. A
+        //     decrypt/decode failure is PERMANENT.
+        if let Err(e) = self
+            .register_external_contact_account(
+                identity_id,
+                &contact_id,
+                &candidate.encrypted_public_key,
+                candidate.our_decryption_key_index,
+                candidate.contact_encryption_key_index,
+            )
+            .await
+        {
+            tracing::warn!(
+                identity = %identity_id,
+                contact = %contact_id,
+                error = %e,
+                "Failed to register DashPay external account; marking payment channel broken (permanent)"
+            );
+            self.mark_contact_channel_broken(identity_id, &contact_id)
+                .await;
+        }
+    }
+
+    /// Mark an established contact's payment channel as permanently broken
+    /// (G1c) and persist the transition through the changeset pipeline so
+    /// it survives restarts and is FFI/UI-visible. Idempotent.
+    async fn mark_contact_channel_broken(&self, identity_id: &Identifier, contact_id: &Identifier) {
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+            return;
+        };
+        let Some(contact) = managed.established_contacts.get_mut(contact_id) else {
+            return;
+        };
+        if contact.payment_channel_broken {
+            return;
+        }
+        contact.payment_channel_broken = true;
+        let snapshot = contact.clone();
+
+        // Persist the broken flag via an `established` changeset entry
+        // (the established upsert carries the flag column).
+        let mut cs = crate::changeset::ContactChangeSet::default();
+        cs.established.insert(
+            crate::changeset::SentContactRequestKey {
+                owner_id: *identity_id,
+                recipient_id: *contact_id,
+            },
+            snapshot,
+        );
+        if let Err(e) = self.persister.store(cs.into()) {
+            tracing::error!("Failed to persist broken-channel changeset: {}", e);
+        }
+    }
+}
+
+/// One established contact that needs its DashPay accounts (re)built
+/// during a sync sweep (G1b). Collected under the write guard, consumed
+/// after it is dropped.
+struct AccountBuildCandidate {
+    /// The counterparty identity.
+    contact_id: Identifier,
+    /// The counterparty's 96-byte encrypted xpub (from their incoming
+    /// request to us) to decrypt + register as a `DashpayExternalAccount`.
+    encrypted_public_key: Vec<u8>,
+    /// Our DECRYPTION key id used for ECDH.
+    our_decryption_key_index: u32,
+    /// The counterparty's ENCRYPTION key id used for ECDH.
+    contact_encryption_key_index: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -474,8 +803,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let our_identity_id = request.recipient_id;
         let sender_id = request.sender_id;
 
-        // 1. Verify the incoming request is known.
-        {
+        // 1. Verify the incoming request is known, and detect whether an
+        //    on-platform reciprocal already exists for this pair (G13).
+        let already_reciprocated = {
             let wm = self.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
@@ -484,10 +814,21 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .identity_manager
                 .managed_identity(&our_identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(our_identity_id))?;
-            if !managed.incoming_contact_requests.contains_key(&sender_id) {
+            // The contact is already established (sync reconciled both
+            // sides), or our own sent request to this contact already
+            // exists — in either case the reciprocal is already on
+            // Platform and re-broadcasting it would be rejected by the
+            // `(ownerId, toUserId, accountReference)` unique index.
+            let established = managed.established_contacts.contains_key(&sender_id);
+            let sent_exists = managed.sent_contact_requests.contains_key(&sender_id);
+            if !established
+                && !sent_exists
+                && !managed.incoming_contact_requests.contains_key(&sender_id)
+            {
                 return Err(PlatformWalletError::ContactRequestNotFound(sender_id));
             }
-        }
+            established || sent_exists
+        };
 
         // 2. Capture the encrypted xpub + key indices BEFORE sending
         //    the reciprocal request (same ordering as the legacy
@@ -496,20 +837,48 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let our_decryption_key_index = request.recipient_key_index;
         let contact_encryption_key_index = request.sender_key_index;
 
-        // 3. Send reciprocal request via the external-signer path.
-        self.send_contact_request_with_external_signer(
-            &our_identity_id,
-            &sender_id,
-            None,
-            None,
-            signer,
-        )
-        .await?;
+        // 3. Send the reciprocal request — UNLESS one already exists on
+        //    Platform (G13 accept-adopt): re-broadcasting the same
+        //    `(ownerId, toUserId, accountReference)` triple is rejected by
+        //    the unique index forever. When adopting, we still perform the
+        //    fresh-send local registrations below (receiving account +
+        //    validate→decrypt→register external), so the contact becomes
+        //    payable without a duplicate broadcast.
+        if already_reciprocated {
+            tracing::info!(
+                our_identity = %our_identity_id,
+                contact = %sender_id,
+                "Accept: reciprocal already on Platform — adopting instead of re-broadcasting"
+            );
+            // Adopt: register the receiving account (derivable from seed),
+            // matching what the fresh-send path does.
+            if let Err(e) = self
+                .register_contact_account(&our_identity_id, &sender_id, 0)
+                .await
+            {
+                tracing::warn!(
+                    our_identity = %our_identity_id,
+                    contact = %sender_id,
+                    error = %e,
+                    "Accept-adopt: failed to register receiving account; will retry on next sweep"
+                );
+            }
+        } else {
+            self.send_contact_request_with_external_signer(
+                &our_identity_id,
+                &sender_id,
+                None,
+                None,
+                signer,
+            )
+            .await?;
+        }
 
-        // 4. Best-effort external-account registration. Failures are
-        //    logged but do not abort.
+        // 4. Validate key indices (same gate as the sync sweep and the
+        //    fresh send — applies to ALL three accept paths) BEFORE any
+        //    ECDH, then register the external (sending) account.
         if let Err(e) = self
-            .register_external_contact_account(
+            .accept_register_external_validated(
                 &our_identity_id,
                 &sender_id,
                 &contact_encrypted_xpub,
@@ -523,7 +892,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 contact = %sender_id,
                 error = %e,
                 "Failed to register external contact account after accept (external signer) — \
-                 re-run register_external_contact_account to retry"
+                 re-run sync to retry"
             );
         }
 
@@ -542,6 +911,67 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .get(&sender_id)
             .cloned()
             .ok_or(PlatformWalletError::ContactRequestNotFound(sender_id))
+    }
+
+    /// Validate the contact request's key indices (purpose
+    /// ENCRYPTION/DECRYPTION + ECDSA type) BEFORE any ECDH, then register
+    /// the external sending account. Shared by the accept and accept-adopt
+    /// paths so the validation gate is applied uniformly (it also runs in
+    /// the sync sweep).
+    ///
+    /// A validation failure is returned as an error so the caller can log
+    /// it; the channel is not silently registered against an unvalidated
+    /// index. On the network/decrypt side this simply forwards to
+    /// [`register_external_contact_account`].
+    async fn accept_register_external_validated(
+        &self,
+        our_identity_id: &Identifier,
+        contact_id: &Identifier,
+        contact_encrypted_xpub: &[u8],
+        our_decryption_key_index: u32,
+        contact_encryption_key_index: u32,
+    ) -> Result<(), PlatformWalletError> {
+        use dash_sdk::platform::Fetch;
+
+        // Fetch counterparty + our identity for validation.
+        let contact_identity = Identity::fetch(&self.sdk, *contact_id)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to fetch contact identity {contact_id} for validation: {e}"
+                ))
+            })?
+            .ok_or(PlatformWalletError::IdentityNotFound(*contact_id))?;
+
+        let our_identity = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .and_then(|info| info.identity_manager.managed_identity(our_identity_id))
+                .map(|m| m.identity.clone())
+                .ok_or(PlatformWalletError::IdentityNotFound(*our_identity_id))?
+        };
+
+        let validation = crate::wallet::identity::crypto::validation::validate_contact_request(
+            &contact_identity,
+            contact_encryption_key_index,
+            &our_identity,
+            our_decryption_key_index,
+        );
+        if !validation.is_valid {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "Contact request failed key-index validation: {:?}",
+                validation.errors
+            )));
+        }
+
+        self.register_external_contact_account(
+            our_identity_id,
+            contact_id,
+            contact_encrypted_xpub,
+            our_decryption_key_index,
+            contact_encryption_key_index,
+        )
+        .await
     }
 }
 
@@ -663,13 +1093,22 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 // ---------------------------------------------------------------------------
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Reject a contact request by hiding the contact.
+    /// Reject a contact request and record a local tombstone (G5 stage 1).
     ///
-    /// This marks the contact as hidden in the local identity manager so that
-    /// the UI no longer surfaces it. A full DashPay implementation would also
-    /// create or update a `contactInfo` document on Platform with
-    /// `display_hidden: true`; that part requires SDK support for document
-    /// creation on arbitrary contracts which is not yet available here.
+    /// Removes the incoming request from local state AND records a
+    /// rejected-request tombstone keyed by `(sender, accountReference)` so
+    /// the recurring sync ingest path won't resurrect the still-on-platform
+    /// immutable document. The tombstone is **not** keyed by bare sender id:
+    /// a once-rejected sender CAN re-request via a bumped `accountReference`
+    /// (DIP-15 rotation), and that rotated request must reach the user.
+    ///
+    /// The tombstone is persisted through the existing
+    /// changeset → apply → SQLite pipeline.
+    ///
+    /// A full cross-device implementation (M3) will also create/update a
+    /// `contactInfo` document on Platform with `display_hidden: true`; that
+    /// requires SDK support for arbitrary DashPay documents, out of scope
+    /// for this stage.
     ///
     /// # Arguments
     ///
@@ -689,27 +1128,382 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .managed_identity_mut(identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
 
-        // Remove from incoming requests (if present).
-        if managed
-            .incoming_contact_requests
-            .remove(contact_identity_id)
-            .is_none()
-        {
-            return Err(PlatformWalletError::ContactRequestNotFound(
-                *contact_identity_id,
-            ));
-        }
+        // The incoming request must exist; capture its accountReference for
+        // the tombstone key BEFORE removing it.
+        let account_reference = match managed.incoming_contact_requests.get(contact_identity_id) {
+            Some(req) => req.account_reference,
+            None => {
+                return Err(PlatformWalletError::ContactRequestNotFound(
+                    *contact_identity_id,
+                ))
+            }
+        };
 
-        // TODO: When the SDK supports creating/updating arbitrary DashPay
-        // documents (contactInfo), submit a `display_hidden: true` document to
-        // Platform here so the rejection is persisted across devices.
+        // Record the tombstone (drops the incoming entry, keyed by
+        // (sender, accountReference)) and persist it.
+        let cs =
+            managed.record_rejected_contact_request(contact_identity_id, account_reference, None);
+        if let Err(e) = self.persister.store(cs.into()) {
+            tracing::error!("Failed to persist reject tombstone changeset: {}", e);
+        }
 
         tracing::info!(
             identity = %identity_id,
             rejected_contact = %contact_identity_id,
-            "Contact request rejected (hidden locally)"
+            account_reference,
+            "Contact request rejected (tombstoned locally; will not resurrect on sync)"
         );
 
         Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Network-layer tests for the G1/G13/G5 sync sweep decision logic.
+//
+// These exercise the *orchestration* helpers that don't require a live
+// network or real ECDH keys: account-build candidate collection (G1b/G1c)
+// and the rejected-tombstone / broken-flag persistence round-trip. The
+// pure state-machine behaviors (guard relaxation, sent-side dedup,
+// metadata-preserving re-establish, tombstone-by-accountReference) are
+// pinned in `state/managed_identity/contact_requests.rs`.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod sweep_tests {
+    use super::*;
+    use crate::broadcaster::SpvBroadcaster;
+    use crate::changeset::{ContactChangeSet, PlatformWalletChangeSet, SentContactRequestKey};
+    use crate::wallet::core::WalletBalance;
+    use crate::wallet::identity::IdentityManager;
+    use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+    use crate::wallet::platform_wallet::PlatformWalletInfo;
+    use dpp::identity::v0::IdentityV0;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+    use key_wallet::wallet::Wallet;
+    use key_wallet::Network;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    fn noop_persister() -> WalletPersister {
+        WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence))
+    }
+
+    fn build_test_wallet() -> Wallet {
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::None)
+            .expect("test wallet")
+    }
+
+    fn empty_info(wallet: &Wallet) -> PlatformWalletInfo {
+        PlatformWalletInfo {
+            core_wallet: ManagedWalletInfo::from_wallet(wallet, 0),
+            balance: Arc::new(WalletBalance::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+        }
+    }
+
+    fn test_identity(id_byte: u8) -> Identity {
+        Identity::V0(IdentityV0 {
+            id: Identifier::from([id_byte; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    fn test_request(sender: u8, recipient: u8, account_reference: u32) -> ContactRequest {
+        ContactRequest::new(
+            Identifier::from([sender; 32]),
+            Identifier::from([recipient; 32]),
+            1,
+            2,
+            account_reference,
+            vec![7u8; 96],
+            100_000,
+            0,
+        )
+    }
+
+    /// Seed a wallet-owned identity that has an established contact (no
+    /// external account yet) into a fresh `PlatformWalletInfo`.
+    fn info_with_established_contact(our: u8, contact: u8) -> (Wallet, PlatformWalletInfo) {
+        let wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let our_id = Identifier::from([our; 32]);
+        let p = noop_persister();
+        info.identity_manager
+            .add_identity(test_identity(our), 0, [0u8; 32], &p)
+            .expect("add identity");
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(&our_id)
+            .expect("managed identity");
+        // Establish a contact via the state machine.
+        managed.add_incoming_contact_request(test_request(contact, our, 0), &p);
+        managed.add_sent_contact_request(test_request(our, contact, 0), &p);
+        assert_eq!(managed.established_contacts.len(), 1);
+        (wallet, info)
+    }
+
+    /// **Test 3 (restore-from-seed shape):** an established contact with
+    /// zero DashPay accounts must surface as an account-build candidate so
+    /// the sweep rebuilds BOTH the receiving and external accounts. Before
+    /// G1b only the fresh-send path created them, so restore-from-seed left
+    /// the contact unpayable and incoming payments invisible.
+    #[test]
+    fn established_contact_missing_external_account_is_a_build_candidate() {
+        let our = 1u8;
+        let contact = 2u8;
+        let our_id = Identifier::from([our; 32]);
+        let (_wallet, info) = info_with_established_contact(our, contact);
+
+        let candidates =
+            IdentityWallet::<SpvBroadcaster>::collect_account_build_candidates(&info, &our_id);
+
+        assert_eq!(
+            candidates.len(),
+            1,
+            "an established contact with no external account must be a build candidate"
+        );
+        let c = &candidates[0];
+        assert_eq!(c.contact_id, Identifier::from([contact; 32]));
+        // The candidate carries the counterparty's encrypted xpub + the
+        // ECDH key indices taken from the INCOMING request.
+        assert_eq!(c.encrypted_public_key, vec![7u8; 96]);
+        // incoming request: sender=contact key_index 1, recipient(us) key_index 2
+        assert_eq!(c.contact_encryption_key_index, 1);
+        assert_eq!(c.our_decryption_key_index, 2);
+    }
+
+    /// **Test 4 (permanent failure → no retry):** once a contact's payment
+    /// channel is marked broken (G1c), the sweep must NOT re-list it as a
+    /// candidate — no unbounded retry until a superseding request clears
+    /// the flag.
+    #[test]
+    fn broken_payment_channel_is_skipped_by_the_sweep() {
+        let our = 1u8;
+        let contact = 2u8;
+        let our_id = Identifier::from([our; 32]);
+        let contact_id = Identifier::from([contact; 32]);
+        let (_wallet, mut info) = info_with_established_contact(our, contact);
+
+        // Mark the channel broken (as the permanent-failure path would).
+        info.identity_manager
+            .managed_identity_mut(&our_id)
+            .unwrap()
+            .established_contacts
+            .get_mut(&contact_id)
+            .unwrap()
+            .payment_channel_broken = true;
+
+        let candidates =
+            IdentityWallet::<SpvBroadcaster>::collect_account_build_candidates(&info, &our_id);
+        assert!(
+            candidates.is_empty(),
+            "a permanently-broken contact must not be retried by the sweep"
+        );
+    }
+
+    /// **Test 4 (persistence):** the broken-channel flag round-trips through
+    /// the changeset → apply pipeline so it survives a restart and is
+    /// FFI/UI-visible — and a transient (cleared) flag round-trips too.
+    #[test]
+    fn broken_channel_flag_round_trips_through_apply() {
+        let our = 1u8;
+        let contact = 2u8;
+        let our_id = Identifier::from([our; 32]);
+        let contact_id = Identifier::from([contact; 32]);
+        let (mut wallet, mut info) = info_with_established_contact(our, contact);
+
+        // Build an `established` changeset carrying the broken flag.
+        let mut contact_obj = info
+            .identity_manager
+            .managed_identity(&our_id)
+            .unwrap()
+            .established_contacts
+            .get(&contact_id)
+            .unwrap()
+            .clone();
+        contact_obj.payment_channel_broken = true;
+        let mut cs = ContactChangeSet::default();
+        cs.established.insert(
+            SentContactRequestKey {
+                owner_id: our_id,
+                recipient_id: contact_id,
+            },
+            contact_obj,
+        );
+        let pcs = PlatformWalletChangeSet {
+            contacts: Some(cs),
+            ..Default::default()
+        };
+
+        info.apply_changeset(&mut wallet, pcs).expect("apply");
+
+        assert!(
+            info.identity_manager
+                .managed_identity(&our_id)
+                .unwrap()
+                .established_contacts
+                .get(&contact_id)
+                .unwrap()
+                .payment_channel_broken,
+            "broken flag must survive the changeset apply round-trip"
+        );
+    }
+
+    /// **Test 2 (rejected tombstone persistence):** a rejected-request
+    /// tombstone round-trips through the changeset → apply pipeline so a
+    /// recurring re-sync after a restart still suppresses it — while a
+    /// bumped-`accountReference` request from the same sender is NOT
+    /// suppressed.
+    #[test]
+    fn rejected_tombstone_round_trips_and_respects_account_reference() {
+        let our = 1u8;
+        let sender = 9u8;
+        let our_id = Identifier::from([our; 32]);
+        let sender_id = Identifier::from([sender; 32]);
+        let wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let p = noop_persister();
+        info.identity_manager
+            .add_identity(test_identity(our), 0, [0u8; 32], &p)
+            .expect("add identity");
+
+        // Record a tombstone for (sender, accountReference=0) and capture
+        // the resulting changeset.
+        let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
+        managed.add_incoming_contact_request(test_request(sender, our, 0), &p);
+        let cs = managed.record_rejected_contact_request(&sender_id, 0, None);
+        let pcs = PlatformWalletChangeSet {
+            contacts: Some(cs),
+            ..Default::default()
+        };
+
+        // Wipe the in-memory tombstone, then re-apply the changeset (the
+        // restore-from-persistence path).
+        info.identity_manager
+            .managed_identity_mut(&our_id)
+            .unwrap()
+            .rejected_contact_requests
+            .clear();
+        let mut wallet = wallet;
+        info.apply_changeset(&mut wallet, pcs).expect("apply");
+
+        let managed = info.identity_manager.managed_identity(&our_id).unwrap();
+        assert!(
+            managed.is_request_rejected(&sender_id, 0),
+            "tombstone must be restored from the changeset"
+        );
+        assert!(
+            !managed.is_request_rejected(&sender_id, 1),
+            "a rotated (bumped accountReference) request must NOT be suppressed"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// G15 send-side recipient key selection (M1 task 9).
+//
+// Verified testnet reality (research/06 §G15): the dominant mobile cohort has
+// an ENCRYPTION key but NO DECRYPTION key, and references its ENCRYPTION key
+// for recipientKeyIndex. Sending to such a recipient must succeed by falling
+// back to the ENCRYPTION key — RED before task 9 (errored "no decryption
+// key"), GREEN after.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod recipient_key_selection_tests {
+    use super::*;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::SecurityLevel;
+    use std::collections::BTreeMap;
+
+    fn key(id: u32, key_type: KeyType, purpose: Purpose) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            key_type,
+            purpose,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: None,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(vec![0x02; 33]),
+            disabled_at: None,
+        })
+    }
+
+    fn identity_with_keys(keys: Vec<IdentityPublicKey>) -> Identity {
+        let mut map = BTreeMap::new();
+        for k in keys {
+            map.insert(k.id(), k);
+        }
+        Identity::V0(IdentityV0 {
+            id: Identifier::from([0xBB; 32]),
+            public_keys: map,
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    /// Mobile-shaped recipient: AUTHENTICATION + ENCRYPTION keys, NO
+    /// DECRYPTION key. Selection must fall back to the ENCRYPTION key (id 2)
+    /// rather than erroring "no decryption key".
+    #[test]
+    fn falls_back_to_encryption_key_when_recipient_has_no_decryption_key() {
+        let recipient = identity_with_keys(vec![
+            key(0, KeyType::ECDSA_SECP256K1, Purpose::AUTHENTICATION),
+            key(1, KeyType::ECDSA_SECP256K1, Purpose::AUTHENTICATION),
+            key(2, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION),
+        ]);
+
+        let idx = select_recipient_key_index(&recipient)
+            .expect("must select the ENCRYPTION key for a mobile-shaped recipient");
+        assert_eq!(idx, 2, "should reference the recipient's ENCRYPTION key");
+    }
+
+    /// Newest cohort / our convention: a DECRYPTION key is present and
+    /// preferred over any ENCRYPTION key.
+    #[test]
+    fn prefers_decryption_key_when_present() {
+        let recipient = identity_with_keys(vec![
+            key(4, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION),
+            key(5, KeyType::ECDSA_SECP256K1, Purpose::DECRYPTION),
+        ]);
+
+        let idx = select_recipient_key_index(&recipient).expect("decryption key present");
+        assert_eq!(idx, 5, "must prefer DECRYPTION over ENCRYPTION");
+    }
+
+    /// Neither DECRYPTION nor ENCRYPTION (only AUTHENTICATION): error. No
+    /// AUTHENTICATION fallback — reusing signing keys for ECDH is poor key
+    /// separation and no live population needs it.
+    #[test]
+    fn errors_when_recipient_has_neither_encryption_nor_decryption() {
+        let recipient = identity_with_keys(vec![key(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::AUTHENTICATION,
+        )]);
+
+        let err = select_recipient_key_index(&recipient).unwrap_err();
+        assert!(
+            matches!(err, PlatformWalletError::InvalidIdentityData(_)),
+            "expected InvalidIdentityData, got {err:?}"
+        );
+    }
+
+    /// A DECRYPTION key of the wrong key TYPE is not selectable; selection
+    /// falls through to a valid ECDSA ENCRYPTION key.
+    #[test]
+    fn skips_non_ecdsa_decryption_key_and_uses_ecdsa_encryption() {
+        let recipient = identity_with_keys(vec![
+            key(0, KeyType::BLS12_381, Purpose::DECRYPTION),
+            key(1, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION),
+        ]);
+
+        let idx = select_recipient_key_index(&recipient)
+            .expect("ECDSA encryption key must be selectable");
+        assert_eq!(idx, 1);
     }
 }

@@ -7,7 +7,8 @@
 
 use super::ManagedIdentity;
 use crate::changeset::{
-    ContactChangeSet, ContactRequestEntry, ReceivedContactRequestKey, SentContactRequestKey,
+    ContactChangeSet, ContactRequestEntry, ReceivedContactRequestKey, RejectedContactRequest,
+    SentContactRequestKey,
 };
 use crate::wallet::persister::WalletPersister;
 use crate::{ContactRequest, EstablishedContact};
@@ -19,6 +20,18 @@ impl ManagedIdentity {
     /// If there's already an incoming request from the recipient, the
     /// contact is auto-established. Persists the resulting
     /// [`ContactChangeSet`] via `persister` and returns `()`.
+    ///
+    /// **Sent-side ingest guard (G13).** A recurring sweep re-ingests the
+    /// identity's own sent requests on every pass; without a guard that
+    /// would create a phantom pending-sent row + a changeset write per
+    /// contact per sweep, and an `EstablishedContact::new` for an
+    /// already-established pair would wipe the user's alias / note /
+    /// hide-flag / accepted-accounts. So this method is a **no-op** when
+    /// the recipient is already tracked as established or already in the
+    /// sent map (symmetric to the received-side dedup in
+    /// `sync_contact_requests`). When it must (re-)establish against a
+    /// pre-existing incoming request, it MERGES into any existing
+    /// `EstablishedContact` to preserve metadata.
     pub fn add_sent_contact_request(
         &mut self,
         request: ContactRequest,
@@ -26,6 +39,19 @@ impl ManagedIdentity {
     ) {
         let owner_id = self.id();
         let recipient_id = request.recipient_id;
+
+        // Sent-side guard: already established → nothing to do. The
+        // on-platform request is immutable, so a re-ingest carries no new
+        // information; re-establishing would wipe user metadata.
+        if self.established_contacts.contains_key(&recipient_id) {
+            return;
+        }
+        // Already tracked as a pending sent request → no-op (no phantom
+        // row, no redundant changeset write).
+        if self.sent_contact_requests.contains_key(&recipient_id) {
+            return;
+        }
+
         let mut cs = ContactChangeSet::default();
 
         // Check if there's already an incoming request from this recipient
@@ -33,8 +59,16 @@ impl ManagedIdentity {
             // Automatically establish the contact — per the ContactChangeSet
             // auto-establishment contract, `established` implies the matching
             // pending entries are dropped, so we don't also emit a
-            // `removed_incoming` tombstone here.
-            let contact = EstablishedContact::new(recipient_id, request, incoming_request);
+            // `removed_incoming` tombstone here. Preserve metadata if a
+            // prior `EstablishedContact` exists for this pair.
+            let contact = match self.established_contacts.get(&recipient_id) {
+                Some(existing) => EstablishedContact::reestablish_preserving_metadata(
+                    existing,
+                    request,
+                    incoming_request,
+                ),
+                None => EstablishedContact::new(recipient_id, request, incoming_request),
+            };
             cs.established.insert(
                 SentContactRequestKey {
                     owner_id,
@@ -59,6 +93,50 @@ impl ManagedIdentity {
         if let Err(e) = persister.store(cs.into()) {
             tracing::error!("Failed to persist changeset: {}", e);
         }
+    }
+
+    /// Record a rejected incoming contact request (G5 stage 1).
+    ///
+    /// Drops the incoming entry (if present) and records a tombstone keyed
+    /// by `(sender, account_reference)` so the recurring sync ingest path
+    /// won't resurrect the still-on-platform immutable document. Returns
+    /// the [`ContactChangeSet`] carrying the tombstone (the caller is
+    /// responsible for persisting it through the same write guard it holds).
+    ///
+    /// The tombstone is **NOT** keyed by bare sender id: a once-rejected
+    /// sender CAN re-request via a bumped `accountReference` (DIP-15
+    /// rotation), and that rotated request must reach the user.
+    pub fn record_rejected_contact_request(
+        &mut self,
+        sender_id: &Identifier,
+        account_reference: u32,
+        document_id: Option<Identifier>,
+    ) -> ContactChangeSet {
+        let owner_id = self.id();
+        self.incoming_contact_requests.remove(sender_id);
+
+        let tombstone = RejectedContactRequest {
+            owner_id,
+            sender_id: *sender_id,
+            account_reference,
+            document_id,
+        };
+        self.rejected_contact_requests
+            .insert((*sender_id, account_reference), tombstone.clone());
+
+        let mut cs = ContactChangeSet::default();
+        cs.rejected
+            .insert((owner_id, *sender_id, account_reference), tombstone);
+        cs
+    }
+
+    /// Whether an incoming request from `sender_id` with this exact
+    /// `account_reference` has been rejected (G5 stage 1). A request from
+    /// the same sender with a *different* `account_reference` (rotation) is
+    /// NOT suppressed.
+    pub fn is_request_rejected(&self, sender_id: &Identifier, account_reference: u32) -> bool {
+        self.rejected_contact_requests
+            .contains_key(&(*sender_id, account_reference))
     }
 
     /// Remove a sent contact request.
@@ -98,8 +176,18 @@ impl ManagedIdentity {
             // Automatically establish the contact — per the ContactChangeSet
             // auto-establishment contract, `established` implies the matching
             // pending entries are dropped, so we don't also emit a
-            // `removed_sent` tombstone here.
-            let contact = EstablishedContact::new(sender_id, outgoing_request, request);
+            // `removed_sent` tombstone here. Preserve metadata if a prior
+            // `EstablishedContact` exists for this pair (a recurring sweep
+            // can re-ingest a reciprocal while the relationship already
+            // exists — naive re-establish would wipe the user's metadata).
+            let contact = match self.established_contacts.get(&sender_id) {
+                Some(existing) => EstablishedContact::reestablish_preserving_metadata(
+                    existing,
+                    outgoing_request,
+                    request,
+                ),
+                None => EstablishedContact::new(sender_id, outgoing_request, request),
+            };
             cs.established.insert(
                 SentContactRequestKey {
                     owner_id,
@@ -476,6 +564,120 @@ mod tests {
         let (result, cs) = managed.accept_incoming_request(&contact_id);
         assert!(result.is_none());
         assert!(<ContactChangeSet as crate::changeset::Merge>::is_empty(&cs));
+    }
+
+    /// G13: re-ingesting one's own already-tracked sent request must be a
+    /// no-op — no phantom pending-sent row, no second changeset write. The
+    /// sent-side guard mirrors the received-side dedup.
+    #[test]
+    fn test_add_sent_contact_request_is_idempotent_when_already_tracked() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = Identifier::from([1u8; 32]);
+        let recipient_id = Identifier::from([2u8; 32]);
+        let p = noop_persister();
+
+        let request = create_contact_request(our_id, recipient_id, 1234567890);
+        managed.add_sent_contact_request(request.clone(), &p);
+        assert_eq!(managed.sent_contact_requests.len(), 1);
+
+        // Re-ingest the SAME sent request (recurring sweep). It must not
+        // create a duplicate / phantom row.
+        managed.add_sent_contact_request(request, &p);
+        assert_eq!(
+            managed.sent_contact_requests.len(),
+            1,
+            "re-ingesting an already-tracked sent request must not duplicate it"
+        );
+        assert_eq!(managed.established_contacts.len(), 0);
+    }
+
+    /// G13: re-ingesting a sent request to an ALREADY-established contact
+    /// must be a no-op — it must NOT wipe the existing contact's user
+    /// metadata (alias/note/is_hidden/accepted_accounts).
+    #[test]
+    fn test_add_sent_contact_request_preserves_established_metadata() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = Identifier::from([1u8; 32]);
+        let contact_id = Identifier::from([2u8; 32]);
+        let p = noop_persister();
+
+        // Establish a contact and attach user metadata.
+        managed.add_incoming_contact_request(create_contact_request(contact_id, our_id, 1), &p);
+        managed.add_sent_contact_request(create_contact_request(our_id, contact_id, 2), &p);
+        assert_eq!(managed.established_contacts.len(), 1);
+        let established = managed.established_contacts.get_mut(&contact_id).unwrap();
+        established.set_alias("Alice".to_string());
+        established.set_note("from work".to_string());
+        established.hide();
+
+        // Recurring sweep re-ingests our own sent request for an already
+        // established contact — must not reset metadata.
+        managed.add_sent_contact_request(create_contact_request(our_id, contact_id, 3), &p);
+
+        let established = managed.established_contacts.get(&contact_id).unwrap();
+        assert_eq!(established.alias, Some("Alice".to_string()));
+        assert_eq!(established.note, Some("from work".to_string()));
+        assert_eq!(established.is_hidden, true);
+    }
+
+    /// G13: when a sent request auto-establishes against a pre-existing
+    /// incoming, but the pair was previously established and we carry
+    /// forward metadata — the re-establish must preserve it. (Covers the
+    /// case where the incoming map still holds a request because a sweep
+    /// re-ingested it.)
+    #[test]
+    fn test_reestablish_via_incoming_preserves_metadata() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = Identifier::from([1u8; 32]);
+        let contact_id = Identifier::from([2u8; 32]);
+        let p = noop_persister();
+
+        // Establish, then attach metadata.
+        managed.add_incoming_contact_request(create_contact_request(contact_id, our_id, 1), &p);
+        managed.add_sent_contact_request(create_contact_request(our_id, contact_id, 2), &p);
+        let est = managed.established_contacts.get_mut(&contact_id).unwrap();
+        est.set_alias("Bob".to_string());
+
+        // Simulate a re-ingested incoming reciprocal landing while a sent
+        // request also exists in the map (forced state).
+        managed
+            .sent_contact_requests
+            .insert(contact_id, create_contact_request(our_id, contact_id, 4));
+        managed.add_incoming_contact_request(create_contact_request(contact_id, our_id, 5), &p);
+
+        let est = managed.established_contacts.get(&contact_id).unwrap();
+        assert_eq!(
+            est.alias,
+            Some("Bob".to_string()),
+            "re-establish must preserve the alias"
+        );
+    }
+
+    /// G5 stage 1: rejecting an incoming request records a tombstone keyed
+    /// by `(sender, accountReference)` and removes the incoming entry.
+    #[test]
+    fn test_record_rejected_contact_request_tombstones_by_account_reference() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = Identifier::from([1u8; 32]);
+        let sender_id = Identifier::from([2u8; 32]);
+        let p = noop_persister();
+
+        let mut request = create_contact_request(sender_id, our_id, 1);
+        request.account_reference = 0;
+        managed.add_incoming_contact_request(request, &p);
+        assert_eq!(managed.incoming_contact_requests.len(), 1);
+
+        let cs = managed.record_rejected_contact_request(&sender_id, 0, None);
+
+        // Incoming dropped, tombstone recorded for (sender, 0).
+        assert_eq!(managed.incoming_contact_requests.len(), 0);
+        assert!(managed
+            .rejected_contact_requests
+            .contains_key(&(sender_id, 0)));
+        assert!(cs.rejected.contains_key(&(our_id, sender_id, 0)));
+        // A rotated request (accountReference 1) is NOT suppressed.
+        assert!(!managed.is_request_rejected(&sender_id, 1));
+        assert!(managed.is_request_rejected(&sender_id, 0));
     }
 
     #[test]

@@ -543,6 +543,37 @@ pub struct ReceivedContactRequestKey {
     pub sender_id: Identifier,
 }
 
+/// A locally-persisted tombstone for a **rejected** incoming contact
+/// request (G5 stage 1).
+///
+/// Keyed by `(owner_id, sender_id, account_reference)` — deliberately
+/// **NOT** bare sender id. Contact-request documents are immutable, so
+/// the only legitimate way a once-rejected sender can re-request is a
+/// **new** document with a bumped `accountReference` (the DIP-15
+/// rotation mechanism). A sender-keyed tombstone would silently block
+/// that rotation forever with no un-reject affordance; keying on
+/// `(sender, accountReference)` suppresses only the exact rejected
+/// relationship while letting a rotated request through.
+///
+/// `document_id` records the rejected document's id when known (for
+/// audit / exact-match suppression); it is not part of the suppression
+/// key, so a re-fetch of the same `(sender, accountReference)` request
+/// is still suppressed even if the document id is absent.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct RejectedContactRequest {
+    /// The wallet-owned identity that rejected the request (the recipient).
+    pub owner_id: Identifier,
+    /// The identity whose request was rejected (the sender).
+    pub sender_id: Identifier,
+    /// The `accountReference` of the rejected request. A request from the
+    /// same sender with a *different* `accountReference` is NOT suppressed.
+    pub account_reference: u32,
+    /// The rejected document's id, when known. Not part of the
+    /// suppression key — `(owner, sender, account_reference)` is.
+    pub document_id: Option<Identifier>,
+}
+
 /// Changes to the DashPay contact store.
 ///
 /// All maps and sets key by `(owner_identity_id, contact_identity_id)` —
@@ -600,6 +631,12 @@ pub struct ContactChangeSet {
     /// [`SentContactRequestKey`] since from the owner's perspective the
     /// contact is the "recipient" of the relationship.
     pub established: BTreeMap<SentContactRequestKey, EstablishedContact>,
+    /// Rejected-request tombstones (G5 stage 1), keyed by
+    /// `(owner, sender, account_reference)` so the suppression survives a
+    /// recurring re-sync but a rotated (bumped-`accountReference`)
+    /// request from the same sender is still let through. Last-write-wins
+    /// per key on merge (a re-reject just refreshes `document_id`).
+    pub rejected: BTreeMap<(Identifier, Identifier, u32), RejectedContactRequest>,
 }
 
 impl Merge for ContactChangeSet {
@@ -609,6 +646,7 @@ impl Merge for ContactChangeSet {
         self.incoming_requests.extend(other.incoming_requests);
         self.removed_incoming.extend(other.removed_incoming);
         self.established.extend(other.established);
+        self.rejected.extend(other.rejected);
     }
 
     fn is_empty(&self) -> bool {
@@ -617,6 +655,7 @@ impl Merge for ContactChangeSet {
             && self.incoming_requests.is_empty()
             && self.removed_incoming.is_empty()
             && self.established.is_empty()
+            && self.rejected.is_empty()
     }
 }
 

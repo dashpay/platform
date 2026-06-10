@@ -64,6 +64,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             CryptoError::InvalidCiphertextLength => PlatformWalletError::InvalidIdentityData(
                 "Invalid encrypted account label length".into(),
             ),
+            // Not reachable from account-label decryption (that path never
+            // parses a compact xpub), but the match must stay exhaustive.
+            CryptoError::InvalidCompactXpubLength(len) => PlatformWalletError::InvalidIdentityData(
+                format!("Unexpected compact-xpub length error during label decryption: {len}"),
+            ),
         })
     }
 }

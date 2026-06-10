@@ -273,6 +273,15 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// `SpvBroadcaster`-pinned, while this one picks the broadcaster
     /// used by `send_payment` (static dispatch per call).
     pub(crate) broadcaster: Arc<B>,
+    /// Object-safe seam over the SDK's DashPay write operations
+    /// (contact-request broadcast, document put). Defaults to an
+    /// [`SdkWriter`](super::sdk_writer::SdkWriter) wrapping `sdk` so
+    /// public construction and the FFI are untouched; the network-layer
+    /// tests inject a recording/stub writer here. The write half of the
+    /// DashPay network layer can't ride the dash-sdk mock the way the
+    /// fetch half does (`Sdk::send_contact_request` is generic over
+    /// seven type params), so this trait object is the test seam for it.
+    pub(crate) sdk_writer: Arc<dyn super::sdk_writer::DashPaySdkWriter>,
 }
 
 // Manual `Debug`: the derive would require `B: Debug`, which is not part
@@ -295,6 +304,7 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             asset_locks: Arc::clone(&self.asset_locks),
             persister: self.persister.clone(),
             broadcaster: Arc::clone(&self.broadcaster),
+            sdk_writer: Arc::clone(&self.sdk_writer),
         }
     }
 }
@@ -464,5 +474,83 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 e
             ))
         })
+    }
+}
+
+#[cfg(test)]
+mod ecdh_key_derivation_tests {
+    use super::*;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{Purpose, SecurityLevel};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+    fn key_with_purpose(id: u32, purpose: Purpose) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: None,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(vec![0x02; 33]),
+            disabled_at: None,
+        })
+    }
+
+    /// G15 task (c): the ECDH decrypt-key derivation must follow the key id
+    /// the contact-request document references (its `recipientKeyIndex`),
+    /// WHATEVER that key's purpose. The mobile cohort's recipientKeyIndex
+    /// points at an ENCRYPTION-purpose key, not a DECRYPTION slot, so the
+    /// derivation must not be purpose-coupled. This pins that
+    /// `derive_encryption_private_key` is index-generic: for a given key id,
+    /// the derived private key is IDENTICAL regardless of the public key's
+    /// declared purpose.
+    #[test]
+    fn ecdh_key_derivation_is_purpose_agnostic_and_index_driven() {
+        let wallet = Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::None)
+            .expect("test wallet");
+        let identity_index = 0u32;
+        let key_id = 2u32; // the mobile-cohort ENCRYPTION key id
+
+        // Same key id, different declared purpose.
+        let as_encryption = key_with_purpose(key_id, Purpose::ENCRYPTION);
+        let as_decryption = key_with_purpose(key_id, Purpose::DECRYPTION);
+
+        let priv_enc = IdentityWallet::<SpvBroadcaster>::derive_encryption_private_key(
+            &wallet,
+            Network::Testnet,
+            identity_index,
+            &as_encryption,
+        )
+        .expect("derive for ENCRYPTION-purpose key");
+        let priv_dec = IdentityWallet::<SpvBroadcaster>::derive_encryption_private_key(
+            &wallet,
+            Network::Testnet,
+            identity_index,
+            &as_decryption,
+        )
+        .expect("derive for DECRYPTION-purpose key");
+
+        assert_eq!(
+            priv_enc.secret_bytes(),
+            priv_dec.secret_bytes(),
+            "the decrypt key must be derived from the referenced key id, not a purpose-specific slot"
+        );
+
+        // And a different key id must derive a different key (the index is
+        // actually load-bearing, not ignored).
+        let other = key_with_purpose(3, Purpose::ENCRYPTION);
+        let priv_other = IdentityWallet::<SpvBroadcaster>::derive_encryption_private_key(
+            &wallet,
+            Network::Testnet,
+            identity_index,
+            &other,
+        )
+        .expect("derive for key id 3");
+        assert_ne!(
+            priv_enc.secret_bytes(),
+            priv_other.secret_bytes(),
+            "different recipientKeyIndex must derive a different ECDH key"
+        );
     }
 }

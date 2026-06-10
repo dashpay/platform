@@ -531,7 +531,7 @@ fn contacts_round_trip(
 
 /// A fully-populated [`EstablishedContact`] so the round-trip exercises
 /// every metadata column (`alias`, `note`, `is_hidden`,
-/// `accepted_accounts`) plus both request blobs.
+/// `accepted_accounts`, `payment_channel_broken`) plus both request blobs.
 fn established_contact(owner: u8, contact: u8) -> EstablishedContact {
     EstablishedContact {
         contact_identity_id: Identifier::from([contact; 32]),
@@ -541,6 +541,9 @@ fn established_contact(owner: u8, contact: u8) -> EstablishedContact {
         note: Some("met at conf".to_string()),
         is_hidden: true,
         accepted_accounts: vec![1, 7, 42],
+        // Non-default so the round-trip test pins the new
+        // `payment_channel_broken` column through write + read.
+        payment_channel_broken: true,
     }
 }
 

@@ -16,6 +16,17 @@ pub struct ContactRequestValidation {
     pub errors: Vec<String>,
     /// Non-fatal warnings the caller may want to surface.
     pub warnings: Vec<String>,
+    /// `true` when the *only* reason the request is invalid is a key-PURPOSE
+    /// mismatch (e.g. a legacy 2024 doc referencing an AUTHENTICATION key).
+    ///
+    /// This classification is load-bearing for the sync sweep / accept paths
+    /// (G15): a purpose mismatch must NOT mark the payment channel
+    /// **permanently** broken — on-chain history demonstrably contains
+    /// nonconforming-but-honest documents, and our acceptance policy (not the
+    /// immutable request) is what might change. A purpose-only failure is a
+    /// non-permanent skip (log + retry next sweep); a key-TYPE / missing-key /
+    /// disabled-key failure stays permanent.
+    pub purpose_mismatch: bool,
 }
 
 impl Default for ContactRequestValidation {
@@ -24,6 +35,7 @@ impl Default for ContactRequestValidation {
             is_valid: true,
             errors: Vec::new(),
             warnings: Vec::new(),
+            purpose_mismatch: false,
         }
     }
 }
@@ -40,6 +52,15 @@ impl ContactRequestValidation {
         self.is_valid = false;
     }
 
+    /// Add a key-PURPOSE error: sets `is_valid = false` AND flags
+    /// `purpose_mismatch` so callers can downgrade this to a non-permanent
+    /// skip rather than a permanent broken-channel mark (G15).
+    pub fn add_purpose_error(&mut self, error: String) {
+        self.errors.push(error);
+        self.is_valid = false;
+        self.purpose_mismatch = true;
+    }
+
     /// Add a non-fatal warning.
     pub fn add_warning(&mut self, warning: String) {
         self.warnings.push(warning);
@@ -52,27 +73,43 @@ impl ContactRequestValidation {
         if !other.is_valid {
             self.is_valid = false;
         }
+        if other.purpose_mismatch {
+            self.purpose_mismatch = true;
+        }
     }
 }
 
-/// Validate a contact request before sending.
+/// Validate a contact request against the verified on-chain envelope (G15).
 ///
-/// Checks that the sender identity has a suitable ENCRYPTION key at
-/// `sender_key_index` and the recipient identity has a suitable DECRYPTION
-/// key at `recipient_key_index`.
+/// The empirical testnet census (368 docs, research/06 §G15) shows two live
+/// honest cohorts: the dominant mobile population references an **unbound
+/// ENCRYPTION key for BOTH indices** (mobile identities carry no DECRYPTION
+/// key), and the newest cohort uses bound **ENCRYPTION(sender) /
+/// DECRYPTION(recipient)** — our original convention. Consensus enforces
+/// neither purpose nor boundedness on these integer fields. This validator is
+/// therefore *liberal on receive*: it accepts the purposes mobile actually
+/// uses while keeping the ECDSA key-*type* gate (every observed key is
+/// ECDSA_SECP256K1) and the disabled-key check.
 ///
 /// # Checks performed
 ///
 /// **Sender key:**
 /// - Key at `sender_key_index` exists on the sender identity.
 /// - Key type is `ECDSA_SECP256K1` (required for ECDH).
-/// - Key purpose is `ENCRYPTION`.
+/// - Key purpose is `ENCRYPTION` (bound or unbound) — a non-ENCRYPTION
+///   purpose is flagged as a `purpose_mismatch` (non-permanent).
 /// - Key is not disabled.
 ///
-/// **Recipient key:**
+/// **Recipient key (our key):**
 /// - Key at `recipient_key_index` exists on the recipient identity.
 /// - Key type is compatible (`ECDSA_SECP256K1` or `ECDSA_HASH160`).
+/// - Key purpose is `ENCRYPTION` **or** `DECRYPTION` — anything else
+///   (AUTHENTICATION/MASTER/TRANSFER) is flagged as a `purpose_mismatch`.
 /// - Key is not disabled.
+///
+/// A failure whose *only* cause is a purpose mismatch sets
+/// [`ContactRequestValidation::purpose_mismatch`], signalling callers to skip
+/// (and retry) rather than permanently break the channel.
 pub fn validate_contact_request(
     sender_identity: &Identity,
     sender_key_index: u32,
@@ -95,9 +132,11 @@ pub fn validate_contact_request(
                 ));
             }
 
-            // Must have ENCRYPTION purpose.
+            // Must have ENCRYPTION purpose (bound or unbound — both live
+            // cohorts use ENCRYPTION for the sender). A non-ENCRYPTION
+            // purpose is a non-permanent purpose mismatch (G15).
             if key.purpose() != Purpose::ENCRYPTION {
-                validation.add_error(format!(
+                validation.add_purpose_error(format!(
                     "Sender key {} has purpose {:?}, but ENCRYPTION is required for contact requests",
                     sender_key_index,
                     key.purpose(),
@@ -141,6 +180,23 @@ pub fn validate_contact_request(
                 other => {
                     validation.add_error(format!(
                         "Recipient key {} has type {:?}, which is not compatible with ECDH",
+                        recipient_key_index, other,
+                    ));
+                }
+            }
+
+            // Purpose must be ENCRYPTION or DECRYPTION (G15): the mobile
+            // cohort's recipientKeyIndex points at an ENCRYPTION key, the
+            // newest cohort's at a DECRYPTION key — both honest. Anything
+            // else (AUTHENTICATION/MASTER/TRANSFER) is a non-permanent purpose
+            // mismatch: legacy 2024 docs reference AUTHENTICATION keys, so we
+            // skip-and-retry rather than permanently break the channel.
+            match key.purpose() {
+                Purpose::ENCRYPTION | Purpose::DECRYPTION => {}
+                other => {
+                    validation.add_purpose_error(format!(
+                        "Recipient key {} has purpose {:?}, but ENCRYPTION or DECRYPTION is \
+                         required for contact requests",
                         recipient_key_index, other,
                     ));
                 }
@@ -331,5 +387,138 @@ mod tests {
         assert!(!a.is_valid);
         assert_eq!(a.errors.len(), 1);
         assert_eq!(a.warnings.len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // G15 key-purpose alignment (M1 task 9). The verified testnet reality
+    // (368 on-chain docs, research/06 §G15): the dominant mobile cohort
+    // references an UNBOUND ENCRYPTION key for BOTH senderKeyIndex and
+    // recipientKeyIndex (mobile identities carry no DECRYPTION key); the
+    // newest cohort uses bound ENCRYPTION(sender)/DECRYPTION(recipient).
+    // Consensus enforces neither purpose nor boundedness. So the validator
+    // must accept ENCRYPTION for the sender and ENCRYPTION-or-DECRYPTION for
+    // the recipient, keep the ECDSA type gate, and reject AUTHENTICATION.
+    // -----------------------------------------------------------------------
+
+    /// Mobile-cohort shape: sender references an ENCRYPTION key, recipient
+    /// (our key) is ALSO an ENCRYPTION key (mobile identities have no
+    /// DECRYPTION key). This must pass — RED before task 9 because the
+    /// recipient side had no purpose gate at all, so it "passed" for the
+    /// wrong reason; the companion AUTHENTICATION test below is the one that
+    /// proves the gate was previously missing.
+    #[test]
+    fn mobile_cohort_recipient_encryption_key_is_accepted() {
+        let sender = make_identity(vec![make_key(
+            2,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::ENCRYPTION,
+        )]);
+        let recipient = make_identity(vec![make_key(
+            2,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::ENCRYPTION,
+        )]);
+
+        let result = validate_contact_request(&sender, 2, &recipient, 2);
+        assert!(
+            result.is_valid,
+            "mobile-cohort ENC/ENC request must validate, errors: {:?}",
+            result.errors
+        );
+        assert!(!result.purpose_mismatch);
+    }
+
+    /// A recipient key of purpose AUTHENTICATION must FAIL validation (legacy
+    /// 2024 cohort / test-noise shape). RED before task 9: the recipient side
+    /// had NO purpose check, so an AUTHENTICATION recipient key was silently
+    /// accepted and a wrong shared secret could be derived.
+    #[test]
+    fn recipient_authentication_key_is_rejected_as_purpose_mismatch() {
+        let sender = make_identity(vec![make_key(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::ENCRYPTION,
+        )]);
+        let recipient = make_identity(vec![make_key(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::AUTHENTICATION,
+        )]);
+
+        let result = validate_contact_request(&sender, 0, &recipient, 0);
+        assert!(
+            !result.is_valid,
+            "an AUTHENTICATION recipient key must be rejected"
+        );
+        assert!(
+            result.purpose_mismatch,
+            "an AUTHENTICATION recipient is a PURPOSE mismatch (non-permanent skip), not a hard/permanent failure"
+        );
+        assert!(result.errors.iter().any(|e| e.contains("ENCRYPTION")
+            || e.contains("DECRYPTION")
+            || e.contains("purpose")));
+    }
+
+    /// Sender ENCRYPTION + recipient DECRYPTION (our existing convention,
+    /// the newest 2026 cohort) still validates and is not a purpose mismatch.
+    #[test]
+    fn bound_convention_enc_dec_still_validates() {
+        let sender = make_identity(vec![make_key(
+            4,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::ENCRYPTION,
+        )]);
+        let recipient = make_identity(vec![make_key(
+            5,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::DECRYPTION,
+        )]);
+
+        let result = validate_contact_request(&sender, 4, &recipient, 5);
+        assert!(result.is_valid, "errors: {:?}", result.errors);
+        assert!(!result.purpose_mismatch);
+    }
+
+    /// A sender key of purpose AUTHENTICATION is a purpose mismatch (the
+    /// classification flag must be set so the sweep/accept paths skip rather
+    /// than permanently break the channel).
+    #[test]
+    fn sender_authentication_key_is_a_purpose_mismatch() {
+        let sender = make_identity(vec![make_key(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::AUTHENTICATION,
+        )]);
+        let recipient = make_identity(vec![make_key(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::DECRYPTION,
+        )]);
+
+        let result = validate_contact_request(&sender, 0, &recipient, 0);
+        assert!(!result.is_valid);
+        assert!(
+            result.purpose_mismatch,
+            "a sender purpose mismatch must be flagged so the channel is not permanently broken"
+        );
+    }
+
+    /// A NON-purpose failure (wrong key type) must NOT set `purpose_mismatch`
+    /// — it stays a hard/permanent failure that breaks the channel.
+    #[test]
+    fn wrong_key_type_is_not_a_purpose_mismatch() {
+        let sender = make_identity(vec![make_key(0, KeyType::BLS12_381, Purpose::ENCRYPTION)]);
+        let recipient = make_identity(vec![make_key(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::DECRYPTION,
+        )]);
+
+        let result = validate_contact_request(&sender, 0, &recipient, 0);
+        assert!(!result.is_valid);
+        assert!(
+            !result.purpose_mismatch,
+            "a key-TYPE failure is permanent, not a purpose mismatch"
+        );
     }
 }

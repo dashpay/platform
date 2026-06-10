@@ -211,6 +211,7 @@ fn managed_identity_from_entry(
         established_contacts: Default::default(),
         sent_contact_requests: Default::default(),
         incoming_contact_requests: Default::default(),
+        rejected_contact_requests: Default::default(),
         status: entry.status,
         dpns_names: entry.dpns_names.clone(),
         contested_dpns_names: entry.contested_dpns_names.clone(),

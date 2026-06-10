@@ -11,13 +11,45 @@ use crate::error::PlatformWalletError;
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Comprehensive DashPay sync: contact requests followed by profiles.
     ///
-    /// Call this on wallet open and on periodic refresh. Failures in either
-    /// step propagate immediately; partial progress is not rolled back.
+    /// Call this on wallet open and on periodic refresh (the recurring
+    /// [`DashPaySyncManager`](crate::manager::dashpay_sync::DashPaySyncManager)
+    /// loop drives it per sweep). Partial progress is not rolled back.
+    ///
+    /// **Step independence (log-and-continue):** the two steps are run
+    /// independently — a failure in the contact-request step is logged
+    /// but does **not** skip the profile step, and vice versa. The first
+    /// error encountered is returned after both steps have been
+    /// attempted, so the caller (the recurring sweep) can record this
+    /// wallet's outcome as failed while the rest of the sweep continues.
+    /// The per-*identity* continue (so one identity's fetch failure
+    /// doesn't abort the others within a step) lives inside
+    /// `sync_contact_requests` / `sync_profiles` themselves.
     pub async fn dashpay_sync(&self) -> Result<(), PlatformWalletError> {
         // Contact requests first — may establish new contacts.
-        self.sync_contact_requests().await?;
-        // Then profiles for all managed identities.
-        self.sync_profiles().await?;
+        let contact_result = self.sync_contact_requests().await;
+        if let Err(e) = &contact_result {
+            tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id()),
+                error = %e,
+                "DashPay contact-request sync failed; continuing to profile sync"
+            );
+        }
+
+        // Then profiles for all managed identities — attempted even if
+        // the contact-request step failed.
+        let profile_result = self.sync_profiles().await;
+        if let Err(e) = &profile_result {
+            tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id()),
+                error = %e,
+                "DashPay profile sync failed"
+            );
+        }
+
+        // Surface the first error (if any) so the recurring sweep records
+        // a failed outcome for this wallet; both steps have already run.
+        contact_result?;
+        profile_result?;
         Ok(())
     }
 }

@@ -57,6 +57,27 @@ pub struct ContactXpubData {
     pub public_key: [u8; 33],
 }
 
+impl ContactXpubData {
+    /// Assemble the DIP-15 compact extended-public-key plaintext (69 bytes).
+    ///
+    /// Layout: `parent_fingerprint(4) ‖ chain_code(32) ‖ public_key(33)`.
+    ///
+    /// This is the plaintext that must be encrypted into `encryptedPublicKey`
+    /// per DIP-15 — **not** [`ExtendedPubKey::encode()`], which for the DashPay
+    /// receiving path emits the 107-byte DIP-14 serialization (extra
+    /// version/depth/child-number metadata) and encrypts to 128 bytes, failing
+    /// the contract's `maxItems: 96`. Both reference clients (iOS
+    /// dash-shared-core, Android dashj `serializeContactPub`) emit exactly this
+    /// 69-byte form. See `docs/dashpay/research/06-interop-desk-check.md` (G14).
+    pub fn compact_xpub(&self) -> [u8; platform_encryption::COMPACT_XPUB_LEN] {
+        platform_encryption::compact_xpub_bytes(
+            self.parent_fingerprint,
+            self.chain_code,
+            self.public_key,
+        )
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Contact xpub derivation
 // ---------------------------------------------------------------------------
@@ -118,6 +139,57 @@ pub fn derive_contact_xpub(
         parent_fingerprint,
         chain_code,
         public_key,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Contact xpub reconstruction (DIP-15 receive side)
+// ---------------------------------------------------------------------------
+
+/// Reconstruct a contact's [`ExtendedPubKey`] from the DIP-15 compact form.
+///
+/// The wire format (`encryptedPublicKey`) carries only
+/// `parent_fingerprint ‖ chain_code ‖ public_key` — it deliberately omits the
+/// BIP32/DIP-14 version/depth/child-number metadata. To rebuild an
+/// `ExtendedPubKey` we synthesize that metadata from the known derivation-path
+/// context: both parties know this key sits at the leaf of the friendship path
+/// `m/9'/coin'/15'/0'/<sender256>/<recipient256>`, i.e. **depth 6** with a
+/// non-hardened 256-bit child.
+///
+/// **Correctness:** only `chain_code` + `public_key` feed non-hardened
+/// `ckd_pub` ([`derive_contact_payment_address`]), so the synthesized
+/// depth/child-number are pure metadata and do not affect derived payment
+/// addresses (pinned by `reconstructed_xpub_derives_identical_addresses`). The
+/// `child_number` is set to a `Normal256` zero index purely so the
+/// reconstructed key is non-hardened (a hardened child would refuse `ckd_pub`).
+///
+/// # Arguments
+/// * `parent_fingerprint` - 4-byte parent fingerprint from the compact form.
+/// * `chain_code` - 32-byte chain code from the compact form.
+/// * `public_key` - 33-byte compressed public key from the compact form.
+/// * `network` - Network for address encoding (from path context).
+pub fn reconstruct_contact_xpub(
+    parent_fingerprint: [u8; 4],
+    chain_code: [u8; 32],
+    public_key: [u8; 33],
+    network: Network,
+) -> Result<ExtendedPubKey, PlatformWalletError> {
+    let public_key = dashcore::secp256k1::PublicKey::from_slice(&public_key).map_err(|e| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "Compact contact xpub has an invalid compressed public key: {e}"
+        ))
+    })?;
+
+    Ok(ExtendedPubKey {
+        network,
+        // Friendship-path leaf depth (m/9'/coin'/15'/0'/sender/recipient).
+        depth: 6,
+        parent_fingerprint: key_wallet::bip32::Fingerprint::from_bytes(parent_fingerprint),
+        // Non-hardened so ckd_pub is permitted; index value is irrelevant to
+        // non-hardened child derivation, which keys only off chain_code+pubkey.
+        child_number: ChildNumber::Normal256 { index: [0u8; 32] },
+        public_key,
+        chain_code: key_wallet::bip32::ChainCode::from_bytes(chain_code),
     })
 }
 
@@ -442,5 +514,80 @@ mod tests {
     #[test]
     fn test_default_gap_limit() {
         assert_eq!(DEFAULT_CONTACT_GAP_LIMIT, 10);
+    }
+
+    #[test]
+    fn compact_xpub_is_69_byte_dip15_plaintext_not_107_byte_encode() {
+        // G14 regression. The send path must encrypt the DIP-15 compact
+        // plaintext (fingerprint ‖ chaincode ‖ pubkey = 69 bytes), NOT
+        // `ExtendedPubKey::encode()`, which for the DashPay receiving path is
+        // the 107-byte DIP-14 serialization (ends in a Normal256 child) and
+        // encrypts to 128 bytes — failing the contract's maxItems: 96.
+        //
+        // Before the fix, the producer at contact_requests.rs:150 used
+        // `account_xpub.encode()`; against that code this assertion is RED
+        // (107 != 69). This pins the byte-exact compact layout.
+        let wallet = test_wallet(Network::Testnet);
+        let (sender, recipient) = test_identifiers();
+
+        let data = derive_contact_xpub(&wallet, Network::Testnet, 0, &sender, &recipient)
+            .expect("derive contact xpub");
+
+        let compact = data.compact_xpub();
+
+        // The DashPay receiving path ends in a Normal256 child, so encode() is
+        // the 107-byte DIP-14 form. Prove the two are genuinely different.
+        let encoded = data.xpub.encode();
+        assert_eq!(
+            encoded.len(),
+            107,
+            "DashPay account xpub encodes to 107 bytes"
+        );
+        assert_eq!(compact.len(), 69, "compact plaintext must be 69 bytes");
+
+        // Byte-exact layout: fingerprint ‖ chaincode ‖ compressed pubkey.
+        assert_eq!(&compact[0..4], &data.parent_fingerprint);
+        assert_eq!(&compact[4..36], &data.chain_code);
+        assert_eq!(&compact[36..69], &data.public_key);
+
+        // And it round-trips through the codec.
+        let (fp, cc, pk) =
+            platform_encryption::parse_compact_xpub(&compact).expect("parse compact");
+        assert_eq!(fp, data.parent_fingerprint);
+        assert_eq!(cc, data.chain_code);
+        assert_eq!(pk, data.public_key);
+    }
+
+    #[test]
+    fn reconstructed_xpub_derives_identical_addresses() {
+        // G14 receive-side correctness. After compacting a contact xpub to 69
+        // bytes and reconstructing an ExtendedPubKey from
+        // (chain_code, public_key) with synthesized depth/child-number, address
+        // derivation MUST produce the same addresses as the original xpub —
+        // because non-hardened ckd_pub uses only chain_code + public_key.
+        let wallet = test_wallet(Network::Testnet);
+        let (sender, recipient) = test_identifiers();
+
+        let data = derive_contact_xpub(&wallet, Network::Testnet, 0, &sender, &recipient)
+            .expect("derive contact xpub");
+
+        let compact = data.compact_xpub();
+        let (fp, cc, pk) =
+            platform_encryption::parse_compact_xpub(&compact).expect("parse compact");
+        let reconstructed = reconstruct_contact_xpub(fp, cc, pk, Network::Testnet)
+            .expect("reconstruct from compact");
+
+        for i in 0..6u32 {
+            let from_original = derive_contact_payment_address(&data.xpub, i, Network::Testnet)
+                .expect("derive from original");
+            let from_reconstructed =
+                derive_contact_payment_address(&reconstructed, i, Network::Testnet)
+                    .expect("derive from reconstructed");
+            assert_eq!(
+                from_original, from_reconstructed,
+                "address {} differs between original and reconstructed xpub",
+                i
+            );
+        }
     }
 }

@@ -32,6 +32,22 @@ pub struct EstablishedContact {
 
     /// List of accepted account references beyond the default
     pub accepted_accounts: Vec<u32>,
+
+    /// Whether this contact's payment channel is **permanently** broken.
+    ///
+    /// Set by the account-building sweep (G1c) when registering the
+    /// counterparty's external sending account fails for a *permanent*
+    /// reason — a decrypt/decode failure of the encrypted xpub, or an
+    /// identity-key shape that can never satisfy the ECDH gate. A
+    /// transient failure (network) leaves this `false` so the next sweep
+    /// retries. Once `true`, the sweep skips this contact until the
+    /// underlying request changes, and the FFI/UI surfaces "payment
+    /// channel broken — ask the contact to send a new request" instead
+    /// of an unbounded retry loop.
+    ///
+    /// Defaults to `false`; a freshly established contact is never broken.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub payment_channel_broken: bool,
 }
 
 impl EstablishedContact {
@@ -49,6 +65,42 @@ impl EstablishedContact {
             note: None,
             is_hidden: false,
             accepted_accounts: Vec::new(),
+            payment_channel_broken: false,
+        }
+    }
+
+    /// (Re-)establish a contact while **preserving** any user metadata
+    /// already attached to a prior `EstablishedContact` for the same pair.
+    ///
+    /// [`EstablishedContact::new`] resets `alias` / `note` / `is_hidden` /
+    /// `accepted_accounts` / `payment_channel_broken` to their defaults —
+    /// so a naive re-establish on every recurring sweep (G13's sent-side
+    /// reconcile, or a re-ingested reciprocal) would wipe the user's alias,
+    /// note, hide flag, and accepted-accounts list each pass. This
+    /// constructor refreshes the two underlying [`ContactRequest`]s (the
+    /// authoritative on-platform documents may have been re-fetched) but
+    /// carries the metadata forward from `existing`.
+    ///
+    /// `payment_channel_broken` is **reset to `false`** on re-establish:
+    /// re-establishment means a fresh request flowed in, which is exactly
+    /// the "underlying request changed" condition under which the broken
+    /// flag should clear so the account-building sweep retries.
+    pub fn reestablish_preserving_metadata(
+        existing: &EstablishedContact,
+        outgoing_request: ContactRequest,
+        incoming_request: ContactRequest,
+    ) -> Self {
+        Self {
+            contact_identity_id: existing.contact_identity_id,
+            outgoing_request,
+            incoming_request,
+            alias: existing.alias.clone(),
+            note: existing.note.clone(),
+            is_hidden: existing.is_hidden,
+            accepted_accounts: existing.accepted_accounts.clone(),
+            // A new request superseded the old relationship — clear the
+            // broken flag so the sweep gives the rebuilt channel a chance.
+            payment_channel_broken: false,
         }
     }
 
@@ -138,6 +190,50 @@ mod tests {
         assert_eq!(contact.note, None);
         assert_eq!(contact.is_hidden, false);
         assert_eq!(contact.accepted_accounts.len(), 0);
+        // A freshly established contact is never broken.
+        assert_eq!(contact.payment_channel_broken, false);
+    }
+
+    /// `reestablish_preserving_metadata` must carry alias/note/is_hidden/
+    /// accepted_accounts forward from the prior contact — the G13 sweep
+    /// re-establishes on every pass, and `EstablishedContact::new` would
+    /// wipe the user's metadata each time. This pins that the
+    /// metadata-preserving path does NOT reset it.
+    #[test]
+    fn test_reestablish_preserves_user_metadata() {
+        let mut existing = EstablishedContact::new(
+            Identifier::from([2u8; 32]),
+            create_test_outgoing_request(),
+            create_test_incoming_request(),
+        );
+        existing.set_alias("Best Friend".to_string());
+        existing.set_note("Met at conference".to_string());
+        existing.hide();
+        existing.add_accepted_account(7);
+        existing.payment_channel_broken = true;
+
+        // Re-establish with fresh request docs (newer timestamps).
+        let mut newer_outgoing = create_test_outgoing_request();
+        newer_outgoing.created_at = 2_000_000_000;
+        let mut newer_incoming = create_test_incoming_request();
+        newer_incoming.created_at = 2_000_000_001;
+
+        let reestablished = EstablishedContact::reestablish_preserving_metadata(
+            &existing,
+            newer_outgoing.clone(),
+            newer_incoming.clone(),
+        );
+
+        // Metadata survives.
+        assert_eq!(reestablished.alias, Some("Best Friend".to_string()));
+        assert_eq!(reestablished.note, Some("Met at conference".to_string()));
+        assert_eq!(reestablished.is_hidden, true);
+        assert_eq!(reestablished.accepted_accounts, vec![7]);
+        // Fresh requests are adopted.
+        assert_eq!(reestablished.outgoing_request.created_at, 2_000_000_000);
+        assert_eq!(reestablished.incoming_request.created_at, 2_000_000_001);
+        // A superseding request clears the broken flag so the sweep retries.
+        assert_eq!(reestablished.payment_channel_broken, false);
     }
 
     #[test]

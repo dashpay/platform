@@ -35,6 +35,10 @@ pub use key_wallet_manager::DerivedAddress;
 pub use address_paths::{
     derivation_path_for_derived_address, derivation_path_string_for_derived_address,
 };
+pub use manager::dashpay_sync::{
+    DashPaySyncManager, DashPaySyncSummary, WalletDashPaySyncOutcome,
+    DEFAULT_SYNC_INTERVAL_SECS as DASHPAY_SYNC_DEFAULT_INTERVAL_SECS,
+};
 pub use manager::identity_sync::{
     IdentitySyncManager, IdentityTokenSyncInfo, IdentityTokenSyncState,
     DEFAULT_SYNC_INTERVAL_SECS as IDENTITY_SYNC_DEFAULT_INTERVAL_SECS,

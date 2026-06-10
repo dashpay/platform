@@ -294,6 +294,11 @@ impl PlatformWallet {
             asset_locks: Arc::clone(&asset_locks),
             persister: wallet_persister.clone(),
             broadcaster: dashpay_broadcaster,
+            // Default DashPay write seam: forwards to the live SDK. The
+            // network-layer tests swap this for a recording writer.
+            sdk_writer: Arc::new(
+                crate::wallet::identity::network::sdk_writer::SdkWriter::new(Arc::clone(&sdk)),
+            ),
         };
 
         let platform = PlatformAddressWallet::new(

@@ -37,6 +37,7 @@ mod contacts;
 mod dashpay_sync;
 mod payments;
 mod profile;
+pub(crate) mod sdk_writer;
 
 // Token state-transition operations (same `IdentityWallet` impl blocks).
 // Bookkeeping (watch / sync / balance) lives on

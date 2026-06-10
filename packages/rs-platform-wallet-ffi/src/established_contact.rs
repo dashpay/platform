@@ -216,6 +216,28 @@ pub unsafe extern "C" fn established_contact_is_hidden(
     PlatformWalletFFIResult::ok()
 }
 
+/// Check whether an established contact's DashPay payment channel is
+/// permanently broken (G1c).
+///
+/// `true` means the account-building sweep hit a permanent failure
+/// (decrypt/decode of the counterparty xpub, or a key-index validation
+/// failure) and stopped retrying. The UI should disable "Send Dash" and
+/// surface "Payment channel broken — ask the contact to send a new
+/// request"; the flag clears automatically when a superseding contact
+/// request (re-)establishes the relationship.
+#[no_mangle]
+pub unsafe extern "C" fn established_contact_is_payment_channel_broken(
+    contact_handle: Handle,
+    out_is_broken: *mut bool,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_is_broken);
+
+    let option = ESTABLISHED_CONTACT_STORAGE
+        .with_item(contact_handle, |contact| contact.payment_channel_broken);
+    *out_is_broken = unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
+}
+
 /// Hide an established contact from the contact list
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_hide(

@@ -199,8 +199,8 @@ pub fn apply(
         let mut stmt = tx.prepare_cached(
             "INSERT INTO contacts \
                 (wallet_id, owner_id, contact_id, state, outgoing_request, incoming_request, \
-                 alias, note, is_hidden, accepted_accounts) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+                 alias, note, is_hidden, accepted_accounts, payment_channel_broken) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
              ON CONFLICT(wallet_id, owner_id, contact_id) DO UPDATE SET \
                 state = excluded.state, \
                 outgoing_request = excluded.outgoing_request, \
@@ -208,7 +208,8 @@ pub fn apply(
                 alias = excluded.alias, \
                 note = excluded.note, \
                 is_hidden = excluded.is_hidden, \
-                accepted_accounts = excluded.accepted_accounts",
+                accepted_accounts = excluded.accepted_accounts, \
+                payment_channel_broken = excluded.payment_channel_broken",
         )?;
         for (key, established) in &cs.established {
             let outgoing = blob::encode(&established.outgoing_request)?;
@@ -225,6 +226,30 @@ pub fn apply(
                 established.note,
                 established.is_hidden as i64,
                 accepted,
+                established.payment_channel_broken as i64,
+            ])?;
+        }
+    }
+    if !cs.rejected.is_empty() {
+        // Rejected-request tombstone (G5 stage 1). Keyed by the rejected
+        // document id OR `(sender, accountReference)` — NEVER bare sender
+        // id — so a rotation request (bumped accountReference) from a
+        // once-rejected sender is NOT silently blocked. The sync ingest
+        // path consults this table before re-ingesting a received request.
+        let mut stmt = tx.prepare_cached(
+            "INSERT INTO rejected_contact_requests \
+                (wallet_id, owner_id, sender_id, account_reference, document_id) \
+             VALUES (?1, ?2, ?3, ?4, ?5) \
+             ON CONFLICT(wallet_id, owner_id, sender_id, account_reference) DO UPDATE SET \
+                document_id = excluded.document_id",
+        )?;
+        for entry in cs.rejected.values() {
+            stmt.execute(params![
+                wallet_id.as_slice(),
+                entry.owner_id.as_slice(),
+                entry.sender_id.as_slice(),
+                entry.account_reference as i64,
+                entry.document_id.as_ref().map(|d| d.as_slice()),
             ])?;
         }
     }
@@ -245,7 +270,7 @@ pub(crate) fn load_state(
 
     let mut stmt = conn.prepare(
         "SELECT owner_id, contact_id, state, outgoing_request, incoming_request, \
-                alias, note, is_hidden, accepted_accounts \
+                alias, note, is_hidden, accepted_accounts, payment_channel_broken \
          FROM contacts WHERE wallet_id = ?1",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
@@ -289,6 +314,7 @@ pub(crate) fn load_state(
                     Some(bytes) => blob::decode(&bytes)?,
                     None => Vec::new(),
                 };
+                let payment_channel_broken: bool = row.get::<_, Option<i64>>(9)?.unwrap_or(0) != 0;
                 state.established.insert(
                     SentContactRequestKey {
                         owner_id,
@@ -302,6 +328,7 @@ pub(crate) fn load_state(
                         note,
                         is_hidden,
                         accepted_accounts,
+                        payment_channel_broken,
                     },
                 );
             }

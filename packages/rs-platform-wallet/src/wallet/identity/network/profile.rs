@@ -2,8 +2,6 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use dpp::address_funds::AddressWitness;
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::Purpose;
@@ -11,46 +9,12 @@ use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyType;
 use dpp::identity::SecurityLevel;
-use dpp::platform_value::BinaryData;
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
-use dpp::ProtocolError;
 
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
-
-// Borrowed-signer adapter — see `dpns.rs` for the pattern.
-struct SignerRef<'a, S: ?Sized>(&'a S);
-
-impl<'a, S: ?Sized> std::fmt::Debug for SignerRef<'a, S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("SignerRef")
-    }
-}
-
-#[async_trait]
-impl<'a, K, S> Signer<K> for SignerRef<'a, S>
-where
-    K: Send + Sync,
-    S: Signer<K> + ?Sized + Send + Sync,
-{
-    async fn sign(&self, key: &K, data: &[u8]) -> Result<BinaryData, ProtocolError> {
-        self.0.sign(key, data).await
-    }
-
-    async fn sign_create_witness(
-        &self,
-        key: &K,
-        data: &[u8],
-    ) -> Result<AddressWitness, ProtocolError> {
-        self.0.sign_create_witness(key, data).await
-    }
-
-    fn can_sign_with(&self, key: &K) -> bool {
-        self.0.can_sign_with(key)
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Sync profiles
@@ -246,7 +210,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        use dash_sdk::platform::transition::put_document::PutDocument;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::document::Document;
         use dpp::document::DocumentV0;
@@ -353,18 +316,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             })?
             .to_owned_document_type();
 
-        let _result_doc = stub_document
-            .put_to_platform_and_wait_for_response(
-                &self.sdk,
-                profile_document_type,
-                None,
-                signing_key,
-                None,
-                &SignerRef(signer),
-                None,
-            )
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
+        let _result_doc = self
+            .sdk_writer
+            .put_document(super::sdk_writer::PutDocumentParams {
+                document: stub_document,
+                document_type: profile_document_type,
+                signing_public_key: signing_key,
+                signer: signer as &(dyn Signer<IdentityPublicKey> + Send + Sync),
+            })
+            .await?;
 
         let profile = crate::wallet::identity::DashPayProfile {
             display_name: input.display_name,
@@ -401,7 +361,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        use dash_sdk::platform::transition::put_document::PutDocument;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::document::Document;
         use dpp::document::DocumentV0;
@@ -557,18 +516,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             })?
             .to_owned_document_type();
 
-        let _result_doc = updated_document
-            .put_to_platform_and_wait_for_response(
-                &self.sdk,
-                profile_document_type,
-                None,
-                signing_key,
-                None,
-                &SignerRef(signer),
-                None,
-            )
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
+        let _result_doc = self
+            .sdk_writer
+            .put_document(super::sdk_writer::PutDocumentParams {
+                document: updated_document,
+                document_type: profile_document_type,
+                signing_public_key: signing_key,
+                signer: signer as &(dyn Signer<IdentityPublicKey> + Send + Sync),
+            })
+            .await?;
 
         let profile = crate::wallet::identity::DashPayProfile {
             display_name: input.display_name,

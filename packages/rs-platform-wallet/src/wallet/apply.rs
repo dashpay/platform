@@ -184,6 +184,7 @@ impl PlatformWalletInfo {
                 incoming_requests,
                 removed_incoming,
                 established,
+                rejected,
             } = contact_cs;
 
             for (key, entry) in sent_requests {
@@ -232,6 +233,23 @@ impl PlatformWalletInfo {
                     None => tracing::warn!(
                         owner = %key.owner_id,
                         "skipping established contact during apply: owner identity not in wallet"
+                    ),
+                }
+            }
+            // Rejected-request tombstones (G5 stage 1). Restore the
+            // in-memory suppression set keyed by `(sender, account_reference)`
+            // so the sync ingest path won't resurrect a rejected request
+            // after a restart. Orphan owners are logged and skipped.
+            for ((owner_id, sender_id, account_reference), entry) in rejected {
+                match self.identity_manager.managed_identity_mut(&owner_id) {
+                    Some(managed) => {
+                        managed
+                            .rejected_contact_requests
+                            .insert((sender_id, account_reference), entry);
+                    }
+                    None => tracing::warn!(
+                        owner = %owner_id,
+                        "skipping rejected contact tombstone during apply: owner identity not in wallet"
                     ),
                 }
             }

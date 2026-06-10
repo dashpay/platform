@@ -65,6 +65,18 @@ pub struct ManagedIdentity {
     /// Map of incoming contact requests (not yet accepted) keyed by sender ID
     pub incoming_contact_requests: BTreeMap<Identifier, ContactRequest>,
 
+    /// Rejected-request tombstones (G5 stage 1) keyed by
+    /// `(sender_id, account_reference)`.
+    ///
+    /// A `reject_contact_request` records the `(sender, accountReference)`
+    /// of the dropped incoming request here so the recurring sync ingest
+    /// path won't resurrect the still-on-platform immutable document. The
+    /// key deliberately includes `account_reference`: a once-rejected
+    /// sender CAN re-request via a bumped `accountReference` (DIP-15
+    /// rotation), and that rotated request is NOT suppressed.
+    pub rejected_contact_requests:
+        BTreeMap<(Identifier, u32), crate::changeset::RejectedContactRequest>,
+
     /// Identity lifecycle status on Platform.
     pub status: IdentityStatus,
 
