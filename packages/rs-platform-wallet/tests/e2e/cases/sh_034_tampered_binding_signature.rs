@@ -16,9 +16,9 @@ use std::time::Duration;
 
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
-    adversarial_enabled, bind_shielded, broadcast_raw, capture_unshield_st,
-    mutate_serialized_bundle, observe_adv_verdict, shielded_prover, teardown_sweep_shielded,
-    wait_for_shielded_balance, BundleField, BundleMutation,
+    adversarial_enabled, assert_adv_rejected, bind_shielded, broadcast_raw, capture_unshield_st,
+    mutate_serialized_bundle, shielded_prover, teardown_sweep_shielded, wait_for_shielded_balance,
+    BundleField, BundleMutation,
 };
 use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
@@ -117,14 +117,27 @@ async fn sh_034_tampered_binding_signature() {
         mutate_serialized_bundle(&mut st, BundleField::BindingSignature, &mutation)
             .expect("tamper binding signature");
         let result = broadcast_raw(s.ctx.sdk(), &st).await;
-        // Observe the TRUE verdict (consensus, not just check_tx) for Marvin.
+        // Verdict is load-bearing: the TRUE consensus result (not just check_tx
+        // admission) gates PASS/FAIL, and the bundle-verification reason pins the
+        // rejection so a transport drop can't read as "binding enforced". FAILS
+        // only if the tampered binding signature actually committed at consensus.
         let probe = format!("SH-034/{mutation:?}");
-        observe_adv_verdict(s.ctx.sdk(), &probe, &result, &st, COMMIT_TIMEOUT).await;
-        assert!(
-            result.is_err(),
-            "SH-034 FINDING (CRITICAL): backend ACCEPTED a tampered binding signature \
-             ({mutation:?}) — value-balance binding bypass. result={result:?}"
-        );
+        assert_adv_rejected(
+            s.ctx.sdk(),
+            &probe,
+            &result,
+            &st,
+            COMMIT_TIMEOUT,
+            &[
+                "binding",
+                "signature",
+                "proof",
+                "bundle",
+                "verification",
+                "invalid",
+            ],
+        )
+        .await;
         tracing::info!(
             target: "platform_wallet::e2e::cases::sh_034",
             ?mutation,

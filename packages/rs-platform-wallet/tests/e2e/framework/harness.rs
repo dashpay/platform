@@ -317,6 +317,40 @@ impl E2eContext {
         self.bank.bank_floor_satisfied()
     }
 
+    /// Single source of truth for the token-suite bank-floor skip.
+    ///
+    /// Returns `true` when `case` should `return` early because the bank's
+    /// Platform balance is below the token-suite floor. A drained live bank is
+    /// a legitimate reason to not run (so this is a skip, not a hard failure),
+    /// but a skip that reports PASS is indistinguishable from a real pass — so
+    /// this emits a loud `WARN` plus a greppable `E2E-SKIP` stderr marker. A
+    /// run where the whole token suite was skipped therefore shows `N` warnings
+    /// and `N` `E2E-SKIP` lines instead of a silent all-green.
+    ///
+    /// Centralizing the policy here means the skip-vs-fail decision can be
+    /// upgraded suite-wide in one edit (e.g. to a hard fail in CI, gated on an
+    /// env var) without touching all 17 token cases.
+    pub fn skip_if_bank_floor_unmet(&self, case: &str) -> bool {
+        if self.bank_floor_satisfied() {
+            return false;
+        }
+        let refill = self
+            .bank()
+            .primary_receive_address()
+            .to_bech32m_string(self.bank().network());
+        tracing::warn!(
+            target: "platform_wallet::e2e::harness",
+            case,
+            refill_address = %refill,
+            "E2E-SKIP: {case} did NOT run — bank Platform balance below the 50B token-suite floor; \
+             this is a SKIP reporting PASS, not a verified pass. Refill {refill} to exercise the token suite."
+        );
+        eprintln!(
+            "E2E-SKIP: {case} did NOT run (bank Platform balance below 50B floor); refill {refill} to run the token suite"
+        );
+        true
+    }
+
     async fn build() -> FrameworkResult<E2eContext> {
         // Install the panic hook before doing anything that can
         // panic — it's a no-op on subsequent calls. See

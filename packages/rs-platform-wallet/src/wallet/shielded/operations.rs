@@ -257,8 +257,9 @@ pub async fn build_shield_st<Sig: Signer<PlatformAddress>, P: OrchardProver>(
     // The fee is loaded onto the smallest-key input — the `DeductFromInput(0)`
     // fee-strategy payer (input 0 == BTreeMap-smallest address). The caller
     // (`shielded_shield_from_account`) reserves ~1e9 credits of unclaimed
-    // headroom on input 0 specifically for this, and `F` (~1.2e8 credits)
-    // fits well within it. Inflating the claim BEFORE the fetch lets the
+    // headroom on input 0 specifically for this, and `F` (162,851,200 credits
+    // ≈ 1.63e8 at protocol V8: 100M proof-verification + 2×22M per-action +
+    // ~18.85M storage) fits well within it. Inflating the claim BEFORE the fetch lets the
     // single hard balance check below validate the fee-inclusive claim
     // against the on-chain balance in one shot — no second round-trip and
     // no claim that outruns its balance check.

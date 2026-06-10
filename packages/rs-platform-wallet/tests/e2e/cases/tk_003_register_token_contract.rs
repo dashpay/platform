@@ -58,13 +58,7 @@ async fn tk_003_register_token_contract() {
     // does internally (register identity + register contract) into
     // two phases so the credit-balance snapshot lands between them.
     let ctx = E2eContext::init().await.expect("init e2e context");
-    if !ctx.bank_floor_satisfied() {
-        eprintln!(
-            "Skipping tk_003: bank Platform balance below 50B floor; refill {} to run token suite",
-            ctx.bank()
-                .primary_receive_address()
-                .to_bech32m_string(ctx.bank().network())
-        );
+    if ctx.skip_if_bank_floor_unmet("tk_003") {
         return;
     }
     // QA-V39-002 — funding 35 B credits on a freshly-funded test wallet

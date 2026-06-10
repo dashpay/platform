@@ -836,11 +836,11 @@ impl PlatformWallet {
         //     BTreeMap-smallest address).
         //
         // The flat shielded fee `F = compute_minimum_shielded_fee(2)`
-        // on a Type 15 transition lands at ~1.23e8 credits (~0.0012
-        // DASH); `operations::shield` loads exactly `F` onto input 0's
-        // claim from this reserved headroom. Reserve 1e9 credits
-        // (0.01 DASH) — ~8× headroom over `F`, still trivial relative
-        // to typical balances.
+        // on a Type 15 transition lands at 162,851,200 credits (~1.63e8,
+        // ~0.0016 DASH) at protocol V8; `operations::shield` loads exactly
+        // `F` onto input 0's claim from this reserved headroom. Reserve 1e9
+        // credits (0.01 DASH) — ~6× headroom over `F`, still trivial
+        // relative to typical balances.
         const FEE_RESERVE_CREDITS: u64 = 1_000_000_000;
 
         // Build the inputs map under the wallet-manager read lock,

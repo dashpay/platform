@@ -581,22 +581,108 @@ pub async fn wait_commit_raw(
         .map_err(|e| FrameworkError::Sdk(format!("wait_commit_raw: {e}")))
 }
 
+/// The TRUE verdict of a malformed-transition probe, resolved past mempool
+/// admission to the consensus result (SD-002).
+///
+/// The detail string carries the rejection reason / commit summary so a
+/// caller can gate on the reason (e.g. `value-balance`, `anchor`), not just
+/// the fact of rejection — distinguishing a backend rejection from a DAPI
+/// transport drop.
+#[derive(Debug, Clone)]
+pub enum AdvVerdict {
+    /// Rejected at `check_tx` (stateless / structure). `detail` is the error.
+    RejectedCheckTx(String),
+    /// Rejected at consensus. `detail` is the consensus error / code.
+    RejectedConsensus(String),
+    /// Admitted at `check_tx` and COMMITTED at consensus — a malformed tx the
+    /// backend accepted. `detail` is the commit summary. **Potential P0.**
+    Accepted(String),
+    /// Admitted at `check_tx`, but the proof-verified consensus readback timed
+    /// out (the rust-dashcore quorum-by-hash gap). NOT a probe failure.
+    Unobserved(String),
+}
+
+impl AdvVerdict {
+    /// The probe was rejected by the backend at some stage (the GOOD outcome).
+    pub fn is_rejected(&self) -> bool {
+        matches!(
+            self,
+            AdvVerdict::RejectedCheckTx(_) | AdvVerdict::RejectedConsensus(_)
+        )
+    }
+
+    /// The rejection reason / commit-summary detail, lowercased for substring
+    /// gating on the rejection reason.
+    pub fn detail_lower(&self) -> String {
+        match self {
+            AdvVerdict::RejectedCheckTx(d)
+            | AdvVerdict::RejectedConsensus(d)
+            | AdvVerdict::Accepted(d)
+            | AdvVerdict::Unobserved(d) => d.to_lowercase(),
+        }
+    }
+}
+
+/// Resolve the TRUE verdict of a malformed-transition probe past mempool
+/// admission to the consensus result (SD-002), and emit the greppable
+/// `ADV-VERDICT` line.
+///
+/// Pass the result of [`broadcast_raw`] as `broadcast`:
+/// - `Err` → caught at `check_tx`: [`AdvVerdict::RejectedCheckTx`].
+/// - `Ok` → driven to consensus via [`wait_commit_raw`]:
+///   - committed → [`AdvVerdict::Accepted`] (**potential P0**),
+///   - consensus error → [`AdvVerdict::RejectedConsensus`] (the GOOD outcome),
+///   - readback timeout → [`AdvVerdict::Unobserved`] (quorum-gap, not a failure).
+///
+/// Resolution only — never asserts, so a quorum-gap timeout can't false-RED.
+pub async fn classify_adv_verdict(
+    sdk: &Arc<dash_sdk::Sdk>,
+    probe: &str,
+    broadcast: &FrameworkResult<()>,
+    state_transition: &dpp::state_transition::StateTransition,
+    timeout: Duration,
+) -> AdvVerdict {
+    let verdict = match broadcast {
+        Err(e) => AdvVerdict::RejectedCheckTx(e.to_string()),
+        Ok(()) => match wait_commit_raw(sdk, state_transition, timeout).await {
+            Ok(r) => AdvVerdict::Accepted(format!("committed: {r}")),
+            Err(e) => {
+                let es = e.to_string();
+                let lower = es.to_lowercase();
+                if lower.contains("timeout") || lower.contains("timed out") {
+                    AdvVerdict::Unobserved(es)
+                } else {
+                    AdvVerdict::RejectedConsensus(es)
+                }
+            }
+        },
+    };
+    match &verdict {
+        AdvVerdict::RejectedCheckTx(d) => tracing::info!(
+            target: "platform_wallet::e2e::shielded",
+            "ADV-VERDICT probe={probe} stage=check_tx result=rejected detail=\"{d}\""
+        ),
+        AdvVerdict::RejectedConsensus(d) => tracing::info!(
+            target: "platform_wallet::e2e::shielded",
+            "ADV-VERDICT probe={probe} stage=consensus result=rejected detail=\"{d}\""
+        ),
+        AdvVerdict::Accepted(d) => tracing::warn!(
+            target: "platform_wallet::e2e::shielded",
+            "ADV-VERDICT probe={probe} stage=consensus result=accepted detail=\"{d}\""
+        ),
+        AdvVerdict::Unobserved(d) => tracing::info!(
+            target: "platform_wallet::e2e::shielded",
+            "ADV-VERDICT probe={probe} stage=consensus result=unobserved detail=\"{d}\""
+        ),
+    }
+    verdict
+}
+
 /// Emit the greppable `ADV-VERDICT` line for a malformed-transition probe,
 /// reading the TRUE verdict (not just mempool admission, SD-002).
 ///
-/// Pass the result of [`broadcast_raw`] as `broadcast`:
-/// - `Err` → the malformation was caught at `check_tx` (stateless /
-///   structure): `stage=check_tx result=rejected`.
-/// - `Ok` → drive it to consensus via [`wait_commit_raw`]:
-///   - committed → `stage=consensus result=accepted` (**potential P0**: a
-///     malformed tx that committed),
-///   - consensus error → `stage=consensus result=rejected` (the GOOD
-///     outcome — carries the consensus error / code),
-///   - the readback itself times out → `stage=consensus result=unobserved`
-///     (the rust-dashcore quorum-by-hash gap can stall the proof-verified
-///     readback; this is NOT a probe failure).
-///
 /// Observation only — never asserts, so a quorum-gap timeout can't false-RED.
+/// Use [`assert_adv_rejected`] when the verdict should gate PASS/FAIL.
 pub async fn observe_adv_verdict(
     sdk: &Arc<dash_sdk::Sdk>,
     probe: &str,
@@ -604,32 +690,58 @@ pub async fn observe_adv_verdict(
     state_transition: &dpp::state_transition::StateTransition,
     timeout: Duration,
 ) {
-    match broadcast {
-        Err(e) => tracing::info!(
-            target: "platform_wallet::e2e::shielded",
-            "ADV-VERDICT probe={probe} stage=check_tx result=rejected detail=\"{e}\""
-        ),
-        Ok(()) => match wait_commit_raw(sdk, state_transition, timeout).await {
-            Ok(r) => tracing::warn!(
-                target: "platform_wallet::e2e::shielded",
-                "ADV-VERDICT probe={probe} stage=consensus result=accepted detail=\"committed: {r}\""
-            ),
-            Err(e) => {
-                let es = e.to_string().to_lowercase();
-                if es.contains("timeout") || es.contains("timed out") {
-                    tracing::info!(
-                        target: "platform_wallet::e2e::shielded",
-                        "ADV-VERDICT probe={probe} stage=consensus result=unobserved detail=\"{e}\""
-                    );
-                } else {
-                    tracing::info!(
-                        target: "platform_wallet::e2e::shielded",
-                        "ADV-VERDICT probe={probe} stage=consensus result=rejected detail=\"{e}\""
-                    );
-                }
-            }
-        },
+    let _ = classify_adv_verdict(sdk, probe, broadcast, state_transition, timeout).await;
+}
+
+/// Assert a malformed-transition probe was REJECTED by the backend for the
+/// right reason, resolving the verdict past mempool admission (SD-002).
+///
+/// This is the load-bearing adversarial gate: it accepts rejection at EITHER
+/// `check_tx` OR consensus, and FAILS only when the backend [`AdvVerdict::Accepted`]
+/// (committed) the malformed transition. A `check_tx`-admitted transition that
+/// is later rejected at consensus therefore PASSES (no false-RED), and a
+/// `check_tx` rejection no longer hinges on the ambiguous `is_err()` of
+/// [`broadcast_raw`] (which also covers transport drops) — `reason_substrings`
+/// pins the rejection to the attack class.
+///
+/// - `reason_substrings`: the verdict detail (lowercased) must contain at least
+///   one of these — e.g. `["value", "balance"]` for a value-overflow probe,
+///   `["anchor", "root"]` for an anchor mismatch. Pass `&[]` to skip the reason
+///   gate (rejection-at-any-stage suffices).
+/// - [`AdvVerdict::Unobserved`] (consensus readback timed out after a `check_tx`
+///   admission) is treated as a PASS: the quorum-by-hash gap is an environment
+///   artifact, not the backend accepting the attack.
+///
+/// Panics (test assertion) on [`AdvVerdict::Accepted`] or on a rejection whose
+/// reason matches none of `reason_substrings`.
+pub async fn assert_adv_rejected(
+    sdk: &Arc<dash_sdk::Sdk>,
+    probe: &str,
+    broadcast: &FrameworkResult<()>,
+    state_transition: &dpp::state_transition::StateTransition,
+    timeout: Duration,
+    reason_substrings: &[&str],
+) -> AdvVerdict {
+    let verdict = classify_adv_verdict(sdk, probe, broadcast, state_transition, timeout).await;
+
+    if let AdvVerdict::Accepted(detail) = &verdict {
+        panic!(
+            "{probe} FINDING (CRITICAL): backend ACCEPTED a malformed transition — \
+             the attack committed at consensus. detail=\"{detail}\""
+        );
     }
+
+    if !reason_substrings.is_empty() && verdict.is_rejected() {
+        let detail = verdict.detail_lower();
+        assert!(
+            reason_substrings.iter().any(|s| detail.contains(s)),
+            "{probe}: rejected, but not for the expected reason (wanted one of \
+             {reason_substrings:?}); a transport/connection drop must not read as \
+             'attack rejected'. verdict={verdict:?}"
+        );
+    }
+
+    verdict
 }
 
 /// Mutate one `SerializedBundle` field of a built shielded

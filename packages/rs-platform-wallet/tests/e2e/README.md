@@ -117,7 +117,7 @@ cp packages/rs-platform-wallet/tests/.env.example \
 | `PLATFORM_WALLET_E2E_DEVNET_GENESIS_TIME` | no | built-in `1417713337` | Devnet genesis block time (unix seconds). |
 | `PLATFORM_WALLET_E2E_DEVNET_GENESIS_BITS` | no | built-in `207fffff` | Devnet genesis compact target `nBits` (hex). |
 | `PLATFORM_WALLET_E2E_DEVNET_GENESIS_NONCE` | no | built-in `1096447` | Devnet genesis block nonce (decimal). |
-| `RUST_LOG` | no | `info,rs_platform_wallet=debug` | Tracing filter passed to `tracing-subscriber`. Increase to `debug` or `trace` for detailed sync output. |
+| `RUST_LOG` | no | `info,platform_wallet=debug` | Tracing filter passed to `tracing-subscriber`. Increase to `debug` or `trace` for detailed sync output. |
 
 Shell-exported variables take precedence — `dotenvy::from_path` does NOT overwrite
 variables already set in the process environment. The workspace `.gitignore` covers

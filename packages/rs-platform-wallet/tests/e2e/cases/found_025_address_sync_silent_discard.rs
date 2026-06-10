@@ -10,8 +10,8 @@
 //! whether the upstream defect exists — it is `std::collections::HashMap`
 //! semantics, not SDK behaviour. After any genuine upstream fix the pin would
 //! still panic red and falsely report regression, leaving no real coverage for
-//! the actual bug. Marvin's empirical sweep flagged this as the same disease
-//! as Found-022. See `/tmp/marvin-redbyd-sweep.md`.
+//! the actual bug — the same disease as Found-022 (the prior pin asserted on a
+//! local `HashMap` the SDK never touches).
 //!
 //! # Why the retarget is blocked
 //!

@@ -19,9 +19,9 @@ use std::time::Duration;
 
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
-    adversarial_enabled, bind_shielded, broadcast_raw, capture_unshield_st,
-    mutate_serialized_bundle, observe_adv_verdict, shielded_prover, teardown_sweep_shielded,
-    wait_for_shielded_balance, BundleField, BundleMutation,
+    adversarial_enabled, assert_adv_rejected, bind_shielded, broadcast_raw, capture_unshield_st,
+    mutate_serialized_bundle, shielded_prover, teardown_sweep_shielded, wait_for_shielded_balance,
+    BundleField, BundleMutation,
 };
 use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
@@ -120,14 +120,20 @@ async fn sh_025_forged_proof() {
             .expect("capture valid unshield ST");
         mutate_serialized_bundle(&mut st, BundleField::Proof, &mutation).expect("tamper proof");
         let result = broadcast_raw(s.ctx.sdk(), &st).await;
-        // Observe the TRUE verdict (consensus, not just check_tx) for Marvin.
+        // Verdict is load-bearing: the TRUE consensus result (not just check_tx
+        // admission) gates PASS/FAIL, and the proof-invalid reason pins the
+        // rejection so a transport drop can't read as "soundness preserved".
+        // FAILS only if the tampered proof actually committed at consensus.
         let probe = format!("SH-025/{mutation:?}");
-        observe_adv_verdict(s.ctx.sdk(), &probe, &result, &st, COMMIT_TIMEOUT).await;
-        assert!(
-            result.is_err(),
-            "SH-025 FINDING (CRITICAL): backend ACCEPTED a tampered proof ({mutation:?}) — \
-             total break of shielded soundness. result={result:?}"
-        );
+        assert_adv_rejected(
+            s.ctx.sdk(),
+            &probe,
+            &result,
+            &st,
+            COMMIT_TIMEOUT,
+            &["proof", "bundle", "verification", "invalid"],
+        )
+        .await;
         tracing::info!(
             target: "platform_wallet::e2e::cases::sh_025",
             ?mutation,

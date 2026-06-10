@@ -76,13 +76,7 @@ async fn tk_002_token_claim_perpetual_distribution() {
         .try_init();
 
     let ctx = E2eContext::init().await.expect("init e2e context");
-    if !ctx.bank_floor_satisfied() {
-        eprintln!(
-            "Skipping tk_002: bank Platform balance below 50B floor; refill {} to run token suite",
-            ctx.bank()
-                .primary_receive_address()
-                .to_bech32m_string(ctx.bank().network())
-        );
+    if ctx.skip_if_bank_floor_unmet("tk_002") {
         return;
     }
 

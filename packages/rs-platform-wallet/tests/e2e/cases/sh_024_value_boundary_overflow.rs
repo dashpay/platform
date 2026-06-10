@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
-    adversarial_enabled, bind_shielded, broadcast_raw, capture_unshield_st,
+    adversarial_enabled, assert_adv_rejected, bind_shielded, broadcast_raw, capture_unshield_st,
     mutate_serialized_bundle, shielded_prover, teardown_sweep_shielded, wait_for_shielded_balance,
     BundleField, BundleMutation,
 };
@@ -33,6 +33,8 @@ const SHIELD_AMOUNT: u64 = 200_000_000;
 const UNSHIELD_AMOUNT: u64 = 20_000_000;
 const NUM_PROBES: u64 = 2;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
+/// Consensus commit needs block production + proof — longer than a per-step gate.
+const COMMIT_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn sh_024_value_boundary_overflow() {
@@ -119,11 +121,20 @@ async fn sh_024_value_boundary_overflow() {
         )
         .expect("set boundary amount");
         let result = broadcast_raw(s.ctx.sdk(), &st).await;
-        assert!(
-            result.is_err(),
-            "SH-024 FINDING: backend ACCEPTED a boundary unshielding_amount ({boundary}) — \
-             missing backend arithmetic check (wrap/overflow/accept). result={result:?}"
-        );
+        // Gate on the value-balance rejection REASON, resolved past check_tx to
+        // consensus: a DAPI transport drop (also an `Err`) must not read as
+        // "attack rejected", and a check_tx-admitted-then-consensus-rejected
+        // boundary value still passes. FAILS only if the backend committed it.
+        let probe = format!("SH-024/{boundary}");
+        assert_adv_rejected(
+            s.ctx.sdk(),
+            &probe,
+            &result,
+            &st,
+            COMMIT_TIMEOUT,
+            &["value", "balance", "amount", "maximum"],
+        )
+        .await;
         tracing::info!(
             target: "platform_wallet::e2e::cases::sh_024",
             boundary,

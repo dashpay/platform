@@ -46,20 +46,23 @@
 //!    is an in-crate, not tests/e2e/, change.
 //!
 //! Neither path is in scope for the asset-lock test suite — the
-//! scaffold documents the gap and the test stays red until either
-//! lands.
+//! scaffold documents the gap.
 //!
-//! ## FAILS UNTIL
+//! ## Blocked on
 //!
-//! Either the harness gains an orphan-wallet-id AssetLockManager
-//! builder, or the upstream signature changes to
-//! `Result<(), PlatformWalletError>` (the spec-suggested fix). The
-//! latter inverts this test from "silent failure" to "loud error
+//! This scaffold is `#[ignore]`d (no assertions yet, so without the ignore it
+//! would report a meaningless PASS). It is unblocked when either the harness
+//! gains an orphan-wallet-id AssetLockManager builder, or the upstream
+//! signature changes to `Result<(), PlatformWalletError>` (the spec-suggested
+//! fix). The latter inverts this test from "silent failure" to "loud error
 //! reaches caller" and the assertion shape flips accordingly.
 
-/// Placeholder bug pin for Found-013. Gated behind the `e2e` cargo feature until the
-/// harness gains an orphan-wallet-id manager builder.
+/// Ignored scaffold for the Found-013 bug class — no assertions yet. The
+/// `#[ignore]` keeps it visible in the suite summary as explicitly skipped
+/// rather than a silent green; the next harness extension drops the ignore and
+/// fills in the body per the TODO below.
 #[test]
+#[ignore = "scaffold — blocked on an orphan-wallet-id AssetLockManager builder; see module docs"]
 fn found_013_recover_asset_lock_silent_failure_scaffold() {
     // TODO(harness): once an orphan-wallet-id AssetLockManager
     // builder lands, port the spec's scenario into this body:

@@ -2,9 +2,9 @@
 //! `#[tokio_shared_rt::test(shared)]` entries that share the
 //! process-wide [`super::framework::E2eContext`].
 //!
-//! P0 platform-address (PA) cases land here first; the remaining
-//! TEST_SPEC.md priorities (P1, P2, ID-, DP-, DPNS-, TK-, …) follow
-//! in subsequent PRs.
+//! Hosts the platform-address (PA), identity (ID), asset-lock (AL/CR),
+//! DPNS, token (TK), shielded (SH) and Found-bug-pin cases; see
+//! `TEST_SPEC.md` for the priority matrix.
 
 // Asset-lock manager cases (Wave AL — see TEST_SPEC.md ### Asset Lock (AL))
 pub mod al_001_concurrent_asset_lock_builds;

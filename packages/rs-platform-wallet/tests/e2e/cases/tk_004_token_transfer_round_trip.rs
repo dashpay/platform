@@ -80,13 +80,7 @@ async fn tk_004_token_transfer_round_trip() {
         .try_init();
 
     let ctx = E2eContext::init().await.expect("e2e context init failed");
-    if !ctx.bank_floor_satisfied() {
-        eprintln!(
-            "Skipping tk_004: bank Platform balance below 50B floor; refill {} to run token suite",
-            ctx.bank()
-                .primary_receive_address()
-                .to_bech32m_string(ctx.bank().network())
-        );
+    if ctx.skip_if_bank_floor_unmet("tk_004") {
         return;
     }
 

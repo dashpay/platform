@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
-    adversarial_enabled, bind_shielded, broadcast_raw, capture_unshield_st,
+    adversarial_enabled, assert_adv_rejected, bind_shielded, broadcast_raw, capture_unshield_st,
     mutate_serialized_bundle, shielded_prover, teardown_sweep_shielded, wait_for_shielded_balance,
     BundleField, BundleMutation,
 };
@@ -31,6 +31,8 @@ const FUNDING_CREDITS: u64 = 1_400_000_000;
 const SHIELD_AMOUNT: u64 = 200_000_000;
 const UNSHIELD_AMOUNT: u64 = 20_000_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
+/// Consensus commit needs block production + proof — longer than a per-step gate.
+const COMMIT_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn sh_026_anchor_mismatch() {
@@ -101,11 +103,19 @@ async fn sh_026_anchor_mismatch() {
     )
     .expect("tamper anchor");
     let result = broadcast_raw(s.ctx.sdk(), &st).await;
-    assert!(
-        result.is_err(),
-        "SH-026 FINDING: backend ACCEPTED a wrong/random anchor — soundness break (and resolves \
-         Found-030 against any documented depth). result={result:?}"
-    );
+    // Gate on the anchor/proof rejection REASON, resolved past check_tx to
+    // consensus: a wrong anchor breaks the bound Orchard proof, so it surfaces
+    // as an anchor / proof / bundle-verification error. A transport drop must
+    // not read as "soundness preserved"; FAILS only if the backend committed it.
+    assert_adv_rejected(
+        s.ctx.sdk(),
+        "SH-026",
+        &result,
+        &st,
+        COMMIT_TIMEOUT,
+        &["anchor", "root", "proof", "bundle", "merkle"],
+    )
+    .await;
     tracing::info!(
         target: "platform_wallet::e2e::cases::sh_026",
         "wrong anchor correctly rejected by backend (Found-030 probe: rejected as expected)"
