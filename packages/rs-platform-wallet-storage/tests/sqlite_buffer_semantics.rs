@@ -311,7 +311,7 @@ fn tc023_one_flush_is_one_transaction() {
     cs.core = Some(core_with_height(7, 7));
     cs.wallet_metadata = Some(WalletMetadataEntry {
         network: Network::Testnet,
-        wallet_group_id: [0u8; 32],
+        wallet_group_id: w,
         birth_height: 1,
     });
     let mut balances = BTreeMap::new();
