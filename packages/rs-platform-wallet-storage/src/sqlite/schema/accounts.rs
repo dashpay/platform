@@ -158,15 +158,14 @@ pub fn apply_pools(
         // helper keeps these rows identical to the live derive path.
         for info in &entry.addresses {
             let address = info.address.to_string();
-            let path =
-                crate::sqlite::schema::core_state::derivation_path_label(pool_type, info.index);
             crate::sqlite::schema::core_state::upsert_derived_address_row(
                 tx,
                 wallet_id,
                 account_type,
                 i64::from(account_index),
+                pool_type,
+                info.index,
                 &address,
-                &path,
                 info.used,
             )?;
         }

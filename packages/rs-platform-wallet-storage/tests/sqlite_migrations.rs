@@ -111,7 +111,7 @@ fn tc027_smoke_insert_every_table() {
         ),
         (
             "core_derived_addresses",
-            "INSERT INTO core_derived_addresses (wallet_id, account_type, account_index, address, derivation_path, used) VALUES (?1, 'standard', 0, 'addr', '', 0)",
+            "INSERT INTO core_derived_addresses (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) VALUES (?1, 'standard', 0, 'external', 0, 'addr', 0)",
             &[&wallet_id.as_slice()],
         ),
         (

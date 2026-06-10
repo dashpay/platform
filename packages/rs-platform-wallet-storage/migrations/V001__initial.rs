@@ -147,18 +147,19 @@ CREATE TABLE core_derived_addresses (
     wallet_id BLOB NOT NULL,
     account_type TEXT NOT NULL CHECK (account_type IN {account_type_check}),
     account_index INTEGER NOT NULL,
+    pool_type TEXT NOT NULL CHECK (pool_type IN {pool_type_check}),
+    derivation_index INTEGER NOT NULL,
     address TEXT NOT NULL,
-    derivation_path TEXT NOT NULL,
     used INTEGER NOT NULL,
-    -- TODO: PK omits account_index/pool_type, so two addresses sharing
-    -- (wallet_id, account_type, address) collapse via ON CONFLICT. Pre-existing,
-    -- practically unreachable under honest BIP32 (needs a hash collision);
-    -- tracked for future hardening.
-    PRIMARY KEY (wallet_id, account_type, address),
+    -- PK is the BIP32 leaf identity. `address` is a derived attribute, not
+    -- a key, so every collision (within- or cross-pool) trips
+    -- UNIQUE(address) loud. `account_index` is account-level context (the
+    -- value the read returns), not a uniqueness discriminator. The UNIQUE
+    -- index also backs ACCOUNT_INDEX_BY_ADDRESS_SQL.
+    PRIMARY KEY (wallet_id, account_type, pool_type, derivation_index),
+    UNIQUE (wallet_id, address),
     FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
-
-CREATE INDEX idx_core_derived_addresses_addr ON core_derived_addresses(wallet_id, address);
 
 CREATE TABLE core_sync_state (
     wallet_id BLOB NOT NULL PRIMARY KEY,

@@ -105,9 +105,10 @@ erDiagram
     CORE_DERIVED_ADDRESSES {
         BLOB wallet_id PK
         TEXT account_type PK
-        TEXT address PK "bech32 / Base58 address string"
-        INTEGER account_index
-        TEXT derivation_path "pool_type/derivation_index"
+        TEXT pool_type PK "external | internal | absent | absent_hardened"
+        INTEGER derivation_index PK
+        INTEGER account_index "account-level context; the value the read returns"
+        TEXT address UK "bech32 / Base58 address string"
         INTEGER used "0 | 1"
     }
 
@@ -415,17 +416,22 @@ rows are identical regardless of origin:
    address resolves even before its live derive event arrives
    (genesis-rescan).
 3. **Load-time reconcile** — on load, pool snapshots fill any address the
-   table is missing, purely additively (`ON CONFLICT DO NOTHING`), so an
-   authoritative live/mirrored row is never overwritten.
+   table is missing, purely additively (`INSERT OR IGNORE`), so an
+   authoritative live/mirrored row is never overwritten and a would-be
+   `UNIQUE(address)` collision is skipped rather than aborting the load.
 
 An unspent UTXO whose address is absent from this table cannot resolve an
 account; the writer **skips** it (with a `warn`) rather than erroring, so
 one unresolvable row never aborts a whole flush. Its balance re-warms once
 the address is later derived.
 
-- PK: `(wallet_id, account_type, address)`.
+- PK: `(wallet_id, account_type, pool_type, derivation_index)` — the BIP32
+  leaf identity (one row per derived address).
+- `UNIQUE(wallet_id, address)` — the read-index invariant (one
+  account_index per address); its index also backs the address lookup, so
+  no separate index is needed. `address` is a derived attribute, never a
+  key, so every collision surfaces loud.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
-- Index: `idx_core_derived_addresses_addr(wallet_id, address)`.
 
 ### `core_sync_state`
 
@@ -621,6 +627,7 @@ fifth (`contacts.state`) is a synthetic lifecycle label naming which
 | `account_address_pools` | `account_type` | `sqlite::schema::accounts::ACCOUNT_TYPE_LABELS` |
 | `account_address_pools` | `pool_type` | `sqlite::schema::accounts::POOL_TYPE_LABELS` |
 | `core_derived_addresses` | `account_type` | `sqlite::schema::accounts::ACCOUNT_TYPE_LABELS` |
+| `core_derived_addresses` | `pool_type` | `sqlite::schema::accounts::POOL_TYPE_LABELS` |
 | `asset_locks` | `status` | `sqlite::schema::asset_locks::ASSET_LOCK_STATUS_LABELS` |
 | `contacts` | `state` | `sqlite::schema::contacts::CONTACT_STATE_LABELS` |
 

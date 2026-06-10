@@ -133,12 +133,14 @@ fn multi_account_utxos_bucket_to_real_account() {
     {
         let mut conn = persister.lock_conn_for_test();
         // Pre-seed the derived-address map with two distinct accounts.
-        for (acct, addr) in [(5u32, &addr_acct5), (9u32, &addr_acct9)] {
+        // Distinct derivation_index keeps the rows off the same BIP32-leaf
+        // PK (account_index is account-level context, not a key).
+        for (acct, deriv, addr) in [(5u32, 0u32, &addr_acct5), (9u32, 1u32, &addr_acct9)] {
             conn.execute(
                 "INSERT INTO core_derived_addresses \
-                    (wallet_id, account_type, account_index, address, derivation_path, used) \
-                 VALUES (?1, 'standard', ?2, ?3, '0/0', 0)",
-                params![w.as_slice(), acct as i64, addr.to_string()],
+                    (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
+                 VALUES (?1, 'standard', ?2, 'external', ?3, ?4, 0)",
+                params![w.as_slice(), acct as i64, deriv as i64, addr.to_string()],
             )
             .unwrap();
         }

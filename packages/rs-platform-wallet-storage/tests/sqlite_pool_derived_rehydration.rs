@@ -28,10 +28,8 @@ use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
 
 /// Snapshot a freshly seeded wallet's Standard BIP44 external pool as a
 /// single `AccountAddressPoolEntry`, mirroring the production registration
-/// round in `wallet_lifecycle.rs`. One pool keeps the derived-row keys
-/// `(account_type, address)` unique across the returned set, so the test
-/// reads back exactly what it wrote — the cross-account label collapse
-/// the schema PK allows is exercised elsewhere, not load-bearing here.
+/// round in `wallet_lifecycle.rs`. One pool of distinct BIP32 leaves keeps
+/// every derived row unique, so the test reads back exactly what it wrote.
 fn standard_external_pool(info: &ManagedWalletInfo) -> AccountAddressPoolEntry {
     use key_wallet::account::AccountType;
     use key_wallet::managed_account::address_pool::AddressPoolType;
@@ -174,7 +172,8 @@ fn genesis_rescan_utxo_at_pool_address_persists() {
 }
 
 /// Row-shape parity: a `core_derived_addresses` row written via
-/// `apply_pools` is byte-identical (account_index, derivation_path, used)
+/// `apply_pools` is byte-identical (account_index, pool_type,
+/// derivation_index, used)
 /// to the row the live `core_state::apply` writes for the same address —
 /// the two sources share one helper, so they cannot drift.
 #[test]
@@ -257,8 +256,12 @@ fn pool_and_live_derived_rows_are_identical() {
         "account_index must match"
     );
     assert_eq!(
-        row_pool.derivation_path, row_live.derivation_path,
-        "derivation_path must be rendered identically by both sources"
+        row_pool.pool_type, row_live.pool_type,
+        "pool_type must match"
+    );
+    assert_eq!(
+        row_pool.derivation_index, row_live.derivation_index,
+        "derivation_index must match"
     );
     // The live path hardcodes used=false; an unused pool address agrees.
     assert!(
@@ -359,6 +362,10 @@ fn load_reconciles_partial_state_without_clobbering_live_rows() {
     // A pool address left un-derived — the gap the reconcile must fill.
     let missing_addr = pool.addresses[1].address.to_string();
     const LIVE_ACCOUNT_INDEX: i64 = 4242;
+    // Off-pool leaf: a different pool_type/derivation_index than the
+    // external-pool leaf the reconcile would assign, so the would-be
+    // reconcile insert is a UNIQUE(address) skip, not a PK no-op.
+    const LIVE_DERIVATION_INDEX: i64 = 999;
 
     persister
         .store(
@@ -381,9 +388,14 @@ fn load_reconciles_partial_state_without_clobbering_live_rows() {
         .unwrap();
         conn.execute(
             "INSERT INTO core_derived_addresses \
-                (wallet_id, account_type, account_index, address, derivation_path, used) \
-             VALUES (?1, 'standard', ?2, ?3, 'live/0', 1)",
-            rusqlite::params![w.as_slice(), LIVE_ACCOUNT_INDEX, live_addr],
+                (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
+             VALUES (?1, 'standard', ?2, 'internal', ?3, ?4, 1)",
+            rusqlite::params![
+                w.as_slice(),
+                LIVE_ACCOUNT_INDEX,
+                LIVE_DERIVATION_INDEX,
+                live_addr
+            ],
         )
         .unwrap();
     }
@@ -415,8 +427,12 @@ fn load_reconciles_partial_state_without_clobbering_live_rows() {
         "reconcile must NOT overwrite a live row's account_index"
     );
     assert_eq!(
-        live.derivation_path, "live/0",
-        "reconcile must NOT overwrite a live row's derivation_path"
+        live.pool_type, "internal",
+        "reconcile must NOT overwrite a live row's pool_type"
+    );
+    assert_eq!(
+        live.derivation_index, LIVE_DERIVATION_INDEX,
+        "reconcile must NOT overwrite a live row's derivation_index"
     );
     assert!(live.used, "reconcile must NOT clear a live row's used flag");
 }
@@ -525,5 +541,252 @@ fn undeclared_unspent_utxo_is_skipped_not_fatal() {
         synced,
         Some(123),
         "sync-height must commit alongside valid records"
+    );
+}
+
+/// Build a live `DerivedAddress` for an explicit slot + address — the raw
+/// material for the Design-Z invariant tests below.
+fn derived_at(
+    account_type: key_wallet::account::AccountType,
+    pool_type: key_wallet::managed_account::address_pool::AddressPoolType,
+    derivation_index: u32,
+    address: dashcore::Address,
+) -> platform_wallet::DerivedAddress {
+    const PUBKEY_G: [u8; 33] = [
+        0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62, 0x95, 0xce, 0x87,
+        0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81, 0x5b, 0x16,
+        0xf8, 0x17, 0x98,
+    ];
+    platform_wallet::DerivedAddress {
+        account_type,
+        pool_type,
+        derivation_index,
+        address,
+        public_key: dashcore::PublicKey::from_slice(&PUBKEY_G).expect("valid compressed pubkey"),
+    }
+}
+
+/// An arbitrary testnet P2PKH address from a byte pattern.
+fn addr_from(byte: u8) -> dashcore::Address {
+    use dashcore::address::Payload;
+    use dashcore::hashes::Hash;
+    use dashcore::PubkeyHash;
+    dashcore::Address::new(
+        dashcore::Network::Testnet,
+        Payload::PubkeyHash(PubkeyHash::from_byte_array([byte; 20])),
+    )
+}
+
+/// A Standard BIP44 account type for the explicit-slot fixtures.
+fn standard_account() -> key_wallet::account::AccountType {
+    key_wallet::account::AccountType::Standard {
+        index: 0,
+        standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+    }
+}
+
+/// Assert a storage error is a SQLite UNIQUE-constraint violation.
+fn assert_unique_violation(err: platform_wallet_storage::WalletStorageError) {
+    match err {
+        platform_wallet_storage::WalletStorageError::Sqlite(rusqlite::Error::SqliteFailure(
+            e,
+            _,
+        )) => assert_eq!(
+            e.code,
+            rusqlite::ErrorCode::ConstraintViolation,
+            "expected a UNIQUE constraint violation, got {e:?}"
+        ),
+        other => panic!("expected a SQLite constraint error, got {other:?}"),
+    }
+}
+
+/// The whole BIP32 leaf grain: a multi-address pool persists ONE row per
+/// derivation index — never a single collapsed row. Regression guard for
+/// the 1-row collapse a non-leaf PK caused.
+#[test]
+fn multi_address_pool_persists_one_row_per_leaf() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF0);
+    ensure_wallet_meta(&persister, &w);
+
+    let (snapshots, _target) = wallet_with_pools(0x22);
+    let pool_len = snapshots[0].addresses.len();
+    assert!(pool_len >= 2, "fixture needs a multi-address pool");
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: snapshots,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let conn = persister.lock_conn_for_test();
+    let rows = core_state::list_derived_addresses_for_test(&conn, &w).unwrap();
+    assert_eq!(
+        rows.len(),
+        pool_len,
+        "every pool address must persist its own row (no PK collapse)"
+    );
+}
+
+/// Within-pool collision goes LOUD: two distinct `derivation_index` in the
+/// SAME pool resolving to the SAME address must NOT silently collapse — the
+/// second authoritative write fails on UNIQUE(wallet_id, address).
+#[test]
+fn within_pool_address_collision_is_loud() {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF1);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = addr_from(0x71);
+    let acct = standard_account();
+
+    let mut conn = persister.lock_conn_for_test();
+    let tx = conn.transaction().unwrap();
+    core_state::apply(
+        &tx,
+        &w,
+        &CoreChangeSet {
+            addresses_derived: vec![derived_at(acct, AddressPoolType::External, 0, addr.clone())],
+            ..Default::default()
+        },
+    )
+    .expect("first leaf at a fresh address must persist");
+
+    // Leaf 1 of the SAME pool yielding the SAME address — a distinct PK
+    // leaf, so this is a UNIQUE(address) violation, not a PK no-op.
+    let err = core_state::apply(
+        &tx,
+        &w,
+        &CoreChangeSet {
+            addresses_derived: vec![derived_at(acct, AddressPoolType::External, 1, addr.clone())],
+            ..Default::default()
+        },
+    )
+    .expect_err("a different leaf reusing the same address must violate UNIQUE(address)");
+
+    assert_unique_violation(err);
+}
+
+/// Cross-pool collision goes loud: the same address at a different
+/// pool_type is still a UNIQUE(address) violation.
+#[test]
+fn cross_pool_address_collision_is_loud() {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xF2);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = addr_from(0x72);
+    let acct = standard_account();
+
+    let mut conn = persister.lock_conn_for_test();
+    let tx = conn.transaction().unwrap();
+    core_state::apply(
+        &tx,
+        &w,
+        &CoreChangeSet {
+            addresses_derived: vec![derived_at(acct, AddressPoolType::External, 0, addr.clone())],
+            ..Default::default()
+        },
+    )
+    .expect("external-pool leaf must persist");
+
+    let err = core_state::apply(
+        &tx,
+        &w,
+        &CoreChangeSet {
+            addresses_derived: vec![derived_at(acct, AddressPoolType::Internal, 0, addr.clone())],
+            ..Default::default()
+        },
+    )
+    .expect_err("the same address in a different pool must violate UNIQUE(address)");
+
+    assert_unique_violation(err);
+}
+
+/// Reconcile stays non-fatal: a pre-existing live row holds an address at
+/// one leaf; the pool snapshot declares the SAME address at a DIFFERENT
+/// leaf. On `load`, the gap-fill `INSERT OR IGNORE` must SILENTLY skip the
+/// would-be UNIQUE(address) collision rather than aborting the load — and
+/// the authoritative live row must survive untouched.
+#[test]
+fn load_reconcile_silently_skips_unique_address_collision() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w: WalletId = wid(0xF3);
+    ensure_wallet_meta(&persister, &w);
+
+    let (snapshots, target) = wallet_with_pools(0x66);
+    let pool_addr = target.address.to_string();
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: snapshots.clone(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    // Recreate a partial DB: drop the auto-mirrored rows, then seed ONE
+    // live row claiming the pool address at a DIFFERENT leaf (off-pool
+    // pool_type + derivation_index). Reconcile would try to (re)insert the
+    // pool address at its real leaf — a UNIQUE(address) collision.
+    const LIVE_ACCOUNT_INDEX: i64 = 0;
+    const LIVE_DERIVATION_INDEX: i64 = 7777;
+    {
+        let conn = persister.lock_conn_for_test();
+        conn.execute(
+            "DELETE FROM core_derived_addresses WHERE wallet_id = ?1",
+            rusqlite::params![w.as_slice()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO core_derived_addresses \
+                (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
+             VALUES (?1, 'standard', ?2, 'internal', ?3, ?4, 1)",
+            rusqlite::params![
+                w.as_slice(),
+                LIVE_ACCOUNT_INDEX,
+                LIVE_DERIVATION_INDEX,
+                pool_addr
+            ],
+        )
+        .unwrap();
+    }
+    drop(persister);
+
+    let p2 = reopen(&path);
+    PlatformWalletPersistence::load(&p2).expect("reconcile must not abort load on a UNIQUE skip");
+
+    let rows = {
+        let conn = p2.lock_conn_for_test();
+        core_state::list_derived_addresses_for_test(&conn, &w).unwrap()
+    };
+    let at_addr: Vec<_> = rows.iter().filter(|r| r.address == pool_addr).collect();
+    assert_eq!(
+        at_addr.len(),
+        1,
+        "UNIQUE(address) guarantees exactly one read-index row per address"
+    );
+    let live = at_addr[0];
+    assert_eq!(
+        live.pool_type, "internal",
+        "the authoritative live row's pool_type must survive the skipped reconcile insert"
+    );
+    assert_eq!(
+        live.derivation_index, LIVE_DERIVATION_INDEX,
+        "the authoritative live row's derivation_index must survive"
+    );
+    assert!(
+        live.used,
+        "reconcile must not clear the live row's used flag"
     );
 }

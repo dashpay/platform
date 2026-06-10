@@ -60,7 +60,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     ("core_state.rs", "SELECT outpoint, value, script, height"),
     (
         "core_state.rs",
-        "SELECT account_type, account_index, address, derivation_path, used",
+        "SELECT account_type, account_index, pool_type, derivation_index, address, used",
     ),
     // Full-rehydration readers — one-shot SELECTs in `load_state`.
     (

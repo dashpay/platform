@@ -61,7 +61,6 @@ pub fn apply(
         let account_index = crate::sqlite::schema::accounts::account_index(&da.account_type);
         let pool_type = crate::sqlite::schema::accounts::pool_type_db_label(&da.pool_type);
         let address = da.address.to_string();
-        let path = derivation_path_label(pool_type, da.derivation_index);
         // Live derive events carry no `used` flag — default false; a pool
         // snapshot (the other caller of this helper) carries the real one.
         upsert_derived_address_row(
@@ -69,8 +68,9 @@ pub fn apply(
             wallet_id,
             account_type,
             i64::from(account_index),
+            pool_type,
+            da.derivation_index,
             &address,
-            &path,
             false,
         )?;
     }
@@ -196,31 +196,23 @@ fn execute_upsert_utxo(
     Ok(())
 }
 
-/// The `derivation_path` TEXT stored on a `core_derived_addresses` row:
-/// `"{pool_type}/{index}"`. Rendering both the live derive path and the
-/// pool-snapshot path through this one function keeps the two writers
-/// byte-identical (the snapshot's own BIP32 `path` is deliberately not
-/// used, so a row is independent of which source produced it).
-pub(crate) fn derivation_path_label(pool_type: &str, derivation_index: u32) -> String {
-    format!("{pool_type}/{derivation_index}")
-}
-
-// `used` is preserved on conflict (write-once): the clause refreshes
-// account_index / derivation_path but never `used`, so a later live
-// re-derive (which carries used=false) can't clear a true flag.
+// Conflict target = the BIP32-leaf PK. A same-leaf re-derive is
+// deterministic — `address` is a pure function of the slot and `used` is
+// write-once — so there is nothing legitimate to update; DO NOTHING. A
+// different leaf yielding the same `address` is a UNIQUE(address)
+// violation, not a PK hit, so it surfaces loud.
 const UPSERT_DERIVED_ADDRESS_SQL: &str = "INSERT INTO core_derived_addresses \
-        (wallet_id, account_type, account_index, address, derivation_path, used) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
-     ON CONFLICT(wallet_id, account_type, address) DO UPDATE SET \
-        account_index = excluded.account_index, \
-        derivation_path = excluded.derivation_path";
+        (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+     ON CONFLICT(wallet_id, account_type, pool_type, derivation_index) DO NOTHING";
 
-// Additive reconcile: fill gaps only, never touch an existing row. A live
-// or already-mirrored row is authoritative.
-const INSERT_DERIVED_ADDRESS_IF_ABSENT_SQL: &str = "INSERT INTO core_derived_addresses \
-        (wallet_id, account_type, account_index, address, derivation_path, used) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
-     ON CONFLICT(wallet_id, account_type, address) DO NOTHING";
+// Additive reconcile: fill gaps only, never touch an existing row. `OR
+// IGNORE` skips ALL constraint violations (PK and UNIQUE(address)) so a
+// would-be address collision can't abort the load — safe because an
+// authoritative row already owns any colliding address.
+const INSERT_DERIVED_ADDRESS_IF_ABSENT_SQL: &str = "INSERT OR IGNORE INTO core_derived_addresses \
+        (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)";
 
 /// Upsert one `core_derived_addresses` row. Single writer for both the
 /// live `addresses_derived` event path and the `apply_pools` snapshot
@@ -229,13 +221,17 @@ const INSERT_DERIVED_ADDRESS_IF_ABSENT_SQL: &str = "INSERT INTO core_derived_add
 /// insert only — the conflict clause leaves an existing `used` untouched
 /// so a later live re-derive (which carries no flag) cannot clear a
 /// snapshot's real value.
+// Args map 1:1 onto the row's NOT-NULL columns; a wrapper struct would add
+// a single-use type for the two call sites without improving clarity.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn upsert_derived_address_row(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     account_type: &str,
     account_index: i64,
+    pool_type: &str,
+    derivation_index: u32,
     address: &str,
-    derivation_path: &str,
     used: bool,
 ) -> Result<(), WalletStorageError> {
     let mut stmt = tx.prepare_cached(UPSERT_DERIVED_ADDRESS_SQL)?;
@@ -243,8 +239,9 @@ pub(crate) fn upsert_derived_address_row(
         wallet_id.as_slice(),
         account_type,
         account_index,
+        pool_type,
+        i64::from(derivation_index),
         address,
-        derivation_path,
         used,
     ])?;
     Ok(())
@@ -256,11 +253,13 @@ pub(crate) fn upsert_derived_address_row(
 /// predate the pool→derived mirror, or partial state where some addresses
 /// derived live but others never did).
 ///
-/// Purely additive: every insert is `ON CONFLICT DO NOTHING`, so an
-/// existing live or mirrored row (authoritative) keeps its account_index,
-/// derivation_path, and used flag untouched. A wallet whose derived rows
-/// already cover its pools incurs only no-op inserts. Decoding a snapshot
-/// blob is fail-hard (corruption is never skipped).
+/// Purely additive: every insert is `INSERT OR IGNORE`, so an existing
+/// authoritative row (live or mirrored) keeps its account_index,
+/// pool_type, derivation_index, and used flag untouched, and a would-be
+/// UNIQUE(address) collision is skipped rather than aborting the load. A
+/// wallet whose derived rows already cover its pools incurs only no-op
+/// inserts. Decoding a snapshot blob is fail-hard (corruption is never
+/// skipped).
 pub(crate) fn rehydrate_derived_addresses_from_pools(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -288,13 +287,13 @@ pub(crate) fn rehydrate_derived_addresses_from_pools(
         let pool_type = crate::sqlite::schema::accounts::pool_type_db_label(&entry.pool_type);
         for info in &entry.addresses {
             let address = info.address.to_string();
-            let path = derivation_path_label(pool_type, info.index);
             insert_stmt.execute(params![
                 wallet_id.as_slice(),
                 account_type,
                 i64::from(account_index),
+                pool_type,
+                i64::from(info.index),
                 address,
-                path,
                 info.used,
             ])?;
         }
@@ -558,8 +557,9 @@ pub fn list_unspent_utxos(
 pub struct DerivedAddressRow {
     pub account_type: String,
     pub account_index: i64,
+    pub pool_type: String,
+    pub derivation_index: i64,
     pub address: String,
-    pub derivation_path: String,
     pub used: bool,
 }
 
@@ -571,17 +571,18 @@ pub fn list_derived_addresses_for_test(
     wallet_id: &WalletId,
 ) -> Result<Vec<DerivedAddressRow>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT account_type, account_index, address, derivation_path, used \
+        "SELECT account_type, account_index, pool_type, derivation_index, address, used \
          FROM core_derived_addresses WHERE wallet_id = ?1 \
-         ORDER BY account_type, account_index, address",
+         ORDER BY account_type, pool_type, derivation_index",
     )?;
     let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
         Ok(DerivedAddressRow {
             account_type: row.get(0)?,
             account_index: row.get(1)?,
-            address: row.get(2)?,
-            derivation_path: row.get(3)?,
-            used: row.get(4)?,
+            pool_type: row.get(2)?,
+            derivation_index: row.get(3)?,
+            address: row.get(4)?,
+            used: row.get(5)?,
         })
     })?;
     let mut out = Vec::new();
