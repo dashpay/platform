@@ -1004,3 +1004,9 @@ mod ovk_recovery_tests;
 /// (the chain stores them verbatim, so this covers the full path).
 #[cfg(test)]
 mod shield_decrypt_tests;
+
+/// Round-trip guard for the shielded note memo: a `ShieldedMemo` attached
+/// to an output survives encryption and comes back out of both the IVK
+/// full-decryption and the OVK send-history recovery primitives.
+#[cfg(test)]
+mod memo_roundtrip_tests;
