@@ -6,7 +6,6 @@ use crate::PartialIdentityWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
 use js_sys::Map;
-use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
 
@@ -40,11 +39,8 @@ impl VerifiedAddressInfosWasm {
 
     #[wasm_bindgen(js_name = fromObject)]
     pub fn from_object(value: JsValue) -> WasmDppResult<VerifiedAddressInfosWasm> {
-        let map_val = js_sys::Reflect::get(&value, &"addressInfos".into())
-            .map_err(|_| WasmDppError::generic("Missing property: addressInfos"))?;
-        Ok(VerifiedAddressInfosWasm {
-            address_infos: map_val.unchecked_into(),
-        })
+        let address_infos = super::helpers::read_map_property(&value, "addressInfos")?;
+        Ok(VerifiedAddressInfosWasm { address_infos })
     }
 
     #[wasm_bindgen(js_name = fromJSON)]
@@ -99,11 +95,10 @@ impl VerifiedIdentityFullWithAddressInfosWasm {
         let identity_val = js_sys::Reflect::get(&value, &"identity".into())
             .map_err(|_| WasmDppError::generic("Missing property: identity"))?;
         let identity: IdentityWasm = crate::serialization::conversions::from_object(identity_val)?;
-        let map_val = js_sys::Reflect::get(&value, &"addressInfos".into())
-            .map_err(|_| WasmDppError::generic("Missing property: addressInfos"))?;
+        let address_infos = super::helpers::read_map_property(&value, "addressInfos")?;
         Ok(VerifiedIdentityFullWithAddressInfosWasm {
             identity,
-            address_infos: map_val.unchecked_into(),
+            address_infos,
         })
     }
 
@@ -112,11 +107,10 @@ impl VerifiedIdentityFullWithAddressInfosWasm {
         let identity_val = js_sys::Reflect::get(&value, &"identity".into())
             .map_err(|_| WasmDppError::generic("Missing property: identity"))?;
         let identity: IdentityWasm = crate::serialization::conversions::from_json(identity_val)?;
-        let map_val = js_sys::Reflect::get(&value, &"addressInfos".into())
-            .map_err(|_| WasmDppError::generic("Missing property: addressInfos"))?;
+        let address_infos = super::helpers::read_map_property(&value, "addressInfos")?;
         Ok(VerifiedIdentityFullWithAddressInfosWasm {
             identity,
-            address_infos: map_val.unchecked_into(),
+            address_infos,
         })
     }
 }
@@ -171,11 +165,10 @@ impl VerifiedIdentityWithAddressInfosWasm {
             .map_err(|_| WasmDppError::generic("Missing property: partialIdentity"))?;
         let partial_identity: PartialIdentityWasm =
             crate::serialization::conversions::from_object(pi_val)?;
-        let map_val = js_sys::Reflect::get(&value, &"addressInfos".into())
-            .map_err(|_| WasmDppError::generic("Missing property: addressInfos"))?;
+        let address_infos = super::helpers::read_map_property(&value, "addressInfos")?;
         Ok(VerifiedIdentityWithAddressInfosWasm {
             partial_identity,
-            address_infos: map_val.unchecked_into(),
+            address_infos,
         })
     }
 
@@ -185,11 +178,10 @@ impl VerifiedIdentityWithAddressInfosWasm {
             .map_err(|_| WasmDppError::generic("Missing property: partialIdentity"))?;
         let partial_identity: PartialIdentityWasm =
             crate::serialization::conversions::from_json(pi_val)?;
-        let map_val = js_sys::Reflect::get(&value, &"addressInfos".into())
-            .map_err(|_| WasmDppError::generic("Missing property: addressInfos"))?;
+        let address_infos = super::helpers::read_map_property(&value, "addressInfos")?;
         Ok(VerifiedIdentityWithAddressInfosWasm {
             partial_identity,
-            address_infos: map_val.unchecked_into(),
+            address_infos,
         })
     }
 }

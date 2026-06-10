@@ -213,6 +213,14 @@ impl PartialIdentityWasm {
         Ok(js_value.into())
     }
 
+    // KEEP-AS-MANUAL: the `from*` pair reconstructs field-by-field instead of
+    // delegating to canonical `ValueConvertible::from_object` because it
+    // accepts lenient JS input shapes (`id` as Uint8Array | base58 string |
+    // Identifier instance; `balance`/`revision` as BigInt | number | string;
+    // optional fields omitted rather than null). The only structured leaf
+    // (`IdentityPublicKey`) DOES go through the canonical traits below. The
+    // `platform_version` arg is API-consistency only (see IdentityPublicKey's
+    // own docs) — not load-bearing for dispatch.
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(
         obj: PartialIdentityObjectJs,

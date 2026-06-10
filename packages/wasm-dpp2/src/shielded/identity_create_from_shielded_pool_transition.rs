@@ -254,7 +254,9 @@ impl IdentityCreateFromShieldedPoolTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = fromBytes)]
-    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityCreateFromShieldedPoolTransitionWasm> {
+    pub fn from_bytes(
+        bytes: Vec<u8>,
+    ) -> WasmDppResult<IdentityCreateFromShieldedPoolTransitionWasm> {
         let st = StateTransition::deserialize_from_bytes(&bytes)?;
         match st {
             StateTransition::IdentityCreateFromShieldedPool(inner) => Ok(inner.into()),

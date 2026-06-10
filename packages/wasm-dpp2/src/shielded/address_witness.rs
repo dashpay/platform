@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_js_value;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::utils::{IntoWasm, try_from_options_with, try_to_array};
 use dpp::address_funds::AddressWitness;
@@ -53,6 +54,15 @@ export interface AddressWitnessP2shJSON {
  */
 export type AddressWitnessJSON = AddressWitnessP2pkhJSON | AddressWitnessP2shJSON;
 "#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "AddressWitnessObject")]
+    pub type AddressWitnessObjectJs;
+
+    #[wasm_bindgen(typescript_type = "AddressWitnessJSON")]
+    pub type AddressWitnessJSONJs;
+}
 
 /// The input witness data required to spend from a PlatformAddress.
 ///
@@ -168,6 +178,14 @@ impl AddressWitnessWasm {
 
 impl_try_from_js_value!(AddressWitnessWasm, "AddressWitness");
 impl_wasm_type_info!(AddressWitnessWasm, AddressWitness);
+
+impl_wasm_conversions_inner!(
+    AddressWitnessWasm,
+    AddressWitness,
+    AddressWitness,
+    AddressWitnessObjectJs,
+    AddressWitnessJSONJs
+);
 
 /// Extract a `Vec<AddressWitnessWasm>` from a JS options object property.
 ///

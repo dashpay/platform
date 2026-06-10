@@ -3,7 +3,7 @@
 //! These types were extracted from `proof_result` to keep shielded-specific
 //! code in its own module.
 
-use super::helpers::js_obj;
+use super::helpers::{js_obj, read_map_property};
 use crate::IdentityWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_conversions_serde;
@@ -11,34 +11,8 @@ use crate::impl_wasm_type_info;
 use crate::serialization::conversions::normalize_js_value_for_json;
 use js_sys::{BigInt, Map};
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::*;
-
-fn read_map_property(value: &JsValue, name: &str) -> WasmDppResult<Map> {
-    let raw = js_sys::Reflect::get(value, &name.into())
-        .map_err(|_| WasmDppError::generic(format!("Missing property: {}", name)))?;
-    // `to_json` normalizes the `Map` to a plain object so it survives `JSON.stringify`. A value
-    // that round-tripped through `JSON.parse(JSON.stringify(...))` therefore arrives here as a
-    // plain object, not a `Map`. Accept both: use a real `Map` directly, otherwise rebuild one
-    // from the plain object's entries so `.size`/`.get()`/iteration behave as a `Map`.
-    if raw.is_instance_of::<Map>() {
-        Ok(raw.unchecked_into())
-    } else if raw.is_object() {
-        let entries = js_sys::Object::entries(raw.unchecked_ref());
-        let map = Map::new();
-        for entry in entries.iter() {
-            let pair: js_sys::Array = entry.unchecked_into();
-            map.set(&pair.get(0), &pair.get(1));
-        }
-        Ok(map)
-    } else {
-        Err(WasmDppError::generic(format!(
-            "Property {} must be a Map or plain object",
-            name
-        )))
-    }
-}
 
 // --- VerifiedShieldedPoolState ---
 
