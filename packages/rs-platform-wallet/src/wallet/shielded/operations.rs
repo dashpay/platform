@@ -469,6 +469,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     account: u32,
     to_address: &PaymentAddress,
     amount: u64,
+    memo: [u8; 36],
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
     let recipient_addr = payment_address_to_orchard(to_address)?;
@@ -503,7 +504,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             &keys.spend_auth_key,
             anchor,
             prover,
-            [0u8; 36],
+            memo,
             sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;

@@ -570,6 +570,7 @@ impl PlatformWallet {
         account: u32,
         recipient_raw_43: &[u8; 43],
         amount: u64,
+        memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
         let guard = self.shielded_keys.read().await;
@@ -598,6 +599,7 @@ impl PlatformWallet {
             account,
             &recipient,
             amount,
+            memo,
             &prover,
         )
         .await

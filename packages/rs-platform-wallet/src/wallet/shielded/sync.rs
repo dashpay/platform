@@ -1011,3 +1011,9 @@ mod shield_decrypt_tests;
 /// note — the wallet's own send history reconstructed from chain data.
 #[cfg(test)]
 mod ovk_builder_roundtrip_tests;
+
+/// Round-trip guard for the shielded note memo: a `ShieldedMemo` attached
+/// to an output survives encryption and comes back out of both the IVK
+/// full-decryption and the OVK send-history recovery primitives.
+#[cfg(test)]
+mod memo_roundtrip_tests;

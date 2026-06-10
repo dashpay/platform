@@ -429,11 +429,18 @@ extension PlatformWalletManager {
     /// Amount is in credits (1 DASH = 1e11). Heavy CPU work runs
     /// on a detached task so the caller's actor isn't blocked
     /// through the proof build.
+    ///
+    /// `memo` is an optional UTF-8 text note attached to the
+    /// recipient's note. `nil` (or an empty string) means no memo;
+    /// a non-empty memo's UTF-8 byte length must be at most 32 or
+    /// Rust rejects it. The 36-byte on-chain encoding is done on the
+    /// Rust side.
     public func shieldedTransfer(
         walletId: Data,
         account: UInt32 = 0,
         recipientRaw43: Data,
-        amount: UInt64
+        amount: UInt64,
+        memo: String? = nil
     ) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(
@@ -466,9 +473,19 @@ extension PlatformWalletManager {
                             "recipient baseAddress is nil"
                         )
                     }
-                    try platform_wallet_manager_shielded_transfer(
-                        handle, widPtr, account, recipientPtr, amount
-                    ).check()
+                    // `nil` / empty → null pointer (no memo); otherwise
+                    // pass the text as a C string. Rust validates the
+                    // 32-byte limit and does the 36-byte encoding.
+                    let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
+                        try platform_wallet_manager_shielded_transfer(
+                            handle, widPtr, account, recipientPtr, amount, memoCStr
+                        ).check()
+                    }
+                    if let memo, !memo.isEmpty {
+                        try memo.withCString { try send($0) }
+                    } else {
+                        try send(nil)
+                    }
                 }
             }
         }.value
