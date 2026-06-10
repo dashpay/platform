@@ -48,7 +48,8 @@ pub use unshield::build_unshield_transition;
 
 use grovedb_commitment_tree::{
     Anchor, Authorized, Builder, Bundle, BundleType, DashMemo, Flags as OrchardFlags,
-    FullViewingKey, MerklePath, Note, NoteValue, PaymentAddress, ProvingKey, SpendAuthorizingKey,
+    FullViewingKey, MerklePath, Note, NoteValue, OutgoingViewingKey, PaymentAddress, ProvingKey,
+    Scope, SpendAuthorizingKey,
 };
 use rand::rngs::OsRng;
 
@@ -145,10 +146,18 @@ pub fn serialize_authorized_bundle(bundle: &Bundle<Authorized, i64, DashMemo>) -
 ///
 /// Used by Shield and ShieldFromAssetLock transitions where funds enter
 /// the shielded pool from transparent sources.
+///
+/// `sender_ovk` encrypts the output's `out_ciphertext` (Zcash
+/// outgoing-transaction-history convention): with `Some`, the sender can
+/// later recover the note (recipient, value, memo) from chain data via
+/// `try_recover_outgoing_note` under that OVK. With `None`, a random
+/// outgoing cipher key is used and the sent note is unrecoverable by
+/// anyone. Orchard's padding outputs always use `None`.
 pub(crate) fn build_output_only_bundle<P: OrchardProver>(
     recipient: &OrchardAddress,
     amount: u64,
     memo: [u8; 36],
+    sender_ovk: Option<OutgoingViewingKey>,
     prover: &P,
 ) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError> {
     let payment_address = PaymentAddress::from(recipient);
@@ -162,7 +171,12 @@ pub(crate) fn build_output_only_bundle<P: OrchardProver>(
     );
 
     builder
-        .add_output(None, payment_address, NoteValue::from_raw(amount), memo)
+        .add_output(
+            sender_ovk,
+            payment_address,
+            NoteValue::from_raw(amount),
+            memo,
+        )
         .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to add output: {:?}", e)))?;
 
     prove_and_sign_bundle(builder, prover, &[], &[])
@@ -170,8 +184,12 @@ pub(crate) fn build_output_only_bundle<P: OrchardProver>(
 
 /// Builds a spend+output Orchard bundle.
 ///
-/// Used by ShieldedTransfer, Unshield, and ShieldedWithdrawal where funds
-/// are spent from existing notes.
+/// Used by Unshield, ShieldedWithdrawal, and IdentityCreateFromShieldedPool
+/// where funds are spent from existing notes. The single shielded output is
+/// the spender's change note; its `out_ciphertext` is encrypted under the
+/// spender's own External-scope OVK (derived from `fvk`) so the wallet can
+/// recover the note — including its structured memo, which the compact IVK
+/// scan path never sees — from chain data alone.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_spend_bundle<P: OrchardProver>(
     spends: Vec<SpendableNote>,
@@ -198,7 +216,7 @@ pub(crate) fn build_spend_bundle<P: OrchardProver>(
 
     builder
         .add_output(
-            None,
+            Some(fvk.to_ovk(Scope::External)),
             payment_address,
             NoteValue::from_raw(output_amount),
             memo,
@@ -328,7 +346,7 @@ mod mod_tests {
     #[test]
     fn output_only_bundle_flags_and_value_balance() {
         let recipient = test_orchard_address();
-        let bundle = build_output_only_bundle(&recipient, 10_000, [0u8; 36], &TestProver)
+        let bundle = build_output_only_bundle(&recipient, 10_000, [0u8; 36], None, &TestProver)
             .expect("bundle should build");
 
         // Spends are disabled for Shield / ShieldFromAssetLock bundles.
@@ -350,7 +368,7 @@ mod mod_tests {
     #[test]
     fn serialize_authorized_bundle_preserves_fields() {
         let recipient = test_orchard_address();
-        let bundle = build_output_only_bundle(&recipient, 7_777, [3u8; 36], &TestProver)
+        let bundle = build_output_only_bundle(&recipient, 7_777, [3u8; 36], None, &TestProver)
             .expect("bundle should build");
         let sb = serialize_authorized_bundle(&bundle);
 
@@ -372,6 +390,76 @@ mod mod_tests {
             assert_eq!(action.rk.len(), 32);
             assert_eq!(action.spend_auth_sig.len(), 64);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // OVK outgoing-history round trip: an output built with the sender's
+    // OVK must recover (note, recipient, memo) under that same OVK — the
+    // Zcash convention that lets a wallet reconstruct its send history
+    // from chain data alone — and must stay opaque to any other OVK.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn output_built_with_sender_ovk_recovers_under_that_ovk_only() {
+        use grovedb_commitment_tree::{try_output_recovery_with_ovk, OrchardDomain, Scope};
+
+        let sk = SpendingKey::from_bytes([42u8; 32]).expect("valid spending key bytes");
+        let sender_ovk = FullViewingKey::from(&sk).to_ovk(Scope::External);
+
+        let recipient = test_orchard_address();
+        let amount = 31_337u64;
+        let mut memo = [0u8; 36];
+        memo[..9].copy_from_slice(b"ovk-round");
+
+        let bundle = build_output_only_bundle(
+            &recipient,
+            amount,
+            memo,
+            Some(sender_ovk.clone()),
+            &TestProver,
+        )
+        .expect("bundle should build");
+
+        let recover_all = |ovk: &grovedb_commitment_tree::OutgoingViewingKey| {
+            bundle
+                .actions()
+                .iter()
+                .filter_map(|action| {
+                    let domain = OrchardDomain::<DashMemo>::for_action(action);
+                    try_output_recovery_with_ovk(
+                        &domain,
+                        ovk,
+                        action,
+                        action.cv_net(),
+                        &action.encrypted_note().out_ciphertext,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let recovered = recover_all(&sender_ovk);
+        assert_eq!(
+            recovered.len(),
+            1,
+            "exactly the real recipient output must recover; padding stays opaque"
+        );
+        let (note, recovered_addr, recovered_memo) = &recovered[0];
+        assert_eq!(note.value().inner(), amount, "recovered value mismatch");
+        assert_eq!(
+            recovered_addr.to_raw_address_bytes(),
+            recipient.inner().to_raw_address_bytes(),
+            "recovered recipient mismatch"
+        );
+        assert_eq!(*recovered_memo, memo, "recovered memo mismatch");
+
+        // A different wallet's OVK opens nothing — no false positives in
+        // anyone else's send history.
+        let other_sk = SpendingKey::from_bytes([7u8; 32]).expect("valid spending key bytes");
+        let other_ovk = FullViewingKey::from(&other_sk).to_ovk(Scope::External);
+        assert!(
+            recover_all(&other_ovk).is_empty(),
+            "a foreign OVK must not recover the output"
+        );
     }
 
     // ------------------------------------------------------------------

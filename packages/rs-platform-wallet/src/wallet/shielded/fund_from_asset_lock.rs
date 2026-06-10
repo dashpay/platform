@@ -284,6 +284,26 @@ impl PlatformWallet {
         }
         let (recipient, _) = *recipients.first().expect("preflight enforces len() == 1");
 
+        // Encrypt the output under this wallet's OVK so the shielded sync can
+        // recover the funding (recipient, value, memo) from chain data alone.
+        // Prefer the bound account whose IVK recognizes the recipient address
+        // (the sent-note row then lands under that account); fall back to the
+        // lowest bound account, or `None` (unrecoverable out_ciphertext) if
+        // the shielded sub-wallet isn't bound.
+        let sender_ovk = {
+            let guard = self.shielded_keys.read().await;
+            guard.as_ref().and_then(|keys| {
+                keys.values()
+                    .find(|ks| {
+                        ks.incoming_viewing_key
+                            .diversifier_index(recipient.inner())
+                            .is_some()
+                    })
+                    .or_else(|| keys.values().next())
+                    .map(|ks| ks.outgoing_viewing_key.clone())
+            })
+        };
+
         // Step 4: submit. Two Platform-side fallback layers — matching
         // the address-funding sibling: CL-height-too-low retries bump
         // `user_fee_increase` (bypasses Tenderdash's invalid-tx hash
@@ -314,6 +334,7 @@ impl PlatformWallet {
                 path.clone(),
                 asset_lock_signer,
                 &prover,
+                sender_ovk.clone(),
                 surplus_output,
                 s,
             )
@@ -350,6 +371,7 @@ impl PlatformWallet {
                         path.clone(),
                         asset_lock_signer,
                         &prover,
+                        sender_ovk.clone(),
                         surplus_output,
                         s,
                     )
@@ -510,6 +532,7 @@ async fn build_and_broadcast_shielded<AS, P>(
     path: ::key_wallet::bip32::DerivationPath,
     asset_lock_signer: &AS,
     prover: &P,
+    sender_ovk: Option<grovedb_commitment_tree::OutgoingViewingKey>,
     surplus_output: Option<PlatformAddress>,
     settings: Option<PutSettings>,
 ) -> Result<(), dash_sdk::Error>
@@ -525,6 +548,7 @@ where
         asset_lock_signer,
         prover,
         [0u8; 36],
+        sender_ovk,
         surplus_output,
         sdk.version(),
     )

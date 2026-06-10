@@ -287,6 +287,10 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
         0, // user_fee_increase
         prover,
         [0u8; 36], // empty memo
+        // Encrypt the output under the account's own OVK so the wallet's
+        // shielded sync can recover this send (recipient, value, memo)
+        // from chain data alone.
+        Some(keys.outgoing_viewing_key.clone()),
         sdk.version(),
     )
     .await
