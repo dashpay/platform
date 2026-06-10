@@ -150,6 +150,75 @@ Custom serde impl precedents (for tuple-variant enums that can't auto-derive int
 
 ---
 
+## Review follow-ups (2026-06-10)
+
+Post-merge audit (merged v3.1-dev @ `883779d2a6`; 3712 dpp lib tests green) verified the
+unification claims hold — 17 `_serde!` sites all wasm-only DTOs, zero tagging violations,
+`BASE_FIELD_NAMES` complete — but found gaps, mostly from types that landed on base while
+the branch lived. Fix order below; checkboxes updated as work lands on this branch.
+
+### P1 — `IdentityCreateFromShieldedPoolTransition` (base PR #3816) coverage
+
+The leaf followed the derive pattern (J+V, `$formatVersion`, `json_safe_fields` on V0) but
+shipped without the test/wasm discipline this branch establishes.
+
+- [x] Leaf `json_convertible_tests` module with `pub(crate) fixture()` + JSON/Value
+      wire-shape round-trip tests (pattern: `shield_transition/mod.rs`).
+- [x] 21st umbrella test `umbrella_identity_create_from_shielded_pool` in
+      `state_transition/mod.rs` (currently 20 tests / 21 variants).
+- [x] wasm-dpp2 wrapper `src/shielded/identity_create_from_shielded_pool_transition.rs`
+      with `impl_wasm_conversions_inner!` + exports (modeled on `shield_transition.rs`),
+      plus spec coverage (12 mocha specs passing).
+
+### P2 — missing J+V impls (cluster skipped by pass 1)
+
+All serde-capable, no impls, no KEEP-AS-EXCEPTION. Each gets impls + wire-shape round-trip
+tests. The tuple-variant enums also get custom internal-tagging serde per the
+`ResourceVoteChoice` precedent — an intentional wire-shape change (was externally tagged);
+downstream wire-shape assertions (`TokenConfiguration`, `ChangeControlRules`, …) updated in
+the same commit.
+
+- [ ] `AuthorizedActionTakers` (custom serde — `Identity(Identifier)` / `Group(u16)` tuple variants)
+- [ ] `TokenDistributionRecipient` / `TokenDistributionResolvedRecipient` (custom serde — Identifier tuple variants)
+- [ ] `TokenDistributionType`, `TokenDistributionKey` (clears the in-file `TODO(unification pass 2)`)
+- [ ] `RewardDistributionMoment` (already has `json_safe_u64` fields — only impls + tests missing)
+- [ ] `IndexCountability` (manual empty impls like its `index/mod.rs` siblings)
+- [ ] `TokenConfigurationPreset` / `TokenConfigurationPresetFeatures`
+- [ ] `Metadata` (+ `json_safe_fields` — raw u64s reachable via `ExtendedDocument` `$metadata`)
+- [ ] `TokenTradeMode` (trivial, consistency)
+- Skipped deliberately: `FeeRefunds` (fee-module internal, no J/V callers), `LazyRegex`
+  (string-newtype primitive, covered via `ContestedIndexFieldMatch` tests).
+
+### P3 — `Index` drift from base (#3623 count + #3661 sum fields)
+
+- [ ] `#[serde(default)]` on `countable`, `range_countable`, `summable`, `range_summable`
+      (red test first: pre-#3623 JSON must deserialize).
+- [ ] `Index` + `IndexProperty` wire-shape round-trip tests (none exist crate-wide).
+
+### P4 — wasm-dpp2 fixes
+
+- [ ] Replace `unchecked_into::<Map>()` ingestion in `proof_result/{address_funds,document,token}.rs`
+      with the `read_map_property` pattern `proof_result/shielded.rs` already documents
+      (plain-object input from `toJSON` round-trips silently breaks Maps today).
+- [ ] `PartialIdentityWasm::fromObject/fromJSON` delegate to canonical traits (to-side already does).
+- [ ] `AddressWitnessWasm` + `TokenPricingScheduleWasm`: add `impl_wasm_conversions_inner!`
+      (inners have J+V; AddressWitness already declares the TS object/JSON types).
+
+### P5 — hygiene
+
+- [ ] KEEP-AS-EXCEPTION comments: `DataContractConfig::from_value(value, platform_version)`,
+      `DocumentTransitionObjectLike` trait def; brief justification comments on `Epoch`
+      Deserialize + `InstantAssetLockProof` manual serde.
+- [ ] Delete dead code: `DataContractConfigV0/V1::from_value` (zero callers),
+      `util/deserializer.rs::serde_entropy` (zero users, HR-only),
+      `ExtendedDocument::to_value/into_value` (test-only callers, legacy shape) — or document if deletion ripples.
+- [ ] Fix 3 stale `outpoint_serde` comments in `chain_asset_lock_proof.rs`.
+- [ ] Fix duplicated feature predicates `any(feature = "serde-conversion", feature = "serde-conversion")`
+      (`Identity`, `PartialIdentity`, `IdentityV0`, `ExtendedDocumentV0`).
+- [ ] Add staleness note for the shielded family to `json-value-conversion-inventory.md`.
+
+---
+
 ## 1. Goal
 
 Every dpp domain type that needs JSON or platform-value conversion uses **exactly one** mechanism: the `JsonConvertible` / `ValueConvertible` traits in `packages/rs-dpp/src/serialization/serialization_traits.rs:141-185`.

@@ -760,6 +760,15 @@ mod json_convertible_tests {
             "shieldedWithdrawal",
         );
     }
+
+    #[test]
+    fn umbrella_identity_create_from_shielded_pool() {
+        let inner = crate::state_transition::identity_create_from_shielded_pool_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::IdentityCreateFromShieldedPool(inner),
+            "identityCreateFromShieldedPool",
+        );
+    }
 }
 
 impl OptionallyAssetLockProved for StateTransition {
