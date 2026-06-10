@@ -998,3 +998,9 @@ mod tests {
 /// `sync_notes_across`).
 #[cfg(test)]
 mod ovk_recovery_tests;
+
+/// Round-trip guard for the Type 15 client pair: the shield builder's
+/// serialized actions must trial-decrypt under the same keyset's IVK
+/// (the chain stores them verbatim, so this covers the full path).
+#[cfg(test)]
+mod shield_decrypt_tests;
