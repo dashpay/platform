@@ -203,6 +203,16 @@ impl<'de> Visitor<'de> for PlatformAddressWasmVisitor {
     where
         E: de::Error,
     {
+        // Same 21-byte guard as every public entry point (see the Uint8Array
+        // branch in `TryFrom<JsValue>` for the consensus rationale): bincode
+        // decode tolerates trailing bytes, so over-length input would be
+        // silently truncated without this.
+        if value.len() != 21 {
+            return Err(E::custom(format!(
+                "PlatformAddress must be exactly 21 bytes, got {}",
+                value.len()
+            )));
+        }
         PlatformAddress::from_bytes(value)
             .map(PlatformAddressWasm)
             .map_err(|e| E::custom(e.to_string()))
@@ -215,6 +225,13 @@ impl<'de> Visitor<'de> for PlatformAddressWasmVisitor {
         let mut bytes: Vec<u8> = Vec::new();
         while let Some(byte) = seq.next_element::<u8>()? {
             bytes.push(byte);
+        }
+        // Same 21-byte guard as `visit_bytes` above.
+        if bytes.len() != 21 {
+            return Err(A::Error::custom(format!(
+                "PlatformAddress must be exactly 21 bytes, got {}",
+                bytes.len()
+            )));
         }
         PlatformAddress::from_bytes(&bytes)
             .map(PlatformAddressWasm)

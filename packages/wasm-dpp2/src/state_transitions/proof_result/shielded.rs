@@ -152,29 +152,43 @@ impl VerifiedAssetLockConsumedWithAddressInfosWasm {
         // A credit value may arrive as a BigInt (`toObject`), a base-10 string (`toJSON`
         // normalizes BigInt to a string so it survives `JSON.stringify`), or a plain number
         // (a hand-built object). Accept all three so `fromJSON(JSON.parse(JSON.stringify(...)))`
-        // round-trips instead of dropping the value to `None`.
-        let read_opt_u64 = |name: &str| -> Option<u64> {
-            js_sys::Reflect::get(&value, &name.into())
-                .ok()
-                .and_then(|v| {
-                    if v.is_undefined() || v.is_null() {
-                        None
-                    } else if let Ok(b) = u64::try_from(v.clone()) {
-                        Some(b)
-                    } else if let Some(s) = v.as_string() {
-                        s.parse::<u64>().ok()
-                    } else {
-                        v.as_f64().and_then(|n| {
-                            (n >= 0.0 && n.fract() == 0.0 && n <= u64::MAX as f64)
-                                .then_some(n as u64)
-                        })
-                    }
-                })
+        // round-trips. Absent / null / undefined means "no surplus" (`None`); a PRESENT value
+        // that cannot be cleanly read as u64 is an error — silently mapping it to `None`
+        // would conflate "absent" with "garbage".
+        let read_opt_u64 = |name: &str| -> WasmDppResult<Option<u64>> {
+            let v = js_sys::Reflect::get(&value, &name.into()).unwrap_or(JsValue::UNDEFINED);
+            if v.is_undefined() || v.is_null() {
+                return Ok(None);
+            }
+            if let Ok(b) = u64::try_from(v.clone()) {
+                return Ok(Some(b));
+            }
+            if let Some(s) = v.as_string() {
+                return s.parse::<u64>().map(Some).map_err(|e| {
+                    WasmDppError::invalid_argument(format!(
+                        "{} is not a valid u64 string: {}",
+                        name, e
+                    ))
+                });
+            }
+            if let Some(n) = v.as_f64() {
+                if n >= 0.0 && n.fract() == 0.0 && n <= u64::MAX as f64 {
+                    return Ok(Some(n as u64));
+                }
+                return Err(WasmDppError::invalid_argument(format!(
+                    "{} must be a non-negative integer within u64 range, got {}",
+                    name, n
+                )));
+            }
+            Err(WasmDppError::invalid_argument(format!(
+                "{} must be a BigInt, base-10 string, or integer number",
+                name
+            )))
         };
         Ok(VerifiedAssetLockConsumedWithAddressInfosWasm {
             status,
-            initial_credit_value: read_opt_u64("initialCreditValue"),
-            remaining_credit_value: read_opt_u64("remainingCreditValue"),
+            initial_credit_value: read_opt_u64("initialCreditValue")?,
+            remaining_credit_value: read_opt_u64("remainingCreditValue")?,
             address_infos: read_map_property(&value, "addressInfos")?,
         })
     }
