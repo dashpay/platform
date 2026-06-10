@@ -267,9 +267,18 @@ async fn sh_036_identity_create_from_shielded_pool() {
     // TODO(#3040-fee): pin the exact identity balance once the create fee is a
     // stable, queryable consensus constant.
     let identity_balance = on_chain.balance();
-    let predicted_fee =
-        compute_shielded_identity_create_fee(2, submitted_keys.len(), s.ctx.sdk().version())
-            .expect("compute_shielded_identity_create_fee");
+    // The create spends the single note produced by the one shield above.
+    // Mirror the builder's `spends.len().max(2)` action-padding floor
+    // (identity_create_from_shielded_pool.rs) instead of a bare literal, so
+    // this predictor doesn't drift if the padding floor ever changes.
+    let spend_note_count: usize = 1;
+    let num_actions = spend_note_count.max(2);
+    let predicted_fee = compute_shielded_identity_create_fee(
+        num_actions,
+        submitted_keys.len(),
+        s.ctx.sdk().version(),
+    )
+    .expect("compute_shielded_identity_create_fee");
     assert!(
         identity_balance > 0 && identity_balance <= denomination,
         "A5: identity balance {identity_balance} must be in (0, {denomination}]"
