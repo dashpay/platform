@@ -81,6 +81,10 @@ impl Encode for Epoch {
     }
 }
 
+// Manual Deserialize (Serialize stays derived with `serde(skip)` on `key`):
+// the `key` field is derived from `index`, so deserialization must recompute
+// it via `Epoch::new` to preserve the invariant rather than trusting wire
+// input. Not a wire-shape customization — the shape matches the derive.
 impl<'de> Deserialize<'de> for Epoch {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

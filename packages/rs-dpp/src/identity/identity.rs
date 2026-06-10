@@ -43,10 +43,7 @@ use std::collections::{BTreeMap, BTreeSet};
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 pub enum Identity {
-    #[cfg_attr(
-        any(feature = "serde-conversion", feature = "serde-conversion"),
-        serde(rename = "0")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(IdentityV0),
 }
 
@@ -206,7 +203,7 @@ mod json_convertible_tests {
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(
-    any(feature = "serde-conversion", feature = "serde-conversion",),
+    feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]

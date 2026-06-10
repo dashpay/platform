@@ -12,6 +12,8 @@ Source traits: `packages/rs-dpp/src/serialization/serialization_traits.rs:141-18
 This file is generated from a 4-agent parallel inventory. A 5th verification agent will cross-check it; corrections land back here as a follow-up.
 
 > **Status (2026-05-04, head commit `7397c73f31`)**: this inventory is a *historical* snapshot of the structural starting point. The tables in Section 1 (already-covered) and Section 5 (missing-impls) are not maintained as work progresses — for current coverage refer to `docs/json-value-unification-plan.md` (§7 Phase B / Phase C and the "Pass-2 follow-up fix sequence" table). Passes 1 and 2 are complete: 3633 dpp lib tests pass, 8 ignored (6 unrelated pre-existing + 2 StateTransition umbrella). Every bug surfaced by pass-2 testing has either landed a fix or been correctly classified as a fundamental format limitation.
+>
+> **Staleness note (2026-06-10)**: types that landed on base after this snapshot are absent from every table — notably the whole shielded family (`Shield`/`Unshield`/`ShieldedTransfer`/`ShieldFromAssetLock`/`ShieldedWithdrawal` transitions, `SerializedAction`, `IdentityCreateFromShieldedPool`) and the `Index` count/sum fields (#3623/#3661). Their coverage is tracked in the plan doc's "Review follow-ups (2026-06-10)" section instead.
 
 ---
 

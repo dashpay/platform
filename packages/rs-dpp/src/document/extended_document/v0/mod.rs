@@ -47,59 +47,35 @@ use serde_json::Value as JsonValue;
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
 #[derive(Debug, Clone)]
-#[cfg_attr(
-    all(feature = "serde-conversion", feature = "serde-conversion"),
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub struct ExtendedDocumentV0 {
     /// The document type name, stored as a string.
-    #[cfg_attr(
-        all(feature = "serde-conversion", feature = "serde-conversion"),
-        serde(rename = "$type")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$type"))]
     pub document_type_name: String,
 
     /// The identifier of the associated data contract.
-    #[cfg_attr(
-        all(feature = "serde-conversion", feature = "serde-conversion"),
-        serde(rename = "$dataContractId")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$dataContractId"))]
     pub data_contract_id: Identifier,
 
     /// The actual document object containing the data.
-    #[cfg_attr(
-        all(feature = "serde-conversion", feature = "serde-conversion"),
-        serde(flatten)
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(flatten))]
     pub document: Document,
 
     // TODO: We should remove it from here, or at least keep a ref
     //  also there is no point to keep both contract and its ID
     /// The data contract associated with the document.
-    #[cfg_attr(
-        all(feature = "serde-conversion", feature = "serde-conversion"),
-        serde(rename = "$dataContract")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$dataContract"))]
     pub data_contract: DataContract,
 
     /// An optional field for metadata associated with the document.
-    #[cfg_attr(
-        all(feature = "serde-conversion", feature = "serde-conversion"),
-        serde(rename = "$metadata", default)
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$metadata", default))]
     pub metadata: Option<Metadata>,
 
     /// A field representing the entropy, stored as `Bytes32`.
-    #[cfg_attr(
-        all(feature = "serde-conversion", feature = "serde-conversion"),
-        serde(rename = "$entropy")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$entropy"))]
     pub entropy: Bytes32,
     /// A field representing the token payment info.
-    #[cfg_attr(
-        all(feature = "serde-conversion", feature = "serde-conversion"),
-        serde(rename = "$tokenPaymentInfo")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$tokenPaymentInfo"))]
     pub token_payment_info: Option<TokenPaymentInfo>,
 }
 
@@ -510,16 +486,6 @@ impl ExtendedDocumentV0 {
         Ok(object)
     }
 
-    #[cfg(feature = "value-conversion")]
-    pub fn into_value(self) -> Result<Value, ProtocolError> {
-        Ok(self.into_map_value()?.into())
-    }
-
-    #[cfg(feature = "value-conversion")]
-    pub fn to_value(&self) -> Result<Value, ProtocolError> {
-        Ok(self.to_map_value()?.into())
-    }
-
     pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash_double_to_vec(
             ExtendedDocumentPlatformConversionMethodsV0::serialize_to_bytes(
@@ -860,28 +826,6 @@ mod tests {
             map.get(property_names::FEATURE_VERSION),
             Some(&Value::U16(0))
         );
-    }
-
-    // ================================================================
-    //  to_value and into_value
-    // ================================================================
-
-    #[test]
-    fn to_value_produces_a_map_value() {
-        let platform_version = PlatformVersion::latest();
-        let (ext_doc, _) = make_extended_document(platform_version);
-
-        let val = ext_doc.to_value().expect("to_value should succeed");
-        assert!(val.is_map(), "to_value should produce a map Value");
-    }
-
-    #[test]
-    fn into_value_produces_a_map_value() {
-        let platform_version = PlatformVersion::latest();
-        let (ext_doc, _) = make_extended_document(platform_version);
-
-        let val = ext_doc.into_value().expect("into_value should succeed");
-        assert!(val.is_map(), "into_value should produce a map Value");
     }
 
     // ================================================================

@@ -47,15 +47,12 @@ use std::fmt::Formatter;
 
 #[derive(Clone, Debug, PartialEq, From)]
 #[cfg_attr(
-    any(feature = "serde-conversion", feature = "serde-conversion"),
+    feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize),
     serde(tag = "$formatVersion")
 )]
 pub enum Document {
-    #[cfg_attr(
-        any(feature = "serde-conversion", feature = "serde-conversion"),
-        serde(rename = "0")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(DocumentV0),
 }
 

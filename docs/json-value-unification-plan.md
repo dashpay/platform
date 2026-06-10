@@ -200,25 +200,34 @@ the same commit.
 
 ### P4 — wasm-dpp2 fixes
 
-- [ ] Replace `unchecked_into::<Map>()` ingestion in `proof_result/{address_funds,document,token}.rs`
+- [x] Replace `unchecked_into::<Map>()` ingestion in `proof_result/{address_funds,document,token}.rs`
       with the `read_map_property` pattern `proof_result/shielded.rs` already documents
-      (plain-object input from `toJSON` round-trips silently breaks Maps today).
-- [ ] `PartialIdentityWasm::fromObject/fromJSON` delegate to canonical traits (to-side already does).
-- [ ] `AddressWitnessWasm` + `TokenPricingScheduleWasm`: add `impl_wasm_conversions_inner!`
-      (inners have J+V; AddressWitness already declares the TS object/JSON types).
+      (plain-object input from `toJSON` round-trips silently breaks Maps today). Helper moved
+      to `proof_result/helpers.rs`, shared by all five DTOs + the shielded module.
+- [x] `PartialIdentityWasm::fromObject/fromJSON` — **resolved as documented exception, not a
+      rewrite**: the field-by-field path exists for lenient JS input (IdentifierLike,
+      BigInt|number|string, omitted optionals) and its only structured leaf
+      (`IdentityPublicKey`) already goes through the canonical traits. KEEP-AS-MANUAL comment
+      added at the site.
+- [x] `AddressWitnessWasm` + `TokenPricingScheduleWasm`: add `impl_wasm_conversions_inner!`
+      (inners have J+V; AddressWitness already declared the TS object/JSON types — now
+      bound via typed externs; TokenPricingSchedule uses the 3-arg JsValue form).
 
 ### P5 — hygiene
 
-- [ ] KEEP-AS-EXCEPTION comments: `DataContractConfig::from_value(value, platform_version)`,
+- [x] KEEP-AS-EXCEPTION comments: `DataContractConfig::from_value(value, platform_version)`,
       `DocumentTransitionObjectLike` trait def; brief justification comments on `Epoch`
       Deserialize + `InstantAssetLockProof` manual serde.
-- [ ] Delete dead code: `DataContractConfigV0/V1::from_value` (zero callers),
+- [x] Delete dead code: `DataContractConfigV0/V1::from_value` (zero callers),
       `util/deserializer.rs::serde_entropy` (zero users, HR-only),
-      `ExtendedDocument::to_value/into_value` (test-only callers, legacy shape) — or document if deletion ripples.
-- [ ] Fix 3 stale `outpoint_serde` comments in `chain_asset_lock_proof.rs`.
-- [ ] Fix duplicated feature predicates `any(feature = "serde-conversion", feature = "serde-conversion")`
-      (`Identity`, `PartialIdentity`, `IdentityV0`, `ExtendedDocumentV0`).
-- [ ] Add staleness note for the shielded family to `json-value-conversion-inventory.md`.
+      `ExtendedDocument::to_value/into_value` (+ V0 impls + their 2 shape-only tests;
+      verified zero non-test callers workspace-wide).
+- [x] Fix 3 stale `outpoint_serde` comments in `chain_asset_lock_proof.rs`.
+- [x] Fix duplicated feature predicates `any(feature = "serde-conversion", feature = "serde-conversion")`
+      — collapsed to the single predicate (behavior-preserving, `a∨a ≡ a`) across 8 files
+      (`Identity`, `IdentityV0`, `Document`, `DocumentV0`, `ExtendedDocumentV0`,
+      `GasFeesPaidBy`, `TokenPaymentInfo` + V0).
+- [x] Add staleness note for the shielded family to `json-value-conversion-inventory.md`.
 
 ---
 

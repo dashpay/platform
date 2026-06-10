@@ -44,6 +44,10 @@ pub struct InstantAssetLockProof {
     pub output_index: u32,
 }
 
+// Manual Serialize/Deserialize via the `RawInstantLockProof` DTO bridge:
+// `InstantLock`/`Transaction` are consensus-encoded byte blobs on the wire
+// (base64 in HR JSON, bytes otherwise), not serde-shaped structs, so the
+// derive can't express the shape. Not a tagging customization.
 impl Serialize for InstantAssetLockProof {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

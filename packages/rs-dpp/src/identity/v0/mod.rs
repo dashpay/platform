@@ -30,17 +30,14 @@ use bincode::{Decode, Encode};
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "identity-serialization", derive(Encode, Decode))]
 #[cfg_attr(
-    any(feature = "serde-conversion", feature = "serde-conversion"),
+    feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 pub struct IdentityV0 {
     pub id: Identifier,
-    #[cfg_attr(
-        any(feature = "serde-conversion", feature = "serde-conversion"),
-        serde(with = "public_key_serialization")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(with = "public_key_serialization"))]
     pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: u64,
     pub revision: Revision,

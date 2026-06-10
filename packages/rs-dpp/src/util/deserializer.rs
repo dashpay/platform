@@ -53,34 +53,3 @@ pub fn split_cbor_feature_version(
         main_message_bytes,
     })
 }
-
-pub mod serde_entropy {
-    use base64::prelude::BASE64_STANDARD;
-    use base64::Engine;
-    use std::convert::TryInto;
-
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<[u8; 32], D::Error> {
-        let data: String = Deserialize::deserialize(d)?;
-        BASE64_STANDARD
-            .decode(&data)
-            .map_err(|e| {
-                serde::de::Error::custom(format!("Unable to decode {}' with base64 - {}", data, e))
-            })?
-            .try_into()
-            .map_err(|_| {
-                serde::de::Error::custom(format!(
-                    "Unable to convert the '{:?}' into 32 bytes array",
-                    data
-                ))
-            })
-    }
-
-    pub fn serialize<S>(buffer: &[u8], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&BASE64_STANDARD.encode(buffer))
-    }
-}

@@ -9,10 +9,7 @@ use bincode::{Decode, Encode};
 use derive_more::Display;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Identifier, Value};
-#[cfg(any(
-    feature = "serde-conversion",
-    all(feature = "serde-conversion", feature = "serde-conversion"),
-))]
+#[cfg(any(feature = "serde-conversion", feature = "serde-conversion",))]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -22,10 +19,7 @@ use std::collections::BTreeMap;
 // values as strings — same convention as the rest of the wire shape.
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
-    any(
-        feature = "serde-conversion",
-        all(feature = "serde-conversion", feature = "serde-conversion"),
-    ),
+    any(feature = "serde-conversion", feature = "serde-conversion",),
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]

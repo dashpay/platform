@@ -383,26 +383,6 @@ impl ExtendedDocument {
         }
     }
 
-    /// Convert the extended document to a Value instance consuming the instance.
-    ///
-    /// This function is a passthrough to the `into_value` method.
-    #[cfg(feature = "value-conversion")]
-    pub fn into_value(self) -> Result<Value, ProtocolError> {
-        match self {
-            ExtendedDocument::V0(v0) => v0.into_value(),
-        }
-    }
-
-    /// Convert the extended document to a Value instance.
-    ///
-    /// This function is a passthrough to the `to_value` method.
-    #[cfg(feature = "value-conversion")]
-    pub fn to_value(&self) -> Result<Value, ProtocolError> {
-        match self {
-            ExtendedDocument::V0(v0) => v0.to_value(),
-        }
-    }
-
     /// Calculate the hash of the extended document.
     ///
     /// This function is a passthrough to the `hash` method.

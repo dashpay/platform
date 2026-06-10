@@ -79,6 +79,11 @@ impl DataContractConfig {
         }
     }
 
+    /// **KEEP-AS-EXCEPTION** in the JSON/Value canonical-trait migration —
+    /// this is a context-aware constructor, not a parallel conversion path:
+    /// it dispatches the config variant on `platform_version` (the input map
+    /// carries no `$formatVersion` tag in the contract-creation flow), so
+    /// canonical `ValueConvertible::from_object` cannot replace it.
     pub fn from_value(
         value: Value,
         platform_version: &PlatformVersion,

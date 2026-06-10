@@ -133,10 +133,11 @@ mod json_convertible_tests {
         let original = fixture();
         let json = original.to_json().expect("to_json");
         // `ChainAssetLockProof` is a plain struct with `rename_all = "camelCase"`.
-        // The local `outpoint_serde` wrapper (commit 09c0a2b771) delegates to
-        // dashcore's `OutPoint::serialize`, which is HR-aware: in JSON this
-        // emits the `"<txid>:<vout>"` string form. `core_chain_locked_height`
-        // is `u32`; JSON erases the size — see the value-path assertion.
+        // `out_point` uses dashcore's `OutPoint` serde directly (the local
+        // `outpoint_serde` wrapper was dropped once dashcore #708 landed the
+        // unified visitor upstream), which is HR-aware: in JSON this emits the
+        // `"<txid>:<vout>"` string form. `core_chain_locked_height` is `u32`;
+        // JSON erases the size — see the value-path assertion.
         // The HR string form mirrors the input we passed to `from_str`.
         assert_eq!(
             json,
@@ -159,15 +160,15 @@ mod json_convertible_tests {
         // and `Txid` itself serializes as a 32-byte array on the non-HR path
         // (collapsing to `Value::Bytes32` via platform_value's sized-bytes
         // detection). `vout` is `u32`. This is exactly the dual-shape behaviour
-        // the local `outpoint_serde` wrapper has to round-trip via
-        // `ContentDeserializer` (the HR=true / non-HR=false split that broke
-        // round-tripping before commit 09c0a2b771).
+        // dashcore's unified-visitor `OutPoint` serde (upstream #708; it
+        // replaced the local `outpoint_serde` wrapper) round-trips via
+        // `ContentDeserializer` (the HR=true / non-HR=false split).
         // NOTE on byte order: the JSON/hex form (`00...01`, lowest nibble at
         // the end) is REVERSED from the raw-bytes form. dashcore's `Txid`
         // follows the Bitcoin convention — `as_byte_array()` returns the raw
         // buffer where index 0 holds what shows as the LAST hex digit. So
         // the displayed `00...01` corresponds to raw `[0x01, 0, 0, ..., 0]`.
-        // The local `outpoint_serde` wrapper bridges the two shapes.
+        // dashcore's `OutPoint` serde bridges the two shapes.
         let mut raw = [0u8; 32];
         raw[0] = 0x01;
         assert_eq!(

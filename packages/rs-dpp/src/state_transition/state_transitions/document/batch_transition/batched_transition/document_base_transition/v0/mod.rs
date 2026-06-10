@@ -74,6 +74,13 @@ impl DocumentBaseTransitionV0 {
     }
 }
 
+/// **KEEP-AS-EXCEPTION** in the JSON/Value canonical-trait migration — this
+/// trait is context-aware: the `from_*` constructors need a `DataContract`
+/// to type document properties, which `JsonConvertible`/`ValueConvertible`
+/// can't carry. NOTE the to-side emits a flat LEGACY shape (`$version: "0"`,
+/// no `$action`/`$baseFormatVersion` tags) that intentionally differs from
+/// canonical `JsonConvertible::to_json` on the same transition — see the
+/// wire-shape comparison tests in `document_create_transition/v0/mod.rs`.
 pub trait DocumentTransitionObjectLike {
     #[cfg(feature = "json-conversion")]
     /// Creates the Document Transition from JSON representation. The JSON representation contains
