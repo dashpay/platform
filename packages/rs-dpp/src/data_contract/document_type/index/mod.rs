@@ -298,6 +298,12 @@ pub struct Index {
     pub contested_index: Option<ContestedIndexInformation>,
     /// Whether and how the index supports count fast paths. See
     /// [`IndexCountability`].
+    //
+    // `serde(default)` on this and the three fields below: they were added
+    // after the struct's serde shape was already in the wild (#3623 count
+    // fields, #3661 sum fields), so JSON serialized before then must still
+    // deserialize.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub countable: IndexCountability,
     /// Whether the index supports O(log n) count queries over a *range* of
     /// values for the index's last property (the terminator). The flag
@@ -315,6 +321,7 @@ pub struct Index {
     ///
     /// `range_countable: true` requires `countable` to be `Countable` or
     /// `CountableAllowingOffset` (it's additive, not a replacement).
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub range_countable: bool,
     /// When set to `Some(property_name)`, this index's value-tree is laid out
     /// as a `SumTree` (or `CountSumTree` if [`Index::countable`] is also set
@@ -337,6 +344,7 @@ pub struct Index {
     /// non-null (the terminal is a bare reference at key `[0]`), and it
     /// does meaningful sum-aggregation work only for null-bearing entries
     /// (which take the same sum-tree branch a non-unique index uses).
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub summable: Option<String>,
     /// When `true`, this index supports O(log n) range-sum queries on its
     /// last property. The storage-layout effect mirrors
@@ -358,6 +366,7 @@ pub struct Index {
     /// single tree carries both metrics. The dispatcher in
     /// `packages/rs-drive/src/drive/document/primary_key_tree_type.rs`
     /// picks the appropriate variant.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub range_summable: bool,
 }
 
@@ -2104,6 +2113,12 @@ impl crate::serialization::JsonConvertible for IndexProperty {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for IndexProperty {}
 
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for IndexCountability {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for IndexCountability {}
+
 #[cfg(all(
     test,
     feature = "json-conversion",
@@ -2209,6 +2224,134 @@ mod json_convertible_tests {
         match recovered {
             ContestedIndexFieldMatch::PositiveIntegerMatch(n) => assert_eq!(n, u128::MAX),
             other => panic!("expected PositiveIntegerMatch, got {:?}", other),
+        }
+    }
+
+    // --- Index / IndexProperty / IndexCountability (count + sum fields from
+    // base PRs #3623 / #3661) ---
+
+    fn index_fixture() -> Index {
+        Index {
+            name: "byOwnerAndPrice".to_string(),
+            properties: vec![
+                IndexProperty {
+                    name: "ownerId".to_string(),
+                    ascending: true,
+                },
+                IndexProperty {
+                    name: "price".to_string(),
+                    ascending: false,
+                },
+            ],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::CountableAllowingOffset,
+            range_countable: true,
+            summable: Some("price".to_string()),
+            range_summable: true,
+        }
+    }
+
+    #[test]
+    fn index_json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = index_fixture();
+        let json = original.to_json().expect("to_json");
+        // Internal (non-user-authored) shape: snake_case field names, no
+        // rename_all on the struct. `countable` is the camelCase-renamed
+        // IndexCountability unit enum.
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "name": "byOwnerAndPrice",
+                "properties": [
+                    {"name": "ownerId", "ascending": true},
+                    {"name": "price", "ascending": false},
+                ],
+                "unique": false,
+                "null_searchable": true,
+                "contested_index": serde_json::Value::Null,
+                "countable": "countableAllowingOffset",
+                "range_countable": true,
+                "summable": "price",
+                "range_summable": true,
+            })
+        );
+        let recovered = Index::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn index_value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = index_fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = Index::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    /// JSON serialized before the count (#3623) and sum (#3661) fields existed
+    /// must still deserialize — the four new fields default (NotCountable /
+    /// false / None / false). Without `serde(default)` this fails with
+    /// "missing field `countable`".
+    #[test]
+    fn index_deserializes_pre_count_sum_json() {
+        use crate::serialization::JsonConvertible;
+        let old_json = serde_json::json!({
+            "name": "byOwner",
+            "properties": [{"name": "ownerId", "ascending": true}],
+            "unique": true,
+            "null_searchable": false,
+            "contested_index": serde_json::Value::Null,
+        });
+        let recovered = Index::from_json(old_json).expect("pre-#3623 JSON must deserialize");
+        assert_eq!(recovered.countable, IndexCountability::NotCountable);
+        assert!(!recovered.range_countable);
+        assert_eq!(recovered.summable, None);
+        assert!(!recovered.range_summable);
+    }
+
+    #[test]
+    fn index_property_json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = IndexProperty {
+            name: "ownerId".to_string(),
+            ascending: false,
+        };
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            serde_json::json!({"name": "ownerId", "ascending": false})
+        );
+        let recovered = IndexProperty::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn index_countability_round_trips_all_variants() {
+        use crate::serialization::{JsonConvertible, ValueConvertible};
+        let cases = [
+            (IndexCountability::NotCountable, "notCountable"),
+            (IndexCountability::Countable, "countable"),
+            (
+                IndexCountability::CountableAllowingOffset,
+                "countableAllowingOffset",
+            ),
+        ];
+        for (original, expected) in cases {
+            let json_v = original.to_json().expect("to_json");
+            assert_eq!(json_v, serde_json::json!(expected));
+            assert_eq!(
+                IndexCountability::from_json(json_v).expect("from_json"),
+                original
+            );
+            let value = original.to_object().expect("to_object");
+            assert_eq!(value, platform_value::Value::Text(expected.to_string()));
+            assert_eq!(
+                IndexCountability::from_object(value).expect("from_object"),
+                original
+            );
         }
     }
 }
