@@ -9,28 +9,36 @@
 //!   - `normalizePhrase:`  (m:387-408) -> [`platform_wallet_mnemonic_normalize_phrase`]
 //!   - `cleanupPhrase:`    (m:325-384) -> [`platform_wallet_mnemonic_cleanup_phrase`]
 //!
+//! This module is a thin **facade** over `key-wallet`'s BIP-39 primitives:
+//! word membership, phrase normalization, and per-language validation all
+//! delegate to `key_wallet::Mnemonic` (one source of BIP-39 logic — no direct
+//! `bip39` dependency here). Recover-flow-specific policy stays local: the
+//! DashSync bundled-language set ([`LANGS`]) and `cleanupPhrase`'s CJK
+//! ideographic auto-split.
+//!
 //! Parity notes:
 //! * DashSync compares against NFKD/lowercase wordlists with exact
 //!   `containsObject:` membership and normalizes the *phrase* (not the
-//!   per-word lookup). We mirror that: word lookups are exact-byte against
-//!   the bip39 wordlists (same canonical NFKD/lowercase lists); callers
-//!   normalize first via `normalizePhrase`/`cleanupPhrase`.
+//!   per-word lookup). We mirror that: word lookups go through
+//!   `key_wallet::Mnemonic::is_word_in_language` (exact membership against
+//!   the canonical BIP-39 lists); callers normalize first via
+//!   `key_wallet::Mnemonic::normalize_phrase`.
 //! * DashSync bundles 7 languages (en, fr, es, it, ja, ko, zh-Hans) and
 //!   `wordIsValid:` checks the union; we restrict [`LANGS`] to those 7 for
-//!   exact parity rather than all 10 bip39 languages.
+//!   exact parity rather than all 10 key-wallet languages.
 //! * `phrase_is_valid_impl` rejects sub-12-word phrases (3/6/9 words) that
-//!   DashSync's `phraseIsValid:` checksum loop would accept: bip39's
-//!   `parse_in_normalized` enforces the BIP-39 ≥12-word (≥128-bit entropy)
-//!   floor. The divergence is intentional and inert — the only caller is
-//!   `cleanup_phrase_impl`'s early-return gate, output is byte-identical for
-//!   ASCII input (the CJK loop is a no-op without ≥U+3000 chars), and the
-//!   production recover path enforces `DW_PHRASE_MIN_LENGTH = 12` anyway.
+//!   DashSync's `phraseIsValid:` checksum loop would accept: key-wallet's
+//!   `validate` (via bip39 `parse_in`) enforces the BIP-39 ≥12-word
+//!   (≥128-bit entropy) floor. The divergence is intentional and inert — the
+//!   only caller is `cleanup_phrase_impl`'s early-return gate, output is
+//!   byte-identical for ASCII input (the CJK loop is a no-op without ≥U+3000
+//!   chars), and the production recover path enforces
+//!   `DW_PHRASE_MIN_LENGTH = 12` anyway.
 
-use bip39::Language as B;
+use key_wallet::Language as L;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use unicode_normalization::char::is_combining_mark;
-use unicode_normalization::UnicodeNormalization;
 
 use crate::error::PlatformWalletFFIResult;
 use crate::{check_ptr, unwrap_result_or_return};
@@ -42,63 +50,49 @@ const IDEO_SP: &str = "\u{3000}";
 /// The 7 languages DashSync bundles as `BIP39Words.plist` localizations.
 /// `wordIsValid` checks the union; `wordIsLocal` uses only English (the
 /// recover flow's default language).
-const LANGS: [B; 7] = [
-    B::English,
-    B::French,
-    B::Spanish,
-    B::Italian,
-    B::Japanese,
-    B::Korean,
-    B::SimplifiedChinese,
+const LANGS: [L; 7] = [
+    L::English,
+    L::French,
+    L::Spanish,
+    L::Italian,
+    L::Japanese,
+    L::Korean,
+    L::ChineseSimplified,
 ];
 
 // ---------------------------------------------------------------------------
 // Internal algorithm core (no FFI) — ports DSBIP39Mnemonic.m exactly.
 // ---------------------------------------------------------------------------
 
-/// Exact membership of `w` in one language's wordlist (DashSync plist
-/// `containsObject:`). The bip39 wordlists are the canonical NFKD/lowercase
-/// BIP-39 lists, identical to DashSync's plists.
-fn word_in_list(lang: B, w: &str) -> bool {
-    lang.word_list().contains(&w)
-}
-
-/// `wordIsValid:` (m:258-261) — member of *any* bundled language.
+/// `wordIsValid:` (m:258-261) — member of *any* bundled language. Exact
+/// membership via key-wallet (canonical BIP-39 lists); caller pre-normalizes.
 fn word_in_any_list(w: &str) -> bool {
-    LANGS.iter().any(|&l| word_in_list(l, w))
+    LANGS
+        .iter()
+        .any(|&l| key_wallet::Mnemonic::is_word_in_language(w, l))
 }
 
 /// `wordIsLocal:` (m:278-281) — member of the default (English) wordlist.
 fn word_in_english(w: &str) -> bool {
-    word_in_list(B::English, w)
+    key_wallet::Mnemonic::is_word_in_language(w, L::English)
 }
 
-/// NFKD + lowercase, matching DashSync's `CFStringNormalize(kCFStringNormalizationFormKD)`
-/// + `CFStringLowercase(CFLocaleGetSystem())`.
-fn nfkd_lower(s: &str) -> String {
-    s.nfkd().collect::<String>().to_lowercase()
-}
-
-/// `normalizePhrase:` (m:387-408) — NFKD, lowercase, trim, collapse every
-/// whitespace run to a single space. `split_whitespace().join(" ")` performs
-/// the trim + "replace each whitespace char with a space" + "collapse double
-/// spaces" in one pass (Unicode `White_Space` ≈ NSCharacterSet
-/// whitespaceAndNewline for typed input, incl. U+3000).
+/// `normalizePhrase:` (m:387-408) — NFKD + lowercase + whitespace-collapse.
+/// Delegates to key-wallet's lenient input normalization (byte-identical to
+/// the prior in-crate impl).
 fn normalize_phrase_impl(input: &str) -> String {
-    nfkd_lower(input)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    key_wallet::Mnemonic::normalize_phrase(input)
 }
 
 /// `phraseIsValid:` (m:284-298) — true if the (already-normalized) phrase
 /// decodes (all words present + valid checksum) in *some* bundled language.
-/// Per-language loop, never bip39 autodetect (`parse()`/`language_of` returns
-/// `AmbiguousLanguages` and diverges from DashSync's per-language decode).
+/// Per-language loop, never autodetect. `key_wallet::Mnemonic::validate`
+/// re-runs NFKD internally (via bip39 `parse_in`); that is idempotent on an
+/// already-normalized phrase, so the pre-normalize step above it must stay.
 fn phrase_is_valid_impl(normalized: &str) -> bool {
     LANGS
         .iter()
-        .any(|&l| bip39::Mnemonic::parse_in_normalized(l, normalized).is_ok())
+        .any(|&l| key_wallet::Mnemonic::validate(normalized, l))
 }
 
 /// `cleanupPhrase:` (m:325-384) — minimal cleanup for display/editing, plus
@@ -264,6 +258,19 @@ mod tests {
     use super::*;
     use crate::error::PlatformWalletFFIResultCode;
     use crate::xpub_render::platform_wallet_free_string;
+    use unicode_normalization::UnicodeNormalization;
+
+    /// First word of a language's all-zero-entropy 12-word phrase — a real
+    /// wordlist entry for that language (index-0 word for zero entropy).
+    fn first_word(lang: L) -> String {
+        key_wallet::Mnemonic::from_entropy(&[0u8; 16], lang)
+            .unwrap()
+            .phrase()
+            .split(' ')
+            .next()
+            .unwrap()
+            .to_string()
+    }
 
     const EN_ZERO: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -279,9 +286,9 @@ mod tests {
     #[test]
     fn non_english_word_valid_but_not_local() {
         // A Japanese wordlist entry: valid in the union, not in English.
-        let w = B::Japanese.word_list()[0];
-        assert!(word_in_any_list(w));
-        assert!(!word_in_english(w));
+        let w = first_word(L::Japanese);
+        assert!(word_in_any_list(&w));
+        assert!(!word_in_english(&w));
     }
 
     #[test]
@@ -314,9 +321,9 @@ mod tests {
             0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x0f, 0x1e, 0x2d, 0x3c, 0x4b, 0x5a,
             0x69, 0x78,
         ];
-        let m = bip39::Mnemonic::from_entropy_in(B::Japanese, &entropy).unwrap();
-        let words: Vec<&'static str> = m.words().collect();
-        let spaced = words.join(" ");
+        let spaced = key_wallet::Mnemonic::from_entropy(&entropy, L::Japanese)
+            .unwrap()
+            .phrase();
         assert!(
             phrase_is_valid_impl(&normalize_phrase_impl(&spaced)),
             "fixture must be a valid Japanese phrase"
@@ -329,7 +336,7 @@ mod tests {
 
         // (b) a no-space CJK phrase gets ideographic spaces inserted (best-effort
         //     split — exact reconstruction is greedy-dependent, matching DashSync).
-        let nospace: String = words.concat();
+        let nospace: String = spaced.split(' ').collect();
         assert!(
             cleanup_phrase_impl(&nospace).contains(IDEO_SP),
             "cleanup should insert ideographic spaces into a no-space CJK phrase"
@@ -416,12 +423,12 @@ mod tests {
         // A representative word from each bundled language is valid in the
         // union (`wordIsValid`); only English words are "local" (`wordIsLocal`).
         for lang in LANGS {
-            let w = lang.word_list()[0];
-            assert!(word_in_any_list(w), "{lang:?} word_list[0] should be valid");
+            let w = first_word(lang);
+            assert!(word_in_any_list(&w), "{lang:?} word should be valid");
         }
-        assert!(word_in_english(B::English.word_list()[0]));
-        assert!(!word_in_english(B::Japanese.word_list()[0]));
-        assert!(!word_in_english(B::SimplifiedChinese.word_list()[0]));
+        assert!(word_in_english(&first_word(L::English)));
+        assert!(!word_in_english(&first_word(L::Japanese)));
+        assert!(!word_in_english(&first_word(L::ChineseSimplified)));
     }
 
     #[test]
@@ -433,15 +440,16 @@ mod tests {
             0x69, 0x78,
         ];
         for lang in [
-            B::French,
-            B::Spanish,
-            B::Italian,
-            B::Japanese,
-            B::Korean,
-            B::SimplifiedChinese,
+            L::French,
+            L::Spanish,
+            L::Italian,
+            L::Japanese,
+            L::Korean,
+            L::ChineseSimplified,
         ] {
-            let m = bip39::Mnemonic::from_entropy_in(lang, &entropy).unwrap();
-            let phrase = m.words().collect::<Vec<_>>().join(" ");
+            let phrase = key_wallet::Mnemonic::from_entropy(&entropy, lang)
+                .unwrap()
+                .phrase();
             assert!(
                 phrase_is_valid_impl(&normalize_phrase_impl(&phrase)),
                 "{lang:?} phrase should validate"
@@ -469,8 +477,11 @@ mod tests {
             0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0x07, 0x18, 0x29, 0x3a, 0x4b, 0x5c, 0x6d, 0x7e,
             0x8f, 0x90,
         ];
-        let m = bip39::Mnemonic::from_entropy_in(B::SimplifiedChinese, &entropy).unwrap();
-        let nospace: String = m.words().collect::<Vec<_>>().concat();
+        let nospace: String = key_wallet::Mnemonic::from_entropy(&entropy, L::ChineseSimplified)
+            .unwrap()
+            .phrase()
+            .split(' ')
+            .collect();
         assert!(
             cleanup_phrase_impl(&nospace).contains(IDEO_SP),
             "no-space Chinese phrase should get ideographic spaces"
@@ -515,38 +526,16 @@ mod tests {
 
     #[test]
     fn word_validity_requires_prenormalized_input() {
-        // Wordlist membership is exact-byte; callers MUST nfkd_lower first
+        // Wordlist membership is exact-byte; callers MUST normalize first
         // (DashSync normalizes the phrase before every containsObject: check).
-
-        // (a) Uppercase: the raw form fails, the normalized form passes.
+        // Raw uppercase fails; the normalized form passes. The NFC/NFD
+        // accent-convergence half of this contract is covered in key-wallet's
+        // `test_normalize_phrase_unicode_forms_converge` / `test_is_word_in_language`,
+        // where the wordlist is accessible.
         assert!(!word_in_english("ABANDON"));
-        assert!(word_in_english(&nfkd_lower("ABANDON")));
+        assert!(word_in_english(&normalize_phrase_impl("ABANDON")));
         assert!(!word_in_any_list("ABANDON"));
-        assert!(word_in_any_list(&nfkd_lower("ABANDON")));
-
-        // (b) Accent: find a bundled word whose NFC and NFD forms differ
-        //     (Japanese voiced kana / Latin diacritics guarantee a hit). Both
-        //     forms converge to the same valid member under nfkd_lower. We
-        //     assert only the positive normalize->member direction, so the test
-        //     is independent of which Unicode form the crate stores its lists in.
-        let mut accented: Option<&'static str> = None;
-        'outer: for lang in LANGS {
-            for &word in lang.word_list().iter() {
-                let nfc: String = word.nfc().collect();
-                let nfd: String = word.nfd().collect();
-                if nfc != nfd {
-                    accented = Some(word);
-                    break 'outer;
-                }
-            }
-        }
-        let w = accented.expect("some bundled word should have distinct NFC/NFD forms");
-        let nfc: String = w.nfc().collect();
-        let nfd: String = w.nfd().collect();
-        assert_ne!(nfc, nfd);
-        assert_eq!(nfkd_lower(&nfc), nfkd_lower(&nfd));
-        assert!(word_in_any_list(&nfkd_lower(&nfc)));
-        assert!(word_in_any_list(&nfkd_lower(&nfd)));
+        assert!(word_in_any_list(&normalize_phrase_impl("ABANDON")));
     }
 
     #[test]
@@ -557,9 +546,10 @@ mod tests {
             0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0x07, 0x18, 0x29, 0x3a, 0x4b, 0x5c, 0x6d, 0x7e,
             0x8f, 0x90,
         ];
-        let m = bip39::Mnemonic::from_entropy_in(B::SimplifiedChinese, &entropy).unwrap();
-        let words: Vec<&'static str> = m.words().collect();
-        let dirty = words.join(",");
+        let phrase = key_wallet::Mnemonic::from_entropy(&entropy, L::ChineseSimplified)
+            .unwrap()
+            .phrase();
+        let dirty = phrase.split(' ').collect::<Vec<_>>().join(",");
         let cleaned = cleanup_phrase_impl(&dirty);
         assert!(
             !cleaned.contains(','),
@@ -594,7 +584,7 @@ mod tests {
         // The CJK split uses a global String::replace (parity with DashSync's
         // stringByReplacingOccurrencesOfString:), so every occurrence of a
         // repeated word is wrapped; the loop must terminate without panic.
-        let cw = B::SimplifiedChinese.word_list()[0]; // a single valid ideograph
+        let cw = first_word(L::ChineseSimplified); // a single valid ideograph
         let nospace = format!("{cw}{cw}{cw}");
         let cleaned = cleanup_phrase_impl(&nospace);
         assert!(
@@ -602,7 +592,7 @@ mod tests {
             "repeated CJK word should get ideographic spaces: {cleaned:?}"
         );
         assert_eq!(
-            cleaned.matches(cw).count(),
+            cleaned.matches(cw.as_str()).count(),
             3,
             "all occurrences preserved (wrap-all, no loss/dup): {cleaned:?}"
         );
