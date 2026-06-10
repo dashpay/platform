@@ -20,11 +20,12 @@
 //!     &fvk.address_at(0, Scope::External).to_raw_address_bytes(),
 //! );
 //!
-//! // Build a shield transition
+//! // Build a shield transition; pass the sender's OVK so the wallet can
+//! // later recover its own send from chain data (None = unrecoverable)
 //! let pk = ProvingKey::build();
 //! let st = build_shield_transition(
 //!     &recipient, shield_amount, inputs, fee_strategy,
-//!     &signer, 0, &pk, [0u8; 36], platform_version,
+//!     &signer, 0, &pk, [0u8; 36], Some(fvk.to_ovk(Scope::External)), platform_version,
 //! )?;
 //! ```
 
