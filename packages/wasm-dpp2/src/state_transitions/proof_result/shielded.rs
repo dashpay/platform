@@ -4,6 +4,7 @@
 //! code in its own module.
 
 use super::helpers::js_obj;
+use crate::IdentityWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_conversions_serde;
 use crate::impl_wasm_type_info;
@@ -416,4 +417,94 @@ impl VerifiedShieldedNullifiersWithWithdrawalDocumentWasm {
 impl_wasm_type_info!(
     VerifiedShieldedNullifiersWithWithdrawalDocumentWasm,
     VerifiedShieldedNullifiersWithWithdrawalDocument
+);
+
+// --- VerifiedIdentityWithShieldedNullifiers ---
+
+/// Returned by `IdentityCreateFromShieldedPool`: the newly-created identity plus the presence of
+/// each spent funding nullifier, proven together in a single STRICT merged GroveDB proof.
+#[wasm_bindgen(js_name = "VerifiedIdentityWithShieldedNullifiers")]
+#[derive(Clone)]
+pub struct VerifiedIdentityWithShieldedNullifiersWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub identity: IdentityWasm,
+    nullifiers: Map,
+}
+
+#[wasm_bindgen(js_class = VerifiedIdentityWithShieldedNullifiers)]
+impl VerifiedIdentityWithShieldedNullifiersWasm {
+    #[wasm_bindgen(getter)]
+    pub fn nullifiers(&self) -> Map {
+        self.nullifiers.clone()
+    }
+
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        // Use the identity's own `toObject` so consumers get a plain JS object (not the exported
+        // `IdentityWasm` class instance), matching the address-funded sibling wrapper.
+        let id = self.identity.to_object()?;
+        let nullifiers_js: JsValue = self.nullifiers.clone().into();
+        let obj = js_sys::Object::new();
+        js_sys::Reflect::set(&obj, &"identity".into(), &id.into()).unwrap();
+        js_sys::Reflect::set(&obj, &"nullifiers".into(), &nullifiers_js).unwrap();
+        Ok(obj.into())
+    }
+
+    /// Returns a `JSON.stringify`-friendly form: the `Map` is normalised to a plain object so its
+    /// entries survive serialisation.
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        let id = self.identity.to_json()?;
+        let nullifiers_js: JsValue = self.nullifiers.clone().into();
+        let obj = js_sys::Object::new();
+        js_sys::Reflect::set(&obj, &"identity".into(), &id.into()).unwrap();
+        js_sys::Reflect::set(&obj, &"nullifiers".into(), &nullifiers_js).unwrap();
+        normalize_js_value_for_json(&obj.into())
+    }
+
+    #[wasm_bindgen(js_name = fromObject)]
+    pub fn from_object(
+        value: JsValue,
+    ) -> WasmDppResult<VerifiedIdentityWithShieldedNullifiersWasm> {
+        let identity_val = js_sys::Reflect::get(&value, &"identity".into())
+            .map_err(|_| WasmDppError::generic("Missing property: identity"))?;
+        let identity: IdentityWasm = crate::serialization::conversions::from_object(identity_val)?;
+        // `toJSON` normalizes the `Map` to a plain object so it survives `JSON.stringify`; rebuild a
+        // real `Map` (accepting either form) so `nullifiers()` behaves like a Map after a
+        // `JSON.parse(JSON.stringify(...))` round-trip — same boundary the sibling wrappers handle.
+        let nullifiers = read_map_property(&value, "nullifiers")?;
+        Ok(VerifiedIdentityWithShieldedNullifiersWasm {
+            identity,
+            nullifiers,
+        })
+    }
+
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(value: JsValue) -> WasmDppResult<VerifiedIdentityWithShieldedNullifiersWasm> {
+        let identity_val = js_sys::Reflect::get(&value, &"identity".into())
+            .map_err(|_| WasmDppError::generic("Missing property: identity"))?;
+        let identity: IdentityWasm = crate::serialization::conversions::from_json(identity_val)?;
+        // `toJSON` normalizes the `Map` to a plain object so it survives `JSON.stringify`; rebuild a
+        // real `Map` (accepting either form) so `nullifiers()` behaves like a Map after a
+        // `JSON.parse(JSON.stringify(...))` round-trip — same boundary the sibling wrappers handle.
+        let nullifiers = read_map_property(&value, "nullifiers")?;
+        Ok(VerifiedIdentityWithShieldedNullifiersWasm {
+            identity,
+            nullifiers,
+        })
+    }
+}
+
+impl VerifiedIdentityWithShieldedNullifiersWasm {
+    pub fn new(identity: IdentityWasm, nullifiers: Map) -> Self {
+        Self {
+            identity,
+            nullifiers,
+        }
+    }
+}
+
+impl_wasm_type_info!(
+    VerifiedIdentityWithShieldedNullifiersWasm,
+    VerifiedIdentityWithShieldedNullifiers
 );

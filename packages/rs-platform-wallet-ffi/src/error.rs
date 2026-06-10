@@ -89,6 +89,14 @@ pub enum PlatformWalletFFIResultCode {
     /// receive address, consolidate sub-min balances, or fall back to
     /// `InputSelection::Explicit`.
     ErrorNoSelectableInputs = 14,
+    /// Maps `PlatformWalletError::WalletAlreadyExists`. Callers that create
+    /// a wallet across multiple networks (or enable an additional network on
+    /// an existing wallet) treat this as a benign "already present" no-op
+    /// rather than a hard failure — the wallet's mnemonic/metadata were
+    /// stored under its scoped id at original creation, so there is nothing
+    /// to re-persist. The typed Display rendering still survives as the
+    /// result message for logging/detail.
+    ErrorWalletAlreadyExists = 15,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -179,6 +187,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             | PlatformWalletError::OnlyOutputAddressesFunded { .. }
             | PlatformWalletError::OnlyDustInputs { .. } => {
                 PlatformWalletFFIResultCode::ErrorNoSelectableInputs
+            }
+            PlatformWalletError::WalletAlreadyExists(..) => {
+                PlatformWalletFFIResultCode::ErrorWalletAlreadyExists
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
@@ -456,6 +467,31 @@ mod tests {
                 "Display payload must survive the FFI boundary verbatim"
             );
         }
+    }
+
+    /// `WalletAlreadyExists` maps to the dedicated
+    /// `ErrorWalletAlreadyExists` FFI code rather than flattening to
+    /// `ErrorUnknown`, so multi-network wallet create/enable callers can
+    /// branch on the typed code instead of substring-matching the Display
+    /// text. The typed Display rendering still survives as the message.
+    #[test]
+    fn wallet_already_exists_maps_to_dedicated_code() {
+        let err = PlatformWalletError::WalletAlreadyExists("wallet 0xdeadbeef".to_string());
+        let rendered = err.to_string();
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletAlreadyExists,
+            "WalletAlreadyExists should map to ErrorWalletAlreadyExists (rendered: {rendered})"
+        );
+        assert!(!result.message.is_null());
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            msg, rendered,
+            "Display payload must survive the FFI boundary verbatim"
+        );
     }
 
     /// Other wallet-error variants without a dedicated FFI arm still

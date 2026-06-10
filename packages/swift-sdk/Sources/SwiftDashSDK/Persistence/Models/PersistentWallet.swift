@@ -16,11 +16,34 @@ public final class PersistentWallet {
     /// Index `networkRaw` so per-network wallet scans (used everywhere
     /// from the network-scoped storage explorer to the per-network
     /// "is there a wallet on this chain yet" lookups) don't degrade
-    /// to a table scan.
-    #Index<PersistentWallet>([\.networkRaw])
+    /// to a table scan. Also index `walletGroupId` so the Wallet Info
+    /// "Networks" lookup — which fetches every sibling-network row for
+    /// a seed by its group id — stays a keyed scan.
+    #Index<PersistentWallet>([\.networkRaw], [\.walletGroupId])
+    #Unique<PersistentWallet>([\.walletId])
 
-    /// 32-byte wallet ID (SHA256 of root public key).
-    @Attribute(.unique) public var walletId: Data
+    /// 32-byte NETWORK-SCOPED wallet ID, and the row's primary
+    /// uniqueness key. Since the network-scoping change the same seed
+    /// yields a DISTINCT `walletId` per network (a domain-tagged network
+    /// byte is folded into the digest), so a wallet that exists on
+    /// multiple chains has one row per network, each with its own id —
+    /// the network is already baked into the id, so `walletId` alone is
+    /// globally unique (an earlier `(walletId, networkRaw)` composite
+    /// was a leftover from the pre-scoping model, where one seed shared
+    /// a single id across networks and `networkRaw` was the only
+    /// distinguishing column). To gather a seed's sibling-network rows,
+    /// group by `walletGroupId` (which is the same across networks),
+    /// not by this id.
+    public var walletId: Data
+    /// 32-byte NETWORK-INDEPENDENT group id shared by every network's
+    /// wallet derived from the same seed (Rust computes it as the
+    /// no-network digest of the root key). Distinct from `walletId`,
+    /// which is network-scoped. Used to group a seed's sibling-network
+    /// rows in the Wallet Info "Networks" section. Defaults to empty
+    /// for rows written before this column existed (pre-release, no
+    /// migration); consumers treat empty as "legacy — this single row
+    /// only".
+    public var walletGroupId: Data = Data()
     /// Network this wallet belongs to. `nil` means "not yet known" —
     /// the row was created by a changeset before `persistWalletMetadata`
     /// filled the network in. Views treat `nil` as unknown.
@@ -92,6 +115,7 @@ public final class PersistentWallet {
 
     public init(
         walletId: Data,
+        walletGroupId: Data = Data(),
         network: Network? = nil,
         name: String? = nil,
         walletDescription: String? = nil,
@@ -100,6 +124,7 @@ public final class PersistentWallet {
         isImported: Bool = false
     ) {
         self.walletId = walletId
+        self.walletGroupId = walletGroupId
         self.networkRaw = network?.rawValue
         self.name = name
         self.walletDescription = walletDescription
@@ -139,5 +164,13 @@ extension PersistentWallet {
 extension PersistentWallet {
     public static func predicate(walletId: Data) -> Predicate<PersistentWallet> {
         #Predicate<PersistentWallet> { $0.walletId == walletId }
+    }
+
+    /// Fetch every sibling-network row for one seed by its
+    /// network-independent group id. See `walletGroupId`.
+    public static func predicate(
+        walletGroupId: Data
+    ) -> Predicate<PersistentWallet> {
+        #Predicate<PersistentWallet> { $0.walletGroupId == walletGroupId }
     }
 }

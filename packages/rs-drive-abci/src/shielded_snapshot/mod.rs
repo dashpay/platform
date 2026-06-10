@@ -510,16 +510,40 @@ pub fn apply_shielded_snapshot(
     std::fs::write(&sst_tmp, sst_slice)?;
     let _cleanup = SstTmpGuard(sst_tmp.clone());
 
-    // 4. Bulk-ingest. Bypasses any open transaction; OK at InitChain time
-    //    (txn abort = wipe-and-restart, so orphan data is unreachable).
-    grove
-        .ingest_subtree_sst(SUBTREE_CF, &sst_tmp)
-        .map_err(|e| ShieldedSnapshotError::GroveDb(format!("ingest_subtree_sst: {e}")))?;
-
-    // 5. Cross-validate: reload CommitmentTree from the just-ingested data
-    //    and check recomputed combined_root matches header. Drift surfaces
-    //    BEFORE we touch the parent Merk.
+    // 4. Bulk-ingest the SST — UNLESS a prior attempt already ingested it.
+    //
+    //    The ingest writes straight to RocksDB (`ingest_external_file_cf`),
+    //    bypassing `transaction`, and nothing wipes the DB on InitChain. The
+    //    genesis transaction is committed only at the END of block 1, so if
+    //    InitChain never reaches that commit (a later genesis/block-1 failure,
+    //    a drive-abci restart, or a Tenderdash InitChain retry) the transaction
+    //    rolls back but these directly-committed keys SURVIVE — the rollback
+    //    restores an empty DB for everything except this non-transactional
+    //    ingest. A naive re-ingest on the next attempt overlaps the orphaned
+    //    keys, and RocksDB rejects the overlapping ingest with "Global seqno is
+    //    required, but disabled" (grovedb ingests with `allow_global_seqno =
+    //    false`), wedging the chain permanently.
+    //
+    //    The snapshot is deterministic, so an already-populated subtree holds
+    //    exactly the keys we'd write. Detect that committed state and skip the
+    //    re-ingest; the combined_root cross-validation in step 5 still verifies
+    //    the data (and fails loudly if a stale/foreign subtree is present).
     let subtree_segments = shielded_subtree_segments();
+    if shielded_subtree_has_committed_keys(grove, &subtree_segments) {
+        tracing::info!(
+            "apply_shielded_snapshot: shielded subtree already populated (a prior \
+             InitChain attempt's ingest survived a rolled-back transaction); \
+             skipping re-ingest and re-validating the existing data"
+        );
+    } else {
+        grove
+            .ingest_subtree_sst(SUBTREE_CF, &sst_tmp)
+            .map_err(|e| ShieldedSnapshotError::GroveDb(format!("ingest_subtree_sst: {e}")))?;
+    }
+
+    // 5. Cross-validate: reload CommitmentTree from the ingested (or
+    //    already-present) data and check recomputed combined_root matches
+    //    header. Drift surfaces BEFORE we touch the parent Merk.
     let subtree_path = SubtreePath::from(subtree_segments.as_slice());
 
     let local_tx;
@@ -585,6 +609,28 @@ impl Drop for SstTmpGuard {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
     }
+}
+
+/// Returns `true` if the shielded commitment-tree subtree already has at least
+/// one key committed to the underlying RocksDB.
+///
+/// Read through a fresh, throwaway transaction (rolled back on drop), which
+/// sees the latest committed state — exactly the state the SST ingest's
+/// overlap check compares against. This is the idempotency probe for
+/// [`apply_shielded_snapshot`]: the ingest bypasses the caller's transaction,
+/// so a prior InitChain attempt's keys survive a rolled-back genesis and must
+/// not be re-ingested (RocksDB would reject the overlapping ingest with
+/// "Global seqno is required, but disabled").
+fn shielded_subtree_has_committed_keys(grove: &GroveDb, subtree_segments: &[Vec<u8>]) -> bool {
+    let probe_tx = grove.start_transaction();
+    let path = SubtreePath::from(subtree_segments);
+    let ctx = grove
+        .raw_storage()
+        .get_transactional_storage_context(path, None, &probe_tx)
+        .unwrap();
+    let mut iter = ctx.raw_iter();
+    iter.seek_to_first().unwrap();
+    iter.valid().unwrap()
 }
 
 #[cfg(test)]

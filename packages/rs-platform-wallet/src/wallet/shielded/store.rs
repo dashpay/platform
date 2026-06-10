@@ -77,6 +77,42 @@ pub struct ShieldedNote {
     pub note_data: Vec<u8>,
 }
 
+/// A note this subwallet **sent**, recovered during the note scan via
+/// the wallet's Outgoing Viewing Key (the Zcash outgoing-transaction-
+/// history mechanism).
+///
+/// Unlike [`ShieldedNote`] (which is a note the wallet *received* and
+/// can later spend), this is a minimal record of an *outgoing*
+/// payment — who the wallet paid, how much, and with what memo —
+/// kept purely for send-history display. It carries no spend
+/// bookkeeping (no nullifier / position / witness) because the wallet
+/// cannot spend a note it sent to someone else.
+///
+/// Keyed by `cmx` (the recovered output note's commitment), which is
+/// globally unique on-chain, so recording the same recovered note
+/// twice (a re-scan of the same chunk) is idempotent.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ShieldedOutgoingNote {
+    /// Extracted note commitment (32 bytes) of the note that was sent.
+    /// Primary key — unique per on-chain output.
+    pub cmx: [u8; 32],
+    /// Recipient's raw Orchard address (43 bytes,
+    /// `Address::to_raw_address_bytes`). The wallet paid this address.
+    /// Stored as a `Vec` rather than `[u8; 43]` because `serde`'s derive
+    /// only covers fixed arrays up to length 32; always 43 bytes for a
+    /// recovered note.
+    pub recipient: Vec<u8>,
+    /// Value sent, in credits.
+    pub value: u64,
+    /// Raw Dash memo bytes (`DashMemo`, 36 bytes). Stored as a `Vec`
+    /// rather than `[u8; 36]` so the persisted shape stays flexible if
+    /// the memo size ever changes; always 36 bytes for a recovered note.
+    pub memo: Vec<u8>,
+    /// Block height at which the sent note appeared on-chain.
+    pub block_height: u64,
+}
+
 /// Storage abstraction for shielded wallet state.
 ///
 /// Consumers implement this for their persistence layer. The
@@ -111,9 +147,10 @@ pub trait ShieldedStore: Send + Sync {
     ///
     /// Pending state is **in-memory only** — it does not survive
     /// a process restart. The crash-during-broadcast case is
-    /// reconciled by the next nullifier-sync pass after the
-    /// transition lands (or, on rejection, leaves the notes
-    /// observable as unspent again on the next launch).
+    /// reconciled by the next note-scan pass after the transition
+    /// lands (scan-based spend detection marks the spent note via
+    /// its nullifier), or, on rejection, leaves the notes
+    /// observable as unspent again on the next launch.
     ///
     /// `unspent_notes` skips notes whose nullifier is in the
     /// pending set, so a successful `mark_pending` immediately
@@ -128,6 +165,26 @@ pub trait ShieldedStore: Send + Sync {
     /// `mark_spent`).
     fn clear_pending(&mut self, id: SubwalletId, nullifier: &[u8; 32])
         -> Result<bool, Self::Error>;
+
+    // ── Outgoing history (per-subwallet) ───────────────────────────────
+
+    /// Record an outgoing (sent) note recovered via OVK for `id`.
+    ///
+    /// Idempotent by `note.cmx`: re-recording a note already on file
+    /// (a re-scan of the same chunk) is a no-op and returns `false`;
+    /// a genuinely new outgoing note is stored and returns `true`.
+    /// Outgoing notes are append-only send history — there is no
+    /// "mark spent" / mutation path for them.
+    fn record_outgoing_note(
+        &mut self,
+        id: SubwalletId,
+        note: &ShieldedOutgoingNote,
+    ) -> Result<bool, Self::Error>;
+
+    /// Return every outgoing (sent) note recovered for `id`, in the
+    /// order they were recorded.
+    fn get_outgoing_notes(&self, id: SubwalletId)
+        -> Result<Vec<ShieldedOutgoingNote>, Self::Error>;
 
     // ── Commitment tree (network-shared) ───────────────────────────────
 
@@ -190,17 +247,6 @@ pub trait ShieldedStore: Send + Sync {
         index: u64,
     ) -> Result<(), Self::Error>;
 
-    /// The last `(height, timestamp)` nullifier sync checkpoint for `id`, if any.
-    fn nullifier_checkpoint(&self, id: SubwalletId) -> Result<Option<(u64, u64)>, Self::Error>;
-
-    /// Persist the nullifier sync checkpoint for `id`.
-    fn set_nullifier_checkpoint(
-        &mut self,
-        id: SubwalletId,
-        height: u64,
-        timestamp: u64,
-    ) -> Result<(), Self::Error>;
-
     // ── Per-subwallet lifecycle ────────────────────────────────────────
 
     /// Drop ALL in-memory per-subwallet state (decrypted notes,
@@ -252,13 +298,17 @@ pub(super) struct SubwalletState {
     /// Sync watermark: count of note positions scanned = the next
     /// global index to scan (exclusive). `0` = nothing scanned yet.
     pub last_synced_index: u64,
-    /// `(height, timestamp)` from the most recent nullifier sync.
-    pub nullifier_checkpoint: Option<(u64, u64)>,
     /// Nullifiers of notes currently being spent in an in-flight
     /// transition. Excluded from `unspent_notes()` so concurrent
     /// callers can't double-select. In-memory only — never
     /// persisted; the next sync after a crash reconciles state.
     pub pending_nullifiers: BTreeSet<[u8; 32]>,
+    /// Notes this subwallet SENT, recovered via OVK during the scan.
+    /// Append-only send history in recording order.
+    pub outgoing_notes: Vec<ShieldedOutgoingNote>,
+    /// `cmx` set of recorded outgoing notes, for O(log n) idempotency
+    /// on `record_outgoing_note` (Orchard cmx is globally unique).
+    pub outgoing_cmx_index: BTreeSet<[u8; 32]>,
 }
 
 impl SubwalletState {
@@ -316,6 +366,21 @@ impl SubwalletState {
     /// removed.
     pub(super) fn clear_pending(&mut self, nullifier: &[u8; 32]) -> bool {
         self.pending_nullifiers.remove(nullifier)
+    }
+
+    /// Record an outgoing (sent) note. Idempotent by `cmx`: returns
+    /// `true` if newly recorded, `false` if a note with that `cmx`
+    /// was already present.
+    pub(super) fn record_outgoing_note(&mut self, note: &ShieldedOutgoingNote) -> bool {
+        if !self.outgoing_cmx_index.insert(note.cmx) {
+            return false;
+        }
+        self.outgoing_notes.push(note.clone());
+        true
+    }
+
+    pub(super) fn outgoing_notes(&self) -> Vec<ShieldedOutgoingNote> {
+        self.outgoing_notes.clone()
     }
 }
 
@@ -411,6 +476,29 @@ impl ShieldedStore for InMemoryShieldedStore {
             .unwrap_or(false))
     }
 
+    fn record_outgoing_note(
+        &mut self,
+        id: SubwalletId,
+        note: &ShieldedOutgoingNote,
+    ) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .entry(id)
+            .or_default()
+            .record_outgoing_note(note))
+    }
+
+    fn get_outgoing_notes(
+        &self,
+        id: SubwalletId,
+    ) -> Result<Vec<ShieldedOutgoingNote>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::outgoing_notes)
+            .unwrap_or_default())
+    }
+
     fn append_commitment(&mut self, cmx: &[u8; 32], marked: bool) -> Result<(), Self::Error> {
         self.commitments.push(*cmx);
         self.marked_positions.push(marked);
@@ -453,23 +541,6 @@ impl ShieldedStore for InMemoryShieldedStore {
         index: u64,
     ) -> Result<(), Self::Error> {
         self.subwallets.entry(id).or_default().last_synced_index = index;
-        Ok(())
-    }
-
-    fn nullifier_checkpoint(&self, id: SubwalletId) -> Result<Option<(u64, u64)>, Self::Error> {
-        Ok(self
-            .subwallets
-            .get(&id)
-            .and_then(|sw| sw.nullifier_checkpoint))
-    }
-
-    fn set_nullifier_checkpoint(
-        &mut self,
-        id: SubwalletId,
-        height: u64,
-        timestamp: u64,
-    ) -> Result<(), Self::Error> {
-        self.subwallets.entry(id).or_default().nullifier_checkpoint = Some((height, timestamp));
         Ok(())
     }
 
@@ -565,13 +636,6 @@ mod tests {
         assert_eq!(store.last_synced_note_index(a).unwrap(), 100);
         // Different subwallet still at 0.
         assert_eq!(store.last_synced_note_index(b).unwrap(), 0);
-
-        store.set_nullifier_checkpoint(a, 200, 1234567890).unwrap();
-        assert_eq!(
-            store.nullifier_checkpoint(a).unwrap(),
-            Some((200, 1234567890))
-        );
-        assert!(store.nullifier_checkpoint(b).unwrap().is_none());
     }
 
     #[test]

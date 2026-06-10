@@ -433,6 +433,34 @@ impl Drive {
                     None => outpoint_pq,
                 }
             }
+            StateTransition::IdentityCreateFromShieldedPool(st) => {
+                use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
+                use dpp::state_transition::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+
+                // Prove BOTH the spent nullifiers AND the newly-created identity in a single merged
+                // multi-root proof. Built STRICT from day one (per #3812): the verifier rebuilds this
+                // exact merged query and verifies it with `verify_query_with_absence_proof`, so the
+                // proof cannot carry any branch beyond {nullifiers, identity}.
+                let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
+                let mut nf_query = grovedb::Query::new();
+                nf_query.insert_keys(nullifier_keys);
+                // `PathQuery::merge` rejects sub-queries that carry a limit, so leave it None.
+                let nullifier_pq = PathQuery::new(
+                    shielded_credit_pool_nullifiers_path_vec(),
+                    grovedb::SizedQuery::new(nf_query, None, None),
+                );
+
+                let mut identity_pq = Drive::full_identity_query(
+                    &st.identity_id().to_buffer(),
+                    &platform_version.drive.grove_version,
+                )?;
+                identity_pq.query.limit = None;
+
+                PathQuery::merge(
+                    vec![&nullifier_pq, &identity_pq],
+                    &platform_version.drive.grove_version,
+                )?
+            }
         };
 
         let proof = self.grove_get_proved_path_query(

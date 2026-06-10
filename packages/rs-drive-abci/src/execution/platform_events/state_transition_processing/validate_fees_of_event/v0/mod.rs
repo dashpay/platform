@@ -281,6 +281,61 @@ where
                     ))
                 }
             }
+            ExecutionEvent::PaidFromShieldedPoolToNewIdentity {
+                identity,
+                operations,
+                execution_operations,
+                denomination,
+                additional_fixed_fee_cost,
+            } => {
+                // Affordability gate mirroring `PaidFromAssetLock`: the new identity is created
+                // holding `denomination`, and the metered fee + the flat compute fee must not exceed
+                // it (otherwise the identity would be credited <= 0). Estimate the metered cost
+                // (apply = false), fold the compute fee into processing for gas-wanted parity, and
+                // reject with `IdentityInsufficientBalanceError` if `denomination < total_fee`.
+                let mut estimated_fee_result = self
+                    .drive
+                    .apply_drive_operations(
+                        operations.clone(),
+                        false,
+                        block_info,
+                        transaction,
+                        platform_version,
+                        Some(previous_fee_versions),
+                    )
+                    .map_err(Error::Drive)?;
+
+                ValidationOperation::add_many_to_fee_result(
+                    execution_operations,
+                    &mut estimated_fee_result,
+                    platform_version,
+                )?;
+
+                if let Some(additional_fixed_fee_cost) = additional_fixed_fee_cost {
+                    estimated_fee_result.processing_fee = estimated_fee_result
+                        .processing_fee
+                        .saturating_add(*additional_fixed_fee_cost);
+                }
+
+                let total_fee = estimated_fee_result.total_base_fee();
+                if *denomination >= total_fee {
+                    Ok(ConsensusValidationResult::new_with_data(
+                        estimated_fee_result,
+                    ))
+                } else {
+                    Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        estimated_fee_result,
+                        vec![StateError::IdentityInsufficientBalanceError(
+                            IdentityInsufficientBalanceError::new(
+                                identity.id,
+                                *denomination,
+                                total_fee,
+                            ),
+                        )
+                        .into()],
+                    ))
+                }
+            }
             ExecutionEvent::PaidFixedCost { .. }
             | ExecutionEvent::PaidFromShieldedPool { .. }
             | ExecutionEvent::Free { .. }
@@ -419,6 +474,7 @@ mod tests {
             ExecutionEvent::PaidFromShieldedPool {
                 operations: vec![],
                 fees_to_add_to_pool: 0,
+                chargeable_failure: false,
             },
             ExecutionEvent::Free { operations: vec![] },
             ExecutionEvent::PaidFromAssetLockWithoutIdentity {

@@ -8,7 +8,8 @@ use super::store::ShieldedNote;
 use crate::error::PlatformWalletError;
 use dpp::fee::Credits;
 use dpp::shielded::{
-    compute_minimum_shielded_fee, compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
+    compute_minimum_shielded_fee, compute_shielded_identity_create_fee,
+    compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
 };
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -22,6 +23,14 @@ use dpp::ProtocolError;
 /// Core withdrawal-document storage cost). Note selection must reserve against the SAME formula the
 /// builder/consensus will charge, otherwise it under-funds the spend (the builder then rejects
 /// it, or — in debug — the `fee_used == exact_fee` assertion fails).
+///
+/// `IdentityCreate` is the odd one out: it uses the EXACT-EQUALITY model (like ShieldedTransfer's
+/// `value_balance`), where the whole `denomination` leaves the pool and the metered fee is taken
+/// FROM the denomination at execution — so its fee is *not* added on top of the amount during note
+/// selection. The variant still carries the fee formula so the offline `denomination >= fee` gate
+/// (the only way the new identity ends up with a non-negative balance) can be checked. Its fee
+/// additionally depends on the number of identity public keys, so the variant carries `num_keys`.
+/// Use [`select_notes_for_denomination`] (not [`select_notes_with_fee`]) for this kind.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ShieldedFeeKind {
     /// `compute_minimum_shielded_fee` — ShieldedTransfer (the base).
@@ -30,6 +39,13 @@ pub enum ShieldedFeeKind {
     Unshield,
     /// `compute_shielded_withdrawal_fee` — ShieldedWithdrawal (adds the flat withdrawal-document cost).
     Withdrawal,
+    /// `compute_shielded_identity_create_fee` — IdentityCreateFromShieldedPool. Exact-equality
+    /// model: the fee is metered FROM the denomination, not added to the selection target. Carries
+    /// the identity's public-key count (the fee scales with it).
+    IdentityCreate {
+        /// Number of public keys in the new identity (the fee scales per key).
+        num_keys: usize,
+    },
 }
 
 impl ShieldedFeeKind {
@@ -46,6 +62,9 @@ impl ShieldedFeeKind {
             }
             ShieldedFeeKind::Withdrawal => {
                 compute_shielded_withdrawal_fee(num_actions, platform_version)
+            }
+            ShieldedFeeKind::IdentityCreate { num_keys } => {
+                compute_shielded_identity_create_fee(num_actions, num_keys, platform_version)
             }
         }
     }
@@ -78,7 +97,16 @@ pub fn select_notes(
         PlatformWalletError::ShieldedBuildError("amount + fee overflows u64".to_string())
     })?;
 
-    let total_available: u64 = unspent_only.iter().map(|n| n.value).sum();
+    // Checked accumulation: a corrupt/crafted store could otherwise overflow u64 (legitimate note
+    // values sum to at most the bounded credit supply, but never trust the store blindly).
+    let total_available = unspent_only
+        .iter()
+        .try_fold(0u64, |acc, n| acc.checked_add(n.value))
+        .ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "shielded note values sum overflows u64".to_string(),
+            )
+        })?;
     if total_available < required {
         return Err(PlatformWalletError::ShieldedInsufficientBalance {
             available: total_available,
@@ -94,8 +122,13 @@ pub fn select_notes(
     let mut accumulated = 0u64;
 
     for note in sorted {
+        // Cannot overflow (the full-set sum above already succeeded), but stay checked for clarity.
+        accumulated = accumulated.checked_add(note.value).ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "selected shielded note values sum overflows u64".to_string(),
+            )
+        })?;
         selected.push(note);
-        accumulated += note.value;
         if accumulated >= required {
             break;
         }
@@ -165,6 +198,62 @@ pub fn select_notes_with_fee<'a>(
     Ok((selected, total, exact_fee))
 }
 
+/// Select notes for an `IdentityCreateFromShieldedPool` exit of exactly `denomination` credits.
+///
+/// Unlike [`select_notes_with_fee`], this uses the EXACT-EQUALITY model: the whole `denomination`
+/// leaves the pool as the bundle's `value_balance`, and the metered fee is taken FROM the
+/// denomination at execution (the new identity is created holding `denomination - fee`). So the
+/// selection target is `denomination` itself — the fee is NOT added on top.
+///
+/// The function still computes the predicted `compute_shielded_identity_create_fee` (using the
+/// resulting action count and `num_keys`) and rejects up-front if `denomination < predicted_fee`,
+/// since that would create an identity with a negative/zero balance (consensus rejects
+/// `total_fee >= denomination`). The predicted fee is informational — the authoritative fee is
+/// metered at consensus — so a small drift between the predictor and the metered amount does not
+/// affect selection (the full denomination is reserved regardless).
+///
+/// Returns the selected notes, total input value, and the predicted fee.
+pub fn select_notes_for_denomination<'a>(
+    unspent: &'a [ShieldedNote],
+    denomination: u64,
+    min_actions: usize,
+    num_keys: usize,
+    platform_version: &PlatformVersion,
+) -> Result<(Vec<&'a ShieldedNote>, u64, u64), PlatformWalletError> {
+    // Reject a non-member denomination up-front: consensus only accepts the versioned exit set, so
+    // an unsupported value is rejected at `validate_structure` — but that happens AFTER the
+    // (expensive) Orchard build/prove in the current flow, so gating here avoids burning that work.
+    let allowed = platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants
+        .shielded_identity_create_denominations;
+    if !allowed.contains(&denomination) {
+        return Err(PlatformWalletError::ShieldedBuildError(format!(
+            "denomination {denomination} is not a member of the allowed exit-denomination set {allowed:?}"
+        )));
+    }
+
+    // Target the denomination exactly — no fee added on top (exact-equality model).
+    let selected = select_notes(unspent, denomination, 0)?;
+    let total: u64 = selected.iter().map(|n| n.value).sum();
+    let num_actions = selected.len().max(min_actions);
+    let predicted_fee = ShieldedFeeKind::IdentityCreate { num_keys }
+        .compute(num_actions, platform_version)
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+
+    // The denomination must cover the metered fee, or the new identity would be created with a
+    // non-positive balance (consensus rejects `total_fee >= denomination`). Gate on the predictor.
+    if denomination <= predicted_fee {
+        return Err(PlatformWalletError::ShieldedBuildError(format!(
+            "denomination {denomination} does not exceed the predicted identity-create fee \
+             {predicted_fee}; the new identity would be created with a non-positive balance"
+        )));
+    }
+
+    Ok((selected, total, predicted_fee))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,6 +280,34 @@ mod tests {
         // Largest-first: should pick 300 alone
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].value, 300);
+    }
+
+    #[test]
+    fn test_select_for_denomination_rejects_non_member_before_proof() {
+        // A non-member denomination must fail fast (before any note selection / Orchard prove),
+        // even when the wallet holds more than enough value — consensus would reject it anyway at
+        // validate_structure, so burning the prove path on it is pure waste.
+        let platform_version = PlatformVersion::latest();
+        let notes = vec![test_note(u64::MAX / 2, 0)];
+        let err = select_notes_for_denomination(&notes, 12_345, 2, 1, platform_version)
+            .expect_err("a non-member denomination must be rejected");
+        assert!(
+            matches!(err, PlatformWalletError::ShieldedBuildError(ref m) if m.contains("not a member")),
+            "expected a not-a-member ShieldedBuildError, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_select_for_denomination_accepts_member() {
+        // A member denomination with enough value selects successfully.
+        let platform_version = PlatformVersion::latest();
+        let denomination = 10_000_000_000u64; // 0.1 DASH — a member of the v12 set.
+        let notes = vec![test_note(denomination + 1, 0)];
+        let (selected, total, _fee) =
+            select_notes_for_denomination(&notes, denomination, 2, 1, platform_version)
+                .expect("a member denomination with enough value must select");
+        assert_eq!(selected.len(), 1);
+        assert!(total >= denomination);
     }
 
     #[test]
@@ -363,5 +480,86 @@ mod tests {
             exact_fee, unshield_fee_2,
             "unshield note selection must reserve the unshield-inclusive fee"
         );
+    }
+
+    #[test]
+    fn test_select_notes_for_denomination_targets_denomination_only() {
+        // IdentityCreateFromShieldedPool uses the exact-equality model: the whole denomination
+        // leaves the pool and the fee is metered FROM it, so selection targets the denomination
+        // itself (NOT denomination + fee). A single note worth exactly the denomination must
+        // therefore satisfy the selection.
+        let platform_version = PlatformVersion::latest();
+        let denomination = 10_000_000_000u64; // 0.1 DASH in credits (a member of the set)
+        let notes = vec![test_note(denomination, 0)];
+
+        let (selected, total, predicted_fee) =
+            select_notes_for_denomination(&notes, denomination, 2, 1, platform_version)
+                .expect("selection ok");
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(total, denomination);
+        // The predicted fee is informational and must be strictly below the denomination (otherwise
+        // the gate rejects). It equals the consensus identity-create fee for this action/key count.
+        let expected_fee = compute_shielded_identity_create_fee(2, 1, platform_version)
+            .expect("fee computation should not overflow");
+        assert_eq!(predicted_fee, expected_fee);
+        assert!(
+            predicted_fee < denomination,
+            "predicted fee must be below the denomination"
+        );
+    }
+
+    #[test]
+    fn test_select_notes_for_denomination_fee_scales_with_keys() {
+        // The identity-create fee scales with the number of keys, so a larger key set yields a
+        // larger predicted fee for the same denomination + action count.
+        let platform_version = PlatformVersion::latest();
+        let denomination = 100_000_000_000u64; // 1 DASH in credits
+        let notes = vec![test_note(denomination, 0)];
+
+        let (_, _, fee_1_key) =
+            select_notes_for_denomination(&notes, denomination, 2, 1, platform_version)
+                .expect("selection ok");
+        let (_, _, fee_5_keys) =
+            select_notes_for_denomination(&notes, denomination, 2, 5, platform_version)
+                .expect("selection ok");
+
+        assert!(
+            fee_5_keys > fee_1_key,
+            "more identity keys must predict a higher fee ({fee_5_keys} > {fee_1_key})"
+        );
+    }
+
+    #[test]
+    fn test_select_notes_for_denomination_rejects_denomination_below_fee() {
+        // If the denomination doesn't exceed the predicted fee, the new identity would be created
+        // with a non-positive balance — the selection must reject up-front.
+        let platform_version = PlatformVersion::latest();
+        let predicted_fee = compute_shielded_identity_create_fee(2, 1, platform_version)
+            .expect("fee computation should not overflow");
+        // A denomination equal to the fee (the boundary) must be rejected (`denomination <= fee`).
+        let denomination = predicted_fee;
+        let notes = vec![test_note(denomination, 0)];
+
+        let result = select_notes_for_denomination(&notes, denomination, 2, 1, platform_version);
+        assert!(
+            matches!(result, Err(PlatformWalletError::ShieldedBuildError(_))),
+            "denomination == fee must reject (non-positive resulting balance)"
+        );
+    }
+
+    #[test]
+    fn test_select_notes_for_denomination_insufficient_balance() {
+        // Not enough unspent value to cover the denomination → insufficient-balance error
+        // (the denomination is the selection target).
+        let platform_version = PlatformVersion::latest();
+        let denomination = 10_000_000_000u64;
+        let notes = vec![test_note(denomination - 1, 0)];
+
+        let result = select_notes_for_denomination(&notes, denomination, 2, 1, platform_version);
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::ShieldedInsufficientBalance { .. })
+        ));
     }
 }

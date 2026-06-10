@@ -429,11 +429,18 @@ extension PlatformWalletManager {
     /// Amount is in credits (1 DASH = 1e11). Heavy CPU work runs
     /// on a detached task so the caller's actor isn't blocked
     /// through the proof build.
+    ///
+    /// `memo` is an optional UTF-8 text note attached to the
+    /// recipient's note. `nil` (or an empty string) means no memo;
+    /// a non-empty memo's UTF-8 byte length must be at most 32 or
+    /// Rust rejects it. The 36-byte on-chain encoding is done on the
+    /// Rust side.
     public func shieldedTransfer(
         walletId: Data,
         account: UInt32 = 0,
         recipientRaw43: Data,
-        amount: UInt64
+        amount: UInt64,
+        memo: String? = nil
     ) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(
@@ -466,9 +473,19 @@ extension PlatformWalletManager {
                             "recipient baseAddress is nil"
                         )
                     }
-                    try platform_wallet_manager_shielded_transfer(
-                        handle, widPtr, account, recipientPtr, amount
-                    ).check()
+                    // `nil` / empty → null pointer (no memo); otherwise
+                    // pass the text as a C string. Rust validates the
+                    // 32-byte limit and does the 36-byte encoding.
+                    let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
+                        try platform_wallet_manager_shielded_transfer(
+                            handle, widPtr, account, recipientPtr, amount, memoCStr
+                        ).check()
+                    }
+                    if let memo, !memo.isEmpty {
+                        try memo.withCString { try send($0) }
+                    } else {
+                        try send(nil)
+                    }
                 }
             }
         }.value
@@ -607,6 +624,139 @@ extension PlatformWalletManager {
                     ).check()
                 }
             }
+        }.value
+    }
+
+    /// Shielded → new identity (Type 20). Spends notes from
+    /// `walletId`'s shielded balance to fund a brand-new Platform
+    /// identity. The whole `denomination` (a member of the versioned
+    /// exit-denomination set, in credits) leaves the pool and the
+    /// metered fee is taken from it, so the new identity is created
+    /// holding `denomination - totalFee`; any excess re-enters the
+    /// pool as a change note.
+    ///
+    /// `identityPubkeys` is the new identity's key set (the first row
+    /// should be the MASTER key). `identitySigner` is the host-side
+    /// `KeychainSigner` whose `.handle` produces each key's
+    /// proof-of-possession signature; the Orchard spend authority is
+    /// the bound wallet's own key. Returns the 32-byte new identity id
+    /// (`double_sha256(sorted nullifiers)`).
+    ///
+    /// `identityIndex` is the DIP-9 identity-registration slot the new
+    /// identity occupies. On a successful broadcast the Rust wallet
+    /// registers the proof-verified identity at this slot in its local
+    /// `IdentityManager` (mirroring address-funded registration), which
+    /// drives the persister callbacks that create the app's identity
+    /// row. This wrapper only marshals it across the FFI.
+    ///
+    /// `sendToAddressOnCreationFailure` is the REQUIRED fallback
+    /// platform address as raw `PlatformAddress` storage bytes (21
+    /// bytes: 1-byte variant tag + 20-byte hash, the encoding
+    /// `PlatformAddress.toBytes()` produces). If creation fails a
+    /// stateful check (a public-key hash already registered to another
+    /// identity) the spend is still finalized and the value is credited
+    /// to this address minus a penalty. It is bound into the transition
+    /// sighash, so it cannot be redirected after signing.
+    ///
+    /// Heavy CPU work (Halo 2 proof + per-key signing) runs on a
+    /// detached task so the caller's actor isn't blocked.
+    public func shieldedIdentityCreateFromPool(
+        walletId: Data,
+        account: UInt32 = 0,
+        identityIndex: UInt32,
+        identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
+        denomination: UInt64,
+        sendToAddressOnCreationFailure: Data,
+        identitySigner: KeychainSigner
+    ) async throws -> Data {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard !identityPubkeys.isEmpty else {
+            throw PlatformWalletError.invalidParameter(
+                "identityPubkeys is empty"
+            )
+        }
+        guard sendToAddressOnCreationFailure.count == 21 else {
+            throw PlatformWalletError.invalidParameter(
+                "sendToAddressOnCreationFailure must be exactly 21 PlatformAddress bytes"
+            )
+        }
+
+        let handle = self.handle
+        let identitySignerHandle = identitySigner.handle
+        let fallbackAddressBytes = sendToAddressOnCreationFailure
+
+        return try await Task.detached(priority: .userInitiated) { () -> Data in
+            var outIdentityId: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            )
+
+            // Pin every pubkey buffer simultaneously (and the
+            // wallet-id bytes), then hand the pinned
+            // `[IdentityPubkeyFFI]` rows + signer handle to the FFI.
+            // Reuses the same marshalling helper the address-funded
+            // registration path uses so the two can't drift.
+            let pubkeyBuffers: [Data] = identityPubkeys.map { $0.pubkeyBytes }
+            // KeychainSigner is passed to Rust via `passUnretained`, so the Rust ctx pointer dangles
+            // unless the Swift owner is kept alive across the FFI call. `_ = identitySigner` is
+            // folklore that the optimizer may elide in -O builds; `withExtendedLifetime` is the
+            // guaranteed keepalive (matches this module's signer-lifetime guidance).
+            let result = try withExtendedLifetime(identitySigner) {
+                try walletId.withUnsafeBytes { widRaw -> PlatformWalletFFIResult in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    // Pin the 21-byte fallback `PlatformAddress` bytes for the whole FFI call so the
+                    // pointer handed to Rust stays valid (validated `== 21` above).
+                    return try fallbackAddressBytes.withUnsafeBytes {
+                        fallbackRaw -> PlatformWalletFFIResult in
+                        guard let fallbackPtr = fallbackRaw.baseAddress?.assumingMemoryBound(
+                            to: UInt8.self
+                        ) else {
+                            throw PlatformWalletError.invalidParameter(
+                                "sendToAddressOnCreationFailure baseAddress is nil"
+                            )
+                        }
+                        return ManagedPlatformWallet.withPubkeyFFIArray(
+                            identityPubkeys,
+                            buffers: pubkeyBuffers
+                        ) { ffiRowsPtr, ffiRowsCount in
+                            platform_wallet_manager_shielded_identity_create_from_pool(
+                                handle,
+                                widPtr,
+                                account,
+                                identityIndex,
+                                ffiRowsPtr,
+                                UInt(ffiRowsCount),
+                                denomination,
+                                fallbackPtr,
+                                identitySignerHandle,
+                                &outIdentityId
+                            )
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            return withUnsafeBytes(of: outIdentityId) { Data($0) }
         }.value
     }
 
