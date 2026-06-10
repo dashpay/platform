@@ -44,7 +44,10 @@ use std::os::raw::c_char;
 
 use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
-use dpp::shielded::ShieldedMemo;
+use dpp::shielded::{
+    compute_minimum_shielded_fee, compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
+    ShieldedMemo,
+};
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
@@ -149,6 +152,64 @@ pub unsafe extern "C" fn platform_wallet_shielded_warm_up_prover() {
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_shielded_prover_is_ready() -> bool {
     CachedOrchardProver::new().is_ready()
+}
+
+/// Estimate the consensus-pinned flat shielded fee (in credits) for a
+/// pool-paid shielded transition.
+///
+/// `kind` selects the transition's fee formula:
+/// - `0` → ShieldedTransfer / Shield (`compute_minimum_shielded_fee` — the
+///   base flat fee; Shield's structure check reserves the same base via
+///   `compute_minimum_shielded_fee(2)`),
+/// - `1` → Unshield (`compute_shielded_unshield_fee` — base + the flat
+///   `AddBalanceToAddress` output-write cost),
+/// - `2` → ShieldedWithdrawal (`compute_shielded_withdrawal_fee` — base +
+///   the flat Core withdrawal-document cost).
+///
+/// `num_actions` is the Orchard action count of the bundle the host will
+/// build (a single-note spend with change is 2 actions). The version is
+/// pinned to [`PlatformVersion::latest()`] — the same version the shielded
+/// builders in `platform-wallet` resolve via `sdk.version()`, so the
+/// estimate can't drift from the fee the builder carves and the consensus
+/// gate validates.
+///
+/// Pure computation: no wallet handle, no network. Writes the fee to
+/// `out_fee` and returns `ok()`. An unknown `kind` returns
+/// `ErrorInvalidParameter`; a fee-formula overflow returns
+/// `ErrorArithmeticOverflow`.
+///
+/// # Safety
+/// `out_fee` must point to 8 writable bytes (a `u64`).
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_shielded_estimate_fee(
+    kind: u8,
+    num_actions: usize,
+    out_fee: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_fee);
+
+    let platform_version = dpp::version::PlatformVersion::latest();
+    let fee = match kind {
+        0 => compute_minimum_shielded_fee(num_actions, platform_version),
+        1 => compute_shielded_unshield_fee(num_actions, platform_version),
+        2 => compute_shielded_withdrawal_fee(num_actions, platform_version),
+        other => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("unknown shielded fee kind {other} (expected 0/1/2)"),
+            );
+        }
+    };
+    match fee {
+        Ok(credits) => {
+            *out_fee = credits;
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorArithmeticOverflow,
+            format!("shielded fee estimation failed: {e}"),
+        ),
+    }
 }
 
 /// Encode an optional host-supplied memo string into the on-chain
@@ -1000,5 +1061,50 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             "over-length memo must surface as an invalid-parameter error"
         );
+    }
+
+    /// Pin the fee estimator to the on-chain ground-truth values observed at the current platform
+    /// version with 2 actions (single-note spend + change). These are the exact credits the
+    /// builder carves and the consensus gate validates, so the host's "Estimated Fee" must match.
+    #[test]
+    fn estimate_fee_matches_observed_onchain_values_for_2_actions() {
+        unsafe {
+            let estimate = |kind: u8| {
+                let mut fee: u64 = 0;
+                let result = platform_wallet_shielded_estimate_fee(kind, 2, &mut fee);
+                assert_eq!(
+                    result.code,
+                    PlatformWalletFFIResultCode::Success,
+                    "kind {kind} must succeed"
+                );
+                fee
+            };
+            // kind 0 — ShieldedTransfer / Shield base.
+            assert_eq!(
+                estimate(0),
+                162_851_200,
+                "shielded transfer fee (2 actions)"
+            );
+            // kind 1 — Unshield.
+            assert_eq!(estimate(1), 168_934_000, "unshield fee (2 actions)");
+            // kind 2 — ShieldedWithdrawal.
+            assert_eq!(
+                estimate(2),
+                275_191_200,
+                "shielded withdrawal fee (2 actions)"
+            );
+        }
+    }
+
+    #[test]
+    fn estimate_fee_rejects_unknown_kind() {
+        unsafe {
+            let mut fee: u64 = 0;
+            let result = platform_wallet_shielded_estimate_fee(7, 2, &mut fee);
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            );
+        }
     }
 }

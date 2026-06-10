@@ -1197,6 +1197,7 @@ struct CreateIdentityView: View {
         let controller = coordinator.startRegistration(
             walletId: walletId,
             identityIndex: identityIndex,
+            fundingKind: .shieldedPool,
             body: {
                 // `shieldedIdentityCreateFromPool` lives on the manager
                 // (it's wallet-id-routed, unlike the per-wallet
