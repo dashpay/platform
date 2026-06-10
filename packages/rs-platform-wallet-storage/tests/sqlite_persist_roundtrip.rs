@@ -65,6 +65,7 @@ fn tc013_wallet_metadata_roundtrip() {
     let cs = PlatformWalletChangeSet {
         wallet_metadata: Some(WalletMetadataEntry {
             network: Network::Testnet,
+            wallet_group_id: [0u8; 32],
             birth_height: 12345,
         }),
         ..Default::default()
