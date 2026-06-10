@@ -5058,6 +5058,7 @@ version = "4.0.0-beta.4"
 dependencies = [
  "anyhow",
  "bincode",
+ "bip39",
  "bs58",
  "cbindgen 0.27.0",
  "dash-network",
@@ -5076,6 +5077,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "unicode-normalization",
  "zeroize",
 ]
 

@@ -55,6 +55,14 @@ bs58 = "0.5"
 # Zeroize intermediate key material crossing the FFI boundary.
 zeroize = { version = "1", features = ["derive"] }
 
+# BIP39 wordlist access for the recover-flow word-validation FFI
+# (parity with DashSync DSBIP39Mnemonic). Mirror key-wallet's language
+# feature set so every bundled-language variant is available.
+bip39 = { version = "2.2.0", default-features = false, features = ["std", "chinese-simplified", "chinese-traditional", "czech", "french", "italian", "japanese", "korean", "portuguese", "spanish"] }
+
+# NFKD normalization matching DashSync's kCFStringNormalizationFormKD.
+unicode-normalization = "0.1"
+
 [dev-dependencies]
 tempfile = "3.8"
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }

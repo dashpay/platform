@@ -149,4 +149,53 @@ public class Mnemonic {
 
         return count
     }
+
+    // MARK: - Recover-flow word helpers (DashSync DSBIP39Mnemonic parity)
+
+    /// `true` if `word` is a BIP-39 word in any bundled language
+    /// (DashSync `wordIsValid:`). Exact wordlist membership — callers
+    /// normalize first via `normalizePhrase` / `cleanupPhrase`.
+    public static func wordIsValid(_ word: String) -> Bool {
+        word.withCString { platform_wallet_mnemonic_word_is_valid($0) }
+    }
+
+    /// `true` if `word` is in the default (English) wordlist
+    /// (DashSync `wordIsLocal:`).
+    public static func wordIsLocal(_ word: String) -> Bool {
+        word.withCString { platform_wallet_mnemonic_word_is_local($0) }
+    }
+
+    /// NFKD + lowercase + whitespace-collapse (DashSync `normalizePhrase:`).
+    /// Returns the input unchanged on the UTF-8/allocation error paths that
+    /// DashSync never hits for valid `NSString` input.
+    public static func normalizePhrase(_ phrase: String) -> String {
+        var outPtr: UnsafeMutablePointer<CChar>? = nil
+        do {
+            try phrase.withCString { cPhrase in
+                try platform_wallet_mnemonic_normalize_phrase(cPhrase, &outPtr).check()
+            }
+        } catch {
+            return phrase
+        }
+        guard let cStr = outPtr else { return phrase }
+        let result = String(cString: cStr)
+        platform_wallet_free_string(cStr)
+        return result
+    }
+
+    /// Minimal cleanup + CJK ideographic auto-split (DashSync `cleanupPhrase:`).
+    public static func cleanupPhrase(_ phrase: String) -> String {
+        var outPtr: UnsafeMutablePointer<CChar>? = nil
+        do {
+            try phrase.withCString { cPhrase in
+                try platform_wallet_mnemonic_cleanup_phrase(cPhrase, &outPtr).check()
+            }
+        } catch {
+            return phrase
+        }
+        guard let cStr = outPtr else { return phrase }
+        let result = String(cString: cStr)
+        platform_wallet_free_string(cStr)
+        return result
+    }
 }
