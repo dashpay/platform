@@ -18,6 +18,13 @@
 //! * DashSync bundles 7 languages (en, fr, es, it, ja, ko, zh-Hans) and
 //!   `wordIsValid:` checks the union; we restrict [`LANGS`] to those 7 for
 //!   exact parity rather than all 10 bip39 languages.
+//! * `phrase_is_valid_impl` rejects sub-12-word phrases (3/6/9 words) that
+//!   DashSync's `phraseIsValid:` checksum loop would accept: bip39's
+//!   `parse_in_normalized` enforces the BIP-39 ≥12-word (≥128-bit entropy)
+//!   floor. The divergence is intentional and inert — the only caller is
+//!   `cleanup_phrase_impl`'s early-return gate, output is byte-identical for
+//!   ASCII input (the CJK loop is a no-op without ≥U+3000 chars), and the
+//!   production recover path enforces `DW_PHRASE_MIN_LENGTH = 12` anyway.
 
 use bip39::Language as B;
 use std::ffi::{CStr, CString};
@@ -349,6 +356,7 @@ mod tests {
             assert!(!platform_wallet_mnemonic_word_is_valid(invalid.as_ptr()));
             assert!(platform_wallet_mnemonic_word_is_local(valid.as_ptr()));
             assert!(!platform_wallet_mnemonic_word_is_valid(std::ptr::null()));
+            assert!(!platform_wallet_mnemonic_word_is_local(std::ptr::null()));
         }
 
         // string fn: normalize
@@ -367,6 +375,29 @@ mod tests {
         let mut out2: *mut c_char = std::ptr::null_mut();
         unsafe {
             let r = platform_wallet_mnemonic_normalize_phrase(std::ptr::null(), &mut out2);
+            assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        }
+
+        // string fn: cleanup — exercises the cleanup into_raw/free path too
+        let dirty = CString::new(
+            "abandon, abandon. abandon abandon abandon abandon abandon abandon abandon abandon abandon about!",
+        )
+        .unwrap();
+        let mut cout: *mut c_char = std::ptr::null_mut();
+        unsafe {
+            let r = platform_wallet_mnemonic_cleanup_phrase(dirty.as_ptr(), &mut cout);
+            assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
+            assert!(!cout.is_null());
+            let s = CStr::from_ptr(cout).to_str().unwrap().to_owned();
+            assert!(!s.contains(','));
+            assert!(!s.contains('!'));
+            platform_wallet_free_string(cout);
+        }
+
+        // cleanup NULL phrase -> error
+        let mut cout2: *mut c_char = std::ptr::null_mut();
+        unsafe {
+            let r = platform_wallet_mnemonic_cleanup_phrase(std::ptr::null(), &mut cout2);
             assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
         }
     }
@@ -472,5 +503,97 @@ mod tests {
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
         );
         assert!(phrase_is_valid_impl(&normalize_phrase_impl(messy)));
+    }
+
+    #[test]
+    fn word_validity_requires_prenormalized_input() {
+        // Wordlist membership is exact-byte; callers MUST nfkd_lower first
+        // (DashSync normalizes the phrase before every containsObject: check).
+
+        // (a) Uppercase: the raw form fails, the normalized form passes.
+        assert!(!word_in_english("ABANDON"));
+        assert!(word_in_english(&nfkd_lower("ABANDON")));
+        assert!(!word_in_any_list("ABANDON"));
+        assert!(word_in_any_list(&nfkd_lower("ABANDON")));
+
+        // (b) Accent: find a bundled word whose NFC and NFD forms differ
+        //     (Japanese voiced kana / Latin diacritics guarantee a hit). Both
+        //     forms converge to the same valid member under nfkd_lower. We
+        //     assert only the positive normalize->member direction, so the test
+        //     is independent of which Unicode form the crate stores its lists in.
+        let mut accented: Option<&'static str> = None;
+        'outer: for lang in LANGS {
+            for &word in lang.word_list().iter() {
+                let nfc: String = word.nfc().collect();
+                let nfd: String = word.nfd().collect();
+                if nfc != nfd {
+                    accented = Some(word);
+                    break 'outer;
+                }
+            }
+        }
+        let w = accented.expect("some bundled word should have distinct NFC/NFD forms");
+        let nfc: String = w.nfc().collect();
+        let nfd: String = w.nfd().collect();
+        assert_ne!(nfc, nfd);
+        assert_eq!(nfkd_lower(&nfc), nfkd_lower(&nfd));
+        assert!(word_in_any_list(&nfkd_lower(&nfc)));
+        assert!(word_in_any_list(&nfkd_lower(&nfd)));
+    }
+
+    #[test]
+    fn cleanup_strips_punctuation_around_cjk() {
+        // Punctuation removal (step 1) and CJK auto-split must both fire on a
+        // no-space CJK phrase that arrives with ASCII punctuation interleaved.
+        let entropy = [
+            0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0x07, 0x18, 0x29, 0x3a, 0x4b, 0x5c, 0x6d, 0x7e,
+            0x8f, 0x90,
+        ];
+        let m = bip39::Mnemonic::from_entropy_in(B::SimplifiedChinese, &entropy).unwrap();
+        let words: Vec<&'static str> = m.words().collect();
+        let dirty = words.join(",");
+        let cleaned = cleanup_phrase_impl(&dirty);
+        assert!(!cleaned.contains(','), "punctuation must be stripped: {cleaned:?}");
+        assert!(
+            cleaned.contains(IDEO_SP),
+            "CJK split should insert ideographic spaces: {cleaned:?}"
+        );
+    }
+
+    #[test]
+    fn normalize_is_idempotent() {
+        for input in [
+            "  ABANDON\tabout \n legal  ",
+            "abandon about legal",
+            "",
+            "   ",
+            "Pr\u{30c}i\u{301}s\u{30c}erne\u{30c}",
+        ] {
+            let once = normalize_phrase_impl(input);
+            assert_eq!(
+                normalize_phrase_impl(&once),
+                once,
+                "normalize must be idempotent for {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn cleanup_wraps_all_occurrences_of_repeated_cjk_word() {
+        // The CJK split uses a global String::replace (parity with DashSync's
+        // stringByReplacingOccurrencesOfString:), so every occurrence of a
+        // repeated word is wrapped; the loop must terminate without panic.
+        let cw = B::SimplifiedChinese.word_list()[0]; // a single valid ideograph
+        let nospace = format!("{cw}{cw}{cw}");
+        let cleaned = cleanup_phrase_impl(&nospace);
+        assert!(
+            cleaned.contains(IDEO_SP),
+            "repeated CJK word should get ideographic spaces: {cleaned:?}"
+        );
+        assert_eq!(
+            cleaned.matches(cw).count(),
+            3,
+            "all occurrences preserved (wrap-all, no loss/dup): {cleaned:?}"
+        );
     }
 }
