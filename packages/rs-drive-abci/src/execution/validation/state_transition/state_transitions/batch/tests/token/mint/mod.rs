@@ -842,11 +842,20 @@ mod token_mint_tests {
         }
 
         #[tokio::test]
-        async fn test_token_mint_with_max_i64_base_supply_then_overflow_fails() {
+        async fn test_token_mint_with_max_i64_base_supply_then_overflow_returns_internal_error_without_mutating_supply(
+        ) {
+            // CHARACTERIZATION TEST (current behavior, not the desired long-term API).
+            //
             // A contract may be created with base_supply == i64::MAX (the largest value
-            // that passes the Drive sum-item guard). A subsequent mint of 1 would push
-            // the supply past i64::MAX and must therefore fail. The concrete surfaced
-            // result is asserted at the end of this test.
+            // that passes the Drive sum-item guard). A subsequent mint of 1 would push the
+            // supply past i64::MAX. With max_supply == None there is no validation-layer
+            // guard, so this is only caught by the low-level Drive checked_add and surfaces
+            // as an InternalError (the "corrupted execution" class) rather than a graceful
+            // consensus rejection — while leaving supply unmutated.
+            //
+            // This test pins that current shape. When a validation-layer guard is added
+            // (tracked separately), this test SHOULD break: that is the signal to update it
+            // from the characterized-current behavior to the new graceful-rejection behavior.
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
