@@ -112,6 +112,27 @@ struct SendTransactionView: View {
                     }
                 }
 
+                // Memo (shielded → shielded only). The on-chain note
+                // carries an optional 32-byte UTF-8 memo. Gate on the
+                // flow, not the recipient type: an Orchard recipient
+                // with a Platform source is the self-shield path, which
+                // has no memo parameter — showing the field there would
+                // silently drop the text. Count UTF-8 bytes (not
+                // characters) so the limit matches Rust.
+                if viewModel.detectedFlow == .shieldedToShielded {
+                    Section("Memo (optional)") {
+                        TextField("Note for the recipient", text: $viewModel.memoText)
+                            .textInputAutocapitalization(.sentences)
+                            .autocorrectionDisabled()
+                        HStack {
+                            Spacer()
+                            Text("\(viewModel.memoByteCount)/\(SendViewModel.memoByteLimit) bytes")
+                                .font(.caption)
+                                .foregroundColor(viewModel.isMemoOverLimit ? .red : .secondary)
+                        }
+                    }
+                }
+
                 // Fund Source
                 if !sources.isEmpty {
                     Section("Send From") {
