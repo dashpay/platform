@@ -61,7 +61,7 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 ///
 /// # v3.1+-only query surfaces
 ///
-/// At this floor (PV10, V0 documents wire) the local encoder rejects the
+/// At the default floor the local encoder rejects the
 /// v3.1+-only surfaces — `Count` (`SelectProjection::count_star`), `group_by`,
 /// and `having` — with [`Error::Config`] *before* any network round-trip. To use
 /// them either pin a higher initial version via [`SdkBuilder::with_initial_version`],
@@ -930,11 +930,10 @@ impl SdkBuilder {
     /// (via `fetch_max` in `maybe_update_protocol_version`) once the
     /// network's actual version is observed in response metadata.
     ///
-    /// Use this when an SDK built against `PlatformVersion::latest()`
-    /// must talk to a network running an older protocol version (e.g.
-    /// a v3.0 testnet from a v3.1+ binary). Without an explicit initial
-    /// version, the SDK's `version()` fallback returns `latest()` until
-    /// the first response is parsed, and the upward-only `fetch_max`
+    /// Use this when the SDK must talk to a network running a protocol
+    /// version *older* than the default floor (e.g. a v3.0 testnet from a
+    /// v3.1+ binary). Without an explicit initial version, the SDK seeds to
+    /// [`DEFAULT_INITIAL_PROTOCOL_VERSION`], and the upward-only `fetch_max`
     /// guard can never ratchet *down* to the older network — leaving
     /// any version-dispatched encoders (e.g. the documents query) to
     /// ship a too-new wire shape that the network rejects.
