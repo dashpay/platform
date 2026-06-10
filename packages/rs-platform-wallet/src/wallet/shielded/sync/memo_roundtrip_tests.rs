@@ -197,6 +197,7 @@ async fn shield_memo_round_trips_through_ivk_decryption() {
         0,
         &&prover,
         memo_bytes,
+        Some(keys.outgoing_viewing_key.clone()),
         PlatformVersion::latest(),
     )
     .await
