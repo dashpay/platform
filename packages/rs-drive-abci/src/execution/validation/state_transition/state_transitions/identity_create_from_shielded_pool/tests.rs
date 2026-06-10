@@ -533,7 +533,23 @@ fn check_tx_fee_estimation_does_not_mutate_committed_state() {
         .minimum_pool_notes_for_outgoing;
     insert_dummy_encrypted_notes(&platform, min_notes.max(1));
 
-    let st = transition(vec![master_key()], vec![action(40), action(41)]);
+    // Unlike the validate_state tests above, fee estimation CONVERTS the `AddNewIdentity` op,
+    // which parses the key bytes — so the key must be a real secp256k1 point, not dummy zeros.
+    let (valid_master_key, _) =
+        IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(11), platform_version)
+            .expect("expected a valid master key");
+    let key_in_creation = IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+        id: 0,
+        key_type: valid_master_key.key_type(),
+        purpose: valid_master_key.purpose(),
+        security_level: valid_master_key.security_level(),
+        contract_bounds: None,
+        read_only: false,
+        data: valid_master_key.data().clone(),
+        signature: BinaryData::default(),
+    });
+
+    let st = transition(vec![key_in_creation], vec![action(40), action(41)]);
     let mut execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)
             .expect("execution context");
