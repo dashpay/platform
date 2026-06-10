@@ -166,9 +166,13 @@ pub struct DashSDKContactRequestParams {
     /// For ClientSide: the shared secret (32 bytes)
     /// For SdkSide: ignored (can be null)
     pub shared_secret: *const u8,
-    /// The extended public key to share (unencrypted, typically 78 bytes)
+    /// The extended public key to share (unencrypted). MUST be the **69-byte
+    /// DIP-15 compact form** (`parentFingerprint(4) ‖ chainCode(32) ‖
+    /// pubKey(33)`) — NOT a 78/107-byte BIP32/DIP-14 serialization. The SDK
+    /// rejects any other length before encryption. (ABI unchanged; only the
+    /// caller contract is tightened.)
     pub extended_public_key: *const u8,
-    /// Length of extended_public_key
+    /// Length of extended_public_key (must be 69 — the DIP-15 compact form)
     pub extended_public_key_len: usize,
 }
 

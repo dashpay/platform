@@ -15,3 +15,6 @@ thiserror = "1.0"
 
 [dev-dependencies]
 hex = "0.4"
+# Tests use secp256k1's RNG helpers (`generate_keypair`, `secp256k1::rand`),
+# which are only available when dashcore's `rand` feature is enabled.
+dashcore = { workspace = true, features = ["rand"] }

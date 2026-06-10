@@ -10,6 +10,16 @@ use dashcore::secp256k1::{PublicKey, SecretKey};
 type Aes256CbcEnc = cbc::Encryptor<Aes256>;
 type Aes256CbcDec = cbc::Decryptor<Aes256>;
 
+/// Length of the DIP-15 compact extended-public-key plaintext, in bytes.
+///
+/// `parentFingerprint(4) ‖ chainCode(32) ‖ publicKey(33)` = 69 bytes. This is
+/// the plaintext layout DIP-15 specifies for `encryptedPublicKey` and the form
+/// both reference clients (iOS dash-shared-core, Android dashj) emit and
+/// hard-check on receive. Encrypting exactly 69 bytes yields a 96-byte
+/// ciphertext (16-byte IV + 80-byte AES-256-CBC/PKCS7 block), matching the
+/// deployed contract's `minItems/maxItems: 96`.
+pub const COMPACT_XPUB_LEN: usize = 69;
+
 /// Derive a shared secret key using ECDH as specified in DIP-15
 ///
 /// This uses libsecp256k1_ecdh which computes: SHA256((y[31]&0x1|0x2) || x)
@@ -127,6 +137,66 @@ pub fn decrypt_extended_public_key(
     decrypt_aes_256_cbc(shared_key, &iv, ciphertext)
 }
 
+/// Assemble the DIP-15 compact extended-public-key plaintext.
+///
+/// Concatenates `parent_fingerprint ‖ chain_code ‖ pubkey` into the 69-byte
+/// compact form that DIP-15 defines for `encryptedPublicKey` (and that both
+/// reference clients emit). This is the plaintext that should be fed to
+/// [`encrypt_extended_public_key`] — *not* a BIP32/DIP-14 serialization, which
+/// carries extra version/depth/child-number metadata the wire format omits.
+///
+/// # Arguments
+/// * `parent_fingerprint` - 4-byte fingerprint of the parent key.
+/// * `chain_code` - 32-byte chain code of the shared (account) key.
+/// * `pubkey` - 33-byte compressed secp256k1 public key.
+///
+/// # Returns
+/// The 69-byte compact plaintext.
+pub fn compact_xpub_bytes(
+    parent_fingerprint: [u8; 4],
+    chain_code: [u8; 32],
+    pubkey: [u8; 33],
+) -> [u8; COMPACT_XPUB_LEN] {
+    let mut out = [0u8; COMPACT_XPUB_LEN];
+    out[0..4].copy_from_slice(&parent_fingerprint);
+    out[4..36].copy_from_slice(&chain_code);
+    out[36..69].copy_from_slice(&pubkey);
+    out
+}
+
+/// Parse a DIP-15 compact extended-public-key plaintext back into its
+/// three components.
+///
+/// Inverse of [`compact_xpub_bytes`]. Rejects any input whose length is not
+/// exactly [`COMPACT_XPUB_LEN`] (69) bytes — the reference clients hard-check
+/// this on receive, so a non-69-byte payload is not a valid DIP-15 compact
+/// xpub and must be handled separately (e.g. a legacy 78/107-byte BIP32/DIP-14
+/// serialization) by the caller.
+///
+/// # Arguments
+/// * `bytes` - The decrypted plaintext (must be exactly 69 bytes).
+///
+/// # Returns
+/// `(parent_fingerprint, chain_code, pubkey)` on success.
+///
+/// # Errors
+/// [`CryptoError::InvalidCompactXpubLength`] if `bytes.len() != 69`.
+#[allow(clippy::type_complexity)]
+pub fn parse_compact_xpub(bytes: &[u8]) -> Result<([u8; 4], [u8; 32], [u8; 33]), CryptoError> {
+    if bytes.len() != COMPACT_XPUB_LEN {
+        return Err(CryptoError::InvalidCompactXpubLength(bytes.len()));
+    }
+
+    let mut parent_fingerprint = [0u8; 4];
+    let mut chain_code = [0u8; 32];
+    let mut pubkey = [0u8; 33];
+    parent_fingerprint.copy_from_slice(&bytes[0..4]);
+    chain_code.copy_from_slice(&bytes[4..36]);
+    pubkey.copy_from_slice(&bytes[36..69]);
+
+    Ok((parent_fingerprint, chain_code, pubkey))
+}
+
 /// Encrypt an account label for DashPay (DIP-15)
 ///
 /// # Arguments
@@ -181,6 +251,9 @@ pub enum CryptoError {
 
     #[error("Invalid ciphertext length (must be at least 16 bytes for IV)")]
     InvalidCiphertextLength,
+
+    #[error("Invalid compact xpub length (DIP-15 requires exactly 69 bytes, got {0})")]
+    InvalidCompactXpubLength(usize),
 }
 
 #[cfg(test)]
@@ -232,8 +305,9 @@ mod tests {
         let mut iv = [0u8; 16];
         thread_rng().fill_bytes(&mut iv);
 
-        // Mock extended public key data (78 bytes)
-        let xpub_data = vec![0x04; 78];
+        // DIP-15 compact xpub plaintext (69 bytes). 69 → PKCS7 → 80, + 16-byte
+        // IV = exactly 96 bytes, matching the contract's minItems/maxItems: 96.
+        let xpub_data = vec![0x04; COMPACT_XPUB_LEN];
 
         // Encrypt and decrypt
         let encrypted = encrypt_extended_public_key(&shared_key, &iv, &xpub_data);
@@ -244,6 +318,66 @@ mod tests {
         let decrypted = decrypt_extended_public_key(&shared_key, &encrypted).unwrap();
 
         assert_eq!(xpub_data, decrypted);
+    }
+
+    #[test]
+    fn test_compact_xpub_round_trip() {
+        // Distinct byte patterns per field so a mis-sliced offset is caught.
+        let parent_fingerprint = [0x11u8, 0x22, 0x33, 0x44];
+        let chain_code = [0xAAu8; 32];
+        let mut pubkey = [0xBBu8; 33];
+        pubkey[0] = 0x02; // compressed-pubkey prefix
+
+        let compact = compact_xpub_bytes(parent_fingerprint, chain_code, pubkey);
+        assert_eq!(compact.len(), COMPACT_XPUB_LEN);
+        assert_eq!(compact.len(), 69);
+
+        // Byte-exact layout: fingerprint ‖ chaincode ‖ pubkey.
+        assert_eq!(&compact[0..4], &parent_fingerprint);
+        assert_eq!(&compact[4..36], &chain_code);
+        assert_eq!(&compact[36..69], &pubkey);
+
+        let (fp, cc, pk) = parse_compact_xpub(&compact).expect("parse 69-byte compact");
+        assert_eq!(fp, parent_fingerprint);
+        assert_eq!(cc, chain_code);
+        assert_eq!(pk, pubkey);
+    }
+
+    #[test]
+    fn test_encrypt_compact_xpub_is_exactly_96_bytes() {
+        // The whole point of the 69-byte compact form: it encrypts to exactly
+        // 96 bytes (16-byte IV + 80-byte AES-256-CBC/PKCS7), which is what the
+        // deployed contract enforces. A 107-byte DIP-14 serialization would
+        // yield 128 bytes and fail the contract's maxItems: 96.
+        let shared_key = [0x07u8; 32];
+        let iv = [0x09u8; 16];
+        let plaintext = [0xCDu8; COMPACT_XPUB_LEN];
+
+        let encrypted = encrypt_extended_public_key(&shared_key, &iv, &plaintext);
+        assert_eq!(
+            encrypted.len(),
+            96,
+            "69-byte compact plaintext must encrypt to exactly 96 bytes"
+        );
+
+        let decrypted = decrypt_extended_public_key(&shared_key, &encrypted).unwrap();
+        assert_eq!(&decrypted[..], &plaintext[..]);
+    }
+
+    #[test]
+    fn test_parse_compact_xpub_rejects_wrong_length() {
+        // Lengths that are NOT 69 must be rejected — including the legacy 78/107
+        // BIP32/DIP-14 serializations and the empty case.
+        for bad_len in [0usize, 36, 68, 70, 78, 107, 128] {
+            let bytes = vec![0u8; bad_len];
+            let err = parse_compact_xpub(&bytes).expect_err("non-69-byte input must be rejected");
+            assert!(
+                matches!(err, CryptoError::InvalidCompactXpubLength(n) if n == bad_len),
+                "expected InvalidCompactXpubLength({}), got {:?}",
+                bad_len,
+                err
+            );
+        }
     }
 
     #[test]
