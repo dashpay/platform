@@ -230,6 +230,14 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    platform_proto::GetDocumentHistoryRequest,
+    platform_proto::GetDocumentHistoryResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_document_history
+);
+
+impl_transport_request_grpc!(
     platform_proto::BroadcastStateTransitionRequest,
     platform_proto::BroadcastStateTransitionResponse,
     PlatformGrpcClient,
@@ -488,6 +496,15 @@ impl_transport_request_grpc!(
     get_shielded_pool_state
 );
 
+// rpc getShieldedNotesCount(GetShieldedNotesCountRequest) returns (GetShieldedNotesCountResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetShieldedNotesCountRequest,
+    platform_proto::GetShieldedNotesCountResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_shielded_notes_count
+);
+
 // rpc getShieldedNullifiers(GetShieldedNullifiersRequest) returns (GetShieldedNullifiersResponse);
 impl_transport_request_grpc!(
     platform_proto::GetShieldedNullifiersRequest,
@@ -495,45 +512,6 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_shielded_nullifiers
-);
-
-// rpc getRecentNullifierChanges(GetRecentNullifierChangesRequest) returns (GetRecentNullifierChangesResponse);
-impl_transport_request_grpc!(
-    platform_proto::GetRecentNullifierChangesRequest,
-    platform_proto::GetRecentNullifierChangesResponse,
-    PlatformGrpcClient,
-    RequestSettings::default(),
-    get_recent_nullifier_changes
-);
-
-// rpc getRecentCompactedNullifierChanges(GetRecentCompactedNullifierChangesRequest) returns (GetRecentCompactedNullifierChangesResponse);
-impl_transport_request_grpc!(
-    platform_proto::GetRecentCompactedNullifierChangesRequest,
-    platform_proto::GetRecentCompactedNullifierChangesResponse,
-    PlatformGrpcClient,
-    RequestSettings {
-        max_decoding_message_size: Some(16 * 1024 * 1024),
-        ..RequestSettings::default()
-    },
-    get_recent_compacted_nullifier_changes
-);
-
-// rpc getNullifiersTrunkState(GetNullifiersTrunkStateRequest) returns (GetNullifiersTrunkStateResponse);
-impl_transport_request_grpc!(
-    platform_proto::GetNullifiersTrunkStateRequest,
-    platform_proto::GetNullifiersTrunkStateResponse,
-    PlatformGrpcClient,
-    RequestSettings::default(),
-    get_nullifiers_trunk_state
-);
-
-// rpc getNullifiersBranchState(GetNullifiersBranchStateRequest) returns (GetNullifiersBranchStateResponse);
-impl_transport_request_grpc!(
-    platform_proto::GetNullifiersBranchStateRequest,
-    platform_proto::GetNullifiersBranchStateResponse,
-    PlatformGrpcClient,
-    RequestSettings::default(),
-    get_nullifiers_branch_state
 );
 
 // Link to each core gRPC request what client and method to use:

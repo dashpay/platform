@@ -25,11 +25,8 @@ pub struct DriveVerifyShieldedMethodVersions {
     pub verify_shielded_anchors: FeatureVersion,
     pub verify_most_recent_shielded_anchor: FeatureVersion,
     pub verify_shielded_encrypted_notes: FeatureVersion,
+    pub verify_shielded_notes_count: FeatureVersion,
     pub verify_shielded_nullifiers: FeatureVersion,
-    pub verify_nullifiers_trunk_query: FeatureVersion,
-    pub verify_nullifiers_branch_query: FeatureVersion,
-    pub verify_recent_nullifier_changes: FeatureVersion,
-    pub verify_compacted_nullifier_changes: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -43,6 +40,7 @@ pub struct DriveVerifyContractMethodVersions {
 pub struct DriveVerifyDocumentMethodVersions {
     pub verify_proof: FeatureVersion,
     pub verify_proof_keep_serialized: FeatureVersion,
+    pub verify_document_history: FeatureVersion,
     pub verify_start_at_document_in_proof: FeatureVersion,
 }
 

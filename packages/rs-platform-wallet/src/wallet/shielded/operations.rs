@@ -1,4 +1,4 @@
-//! Shielded transaction operations (5 transition types), multi-account.
+//! Shielded transaction operations (6 transition types), multi-account.
 //!
 //! Each operation is a free function taking the
 //! (sdk, store, persister, wallet_id, keys, account, …) tuple
@@ -10,15 +10,19 @@
 //! Spends never cross account boundaries — note selection reads
 //! only the given account's unspent notes.
 //!
-//! The five transition types are:
+//! The six transition types are:
 //! - **Shield** (Type 15): transparent platform addresses → shielded pool
 //! - **ShieldFromAssetLock** (Type 18): Core L1 asset lock → shielded pool
 //! - **Unshield** (Type 17): shielded pool → transparent platform address
 //! - **Transfer** (Type 16): shielded pool → shielded pool (private)
 //! - **Withdraw** (Type 19): shielded pool → Core L1 address
+//! - **IdentityCreateFromShieldedPool** (Type 20): shielded pool → a brand-new Platform identity
+//!   funded by a fixed denomination leaving the pool (any excess re-enters as a change note)
 
 use super::keys::OrchardKeySet;
-use super::note_selection::select_notes_with_fee;
+use super::note_selection::{
+    select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind,
+};
 use super::store::{ShieldedNote, ShieldedStore, SubwalletId};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::PlatformWalletError;
@@ -29,21 +33,41 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use dash_sdk::platform::transition::identity_create_from_shielded_pool::IdentityCreateFromShieldedPool;
 use dpp::address_funds::{
     AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, OrchardAddress, PlatformAddress,
 };
 use dpp::fee::Credits;
+use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::core_script::CoreScript;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
+use dpp::identity::{Identity, IdentityPublicKey};
+use dpp::prelude::Identifier;
 use dpp::shielded::builder::{
-    build_shield_transition, build_shielded_transfer_transition,
-    build_shielded_withdrawal_transition, build_unshield_transition, OrchardProver, SpendableNote,
+    build_identity_create_from_shielded_pool_transition, build_shield_transition,
+    build_shielded_transfer_transition, build_shielded_withdrawal_transition,
+    build_unshield_transition, OrchardProver, SpendableNote,
 };
+use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::withdrawal::Pooling;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
 use tracing::{info, trace, warn};
+
+/// Number of Orchard actions in a `Shield` (Type 15) bundle.
+///
+/// `build_shield_transition` builds an *output-only* bundle with a single
+/// output (`build_output_only_bundle`), configured as Orchard's
+/// `BundleType::Transactional { flags: SPENDS_DISABLED, bundle_required: false }`.
+/// For one output and zero spends, Orchard's `num_actions` is
+/// `max(max(0, 1), MIN_ACTIONS) == max(1, 2) == 2`, so the serialized bundle
+/// always carries exactly two actions. Consensus prices the flat shielded fee
+/// `F = compute_minimum_shielded_fee(actions.len())` from the on-wire action
+/// count, so the wallet's fee reservation must use the same count.
+const SHIELD_NUM_ACTIONS: usize = 2;
 
 /// Try to extract a structured `AddressesNotEnoughFundsError` from
 /// a broadcast error so the shield path can format a diagnostic
@@ -143,6 +167,37 @@ fn queue_shielded_changeset(
 // Shield: platform addresses -> shielded pool (Type 15)
 // -------------------------------------------------------------------------
 
+/// Add the flat shielded fee `fee` to the smallest-key input's claim.
+///
+/// The Shield fee strategy is `DeductFromInput(0)`, where "input 0" is the
+/// BTreeMap-smallest address. Consensus requires the input claims to sum to at
+/// least `amount + fee`; the caller's selection claims exactly `amount` and
+/// reserves the fee headroom as *unclaimed* balance on input 0, so loading the
+/// fee onto that same input both satisfies the `Σ inputs >= amount + fee`
+/// structure check and keeps the fee-payer aligned with the fee strategy.
+///
+/// Errors if `inputs` is empty (no input to carry the fee) or the addition
+/// overflows.
+fn reserve_shield_fee_on_input_0(
+    mut inputs: BTreeMap<PlatformAddress, Credits>,
+    fee: Credits,
+) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
+    let Some((&input_0_addr, _)) = inputs.iter().next() else {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "shield has no inputs to carry the shielded fee".to_string(),
+        ));
+    };
+    let claim = inputs
+        .get_mut(&input_0_addr)
+        .expect("input_0_addr was just read from the map");
+    *claim = claim.checked_add(fee).ok_or_else(|| {
+        PlatformWalletError::ShieldedBuildError(
+            "input 0 claim + shielded fee overflows u64".to_string(),
+        )
+    })?;
+    Ok(inputs)
+}
+
 /// Shield credits from transparent platform addresses into the
 /// shielded pool, with the resulting note assigned to `account`'s
 /// default Orchard payment address derived from `keys`.
@@ -157,6 +212,27 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
     let recipient_addr = default_orchard_address(keys)?;
+
+    // Reserve the flat shielded fee `F` on top of `amount` in the input
+    // claims. Consensus `validate_structure` (rs-dpp) now rejects a Shield
+    // unless `Σ inputs >= amount + F`, where
+    // `F = compute_minimum_shielded_fee(num_actions)` and `num_actions` is
+    // the serialized output-only bundle's action count. That bundle has a
+    // single output and spends disabled, so Orchard pads it to exactly
+    // SHIELD_NUM_ACTIONS == 2 actions (see the constant doc below). We
+    // mirror `note_selection.rs`'s spend-side fee math.
+    //
+    // The fee is loaded onto the smallest-key input — the `DeductFromInput(0)`
+    // fee-strategy payer (input 0 == BTreeMap-smallest address). The caller
+    // (`shielded_shield_from_account`) reserves ~1e9 credits of unclaimed
+    // headroom on input 0 specifically for this, and `F` (~1.2e8 credits)
+    // fits well within it. Inflating the claim BEFORE the fetch lets the
+    // single hard balance check below validate the fee-inclusive claim
+    // against the on-chain balance in one shot — no second round-trip and
+    // no claim that outruns its balance check.
+    let fee = compute_minimum_shielded_fee(SHIELD_NUM_ACTIONS, sdk.version())
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+    let inputs = reserve_shield_fee_on_input_0(inputs, fee)?;
 
     // Reuse rs-sdk's canonical fetch + hard balance check rather than
     // re-implementing the fetch-and-validate dance. Unlike the old
@@ -213,6 +289,10 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
         0, // user_fee_increase
         prover,
         [0u8; 36], // empty memo
+        // Encrypt the output under the account's own OVK so the wallet's
+        // shielded sync can recover this send (recipient, value, memo)
+        // from chain data alone.
+        Some(keys.outgoing_viewing_key.clone()),
         sdk.version(),
     )
     .await
@@ -283,8 +363,16 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     let change_addr = default_orchard_address(keys)?;
     let id = SubwalletId::new(wallet_id, account);
 
+    // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
+    // bundles to 2 actions, and the builder prices the fee at spends.len().max(2). Reserving
+    // for 1 would under-fee a single-note transition and the builder would reject it locally.
+    // Unshield is carved with `compute_shielded_unshield_fee` (the base fee PLUS the flat storage
+    // cost of the single `AddBalanceToAddress` write crediting the net to the output address), so
+    // reserve against `ShieldedFeeKind::Unshield` — reserving the base fee here would under-fund the
+    // address-write cost and the builder would reject the spend (and the `fee_used == exact_fee`
+    // debug assert below would fire).
     let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 1).await?;
+        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Unshield).await?;
 
     info!(
         account,
@@ -300,7 +388,9 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
 
-        let state_transition = build_unshield_transition(
+        // The builder computes and returns the fee authoritatively; `exact_fee` (== the
+        // minimum) was already used above for note reservation.
+        let (state_transition, fee_used) = build_unshield_transition(
             spends,
             *to_address,
             amount,
@@ -310,10 +400,15 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             anchor,
             prover,
             [0u8; 36],
-            Some(exact_fee),
             sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        // The builder's fee and the wallet's reserved `exact_fee` both come from
+        // compute_shielded_unshield_fee with the same action count; lock that they agree.
+        debug_assert_eq!(
+            fee_used, exact_fee,
+            "builder fee must match the reserved unshield fee"
+        );
 
         trace!("Unshield: state transition built, broadcasting...");
         state_transition
@@ -329,13 +424,14 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             // Broadcast already succeeded; spent-state bookkeeping is
             // best-effort. Surfacing a local write failure as a send
             // failure here would invite duplicate retries — the next
-            // nullifier sync reconciles any drift.
+            // note scan reconciles any drift (scan-based spend
+            // detection re-marks the note from its on-chain nullifier).
             //
             // No double-spend follows from this downgrade: the
             // authoritative no-reuse guarantee is the on-chain nullifier
-            // set, not this local mark. Worst case, before the next
-            // nullifier sync runs the note is re-selected and a second
-            // spend is built + proven, then rejected at broadcast with a
+            // set, not this local mark. Worst case, before the next note
+            // scan runs the note is re-selected and a second spend is
+            // built + proven, then rejected at broadcast with a
             // nullifier-already-used error — wasted ~30 s proof, never
             // fund loss. (`pending_nullifiers` is in-memory only, so it
             // does not protect across a process restart in this window;
@@ -375,14 +471,17 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     account: u32,
     to_address: &PaymentAddress,
     amount: u64,
+    memo: [u8; 36],
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
     let recipient_addr = payment_address_to_orchard(to_address)?;
     let change_addr = default_orchard_address(keys)?;
     let id = SubwalletId::new(wallet_id, account);
 
+    // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so reserve
+    // against `ShieldedFeeKind::Base`.
     let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 2).await?;
+        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Base).await?;
 
     info!(
         account,
@@ -396,7 +495,9 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
 
-        let state_transition = build_shielded_transfer_transition(
+        // The builder computes and returns the fee authoritatively; `exact_fee` (== the
+        // minimum) was already used above for note reservation.
+        let (state_transition, fee_used) = build_shielded_transfer_transition(
             spends,
             &recipient_addr,
             amount,
@@ -405,11 +506,16 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             &keys.spend_auth_key,
             anchor,
             prover,
-            [0u8; 36],
-            Some(exact_fee),
+            memo,
             sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        // The builder's fee and the wallet's reserved `exact_fee` both come from
+        // compute_minimum_shielded_fee with the same action count; lock that they agree.
+        debug_assert_eq!(
+            fee_used, exact_fee,
+            "builder fee must match the reserved minimum fee"
+        );
 
         trace!("Shielded transfer: state transition built, broadcasting...");
         state_transition
@@ -468,8 +574,16 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     let id = SubwalletId::new(wallet_id, account);
     let output_script = CoreScript::from_bytes(to_address.script_pubkey().to_bytes());
 
+    // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
+    // bundles to 2 actions, and the builder prices the fee at spends.len().max(2). Reserving
+    // for 1 would under-fee a single-note transition and the builder would reject it locally.
+    // ShieldedWithdrawal is carved with `compute_shielded_withdrawal_fee` (the base fee PLUS the
+    // flat Core withdrawal-document storage cost), so reserve against
+    // `ShieldedFeeKind::Withdrawal` — reserving the base fee here would under-fund the document
+    // cost and the builder would reject the spend (and the `fee_used == exact_fee` debug assert
+    // below would fire).
     let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 1).await?;
+        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Withdrawal).await?;
 
     info!(
         account,
@@ -483,22 +597,30 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
 
-        let state_transition = build_shielded_withdrawal_transition(
+        // The builder computes and returns the fee authoritatively; `exact_fee` (== the
+        // minimum) was already used above for note reservation.
+        let (state_transition, fee_used) = build_shielded_withdrawal_transition(
             spends,
             amount,
             output_script,
             core_fee_per_byte,
-            Pooling::Standard,
+            // Consensus pins shielded-withdrawal pooling to Never (validate_structure).
+            Pooling::Never,
             &change_addr,
             &keys.full_viewing_key,
             &keys.spend_auth_key,
             anchor,
             prover,
             [0u8; 36],
-            Some(exact_fee),
             sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        // The builder's fee and the wallet's reserved `exact_fee` both come from
+        // compute_shielded_withdrawal_fee with the same action count; lock that they agree.
+        debug_assert_eq!(
+            fee_used, exact_fee,
+            "builder fee must match the reserved withdrawal fee"
+        );
 
         trace!("Shielded withdrawal: state transition built, broadcasting...");
         state_transition
@@ -527,6 +649,202 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
                 "Shielded withdrawal broadcast succeeded"
             );
             Ok(())
+        }
+        Err(e) => {
+            cancel_pending(store, id, &selected_notes).await;
+            Err(e)
+        }
+    }
+}
+
+// -------------------------------------------------------------------------
+// IdentityCreateFromShieldedPool: shielded pool -> brand-new identity (Type 20)
+// -------------------------------------------------------------------------
+
+/// Create a brand-new Platform identity funded directly from `account`'s shielded notes.
+///
+/// Spends notes covering `denomination` (a member of the versioned exit-denomination set); the whole
+/// denomination leaves the pool (`value_balance == denomination` EXACTLY, the ShieldedTransfer
+/// exact-equality model) and the metered fee is taken FROM the denomination at execution, so the new
+/// identity is created holding `denomination - total_fee`. Any spent value above the denomination
+/// re-enters the pool as a single change note to `account`'s default Orchard address.
+///
+/// `public_keys` is the new identity's key set (each entry is the `IdentityPublicKey` and its
+/// `IdentityPublicKeyInCreation` form); `identity_signer` produces each key's proof-of-possession
+/// signature over the transition's signable bytes. Authorization is 100% the Orchard proof +
+/// per-action spend-auth signatures + binding signature (which commits the derived id + denomination
+/// + full key set) + the per-key PoP — there is NO platform identity signature.
+///
+/// Returns the new identity's id (`double_sha256(sorted nullifiers)`, derived deterministically
+/// from the spent notes' nullifiers) together with the proof-verified [`Identity`] returned by the
+/// SDK broadcast. The caller registers that `Identity` in its local `IdentityManager` so the host
+/// persister emits the row, mirroring the address-funded registration path.
+#[allow(clippy::too_many_arguments)]
+pub async fn identity_create_from_shielded_pool<S, P, IS>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>,
+    denomination: u64,
+    send_to_address_on_creation_failure: PlatformAddress,
+    identity_signer: &IS,
+    prover: &P,
+) -> Result<(Identifier, Identity), PlatformWalletError>
+where
+    S: ShieldedStore,
+    P: OrchardProver,
+    IS: Signer<IdentityPublicKey>,
+{
+    if public_keys.is_empty() {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "identity-create-from-shielded-pool requires at least one public key".to_string(),
+        ));
+    }
+    let change_addr = default_orchard_address(keys)?;
+    let id = SubwalletId::new(wallet_id, account);
+    let num_keys = public_keys.len();
+
+    // Exact-equality model: reserve notes covering the denomination itself (NOT denomination + fee
+    // — the fee is metered FROM the denomination at execution). The reservation also gates on
+    // `denomination > predicted_fee` so the new identity can't be created with a non-positive
+    // balance. Orchard's BundleType::DEFAULT pads single-spend bundles to a 2-action floor.
+    let (selected_notes, total_input, predicted_fee) =
+        reserve_unspent_notes_for_denomination(sdk, store, id, denomination, 2, num_keys).await?;
+
+    info!(
+        account,
+        denomination,
+        predicted_fee,
+        inputs = selected_notes.len(),
+        total_input,
+        keys = num_keys,
+        "IdentityCreateFromShieldedPool"
+    );
+
+    // Snapshot the submitted `IdentityPublicKey` halves keyed by their `KeyID` BEFORE the build
+    // consumes `public_keys`. This is the canonical record of the key set the transition commits to
+    // (the binding signature covers it), so it's the defensive fallback if the proof-verified
+    // identity comes back with an empty `public_keys()` map — same pattern register_from_addresses
+    // uses for its address-funded `put_*` stub.
+    let submitted_public_keys: BTreeMap<u32, IdentityPublicKey> = public_keys
+        .iter()
+        .map(|(key, _)| (key.id(), key.clone()))
+        .collect();
+
+    // From here on every error path must release the reservation taken above.
+    let result = async {
+        let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
+
+        let build = build_identity_create_from_shielded_pool_transition(
+            public_keys,
+            denomination,
+            send_to_address_on_creation_failure,
+            spends,
+            &change_addr,
+            &keys.full_viewing_key,
+            &keys.spend_auth_key,
+            anchor,
+            prover,
+            identity_signer,
+            [0u8; 36],
+            sdk.version(),
+        )
+        .await
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+
+        let identity_id = build.identity_id;
+
+        trace!("IdentityCreateFromShieldedPool: built, broadcasting via SDK helper...");
+        // Broadcast through the SDK helper, which re-assembles the transition from the PoP-signed
+        // keys + bundle params (preserving the per-key signatures) and waits for proven execution.
+        // It returns a `VerifiedIdentityWithShieldedNullifiers` proof result carrying the
+        // proof-verified `Identity` (and the consumed nullifiers).
+        let proof_result = sdk
+            .identity_create_from_shielded_pool(
+                build.public_keys,
+                denomination,
+                send_to_address_on_creation_failure,
+                build.bundle,
+                None,
+            )
+            .await
+            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
+
+        // Pull the verified `Identity` out of the proof result. The expected variant is
+        // `VerifiedIdentityWithShieldedNullifiers`; if drive-abci ever returns a different one the
+        // broadcast still SUCCEEDED, so we don't turn it into an error — we synthesize the identity
+        // from the derived id + submitted keys (the binding signature committed both) and warn, so
+        // the local row is still created.
+        let identity = match proof_result {
+            StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers(
+                mut identity,
+                _nullifiers,
+            ) => {
+                // The proof-verified id is authoritative: it's recomputed from the proven nullifier
+                // set, while `identity_id` was derived pre-broadcast. They should match (the derived
+                // id is committed in the sighash), but trust the verified one.
+                if identity.id() != identity_id {
+                    warn!(
+                        derived_id = %identity_id,
+                        verified_id = %identity.id(),
+                        "IdentityCreateFromShieldedPool: derived id differs from proof-verified id; \
+                         using the proof-verified id"
+                    );
+                }
+                // Defensive: a proof result can hand back an identity whose `public_keys` map is
+                // empty. Fill it from the submitted set so downstream auth-key checks see the keys
+                // immediately without waiting for the next identity-fetch round (the transition
+                // committed exactly these keys, so id reproducibility is preserved).
+                if identity.public_keys().is_empty() {
+                    identity.set_public_keys(submitted_public_keys);
+                }
+                identity
+            }
+            other => {
+                warn!(
+                    derived_id = %identity_id,
+                    result = %other,
+                    "IdentityCreateFromShieldedPool: unexpected proof-result variant; synthesizing \
+                     the identity from the derived id + submitted keys so the local row still lands"
+                );
+                Identity::new_with_id_and_keys(
+                    identity_id,
+                    submitted_public_keys,
+                    sdk.version(),
+                )
+                .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?
+            }
+        };
+
+        Ok::<(Identifier, Identity), PlatformWalletError>((identity.id(), identity))
+    }
+    .await;
+
+    match result {
+        Ok((identity_id, identity)) => {
+            // Best-effort post-broadcast bookkeeping (see `unshield`): mark the spent notes so the
+            // local balance reflects the exit immediately; any drift heals on the next nullifier
+            // sync. The on-chain nullifier set — not this local mark — is the authoritative
+            // no-reuse guarantee.
+            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
+            {
+                warn!(
+                    account,
+                    error = %e,
+                    "IdentityCreateFromShieldedPool broadcast succeeded but local spent-state \
+                     update failed; will heal on next sync"
+                );
+            }
+            info!(
+                account,
+                denomination,
+                identity_id = %identity_id,
+                "IdentityCreateFromShieldedPool broadcast succeeded"
+            );
+            Ok((identity_id, identity))
         }
         Err(e) => {
             cancel_pending(store, id, &selected_notes).await;
@@ -631,9 +949,10 @@ async fn extract_spends_and_anchor<S: ShieldedStore>(
 /// Mark the selected notes as spent for `id`. Also queues a
 /// shielded changeset on the persister so the spent flag reaches
 /// durable storage immediately rather than waiting for the next
-/// nullifier-sync pass to rediscover the spend. Also drops any
-/// matching pending reservation so the confirmed-spent state
-/// and the in-flight-spend state can't disagree.
+/// note scan to rediscover the spend (scan-based spend detection).
+/// Also drops any matching pending reservation so the
+/// confirmed-spent state and the in-flight-spend state can't
+/// disagree.
 async fn mark_notes_spent<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
@@ -679,19 +998,54 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
     id: SubwalletId,
     amount: u64,
     outputs: usize,
+    fee_kind: ShieldedFeeKind,
 ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
     let mut store = store.write().await;
     let unspent = store
         .get_unspent_notes(id)
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
     let (selected, total_input, exact_fee) =
-        select_notes_with_fee(&unspent, amount, outputs, sdk.version())?.into_owned();
+        select_notes_with_fee(&unspent, amount, outputs, fee_kind, sdk.version())?.into_owned();
     for note in &selected {
         store
             .mark_pending(id, &note.nullifier)
             .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
     }
     Ok((selected, total_input, exact_fee))
+}
+
+/// Exact-equality sibling of [`reserve_unspent_notes`] for
+/// `IdentityCreateFromShieldedPool`: select + reserve notes covering exactly `denomination`
+/// (the fee is metered FROM the denomination, not added to the target) in one write-locked
+/// critical section, gating on `denomination > predicted_fee` via
+/// [`select_notes_for_denomination`]. Returns the selected notes, total input value, and the
+/// predicted fee. Callers must pair this with [`finalize_pending`] / [`cancel_pending`].
+async fn reserve_unspent_notes_for_denomination<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    denomination: u64,
+    min_actions: usize,
+    num_keys: usize,
+) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
+    let mut store = store.write().await;
+    let unspent = store
+        .get_unspent_notes(id)
+        .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+    let (selected, total_input, predicted_fee) = select_notes_for_denomination(
+        &unspent,
+        denomination,
+        min_actions,
+        num_keys,
+        sdk.version(),
+    )?
+    .into_owned();
+    for note in &selected {
+        store
+            .mark_pending(id, &note.nullifier)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+    }
+    Ok((selected, total_input, predicted_fee))
 }
 
 /// Promote a successful broadcast: mark the notes spent (which
@@ -721,7 +1075,7 @@ async fn cancel_pending<S: ShieldedStore>(
         if let Err(e) = store.clear_pending(id, &note.nullifier) {
             tracing::warn!(
                 error = %e,
-                "cancel_pending: clear_pending failed; the next nullifier sync will reconcile"
+                "cancel_pending: clear_pending failed; the next note scan will reconcile"
             );
         }
     }
@@ -778,4 +1132,49 @@ fn deserialize_note(data: &[u8]) -> Option<grovedb_commitment_tree::Note> {
     let rseed = RandomSeed::from_bytes(rseed_bytes, &rho).into_option()?;
 
     Note::from_parts(recipient, value, rho, rseed).into_option()
+}
+
+#[cfg(test)]
+mod reserve_shield_fee_tests {
+    use super::*;
+
+    fn addr(b: u8) -> PlatformAddress {
+        PlatformAddress::P2pkh([b; 20])
+    }
+
+    #[test]
+    fn loads_fee_onto_smallest_key_input() {
+        // Input 0 is the BTreeMap-smallest address (addr(1)); the fee must
+        // land there, matching the `DeductFromInput(0)` fee strategy.
+        let mut inputs = BTreeMap::new();
+        inputs.insert(addr(2), 5_000_000u64);
+        inputs.insert(addr(1), 1_000_000u64);
+
+        let fee = 123_097_600u64;
+        let out = reserve_shield_fee_on_input_0(inputs, fee).expect("non-empty inputs");
+
+        assert_eq!(out.get(&addr(1)), Some(&(1_000_000 + fee)));
+        assert_eq!(
+            out.get(&addr(2)),
+            Some(&5_000_000),
+            "other inputs untouched"
+        );
+        // Σ claims grew by exactly `fee`, satisfying `Σ inputs >= amount + F`.
+        assert_eq!(out.values().sum::<u64>(), 6_000_000 + fee);
+    }
+
+    #[test]
+    fn errors_on_empty_inputs() {
+        let inputs: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+        let err = reserve_shield_fee_on_input_0(inputs, 1).expect_err("empty must reject");
+        assert!(matches!(err, PlatformWalletError::ShieldedBuildError(_)));
+    }
+
+    #[test]
+    fn errors_on_claim_plus_fee_overflow() {
+        let mut inputs = BTreeMap::new();
+        inputs.insert(addr(1), u64::MAX);
+        let err = reserve_shield_fee_on_input_0(inputs, 1).expect_err("overflow must reject");
+        assert!(matches!(err, PlatformWalletError::ShieldedBuildError(_)));
+    }
 }

@@ -336,6 +336,11 @@ impl Fetch for drive_proof_verifier::types::DataContractHistory {
     type Request = platform_proto::GetDataContractHistoryRequest;
 }
 
+impl Fetch for drive_proof_verifier::types::DocumentHistory {
+    type Query = platform_proto::GetDocumentHistoryRequest;
+    type Request = platform_proto::GetDocumentHistoryRequest;
+}
+
 impl Fetch for ExtendedEpochInfo {
     type Query = platform_proto::GetEpochsInfoRequest;
     type Request = platform_proto::GetEpochsInfoRequest;
@@ -387,6 +392,11 @@ impl Fetch for drive_proof_verifier::types::ShieldedPoolState {
     type Request = platform_proto::GetShieldedPoolStateRequest;
 }
 
+impl Fetch for drive_proof_verifier::types::ShieldedNotesCount {
+    type Query = platform_proto::GetShieldedNotesCountRequest;
+    type Request = platform_proto::GetShieldedNotesCountRequest;
+}
+
 impl Fetch for drive_proof_verifier::types::ShieldedAnchors {
     type Query = platform_proto::GetShieldedAnchorsRequest;
     type Request = platform_proto::GetShieldedAnchorsRequest;
@@ -405,19 +415,4 @@ impl Fetch for drive_proof_verifier::types::ShieldedEncryptedNotes {
 impl Fetch for drive_proof_verifier::types::ShieldedNullifierStatuses {
     type Query = platform_proto::GetShieldedNullifiersRequest;
     type Request = platform_proto::GetShieldedNullifiersRequest;
-}
-
-impl Fetch for drive_proof_verifier::types::NullifiersTrunkState {
-    type Query = platform_proto::GetNullifiersTrunkStateRequest;
-    type Request = platform_proto::GetNullifiersTrunkStateRequest;
-}
-
-impl Fetch for drive_proof_verifier::types::RecentNullifierChanges {
-    type Query = platform_proto::GetRecentNullifierChangesRequest;
-    type Request = platform_proto::GetRecentNullifierChangesRequest;
-}
-
-impl Fetch for drive_proof_verifier::types::RecentCompactedNullifierChanges {
-    type Query = platform_proto::GetRecentCompactedNullifierChangesRequest;
-    type Request = platform_proto::GetRecentCompactedNullifierChangesRequest;
 }

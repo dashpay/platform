@@ -20,6 +20,7 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorUtf8Conversion = 12
     case errorArithmeticOverflow = 13
     case errorNoSelectableInputs = 14
+    case errorWalletAlreadyExists = 15
     case errorConcurrentSpendConflict = 31
     case notFound = 98
     case errorUnknown = 99
@@ -56,6 +57,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorArithmeticOverflow
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_NO_SELECTABLE_INPUTS:
             self = .errorNoSelectableInputs
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_ALREADY_EXISTS:
+            self = .errorWalletAlreadyExists
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_CONCURRENT_SPEND_CONFLICT:
             self = .errorConcurrentSpendConflict
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
@@ -142,6 +145,7 @@ public enum PlatformWalletError: LocalizedError {
     /// the underlying cause (including the race-loser breadcrumb on
     /// `NoSpendableInputs`).
     case noSelectableInputs(String)
+    case walletAlreadyExists(String)
     /// Transaction builder picked an outpoint another concurrent
     /// build had already selected. Retry — the underlying reservation
     /// will have cleared. Mirrors the Rust
@@ -160,7 +164,7 @@ public enum PlatformWalletError: LocalizedError {
              .identityNotFound(let m), .contactNotFound(let m), .utf8Conversion(let m),
              .serialization(let m), .deserialization(let m), .memoryAllocation(let m),
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
-             .concurrentSpendConflict(let m),
+             .walletAlreadyExists(let m), .concurrentSpendConflict(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -187,6 +191,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorUtf8Conversion:    self = .utf8Conversion(detail)
         case .errorArithmeticOverflow: self = .arithmeticOverflow(detail)
         case .errorNoSelectableInputs: self = .noSelectableInputs(detail)
+        case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorConcurrentSpendConflict:
             self = .concurrentSpendConflict(detail)
         case .notFound:               self = .notFound(detail)

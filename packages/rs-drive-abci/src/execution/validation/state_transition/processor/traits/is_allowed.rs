@@ -36,7 +36,8 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => Ok(true),
+            | StateTransition::ShieldedWithdrawal(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_) => Ok(true),
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::IdentityCreate(_)
@@ -78,7 +79,8 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => {
+            | StateTransition::ShieldedWithdrawal(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_) => {
                 if platform_version.protocol_version >= SHIELDED_POOL_INITIAL_PROTOCOL_VERSION {
                     Ok(ConsensusValidationResult::new())
                 } else {
@@ -211,6 +213,7 @@ mod tests {
                 anchor: [0u8; 32],
                 proof: vec![],
                 binding_signature: [0u8; 64],
+                surplus_output: None,
                 signature: Default::default(),
             },
         ))
@@ -229,6 +232,27 @@ mod tests {
                 output_script: Default::default(),
             },
         ))
+    }
+
+    fn make_identity_create_from_shielded_pool_transition() -> StateTransition {
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+        StateTransition::IdentityCreateFromShieldedPool(
+            IdentityCreateFromShieldedPoolTransition::V0(
+                IdentityCreateFromShieldedPoolTransitionV0 {
+                    public_keys: vec![],
+                    denomination: 0,
+                    actions: vec![],
+                    anchor: [0u8; 32],
+                    proof: vec![],
+                    binding_signature: [0u8; 64],
+                    send_to_address_on_creation_failure: dpp::address_funds::PlatformAddress::P2pkh(
+                        [0u8; 20],
+                    ),
+                    identity_id: Default::default(),
+                },
+            ),
+        )
     }
 
     /// Returns all state transitions grouped by expected `has_is_allowed_validation` result.
@@ -264,6 +288,7 @@ mod tests {
             make_unshield_transition(),
             make_shield_from_asset_lock_transition(),
             make_shielded_withdrawal_transition(),
+            make_identity_create_from_shielded_pool_transition(),
         ]
     }
 

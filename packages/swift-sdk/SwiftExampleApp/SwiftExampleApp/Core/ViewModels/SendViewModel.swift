@@ -79,6 +79,10 @@ class SendViewModel: ObservableObject {
         didSet { detectAddressType() }
     }
     @Published var amountString = ""
+    /// Optional UTF-8 memo for a shielded → shielded transfer. Only
+    /// surfaced when the recipient is an Orchard address; Rust caps it
+    /// at 32 UTF-8 bytes and does the 36-byte encoding.
+    @Published var memoText = ""
     @Published var detectedAddressType: DashAddressType = .unknown
     @Published var selectedSource: FundSource = .core
     @Published var detectedFlow: SendFlow?
@@ -116,8 +120,30 @@ class SendViewModel: ObservableObject {
     /// (Core uses duffs; Platform / shielded use credits).
     var amountDuffs: UInt64? { amount }
 
+    /// Maximum UTF-8 byte length of a shielded memo (the 32-byte
+    /// payload of the 36-byte `DashMemo`; the other 4 bytes are the
+    /// kind tag). Mirrors `dpp::shielded::MEMO_PAYLOAD_SIZE`.
+    static let memoByteLimit = 32
+
+    /// UTF-8 byte length of the trimmed memo — what Rust validates
+    /// against the 32-byte limit, not the character count.
+    var memoByteCount: Int {
+        memoText.trimmingCharacters(in: .whitespacesAndNewlines).utf8.count
+    }
+
+    /// Whether the memo exceeds the 32-byte payload limit. Blocks Send.
+    var isMemoOverLimit: Bool {
+        memoByteCount > Self.memoByteLimit
+    }
+
     var canSend: Bool {
         guard let flow = detectedFlow, !isSending else { return false }
+        // An over-limit memo would be rejected by Rust; block here so
+        // the user sees the red counter rather than a backend error.
+        // Only the shielded → shielded path carries a memo, so a stale
+        // over-limit memo must not block the other flows (where the
+        // field is hidden and the text is ignored).
+        if flow == .shieldedToShielded && isMemoOverLimit { return false }
         // Gate on the scaled integer for the *active* flow's unit, not
         // just non-nil. A sub-unit amount (e.g. "0.000000001" in DASH)
         // parses to 0 once scaled; sending that reaches the backend as a
@@ -347,11 +373,13 @@ class SendViewModel: ObservableObject {
                     error = "Recipient is not a shielded address"
                     return
                 }
+                let trimmedMemo = memoText.trimmingCharacters(in: .whitespacesAndNewlines)
                 try await walletManager.shieldedTransfer(
                     walletId: wallet.walletId,
                     account: 0,
                     recipientRaw43: recipientRaw,
-                    amount: amountCredits
+                    amount: amountCredits,
+                    memo: trimmedMemo.isEmpty ? nil : trimmedMemo
                 )
                 successMessage = "Shielded transfer complete"
 

@@ -35,6 +35,8 @@ service Platform {
       returns (GetDataContractHistoryResponse);
   rpc getDataContracts(GetDataContractsRequest)
       returns (GetDataContractsResponse);
+  rpc getDocumentHistory(GetDocumentHistoryRequest)
+      returns (GetDocumentHistoryResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
   rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)
       returns (GetIdentityByPublicKeyHashResponse);
@@ -126,16 +128,10 @@ service Platform {
       returns (GetMostRecentShieldedAnchorResponse);
   rpc getShieldedPoolState(GetShieldedPoolStateRequest)
       returns (GetShieldedPoolStateResponse);
+  rpc getShieldedNotesCount(GetShieldedNotesCountRequest)
+      returns (GetShieldedNotesCountResponse);
   rpc getShieldedNullifiers(GetShieldedNullifiersRequest)
       returns (GetShieldedNullifiersResponse);
-  rpc getNullifiersTrunkState(GetNullifiersTrunkStateRequest)
-      returns (GetNullifiersTrunkStateResponse);
-  rpc getNullifiersBranchState(GetNullifiersBranchStateRequest)
-      returns (GetNullifiersBranchStateResponse);
-  rpc getRecentNullifierChanges(GetRecentNullifierChangesRequest)
-      returns (GetRecentNullifierChangesResponse);
-  rpc getRecentCompactedNullifierChanges(GetRecentCompactedNullifierChangesRequest)
-      returns (GetRecentCompactedNullifierChangesResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -1298,6 +1294,49 @@ message GetDocumentsResponse {
     GetDocumentsResponseV0 v0 = 1;
     GetDocumentsResponseV1 v1 = 2;
   }
+}
+
+message GetDocumentHistoryRequest {
+  message GetDocumentHistoryRequestV0 {
+    bytes data_contract_id = 1; // The ID of the data contract
+    string document_type_name = 2; // The document type name
+    bytes document_id = 3; // The document ID
+    google.protobuf.UInt32Value limit =
+        4; // The maximum number of history entries to return
+    google.protobuf.UInt32Value offset =
+        5; // The offset for pagination through the document history
+    uint64 start_at_ms = 6 [
+      jstype = JS_STRING
+    ];              // Only return results after this time in milliseconds
+    bool prove = 7; // Flag to request a proof as the response
+  }
+  oneof version { GetDocumentHistoryRequestV0 v0 = 1; }
+}
+
+message GetDocumentHistoryResponse {
+  message GetDocumentHistoryResponseV0 {
+    // Represents a single entry in a document's history
+    message DocumentHistoryEntry {
+      uint64 date = 1 [ jstype = JS_STRING ]; // The date of the history entry
+      bytes value = 2; // The value of the document at this point in history
+    }
+
+    // Collection of document history entries
+    message DocumentHistory {
+      repeated DocumentHistoryEntry document_entries =
+          1; // List of history entries
+    }
+
+    oneof result {
+      DocumentHistory document_history =
+          1; // The actual history of the document
+      Proof proof =
+          2; // Cryptographic proof of the document history, if requested
+    }
+
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetDocumentHistoryResponseV0 v0 = 1; }
 }
 
 message GetIdentityByPublicKeyHashRequest {
@@ -2857,6 +2896,7 @@ message GetShieldedEncryptedNotesResponse {
       bytes nullifier = 1;      // 32-byte nullifier (needed for Rho derivation in trial decryption)
       bytes cmx = 2;            // 32-byte extracted note commitment
       bytes encrypted_note = 3; // encrypted note payload (epk + enc_ciphertext + out_ciphertext)
+      bytes cv_net = 4;         // 32-byte value commitment (stored unencrypted, for OVK recovery of outgoing notes)
     }
     message EncryptedNotes {
       repeated EncryptedNote entries = 1;
@@ -2927,6 +2967,31 @@ message GetShieldedPoolStateResponse {
   oneof version { GetShieldedPoolStateResponseV0 v0 = 1; }
 }
 
+// Count of leaves in the shielded notes commitment tree.
+// Used by wallets at the start of a shielded sync to seed a
+// determinate progress-bar denominator. The count IS bound by the
+// Merk value hash: it is the first field (`total_count`) of the
+// serialized `CommitmentTree` element whose bytes are hashed into the
+// app/root hash, so it is provable via a PathQuery proof of that
+// element (set `prove = true`).
+message GetShieldedNotesCountRequest {
+  message GetShieldedNotesCountRequestV0 {
+    bool prove = 1;
+  }
+  oneof version { GetShieldedNotesCountRequestV0 v0 = 1; }
+}
+
+message GetShieldedNotesCountResponse {
+  message GetShieldedNotesCountResponseV0 {
+    oneof result {
+      uint64 total_notes_count = 1 [jstype = JS_STRING];
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetShieldedNotesCountResponseV0 v0 = 1; }
+}
+
 message GetShieldedNullifiersRequest {
   message GetShieldedNullifiersRequestV0 {
     repeated bytes nullifiers = 1;
@@ -2951,99 +3016,4 @@ message GetShieldedNullifiersResponse {
     ResponseMetadata metadata = 3;
   }
   oneof version { GetShieldedNullifiersResponseV0 v0 = 1; }
-}
-
-message GetNullifiersTrunkStateRequest {
-  message GetNullifiersTrunkStateRequestV0 {
-    uint32 pool_type = 1;           // ShieldedPoolType enum value (0=credit, 1=main token, 2=individual token)
-    bytes pool_identifier = 2;      // 32-byte Identifier, required for pool_type=2
-  }
-  oneof version { GetNullifiersTrunkStateRequestV0 v0 = 1; }
-}
-
-message GetNullifiersTrunkStateResponse {
-  message GetNullifiersTrunkStateResponseV0 {
-    Proof proof = 2;
-    ResponseMetadata metadata = 3;
-  }
-  oneof version { GetNullifiersTrunkStateResponseV0 v0 = 1; }
-}
-
-message GetNullifiersBranchStateRequest {
-  message GetNullifiersBranchStateRequestV0 {
-    uint32 pool_type = 1;
-    bytes pool_identifier = 2;
-    bytes key = 3;
-    uint32 depth = 4;
-    uint64 checkpoint_height = 5;
-  }
-  oneof version { GetNullifiersBranchStateRequestV0 v0 = 1; }
-}
-
-message GetNullifiersBranchStateResponse {
-  message GetNullifiersBranchStateResponseV0 {
-    bytes merk_proof = 2;
-  }
-  oneof version { GetNullifiersBranchStateResponseV0 v0 = 1; }
-}
-
-// --- Recent Nullifier Changes ---
-
-message BlockNullifierChanges {
-  uint64 block_height = 1 [ jstype = JS_STRING ];
-  repeated bytes nullifiers = 2;  // Each is 32 bytes
-}
-
-message NullifierUpdateEntries {
-  repeated BlockNullifierChanges block_changes = 1;
-}
-
-message GetRecentNullifierChangesRequest {
-  message GetRecentNullifierChangesRequestV0 {
-    uint64 start_height = 1 [ jstype = JS_STRING ];
-    bool prove = 2;
-  }
-  oneof version { GetRecentNullifierChangesRequestV0 v0 = 1; }
-}
-
-message GetRecentNullifierChangesResponse {
-  message GetRecentNullifierChangesResponseV0 {
-    oneof result {
-      NullifierUpdateEntries nullifier_update_entries = 1;
-      Proof proof = 2;
-    }
-    ResponseMetadata metadata = 3;
-  }
-  oneof version { GetRecentNullifierChangesResponseV0 v0 = 1; }
-}
-
-// --- Compacted Nullifier Changes ---
-
-message CompactedBlockNullifierChanges {
-  uint64 start_block_height = 1 [ jstype = JS_STRING ];
-  uint64 end_block_height = 2 [ jstype = JS_STRING ];
-  repeated bytes nullifiers = 3;  // Each is 32 bytes
-}
-
-message CompactedNullifierUpdateEntries {
-  repeated CompactedBlockNullifierChanges compacted_block_changes = 1;
-}
-
-message GetRecentCompactedNullifierChangesRequest {
-  message GetRecentCompactedNullifierChangesRequestV0 {
-    uint64 start_block_height = 1 [ jstype = JS_STRING ];
-    bool prove = 2;
-  }
-  oneof version { GetRecentCompactedNullifierChangesRequestV0 v0 = 1; }
-}
-
-message GetRecentCompactedNullifierChangesResponse {
-  message GetRecentCompactedNullifierChangesResponseV0 {
-    oneof result {
-      CompactedNullifierUpdateEntries compacted_nullifier_update_entries = 1;
-      Proof proof = 2;
-    }
-    ResponseMetadata metadata = 3;
-  }
-  oneof version { GetRecentCompactedNullifierChangesResponseV0 v0 = 1; }
 }

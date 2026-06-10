@@ -27,6 +27,11 @@ use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver
 /// - `user_fee_increase` - Fee multiplier (0 = 100% base fee)
 /// - `prover` - Orchard prover (holds the Halo 2 proving key; cache with `OnceLock` — ~30s to build)
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
+/// - `sender_ovk` - The sender's outgoing viewing key (External scope). With `Some`, the
+///   recipient output's `out_ciphertext` is encrypted under it so the sender can later
+///   recover the sent note (recipient, value, memo) from chain data via OVK recovery —
+///   the Zcash outgoing-transaction-history convention. With `None`, a random outgoing
+///   cipher key is used and the sent note is unrecoverable by anyone.
 /// - `platform_version` - Protocol version
 #[allow(clippy::too_many_arguments)]
 pub async fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProver>(
@@ -38,6 +43,7 @@ pub async fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProve
     user_fee_increase: UserFeeIncrease,
     prover: &P,
     memo: [u8; 36],
+    sender_ovk: Option<grovedb_commitment_tree::OutgoingViewingKey>,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
     if fee_strategy.is_empty() {
@@ -46,7 +52,7 @@ pub async fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProve
         ));
     }
 
-    let bundle = build_output_only_bundle(recipient, shield_amount, memo, prover)?;
+    let bundle = build_output_only_bundle(recipient, shield_amount, memo, sender_ovk, prover)?;
     let sb = serialize_authorized_bundle(&bundle);
 
     ShieldTransition::try_from_bundle_with_signer(
@@ -115,6 +121,7 @@ mod tests {
             0,
             &TestProver,
             [0u8; 36],
+            None,
             platform_version,
         )
         .await;
@@ -148,6 +155,7 @@ mod tests {
             0,
             &TestProver,
             [0u8; 36],
+            None,
             platform_version,
         )
         .await;
@@ -186,6 +194,7 @@ mod tests {
             0,
             &TestProver,
             [0u8; 36],
+            None,
             platform_version,
         )
         .await;
@@ -217,6 +226,7 @@ mod tests {
             42, // non-zero fee increase
             &TestProver,
             [9u8; 36],
+            None,
             platform_version,
         )
         .await;
@@ -252,6 +262,7 @@ mod tests {
             0,
             &TestProver,
             memo,
+            None,
             platform_version,
         )
         .await;

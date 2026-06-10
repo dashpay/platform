@@ -30,6 +30,29 @@ describe('Document State Transitions', function describeDocumentStateTransitions
     const balances = await client.getIdentityTokenBalances(identityId, [tokenId]);
     return balances.get(tokenId);
   };
+  // Token balance proofs are served by nodes whose view can briefly lag the block
+  // that committed a state transition, so poll until the balance converges instead
+  // of asserting on a single immediate (and racy) read.
+  const expectTokenBalance = async (
+    identityId: string,
+    tokenId: string,
+    expected: bigint,
+    { timeoutMs = 30000, intervalMs = 500 } = {},
+  ) => {
+    const startedAt = Date.now();
+    const deadline = startedAt + timeoutMs;
+    let actual = await getSingleTokenBalance(identityId, tokenId);
+    while (actual !== expected && Date.now() < deadline) {
+      await new Promise((resolve) => { setTimeout(resolve, intervalMs); });
+      actual = await getSingleTokenBalance(identityId, tokenId);
+    }
+    // A timeout here is the most likely failure mode, so surface the triage data
+    // (which identity/token, what we waited for, how long, and the last read).
+    expect(actual).to.equal(
+      expected,
+      `token ${tokenId} balance for identity ${identityId} did not converge to ${expected} within ${Date.now() - startedAt}ms (last read: ${actual})`,
+    );
+  };
   const buildSimpleTokenConfiguration = (baseSupply: bigint, newTokensDestinationIdentity: string) => {
     const contractOwner = sdk.AuthorizedActionTakers.ContractOwner();
     const contractOwnerChangeRules = new sdk.ChangeControlRules({
@@ -395,7 +418,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
 
       await waitForPlatform();
 
-      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(1000n);
+      await expectTokenBalance(testData.identityId, tokenPaidTokenId, 1000n);
 
       await client.tokenTransfer({
         dataContractId: tokenPaidContractId,
@@ -419,9 +442,9 @@ describe('Document State Transitions', function describeDocumentStateTransitions
 
       await waitForPlatform();
 
-      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(900n);
-      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(50n);
-      expect(await getSingleTokenBalance(testData.identityId3, tokenPaidTokenId)).to.equal(50n);
+      await expectTokenBalance(testData.identityId, tokenPaidTokenId, 900n);
+      await expectTokenBalance(testData.identityId2, tokenPaidTokenId, 50n);
+      await expectTokenBalance(testData.identityId3, tokenPaidTokenId, 50n);
     });
 
     it('should reject create when tokenPaymentInfo is omitted', async () => {
@@ -491,9 +514,9 @@ describe('Document State Transitions', function describeDocumentStateTransitions
 
       const { signer: sellerDocSigner, identityKey: sellerDocKey } = createTestSignerAndKey(sdk, 2, 2);
 
-      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(900n);
-      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(50n);
-      expect(await getSingleTokenBalance(testData.identityId3, tokenPaidTokenId)).to.equal(50n);
+      await expectTokenBalance(testData.identityId, tokenPaidTokenId, 900n);
+      await expectTokenBalance(testData.identityId2, tokenPaidTokenId, 50n);
+      await expectTokenBalance(testData.identityId3, tokenPaidTokenId, 50n);
 
       const updatableTitle = `Token paid mutable listing ${Date.now()}`;
       const updatableDocument = new sdk.Document({
@@ -513,8 +536,8 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         }),
       });
 
-      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(45n);
-      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(905n);
+      await expectTokenBalance(testData.identityId2, tokenPaidTokenId, 45n);
+      await expectTokenBalance(testData.identityId, tokenPaidTokenId, 905n);
 
       await waitForPlatform();
 
@@ -536,8 +559,8 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         }),
       });
 
-      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(41n);
-      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(909n);
+      await expectTokenBalance(testData.identityId2, tokenPaidTokenId, 41n);
+      await expectTokenBalance(testData.identityId, tokenPaidTokenId, 909n);
 
       await waitForPlatform();
 
@@ -558,8 +581,8 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         tokenPaymentInfo: makeTokenPaymentInfo(2n),
       });
 
-      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(39n);
-      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(911n);
+      await expectTokenBalance(testData.identityId2, tokenPaidTokenId, 39n);
+      await expectTokenBalance(testData.identityId, tokenPaidTokenId, 911n);
 
       await waitForPlatform();
 
@@ -588,8 +611,8 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         tokenPaymentInfo: makeTokenPaymentInfo(5n),
       });
 
-      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(34n);
-      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(916n);
+      await expectTokenBalance(testData.identityId2, tokenPaidTokenId, 34n);
+      await expectTokenBalance(testData.identityId, tokenPaidTokenId, 916n);
 
       await waitForPlatform();
 
@@ -605,8 +628,8 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         tokenPaymentInfo: makeTokenPaymentInfo(1n),
       });
 
-      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(33n);
-      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(917n);
+      await expectTokenBalance(testData.identityId2, tokenPaidTokenId, 33n);
+      await expectTokenBalance(testData.identityId, tokenPaidTokenId, 917n);
     });
 
     it('should create, price, and purchase a document with tokenPaymentInfo', async () => {
@@ -616,9 +639,9 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       const { signer: sellerDocSigner, identityKey: sellerDocKey } = createTestSignerAndKey(sdk, 2, 2);
       const { signer: buyerDocSigner, identityKey: buyerDocKey } = createTestSignerAndKey(sdk, 3, 2);
 
-      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(917n);
-      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(33n);
-      expect(await getSingleTokenBalance(testData.identityId3, tokenPaidTokenId)).to.equal(50n);
+      await expectTokenBalance(testData.identityId, tokenPaidTokenId, 917n);
+      await expectTokenBalance(testData.identityId2, tokenPaidTokenId, 33n);
+      await expectTokenBalance(testData.identityId3, tokenPaidTokenId, 50n);
 
       const listingTitle = `Token paid listing ${Date.now()}`;
       const document = new sdk.Document({
@@ -638,8 +661,8 @@ describe('Document State Transitions', function describeDocumentStateTransitions
 
       tokenPaidDocumentId = document.id;
       expect(tokenPaidDocumentId).to.exist();
-      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(28n);
-      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(922n);
+      await expectTokenBalance(testData.identityId2, tokenPaidTokenId, 28n);
+      await expectTokenBalance(testData.identityId, tokenPaidTokenId, 922n);
 
       await waitForPlatform();
 
@@ -660,8 +683,8 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         tokenPaymentInfo: makeTokenPaymentInfo(2n),
       });
 
-      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(26n);
-      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(924n);
+      await expectTokenBalance(testData.identityId2, tokenPaidTokenId, 26n);
+      await expectTokenBalance(testData.identityId, tokenPaidTokenId, 924n);
 
       await waitForPlatform();
 
@@ -691,9 +714,9 @@ describe('Document State Transitions', function describeDocumentStateTransitions
 
       expect(purchasedDocument).to.exist();
       expect(purchasedDocument.ownerId.toString()).to.equal(testData.identityId3);
-      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(26n);
-      expect(await getSingleTokenBalance(testData.identityId3, tokenPaidTokenId)).to.equal(47n);
-      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(927n);
+      await expectTokenBalance(testData.identityId2, tokenPaidTokenId, 26n);
+      await expectTokenBalance(testData.identityId3, tokenPaidTokenId, 47n);
+      await expectTokenBalance(testData.identityId, tokenPaidTokenId, 927n);
     });
   });
 });

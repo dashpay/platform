@@ -31,15 +31,12 @@ goog.exportSymbol('proto.org.dash.platform.dapi.v0.AllKeys', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.BalanceAndNonce', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.BlockAddressBalanceChanges', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.BlockHeightCreditEntry', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.BlockNullifierChanges', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.BroadcastStateTransitionRequest', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.BroadcastStateTransitionResponse', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.CompactedAddressBalanceChange', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.CompactedAddressBalanceChange.OperationCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntries', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetAddressInfoRequest', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetAddressInfoRequest.VersionCase', null, { proto });
@@ -150,6 +147,15 @@ goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDataContractsResponse.Data
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDataContractsResponse.GetDataContractsResponseV0', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDataContractsResponse.GetDataContractsResponseV0.ResultCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDataContractsResponse.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.ResultCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.VersionCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentsRequest', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList', null, { proto });
@@ -417,18 +423,6 @@ goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRe
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.ResultCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.VersionCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetPathElementsRequest', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetPathElementsRequest.VersionCase', null, { proto });
@@ -476,20 +470,6 @@ goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentCompactedAddressBala
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0.ResultCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.ResultCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.VersionCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.ResultCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.VersionCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.VersionCase', null, { proto });
@@ -507,6 +487,13 @@ goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResp
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotes', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.ResultCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.ResultCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.VersionCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.VersionCase', null, { proto });
@@ -618,7 +605,6 @@ goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.KeyPurpose', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.KeyRequestType', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.KeyRequestType.RequestCase', null, { proto });
-goog.exportSymbol('proto.org.dash.platform.dapi.v0.NullifierUpdateEntries', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.Proof', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.ResponseMetadata', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.SearchKey', null, { proto });
@@ -2732,6 +2718,132 @@ if (goog.DEBUG && !COMPILED) {
    * @override
    */
   proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.displayName = 'proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.displayName = 'proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.repeatedFields_, null);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.displayName = 'proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory';
 }
 /**
  * Generated by JsPbCodeGenerator.
@@ -8581,6 +8693,90 @@ if (goog.DEBUG && !COMPILED) {
  * @extends {jspb.Message}
  * @constructor
  */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
 proto.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest = function(opt_data) {
   jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.oneofGroups_);
 };
@@ -8696,426 +8892,6 @@ if (goog.DEBUG && !COMPILED) {
    * @override
    */
   proto.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses.displayName = 'proto.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatuses';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.BlockNullifierChanges.repeatedFields_, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.BlockNullifierChanges, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.BlockNullifierChanges.displayName = 'proto.org.dash.platform.dapi.v0.BlockNullifierChanges';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.NullifierUpdateEntries = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.repeatedFields_, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.NullifierUpdateEntries, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.displayName = 'proto.org.dash.platform.dapi.v0.NullifierUpdateEntries';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.repeatedFields_, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.displayName = 'proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.repeatedFields_, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.displayName = 'proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse';
-}
-/**
- * Generated by JsPbCodeGenerator.
- * @param {Array=} opt_data Optional initial data array, typically from a
- * server response, or constructed directly in Javascript. The array is used
- * in place and becomes part of the constructed object. It is not cloned.
- * If no data is provided, the constructed object will be empty, but still
- * valid.
- * @extends {jspb.Message}
- * @constructor
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.oneofGroups_);
-};
-goog.inherits(proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0, jspb.Message);
-if (goog.DEBUG && !COMPILED) {
-  /**
-   * @public
-   * @override
-   */
-  proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0';
 }
 
 
@@ -31553,6 +31329,1381 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.prototype.clearV1 = functio
  */
 proto.org.dash.platform.dapi.v0.GetDocumentsResponse.prototype.hasV1 = function() {
   return jspb.Message.getField(this, 2) != null;
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.oneofGroups_ = [[1]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.VersionCase = {
+  VERSION_NOT_SET: 0,
+  V0: 1
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.VersionCase}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest;
+  return proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.deserializeBinaryFromReader);
+      msg.setV0(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getV0();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.serializeBinaryToWriter
+    );
+  }
+};
+
+
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    dataContractId: msg.getDataContractId_asB64(),
+    documentTypeName: jspb.Message.getFieldWithDefault(msg, 2, ""),
+    documentId: msg.getDocumentId_asB64(),
+    limit: (f = msg.getLimit()) && google_protobuf_wrappers_pb.UInt32Value.toObject(includeInstance, f),
+    offset: (f = msg.getOffset()) && google_protobuf_wrappers_pb.UInt32Value.toObject(includeInstance, f),
+    startAtMs: jspb.Message.getFieldWithDefault(msg, 6, "0"),
+    prove: jspb.Message.getBooleanFieldWithDefault(msg, 7, false)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0;
+  return proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setDataContractId(value);
+      break;
+    case 2:
+      var value = /** @type {string} */ (reader.readString());
+      msg.setDocumentTypeName(value);
+      break;
+    case 3:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setDocumentId(value);
+      break;
+    case 4:
+      var value = new google_protobuf_wrappers_pb.UInt32Value;
+      reader.readMessage(value,google_protobuf_wrappers_pb.UInt32Value.deserializeBinaryFromReader);
+      msg.setLimit(value);
+      break;
+    case 5:
+      var value = new google_protobuf_wrappers_pb.UInt32Value;
+      reader.readMessage(value,google_protobuf_wrappers_pb.UInt32Value.deserializeBinaryFromReader);
+      msg.setOffset(value);
+      break;
+    case 6:
+      var value = /** @type {string} */ (reader.readUint64String());
+      msg.setStartAtMs(value);
+      break;
+    case 7:
+      var value = /** @type {boolean} */ (reader.readBool());
+      msg.setProve(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getDataContractId_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      1,
+      f
+    );
+  }
+  f = message.getDocumentTypeName();
+  if (f.length > 0) {
+    writer.writeString(
+      2,
+      f
+    );
+  }
+  f = message.getDocumentId_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      3,
+      f
+    );
+  }
+  f = message.getLimit();
+  if (f != null) {
+    writer.writeMessage(
+      4,
+      f,
+      google_protobuf_wrappers_pb.UInt32Value.serializeBinaryToWriter
+    );
+  }
+  f = message.getOffset();
+  if (f != null) {
+    writer.writeMessage(
+      5,
+      f,
+      google_protobuf_wrappers_pb.UInt32Value.serializeBinaryToWriter
+    );
+  }
+  f = message.getStartAtMs();
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
+      6,
+      f
+    );
+  }
+  f = message.getProve();
+  if (f) {
+    writer.writeBool(
+      7,
+      f
+    );
+  }
+};
+
+
+/**
+ * optional bytes data_contract_id = 1;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.getDataContractId = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
+};
+
+
+/**
+ * optional bytes data_contract_id = 1;
+ * This is a type-conversion wrapper around `getDataContractId()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.getDataContractId_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getDataContractId()));
+};
+
+
+/**
+ * optional bytes data_contract_id = 1;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getDataContractId()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.getDataContractId_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getDataContractId()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.setDataContractId = function(value) {
+  return jspb.Message.setProto3BytesField(this, 1, value);
+};
+
+
+/**
+ * optional string document_type_name = 2;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.getDocumentTypeName = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.setDocumentTypeName = function(value) {
+  return jspb.Message.setProto3StringField(this, 2, value);
+};
+
+
+/**
+ * optional bytes document_id = 3;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.getDocumentId = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, ""));
+};
+
+
+/**
+ * optional bytes document_id = 3;
+ * This is a type-conversion wrapper around `getDocumentId()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.getDocumentId_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getDocumentId()));
+};
+
+
+/**
+ * optional bytes document_id = 3;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getDocumentId()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.getDocumentId_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getDocumentId()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.setDocumentId = function(value) {
+  return jspb.Message.setProto3BytesField(this, 3, value);
+};
+
+
+/**
+ * optional google.protobuf.UInt32Value limit = 4;
+ * @return {?proto.google.protobuf.UInt32Value}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.getLimit = function() {
+  return /** @type{?proto.google.protobuf.UInt32Value} */ (
+    jspb.Message.getWrapperField(this, google_protobuf_wrappers_pb.UInt32Value, 4));
+};
+
+
+/**
+ * @param {?proto.google.protobuf.UInt32Value|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.setLimit = function(value) {
+  return jspb.Message.setWrapperField(this, 4, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.clearLimit = function() {
+  return this.setLimit(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.hasLimit = function() {
+  return jspb.Message.getField(this, 4) != null;
+};
+
+
+/**
+ * optional google.protobuf.UInt32Value offset = 5;
+ * @return {?proto.google.protobuf.UInt32Value}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.getOffset = function() {
+  return /** @type{?proto.google.protobuf.UInt32Value} */ (
+    jspb.Message.getWrapperField(this, google_protobuf_wrappers_pb.UInt32Value, 5));
+};
+
+
+/**
+ * @param {?proto.google.protobuf.UInt32Value|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.setOffset = function(value) {
+  return jspb.Message.setWrapperField(this, 5, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.clearOffset = function() {
+  return this.setOffset(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.hasOffset = function() {
+  return jspb.Message.getField(this, 5) != null;
+};
+
+
+/**
+ * optional uint64 start_at_ms = 6;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.getStartAtMs = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 6, "0"));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.setStartAtMs = function(value) {
+  return jspb.Message.setProto3StringIntField(this, 6, value);
+};
+
+
+/**
+ * optional bool prove = 7;
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.getProve = function() {
+  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 7, false));
+};
+
+
+/**
+ * @param {boolean} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.prototype.setProve = function(value) {
+  return jspb.Message.setProto3BooleanField(this, 7, value);
+};
+
+
+/**
+ * optional GetDocumentHistoryRequestV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.prototype.clearV0 = function() {
+  return this.setV0(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.prototype.hasV0 = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.oneofGroups_ = [[1]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.VersionCase = {
+  VERSION_NOT_SET: 0,
+  V0: 1
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.VersionCase}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse;
+  return proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.deserializeBinaryFromReader);
+      msg.setV0(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getV0();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.serializeBinaryToWriter
+    );
+  }
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.oneofGroups_ = [[1,2]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.ResultCase = {
+  RESULT_NOT_SET: 0,
+  DOCUMENT_HISTORY: 1,
+  PROOF: 2
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.ResultCase}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.prototype.getResultCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    documentHistory: (f = msg.getDocumentHistory()) && proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.toObject(includeInstance, f),
+    proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
+    metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0;
+  return proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.deserializeBinaryFromReader);
+      msg.setDocumentHistory(value);
+      break;
+    case 2:
+      var value = new proto.org.dash.platform.dapi.v0.Proof;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.Proof.deserializeBinaryFromReader);
+      msg.setProof(value);
+      break;
+    case 3:
+      var value = new proto.org.dash.platform.dapi.v0.ResponseMetadata;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader);
+      msg.setMetadata(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getDocumentHistory();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.serializeBinaryToWriter
+    );
+  }
+  f = message.getProof();
+  if (f != null) {
+    writer.writeMessage(
+      2,
+      f,
+      proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter
+    );
+  }
+  f = message.getMetadata();
+  if (f != null) {
+    writer.writeMessage(
+      3,
+      f,
+      proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter
+    );
+  }
+};
+
+
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    date: jspb.Message.getFieldWithDefault(msg, 1, "0"),
+    value: msg.getValue_asB64()
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry;
+  return proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = /** @type {string} */ (reader.readUint64String());
+      msg.setDate(value);
+      break;
+    case 2:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setValue(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getDate();
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
+      1,
+      f
+    );
+  }
+  f = message.getValue_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      2,
+      f
+    );
+  }
+};
+
+
+/**
+ * optional uint64 date = 1;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.prototype.getDate = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.prototype.setDate = function(value) {
+  return jspb.Message.setProto3StringIntField(this, 1, value);
+};
+
+
+/**
+ * optional bytes value = 2;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.prototype.getValue = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
+};
+
+
+/**
+ * optional bytes value = 2;
+ * This is a type-conversion wrapper around `getValue()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.prototype.getValue_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getValue()));
+};
+
+
+/**
+ * optional bytes value = 2;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getValue()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.prototype.getValue_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getValue()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.prototype.setValue = function(value) {
+  return jspb.Message.setProto3BytesField(this, 2, value);
+};
+
+
+
+/**
+ * List of repeated fields within this message type.
+ * @private {!Array<number>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.repeatedFields_ = [1];
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    documentEntriesList: jspb.Message.toObjectList(msg.getDocumentEntriesList(),
+    proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.toObject, includeInstance)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory;
+  return proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.deserializeBinaryFromReader);
+      msg.addDocumentEntries(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getDocumentEntriesList();
+  if (f.length > 0) {
+    writer.writeRepeatedMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.serializeBinaryToWriter
+    );
+  }
+};
+
+
+/**
+ * repeated DocumentHistoryEntry document_entries = 1;
+ * @return {!Array<!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry>}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.prototype.getDocumentEntriesList = function() {
+  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry>} */ (
+    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry, 1));
+};
+
+
+/**
+ * @param {!Array<!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry>} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.prototype.setDocumentEntriesList = function(value) {
+  return jspb.Message.setRepeatedWrapperField(this, 1, value);
+};
+
+
+/**
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry=} opt_value
+ * @param {number=} opt_index
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.prototype.addDocumentEntries = function(opt_value, opt_index) {
+  return jspb.Message.addToRepeatedWrapperField(this, 1, opt_value, proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry, opt_index);
+};
+
+
+/**
+ * Clears the list making it empty but non-null.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.prototype.clearDocumentEntriesList = function() {
+  return this.setDocumentEntriesList([]);
+};
+
+
+/**
+ * optional DocumentHistory document_history = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.prototype.getDocumentHistory = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.prototype.setDocumentHistory = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.prototype.clearDocumentHistory = function() {
+  return this.setDocumentHistory(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.prototype.hasDocumentHistory = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+/**
+ * optional Proof proof = 2;
+ * @return {?proto.org.dash.platform.dapi.v0.Proof}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.prototype.getProof = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.Proof, 2));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.Proof|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.prototype.setProof = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.prototype.clearProof = function() {
+  return this.setProof(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.prototype.hasProof = function() {
+  return jspb.Message.getField(this, 2) != null;
+};
+
+
+/**
+ * optional ResponseMetadata metadata = 3;
+ * @return {?proto.org.dash.platform.dapi.v0.ResponseMetadata}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.prototype.getMetadata = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ResponseMetadata, 3));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.ResponseMetadata|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.prototype.setMetadata = function(value) {
+  return jspb.Message.setWrapperField(this, 3, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.prototype.clearMetadata = function() {
+  return this.setMetadata(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.prototype.hasMetadata = function() {
+  return jspb.Message.getField(this, 3) != null;
+};
+
+
+/**
+ * optional GetDocumentHistoryResponseV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.prototype.clearV0 = function() {
+  return this.setV0(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.prototype.hasV0 = function() {
+  return jspb.Message.getField(this, 1) != null;
 };
 
 
@@ -87723,7 +88874,8 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
   var f, obj = {
     nullifier: msg.getNullifier_asB64(),
     cmx: msg.getCmx_asB64(),
-    encryptedNote: msg.getEncryptedNote_asB64()
+    encryptedNote: msg.getEncryptedNote_asB64(),
+    cvNet: msg.getCvNet_asB64()
   };
 
   if (includeInstance) {
@@ -87772,6 +88924,10 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
       var value = /** @type {!Uint8Array} */ (reader.readBytes());
       msg.setEncryptedNote(value);
       break;
+    case 4:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setCvNet(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -87819,6 +88975,13 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
   if (f.length > 0) {
     writer.writeBytes(
       3,
+      f
+    );
+  }
+  f = message.getCvNet_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      4,
       f
     );
   }
@@ -87948,6 +89111,48 @@ proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEnc
  */
 proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.setEncryptedNote = function(value) {
   return jspb.Message.setProto3BytesField(this, 3, value);
+};
+
+
+/**
+ * optional bytes cv_net = 4;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.getCvNet = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 4, ""));
+};
+
+
+/**
+ * optional bytes cv_net = 4;
+ * This is a type-conversion wrapper around `getCvNet()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.getCvNet_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getCvNet()));
+};
+
+
+/**
+ * optional bytes cv_net = 4;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getCvNet()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.getCvNet_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getCvNet()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNote.prototype.setCvNet = function(value) {
+  return jspb.Message.setProto3BytesField(this, 4, value);
 };
 
 
@@ -90749,6 +91954,764 @@ proto.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.prototype.hasV0 = f
  * @private {!Array<!Array<number>>}
  * @const
  */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.oneofGroups_ = [[1]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.VersionCase = {
+  VERSION_NOT_SET: 0,
+  V0: 1
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.VersionCase}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest;
+  return proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.deserializeBinaryFromReader);
+      msg.setV0(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getV0();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.serializeBinaryToWriter
+    );
+  }
+};
+
+
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    prove: jspb.Message.getBooleanFieldWithDefault(msg, 1, false)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0;
+  return proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = /** @type {boolean} */ (reader.readBool());
+      msg.setProve(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getProve();
+  if (f) {
+    writer.writeBool(
+      1,
+      f
+    );
+  }
+};
+
+
+/**
+ * optional bool prove = 1;
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.prototype.getProve = function() {
+  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 1, false));
+};
+
+
+/**
+ * @param {boolean} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.prototype.setProve = function(value) {
+  return jspb.Message.setProto3BooleanField(this, 1, value);
+};
+
+
+/**
+ * optional GetShieldedNotesCountRequestV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.prototype.clearV0 = function() {
+  return this.setV0(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.prototype.hasV0 = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.oneofGroups_ = [[1]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.VersionCase = {
+  VERSION_NOT_SET: 0,
+  V0: 1
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.VersionCase}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse;
+  return proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.deserializeBinaryFromReader);
+      msg.setV0(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getV0();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.serializeBinaryToWriter
+    );
+  }
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.oneofGroups_ = [[1,2]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.ResultCase = {
+  RESULT_NOT_SET: 0,
+  TOTAL_NOTES_COUNT: 1,
+  PROOF: 2
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.ResultCase}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.prototype.getResultCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    totalNotesCount: jspb.Message.getFieldWithDefault(msg, 1, "0"),
+    proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
+    metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0;
+  return proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = /** @type {string} */ (reader.readUint64String());
+      msg.setTotalNotesCount(value);
+      break;
+    case 2:
+      var value = new proto.org.dash.platform.dapi.v0.Proof;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.Proof.deserializeBinaryFromReader);
+      msg.setProof(value);
+      break;
+    case 3:
+      var value = new proto.org.dash.platform.dapi.v0.ResponseMetadata;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader);
+      msg.setMetadata(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = /** @type {string} */ (jspb.Message.getField(message, 1));
+  if (f != null) {
+    writer.writeUint64String(
+      1,
+      f
+    );
+  }
+  f = message.getProof();
+  if (f != null) {
+    writer.writeMessage(
+      2,
+      f,
+      proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter
+    );
+  }
+  f = message.getMetadata();
+  if (f != null) {
+    writer.writeMessage(
+      3,
+      f,
+      proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter
+    );
+  }
+};
+
+
+/**
+ * optional uint64 total_notes_count = 1;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.prototype.getTotalNotesCount = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.prototype.setTotalNotesCount = function(value) {
+  return jspb.Message.setOneofField(this, 1, proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.prototype.clearTotalNotesCount = function() {
+  return jspb.Message.setOneofField(this, 1, proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.oneofGroups_[0], undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.prototype.hasTotalNotesCount = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+/**
+ * optional Proof proof = 2;
+ * @return {?proto.org.dash.platform.dapi.v0.Proof}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.prototype.getProof = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.Proof, 2));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.Proof|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.prototype.setProof = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.prototype.clearProof = function() {
+  return this.setProof(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.prototype.hasProof = function() {
+  return jspb.Message.getField(this, 2) != null;
+};
+
+
+/**
+ * optional ResponseMetadata metadata = 3;
+ * @return {?proto.org.dash.platform.dapi.v0.ResponseMetadata}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.prototype.getMetadata = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ResponseMetadata, 3));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.ResponseMetadata|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.prototype.setMetadata = function(value) {
+  return jspb.Message.setWrapperField(this, 3, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.prototype.clearMetadata = function() {
+  return this.setMetadata(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.prototype.hasMetadata = function() {
+  return jspb.Message.getField(this, 3) != null;
+};
+
+
+/**
+ * optional GetShieldedNotesCountResponseV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.prototype.clearV0 = function() {
+  return this.setV0(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.prototype.hasV0 = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
 proto.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.oneofGroups_ = [[1]];
 
 /**
@@ -91921,3900 +93884,6 @@ proto.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.prototype.clearV0 
  * @return {boolean}
  */
 proto.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.prototype.hasV0 = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.oneofGroups_ = [[1]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.VersionCase = {
-  VERSION_NOT_SET: 0,
-  V0: 1
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.VersionCase}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest;
-  return proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.deserializeBinaryFromReader);
-      msg.setV0(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getV0();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.serializeBinaryToWriter
-    );
-  }
-};
-
-
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    poolType: jspb.Message.getFieldWithDefault(msg, 1, 0),
-    poolIdentifier: msg.getPoolIdentifier_asB64()
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0;
-  return proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = /** @type {number} */ (reader.readUint32());
-      msg.setPoolType(value);
-      break;
-    case 2:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setPoolIdentifier(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getPoolType();
-  if (f !== 0) {
-    writer.writeUint32(
-      1,
-      f
-    );
-  }
-  f = message.getPoolIdentifier_asU8();
-  if (f.length > 0) {
-    writer.writeBytes(
-      2,
-      f
-    );
-  }
-};
-
-
-/**
- * optional uint32 pool_type = 1;
- * @return {number}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.prototype.getPoolType = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
-};
-
-
-/**
- * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.prototype.setPoolType = function(value) {
-  return jspb.Message.setProto3IntField(this, 1, value);
-};
-
-
-/**
- * optional bytes pool_identifier = 2;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.prototype.getPoolIdentifier = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
-};
-
-
-/**
- * optional bytes pool_identifier = 2;
- * This is a type-conversion wrapper around `getPoolIdentifier()`
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.prototype.getPoolIdentifier_asB64 = function() {
-  return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getPoolIdentifier()));
-};
-
-
-/**
- * optional bytes pool_identifier = 2;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getPoolIdentifier()`
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.prototype.getPoolIdentifier_asU8 = function() {
-  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getPoolIdentifier()));
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0.prototype.setPoolIdentifier = function(value) {
-  return jspb.Message.setProto3BytesField(this, 2, value);
-};
-
-
-/**
- * optional GetNullifiersTrunkStateRequestV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.GetNullifiersTrunkStateRequestV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest} returns this
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.prototype.clearV0 = function() {
-  return this.setV0(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateRequest.prototype.hasV0 = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.oneofGroups_ = [[1]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.VersionCase = {
-  VERSION_NOT_SET: 0,
-  V0: 1
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.VersionCase}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse;
-  return proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.deserializeBinaryFromReader);
-      msg.setV0(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getV0();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.serializeBinaryToWriter
-    );
-  }
-};
-
-
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
-    metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0;
-  return proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 2:
-      var value = new proto.org.dash.platform.dapi.v0.Proof;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.Proof.deserializeBinaryFromReader);
-      msg.setProof(value);
-      break;
-    case 3:
-      var value = new proto.org.dash.platform.dapi.v0.ResponseMetadata;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader);
-      msg.setMetadata(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getProof();
-  if (f != null) {
-    writer.writeMessage(
-      2,
-      f,
-      proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter
-    );
-  }
-  f = message.getMetadata();
-  if (f != null) {
-    writer.writeMessage(
-      3,
-      f,
-      proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter
-    );
-  }
-};
-
-
-/**
- * optional Proof proof = 2;
- * @return {?proto.org.dash.platform.dapi.v0.Proof}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.prototype.getProof = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.Proof, 2));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.Proof|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.prototype.setProof = function(value) {
-  return jspb.Message.setWrapperField(this, 2, value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.prototype.clearProof = function() {
-  return this.setProof(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.prototype.hasProof = function() {
-  return jspb.Message.getField(this, 2) != null;
-};
-
-
-/**
- * optional ResponseMetadata metadata = 3;
- * @return {?proto.org.dash.platform.dapi.v0.ResponseMetadata}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.prototype.getMetadata = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ResponseMetadata, 3));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.ResponseMetadata|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.prototype.setMetadata = function(value) {
-  return jspb.Message.setWrapperField(this, 3, value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.prototype.clearMetadata = function() {
-  return this.setMetadata(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0.prototype.hasMetadata = function() {
-  return jspb.Message.getField(this, 3) != null;
-};
-
-
-/**
- * optional GetNullifiersTrunkStateResponseV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.GetNullifiersTrunkStateResponseV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse} returns this
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.prototype.clearV0 = function() {
-  return this.setV0(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersTrunkStateResponse.prototype.hasV0 = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.oneofGroups_ = [[1]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.VersionCase = {
-  VERSION_NOT_SET: 0,
-  V0: 1
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.VersionCase}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest;
-  return proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.deserializeBinaryFromReader);
-      msg.setV0(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getV0();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.serializeBinaryToWriter
-    );
-  }
-};
-
-
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    poolType: jspb.Message.getFieldWithDefault(msg, 1, 0),
-    poolIdentifier: msg.getPoolIdentifier_asB64(),
-    key: msg.getKey_asB64(),
-    depth: jspb.Message.getFieldWithDefault(msg, 4, 0),
-    checkpointHeight: jspb.Message.getFieldWithDefault(msg, 5, 0)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0;
-  return proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = /** @type {number} */ (reader.readUint32());
-      msg.setPoolType(value);
-      break;
-    case 2:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setPoolIdentifier(value);
-      break;
-    case 3:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setKey(value);
-      break;
-    case 4:
-      var value = /** @type {number} */ (reader.readUint32());
-      msg.setDepth(value);
-      break;
-    case 5:
-      var value = /** @type {number} */ (reader.readUint64());
-      msg.setCheckpointHeight(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getPoolType();
-  if (f !== 0) {
-    writer.writeUint32(
-      1,
-      f
-    );
-  }
-  f = message.getPoolIdentifier_asU8();
-  if (f.length > 0) {
-    writer.writeBytes(
-      2,
-      f
-    );
-  }
-  f = message.getKey_asU8();
-  if (f.length > 0) {
-    writer.writeBytes(
-      3,
-      f
-    );
-  }
-  f = message.getDepth();
-  if (f !== 0) {
-    writer.writeUint32(
-      4,
-      f
-    );
-  }
-  f = message.getCheckpointHeight();
-  if (f !== 0) {
-    writer.writeUint64(
-      5,
-      f
-    );
-  }
-};
-
-
-/**
- * optional uint32 pool_type = 1;
- * @return {number}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.getPoolType = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
-};
-
-
-/**
- * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.setPoolType = function(value) {
-  return jspb.Message.setProto3IntField(this, 1, value);
-};
-
-
-/**
- * optional bytes pool_identifier = 2;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.getPoolIdentifier = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
-};
-
-
-/**
- * optional bytes pool_identifier = 2;
- * This is a type-conversion wrapper around `getPoolIdentifier()`
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.getPoolIdentifier_asB64 = function() {
-  return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getPoolIdentifier()));
-};
-
-
-/**
- * optional bytes pool_identifier = 2;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getPoolIdentifier()`
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.getPoolIdentifier_asU8 = function() {
-  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getPoolIdentifier()));
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.setPoolIdentifier = function(value) {
-  return jspb.Message.setProto3BytesField(this, 2, value);
-};
-
-
-/**
- * optional bytes key = 3;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.getKey = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, ""));
-};
-
-
-/**
- * optional bytes key = 3;
- * This is a type-conversion wrapper around `getKey()`
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.getKey_asB64 = function() {
-  return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getKey()));
-};
-
-
-/**
- * optional bytes key = 3;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getKey()`
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.getKey_asU8 = function() {
-  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getKey()));
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.setKey = function(value) {
-  return jspb.Message.setProto3BytesField(this, 3, value);
-};
-
-
-/**
- * optional uint32 depth = 4;
- * @return {number}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.getDepth = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 4, 0));
-};
-
-
-/**
- * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.setDepth = function(value) {
-  return jspb.Message.setProto3IntField(this, 4, value);
-};
-
-
-/**
- * optional uint64 checkpoint_height = 5;
- * @return {number}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.getCheckpointHeight = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 5, 0));
-};
-
-
-/**
- * @param {number} value
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0.prototype.setCheckpointHeight = function(value) {
-  return jspb.Message.setProto3IntField(this, 5, value);
-};
-
-
-/**
- * optional GetNullifiersBranchStateRequestV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.GetNullifiersBranchStateRequestV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest} returns this
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.prototype.clearV0 = function() {
-  return this.setV0(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateRequest.prototype.hasV0 = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.oneofGroups_ = [[1]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.VersionCase = {
-  VERSION_NOT_SET: 0,
-  V0: 1
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.VersionCase}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse;
-  return proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.deserializeBinaryFromReader);
-      msg.setV0(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getV0();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.serializeBinaryToWriter
-    );
-  }
-};
-
-
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    merkProof: msg.getMerkProof_asB64()
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0;
-  return proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 2:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setMerkProof(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getMerkProof_asU8();
-  if (f.length > 0) {
-    writer.writeBytes(
-      2,
-      f
-    );
-  }
-};
-
-
-/**
- * optional bytes merk_proof = 2;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.prototype.getMerkProof = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, ""));
-};
-
-
-/**
- * optional bytes merk_proof = 2;
- * This is a type-conversion wrapper around `getMerkProof()`
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.prototype.getMerkProof_asB64 = function() {
-  return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getMerkProof()));
-};
-
-
-/**
- * optional bytes merk_proof = 2;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getMerkProof()`
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.prototype.getMerkProof_asU8 = function() {
-  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getMerkProof()));
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0.prototype.setMerkProof = function(value) {
-  return jspb.Message.setProto3BytesField(this, 2, value);
-};
-
-
-/**
- * optional GetNullifiersBranchStateResponseV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.GetNullifiersBranchStateResponseV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse} returns this
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.prototype.clearV0 = function() {
-  return this.setV0(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetNullifiersBranchStateResponse.prototype.hasV0 = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-
-/**
- * List of repeated fields within this message type.
- * @private {!Array<number>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges.repeatedFields_ = [2];
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.BlockNullifierChanges.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.BlockNullifierChanges} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    blockHeight: jspb.Message.getFieldWithDefault(msg, 1, "0"),
-    nullifiersList: msg.getNullifiersList_asB64()
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.BlockNullifierChanges}
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.BlockNullifierChanges;
-  return proto.org.dash.platform.dapi.v0.BlockNullifierChanges.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.BlockNullifierChanges} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.BlockNullifierChanges}
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = /** @type {string} */ (reader.readUint64String());
-      msg.setBlockHeight(value);
-      break;
-    case 2:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.addNullifiers(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.BlockNullifierChanges.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.BlockNullifierChanges} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getBlockHeight();
-  if (parseInt(f, 10) !== 0) {
-    writer.writeUint64String(
-      1,
-      f
-    );
-  }
-  f = message.getNullifiersList_asU8();
-  if (f.length > 0) {
-    writer.writeRepeatedBytes(
-      2,
-      f
-    );
-  }
-};
-
-
-/**
- * optional uint64 block_height = 1;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges.prototype.getBlockHeight = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
-};
-
-
-/**
- * @param {string} value
- * @return {!proto.org.dash.platform.dapi.v0.BlockNullifierChanges} returns this
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges.prototype.setBlockHeight = function(value) {
-  return jspb.Message.setProto3StringIntField(this, 1, value);
-};
-
-
-/**
- * repeated bytes nullifiers = 2;
- * @return {!Array<string>}
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges.prototype.getNullifiersList = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.getRepeatedField(this, 2));
-};
-
-
-/**
- * repeated bytes nullifiers = 2;
- * This is a type-conversion wrapper around `getNullifiersList()`
- * @return {!Array<string>}
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges.prototype.getNullifiersList_asB64 = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.bytesListAsB64(
-      this.getNullifiersList()));
-};
-
-
-/**
- * repeated bytes nullifiers = 2;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getNullifiersList()`
- * @return {!Array<!Uint8Array>}
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges.prototype.getNullifiersList_asU8 = function() {
-  return /** @type {!Array<!Uint8Array>} */ (jspb.Message.bytesListAsU8(
-      this.getNullifiersList()));
-};
-
-
-/**
- * @param {!(Array<!Uint8Array>|Array<string>)} value
- * @return {!proto.org.dash.platform.dapi.v0.BlockNullifierChanges} returns this
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges.prototype.setNullifiersList = function(value) {
-  return jspb.Message.setField(this, 2, value || []);
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.BlockNullifierChanges} returns this
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges.prototype.addNullifiers = function(value, opt_index) {
-  return jspb.Message.addToRepeatedField(this, 2, value, opt_index);
-};
-
-
-/**
- * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.BlockNullifierChanges} returns this
- */
-proto.org.dash.platform.dapi.v0.BlockNullifierChanges.prototype.clearNullifiersList = function() {
-  return this.setNullifiersList([]);
-};
-
-
-
-/**
- * List of repeated fields within this message type.
- * @private {!Array<number>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.repeatedFields_ = [1];
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.NullifierUpdateEntries} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    blockChangesList: jspb.Message.toObjectList(msg.getBlockChangesList(),
-    proto.org.dash.platform.dapi.v0.BlockNullifierChanges.toObject, includeInstance)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.NullifierUpdateEntries}
- */
-proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.NullifierUpdateEntries;
-  return proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.NullifierUpdateEntries} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.NullifierUpdateEntries}
- */
-proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.BlockNullifierChanges;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.BlockNullifierChanges.deserializeBinaryFromReader);
-      msg.addBlockChanges(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.NullifierUpdateEntries} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getBlockChangesList();
-  if (f.length > 0) {
-    writer.writeRepeatedMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.BlockNullifierChanges.serializeBinaryToWriter
-    );
-  }
-};
-
-
-/**
- * repeated BlockNullifierChanges block_changes = 1;
- * @return {!Array<!proto.org.dash.platform.dapi.v0.BlockNullifierChanges>}
- */
-proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.prototype.getBlockChangesList = function() {
-  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.BlockNullifierChanges>} */ (
-    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.BlockNullifierChanges, 1));
-};
-
-
-/**
- * @param {!Array<!proto.org.dash.platform.dapi.v0.BlockNullifierChanges>} value
- * @return {!proto.org.dash.platform.dapi.v0.NullifierUpdateEntries} returns this
-*/
-proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.prototype.setBlockChangesList = function(value) {
-  return jspb.Message.setRepeatedWrapperField(this, 1, value);
-};
-
-
-/**
- * @param {!proto.org.dash.platform.dapi.v0.BlockNullifierChanges=} opt_value
- * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.BlockNullifierChanges}
- */
-proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.prototype.addBlockChanges = function(opt_value, opt_index) {
-  return jspb.Message.addToRepeatedWrapperField(this, 1, opt_value, proto.org.dash.platform.dapi.v0.BlockNullifierChanges, opt_index);
-};
-
-
-/**
- * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.NullifierUpdateEntries} returns this
- */
-proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.prototype.clearBlockChangesList = function() {
-  return this.setBlockChangesList([]);
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.oneofGroups_ = [[1]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.VersionCase = {
-  VERSION_NOT_SET: 0,
-  V0: 1
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.VersionCase}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest;
-  return proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.deserializeBinaryFromReader);
-      msg.setV0(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getV0();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.serializeBinaryToWriter
-    );
-  }
-};
-
-
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    startHeight: jspb.Message.getFieldWithDefault(msg, 1, "0"),
-    prove: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0;
-  return proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = /** @type {string} */ (reader.readUint64String());
-      msg.setStartHeight(value);
-      break;
-    case 2:
-      var value = /** @type {boolean} */ (reader.readBool());
-      msg.setProve(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getStartHeight();
-  if (parseInt(f, 10) !== 0) {
-    writer.writeUint64String(
-      1,
-      f
-    );
-  }
-  f = message.getProve();
-  if (f) {
-    writer.writeBool(
-      2,
-      f
-    );
-  }
-};
-
-
-/**
- * optional uint64 start_height = 1;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.prototype.getStartHeight = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
-};
-
-
-/**
- * @param {string} value
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.prototype.setStartHeight = function(value) {
-  return jspb.Message.setProto3StringIntField(this, 1, value);
-};
-
-
-/**
- * optional bool prove = 2;
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.prototype.getProve = function() {
-  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 2, false));
-};
-
-
-/**
- * @param {boolean} value
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0.prototype.setProve = function(value) {
-  return jspb.Message.setProto3BooleanField(this, 2, value);
-};
-
-
-/**
- * optional GetRecentNullifierChangesRequestV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.GetRecentNullifierChangesRequestV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest} returns this
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.prototype.clearV0 = function() {
-  return this.setV0(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesRequest.prototype.hasV0 = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.oneofGroups_ = [[1]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.VersionCase = {
-  VERSION_NOT_SET: 0,
-  V0: 1
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.VersionCase}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse;
-  return proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.deserializeBinaryFromReader);
-      msg.setV0(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getV0();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.serializeBinaryToWriter
-    );
-  }
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.oneofGroups_ = [[1,2]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.ResultCase = {
-  RESULT_NOT_SET: 0,
-  NULLIFIER_UPDATE_ENTRIES: 1,
-  PROOF: 2
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.ResultCase}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.prototype.getResultCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    nullifierUpdateEntries: (f = msg.getNullifierUpdateEntries()) && proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.toObject(includeInstance, f),
-    proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
-    metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0;
-  return proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.NullifierUpdateEntries;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.deserializeBinaryFromReader);
-      msg.setNullifierUpdateEntries(value);
-      break;
-    case 2:
-      var value = new proto.org.dash.platform.dapi.v0.Proof;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.Proof.deserializeBinaryFromReader);
-      msg.setProof(value);
-      break;
-    case 3:
-      var value = new proto.org.dash.platform.dapi.v0.ResponseMetadata;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader);
-      msg.setMetadata(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getNullifierUpdateEntries();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.NullifierUpdateEntries.serializeBinaryToWriter
-    );
-  }
-  f = message.getProof();
-  if (f != null) {
-    writer.writeMessage(
-      2,
-      f,
-      proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter
-    );
-  }
-  f = message.getMetadata();
-  if (f != null) {
-    writer.writeMessage(
-      3,
-      f,
-      proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter
-    );
-  }
-};
-
-
-/**
- * optional NullifierUpdateEntries nullifier_update_entries = 1;
- * @return {?proto.org.dash.platform.dapi.v0.NullifierUpdateEntries}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.prototype.getNullifierUpdateEntries = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.NullifierUpdateEntries} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.NullifierUpdateEntries, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.NullifierUpdateEntries|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.prototype.setNullifierUpdateEntries = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.prototype.clearNullifierUpdateEntries = function() {
-  return this.setNullifierUpdateEntries(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.prototype.hasNullifierUpdateEntries = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-/**
- * optional Proof proof = 2;
- * @return {?proto.org.dash.platform.dapi.v0.Proof}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.prototype.getProof = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.Proof, 2));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.Proof|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.prototype.setProof = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.prototype.clearProof = function() {
-  return this.setProof(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.prototype.hasProof = function() {
-  return jspb.Message.getField(this, 2) != null;
-};
-
-
-/**
- * optional ResponseMetadata metadata = 3;
- * @return {?proto.org.dash.platform.dapi.v0.ResponseMetadata}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.prototype.getMetadata = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ResponseMetadata, 3));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.ResponseMetadata|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.prototype.setMetadata = function(value) {
-  return jspb.Message.setWrapperField(this, 3, value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.prototype.clearMetadata = function() {
-  return this.setMetadata(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0.prototype.hasMetadata = function() {
-  return jspb.Message.getField(this, 3) != null;
-};
-
-
-/**
- * optional GetRecentNullifierChangesResponseV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.GetRecentNullifierChangesResponseV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse} returns this
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.prototype.clearV0 = function() {
-  return this.setV0(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetRecentNullifierChangesResponse.prototype.hasV0 = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-
-/**
- * List of repeated fields within this message type.
- * @private {!Array<number>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.repeatedFields_ = [3];
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    startBlockHeight: jspb.Message.getFieldWithDefault(msg, 1, "0"),
-    endBlockHeight: jspb.Message.getFieldWithDefault(msg, 2, "0"),
-    nullifiersList: msg.getNullifiersList_asB64()
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges}
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges;
-  return proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges}
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = /** @type {string} */ (reader.readUint64String());
-      msg.setStartBlockHeight(value);
-      break;
-    case 2:
-      var value = /** @type {string} */ (reader.readUint64String());
-      msg.setEndBlockHeight(value);
-      break;
-    case 3:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.addNullifiers(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getStartBlockHeight();
-  if (parseInt(f, 10) !== 0) {
-    writer.writeUint64String(
-      1,
-      f
-    );
-  }
-  f = message.getEndBlockHeight();
-  if (parseInt(f, 10) !== 0) {
-    writer.writeUint64String(
-      2,
-      f
-    );
-  }
-  f = message.getNullifiersList_asU8();
-  if (f.length > 0) {
-    writer.writeRepeatedBytes(
-      3,
-      f
-    );
-  }
-};
-
-
-/**
- * optional uint64 start_block_height = 1;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.prototype.getStartBlockHeight = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
-};
-
-
-/**
- * @param {string} value
- * @return {!proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges} returns this
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.prototype.setStartBlockHeight = function(value) {
-  return jspb.Message.setProto3StringIntField(this, 1, value);
-};
-
-
-/**
- * optional uint64 end_block_height = 2;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.prototype.getEndBlockHeight = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, "0"));
-};
-
-
-/**
- * @param {string} value
- * @return {!proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges} returns this
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.prototype.setEndBlockHeight = function(value) {
-  return jspb.Message.setProto3StringIntField(this, 2, value);
-};
-
-
-/**
- * repeated bytes nullifiers = 3;
- * @return {!Array<string>}
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.prototype.getNullifiersList = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.getRepeatedField(this, 3));
-};
-
-
-/**
- * repeated bytes nullifiers = 3;
- * This is a type-conversion wrapper around `getNullifiersList()`
- * @return {!Array<string>}
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.prototype.getNullifiersList_asB64 = function() {
-  return /** @type {!Array<string>} */ (jspb.Message.bytesListAsB64(
-      this.getNullifiersList()));
-};
-
-
-/**
- * repeated bytes nullifiers = 3;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getNullifiersList()`
- * @return {!Array<!Uint8Array>}
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.prototype.getNullifiersList_asU8 = function() {
-  return /** @type {!Array<!Uint8Array>} */ (jspb.Message.bytesListAsU8(
-      this.getNullifiersList()));
-};
-
-
-/**
- * @param {!(Array<!Uint8Array>|Array<string>)} value
- * @return {!proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges} returns this
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.prototype.setNullifiersList = function(value) {
-  return jspb.Message.setField(this, 3, value || []);
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
- * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges} returns this
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.prototype.addNullifiers = function(value, opt_index) {
-  return jspb.Message.addToRepeatedField(this, 3, value, opt_index);
-};
-
-
-/**
- * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges} returns this
- */
-proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.prototype.clearNullifiersList = function() {
-  return this.setNullifiersList([]);
-};
-
-
-
-/**
- * List of repeated fields within this message type.
- * @private {!Array<number>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.repeatedFields_ = [1];
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    compactedBlockChangesList: jspb.Message.toObjectList(msg.getCompactedBlockChangesList(),
-    proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.toObject, includeInstance)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries}
- */
-proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries;
-  return proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries}
- */
-proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.deserializeBinaryFromReader);
-      msg.addCompactedBlockChanges(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getCompactedBlockChangesList();
-  if (f.length > 0) {
-    writer.writeRepeatedMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges.serializeBinaryToWriter
-    );
-  }
-};
-
-
-/**
- * repeated CompactedBlockNullifierChanges compacted_block_changes = 1;
- * @return {!Array<!proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges>}
- */
-proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.prototype.getCompactedBlockChangesList = function() {
-  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges>} */ (
-    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges, 1));
-};
-
-
-/**
- * @param {!Array<!proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges>} value
- * @return {!proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries} returns this
-*/
-proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.prototype.setCompactedBlockChangesList = function(value) {
-  return jspb.Message.setRepeatedWrapperField(this, 1, value);
-};
-
-
-/**
- * @param {!proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges=} opt_value
- * @param {number=} opt_index
- * @return {!proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges}
- */
-proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.prototype.addCompactedBlockChanges = function(opt_value, opt_index) {
-  return jspb.Message.addToRepeatedWrapperField(this, 1, opt_value, proto.org.dash.platform.dapi.v0.CompactedBlockNullifierChanges, opt_index);
-};
-
-
-/**
- * Clears the list making it empty but non-null.
- * @return {!proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries} returns this
- */
-proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.prototype.clearCompactedBlockChangesList = function() {
-  return this.setCompactedBlockChangesList([]);
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.oneofGroups_ = [[1]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.VersionCase = {
-  VERSION_NOT_SET: 0,
-  V0: 1
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.VersionCase}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest;
-  return proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.deserializeBinaryFromReader);
-      msg.setV0(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getV0();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.serializeBinaryToWriter
-    );
-  }
-};
-
-
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    startBlockHeight: jspb.Message.getFieldWithDefault(msg, 1, "0"),
-    prove: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0;
-  return proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = /** @type {string} */ (reader.readUint64String());
-      msg.setStartBlockHeight(value);
-      break;
-    case 2:
-      var value = /** @type {boolean} */ (reader.readBool());
-      msg.setProve(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getStartBlockHeight();
-  if (parseInt(f, 10) !== 0) {
-    writer.writeUint64String(
-      1,
-      f
-    );
-  }
-  f = message.getProve();
-  if (f) {
-    writer.writeBool(
-      2,
-      f
-    );
-  }
-};
-
-
-/**
- * optional uint64 start_block_height = 1;
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.prototype.getStartBlockHeight = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, "0"));
-};
-
-
-/**
- * @param {string} value
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.prototype.setStartBlockHeight = function(value) {
-  return jspb.Message.setProto3StringIntField(this, 1, value);
-};
-
-
-/**
- * optional bool prove = 2;
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.prototype.getProve = function() {
-  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 2, false));
-};
-
-
-/**
- * @param {boolean} value
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0.prototype.setProve = function(value) {
-  return jspb.Message.setProto3BooleanField(this, 2, value);
-};
-
-
-/**
- * optional GetRecentCompactedNullifierChangesRequestV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.GetRecentCompactedNullifierChangesRequestV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest} returns this
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.prototype.clearV0 = function() {
-  return this.setV0(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesRequest.prototype.hasV0 = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.oneofGroups_ = [[1]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.VersionCase = {
-  VERSION_NOT_SET: 0,
-  V0: 1
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.VersionCase}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.prototype.getVersionCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse;
-  return proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.deserializeBinaryFromReader);
-      msg.setV0(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getV0();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.serializeBinaryToWriter
-    );
-  }
-};
-
-
-
-/**
- * Oneof group definitions for this message. Each group defines the field
- * numbers belonging to that group. When of these fields' value is set, all
- * other fields in the group are cleared. During deserialization, if multiple
- * fields are encountered for a group, only the last value seen will be kept.
- * @private {!Array<!Array<number>>}
- * @const
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.oneofGroups_ = [[1,2]];
-
-/**
- * @enum {number}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.ResultCase = {
-  RESULT_NOT_SET: 0,
-  COMPACTED_NULLIFIER_UPDATE_ENTRIES: 1,
-  PROOF: 2
-};
-
-/**
- * @return {proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.ResultCase}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.prototype.getResultCase = function() {
-  return /** @type {proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.oneofGroups_[0]));
-};
-
-
-
-if (jspb.Message.GENERATE_TO_OBJECT) {
-/**
- * Creates an object representation of this proto.
- * Field names that are reserved in JavaScript and will be renamed to pb_name.
- * Optional fields that are not set will be set to undefined.
- * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
- * For the list of reserved names please see:
- *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
- * @param {boolean=} opt_includeInstance Deprecated. whether to include the
- *     JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @return {!Object}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.prototype.toObject = function(opt_includeInstance) {
-  return proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.toObject(opt_includeInstance, this);
-};
-
-
-/**
- * Static version of the {@see toObject} method.
- * @param {boolean|undefined} includeInstance Deprecated. Whether to include
- *     the JSPB instance for transitional soy proto support:
- *     http://goto/soy-param-migration
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0} msg The msg instance to transform.
- * @return {!Object}
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.toObject = function(includeInstance, msg) {
-  var f, obj = {
-    compactedNullifierUpdateEntries: (f = msg.getCompactedNullifierUpdateEntries()) && proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.toObject(includeInstance, f),
-    proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
-    metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
-  };
-
-  if (includeInstance) {
-    obj.$jspbMessageInstance = msg;
-  }
-  return obj;
-};
-}
-
-
-/**
- * Deserializes binary data (in protobuf wire format).
- * @param {jspb.ByteSource} bytes The bytes to deserialize.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.deserializeBinary = function(bytes) {
-  var reader = new jspb.BinaryReader(bytes);
-  var msg = new proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0;
-  return proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.deserializeBinaryFromReader(msg, reader);
-};
-
-
-/**
- * Deserializes binary data (in protobuf wire format) from the
- * given reader into the given message object.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0} msg The message object to deserialize into.
- * @param {!jspb.BinaryReader} reader The BinaryReader to use.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.deserializeBinaryFromReader = function(msg, reader) {
-  while (reader.nextField()) {
-    if (reader.isEndGroup()) {
-      break;
-    }
-    var field = reader.getFieldNumber();
-    switch (field) {
-    case 1:
-      var value = new proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.deserializeBinaryFromReader);
-      msg.setCompactedNullifierUpdateEntries(value);
-      break;
-    case 2:
-      var value = new proto.org.dash.platform.dapi.v0.Proof;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.Proof.deserializeBinaryFromReader);
-      msg.setProof(value);
-      break;
-    case 3:
-      var value = new proto.org.dash.platform.dapi.v0.ResponseMetadata;
-      reader.readMessage(value,proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader);
-      msg.setMetadata(value);
-      break;
-    default:
-      reader.skipField();
-      break;
-    }
-  }
-  return msg;
-};
-
-
-/**
- * Serializes the message to binary data (in protobuf wire format).
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.prototype.serializeBinary = function() {
-  var writer = new jspb.BinaryWriter();
-  proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.serializeBinaryToWriter(this, writer);
-  return writer.getResultBuffer();
-};
-
-
-/**
- * Serializes the given message to binary data (in protobuf wire
- * format), writing to the given BinaryWriter.
- * @param {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0} message
- * @param {!jspb.BinaryWriter} writer
- * @suppress {unusedLocalVariables} f is only used for nested messages
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.serializeBinaryToWriter = function(message, writer) {
-  var f = undefined;
-  f = message.getCompactedNullifierUpdateEntries();
-  if (f != null) {
-    writer.writeMessage(
-      1,
-      f,
-      proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries.serializeBinaryToWriter
-    );
-  }
-  f = message.getProof();
-  if (f != null) {
-    writer.writeMessage(
-      2,
-      f,
-      proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter
-    );
-  }
-  f = message.getMetadata();
-  if (f != null) {
-    writer.writeMessage(
-      3,
-      f,
-      proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter
-    );
-  }
-};
-
-
-/**
- * optional CompactedNullifierUpdateEntries compacted_nullifier_update_entries = 1;
- * @return {?proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.prototype.getCompactedNullifierUpdateEntries = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.CompactedNullifierUpdateEntries|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.prototype.setCompactedNullifierUpdateEntries = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.prototype.clearCompactedNullifierUpdateEntries = function() {
-  return this.setCompactedNullifierUpdateEntries(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.prototype.hasCompactedNullifierUpdateEntries = function() {
-  return jspb.Message.getField(this, 1) != null;
-};
-
-
-/**
- * optional Proof proof = 2;
- * @return {?proto.org.dash.platform.dapi.v0.Proof}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.prototype.getProof = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.Proof, 2));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.Proof|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.prototype.setProof = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.prototype.clearProof = function() {
-  return this.setProof(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.prototype.hasProof = function() {
-  return jspb.Message.getField(this, 2) != null;
-};
-
-
-/**
- * optional ResponseMetadata metadata = 3;
- * @return {?proto.org.dash.platform.dapi.v0.ResponseMetadata}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.prototype.getMetadata = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ResponseMetadata, 3));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.ResponseMetadata|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.prototype.setMetadata = function(value) {
-  return jspb.Message.setWrapperField(this, 3, value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0} returns this
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.prototype.clearMetadata = function() {
-  return this.setMetadata(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0.prototype.hasMetadata = function() {
-  return jspb.Message.getField(this, 3) != null;
-};
-
-
-/**
- * optional GetRecentCompactedNullifierChangesResponseV0 v0 = 1;
- * @return {?proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.prototype.getV0 = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0, 1));
-};
-
-
-/**
- * @param {?proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.GetRecentCompactedNullifierChangesResponseV0|undefined} value
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse} returns this
-*/
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.prototype.setV0 = function(value) {
-  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.oneofGroups_[0], value);
-};
-
-
-/**
- * Clears the message field making it undefined.
- * @return {!proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse} returns this
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.prototype.clearV0 = function() {
-  return this.setV0(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetRecentCompactedNullifierChangesResponse.prototype.hasV0 = function() {
   return jspb.Message.getField(this, 1) != null;
 };
 

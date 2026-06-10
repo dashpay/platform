@@ -595,5 +595,5 @@ do {
 ## See Also
 
 - [SwiftExampleApp Integration](../../../SwiftExampleApp/SwiftExampleApp/Services/DashPayService.swift) - Real-world usage example
-- [Unit Tests](../../../SwiftTests/Tests/SwiftDashSDKTests/PlatformWalletTests.swift) - Comprehensive test examples
-- [Integration Tests](../../../SwiftTests/Tests/SwiftDashSDKTests/PlatformWalletIntegrationTests.swift) - Full workflow examples
+- [Unit Tests](../../../SwiftTests/SwiftDashSDKTests/PlatformWalletTests.swift) - Comprehensive test examples
+- [Integration Tests](../../../SwiftTests/SwiftDashSDKTests/PlatformWalletIntegrationTests.swift) - Full workflow examples

@@ -8698,12 +8698,11 @@ mod tests {
         async fn test_invalid_paid_fee_from_input_only() {
             // Scenario: Input has enough balance to cover the entire penalty + processing fee.
             // Fee strategy specifies DeductFromInput first.
-            // Expected: Input balance is reduced, asset lock remains untouched.
+            // Expected: Input balance is reduced by ONLY the fee, asset lock remains untouched.
             //
-            // Note: When a transition fails in advanced_structure validation, the action still has
-            // the "remaining balance" which is (actual_balance - input_spend_amount). The fee is
-            // then deducted from this remaining balance. So the final balance is:
-            // actual_balance - input_spend_amount - fee_from_remaining
+            // Note: When a transition fails in advanced_structure validation, no outputs are created,
+            // so the intended spend is NOT consumed -- only the penalty fee is charged. The final
+            // balance is: actual_balance - fee (the spend is preserved).
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -8795,29 +8794,35 @@ mod tests {
                 .penalties
                 .address_funds_insufficient_balance;
 
-            // Verify input balance was reduced
+            // Verify input balance was reduced by ONLY the fee (the intended spend is preserved
+            // because the transition failed and no outputs were created).
             let input_balance_after = get_address_balance(&platform, input_address, &transaction);
 
-            // The remaining_balance in action = initial_input_balance - input_spend_amount
-            let remaining_balance_in_action = initial_input_balance - input_spend_amount;
+            // Amount actually charged to the input address.
+            let fee_from_input = initial_input_balance - input_balance_after;
 
-            // Fee deducted from input = remaining_balance - balance_after
-            let fee_from_input = remaining_balance_in_action - input_balance_after;
-
-            // Verify that input was charged (balance reduced)
+            // Verify that the input was charged (balance reduced).
             assert!(
-                input_balance_after < remaining_balance_in_action,
-                "Input balance {} should be less than remaining {} (some fee was taken)",
+                input_balance_after < initial_input_balance,
+                "Input balance {} should be less than the initial {} (the fee was taken)",
                 input_balance_after,
-                remaining_balance_in_action
+                initial_input_balance
             );
 
-            // Verify at least the penalty was taken from input
+            // Verify at least the penalty was taken from the input.
             assert!(
                 fee_from_input >= penalty,
                 "Fee from input {} should be at least the penalty {}",
                 fee_from_input,
                 penalty
+            );
+
+            // Verify the intended spend was NOT confiscated -- only the fee should be charged.
+            assert!(
+                fee_from_input < input_spend_amount,
+                "Only the fee ({}) should be charged to the input, not the intended spend ({})",
+                fee_from_input,
+                input_spend_amount
             );
 
             // Verify asset lock is untouched (full value remains)
@@ -8845,13 +8850,204 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn test_invalid_paid_fee_from_input_then_asset_lock() {
-            // Scenario: Input has some balance but not enough for the full fee (penalty + processing).
-            // Fee strategy specifies DeductFromInput first.
-            // Expected: Input contributes what it can, remainder comes from asset lock.
+        async fn test_address_funding_penalty_charges_only_fee_and_conserves_credits() {
+            // Credit-accounting test for the AddressFundingFromAssetLock penalty path (the branch
+            // taken when a transition can't be fully applied):
             //
-            // Note: The action's inputs_with_remaining_balance contains (actual_balance - input_spend_amount).
-            // Fee is deducted from this remaining balance, not the original balance.
+            //   - When the penalty fee is (partly) covered by an address input, only the
+            //     asset-lock-sourced portion of the fee should be reflected in the system credit
+            //     total; the input-covered portion already lives in the address balances.
+            //
+            //   - The failed transition creates no outputs, so the inputs' intended "spend" should
+            //     not be consumed -- only the penalty fee is charged (the address ends at
+            //     actual - fee), so an address keeps its funds aside from the fee.
+            //
+            // This checks that, after processing, the system credit total and the balance trees
+            // reconcile: the asset lock is untouched (no asset-lock-sourced credits), the address is
+            // charged only the penalty fee (its spend preserved), the system credit total does not
+            // grow (scalar_delta == 0), and the totals line up (accounting_gap == 0).
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([200u8; 32]);
+
+            // Seed the address with plenty of balance to cover penalty + processing fee.
+            let initial_input_balance = dash_to_credits!(0.5);
+            let input_spend_amount = dash_to_credits!(0.1);
+            setup_address_with_balance(&mut platform, input_address, 0, initial_input_balance);
+
+            let mut rng = StdRng::seed_from_u64(2002);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let asset_lock_outpoint = asset_lock_proof.out_point().expect("should have outpoint");
+            let initial_asset_lock_value = dash_to_credits!(1.0); // From fixture
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, input_spend_amount));
+
+            let mut outputs = BTreeMap::new();
+            // Outputs (3 DASH) exceed asset_lock (1) + input spend (0.1) -> insufficient-funds
+            // penalty path, with the fee deducted from the input address first.
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(3.0)));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
+
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    AddressFundsFeeStrategyStep::ReduceOutput(0),
+                ],
+            )
+            .await;
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            // --- Capture conservation state before processing (delta approach) ---
+            let before = platform
+                .drive
+                .calculate_total_credits_balance(Some(&transaction), &platform_version.drive)
+                .expect("should calculate total credits balance before");
+            let scalar_before = before.total_credits_in_platform as i128;
+            let trees_before = before.total_in_trees().expect("trees before") as i128;
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Confirm we hit the invalid_paid (penalty) path.
+            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.valid_count(), 0);
+
+            // The asset lock must be left UNTOUCHED: the fee came from the address, so 0 credits
+            // entered the platform from L1.
+            let asset_lock_consumed =
+                match get_asset_lock_info(&platform, &asset_lock_outpoint, &transaction) {
+                    StoredAssetLockInfo::PartiallyConsumed(value) => {
+                        initial_asset_lock_value as i128 - value.remaining_credit_value() as i128
+                    }
+                    StoredAssetLockInfo::FullyConsumed => {
+                        panic!("asset lock should not be fully consumed")
+                    }
+                    StoredAssetLockInfo::NotPresent => {
+                        panic!("asset lock should be present after processing")
+                    }
+                };
+            assert_eq!(
+                asset_lock_consumed, 0,
+                "asset lock should be untouched (fee paid from address), so 0 new money entered from L1"
+            );
+
+            // 2b: the address must be charged ONLY the penalty fee -- its intended spend is preserved.
+            let penalty = platform_version
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .address_funds_insufficient_balance;
+            let address_after = get_address_balance(&platform, input_address, &transaction);
+            let charged_from_address = initial_input_balance as i128 - address_after as i128;
+            assert!(
+                charged_from_address >= penalty as i128,
+                "the penalty ({}) should have been charged to the address (charged {})",
+                penalty,
+                charged_from_address
+            );
+            assert!(
+                charged_from_address < input_spend_amount as i128,
+                "only the fee should be charged, not the intended spend ({}); charged {} -- the \
+                 spend must be preserved on a failed transition",
+                input_spend_amount,
+                charged_from_address
+            );
+
+            // Fees the engine books into the Pools sum tree at block end.
+            let fees = processing_result.aggregated_fees();
+            let fees_to_pools = fees.storage_fee as i128 + fees.processing_fee as i128;
+
+            let after = platform
+                .drive
+                .calculate_total_credits_balance(Some(&transaction), &platform_version.drive)
+                .expect("should calculate total credits balance after");
+            let scalar_after = after.total_credits_in_platform as i128;
+            let trees_after = after.total_in_trees().expect("trees after") as i128;
+
+            let scalar_delta = scalar_after - scalar_before;
+            let trees_delta = trees_after - trees_before;
+
+            // After the block's fees are booked into the pools, the system credit total should equal
+            // the sum of the balance trees, i.e. scalar_delta == trees_delta + fees_to_pools.
+            let accounting_gap = scalar_delta - (trees_delta + fees_to_pools);
+
+            println!(
+                "address-funding penalty credit-accounting check:\n  \
+                 asset_lock_consumed   = {}\n  \
+                 charged_from_address  = {}\n  \
+                 scalar_delta          = {}\n  \
+                 trees_delta           = {}\n  \
+                 fees_to_pools         = {}\n  \
+                 accounting_gap        = {}",
+                asset_lock_consumed,
+                charged_from_address,
+                scalar_delta,
+                trees_delta,
+                fees_to_pools,
+                accounting_gap,
+            );
+
+            // The asset lock contributed nothing and the entire fee was paid from the pre-existing
+            // address balance, so the system credit total must not grow.
+            assert_eq!(
+                scalar_delta, 0,
+                "the system credit total must not grow when the fee is paid from an existing \
+                 address balance and nothing came from the asset lock (scalar_delta {})",
+                scalar_delta,
+            );
+
+            // The system credit total reconciles with the balance trees on this path.
+            assert_eq!(
+                accounting_gap, 0,
+                "the system credit total must reconcile with the balance trees on the penalty path \
+                 (gap {})",
+                accounting_gap,
+            );
+        }
+
+        #[tokio::test]
+        async fn test_invalid_paid_fee_from_input_then_asset_lock() {
+            // Scenario: Input's full balance is not enough for the full fee (penalty + processing).
+            // Fee strategy specifies DeductFromInput first.
+            // Expected: Input contributes everything it has, remainder comes from asset lock.
+            //
+            // Note: on the failed-transition penalty path the fee is charged from the input's full
+            // ACTUAL balance (the intended spend is no longer destroyed). Here the fee exceeds the
+            // balance, so the input is fully drained and the asset lock covers the remainder.
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -8870,13 +9066,10 @@ mod tests {
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([201u8; 32]);
 
-            // Set up input such that remaining_balance < total_fee
-            // remaining_balance = initial_input_balance - input_spend_amount
-            // We want: remaining_balance < penalty (~10M) + processing (~10M)
-            // But remaining_balance > 0 so both input and asset lock contribute
-            let initial_input_balance = 15_000_000u64; // 15M credits
-            let input_spend_amount = 10_000_000u64; // 10M credits
-                                                    // remaining_balance_in_action = 15M - 10M = 5M (less than ~20M total fee)
+            // Set up the input so its FULL actual balance is less than the total fee (penalty +
+            // processing, ~10M), so the input is fully drained and the asset lock covers the rest.
+            let initial_input_balance = 5_000_000u64; // 5M credits (< ~10M total fee)
+            let input_spend_amount = 2_000_000u64; // 2M credits
             setup_address_with_balance(&mut platform, input_address, 0, initial_input_balance);
 
             let mut rng = StdRng::seed_from_u64(2003);
@@ -8944,23 +9137,16 @@ mod tests {
                 .penalties
                 .address_funds_insufficient_balance;
 
-            // Verify input balance after processing
+            // The fee exceeds the input's full balance, so the input is fully drained.
             let input_balance_after = get_address_balance(&platform, input_address, &transaction);
-
-            // The remaining_balance in action = initial_input_balance - input_spend_amount
-            let remaining_balance_in_action = initial_input_balance - input_spend_amount;
-
-            // Input balance should be 0 or reduced significantly (fee deducted from remaining)
-            // Final balance = remaining_balance - min(fee, remaining_balance) = 0 (if remaining < fee)
-            assert!(
-                input_balance_after < remaining_balance_in_action,
-                "Input balance after {} should be less than remaining {} (some fee was taken)",
-                input_balance_after,
-                remaining_balance_in_action
+            assert_eq!(
+                input_balance_after, 0,
+                "Input balance after {} should be 0 (fully drained by the fee)",
+                input_balance_after
             );
 
-            // Fee deducted from input = remaining_balance_in_action - input_balance_after
-            let fee_from_input = remaining_balance_in_action - input_balance_after;
+            // Fee charged to the input = everything it had.
+            let fee_from_input = initial_input_balance - input_balance_after;
 
             // Verify asset lock was partially consumed
             let asset_lock_info =

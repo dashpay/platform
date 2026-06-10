@@ -3,6 +3,19 @@ import SwiftData
 import Combine
 import DashSDKFFI
 
+/// Lock-guarded monotonic generation counter, safe to read and bump from
+/// any thread. Used to drop shielded sync completion events that belong
+/// to a generation already superseded by a `stop`/`clear`, even when a
+/// restart happens in the same `@MainActor` turn (a plain boolean gate
+/// can't, because the restart re-opens the gate before the stale,
+/// previously-enqueued completion task runs).
+final class ShieldedSyncGenerationCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: UInt64 = 0
+    func current() -> UInt64 { lock.withLock { value } }
+    @discardableResult func bump() -> UInt64 { lock.withLock { value &+= 1; return value } }
+}
+
 /// The one thing SwiftUI needs for all wallet operations.
 ///
 /// Owns the Rust-side `PlatformWalletManager` handle which drives:
@@ -26,6 +39,8 @@ public class PlatformWalletManager: ObservableObject {
     /// started in [`configure`].
     @Published public private(set) var spvProgress: PlatformSpvSyncProgress = .empty
 
+    @Published public private(set) var spvIsRunning: Bool = false
+
     /// Block time of the SPV header storage's current tip (if any).
     /// `nil` while SPV isn't running or hasn't stored a header yet.
     /// Useful as a "is core producing blocks?" indicator — when this
@@ -46,21 +61,54 @@ public class PlatformWalletManager: ObservableObject {
     /// Last completed shielded sync event emitted by Rust.
     @Published public internal(set) var lastShieldedSyncEvent: ShieldedSyncEvent?
 
-    /// When true, `handleShieldedSyncCompleted` drops incoming events
-    /// instead of publishing them. Set by `stopShieldedSync` /
-    /// `clearShielded` (after the Rust drain returns) and cleared by any
-    /// sync-start (`startShieldedSync` / `syncShieldedNow`). The Rust
-    /// quiesce barrier guarantees no persistence after stop/clear, but
-    /// the completion callback is re-dispatched onto this `@MainActor`,
-    /// so a final, already-dispatched event can land just after stop/
-    /// clear returns; this gate keeps the published `lastShieldedSyncEvent`
-    /// honest for every SDK consumer (not just the example app). Both
-    /// stop/clear are synchronous on the main actor, so the flag is set
-    /// before the enqueued trailing-event task can run.
+    /// Cumulative number of encrypted notes scanned in the **current**
+    /// in-flight shielded sync pass, published once per chunk (~every
+    /// 2048 notes) via the Rust-side progress callback. Nil between
+    /// passes. Lets UI render a live counter / `ProgressView` during
+    /// the cold sync of a large pool (1M notes can take 20+ min in a
+    /// single SDK call; without this there's no signal between start
+    /// and end).
     ///
-    /// `internal` (not `private`) because the shielded lifecycle methods
-    /// that read/write it live in an extension in a separate file.
-    var suppressShieldedCompletionEvents: Bool = false
+    /// Paired with `currentShieldedSyncBlockHeight` — emitted in the
+    /// same callback. They update together; the chain-tip number lets
+    /// the UI estimate "still N blocks behind".
+    @Published public internal(set) var currentShieldedSyncScanned: UInt64?
+    @Published public internal(set) var currentShieldedSyncBlockHeight: UInt64?
+
+    /// Cumulative count of note commitments appended to the local
+    /// Orchard commitment tree in the **current** in-flight shielded
+    /// sync pass — the "checked / committed-to-tree" signal, distinct
+    /// from `currentShieldedSyncScanned` (which counts *downloaded*
+    /// notes). Published once per committed batch via the Rust-side
+    /// tree-progress callback. Nil between passes.
+    ///
+    /// Paired with `currentShieldedTreeTotal` — emitted in the same
+    /// callback. `currentShieldedTreeTotal == 0` (or nil) means the
+    /// total is indeterminate; the UI should render a spinner rather
+    /// than a determinate bar.
+    @Published public internal(set) var currentShieldedTreeCommitted: UInt64?
+    @Published public internal(set) var currentShieldedTreeTotal: UInt64?
+
+    /// Monotonic generation for shielded sync passes. Each `stop`/`clear`
+    /// bumps it; the FFI completion callback snapshots the generation at
+    /// enqueue time and `handleShieldedSyncCompleted` drops any event whose
+    /// snapshot no longer matches the current generation.
+    ///
+    /// The Rust quiesce barrier guarantees no persistence after stop/clear,
+    /// but the completion callback is re-dispatched onto this `@MainActor`,
+    /// so a final, already-dispatched event can land just after stop/clear
+    /// returns. A plain boolean gate is bypassable: a caller can stop (set
+    /// the flag) and restart (clear the flag) in the same actor turn, which
+    /// re-opens the gate before the stale, previously-enqueued completion
+    /// task runs — so the old event leaks into the new run. Tying
+    /// suppression to a generation closes that race: the stale task carries
+    /// the pre-stop generation, the restart does not reset the counter, so
+    /// the snapshot mismatches and the event is dropped even on a same-turn
+    /// restart.
+    ///
+    /// `nonisolated` + lock-guarded so the FFI callback thread can snapshot
+    /// it without hopping onto the main actor first.
+    nonisolated let shieldedSyncGeneration = ShieldedSyncGenerationCounter()
 
     /// All wallets currently held by the Rust-side
     /// `PlatformWalletManager`, keyed by the 32-byte wallet id.
@@ -573,10 +621,24 @@ public class PlatformWalletManager: ObservableObject {
 
         try persistenceHandler.deleteWalletData(walletId: walletId)
 
-        let storage = WalletStorage()
-        // Delete metadata first so the mnemonic remains available for retry.
-        try storage.deleteMetadata(for: walletId)
-        try storage.deleteMnemonic(for: walletId)
+        // The mnemonic + metadata blobs in the Keychain are keyed by
+        // `walletId`. With network-scoped wallet ids the same mnemonic
+        // maps to a DIFFERENT id per network, so a given id is owned by
+        // exactly one network's wallet and carries its own mnemonic
+        // copy — purging it can't orphan a sibling network (those live
+        // under their own distinct ids). The `walletRowCountAcrossNetworks
+        // == 0` check is therefore expected to be true right after
+        // `deleteWalletData` removes this id's lone row; it is retained
+        // as a defensive guard (and to stay correct should the id model
+        // ever change) so we never delete the phrase while any row for
+        // this exact id still exists.
+        let remaining = try persistenceHandler.walletRowCountAcrossNetworks(walletId: walletId)
+        if remaining == 0 {
+            let storage = WalletStorage()
+            // Delete metadata first so the mnemonic remains available for retry.
+            try storage.deleteMetadata(for: walletId)
+            try storage.deleteMnemonic(for: walletId)
+        }
     }
 
     // MARK: - Per-wallet lookup
@@ -750,6 +812,9 @@ public class PlatformWalletManager: ObservableObject {
                 guard let self = self else { return }
                 if let progress = try? self.syncProgress(), progress != self.spvProgress {
                     self.spvProgress = progress
+                }
+                if let running = try? self.isSpvRunning(), running != self.spvIsRunning {
+                    self.spvIsRunning = running
                 }
                 if let isSyncing = try? self.isPlatformAddressSyncing(),
                    isSyncing != self.platformAddressSyncIsSyncing {

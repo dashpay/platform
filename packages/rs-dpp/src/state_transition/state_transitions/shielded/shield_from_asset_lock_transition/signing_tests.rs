@@ -10,10 +10,15 @@
 //! in `state_transition::mod` pins `sign_with_core_signer` against
 //! `sign_by_private_key` — we don't re-derive that contract here.
 
+// `crate::shielded::builder` (the high-level bundle builder these tests drive) only
+// exists under `shielded-client`, so this module must require it too — otherwise the
+// `--all-targets` feature-unified lib-test target (which enables `state-transition-signing`
+// + `core_key_wallet` without `shielded-client`) fails to resolve the builder import.
 #![cfg(all(
     test,
     feature = "state-transition-signing",
-    feature = "core_key_wallet"
+    feature = "core_key_wallet",
+    feature = "shielded-client"
 ))]
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
@@ -119,6 +124,7 @@ async fn try_from_asset_lock_with_bundle_and_signer_produces_recoverable_compact
         anchor,
         proof,
         binding_signature,
+        None,
         PlatformVersion::latest(),
     )
     .await
@@ -150,6 +156,7 @@ async fn try_from_asset_lock_with_bundle_and_signer_via_outer_dispatcher() {
         [0u8; 32],
         vec![],
         [0u8; 64],
+        None,
         PlatformVersion::latest(),
     )
     .await
@@ -188,6 +195,7 @@ async fn outer_dispatcher_rejects_unknown_serialization_version() {
         [0u8; 32],
         vec![],
         [0u8; 64],
+        None,
         &bad_version,
     )
     .await
@@ -229,6 +237,8 @@ async fn build_shield_from_asset_lock_transition_with_signer_end_to_end() {
         &signer,
         &TestProver,
         [0u8; 36],
+        None, // sender_ovk
+        None, // surplus_output
         PlatformVersion::latest(),
     )
     .await

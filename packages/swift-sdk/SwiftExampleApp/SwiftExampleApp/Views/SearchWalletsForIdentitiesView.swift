@@ -20,13 +20,24 @@ import SwiftData
 
 struct SearchWalletsForIdentitiesView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformState: AppState
     @Environment(\.dismiss) private var dismiss
 
-    /// Wallet list for the picker. Sorted by `createdAt` to match
-    /// the ordering `CreateIdentityView` uses, so the "first wallet"
-    /// that's preselected is deterministic and consistent with the
-    /// rest of the app.
-    @Query(sort: \PersistentWallet.createdAt) private var hdWallets: [PersistentWallet]
+    /// Every persisted wallet, across all networks. Sorted by
+    /// `createdAt` to match the ordering `CreateIdentityView` uses.
+    /// Filtered down to the active network by `hdWallets` — the
+    /// store keeps one row per (walletId, network), so without the
+    /// filter the picker would list other networks' rows too.
+    @Query(sort: \PersistentWallet.createdAt) private var allWallets: [PersistentWallet]
+
+    /// Wallets on the currently-selected network — the only ones the
+    /// picker should offer, since the scan runs against the active
+    /// network's wallet manager. Mirrors the `networkRaw`-filter
+    /// pattern used by `WalletsContentView` / `IdentitiesContentView`.
+    private var hdWallets: [PersistentWallet] {
+        let raw = platformState.currentNetwork.rawValue
+        return allWallets.filter { $0.networkRaw == raw }
+    }
 
     /// User-selected wallet id. Initialized to the first wallet on
     /// appear; always preselected even when the list only has one

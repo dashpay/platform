@@ -16,6 +16,7 @@ use wasm_bindgen::JsValue;
 pub struct ShieldedEncryptedNoteWasm {
     cmx: Vec<u8>,
     nullifier: Vec<u8>,
+    cv_net: Vec<u8>,
     encrypted_note: Vec<u8>,
 }
 
@@ -29,6 +30,11 @@ impl ShieldedEncryptedNoteWasm {
     #[wasm_bindgen(getter)]
     pub fn nullifier(&self) -> Uint8Array {
         Uint8Array::from(self.nullifier.as_slice())
+    }
+
+    #[wasm_bindgen(getter = cvNet)]
+    pub fn cv_net(&self) -> Uint8Array {
+        Uint8Array::from(self.cv_net.as_slice())
     }
 
     #[wasm_bindgen(getter = encryptedNote)]
@@ -93,10 +99,11 @@ impl WasmSdk {
 
         let array = Array::new();
         if let Some(notes) = result {
-            for note in notes.0 {
+            for note in notes.notes {
                 array.push(&JsValue::from(ShieldedEncryptedNoteWasm {
                     cmx: note.cmx,
                     nullifier: note.nullifier,
+                    cv_net: note.cv_net,
                     encrypted_note: note.encrypted_note,
                 }));
             }
@@ -213,10 +220,11 @@ impl WasmSdk {
 
         let array = Array::new();
         if let Some(notes) = result {
-            for note in notes.0 {
+            for note in notes.notes {
                 array.push(&JsValue::from(ShieldedEncryptedNoteWasm {
                     cmx: note.cmx,
                     nullifier: note.nullifier,
+                    cv_net: note.cv_net,
                     encrypted_note: note.encrypted_note,
                 }));
             }

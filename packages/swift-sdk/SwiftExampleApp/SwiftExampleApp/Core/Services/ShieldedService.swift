@@ -101,6 +101,75 @@ class ShieldedService: ObservableObject {
     /// Subscription to `walletManager.$lastShieldedSyncEvent`.
     private var syncEventCancellable: AnyCancellable?
 
+    // MARK: - Timing instrumentation
+    //
+    // Surfaces wall-clock of each sync pass so devnet stress tests
+    // (1M shielded notes via `dashpay/drive:3.1-shielded.*`) can be
+    // measured from the iOS client. See
+    // `docs/shielded-sync-timing-spec.md` for the design.
+
+    /// Wall-clock of the most recent NON-cooldown completed sync
+    /// pass. Nil until the first such pass after `bind()`.
+    @Published var lastSyncDuration: TimeInterval?
+
+    /// Maximum wall-clock observed across every completed sync pass
+    /// since the last `bind()` / `reset()` / `clearLocalState`. Used
+    /// to preserve the cold-sync headline number when subsequent
+    /// steady-state passes (3 s deltas) would otherwise clobber
+    /// `lastSyncDuration` in the UI. Nil until the first completed
+    /// pass.
+    @Published var longestSyncDuration: TimeInterval?
+
+    /// Running wall-clock of the in-flight sync pass. Updated by a
+    /// 1Hz timer while `isSyncing == true`; nil otherwise.
+    @Published var currentSyncElapsed: TimeInterval?
+
+    /// Cumulative encrypted notes scanned in the in-flight pass.
+    /// Republished from `PlatformWalletManager.currentShieldedSyncScanned`
+    /// — fired once per chunk (~2048 notes) by the Rust progress
+    /// callback. Nil between passes. Lets the UI render a live
+    /// counter / ProgressView during a cold sync.
+    @Published var currentSyncScanned: UInt64?
+
+    /// Latest Platform block height observed during the in-flight
+    /// pass. Pairs with `currentSyncScanned` (same callback).
+    @Published var currentSyncBlockHeight: UInt64?
+
+    /// Cumulative note commitments appended to the local Orchard tree
+    /// in the in-flight pass — the "checked / committed-to-tree"
+    /// signal, distinct from `currentSyncScanned` (which counts
+    /// *downloaded* notes). Republished from
+    /// `PlatformWalletManager.currentShieldedTreeCommitted`, fired once
+    /// per committed batch by the Rust tree-progress callback. Nil
+    /// between passes.
+    @Published var currentTreeCommitted: UInt64?
+
+    /// On-chain MMR total leaf count, the denominator for both the
+    /// "downloaded" and "checked" bars (total notes == total leaves).
+    /// Pairs with `currentTreeCommitted` (same callback). A value of 0
+    /// (or nil) means the total is indeterminate — render a spinner
+    /// rather than a determinate bar.
+    @Published var currentTreeTotal: UInt64?
+
+    /// Subscription to `walletManager.$currentShieldedSyncScanned`
+    /// and `…BlockHeight` for live progress. Created in `bind` /
+    /// `bind`, dropped in `reset` / `clearLocalState`.
+    private var progressCancellable: AnyCancellable?
+
+    /// Subscription to `walletManager.$currentShieldedTreeCommitted`
+    /// and `…Total` for the "checked / committed-to-tree" bar. Created
+    /// in `bind`, dropped in `reset` / `clearLocalState`.
+    private var treeProgressCancellable: AnyCancellable?
+
+    /// `Date()` at the moment `isSyncing` flipped false → true.
+    /// Drives both `lastSyncDuration` (at completion) and
+    /// `currentSyncElapsed` (live).
+    private var currentSyncStartedAt: Date?
+
+    /// 1Hz timer that ticks `currentSyncElapsed` while syncing.
+    /// Started on false→true edge, invalidated on true→false edge.
+    private var syncTickTimer: Timer?
+
     // MARK: - Lifecycle
 
     /// Bind the service to a wallet. Drives `bindShielded` on the
@@ -131,6 +200,8 @@ class ShieldedService: ObservableObject {
         self.resolver = resolver
         self.syncStateCancellable?.cancel()
         self.syncEventCancellable?.cancel()
+        self.progressCancellable?.cancel()
+        self.treeProgressCancellable?.cancel()
 
         // Clear the previous wallet's snapshot up front. Without
         // this, switching wallets (or a failed rebind) leaves the
@@ -154,6 +225,16 @@ class ShieldedService: ObservableObject {
         totalScanned = 0
         totalNewNotes = 0
         totalNewlySpent = 0
+        lastSyncDuration = nil
+        longestSyncDuration = nil
+        currentSyncElapsed = nil
+        currentSyncStartedAt = nil
+        currentSyncScanned = nil
+        currentSyncBlockHeight = nil
+        currentTreeCommitted = nil
+        currentTreeTotal = nil
+        syncTickTimer?.invalidate()
+        syncTickTimer = nil
 
         let dbPath = Self.dbPath(for: network)
         let sortedAccounts = Array(Set(accounts)).sorted()
@@ -207,14 +288,68 @@ class ShieldedService: ObservableObject {
         }
 
         syncStateCancellable = walletManager.$shieldedSyncIsSyncing
-            .sink { [weak self] isSyncing in
-                self?.isSyncing = isSyncing
+            .sink { [weak self] newValue in
+                guard let self else { return }
+                let wasSyncing = self.isSyncing
+                self.isSyncing = newValue
+                // Detect false → true edge. `.sink` fires on every
+                // republished value, including duplicates, so we
+                // gate on the previous mirror to avoid log spam. The
+                // timing bracket itself is opened by
+                // `beginSyncTimingIfNeeded()`, which is idempotent —
+                // `manualSync()`'s fast path may have already opened it
+                // for a pass that completes before this publisher flips.
+                if newValue && !wasSyncing {
+                    self.beginSyncTimingIfNeeded()
+                    SDKLogger.log(
+                        "Shielded sync started",
+                        minimumLevel: .medium
+                    )
+                }
+                // Detect true → false edge. Tear down the ticker and
+                // zero the live elapsed, but do NOT clear
+                // `currentSyncStartedAt` here —
+                // `handleShieldedSyncEvent` still needs it to compute
+                // `lastSyncDuration` and calls `endSyncTiming()` itself
+                // on every terminal path. This branch only covers the
+                // edge where the publisher flips false with no paired
+                // event (defensive); the event handler is the
+                // authoritative close.
+                if !newValue && wasSyncing {
+                    self.syncTickTimer?.invalidate()
+                    self.syncTickTimer = nil
+                    self.currentSyncElapsed = nil
+                }
             }
 
         syncEventCancellable = walletManager.$lastShieldedSyncEvent
             .sink { [weak self] event in
                 guard let self, let event else { return }
                 self.handleShieldedSyncEvent(event)
+            }
+
+        // Bridge per-chunk progress from the manager. Pair
+        // `currentShieldedSyncScanned` and `…BlockHeight`; they're
+        // emitted by the same Rust callback so a `combineLatest`
+        // round-trips them coherently into our two @Published mirrors.
+        progressCancellable = walletManager.$currentShieldedSyncScanned
+            .combineLatest(walletManager.$currentShieldedSyncBlockHeight)
+            .sink { [weak self] scanned, height in
+                guard let self else { return }
+                self.currentSyncScanned = scanned
+                self.currentSyncBlockHeight = height
+            }
+
+        // Bridge the second "checked / committed-to-tree" signal from
+        // the manager. Pair `currentShieldedTreeCommitted` and `…Total`;
+        // they're emitted by the same Rust callback so a `combineLatest`
+        // round-trips them coherently into our two @Published mirrors.
+        treeProgressCancellable = walletManager.$currentShieldedTreeCommitted
+            .combineLatest(walletManager.$currentShieldedTreeTotal)
+            .sink { [weak self] committed, total in
+                guard let self else { return }
+                self.currentTreeCommitted = committed
+                self.currentTreeTotal = total
             }
     }
 
@@ -295,6 +430,14 @@ class ShieldedService: ObservableObject {
 
         isSyncing = true
         lastError = nil
+        // Open the timing bracket here too, not just on the
+        // `$shieldedSyncIsSyncing` false→true edge. A fast pass
+        // (e.g. empty-tree sync) can complete before that publisher
+        // ever flips, so without this `currentSyncStartedAt` would be
+        // nil at completion and `lastSyncDuration` would be dropped.
+        // `beginSyncTimingIfNeeded()` is idempotent, so if the
+        // publisher does flip first it simply no-ops there.
+        beginSyncTimingIfNeeded()
         defer { isSyncing = false }
         do {
             try await walletManager.syncShieldedNow()
@@ -346,6 +489,8 @@ class ShieldedService: ObservableObject {
     func reset() {
         syncStateCancellable?.cancel()
         syncEventCancellable?.cancel()
+        progressCancellable?.cancel()
+        treeProgressCancellable?.cancel()
         walletManager = nil
         boundWalletId = nil
         isSyncing = false
@@ -362,6 +507,16 @@ class ShieldedService: ObservableObject {
         totalScanned = 0
         totalNewNotes = 0
         totalNewlySpent = 0
+        lastSyncDuration = nil
+        longestSyncDuration = nil
+        currentSyncElapsed = nil
+        currentSyncStartedAt = nil
+        currentSyncScanned = nil
+        currentSyncBlockHeight = nil
+        currentTreeCommitted = nil
+        currentTreeTotal = nil
+        syncTickTimer?.invalidate()
+        syncTickTimer = nil
     }
 
     /// Wipe every wallet's persisted shielded state and stop. The
@@ -463,6 +618,7 @@ class ShieldedService: ObservableObject {
         //    wallet".
         do {
             try modelContext.delete(model: PersistentShieldedNote.self)
+            try modelContext.delete(model: PersistentShieldedOutgoingNote.self)
             try modelContext.delete(model: PersistentShieldedSyncState.self)
             try modelContext.save()
         } catch {
@@ -479,6 +635,8 @@ class ShieldedService: ObservableObject {
         //    them and leave the user stranded on this screen.
         syncStateCancellable?.cancel()
         syncEventCancellable?.cancel()
+        progressCancellable?.cancel()
+        treeProgressCancellable?.cancel()
         isBound = false
         isSyncing = false
         shieldedBalance = 0
@@ -492,6 +650,61 @@ class ShieldedService: ObservableObject {
         totalScanned = 0
         totalNewNotes = 0
         totalNewlySpent = 0
+        lastSyncDuration = nil
+        longestSyncDuration = nil
+        currentSyncElapsed = nil
+        currentSyncStartedAt = nil
+        currentSyncScanned = nil
+        currentSyncBlockHeight = nil
+        currentTreeCommitted = nil
+        currentTreeTotal = nil
+        syncTickTimer?.invalidate()
+        syncTickTimer = nil
+    }
+
+    // MARK: - Sync timing brackets
+
+    /// Open the timing bracket for a sync pass: stamp the start, zero
+    /// the live elapsed, and start the 1 Hz ticker. Idempotent via the
+    /// `currentSyncStartedAt == nil` guard so it can be called from
+    /// either the `$shieldedSyncIsSyncing` false→true edge OR the
+    /// `manualSync()` fast path — whichever observes the pass starting
+    /// first wins, and the other no-ops. This closes the gap where a
+    /// fast pass completes before the publisher flips, dropping
+    /// `lastSyncDuration`.
+    private func beginSyncTimingIfNeeded() {
+        guard currentSyncStartedAt == nil else { return }
+        currentSyncStartedAt = Date()
+        currentSyncElapsed = 0
+        syncTickTimer?.invalidate()
+        syncTickTimer = Timer.scheduledTimer(
+            withTimeInterval: 1.0,
+            repeats: true
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let started = self.currentSyncStartedAt
+                else { return }
+                self.currentSyncElapsed = max(
+                    0,
+                    Date().timeIntervalSince(started)
+                )
+            }
+        }
+    }
+
+    /// Close the timing bracket: tear down the ticker and clear both
+    /// the live elapsed and the start stamp. Every terminal flow must
+    /// route through this (normal completion, cooldown-skip, skipped,
+    /// failure) so no stale `currentSyncStartedAt` survives to be
+    /// reused — and re-misreport — on the next pass's completion.
+    /// Callers that report `lastSyncDuration` must read
+    /// `currentSyncStartedAt` BEFORE calling this.
+    private func endSyncTiming() {
+        syncTickTimer?.invalidate()
+        syncTickTimer = nil
+        currentSyncElapsed = nil
+        currentSyncStartedAt = nil
     }
 
     // MARK: - Sync event handling
@@ -542,14 +755,80 @@ class ShieldedService: ObservableObject {
                 totalScanned += result.totalScanned
                 totalNewNotes += UInt64(result.newNotes)
                 totalNewlySpent += UInt64(result.newlySpent)
+
+                // Record per-pass wall-clock and log it. `Date()`
+                // here is the Swift-side timestamp of when the
+                // event handler runs (≈ when isSyncing flipped
+                // true → false), pairing with `currentSyncStartedAt`
+                // captured on the false → true edge. Clamp to >= 0
+                // defensively — should never be negative with
+                // Swift-edge endpoints, but if the start timestamp
+                // is missing (e.g. event arrived without a paired
+                // start, post-Clear race) we surface nil rather
+                // than a misleading number.
+                if let started = currentSyncStartedAt {
+                    let elapsed = max(0, Date().timeIntervalSince(started))
+                    lastSyncDuration = elapsed
+                    // Preserve the longest pass observed since the
+                    // last reset. Cold sync (~20 min for 1M notes on
+                    // paloma) would otherwise get clobbered by the
+                    // next steady-state pass (~3 s). The cold number
+                    // is the headline measurement; keep it visible.
+                    if let prev = longestSyncDuration {
+                        if elapsed > prev { longestSyncDuration = elapsed }
+                    } else {
+                        longestSyncDuration = elapsed
+                    }
+                    let rateString: String
+                    if elapsed > 0.05 && result.totalScanned > 0 {
+                        let rate = Double(result.totalScanned) / elapsed
+                        rateString = String(format: " rate=%.0f/s", rate)
+                    } else {
+                        rateString = ""
+                    }
+                    SDKLogger.log(
+                        String(
+                            format: "Shielded sync done  pass=%d  elapsed=%.2fs%@  scanned=%llu  new=%u  spent=%u  balance=%llu",
+                            syncCountSinceLaunch,
+                            elapsed,
+                            rateString,
+                            result.totalScanned,
+                            result.newNotes,
+                            result.newlySpent,
+                            result.balance
+                        ),
+                        minimumLevel: .medium
+                    )
+                } else {
+                    lastSyncDuration = nil
+                    SDKLogger.log(
+                        "Shielded sync done (no paired start) pass=\(syncCountSinceLaunch) scanned=\(result.totalScanned) balance=\(result.balance)",
+                        minimumLevel: .medium
+                    )
+                }
+                // Close the timing bracket AFTER reading
+                // `currentSyncStartedAt` above. Tears down the ticker,
+                // clears `currentSyncElapsed`, and nils the start stamp.
+                endSyncTiming()
+            } else {
+                // Cooldown-skip terminal: no work ran, so we leave the
+                // cached balance / counters alone — but the timing
+                // bracket still has to close, otherwise a stale start
+                // stamp would be reused on the next pass's completion.
+                endSyncTiming()
             }
         } else if result.skipped {
             // Skipped means the wallet hasn't been bound yet on the
             // Rust side. The UI can prompt the user to retry the
-            // bind step.
+            // bind step. Close the timing bracket so no stale start
+            // stamp survives to the next pass.
             isBound = false
+            endSyncTiming()
         } else {
+            // Failure terminal: surface the error and close the timing
+            // bracket so the stale start stamp isn't reused next pass.
             lastError = result.errorMessage ?? "Shielded sync failed"
+            endSyncTiming()
         }
     }
 

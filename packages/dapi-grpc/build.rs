@@ -88,6 +88,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
+        "GetDocumentHistoryRequest",
         "GetDocumentsRequest",
         "GetIdentitiesByPublicKeyHashesRequest",
         "GetIdentitiesRequest",
@@ -138,20 +139,13 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetShieldedAnchorsRequest",
         "GetMostRecentShieldedAnchorRequest",
         "GetShieldedPoolStateRequest",
+        "GetShieldedNotesCountRequest",
         "GetShieldedNullifiersRequest",
-        "GetRecentNullifierChangesRequest",
-        "GetRecentCompactedNullifierChangesRequest",
     ];
 
-    const PROOF_ONLY_VERSIONED_REQUESTS: [&str; 2] = [
-        "GetAddressesTrunkStateRequest",
-        "GetNullifiersTrunkStateRequest",
-    ];
+    const PROOF_ONLY_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesTrunkStateRequest"];
 
-    const MERK_PROOF_VERSIONED_REQUESTS: [&str; 2] = [
-        "GetAddressesBranchStateRequest",
-        "GetNullifiersBranchStateRequest",
-    ];
+    const MERK_PROOF_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesBranchStateRequest"];
 
     // The following responses are excluded as they don't support proofs:
     // - "GetConsensusParamsResponse"
@@ -165,6 +159,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
+        "GetDocumentHistoryResponse",
         "GetDocumentsResponse",
         "GetIdentitiesByPublicKeyHashesResponse",
         "GetIdentitiesResponse",
@@ -213,20 +208,13 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetShieldedAnchorsResponse",
         "GetMostRecentShieldedAnchorResponse",
         "GetShieldedPoolStateResponse",
+        "GetShieldedNotesCountResponse",
         "GetShieldedNullifiersResponse",
-        "GetRecentNullifierChangesResponse",
-        "GetRecentCompactedNullifierChangesResponse",
     ];
 
-    const PROOF_ONLY_VERSIONED_RESPONSES: [&str; 2] = [
-        "GetAddressesTrunkStateResponse",
-        "GetNullifiersTrunkStateResponse",
-    ];
+    const PROOF_ONLY_VERSIONED_RESPONSES: [&str; 1] = ["GetAddressesTrunkStateResponse"];
 
-    const MERK_PROOF_VERSIONED_RESPONSES: [&str; 2] = [
-        "GetAddressesBranchStateResponse",
-        "GetNullifiersBranchStateResponse",
-    ];
+    const MERK_PROOF_VERSIONED_RESPONSES: [&str; 1] = ["GetAddressesBranchStateResponse"];
 
     check_unique(&VERSIONED_REQUESTS).expect("VERSIONED_REQUESTS");
     check_unique(&VERSIONED_RESPONSES).expect("VERSIONED_RESPONSES");
