@@ -286,7 +286,10 @@ mod tests {
 
     #[test]
     fn normalize_trims_lowercases_collapses() {
-        assert_eq!(normalize_phrase_impl("  ABANDON\tabout \n legal  "), "abandon about legal");
+        assert_eq!(
+            normalize_phrase_impl("  ABANDON\tabout \n legal  "),
+            "abandon about legal"
+        );
         assert_eq!(normalize_phrase_impl(""), "");
         assert_eq!(normalize_phrase_impl("   "), "");
     }
@@ -320,7 +323,9 @@ mod tests {
         );
 
         // (a) a space-separated valid CJK phrase passes the valid branch through
-        assert!(phrase_is_valid_impl(&normalize_phrase_impl(&cleanup_phrase_impl(&spaced))));
+        assert!(phrase_is_valid_impl(&normalize_phrase_impl(
+            &cleanup_phrase_impl(&spaced)
+        )));
 
         // (b) a no-space CJK phrase gets ideographic spaces inserted (best-effort
         //     split — exact reconstruction is greedy-dependent, matching DashSync).
@@ -489,7 +494,10 @@ mod tests {
             assert!(phrase_is_valid_impl(&norm), "should be valid: {p}");
             for word in norm.split(' ') {
                 assert!(word_in_any_list(word), "word should be valid: {word}");
-                assert!(word_in_english(word), "word should be English-local: {word}");
+                assert!(
+                    word_in_english(word),
+                    "word should be English-local: {word}"
+                );
             }
         }
     }
@@ -553,7 +561,10 @@ mod tests {
         let words: Vec<&'static str> = m.words().collect();
         let dirty = words.join(",");
         let cleaned = cleanup_phrase_impl(&dirty);
-        assert!(!cleaned.contains(','), "punctuation must be stripped: {cleaned:?}");
+        assert!(
+            !cleaned.contains(','),
+            "punctuation must be stripped: {cleaned:?}"
+        );
         assert!(
             cleaned.contains(IDEO_SP),
             "CJK split should insert ideographic spaces: {cleaned:?}"
