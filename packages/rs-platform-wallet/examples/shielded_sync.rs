@@ -2,9 +2,10 @@
 //!
 //! Drives the **full PlatformWalletManager flow** end-to-end: create wallet
 //! → bind shielded → trigger a sync pass via the network coordinator → check
-//! the recovered balance. Goes through the same APIs production wallets use,
-//! so any breakage in `bind_shielded`, `NetworkShieldedCoordinator::sync`, the
-//! gRPC layer, or proof verification surfaces here.
+//! the pass completed cleanly. Goes through the same APIs production wallets
+//! use, so any breakage in `bind_shielded`,
+//! `NetworkShieldedCoordinator::sync`, the gRPC layer, or proof verification
+//! surfaces here.
 //!
 //! This is an opt-in example (NOT a test) because it performs real network
 //! I/O against a running devnet; cargo examples are compiled but never run by
@@ -17,10 +18,14 @@
 //! # Expected chain config
 //!
 //! The seed config is hardcoded on the chain side (see
-//! `ShieldedSeedConfig::sdk_test_data` in rs-drive-abci):
-//! `total_notes = 5_000, owned_count = 8 (split 4/4), owned_value = 100_000,
-//! rng_seed = 0xDEAD_BEEF`. Each wallet's expected balance after sync is
-//! `4 × 100_000 = 400_000`.
+//! `ShieldedSeedConfig::sdk_test_data` in rs-drive-abci's
+//! `create_genesis_state/test/shielded.rs`). All seeded notes are
+//! **filler-only** — the genesis test-wallet note seeding was removed, so no
+//! seeded note decrypts under any wallet's IVK and a fresh devnet
+//! legitimately reports balance 0. What a clean run guarantees instead is
+//! that the sync pass walked the seeded pool (`total_scanned > 0`) without
+//! errors; balances are printed informationally. For a non-zero balance,
+//! fund the wallet with real shielded transitions post-genesis.
 //!
 //! # Requirements
 //!
@@ -45,7 +50,7 @@
 //! DASH_SDK_CORE_PASSWORD='<password>' cargo run -p platform-wallet \
 //!     --example shielded_sync --features shielded
 //!
-//! # Wallet B (cross-wallet privacy check):
+//! # Wallet B (second, independent ZIP-32 derivation):
 //! SHIELDED_SYNC_WALLET=B DASH_SDK_CORE_PASSWORD='<password>' \
 //!     cargo run -p platform-wallet --example shielded_sync --features shielded
 //! ```
@@ -62,31 +67,21 @@ use platform_wallet::changeset::{
     ClientStartState, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::events::{EventHandler, PlatformEventHandler};
+use platform_wallet::manager::shielded_sync::WalletShieldedOutcome;
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::PlatformWalletManager;
 
-/// Wallet A seed — **must stay byte-identical** to
-/// `packages/rs-drive-abci/src/execution/platform_events/initialization/create_genesis_state/test/shielded_test_wallets.rs::SEED_A`.
-///
-/// Both sides derive the IVK via the same ZIP-32 path
-/// (`SpendingKey::from_zip32_seed(seed, coin_type=1, account=0)`), so the
-/// recipient address the chain encrypts to is byte-identical to the address
-/// the wallet's IVK trial-decrypts under. If the chain-side switches
-/// derivation, this example fails with "decrypted 0 notes".
+/// Wallet A seed. Historically this mirrored the chain-side test-wallet
+/// seeding (removed — see the `ShieldedSeedConfig::sdk_test_data`
+/// doc-comment in rs-drive-abci's `create_genesis_state/test/shielded.rs`);
+/// today it's just a deterministic seed so the wallet ID is reproducible
+/// across runs. Seeded notes are filler-only, so trial decryption under
+/// this wallet's IVK finding nothing is expected.
 const SEED_A: [u8; 32] = [0x73; 32];
 
-/// Wallet B seed — see [`SEED_A`].
+/// Wallet B seed — see [`SEED_A`]. Distinct from A so the `B` run exercises
+/// a second, independent ZIP-32 derivation.
 const SEED_B: [u8; 32] = [0x74; 32];
-
-/// Hardcoded mirror of `ShieldedSeedConfig::sdk_test_data` on the chain side
-/// (rs-drive-abci). If the chain-side constant changes, update both — there's
-/// no shared crate to import from (rs-drive-abci is downstream of this crate).
-const COUNT_A: u32 = 4;
-const COUNT_B: u32 = 4;
-const OWNED_VALUE: u64 = 100_000;
-
-const EXPECTED_BALANCE_A: u64 = COUNT_A as u64 * OWNED_VALUE; // 400_000
-const EXPECTED_BALANCE_B: u64 = COUNT_B as u64 * OWNED_VALUE; // 400_000
 
 #[derive(Clone, Copy, Debug)]
 enum WalletIndex {
@@ -104,7 +99,7 @@ impl WalletIndex {
 }
 
 /// In-memory no-op persister. Real wallets persist; for this example we only
-/// care that a single sync pass recovers the right balance.
+/// care that a single sync pass completes cleanly.
 struct NoopPersister;
 impl PlatformWalletPersistence for NoopPersister {
     fn store(
@@ -132,8 +127,9 @@ impl EventHandler for NoopEventHandler {}
 impl PlatformEventHandler for NoopEventHandler {}
 
 /// Drive the full PlatformWalletManager flow for the given wallet and assert
-/// the recovered balance equals what the chain's seed config produces.
-async fn run_wallet_balance_test(wallet: WalletIndex) {
+/// the sync pass completed cleanly (no errors, not a cooldown skip, seeded
+/// pool actually scanned).
+async fn run_wallet_sync_test(wallet: WalletIndex) {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -141,15 +137,6 @@ async fn run_wallet_balance_test(wallet: WalletIndex) {
         )
         .with_target(true)
         .try_init();
-
-    let (expected_count, expected_balance) = match wallet {
-        WalletIndex::A => (COUNT_A, EXPECTED_BALANCE_A),
-        WalletIndex::B => (COUNT_B, EXPECTED_BALANCE_B),
-    };
-    eprintln!(
-        "{:?}: expecting {} notes summing to {}",
-        wallet, expected_count, expected_balance,
-    );
 
     // --- 1. Build SDK pointing at the local devnet ---
     // Dashmate's local gateway issues SHA-1-signed certs that modern rustls
@@ -266,8 +253,8 @@ async fn run_wallet_balance_test(wallet: WalletIndex) {
         hex::encode(platform_wallet.wallet_id())
     );
 
-    // --- 5. Bind the shielded sub-wallet with the SAME seed bytes the
-    //        chain-side seeder uses, deriving via ZIP-32 (account 0) ---
+    // --- 5. Bind the shielded sub-wallet, deriving via ZIP-32
+    //        (account 0) ---
     let coordinator = manager
         .shielded_coordinator()
         .await
@@ -283,35 +270,55 @@ async fn run_wallet_balance_test(wallet: WalletIndex) {
     let summary = coordinator.sync(true).await;
     eprintln!("{:?}: sync summary: {:?}", wallet, summary);
 
-    // --- 7. Read the wallet's shielded balance per ZIP-32 account. We bound
-    //        account 0 only, so we expect exactly one entry. ---
+    // --- 7. Assert the pass completed cleanly for our wallet: a genuine
+    //        network walk (not a cooldown skip) that streamed the seeded
+    //        pool's commitments without erroring. Balance is NOT asserted —
+    //        seeded notes are filler-only, so 0 is the expected balance on
+    //        a fresh devnet. ---
+    let outcome = summary
+        .wallet_results
+        .get(&platform_wallet.wallet_id())
+        .expect("sync pass must report an outcome for the bound wallet");
+    let wallet_summary = match outcome {
+        WalletShieldedOutcome::Ok(s) => s,
+        other => panic!(
+            "{:?}: sync pass did not complete cleanly: {:?}",
+            wallet, other
+        ),
+    };
+    assert!(
+        !wallet_summary.is_cooldown_skip,
+        "{:?}: pass was a cooldown skip despite force=true",
+        wallet,
+    );
+    assert!(
+        wallet_summary.notes_result.total_scanned > 0,
+        "{:?}: scanned 0 commitments — devnet not built with SDK_TEST_DATA=true?",
+        wallet,
+    );
+
+    // --- 8. Read the wallet's shielded balance per ZIP-32 account,
+    //        informationally. We bound account 0 only, so we expect exactly
+    //        one entry. ---
     let balances = platform_wallet
         .shielded_balances(&coordinator)
         .await
         .expect("shielded_balances");
     let total_balance: u64 = balances.values().sum();
     eprintln!(
-        "{:?}: per-account balances = {:?} (total {})",
+        "{:?}: per-account balances = {:?} (total {}; informational — seeded notes are filler-only)",
         wallet, balances, total_balance
-    );
-
-    assert_eq!(
-        total_balance, expected_balance,
-        "{:?}: balance mismatch (expected {} = {} × {}, got {})",
-        wallet, expected_balance, expected_count, OWNED_VALUE, total_balance,
     );
 
     // Best-effort cleanup of the temp SQLite dir.
     let _ = std::fs::remove_dir_all(&shielded_db_dir);
 }
 
-/// Sync a wallet against the seeded pool and verify balance =
-/// `count × owned_value`.
+/// Sync a wallet against the seeded pool and verify the pass completed
+/// cleanly (no errors, not a cooldown skip, `total_scanned > 0`).
 ///
 /// Defaults to wallet A; set `SHIELDED_SYNC_WALLET=B` to run wallet B
-/// instead. Running wallet B also pins cross-wallet privacy at the network
-/// layer — if A's IVK leaked over the wire and B picked up A's notes, B's
-/// balance would exceed `count_b × value`.
+/// instead, exercising a second, independent ZIP-32 derivation.
 #[tokio::main(flavor = "multi_thread", worker_threads = 1)]
 async fn main() {
     let wallet = match std::env::var("SHIELDED_SYNC_WALLET")
@@ -325,21 +332,17 @@ async fn main() {
         other => panic!("invalid SHIELDED_SYNC_WALLET `{other}`; expected A or B"),
     };
 
-    run_wallet_balance_test(wallet).await;
+    run_wallet_sync_test(wallet).await;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Keep the hardcoded expectations coherent with the seed constants
-    /// so `cargo test` (not just a manual example run) catches drift if
-    /// someone bumps `COUNT_*` / `OWNED_VALUE` without updating the
-    /// expected balances, or accidentally aliases the two seeds.
+    /// Catch an accidental aliasing of the two seeds — the `B` run is
+    /// only meaningful if it derives a distinct wallet.
     #[test]
-    fn expected_balances_match_seed_constants() {
-        assert_eq!(EXPECTED_BALANCE_A, COUNT_A as u64 * OWNED_VALUE);
-        assert_eq!(EXPECTED_BALANCE_B, COUNT_B as u64 * OWNED_VALUE);
+    fn wallet_seeds_are_distinct() {
         assert_ne!(SEED_A, SEED_B);
     }
 }

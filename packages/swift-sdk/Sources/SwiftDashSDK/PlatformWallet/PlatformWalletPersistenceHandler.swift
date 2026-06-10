@@ -401,12 +401,12 @@ public class PlatformWalletPersistenceHandler {
     /// stale post-deletion callbacks can't resurrect a wiped wallet.
     private func ensureWalletRecord(walletId: Data) -> PersistentWallet {
         let descriptor = FetchDescriptor<PersistentWallet>(
-            predicate: #Predicate { $0.walletId == walletId }
+            predicate: walletRecordPredicate(walletId: walletId)
         )
         if let existing = try? backgroundContext.fetch(descriptor).first {
             return existing
         }
-        let record = PersistentWallet(walletId: walletId, network: nil)
+        let record = PersistentWallet(walletId: walletId, network: self.network)
         backgroundContext.insert(record)
         return record
     }
@@ -415,9 +415,25 @@ public class PlatformWalletPersistenceHandler {
     /// when no row exists.
     private func findWalletRecord(walletId: Data) -> PersistentWallet? {
         let descriptor = FetchDescriptor<PersistentWallet>(
-            predicate: #Predicate { $0.walletId == walletId }
+            predicate: walletRecordPredicate(walletId: walletId)
         )
         return try? backgroundContext.fetch(descriptor).first
+    }
+
+    /// Predicate matching the `PersistentWallet` row owned by THIS
+    /// handler. A handler is constructed per-network, so when
+    /// `self.network` is set we scope to `(walletId, networkRaw)` —
+    /// otherwise the mainnet handler would find and overwrite the
+    /// devnet row (and vice versa) now that the same `walletId` can
+    /// have one row per network. When `self.network` is `nil` (the
+    /// advanced `configure(sdkPointer:network:nil)` path) we fall
+    /// back to walletId-only matching to preserve that behaviour.
+    private func walletRecordPredicate(walletId: Data) -> Predicate<PersistentWallet> {
+        if let network = self.network {
+            let networkRaw = network.rawValue
+            return #Predicate { $0.walletId == walletId && $0.networkRaw == networkRaw }
+        }
+        return #Predicate { $0.walletId == walletId }
     }
 
     /// Look up a `PersistentWallet` to hang on
@@ -429,7 +445,7 @@ public class PlatformWalletPersistenceHandler {
     private func fetchWalletForLink(walletId: Data?) -> PersistentWallet? {
         guard let walletId else { return nil }
         let descriptor = FetchDescriptor<PersistentWallet>(
-            predicate: #Predicate { $0.walletId == walletId }
+            predicate: walletRecordPredicate(walletId: walletId)
         )
         return try? backgroundContext.fetch(descriptor).first
     }
@@ -1796,9 +1812,13 @@ public class PlatformWalletPersistenceHandler {
         // 1. Resolve the wallet's network from SwiftData. We need it
         //    to feed `KeyDerivation.getIdentityAuthenticationPath`
         //    so the path chooses the right `coin_type` (mainnet vs
-        //    testnet).
+        //    testnet). Scope to THIS handler's network via
+        //    `walletRecordPredicate` — the same `walletId` can now have
+        //    a row per network, and a bare walletId-only fetch could
+        //    resolve to a sibling network's row and derive the key on
+        //    the wrong chain (unusable on-chain).
         let walletDescriptor = FetchDescriptor<PersistentWallet>(
-            predicate: PersistentWallet.predicate(walletId: walletId)
+            predicate: walletRecordPredicate(walletId: walletId)
         )
         guard
             let persistentWallet = try? backgroundContext.fetch(walletDescriptor).first
@@ -2707,14 +2727,26 @@ public class PlatformWalletPersistenceHandler {
     private var shieldedSyncStateLoadAllocations:
         [UnsafeRawPointer: ShieldedSyncStateLoadAllocation] = [:]
 
-    /// Set network + birth height on the `PersistentWallet` row. Fires
-    /// once at wallet registration with values the Rust side can
-    /// contribute but Swift can't easily recompute (network is on the
-    /// manager's SDK; birth height is SPV's confirmed tip at creation).
-    func persistWalletMetadata(walletId: Data, network: Network, birthHeight: UInt32) {
+    /// Set network, group id + birth height on the `PersistentWallet`
+    /// row. Fires once at wallet registration with values the Rust side
+    /// can contribute but Swift can't easily recompute (network is on
+    /// the manager's SDK; the group id is the network-independent digest
+    /// Rust derives from the root key; birth height is SPV's confirmed
+    /// tip at creation). `walletGroupId` ties this row to its
+    /// sibling-network rows for the same seed; it is left empty only if
+    /// Rust handed back no bytes.
+    func persistWalletMetadata(
+        walletId: Data,
+        network: Network,
+        walletGroupId: Data,
+        birthHeight: UInt32
+    ) {
         onQueue {
             let wallet = ensureWalletRecord(walletId: walletId)
             wallet.network = network
+            if !walletGroupId.isEmpty {
+                wallet.walletGroupId = walletGroupId
+            }
             wallet.birthHeight = birthHeight
             wallet.lastUpdated = Date()
             if !self.inChangeset { try? backgroundContext.save() }
@@ -2735,10 +2767,24 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
-    public func identityIdsForWallet(walletId: Data) throws -> [Data] {
+    /// Count `PersistentWallet` rows for `walletId` across ALL
+    /// networks (deliberately ignores `self.network`). The mnemonic /
+    /// metadata in the Keychain are shared by every network's row, so
+    /// `deleteWallet` consults this after wiping its own network's row
+    /// to decide whether the shared Keychain material can be purged.
+    public func walletRowCountAcrossNetworks(walletId: Data) throws -> Int {
         try onQueue {
             let descriptor = FetchDescriptor<PersistentWallet>(
                 predicate: PersistentWallet.predicate(walletId: walletId)
+            )
+            return try backgroundContext.fetchCount(descriptor)
+        }
+    }
+
+    public func identityIdsForWallet(walletId: Data) throws -> [Data] {
+        try onQueue {
+            let descriptor = FetchDescriptor<PersistentWallet>(
+                predicate: walletRecordPredicate(walletId: walletId)
             )
             guard let walletRow = try backgroundContext.fetch(descriptor).first else {
                 return []
@@ -2752,7 +2798,7 @@ public class PlatformWalletPersistenceHandler {
         try onQueue {
             do {
                 let walletDescriptor = FetchDescriptor<PersistentWallet>(
-                    predicate: PersistentWallet.predicate(walletId: walletId)
+                    predicate: walletRecordPredicate(walletId: walletId)
                 )
                 let walletRow = try backgroundContext.fetch(walletDescriptor).first
                 let walletNetwork = walletRow?.network
@@ -2830,32 +2876,63 @@ public class PlatformWalletPersistenceHandler {
                     try backgroundContext.save()
                 }
 
-                let txoDescriptor = FetchDescriptor<PersistentTxo>(
-                    predicate: #Predicate<PersistentTxo> { $0.walletId == walletId }
-                )
-                for row in try backgroundContext.fetch(txoDescriptor) {
-                    backgroundContext.delete(row)
+                // The txo / pending-input / asset-lock tables are keyed
+                // by the network-independent walletId (same mnemonic →
+                // same id on every network) and carry no network column,
+                // so their rows are shared by every network this wallet
+                // lives on. Only wipe them when this is the wallet's LAST
+                // remaining per-network row — otherwise deleting the
+                // wallet from one network would erase a sibling network's
+                // cached UTXOs / pending inputs / asset-lock state.
+                // (The walletRow itself, deleted below, IS network-scoped
+                // via `walletRecordPredicate`.) Counted before walletRow
+                // is removed, so `<= 1` means "this is the last one".
+                // Guard on `walletRow != nil`: if this handler doesn't
+                // own a row for `walletId` (asked to delete a wallet it
+                // doesn't have), a sibling network's row can still make
+                // the cross-network count 1 — which would wrongly read
+                // as "last row" and wipe the shared child tables out
+                // from under that other network. No owned row → never
+                // treat it as the last one.
+                let isLastNetworkRow: Bool
+                if walletRow != nil {
+                    let siblingDescriptor = FetchDescriptor<PersistentWallet>(
+                        predicate: #Predicate<PersistentWallet> { $0.walletId == walletId }
+                    )
+                    isLastNetworkRow =
+                        ((try? backgroundContext.fetchCount(siblingDescriptor)) ?? 0) <= 1
+                } else {
+                    isLastNetworkRow = false
                 }
 
-                let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
-                    predicate: #Predicate<PersistentPendingInput> { $0.walletId == walletId }
-                )
-                for row in try backgroundContext.fetch(pendingDescriptor) {
-                    backgroundContext.delete(row)
-                }
+                if isLastNetworkRow {
+                    let txoDescriptor = FetchDescriptor<PersistentTxo>(
+                        predicate: #Predicate<PersistentTxo> { $0.walletId == walletId }
+                    )
+                    for row in try backgroundContext.fetch(txoDescriptor) {
+                        backgroundContext.delete(row)
+                    }
 
-                // `loadCachedAssetLocksOnQueue` rehydrates these rows on
-                // the wallet-load path back into the Rust-side
-                // `unused_asset_locks` map so an in-flight registration
-                // can resume across an app kill. Without this cleanup,
-                // delete-then-reimport of the same wallet would
-                // resurrect stale Pending / Resumable asset-lock state
-                // that the user thought they had wiped.
-                let assetLockDescriptor = FetchDescriptor<PersistentAssetLock>(
-                    predicate: #Predicate<PersistentAssetLock> { $0.walletId == walletId }
-                )
-                for row in try backgroundContext.fetch(assetLockDescriptor) {
-                    backgroundContext.delete(row)
+                    let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
+                        predicate: #Predicate<PersistentPendingInput> { $0.walletId == walletId }
+                    )
+                    for row in try backgroundContext.fetch(pendingDescriptor) {
+                        backgroundContext.delete(row)
+                    }
+
+                    // `loadCachedAssetLocksOnQueue` rehydrates these rows on
+                    // the wallet-load path back into the Rust-side
+                    // `unused_asset_locks` map so an in-flight registration
+                    // can resume across an app kill. Without this cleanup,
+                    // delete-then-reimport of the same wallet would
+                    // resurrect stale Pending / Resumable asset-lock state
+                    // that the user thought they had wiped.
+                    let assetLockDescriptor = FetchDescriptor<PersistentAssetLock>(
+                        predicate: #Predicate<PersistentAssetLock> { $0.walletId == walletId }
+                    )
+                    for row in try backgroundContext.fetch(assetLockDescriptor) {
+                        backgroundContext.delete(row)
+                    }
                 }
 
                 // Shielded (Orchard) per-wallet state. These three
@@ -4032,9 +4109,25 @@ public class PlatformWalletPersistenceHandler {
     /// `PlatformWalletManager.loadFromPersistor` after the FFI call
     /// succeeds so it can fetch a Swift-side handle for each wallet
     /// Rust just reconstructed.
+    ///
+    /// Network-scoped to match `loadWalletList()`: when `network` is
+    /// non-nil the fetch is filtered to the handler's bound network so
+    /// `loadFromPersistor` only requests handles for the wallets the FFI
+    /// just reconstructed on this network — not sibling-network rows,
+    /// whose handle lookups would miss and pollute `lastError`. When
+    /// `network` is nil (legacy callers) we fall back to the unfiltered
+    /// cross-network fetch, matching `loadWalletList()`.
     public func restorableWalletIds() -> [Data] {
         onQueue {
-            let descriptor = FetchDescriptor<PersistentWallet>()
+            let descriptor: FetchDescriptor<PersistentWallet>
+            if let network = self.network {
+                let raw = network.rawValue
+                descriptor = FetchDescriptor<PersistentWallet>(
+                    predicate: #Predicate { $0.networkRaw == raw }
+                )
+            } else {
+                descriptor = FetchDescriptor<PersistentWallet>()
+            }
             guard let wallets = try? backgroundContext.fetch(descriptor) else {
                 return []
             }
@@ -4197,8 +4290,14 @@ public class PlatformWalletPersistenceHandler {
     /// `PersistentWallet` row. Returns `nil` if the wallet row
     /// doesn't exist or its network hasn't been resolved yet.
     private func walletNetwork(walletId: Data) -> Network? {
+        // Scope to this handler's network when one is set so a mnemonic
+        // that lives on multiple networks resolves to the row for THIS
+        // manager's network — not an arbitrary sibling row that would
+        // mis-stamp persisted sync state / identity / token writes and
+        // feed the wrong coin type into key derivation. Falls back to
+        // walletId-only when no network is set (legacy / no-container).
         let descriptor = FetchDescriptor<PersistentWallet>(
-            predicate: #Predicate { $0.walletId == walletId }
+            predicate: walletRecordPredicate(walletId: walletId)
         )
         guard let wallet = try? backgroundContext.fetch(descriptor).first else {
             return nil
@@ -5159,6 +5258,7 @@ private func persistWalletMetadataCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
     network: FFINetwork,
+    walletGroupIdPtr: UnsafePointer<UInt8>?,
     birthHeight: UInt32
 ) -> Int32 {
     guard let context = context,
@@ -5169,9 +5269,11 @@ private func persistWalletMetadataCallback(
         .fromOpaque(context)
         .takeUnretainedValue()
     let walletId = Data(bytes: walletIdPtr, count: 32)
+    let walletGroupId = walletGroupIdPtr.map { Data(bytes: $0, count: 32) } ?? Data()
     handler.persistWalletMetadata(
         walletId: walletId,
         network: Network(ffiNetwork: network),
+        walletGroupId: walletGroupId,
         birthHeight: birthHeight
     )
     return 0

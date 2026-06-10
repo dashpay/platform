@@ -810,8 +810,9 @@ impl Merge for TokenBalanceChangeSet {
 
 /// Per-wallet metadata captured at registration. Carries fields not
 /// derivable from the xpub alone: which network the wallet is bound
-/// to and the birth-height best estimate (the SPV tip at create time;
-/// 0 means "scan from genesis / unknown").
+/// to, the network-independent group id that ties a seed's per-network
+/// wallets together, and the birth-height best estimate (the SPV tip
+/// at create time; 0 means "scan from genesis / unknown").
 ///
 /// The shape sits on [`PlatformWalletChangeSet`] as
 /// `Option<WalletMetadataEntry>` because the round emits at most one
@@ -827,6 +828,17 @@ impl Merge for TokenBalanceChangeSet {
 pub struct WalletMetadataEntry {
     /// Network the wallet is bound to.
     pub network: Network,
+    /// Network-INDEPENDENT 32-byte id shared by every network's wallet
+    /// derived from the same seed. Computed as
+    /// `Wallet::compute_wallet_id_from_root_extended_pub_key(root, None)`
+    /// — `SHA256(root_public_key || root_chain_code)` with no network
+    /// byte folded in. Distinct from the per-network [`Self::network`]-
+    /// scoped `wallet_id` the changeset is keyed on: that id differs per
+    /// network for the same seed, this one is the same across all of
+    /// them, so consumers can group a seed's sibling-network rows by it.
+    /// For watch-only / external-signable wallets (which carry no root
+    /// key) this falls back to the scoped `wallet_id` — a group of one.
+    pub wallet_group_id: [u8; 32],
     /// Best estimate of the chain tip at creation time. `0` means
     /// "scan from genesis / unknown".
     pub birth_height: u32,

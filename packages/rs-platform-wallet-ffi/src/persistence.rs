@@ -177,11 +177,18 @@ pub struct PersistenceCallbacks {
         ),
     >,
     /// Called once per registration round with the wallet's
-    /// network tag + birth height. `network` uses the same
-    /// discriminant as `WalletRestoreEntryFFI.network` (0 = Mainnet,
-    /// 1 = Testnet, 2 = Devnet, 3 = Regtest). `birth_height` is the
-    /// best estimate of the block at which the wallet started; zero
-    /// means "scan from genesis / unknown".
+    /// network tag, network-independent group id + birth height.
+    /// `network` uses the same discriminant as
+    /// `WalletRestoreEntryFFI.network` (0 = Mainnet, 1 = Testnet,
+    /// 2 = Devnet, 3 = Regtest). `wallet_group_id` points to 32
+    /// readable bytes (same shape as `wallet_id`) — the
+    /// NETWORK-INDEPENDENT id shared by every network's wallet derived
+    /// from the same seed, so a consumer can group a seed's
+    /// sibling-network rows by it (the per-network `wallet_id` differs
+    /// per network for the same seed). For watch-only /
+    /// external-signable wallets it equals `wallet_id` (a group of
+    /// one). `birth_height` is the best estimate of the block at which
+    /// the wallet started; zero means "scan from genesis / unknown".
     ///
     /// Returns 0 on success. A non-zero return flips the round's
     /// `success` flag to `false` so [`Self::on_changeset_end_fn`]
@@ -191,6 +198,7 @@ pub struct PersistenceCallbacks {
             context: *mut c_void,
             wallet_id: *const u8,
             network: FFINetwork,
+            wallet_group_id: *const u8,
             birth_height: u32,
         ) -> i32,
     >,
@@ -596,6 +604,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         self.callbacks.context,
                         wallet_id.as_ptr(),
                         meta.network.into(),
+                        meta.wallet_group_id.as_ptr(),
                         meta.birth_height,
                     )
                 };
@@ -1430,10 +1439,10 @@ impl PlatformWalletPersistence for FFIPersister {
                     .on_load_shielded_outgoing_notes_free_fn
                     .is_some()
             {
-                return Err("on_load_shielded_outgoing_notes_fn and \
-                     on_load_shielded_outgoing_notes_free_fn must be provided together"
-                    .to_string()
-                    .into());
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_outgoing_notes_fn and \
+                     on_load_shielded_outgoing_notes_free_fn must be provided together",
+                ));
             }
 
             // 1) notes
@@ -1508,11 +1517,10 @@ impl PlatformWalletPersistence for FFIPersister {
                 let rc =
                     unsafe { load_outgoing(self.callbacks.context, &mut out_ptr, &mut out_count) };
                 if rc != 0 {
-                    return Err(format!(
+                    return Err(PersistenceError::backend(format!(
                         "on_load_shielded_outgoing_notes_fn returned error code {}",
                         rc
-                    )
-                    .into());
+                    )));
                 }
                 struct OutgoingGuard {
                     context: *mut c_void,
@@ -2115,11 +2123,30 @@ unsafe fn address_info_from_ffi(
     let address_str = CStr::from_ptr(entry.address_base58)
         .to_str()
         .map_err(|e| format!("address_base58 not UTF-8: {}", e))?;
-    let address = dashcore::Address::from_str(address_str)
+    let parsed = dashcore::Address::from_str(address_str)
         .map_err(|e| format!("failed to parse address '{}': {}", address_str, e))?
         .require_network(network)
         .map_err(|e| format!("address '{}' not on {:?}: {}", address_str, network, e))?;
-    let script_pubkey = address.script_pubkey();
+    let script_pubkey = parsed.script_pubkey();
+    // Re-tag with the wallet's exact network. Devnet (and regtest)
+    // share testnet's base58 prefixes, so `require_network` only
+    // VALIDATES the parse — the returned value keeps the as-parsed
+    // (Testnet) tag. `Address` equality and hashing include the
+    // network, and every runtime lookup key is built via
+    // `Address::from_script(script, wallet_network)`, so a
+    // Testnet-tagged restored key silently misses the pool's
+    // address-keyed maps (`get_address_info`) on a devnet wallet.
+    // The observable failure: outputs paying restored addresses are
+    // counted (`contains_script_pub_key` is script-keyed and hits)
+    // but never credited as UTXOs — a restored wallet permanently
+    // loses change returned by its own transactions. Rebuild from
+    // the script so the restored key is identical to runtime keys.
+    let address = dashcore::Address::from_script(&script_pubkey, network).map_err(|e| {
+        format!(
+            "failed to rebuild address '{}' from its script for {:?}: {}",
+            address_str, network, e
+        )
+    })?;
     let path_str = CStr::from_ptr(entry.derivation_path)
         .to_str()
         .map_err(|e| format!("derivation_path not UTF-8: {}", e))?;
@@ -3626,6 +3653,46 @@ mod tests {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::mnemonic::{Language, Mnemonic};
     use key_wallet::wallet::Wallet;
+
+    /// Regression: restored pool addresses must be tagged with the
+    /// WALLET's network, not the network the base58 string parses as.
+    /// Devnet shares testnet's base58 prefixes, so a devnet wallet's
+    /// persisted "y…" address parses as Testnet, and `require_network`
+    /// only validates — it keeps the as-parsed tag. `Address` equality
+    /// includes the network, so a Testnet-tagged restored key misses
+    /// every runtime lookup built via `Address::from_script(script,
+    /// Devnet)`: outputs paying restored addresses were matched
+    /// (script-keyed `contains_script_pub_key` hits) but never credited
+    /// as UTXOs (`get_address_info` missed) — a restored devnet wallet
+    /// permanently lost the change of its own transactions.
+    #[test]
+    fn restored_address_info_is_tagged_with_wallet_network() {
+        use std::ffi::CString;
+        // A valid testnet-prefixed (0x8C, "y…") P2PKH address, as a
+        // devnet wallet persists them.
+        let addr = "yMqShkrgjTRuReBGFpQr7FozEF1QcNBBYA";
+        let addr_c = CString::new(addr).unwrap();
+        let path_c = CString::new("m/44'/1'/0'/1/0").unwrap();
+        let entry = CoreAddressEntryFFI {
+            public_key: [0u8; 33],
+            has_public_key: false,
+            pool_type_tag: AddressPoolTypeTagFFI::Internal as u8,
+            address_index: 0,
+            is_used: false,
+            balance: 0,
+            address_base58: addr_c.as_ptr(),
+            derivation_path: path_c.as_ptr(),
+        };
+        let info = unsafe { address_info_from_ffi(&entry, Network::Devnet) }
+            .expect("restore must accept a testnet-prefixed string on devnet");
+        let runtime_key = dashcore::Address::from_script(&info.script_pubkey, Network::Devnet)
+            .expect("p2pkh script must convert back to an address");
+        assert_eq!(
+            info.address, runtime_key,
+            "restored address must be identical (network tag included) to the \
+             runtime `from_script` lookup key"
+        );
+    }
 
     /// Pins the contract that an `InBlock` unresolved-asset-lock row
     /// projects onto the matching BIP44 account's in-memory

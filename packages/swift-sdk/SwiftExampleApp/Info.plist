@@ -22,6 +22,12 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 
+	<!-- Camera permission — the Send screen's QR scanner reads Dash
+	     address QR codes. Without this key the app crashes the moment
+	     it touches the camera. -->
+	<key>NSCameraUsageDescription</key>
+	<string>The camera is used to scan Dash address QR codes.</string>
+
 	<!-- UIKit / Scene config (auto-generated equivalents). -->
 	<key>UIApplicationSceneManifest</key>
 	<dict>
