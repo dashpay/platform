@@ -29,8 +29,9 @@
 //! explicit turbofish so the mock recorder knows which response
 //! type to register.
 //!
-//! Count / `group_by` need a v3.1+ initial version, so tests build via
-//! [`count_capable_mock_sdk`] (see `DEFAULT_INITIAL_PROTOCOL_VERSION`).
+//! Count / `group_by` need a v3.1+ version, so tests build via
+//! [`count_capable_mock_sdk`], which pins PV12 (the mock short-circuits the
+//! verifier, so auto-detect never ratchets these tests on its own).
 
 use std::sync::Arc;
 
@@ -47,14 +48,15 @@ use drive::query::ordering::OrderClause;
 use drive::query::SelectProjection;
 use drive_proof_verifier::{DocumentCount, DocumentSplitCounts, SplitCountEntry};
 
-/// Mock SDK seeded to PV12 — the first release wiring `DRIVE_ABCI_QUERY_VERSIONS_V1`
-/// (V1 documents wire), so Count / `group_by` encode. Uses `with_initial_version`,
-/// keeping auto-detect.
+/// Mock SDK pinned to PV12 — the first release wiring `DRIVE_ABCI_QUERY_VERSIONS_V1`
+/// (V1 documents wire), so Count / `group_by` encode. The mock transport short-circuits
+/// the wire verifier, so auto-detect never ratchets here; `with_version` pins the fixed
+/// wire version this test needs.
 fn count_capable_mock_sdk() -> Sdk {
     let pv = PlatformVersion::get(dpp::version::v12::PROTOCOL_VERSION_12)
         .expect("PROTOCOL_VERSION_12 is a known version");
     SdkBuilder::new_mock()
-        .with_initial_version(pv)
+        .with_version(pv)
         .build()
         .expect("mock Sdk should be created")
 }

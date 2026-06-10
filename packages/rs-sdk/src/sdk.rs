@@ -50,9 +50,8 @@ pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 pub const DEFAULT_TOKEN_CONFIG_CACHE_SIZE: usize = 100;
 /// How many quorum public keys fit in the cache.
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
-/// Initial protocol version when the caller pins neither a [`PlatformVersion`]
-/// (via [`SdkBuilder::with_version`]) nor an initial version (via
-/// [`SdkBuilder::with_initial_version`]).
+/// Initial protocol version for the default auto-detect mode — i.e. when the
+/// caller does not pin a [`PlatformVersion`] via [`SdkBuilder::with_version`].
 ///
 /// Set BELOW the latest version on purpose: ratchet-up autodetection
 /// (`maybe_update_protocol_version`) converges to the network's real version,
@@ -64,9 +63,10 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// At the default floor the local encoder rejects the
 /// v3.1+-only surfaces — `Count` (`SelectProjection::count_star`), `group_by`,
 /// and `having` — with [`Error::Config`] *before* any network round-trip. To use
-/// them either pin a higher initial version via [`SdkBuilder::with_initial_version`],
-/// or issue one floor-compatible ratcheting query (no v3.1+ surfaces) right after
-/// `build()` — e.g. the `ExtendedEpochInfo::fetch_current` current-state fetch below.
+/// them either pin a higher version via [`SdkBuilder::with_version`] (which also
+/// disables auto-detect), or issue one floor-compatible ratcheting query (no v3.1+
+/// surfaces) right after `build()` — e.g. the `ExtendedEpochInfo::fetch_current`
+/// current-state fetch below.
 /// Its response metadata lifts the SDK to the network's version, after which `Count` /
 /// `group_by` / `having` encode correctly.
 ///
@@ -367,7 +367,6 @@ impl Sdk {
         }
     }
 
-    // TODO: Changed to public for tests
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
     ///
     /// This method is used to retrieve objects from proofs returned by Dash Platform.
@@ -420,6 +419,10 @@ impl Sdk {
             }
         }?;
 
+        // Security invariant: proof+signature verification above (the `?`) must
+        // precede this call, which ratchets the protocol version from the now-trusted
+        // `metadata.protocol_version`. Never reorder — the ratchet must not consume
+        // unverified metadata.
         self.verify_response_metadata(method_name, &metadata)
             .inspect_err(|err| {
                 tracing::warn!(%err,method=method_name,"received response with stale metadata; try another server");
@@ -920,31 +923,20 @@ impl SdkBuilder {
         self
     }
 
-    /// Set the *initial* protocol version seed for auto-detect mode.
+    /// Test-only seed for the auto-detect atomic — NOT the public way to enable
+    /// auto-detect (auto-detect is the default; [`Self::with_version`] is the opt-out).
     ///
-    /// Unlike [`Self::with_version`], this leaves auto-detect active —
-    /// the SDK starts at `version.protocol_version` and ratchets upward
-    /// (via `fetch_max` in `maybe_update_protocol_version`) once the
-    /// network's actual version is observed in response metadata.
+    /// Auto-detect already starts every unpinned SDK at
+    /// [`DEFAULT_INITIAL_PROTOCOL_VERSION`] and ratchets upward via `fetch_max` in
+    /// `maybe_update_protocol_version` once the network's version is observed. This
+    /// seed exists only to let unit tests start *below* that floor — exercising the
+    /// upward-only ratchet from an older network's version without disabling auto-detect.
     ///
-    /// Use this when the SDK must talk to a network running a protocol
-    /// version *older* than the default floor (e.g. a v3.0 testnet from a
-    /// v3.1+ binary). Without an explicit initial version, the SDK seeds to
-    /// [`DEFAULT_INITIAL_PROTOCOL_VERSION`], and the upward-only `fetch_max`
-    /// guard can never ratchet *down* to the older network — leaving
-    /// any version-dispatched encoders (e.g. the documents query) to
-    /// ship a too-new wire shape that the network rejects.
-    ///
-    /// Seeds `self.version` and resets `version_explicit` to `false`, so
-    /// auto-detect is (re-)enabled. Builder chains use last-write-wins:
-    /// calling `with_initial_version` after `with_version` restores
-    /// auto-detect rather than silently keeping it disabled.
-    ///
-    /// **Caveat**: this protection only holds for encoders whose
-    /// `drive_abci.query.<name>.default_current_version` is correctly pinned per
-    /// historical PV. New versioned encoders must follow the same per-PV pinning
-    /// pattern as `document_query`.
-    pub fn with_initial_version(mut self, version: &'static PlatformVersion) -> Self {
+    /// Seeds `self.version` and keeps `version_explicit` `false`, so auto-detect stays
+    /// on. Builder chains are last-write-wins: a later `with_initial_version` re-enables
+    /// auto-detect that an earlier `with_version` disabled.
+    #[cfg(test)]
+    pub(crate) fn with_initial_version(mut self, version: &'static PlatformVersion) -> Self {
         self.version = version;
         self.version_explicit = false;
         self
@@ -1744,6 +1736,53 @@ mod test {
             sdk.protocol_version_number(),
             target,
             "ratchet must never downgrade below the highest observed version"
+        );
+    }
+
+    /// Regression guard for the verify-before-ratchet security invariant.
+    ///
+    /// The full tampered-*signed*-proof path isn't unit-testable here: it needs a
+    /// quorum BLS signature, a context provider, and a `FromProof` verifier round-trip.
+    /// That path's safety rests on `parse_proof_with_metadata_and_proof` running proof
+    /// verification (the `?`) BEFORE `verify_response_metadata` → `maybe_update_protocol_version`
+    /// (see the guard comment at that call site). Here we lock in the ratchet's own gates:
+    /// it must NOT raise the stored version off untrustworthy inputs (unknown / zero / lower),
+    /// so even a metadata value that slipped past verification can't move the SDK to a bogus
+    /// protocol version.
+    #[test]
+    fn test_ratchet_rejects_unknown_and_non_upward_versions() {
+        let sdk = SdkBuilder::new_mock()
+            .build()
+            .expect("mock Sdk should be created");
+        let floor = super::DEFAULT_INITIAL_PROTOCOL_VERSION;
+        assert_eq!(sdk.protocol_version_number(), floor);
+
+        // Unknown (above LATEST_VERSION): rejected, version unchanged.
+        sdk.maybe_update_protocol_version(dpp::version::LATEST_VERSION + 1);
+        assert_eq!(
+            sdk.protocol_version_number(),
+            floor,
+            "unknown protocol version must not move the stored version"
+        );
+
+        // Zero (e.g. metadata default / stripped field): ignored.
+        sdk.maybe_update_protocol_version(0);
+        assert_eq!(
+            sdk.protocol_version_number(),
+            floor,
+            "zero protocol version must be ignored"
+        );
+
+        // Equal: no-op (no spurious downgrade or churn).
+        sdk.maybe_update_protocol_version(floor);
+        assert_eq!(sdk.protocol_version_number(), floor);
+
+        // Lower known version: ignored by the upward-only guard.
+        sdk.maybe_update_protocol_version(floor - 1);
+        assert_eq!(
+            sdk.protocol_version_number(),
+            floor,
+            "lower known version must not downgrade the stored version"
         );
     }
 

@@ -91,11 +91,12 @@ async fn test_mock_fetch_identity_not_found() {
 #[tokio::test]
 async fn test_mock_fetch_data_contract() {
     // `mock_data_contract` builds V2 document types, so the round-trip must decode
-    // at PV12; the unpinned V0 floor would downgrade the type to V1 and mismatch.
+    // at PV12; the unpinned default floor would downgrade the type and mismatch. The
+    // mock short-circuits the verifier, so `with_version` pins the fixed wire version.
     let pv = PlatformVersion::get(dpp::version::v12::PROTOCOL_VERSION_12)
         .expect("PROTOCOL_VERSION_12 is a known version");
     let mut sdk = SdkBuilder::new_mock()
-        .with_initial_version(pv)
+        .with_version(pv)
         .build()
         .expect("mock Sdk should be created");
 
