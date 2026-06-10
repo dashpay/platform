@@ -114,6 +114,8 @@ pub mod sh_033_duplicate_nullifier_in_bundle;
 pub mod sh_034_tampered_binding_signature;
 #[cfg(feature = "shielded")]
 pub mod sh_035_replayed_asset_lock_proof;
+#[cfg(feature = "shielded")]
+pub mod sh_036_identity_create_from_shielded_pool;
 // Token tests (Wave 2 — per TEST_SPEC.md ### Tokens (TK))
 pub mod tk_001_token_transfer;
 pub mod tk_001b_token_transfer_zero;

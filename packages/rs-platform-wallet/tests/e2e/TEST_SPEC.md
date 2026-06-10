@@ -2492,6 +2492,18 @@ itself a finding (the backend rejected for the wrong reason, or did not reject).
 - **Harness extensions**: Wave H + Core-L1 gate + asset-lock-proof reuse hook.
 - **Severity if it fails**: CRITICAL.
 
+##### SH-036 — IdentityCreateFromShieldedPool (Type 20): create an identity funded from the pool
+- **Priority**: P1.
+- **Flow**: shield a `DENOMINATION + fee headroom` note into Orchard account 0, then `shielded_identity_create_from_pool` spends the pool note to create a brand-new Platform identity holding `DENOMINATION − consensus_create_fee`. `DENOMINATION` is read at runtime from `platform_version…event_constants.shielded_identity_create_denominations` (smallest member — never hardcoded). The only shielded transition the suite did not previously exercise.
+- **Transition type**: 20 (identity-create from shielded pool).
+- **Injection point**: public API (`PlatformWallet::shielded_identity_create_from_pool`), so this is a non-INJECT correctness case — but the transition must reach the backend so consensus actually creates the identity and the proof-verified read is the verdict.
+- **Correct behavior**: the call returns the new identity's `Identifier`; the identity exists on chain with exactly the submitted key set; `DENOMINATION` leaves the pool exactly (the metered fee is carved from it, change re-enters the pool).
+- **Assertions**: A1 call `Ok(non-nil Identifier)`; A2 `Identity::fetch == Some` (proof-verified on-chain existence — THE verdict); A3 fetched public keys match the submitted set (count + purposes/data); A4 shielded pool balance dropped by EXACTLY `DENOMINATION`. Secondary (logged, non-fatal): A5 identity balance `== DENOMINATION − consensus_create_fee` (asserted `>0 && <=DENOMINATION` with a `TODO(#3040-fee)` since the exact fee is version-dependent); A6 no-double-spend (funding notes marked spent / a second create against the same notes fails).
+- **Expected current outcome**: PASS = A1∧A2∧A3∧A4. FAIL (not skip) if any authoritative assert fails or the transition is rejected. SKIP (explicit `E2E-SKIP`, never silent green) when the bank floor is unmet / devnet unavailable.
+- **Harness extensions**: Wave H + the `id_*` identity key-set / signer helpers (`derive_identity_key`, `SeedBackedIdentitySigner`).
+- **Severity if it fails**: CRITICAL.
+- **Out of scope (sh_037+)**: adversarial Type 20 — insufficient denomination, forged proof, double-spent funding notes, tampered binding signature, fallback-address-on-failure path.
+
 ### Found-bug pins (Found-NNN)
 
 Bug-pin cases discovered during a QA-mindset audit of `packages/rs-platform-wallet/src/`.
