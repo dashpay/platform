@@ -41,7 +41,12 @@ impl Value {
             Value::I16(i) => JsonValue::Number(i.into()),
             Value::U8(i) => JsonValue::Number(i.into()),
             Value::I8(i) => JsonValue::Number(i.into()),
-            Value::Float(float) => JsonValue::Number(Number::from_f64(float).unwrap_or(0.into())),
+            // JSON cannot represent NaN/±∞ (`from_f64` returns None) — fail
+            // loudly instead of silently substituting 0, which would be
+            // indistinguishable from a real zero to JSON consumers.
+            Value::Float(float) => JsonValue::Number(Number::from_f64(float).ok_or_else(|| {
+                Error::Unsupported("non-finite float (NaN/±∞) is not representable in JSON".into())
+            })?),
             Value::Text(string) => JsonValue::String(string),
             Value::Bool(value) => JsonValue::Bool(value),
             Value::Null => JsonValue::Null,
@@ -137,7 +142,14 @@ impl Value {
             Value::I16(i) => JsonValue::Number((*i).into()),
             Value::U8(i) => JsonValue::Number((*i).into()),
             Value::I8(i) => JsonValue::Number((*i).into()),
-            Value::Float(float) => JsonValue::Number(Number::from_f64(*float).unwrap_or(0.into())),
+            // JSON cannot represent NaN/±∞ — fail loudly (see owned path above).
+            Value::Float(float) => {
+                JsonValue::Number(Number::from_f64(*float).ok_or_else(|| {
+                    Error::Unsupported(
+                        "non-finite float (NaN/±∞) is not representable in JSON".into(),
+                    )
+                })?)
+            }
             Value::Text(string) => JsonValue::String(string.clone()),
             Value::Bool(value) => JsonValue::Bool(*value),
             Value::Null => JsonValue::Null,
@@ -286,7 +298,10 @@ impl TryInto<JsonValue> for Value {
             Value::Bytes20(bytes) => JsonValue::String(BASE64_STANDARD.encode(bytes.as_slice())),
             Value::Bytes32(bytes) => JsonValue::String(BASE64_STANDARD.encode(bytes.as_slice())),
             Value::Bytes36(bytes) => JsonValue::String(BASE64_STANDARD.encode(bytes.as_slice())),
-            Value::Float(float) => JsonValue::Number(Number::from_f64(float).unwrap_or(0.into())),
+            // JSON cannot represent NaN/±∞ — fail loudly (see validating path above).
+            Value::Float(float) => JsonValue::Number(Number::from_f64(float).ok_or_else(|| {
+                Error::Unsupported("non-finite float (NaN/±∞) is not representable in JSON".into())
+            })?),
             Value::Text(string) => JsonValue::String(string),
             Value::Bool(value) => JsonValue::Bool(value),
             Value::Null => JsonValue::Null,
@@ -1133,9 +1148,32 @@ mod tests {
     }
 
     #[test]
-    fn validating_json_float_nan_becomes_zero() {
-        // NaN cannot be represented in JSON Number, falls back to 0
-        let result = Value::Float(f64::NAN).try_into_validating_json().unwrap();
-        assert_eq!(result, json!(0));
+    fn non_finite_floats_error_in_all_three_json_converters() {
+        // JSON (RFC 8259) cannot represent NaN/±∞. The converters used to
+        // silently substitute 0 (`Number::from_f64(..).unwrap_or(0)`), which
+        // made `Value::Float(f64::NAN)` indistinguishable from a real zero to
+        // every JSON consumer. All three Value→JSON paths now fail loudly
+        // instead — consistent with the loud IntegerSizeError the same
+        // functions return for out-of-range integers.
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            // owned validating path
+            assert!(matches!(
+                Value::Float(bad).try_into_validating_json(),
+                Err(Error::Unsupported(_))
+            ));
+            // by-ref validating path
+            assert!(matches!(
+                Value::Float(bad).try_to_validating_json(),
+                Err(Error::Unsupported(_))
+            ));
+            // plain TryInto path
+            let plain: Result<JsonValue, Error> = Value::Float(bad).try_into();
+            assert!(matches!(plain, Err(Error::Unsupported(_))));
+        }
+        // Finite floats still convert.
+        assert_eq!(
+            Value::Float(1.5).try_into_validating_json().unwrap(),
+            json!(1.5)
+        );
     }
 }

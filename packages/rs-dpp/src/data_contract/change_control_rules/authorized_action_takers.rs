@@ -77,7 +77,14 @@ impl<'de> Deserialize<'de> for AuthorizedActionTakers {
             type Value = AuthorizedActionTakers;
 
             fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("AuthorizedActionTakers as a map with `type` discriminator")
+                // Mention the old shape: contract JSON authored before
+                // 4.0.0-beta.4 used bare strings / externally-tagged maps, and
+                // this message is the only hint users get on ingest failure.
+                f.write_str(
+                    "AuthorizedActionTakers as a map with a `type` discriminator, \
+                     e.g. {\"type\": \"contractOwner\"} or {\"type\": \"identity\", \"identity\": \"<base58>\"} \
+                     (the pre-4.0.0-beta.4 shapes \"ContractOwner\" / {\"Identity\": \"<base58>\"} are no longer accepted)",
+                )
             }
 
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
