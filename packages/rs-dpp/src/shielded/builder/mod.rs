@@ -50,9 +50,10 @@ pub use unshield::build_unshield_transition;
 use grovedb_commitment_tree::{
     Anchor, Authorized, Builder, Bundle, BundleType, DashMemo, Flags as OrchardFlags,
     FullViewingKey, MerklePath, Note, NoteValue, OutgoingViewingKey, PaymentAddress, ProvingKey,
-    Scope, SpendAuthorizingKey,
+    Scope, SpendAuthorizingKey, SpendingKey,
 };
 use rand::rngs::OsRng;
+use rand::RngCore;
 
 use crate::address_funds::OrchardAddress;
 use crate::shielded::{compute_platform_sighash, SerializedAction};
@@ -143,22 +144,55 @@ pub fn serialize_authorized_bundle(bundle: &Bundle<Authorized, i64, DashMemo>) -
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/// Generates a fresh random Orchard payment address with no recoverable
+/// spending authority retained by anyone.
+///
+/// Draws 32 random bytes for an Orchard `SpendingKey` (retrying on the
+/// rare invalid draw — `SpendingKey::from_bytes` returns a `CtOption`),
+/// derives its `FullViewingKey`, and returns the External-scope address
+/// at diversifier index 0. The spending key is dropped here, so the
+/// resulting address is unspendable by this process — exactly what a
+/// zero-value anonymity-set filler output wants.
+fn random_orchard_payment_address() -> PaymentAddress {
+    let mut rng = OsRng;
+    loop {
+        let mut bytes = [0u8; 32];
+        rng.fill_bytes(&mut bytes);
+        if let Some(sk) = Option::<SpendingKey>::from(SpendingKey::from_bytes(bytes)) {
+            let fvk = FullViewingKey::from(&sk);
+            return fvk.address_at(0u32, Scope::External);
+        }
+    }
+}
+
 /// Builds an output-only Orchard bundle (no spends).
 ///
 /// Used by Shield and ShieldFromAssetLock transitions where funds enter
 /// the shielded pool from transparent sources.
 ///
-/// `sender_ovk` encrypts the output's `out_ciphertext` (Zcash
+/// `sender_ovk` encrypts the real output's `out_ciphertext` (Zcash
 /// outgoing-transaction-history convention): with `Some`, the sender can
 /// later recover the note (recipient, value, memo) from chain data via
 /// `try_recover_outgoing_note` under that OVK. With `None`, a random
 /// outgoing cipher key is used and the sent note is unrecoverable by
 /// anyone. Orchard's padding outputs always use `None`.
+///
+/// `dummy_outputs` adds that many extra **zero-value** outputs after the
+/// real one, each to a fresh random Orchard address with `sender_ovk =
+/// None` and an empty memo. They are unrecoverable by anyone (no party
+/// holds the spending key) — they exist purely as anonymity-set filler
+/// so a single transition can grow the on-chain note count. With
+/// `dummy_outputs == 0` the bundle is byte-class identical to the
+/// historical single-output form (Orchard still pads to its 2-action
+/// minimum). The on-wire action count is
+/// `max(1 + dummy_outputs, 2)` and the `value_balance` is unchanged
+/// (the dummies contribute zero value).
 pub(crate) fn build_output_only_bundle<P: OrchardProver>(
     recipient: &OrchardAddress,
     amount: u64,
     memo: [u8; 36],
     sender_ovk: Option<OutgoingViewingKey>,
+    dummy_outputs: usize,
     prover: &P,
 ) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError> {
     let payment_address = PaymentAddress::from(recipient);
@@ -179,6 +213,17 @@ pub(crate) fn build_output_only_bundle<P: OrchardProver>(
             memo,
         )
         .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to add output: {:?}", e)))?;
+
+    // Anonymity-set filler: zero-value outputs to fresh random addresses,
+    // each with `None` OVK and an empty memo (unrecoverable by anyone).
+    for _ in 0..dummy_outputs {
+        let filler_address = random_orchard_payment_address();
+        builder
+            .add_output(None, filler_address, NoteValue::from_raw(0), [0u8; 36])
+            .map_err(|e| {
+                ProtocolError::ShieldedBuildError(format!("failed to add dummy output: {:?}", e))
+            })?;
+    }
 
     prove_and_sign_bundle(builder, prover, &[], &[])
 }
@@ -409,7 +454,7 @@ mod mod_tests {
     #[test]
     fn output_only_bundle_flags_and_value_balance() {
         let recipient = test_orchard_address();
-        let bundle = build_output_only_bundle(&recipient, 10_000, [0u8; 36], None, &TestProver)
+        let bundle = build_output_only_bundle(&recipient, 10_000, [0u8; 36], None, 0, &TestProver)
             .expect("bundle should build");
 
         // Spends are disabled for Shield / ShieldFromAssetLock bundles.
@@ -424,6 +469,40 @@ mod mod_tests {
     }
 
     // ------------------------------------------------------------------
+    // `build_output_only_bundle` dummy-output padding — the on-wire
+    // action count is `max(1 + dummy_outputs, 2)` (Orchard pads an
+    // output-only bundle to its 2-action minimum) and the dummies are
+    // zero-value, so the bundle's `value_balance` still equals exactly
+    // the real recipient amount. This is the invariant the pool-seeding
+    // flow relies on: one transition can publish up to 16 actions, all
+    // but one carrying no value.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn dummy_output_padding_action_count_and_value_balance() {
+        let recipient = test_orchard_address();
+        let amount = 10_000u64;
+
+        // (dummy_outputs, expected on-wire action count).
+        for (dummies, expected_actions) in [(0usize, 2usize), (1, 2), (15, 16)] {
+            let bundle =
+                build_output_only_bundle(&recipient, amount, [0u8; 36], None, dummies, &TestProver)
+                    .expect("bundle should build");
+            assert_eq!(
+                bundle.actions().len(),
+                expected_actions,
+                "dummy_outputs={dummies} should serialize to {expected_actions} actions"
+            );
+            // Dummies are zero-value: net value entering the pool is unchanged.
+            assert_eq!(
+                *bundle.value_balance(),
+                -(amount as i64),
+                "value_balance must equal the real amount regardless of dummy_outputs ({dummies})"
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
     // `serialize_authorized_bundle` — verify the mapping from a fully
     // authorized bundle into the raw state-transition fields.
     // ------------------------------------------------------------------
@@ -431,7 +510,7 @@ mod mod_tests {
     #[test]
     fn serialize_authorized_bundle_preserves_fields() {
         let recipient = test_orchard_address();
-        let bundle = build_output_only_bundle(&recipient, 7_777, [3u8; 36], None, &TestProver)
+        let bundle = build_output_only_bundle(&recipient, 7_777, [3u8; 36], None, 0, &TestProver)
             .expect("bundle should build");
         let sb = serialize_authorized_bundle(&bundle);
 
@@ -479,6 +558,7 @@ mod mod_tests {
             amount,
             memo,
             Some(sender_ovk.clone()),
+            0,
             &TestProver,
         )
         .expect("bundle should build");

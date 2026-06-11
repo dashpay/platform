@@ -45,17 +45,23 @@ use crate::wallet::asset_lock::orchestration::{
 use crate::wallet::PlatformWallet;
 use crate::PlatformWalletError;
 
-/// Number of Orchard actions in a `ShieldFromAssetLock` (and `Shield`) bundle.
+/// On-wire Orchard action count for a `ShieldFromAssetLock` bundle with
+/// `dummy_outputs` anonymity-set fillers appended after the single real
+/// output.
 ///
-/// Both transitions build an *output-only* bundle with a single output via
-/// `dpp::shielded::builder::build_output_only_bundle`, which configures Orchard's
+/// `build_output_only_bundle` configures Orchard's
 /// `BundleType::Transactional { flags: SPENDS_DISABLED, bundle_required: false }`.
-/// For one output and zero spends, Orchard's `num_actions` is
-/// `max(max(0, 1), MIN_ACTIONS) == max(1, 2) == 2`, so the serialized bundle
-/// always carries exactly two actions. Consensus prices the flat shielded fee
-/// from the on-wire `actions.len()`, so this constant must match — see the
+/// For `1 + dummy_outputs` outputs and zero spends, Orchard's `num_actions`
+/// is `max(1 + dummy_outputs, MIN_ACTIONS)` where `MIN_ACTIONS == 2`. Consensus
+/// prices the flat shielded fee from the on-wire `actions.len()`
+/// (`transform_into_action` Step 3b), so the wallet's fee reservation MUST be
+/// computed from this exact count or the transition is rejected — see the
 /// `validate_structure` / `transform_into_action` checks in rs-dpp / rs-drive-abci.
-const SHIELD_FROM_ASSET_LOCK_NUM_ACTIONS: usize = 2;
+///
+/// With `dummy_outputs == 0` this returns `2`, the historical single-output count.
+pub(crate) fn shield_from_asset_lock_num_actions(dummy_outputs: usize) -> usize {
+    (1 + dummy_outputs).max(2)
+}
 
 impl PlatformWallet {
     /// Fund the shielded pool from a Core L1 asset lock, with the
@@ -122,12 +128,17 @@ impl PlatformWallet {
         asset_lock_signer: &AS,
         prover: P,
         surplus_output: Option<PlatformAddress>,
+        dummy_outputs: usize,
         settings: Option<PutSettings>,
     ) -> Result<(), PlatformWalletError>
     where
         AS: ::key_wallet::signer::Signer + Send + Sync,
         P: OrchardProver,
     {
+        // On-wire Orchard action count = max(1 real + dummy_outputs, 2). Consensus
+        // prices the flat shielded fee from this count, so the wallet's fee
+        // reservation below is derived from the SAME value (any mismatch is rejected).
+        let num_actions = shield_from_asset_lock_num_actions(dummy_outputs);
         // Step 1: pre-flight. Failing fast here avoids broadcasting
         // an unfundable asset-lock tx (or paying for an Orchard proof
         // build, ~30s, only to reject downstream).
@@ -156,7 +167,7 @@ impl PlatformWallet {
                      {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
                     ))
                 })?;
-            let pool_fee_credits = self.shield_from_asset_lock_pool_fee()?;
+            let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
             if lock_credits <= pool_fee_credits {
                 return Err(PlatformWalletError::ShieldedBuildError(format!(
                     "asset lock ({lock_credits} credits, from {amount_duffs} duffs) is at or \
@@ -241,7 +252,7 @@ impl PlatformWallet {
         // consensus charges (`transform_into_action` Step 3b). Deriving `shield_amount =
         // lock_value − pool_fee` reserves room for the fee and pins the consensus surplus
         // (`lock_value − shield_amount − pool_fee`) to exactly zero.
-        let pool_fee_credits = self.shield_from_asset_lock_pool_fee()?;
+        let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
         let shield_amount = asset_lock_value_credits
             .checked_sub(pool_fee_credits)
             .ok_or_else(|| {
@@ -336,6 +347,7 @@ impl PlatformWallet {
                 &prover,
                 sender_ovk.clone(),
                 surplus_output,
+                dummy_outputs,
                 s,
             )
         })
@@ -373,6 +385,7 @@ impl PlatformWallet {
                         &prover,
                         sender_ovk.clone(),
                         surplus_output,
+                        dummy_outputs,
                         s,
                     )
                 })
@@ -436,12 +449,16 @@ impl PlatformWallet {
     ///          + asset_lock_base_cost                        [L1 asset-lock processing]
     /// ```
     ///
-    /// `num_actions` is fixed at [`SHIELD_FROM_ASSET_LOCK_NUM_ACTIONS`] (the
-    /// single-output bundle always serializes to 2 Orchard actions).
+    /// `num_actions` is the on-wire Orchard action count of the bundle
+    /// (`shield_from_asset_lock_num_actions(dummy_outputs)` — `2` for the
+    /// classic single-output bundle, up to `16` for a pool-seeding batch).
     /// `asset_lock_base_cost` (`albc`) is the same constant Type 14 (address
     /// funding) uses, read from `dpp.state_transitions.identities.asset_locks`
     /// and converted duffs→credits.
-    fn shield_from_asset_lock_pool_fee(&self) -> Result<Credits, PlatformWalletError> {
+    pub(crate) fn shield_from_asset_lock_pool_fee(
+        &self,
+        num_actions: usize,
+    ) -> Result<Credits, PlatformWalletError> {
         let pv = self.sdk.version();
         let albc_duffs = pv
             .dpp
@@ -455,12 +472,11 @@ impl PlatformWallet {
                  ({albc_duffs} duffs * {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
             ))
         })?;
-        let shielded_fee = compute_minimum_shielded_fee(SHIELD_FROM_ASSET_LOCK_NUM_ACTIONS, pv)
-            .map_err(|e| {
-                PlatformWalletError::ShieldedBuildError(format!(
-                    "failed to compute minimum shielded fee for ShieldFromAssetLock: {e}"
-                ))
-            })?;
+        let shielded_fee = compute_minimum_shielded_fee(num_actions, pv).map_err(|e| {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "failed to compute minimum shielded fee for ShieldFromAssetLock: {e}"
+            ))
+        })?;
         shielded_fee.checked_add(albc).ok_or_else(|| {
             PlatformWalletError::ShieldedBuildError(format!(
                 "ShieldFromAssetLock pool fee overflowed credits conversion \
@@ -534,6 +550,7 @@ async fn build_and_broadcast_shielded<AS, P>(
     prover: &P,
     sender_ovk: Option<grovedb_commitment_tree::OutgoingViewingKey>,
     surplus_output: Option<PlatformAddress>,
+    dummy_outputs: usize,
     settings: Option<PutSettings>,
 ) -> Result<(), dash_sdk::Error>
 where
@@ -550,6 +567,7 @@ where
         [0u8; 36],
         sender_ovk,
         surplus_output,
+        dummy_outputs,
         sdk.version(),
     )
     .await?;

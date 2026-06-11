@@ -791,6 +791,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
                 &asset_lock_signer,
                 &prover,
                 surplus_output,
+                // Single real note, no anonymity-set fillers (the multi-note
+                // pool-seeding path uses its own dedicated FFI entry point).
+                0,
                 None,
             )
             .await
@@ -928,6 +931,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
                 &asset_lock_signer,
                 &prover,
                 surplus_output,
+                // Resuming a single-note fund (not a seeding batch).
+                0,
                 None,
             )
             .await
@@ -939,6 +944,136 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
         );
     }
     PlatformWalletFFIResult::ok()
+}
+
+/// Seed the shielded pool's anonymity set up to `target_total_notes` by
+/// submitting a series of `ShieldFromAssetLock` (Type 18) batches, each
+/// adding up to 16 notes (1 real note to the wallet's own default
+/// shielded address + up to 15 zero-value anonymity-set fillers).
+///
+/// Devnet/testnet ONLY — the Rust side hard-errors on `Network::Mainnet`
+/// (the mainnet pool is seeded at genesis via `DRIVE_SHIELDED_SNAPSHOT`).
+/// This exists so a freshly-reset devnet can satisfy the 250-note
+/// outgoing-transition minimum from the example app in one action.
+///
+/// The asset-lock-proof signature for each batch is produced by a
+/// `MnemonicResolverHandle` — the raw key never crosses the FFI boundary.
+///
+/// Batches run serially; each waits for proven execution before the next
+/// starts (so a 250-note seed is roughly 16 batches and tens of minutes).
+/// `progress_fn`, when non-null, is invoked before and after each batch
+/// with the live counters so the host can render a progress UI. It is
+/// called from a background worker thread — the host trampoline is
+/// responsible for hopping to its own UI executor.
+///
+/// `account` is the shielded BIP44 account whose default address receives
+/// each real note (must be bound via `bind_shielded`). `funding_account_index`
+/// is the Core BIP44 account whose UTXOs fund each per-batch asset lock.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `core_signer_handle` must be a valid, non-destroyed
+///   `*mut MnemonicResolverHandle` produced by
+///   `dash_sdk_mnemonic_resolver_create`. The caller retains ownership and
+///   must keep it alive for the duration of this (blocking) call.
+/// - `progress_fn`, when non-null, must be a valid C function pointer for
+///   the duration of the call; `progress_ctx` is passed to it opaquely and
+///   must remain valid for the duration of the call (or be null).
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_seed_pool_notes(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    account: u32,
+    target_total_notes: u64,
+    funding_account_index: u32,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    progress_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut std::os::raw::c_void,
+            batch_index: u64,
+            batches_total_estimate: u64,
+            pool_notes_now: u64,
+            target: u64,
+        ),
+    >,
+    progress_ctx: *mut std::os::raw::c_void,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(core_signer_handle);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+
+    let wallet = match resolve_wallet(handle, &wallet_id) {
+        Ok(w) => w,
+        Err(result) => return result,
+    };
+    let network = wallet.network();
+
+    // Round-trip the resolver handle and the progress context through
+    // `usize` so the worker future's capture is `Send + 'static`. The
+    // caller's documented contract pins both alive for the (blocking)
+    // duration of this call, and `block_on_worker` blocks the calling
+    // frame until the task completes.
+    let core_signer_addr = core_signer_handle as usize;
+    let progress_ctx_addr = progress_ctx as usize;
+
+    // Run the proof + broadcast loop on a worker thread (8 MB stack):
+    // Halo 2 circuit synthesis recurses past the ~512 KB iOS dispatch
+    // thread stack.
+    let result = block_on_worker(async move {
+        // SAFETY: see the fn-level safety doc — the resolver handle is
+        // pinned alive for the duration of this synchronously-awaited task.
+        let asset_lock_signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+
+        // Bridge the C progress callback into the Rust `Fn(SeedPoolProgress)`.
+        // The fn pointer is `Send` and the context is moved as a `usize`;
+        // both are re-materialized inside this task. A null `progress_fn`
+        // makes the closure a no-op.
+        let progress = move |p: platform_wallet::wallet::shielded::SeedPoolProgress| {
+            if let Some(cb) = progress_fn {
+                // SAFETY: `progress_ctx` (re-materialized from `progress_ctx_addr`)
+                // and `cb` are valid for the duration of this call per the
+                // fn-level contract.
+                unsafe {
+                    cb(
+                        progress_ctx_addr as *mut std::os::raw::c_void,
+                        p.batch_index,
+                        p.batches_total_estimate,
+                        p.pool_notes_now,
+                        p.target,
+                    );
+                }
+            }
+        };
+
+        wallet
+            .shielded_seed_pool_notes(
+                &wallet_id,
+                account,
+                target_total_notes,
+                funding_account_index,
+                &asset_lock_signer,
+                progress,
+                None,
+            )
+            .await
+    });
+
+    match result {
+        Ok(_outcome) => PlatformWalletFFIResult::ok(),
+        Err(e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("shielded seed-pool-notes failed: {e}"),
+        ),
+    }
 }
 
 /// Resolve the wallet `Arc` for the given manager handle, or

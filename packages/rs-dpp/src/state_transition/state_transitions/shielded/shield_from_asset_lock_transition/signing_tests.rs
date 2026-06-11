@@ -239,6 +239,7 @@ async fn build_shield_from_asset_lock_transition_with_signer_end_to_end() {
         [0u8; 36],
         None, // sender_ovk
         None, // surplus_output
+        0,    // dummy_outputs
         PlatformVersion::latest(),
     )
     .await
@@ -258,4 +259,94 @@ async fn build_shield_from_asset_lock_transition_with_signer_end_to_end() {
         !v0.actions.is_empty(),
         "output-only bundle must produce at least one Orchard action",
     );
+}
+
+#[tokio::test]
+async fn build_shield_from_asset_lock_transition_with_signer_dummy_outputs_pad_actions() {
+    // Pool-seeding path: `dummy_outputs = 15` makes a 16-action
+    // (1 real + 15 zero-value filler) ShieldFromAssetLock. The on-wire
+    // action count is what consensus prices the fee from, and the real
+    // recipient amount stays the transition's `value_balance` (the
+    // fillers carry no value).
+    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
+
+    let recipient = test_orchard_address();
+    let signer = FixedKeySigner::new([7u8; 32]);
+    let path = DerivationPath::default();
+    let shield_amount = 50_000u64;
+
+    let st = build_shield_from_asset_lock_transition_with_signer(
+        &recipient,
+        shield_amount,
+        make_chain_asset_lock_proof(),
+        &path,
+        &signer,
+        &TestProver,
+        [0u8; 36],
+        None, // sender_ovk
+        None, // surplus_output
+        15,   // dummy_outputs -> 16 on-wire actions
+        PlatformVersion::latest(),
+    )
+    .await
+    .expect("builder should succeed");
+
+    let v0 = extract_v0(st);
+    assert_eq!(
+        v0.actions.len(),
+        16,
+        "1 real + 15 dummy outputs must serialize to 16 Orchard actions",
+    );
+    assert_eq!(
+        v0.value_balance, shield_amount,
+        "dummy outputs are zero-value: value_balance must equal the real amount",
+    );
+}
+
+#[tokio::test]
+async fn seed_pool_batch_fits_max_state_transition_size() {
+    // The pool-seeding batch size (MAX_ACTIONS_PER_BATCH = 6 in
+    // rs-platform-wallet's seed_pool.rs) is bounded by the 20 KiB
+    // transaction-size limit, not the 16-action consensus cap: the Halo 2
+    // proof grows ~2,681 bytes per action (measured: 2 actions → 8,294 B,
+    // 6 → 19,018 B, 7 → 21,699 B — the last rejected by tenderdash's
+    // `mempool.max-tx-bytes = 20480` as "Tx too large"). Pin the largest
+    // seeding batch under `system_limits.max_state_transition_size` so a
+    // proof- or action-encoding size change that breaks seeding fails here
+    // instead of on a devnet.
+    use crate::serialization::PlatformSerializable;
+    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
+
+    let platform_version = PlatformVersion::latest();
+    let recipient = test_orchard_address();
+    let signer = FixedKeySigner::new([7u8; 32]);
+    let path = DerivationPath::default();
+
+    let st = build_shield_from_asset_lock_transition_with_signer(
+        &recipient,
+        50_000u64,
+        make_chain_asset_lock_proof(),
+        &path,
+        &signer,
+        &TestProver,
+        [0u8; 36],
+        None, // sender_ovk
+        None, // surplus_output
+        5,    // dummy_outputs -> 6 on-wire actions, the seeding batch max
+        platform_version,
+    )
+    .await
+    .expect("builder should succeed");
+
+    let bytes = st.serialize_to_bytes().expect("serialize");
+    let max = platform_version.system_limits.max_state_transition_size as usize;
+    assert!(
+        bytes.len() <= max,
+        "a 6-action seeding batch must fit max_state_transition_size: {} > {}",
+        bytes.len(),
+        max,
+    );
+
+    let v0 = extract_v0(st);
+    assert_eq!(v0.actions.len(), 6);
 }
