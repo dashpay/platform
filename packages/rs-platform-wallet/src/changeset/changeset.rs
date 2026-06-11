@@ -951,9 +951,11 @@ pub struct PlatformWalletChangeSet {
     /// the merge policy (plain `Vec::extend`, dedup is the apply-side
     /// caller's job).
     pub account_registrations: Vec<AccountRegistrationEntry>,
-    /// Address-pool snapshots emitted at wallet create (initial
-    /// gap-limit population) and on any pool extension / "used" flip.
-    /// See [`AccountAddressPoolEntry`] for the merge policy.
+    /// Full address-pool snapshots: emitted at wallet create and, in-band,
+    /// on every block that derives new pool addresses (the
+    /// `core.addresses_derived` delta). Each entry is the whole current
+    /// pool, not just the new index. See [`AccountAddressPoolEntry`] for
+    /// the merge policy and `core_bridge::build_platform_changeset`.
     pub account_address_pools: Vec<AccountAddressPoolEntry>,
     /// Shielded sub-wallet deltas: per-subwallet decrypted notes,
     /// spent marks, sync watermarks, nullifier checkpoints. The

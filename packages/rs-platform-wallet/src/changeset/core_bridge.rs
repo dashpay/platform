@@ -24,10 +24,12 @@
 //! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
 //! make the task exit cleanly.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use dashcore::blockdata::transaction::{txout::TxOut, OutPoint};
 use dashcore::ScriptBuf;
+use key_wallet::account::AccountType;
 use key_wallet::managed_account::transaction_record::{OutputRole, TransactionRecord};
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
@@ -37,7 +39,9 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use crate::changeset::changeset::{CoreChangeSet, PlatformWalletChangeSet};
+use crate::changeset::changeset::{
+    AccountAddressPoolEntry, CoreChangeSet, PlatformWalletChangeSet,
+};
 use crate::changeset::traits::PlatformWalletPersistence;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
@@ -85,10 +89,8 @@ where
                                 // persist. Skip the round-trip.
                                 continue;
                             }
-                            let cs = PlatformWalletChangeSet {
-                                core: Some(core),
-                                ..PlatformWalletChangeSet::default()
-                            };
+                            let cs =
+                                build_platform_changeset(&wallet_manager, &wallet_id, core).await;
                             if let Err(e) = persister.store(wallet_id, cs) {
                                 tracing::warn!(
                                     wallet_id = %hex::encode(wallet_id),
@@ -228,6 +230,76 @@ async fn build_core_changeset(
     }
 }
 
+/// Wrap a [`CoreChangeSet`] in a [`PlatformWalletChangeSet`], attaching a
+/// full pool snapshot in-band when the delta derived new addresses.
+///
+/// `addresses_derived` is a delta with no `used` flag, so it can't be the
+/// manifest. When non-empty the in-memory pool just changed, so we read
+/// the whole current pool. It must ride the same changeset because the
+/// persister applies `account_address_pools` before the core UTXO delta
+/// in one tx, making any newly-derived address resolvable when this
+/// changeset's UTXOs are written — closing the gap-limit race in-band.
+///
+/// A `used` flip with no derivation leaves the delta empty and is
+/// intentionally not snapshot here: `used` doesn't affect
+/// address→account resolution, and emitting on every wallet-touching
+/// block would be pure write amplification.
+async fn build_platform_changeset(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    core: CoreChangeSet,
+) -> PlatformWalletChangeSet {
+    let mut account_address_pools = Vec::new();
+    if !core.addresses_derived.is_empty() {
+        let guard = wallet_manager.read().await;
+        let affected: BTreeSet<AccountType> = core
+            .addresses_derived
+            .iter()
+            .map(|d| d.account_type)
+            .collect();
+        for account_type in &affected {
+            account_address_pools.extend(snapshot_account_pools(&guard, wallet_id, account_type));
+        }
+    }
+    PlatformWalletChangeSet {
+        core: Some(core),
+        account_address_pools,
+        ..PlatformWalletChangeSet::default()
+    }
+}
+
+/// Snapshot one account's non-empty pools straight from the live
+/// `WalletManager`, mirroring the enumeration the registration path uses
+/// (`account_address_pools_blocking` is on a different type, so the shared
+/// walk lives here). Empty vec when the wallet/account is absent.
+fn snapshot_account_pools(
+    guard: &WalletManager<PlatformWalletInfo>,
+    wallet_id: &WalletId,
+    account_type: &AccountType,
+) -> Vec<AccountAddressPoolEntry> {
+    let Some(info) = guard.get_wallet_info(wallet_id) else {
+        return Vec::new();
+    };
+    let accounts = info.core_wallet.accounts.all_accounts();
+    let Some(account) = accounts
+        .iter()
+        .find(|a| &a.managed_account_type().to_account_type() == account_type)
+    else {
+        return Vec::new();
+    };
+    account
+        .managed_account_type()
+        .address_pools()
+        .iter()
+        .filter(|pool| !pool.addresses.is_empty())
+        .map(|pool| AccountAddressPoolEntry {
+            account_type: *account_type,
+            pool_type: pool.pool_type,
+            addresses: pool.addresses.values().cloned().collect(),
+        })
+        .collect()
+}
+
 /// Returns `true` when the wallet's stored record for `txid` is in a
 /// chain-locked block. Used to gate IS-lock projection.
 async fn is_chain_locked(
@@ -355,5 +427,172 @@ impl CoreChangeSet {
             && self.synced_height.is_none()
             && self.last_applied_chain_lock.is_none()
             && self.addresses_derived.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+    use key_wallet::wallet::Wallet;
+    use key_wallet::Network;
+    use key_wallet_manager::DerivedAddress;
+
+    use super::*;
+    use crate::wallet::core::WalletBalance;
+    use crate::wallet::identity::IdentityManager;
+
+    /// Register a seeded wallet (default account creation derives the
+    /// gap-limit pools) into a fresh manager.
+    fn manager_with_wallet() -> (Arc<RwLock<WalletManager<PlatformWalletInfo>>>, WalletId) {
+        let wallet = Wallet::from_seed_bytes(
+            [0x42; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .expect("wallet from seed");
+        let info = PlatformWalletInfo {
+            core_wallet: ManagedWalletInfo::from_wallet(&wallet, 0),
+            balance: Arc::new(WalletBalance::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+        };
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+        let wallet_id = wm.insert_wallet(wallet, info).expect("insert wallet");
+        (Arc::new(RwLock::new(wm)), wallet_id)
+    }
+
+    /// First funds account's type plus the index count of its external
+    /// pool, and a `DerivedAddress` forged from a real address in it (the
+    /// emitter keys only off `account_type`).
+    fn funds_account_and_derived(
+        guard: &WalletManager<PlatformWalletInfo>,
+        wallet_id: &WalletId,
+    ) -> (AccountType, usize, DerivedAddress) {
+        let info = guard.get_wallet_info(wallet_id).expect("wallet present");
+        for account in &info.core_wallet.accounts.all_accounts() {
+            let account_type = account.managed_account_type().to_account_type();
+            for pool in account.managed_account_type().address_pools() {
+                if pool.pool_type != AddressPoolType::External || pool.addresses.is_empty() {
+                    continue;
+                }
+                let addr = pool.addresses.values().next().expect("address present");
+                let Some(PublicKeyType::ECDSA(bytes)) = addr.public_key.as_ref() else {
+                    continue;
+                };
+                let derived = DerivedAddress {
+                    account_type,
+                    pool_type: pool.pool_type,
+                    derivation_index: addr.index,
+                    address: addr.address.clone(),
+                    public_key: dashcore::PublicKey::from_slice(bytes).expect("valid key"),
+                };
+                return (account_type, pool.addresses.len(), derived);
+            }
+        }
+        panic!("no funds account with a populated ECDSA external pool");
+    }
+
+    fn core_with_derived(derived: Vec<DerivedAddress>) -> CoreChangeSet {
+        CoreChangeSet {
+            last_processed_height: Some(100),
+            addresses_derived: derived,
+            ..CoreChangeSet::default()
+        }
+    }
+
+    /// A derivation delta yields the FULL pool (every index), not just the
+    /// new one, and it rides the SAME changeset as the core delta.
+    #[tokio::test]
+    async fn extension_snapshots_full_pool_in_band() {
+        let (wm, wallet_id) = manager_with_wallet();
+        let (account_type, full_len, derived) = {
+            let guard = wm.read().await;
+            funds_account_and_derived(&guard, &wallet_id)
+        };
+        assert!(full_len > 1, "external pool populated to the gap limit");
+
+        let cs = build_platform_changeset(&wm, &wallet_id, core_with_derived(vec![derived])).await;
+
+        assert!(cs.core.is_some(), "core delta rides the same changeset");
+        let entry = cs
+            .account_address_pools
+            .iter()
+            .find(|e| e.account_type == account_type && e.pool_type == AddressPoolType::External)
+            .expect("external pool snapshot for the affected account");
+        assert_eq!(entry.addresses.len(), full_len, "FULL pool, not the delta");
+    }
+
+    /// An empty delta emits no pool snapshot — no write amplification on
+    /// blocks that derive nothing.
+    #[tokio::test]
+    async fn empty_derivation_emits_no_snapshot() {
+        let (wm, wallet_id) = manager_with_wallet();
+        let cs = build_platform_changeset(&wm, &wallet_id, core_with_derived(Vec::new())).await;
+        assert!(cs.account_address_pools.is_empty());
+        assert!(cs.core.is_some(), "core delta still carried");
+    }
+
+    /// The emitter snapshot matches the registration-path enumeration for
+    /// the same account (same pools, same addresses per pool), so
+    /// registration semantics are preserved. `AccountAddressPoolEntry`
+    /// isn't `PartialEq`, so compare on a stable projection.
+    #[tokio::test]
+    async fn emitter_matches_registration_shape() {
+        let (wm, wallet_id) = manager_with_wallet();
+        let guard = wm.read().await;
+        let (account_type, _, _) = funds_account_and_derived(&guard, &wallet_id);
+
+        let project = |entries: &[AccountAddressPoolEntry]| -> Vec<(AddressPoolType, Vec<String>)> {
+            let mut out: Vec<_> = entries
+                .iter()
+                .map(|e| {
+                    let mut addrs: Vec<String> =
+                        e.addresses.iter().map(|a| a.address.to_string()).collect();
+                    addrs.sort();
+                    (e.pool_type, addrs)
+                })
+                .collect();
+            out.sort_by_key(|(pt, _)| *pt);
+            out
+        };
+
+        let emitted = snapshot_account_pools(&guard, &wallet_id, &account_type);
+
+        let info = guard.get_wallet_info(&wallet_id).expect("wallet present");
+        let account = info
+            .core_wallet
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .find(|a| a.managed_account_type().to_account_type() == account_type)
+            .expect("account present");
+        let registration_shape: Vec<AccountAddressPoolEntry> = account
+            .managed_account_type()
+            .address_pools()
+            .iter()
+            .filter(|p| !p.addresses.is_empty())
+            .map(|p| AccountAddressPoolEntry {
+                account_type,
+                pool_type: p.pool_type,
+                addresses: p.addresses.values().cloned().collect(),
+            })
+            .collect();
+
+        assert_eq!(project(&emitted), project(&registration_shape));
+        assert!(emitted.iter().all(|e| e.account_type == account_type));
+        assert!(!emitted.is_empty());
+    }
+
+    /// Unknown wallet → empty snapshot, not a panic.
+    #[tokio::test]
+    async fn snapshot_unknown_wallet_is_empty() {
+        let (wm, wallet_id) = manager_with_wallet();
+        let guard = wm.read().await;
+        let (account_type, _, _) = funds_account_and_derived(&guard, &wallet_id);
+        assert!(snapshot_account_pools(&guard, &[0xAB; 32], &account_type).is_empty());
     }
 }
