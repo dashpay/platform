@@ -104,7 +104,7 @@ pub struct SeedPoolOutcome {
 impl PlatformWallet {
     /// Seed the shielded pool up to `target_total_notes` by submitting a
     /// series of `ShieldFromAssetLock` (Type 18) batches, each adding up
-    /// to [`MAX_ACTIONS_PER_BATCH`] notes (1 real + up to 15 zero-value
+    /// to [`MAX_ACTIONS_PER_BATCH`] notes (1 real + up to 5 zero-value
     /// anonymity-set fillers).
     ///
     /// Devnet/testnet-only: hard-errors on `Network::Mainnet` (the mainnet
@@ -256,15 +256,24 @@ impl PlatformWallet {
             // transient pacing condition, not a failure — retry the
             // batch a few times with a pause to let a block land
             // instead of aborting the whole run.
+            //
+            // The timed-out lock is already broadcast and tracked, so the
+            // retry MUST resume it (`FromExistingAssetLock` with the
+            // outpoint from the error) rather than build a fresh lock:
+            // re-funding from wallet balance would strand the original
+            // lock, burn another UTXO per attempt, and chain the new lock
+            // on top of the very unconfirmed-ancestor depth that caused
+            // the stall.
             let mut attempt = 0u32;
+            let mut funding = AssetLockFunding::FromWalletBalance {
+                amount_duffs,
+                account_index: funding_account_index,
+            };
             loop {
                 attempt += 1;
                 match self
                     .shielded_fund_from_asset_lock(
-                        AssetLockFunding::FromWalletBalance {
-                            amount_duffs,
-                            account_index: funding_account_index,
-                        },
+                        funding,
                         vec![(recipient, None)],
                         asset_lock_signer,
                         &prover,
@@ -282,8 +291,10 @@ impl PlatformWallet {
                             batch = batches_submitted,
                             attempt,
                             %out_point,
-                            "seed batch finality timed out; pausing for a core block then retrying"
+                            "seed batch finality timed out; pausing for a core block then \
+                             resuming the tracked lock"
                         );
+                        funding = AssetLockFunding::FromExistingAssetLock { out_point };
                         tokio::time::sleep(SEED_BATCH_RETRY_PAUSE).await;
                     }
                     Err(e) => return Err(e),

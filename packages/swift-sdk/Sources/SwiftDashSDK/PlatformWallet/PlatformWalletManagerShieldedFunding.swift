@@ -290,8 +290,11 @@ extension PlatformWalletManager {
 
     /// Seed the shielded pool's anonymity set up to `targetTotalNotes`
     /// by submitting a series of `ShieldFromAssetLock` (Type 18) batches,
-    /// each adding up to 16 notes (1 real note to the wallet's own default
-    /// shielded address + up to 15 zero-value anonymity-set fillers).
+    /// each adding up to 6 notes (1 real note to the wallet's own default
+    /// shielded address + up to 5 zero-value anonymity-set fillers). 6 is
+    /// `MAX_ACTIONS_PER_BATCH` in rs-platform-wallet's `seed_pool.rs` —
+    /// the most that fits the 20 KiB `max_state_transition_size`, NOT the
+    /// 16-action consensus cap.
     ///
     /// **Devnet/testnet only** — the Rust side hard-errors on mainnet
     /// (`Network.mainnet`). It exists so a freshly-reset devnet can satisfy
@@ -299,7 +302,7 @@ extension PlatformWalletManager {
     /// action, without a `DRIVE_SHIELDED_SNAPSHOT` genesis ingest.
     ///
     /// Batches run serially and each waits for proven execution, so a
-    /// 250-note seed is ~16 batches and can take tens of minutes. `progress`
+    /// 250-note seed is ~42 batches and can take an hour or more. `progress`
     /// is invoked before and after each batch with the live counters; it is
     /// called from a background worker thread, so hop to your own UI executor
     /// inside the handler if you touch UI state.

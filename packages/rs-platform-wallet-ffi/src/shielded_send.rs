@@ -948,8 +948,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
 
 /// Seed the shielded pool's anonymity set up to `target_total_notes` by
 /// submitting a series of `ShieldFromAssetLock` (Type 18) batches, each
-/// adding up to 16 notes (1 real note to the wallet's own default
-/// shielded address + up to 15 zero-value anonymity-set fillers).
+/// adding up to 6 notes (1 real note to the wallet's own default
+/// shielded address + up to 5 zero-value anonymity-set fillers). 6 is
+/// `MAX_ACTIONS_PER_BATCH` in rs-platform-wallet's `seed_pool.rs` — the
+/// most that fits the 20 KiB `max_state_transition_size`, NOT the
+/// 16-action consensus cap.
 ///
 /// Devnet/testnet ONLY — the Rust side hard-errors on `Network::Mainnet`
 /// (the mainnet pool is seeded at genesis via `DRIVE_SHIELDED_SNAPSHOT`).
@@ -960,7 +963,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
 /// `MnemonicResolverHandle` — the raw key never crosses the FFI boundary.
 ///
 /// Batches run serially; each waits for proven execution before the next
-/// starts (so a 250-note seed is roughly 16 batches and tens of minutes).
+/// starts (so a 250-note seed is roughly 42 batches and can take an hour
+/// or more).
 /// `progress_fn`, when non-null, is invoked before and after each batch
 /// with the live counters so the host can render a progress UI. It is
 /// called from a background worker thread — the host trampoline is
