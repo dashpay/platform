@@ -55,12 +55,6 @@ bs58 = "0.5"
 # Zeroize intermediate key material crossing the FFI boundary.
 zeroize = { version = "1", features = ["derive"] }
 
-# CJK cleanup uses `is_combining_mark` to keep combining marks while
-# stripping non-letter input (DashSync letterCharacterSet L*∪M*). The
-# BIP-39 wordlist / normalize / validate logic now comes from key-wallet
-# (no direct `bip39` dependency — see mnemonic_words.rs).
-unicode-normalization = "0.1"
-
 [dev-dependencies]
 tempfile = "3.8"
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }

@@ -5049,6 +5049,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "unicode-normalization",
  "zeroize",
  "zip32",
 ]
@@ -5077,7 +5078,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
- "unicode-normalization",
  "zeroize",
 ]
 
