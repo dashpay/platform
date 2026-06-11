@@ -44,6 +44,10 @@ use std::os::raw::c_char;
 
 use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
+use dpp::shielded::{
+    compute_minimum_shielded_fee, compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
+    ShieldedMemo,
+};
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
@@ -150,6 +154,91 @@ pub unsafe extern "C" fn platform_wallet_shielded_prover_is_ready() -> bool {
     CachedOrchardProver::new().is_ready()
 }
 
+/// Estimate the consensus-pinned flat shielded fee (in credits) for a
+/// pool-paid shielded transition.
+///
+/// `kind` selects the transition's fee formula:
+/// - `0` → ShieldedTransfer / Shield (`compute_minimum_shielded_fee` — the
+///   base flat fee; Shield's structure check reserves the same base via
+///   `compute_minimum_shielded_fee(2)`),
+/// - `1` → Unshield (`compute_shielded_unshield_fee` — base + the flat
+///   `AddBalanceToAddress` output-write cost),
+/// - `2` → ShieldedWithdrawal (`compute_shielded_withdrawal_fee` — base +
+///   the flat Core withdrawal-document cost).
+///
+/// `num_actions` is the Orchard action count of the bundle the host will
+/// build (a single-note spend with change is 2 actions). The version is
+/// pinned to [`PlatformVersion::latest()`] — the same version the shielded
+/// builders in `platform-wallet` resolve via `sdk.version()`, so the
+/// estimate can't drift from the fee the builder carves and the consensus
+/// gate validates.
+///
+/// Pure computation: no wallet handle, no network. Writes the fee to
+/// `out_fee` and returns `ok()`. An unknown `kind` returns
+/// `ErrorInvalidParameter`; a fee-formula overflow returns
+/// `ErrorArithmeticOverflow`.
+///
+/// # Safety
+/// `out_fee` must point to 8 writable bytes (a `u64`).
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_shielded_estimate_fee(
+    kind: u8,
+    num_actions: usize,
+    out_fee: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_fee);
+
+    let platform_version = dpp::version::PlatformVersion::latest();
+    let fee = match kind {
+        0 => compute_minimum_shielded_fee(num_actions, platform_version),
+        1 => compute_shielded_unshield_fee(num_actions, platform_version),
+        2 => compute_shielded_withdrawal_fee(num_actions, platform_version),
+        other => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("unknown shielded fee kind {other} (expected 0/1/2)"),
+            );
+        }
+    };
+    match fee {
+        Ok(credits) => {
+            *out_fee = credits;
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorArithmeticOverflow,
+            format!("shielded fee estimation failed: {e}"),
+        ),
+    }
+}
+
+/// Encode an optional host-supplied memo string into the on-chain
+/// 36-byte `DashMemo` layout via [`ShieldedMemo`].
+///
+/// Rules (the encoding decision lives here on the Rust side, not in
+/// the Swift caller):
+/// - `None` or an empty string → `ShieldedMemo::Empty` → all-zero
+///   36 bytes (identical to today's hardcoded `[0u8; 36]`).
+/// - Otherwise a UTF-8 text memo whose byte length must be ≤
+///   [`MEMO_PAYLOAD_SIZE`]; over-length is rejected with
+///   `ErrorInvalidParameter`.
+///
+/// Factored out as a pure function so the text→bytes rules are unit
+/// testable without a live wallet handle.
+fn encode_memo_text(memo_text: Option<&str>) -> Result<[u8; 36], PlatformWalletFFIResult> {
+    match memo_text {
+        None | Some("") => Ok(ShieldedMemo::Empty.to_bytes()),
+        Some(text) => ShieldedMemo::text(text)
+            .map(|memo| memo.to_bytes())
+            .map_err(|e| {
+                PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                    e.to_string(),
+                )
+            }),
+    }
+}
+
 /// Send a shielded → shielded transfer.
 ///
 /// Spends notes from `wallet_id`'s shielded balance and creates a
@@ -158,11 +247,20 @@ pub unsafe extern "C" fn platform_wallet_shielded_prover_is_ready() -> bool {
 /// shielded sub-wallet, no spendable notes, or insufficient
 /// shielded balance to cover `amount + estimated_fee`.
 ///
+/// `memo_text` is an optional NUL-terminated UTF-8 string attached
+/// to the recipient's note. `null` or an empty string means no memo
+/// (the all-zero 36-byte memo). A non-empty memo's UTF-8 byte length
+/// must be ≤ 32; longer memos are rejected with
+/// `ErrorInvalidParameter`. The 36-byte `DashMemo` encoding is done
+/// on the Rust side.
+///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
 /// - `recipient_raw_43` must point to 43 readable bytes (the
 ///   recipient's raw Orchard payment address — same shape
 ///   `platform_wallet_manager_shielded_default_address` returns).
+/// - `memo_text`, when non-null, must be a valid NUL-terminated UTF-8
+///   C string for the duration of the call.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     handle: Handle,
@@ -170,6 +268,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     account: u32,
     recipient_raw_43: *const u8,
     amount: u64,
+    memo_text: *const c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(recipient_raw_43);
@@ -178,6 +277,26 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
     let mut recipient = [0u8; 43];
     std::ptr::copy_nonoverlapping(recipient_raw_43, recipient.as_mut_ptr(), 43);
+
+    // Decode the optional memo string before resolving the wallet so a
+    // malformed memo fails fast without touching wallet state.
+    let memo_str = if memo_text.is_null() {
+        None
+    } else {
+        match CStr::from_ptr(memo_text).to_str() {
+            Ok(s) => Some(s),
+            Err(e) => {
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+                    format!("memo_text is not valid UTF-8: {e}"),
+                );
+            }
+        }
+    };
+    let memo = match encode_memo_text(memo_str) {
+        Ok(m) => m,
+        Err(result) => return result,
+    };
 
     let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
         Ok(p) => p,
@@ -192,7 +311,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         wallet
-            .shielded_transfer_to(&coordinator, account, &recipient, amount, &prover)
+            .shielded_transfer_to(&coordinator, account, &recipient, amount, memo, &prover)
             .await
     });
     if let Err(e) = result {
@@ -339,6 +458,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 /// denomination + full key set) + a per-key proof-of-possession produced via
 /// `signer_identity_handle`. There is NO platform identity signature.
 ///
+/// `identity_index` is the DIP-9 identity-registration slot the new identity occupies. On a
+/// successful broadcast the wallet registers the proof-verified identity at this slot in its local
+/// `IdentityManager` (mirroring address-funded registration), which drives the host persister's
+/// identity-row emit. It carries no decision here — it is marshalled straight through to the wallet.
+///
 /// On success the 32-byte new identity id (`double_sha256(sorted nullifiers)`) is written to
 /// `out_identity_id`. The id is deterministic in the spent notes, so the host can also predict it
 /// independently if needed.
@@ -367,6 +491,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
     handle: Handle,
     wallet_id_bytes: *const u8,
     account: u32,
+    identity_index: u32,
     identity_pubkeys: *const IdentityPubkeyFFI,
     identity_pubkeys_count: usize,
     denomination: u64,
@@ -444,6 +569,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
             .shielded_identity_create_from_pool(
                 &coordinator,
                 account,
+                identity_index,
                 public_keys,
                 denomination,
                 send_to_address_on_creation_failure,
@@ -884,4 +1010,101 @@ fn resolve_wallet_and_coordinator(
         )
     })?;
     Ok((wallet, coordinator))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::shielded::MEMO_PAYLOAD_SIZE;
+
+    #[test]
+    fn encode_memo_text_none_is_empty() {
+        let bytes = encode_memo_text(None).expect("None must encode");
+        assert_eq!(bytes, [0u8; 36], "None must produce the all-zero memo");
+        assert_eq!(ShieldedMemo::from_bytes(&bytes), ShieldedMemo::Empty);
+    }
+
+    #[test]
+    fn encode_memo_text_empty_string_is_empty() {
+        let bytes = encode_memo_text(Some("")).expect("empty string must encode");
+        assert_eq!(
+            bytes, [0u8; 36],
+            "an empty string must produce the all-zero memo, not a kind-1 text memo"
+        );
+        assert_eq!(ShieldedMemo::from_bytes(&bytes), ShieldedMemo::Empty);
+    }
+
+    #[test]
+    fn encode_memo_text_roundtrips_text() {
+        let bytes = encode_memo_text(Some("thanks for lunch")).expect("text must encode");
+        assert_eq!(
+            ShieldedMemo::from_bytes(&bytes),
+            ShieldedMemo::Text("thanks for lunch".to_string())
+        );
+    }
+
+    #[test]
+    fn encode_memo_text_max_length_multibyte_is_accepted() {
+        // 8 × 🍕 = 32 bytes, exactly the payload limit.
+        let s = "🍕".repeat(8);
+        assert_eq!(s.len(), MEMO_PAYLOAD_SIZE);
+        let bytes = encode_memo_text(Some(&s)).expect("a 32-byte memo must be accepted");
+        assert_eq!(ShieldedMemo::from_bytes(&bytes), ShieldedMemo::Text(s));
+    }
+
+    #[test]
+    fn encode_memo_text_over_limit_is_rejected() {
+        let s = "a".repeat(MEMO_PAYLOAD_SIZE + 1);
+        let err = encode_memo_text(Some(&s)).expect_err("a 33-byte memo must be rejected");
+        assert_eq!(
+            err.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "over-length memo must surface as an invalid-parameter error"
+        );
+    }
+
+    /// Pin the fee estimator to the on-chain ground-truth values observed at the current platform
+    /// version with 2 actions (single-note spend + change). These are the exact credits the
+    /// builder carves and the consensus gate validates, so the host's "Estimated Fee" must match.
+    #[test]
+    fn estimate_fee_matches_observed_onchain_values_for_2_actions() {
+        unsafe {
+            let estimate = |kind: u8| {
+                let mut fee: u64 = 0;
+                let result = platform_wallet_shielded_estimate_fee(kind, 2, &mut fee);
+                assert_eq!(
+                    result.code,
+                    PlatformWalletFFIResultCode::Success,
+                    "kind {kind} must succeed"
+                );
+                fee
+            };
+            // kind 0 — ShieldedTransfer / Shield base.
+            assert_eq!(
+                estimate(0),
+                162_851_200,
+                "shielded transfer fee (2 actions)"
+            );
+            // kind 1 — Unshield.
+            assert_eq!(estimate(1), 168_934_000, "unshield fee (2 actions)");
+            // kind 2 — ShieldedWithdrawal.
+            assert_eq!(
+                estimate(2),
+                275_191_200,
+                "shielded withdrawal fee (2 actions)"
+            );
+        }
+    }
+
+    #[test]
+    fn estimate_fee_rejects_unknown_kind() {
+        unsafe {
+            let mut fee: u64 = 0;
+            let result = platform_wallet_shielded_estimate_fee(7, 2, &mut fee);
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            );
+        }
+    }
 }

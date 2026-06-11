@@ -1,7 +1,3 @@
-use crate::drive::shielded::nullifiers::queries::{
-    SHIELDED_COMPACTED_NULLIFIERS_KEY_U8, SHIELDED_NULLIFIERS_EXPIRATION_TIME_KEY_U8,
-    SHIELDED_RECENT_NULLIFIERS_KEY_U8,
-};
 use crate::drive::shielded::paths::{
     shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_BY_HEIGHT_KEY,
     SHIELDED_ANCHORS_IN_POOL_KEY, SHIELDED_NOTES_CHUNK_POWER, SHIELDED_NOTES_KEY,
@@ -14,7 +10,7 @@ use grovedb::{Element, TransactionArg};
 use grovedb_path::SubtreePath;
 
 impl Drive {
-    /// Inserts the main shielded credit pool and its eight child subtrees under
+    /// Inserts the main shielded credit pool and its five child subtrees under
     /// an already-existing top-level `RootTree::ShieldedBalances` SumTree.
     ///
     /// CONSENSUS-CRITICAL: this is the single source of truth for the shielded
@@ -37,9 +33,7 @@ impl Drive {
     /// 1. Do not reorder these inserts and do not move them into a batch.
     ///
     /// The caller MUST have already created the top-level
-    /// `RootTree::ShieldedBalances` SumTree; this helper only fills it in. The
-    /// recent-nullifiers `CountSumTree` is wrapped in `Element::NotSummed` so its
-    /// sum side does not propagate into the pool's "credits" aggregate.
+    /// `RootTree::ShieldedBalances` SumTree; this helper only fills it in.
     ///
     /// # Parameters
     ///
@@ -62,7 +56,7 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        // The eight child inserts below are ordered breadth-first to match the
+        // The five child inserts below are ordered breadth-first to match the
         // intended balanced shape of the parent Merk tree (see the layout
         // diagram in `crate::drive::shielded::paths`). AVL rebalancing is
         // order-sensitive, so this ordering is what actually places
@@ -120,43 +114,6 @@ impl Drive {
         self.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
             &[SHIELDED_ANCHORS_BY_HEIGHT_KEY],
-            Element::empty_tree(),
-            transaction,
-            None,
-            &platform_version.drive,
-        )?;
-
-        // Level 2: per-block recent-nullifiers CountSumTree wrapped in
-        // NotSummed — the sum side (per-block nullifier count) is suppressed
-        // so it does NOT propagate into the enclosing shielded pool SumTree.
-        // [ShieldedBalances, "M"] / [160]
-        self.grove_insert_if_not_exists(
-            (&shielded_pool_path).into(),
-            &[SHIELDED_RECENT_NULLIFIERS_KEY_U8],
-            Element::new_not_summed(Element::empty_count_sum_tree())
-                .expect("count sum tree is a valid NotSummed inner"),
-            transaction,
-            None,
-            &platform_version.drive,
-        )?;
-
-        // Level 2: compacted nullifiers NormalTree —
-        // (start_block, end_block) → serialized Vec<[u8;32]>.
-        // [ShieldedBalances, "M"] / [224]
-        self.grove_insert_if_not_exists(
-            (&shielded_pool_path).into(),
-            &[SHIELDED_COMPACTED_NULLIFIERS_KEY_U8],
-            Element::empty_tree(),
-            transaction,
-            None,
-            &platform_version.drive,
-        )?;
-
-        // Level 3: nullifiers-expiration-time NormalTree (deepest leaf).
-        // [ShieldedBalances, "M"] / [240]
-        self.grove_insert_if_not_exists(
-            (&shielded_pool_path).into(),
-            &[SHIELDED_NULLIFIERS_EXPIRATION_TIME_KEY_U8],
             Element::empty_tree(),
             transaction,
             None,

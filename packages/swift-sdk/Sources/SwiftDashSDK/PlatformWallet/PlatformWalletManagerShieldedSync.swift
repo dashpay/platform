@@ -423,17 +423,56 @@ extension PlatformWalletManager {
         platform_wallet_shielded_prover_is_ready()
     }
 
+    /// Which consensus fee formula a pool-paid shielded transition is
+    /// charged under. Mirrors the `kind` byte the Rust FFI
+    /// `platform_wallet_shielded_estimate_fee` dispatches on.
+    public enum ShieldedFeeKind: UInt8 {
+        /// ShieldedTransfer / Shield base (`compute_minimum_shielded_fee`).
+        case transfer = 0
+        /// Unshield (`compute_shielded_unshield_fee`).
+        case unshield = 1
+        /// ShieldedWithdrawal (`compute_shielded_withdrawal_fee`).
+        case withdrawal = 2
+    }
+
+    /// Consensus-pinned flat shielded fee (in credits) for a pool-paid
+    /// shielded transition with `numActions` Orchard actions. Pure
+    /// computation on the Rust side (no handle, no network) against
+    /// `PlatformVersion::latest()` — the same version the builders pin —
+    /// so the estimate can't drift from the carved fee. A single-note
+    /// spend with change is `numActions: 2`.
+    public static func estimateShieldedFee(
+        kind: ShieldedFeeKind,
+        numActions: Int = 2
+    ) throws -> UInt64 {
+        var fee: UInt64 = 0
+        // `num_actions` is `usize` on the Rust side → imported as `UInt`.
+        try platform_wallet_shielded_estimate_fee(
+            kind.rawValue,
+            UInt(numActions),
+            &fee
+        ).check()
+        return fee
+    }
+
     /// Shielded → Shielded transfer. Spends notes from `account`
     /// on `walletId` and creates a new note for `recipientRaw43`
     /// (the recipient's raw 43-byte Orchard payment address).
     /// Amount is in credits (1 DASH = 1e11). Heavy CPU work runs
     /// on a detached task so the caller's actor isn't blocked
     /// through the proof build.
+    ///
+    /// `memo` is an optional UTF-8 text note attached to the
+    /// recipient's note. `nil` (or an empty string) means no memo;
+    /// a non-empty memo's UTF-8 byte length must be at most 32 or
+    /// Rust rejects it. The 36-byte on-chain encoding is done on the
+    /// Rust side.
     public func shieldedTransfer(
         walletId: Data,
         account: UInt32 = 0,
         recipientRaw43: Data,
-        amount: UInt64
+        amount: UInt64,
+        memo: String? = nil
     ) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(
@@ -466,9 +505,19 @@ extension PlatformWalletManager {
                             "recipient baseAddress is nil"
                         )
                     }
-                    try platform_wallet_manager_shielded_transfer(
-                        handle, widPtr, account, recipientPtr, amount
-                    ).check()
+                    // `nil` / empty → null pointer (no memo); otherwise
+                    // pass the text as a C string. Rust validates the
+                    // 32-byte limit and does the 36-byte encoding.
+                    let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
+                        try platform_wallet_manager_shielded_transfer(
+                            handle, widPtr, account, recipientPtr, amount, memoCStr
+                        ).check()
+                    }
+                    if let memo, !memo.isEmpty {
+                        try memo.withCString { try send($0) }
+                    } else {
+                        try send(nil)
+                    }
                 }
             }
         }.value
@@ -625,6 +674,13 @@ extension PlatformWalletManager {
     /// the bound wallet's own key. Returns the 32-byte new identity id
     /// (`double_sha256(sorted nullifiers)`).
     ///
+    /// `identityIndex` is the DIP-9 identity-registration slot the new
+    /// identity occupies. On a successful broadcast the Rust wallet
+    /// registers the proof-verified identity at this slot in its local
+    /// `IdentityManager` (mirroring address-funded registration), which
+    /// drives the persister callbacks that create the app's identity
+    /// row. This wrapper only marshals it across the FFI.
+    ///
     /// `sendToAddressOnCreationFailure` is the REQUIRED fallback
     /// platform address as raw `PlatformAddress` storage bytes (21
     /// bytes: 1-byte variant tag + 20-byte hash, the encoding
@@ -639,6 +695,7 @@ extension PlatformWalletManager {
     public func shieldedIdentityCreateFromPool(
         walletId: Data,
         account: UInt32 = 0,
+        identityIndex: UInt32,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
         denomination: UInt64,
         sendToAddressOnCreationFailure: Data,
@@ -717,6 +774,7 @@ extension PlatformWalletManager {
                                 handle,
                                 widPtr,
                                 account,
+                                identityIndex,
                                 ffiRowsPtr,
                                 UInt(ffiRowsCount),
                                 denomination,

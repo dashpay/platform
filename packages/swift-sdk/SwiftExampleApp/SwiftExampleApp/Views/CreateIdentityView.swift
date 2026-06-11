@@ -8,12 +8,23 @@
 //      "Create without Wallet" for the advanced path where the caller
 //      supplies a raw asset-lock proof.
 //   2. When a wallet is chosen: either a PersistentAccount on that
-//      wallet (any type — Core pools and Platform Payment both work)
-//      or "Fund from unused Asset Lock".
+//      wallet (any type — Core pools and Platform Payment both work),
+//      "Fund from unused Asset Lock", or "Shielded Balance" (Type 20
+//      IdentityCreateFromShieldedPool — funds the identity directly
+//      from the wallet's bound Orchard pool).
 //
-// The first-pass implementation only wires the Platform Payment
-// funding path — see `submit()`. Core / CoinJoin / walletless paths
-// are still stubs pending their respective FFI entry points.
+// Funding paths wired in `submit()`: Platform Payment
+// (`registerIdentityFromAddresses`), Core / CoinJoin
+// (`registerIdentityWithFunding`), unused asset-lock resume
+// (`resumeIdentityWithAssetLock`), and Shielded Balance
+// (`shieldedIdentityCreateFromPool`). The walletless raw-proof path
+// is still a stub pending its FFI entry point.
+//
+// The Shielded Balance pass differs from the others: it spends a FIXED
+// protocol denomination (not a free-form amount) from the bound
+// shielded (Orchard) pool, takes tens of seconds for the Halo 2 proof,
+// and so routes through the RegistrationCoordinator-hosted controller
+// (survives sheet dismissal, visible under Pending Registrations).
 
 import SwiftUI
 import SwiftDashSDK
@@ -41,6 +52,11 @@ struct CreateIdentityView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
+    /// Display-state mirror of the Rust-owned shielded sync. Injected
+    /// at the app root (`SwiftExampleAppApp.swift`). Binds ONE wallet
+    /// at a time — the `.shieldedBalance` funding option is only
+    /// offered when its `boundWalletId` matches the selected wallet.
+    @EnvironmentObject var shieldedService: ShieldedService
 
     /// Default number of Platform identity authentication keys to
     /// register in this first-pass flow. First key is MASTER, the
@@ -80,6 +96,24 @@ struct CreateIdentityView: View {
     /// credit amounts. Duplicated from `PersistentPlatformAddress`
     /// docstring; kept here so the conversion logic stays local.
     private static let creditsPerDash: UInt64 = 100_000_000_000
+
+    /// Versioned fixed exit denominations (in CREDITS) a Type-20
+    /// IdentityCreateFromShieldedPool transition may spend from the
+    /// shielded pool — 0.1 / 0.3 / 0.5 / 1.0 DASH. Source of truth:
+    /// `shielded_identity_create_denominations` in
+    /// `packages/rs-platform-version/src/version/drive_abci_versions/`
+    /// `drive_abci_validation_versions/v8.rs`. There is no FFI getter
+    /// for this set, so it's mirrored here — same precedent as
+    /// `identityKeyCreationCostCredits` / `dashpayContractId`. If the
+    /// versioned set changes on the Rust side, update this constant to
+    /// match (a submitted denomination not in the on-chain set is
+    /// rejected at validation).
+    private static let shieldedIdentityCreateDenominations: [UInt64] = [
+        10_000_000_000,   // 0.1 DASH
+        30_000_000_000,   // 0.3 DASH
+        50_000_000_000,   // 0.5 DASH
+        100_000_000_000,  // 1.0 DASH
+    ]
 
     /// Duffs per DASH (1e8) — Core-side scale, used by the Core-funded
     /// identity path.
@@ -214,6 +248,13 @@ struct CreateIdentityView: View {
     /// automatically from the selected account's balance; the user
     /// can lower it but not exceed the available balance.
     @State private var amountDash: String = ""
+
+    /// Chosen fixed exit denomination (in credits) for the
+    /// `.shieldedBalance` funding path. `nil` until the user picks one
+    /// in the denomination picker. Reset on any wallet / funding-source
+    /// change (same reset paths as `amountDash`). Only ever one of
+    /// `Self.shieldedIdentityCreateDenominations`.
+    @State private var selectedDenomination: UInt64? = nil
 
     // MARK: - Submit state
 
@@ -404,10 +445,11 @@ struct CreateIdentityView: View {
             }
             .onChange(of: walletSelection) { _, newValue in
                 // Reset downstream selection whenever the wallet
-                // changes so a stale account / proof can't leak
-                // through.
+                // changes so a stale account / proof / denomination
+                // can't leak through.
                 fundingSelection = nil
                 walletlessProof = ""
+                selectedDenomination = nil
                 // Default the identity-registration index to one
                 // past the highest already-used slot on the newly-
                 // selected wallet (identities aren't gap-limited; we
@@ -513,6 +555,9 @@ struct CreateIdentityView: View {
     @ViewBuilder
     private func walletAccountSection(for walletId: Data) -> some View {
         let options = accountOptions(for: walletId)
+        // Whether to surface the shielded-pool funding row. Computed
+        // once so the picker body and the footer text stay in lockstep.
+        let showShielded = shieldedOptionAvailable(for: walletId)
         Section {
             Picker("Funding Source", selection: $fundingSelection) {
                 Text("Select…")
@@ -521,12 +566,24 @@ struct CreateIdentityView: View {
                     Text("\(option.label) — \(option.balanceText)")
                         .tag(Optional(FundingSelection.account(id: option.persistentId)))
                 }
+                if showShielded {
+                    let shieldedText = Self.formatDash(
+                        raw: shieldedService.shieldedBalance,
+                        divisor: Double(Self.creditsPerDash)
+                    )
+                    Text("Shielded Balance — \(shieldedText)")
+                        .tag(Optional(FundingSelection.shieldedBalance))
+                }
             }
             .onChange(of: fundingSelection) { _, newValue in
                 // Pre-fill the amount with the full available balance
                 // of the selected Platform Payment account so the
-                // happy path is one tap. Users can dial it down.
+                // happy path is one tap. Users can dial it down. The
+                // shielded path uses a fixed denomination, not this
+                // free-form field, so clear both the amount and the
+                // denomination on every funding-source change.
                 amountDash = defaultAmountString(for: newValue)
+                selectedDenomination = nil
             }
         } header: {
             Text("Funding Source")
@@ -534,17 +591,27 @@ struct CreateIdentityView: View {
             Text(
                 "Any account on the selected wallet with a balance can fund "
                 + "the identity — Core or Platform Payment. Empty accounts "
-                + "are hidden. To resume a prior in-flight registration, "
+                + "are hidden. "
+                + (showShielded
+                    ? "Shielded Balance funds the identity directly from this "
+                      + "wallet's shielded (Orchard) pool by spending a fixed "
+                      + "denomination. "
+                    : "")
+                + "To resume a prior in-flight registration, "
                 + "use the Resumable Registrations section on the Identities tab."
             )
         }
     }
 
     /// Amount (in DASH) to fund the new identity with. Shown for
-    /// Platform Payment and Core / CoinJoin funding sources.
+    /// Platform Payment and Core / CoinJoin funding sources. For the
+    /// `.shieldedBalance` path the free-form amount is replaced by a
+    /// fixed-denomination picker (`shieldedDenominationSection`).
     @ViewBuilder
     private var amountSection: some View {
-        if let account = selectedPlatformAccount {
+        if fundingSelection == .shieldedBalance {
+            shieldedDenominationSection
+        } else if let account = selectedPlatformAccount {
             Section {
                 HStack {
                     TextField("Amount", text: $amountDash)
@@ -586,6 +653,65 @@ struct CreateIdentityView: View {
                 )
                 Text("Available: \(available). Minimum: \(minimum). Rust builds an asset-lock transaction from your Core UTXOs and the locked funds become the new identity's initial credit balance.")
             }
+        }
+    }
+
+    /// Fixed-denomination picker for the `.shieldedBalance` funding
+    /// path. The Type-20 transition spends one of the versioned
+    /// denominations (`Self.shieldedIdentityCreateDenominations`), not
+    /// a free-form amount — so this replaces the amount field. Only
+    /// denominations the bound shielded pool can actually cover
+    /// (`<= shieldedService.shieldedBalance`) are offered.
+    @ViewBuilder
+    private var shieldedDenominationSection: some View {
+        // Denominations the pool can cover. Computed off the live
+        // `shieldedService.shieldedBalance` so the list shrinks as the
+        // pool drains (e.g. after a prior shielded spend this session).
+        let affordable = Self.shieldedIdentityCreateDenominations
+            .filter { $0 <= shieldedService.shieldedBalance }
+        Section {
+            if affordable.isEmpty {
+                // Defensive: the option is gated on `shieldedBalance > 0`,
+                // but the smallest denomination (0.1 DASH) can still
+                // exceed a small positive balance. Surface why no
+                // denomination is selectable rather than showing an
+                // empty picker.
+                Text(
+                    "The shielded balance is below the smallest "
+                    + "denomination (\(Self.formatDash(raw: Self.shieldedIdentityCreateDenominations.first ?? 0, divisor: Double(Self.creditsPerDash)))). "
+                    + "Shield more funds first."
+                )
+                .font(.caption)
+                .foregroundColor(.secondary)
+            } else {
+                Picker("Denomination", selection: $selectedDenomination) {
+                    Text("Select…")
+                        .tag(Optional<UInt64>.none)
+                    ForEach(affordable, id: \.self) { denom in
+                        Text(Self.formatDash(
+                            raw: denom,
+                            divisor: Double(Self.creditsPerDash)
+                        ))
+                        .tag(Optional(denom))
+                    }
+                }
+                .disabled(isCreating)
+            }
+        } header: {
+            Text("Denomination")
+        } footer: {
+            let available = Self.formatDash(
+                raw: shieldedService.shieldedBalance,
+                divisor: Double(Self.creditsPerDash)
+            )
+            Text(
+                "Available shielded: \(available). The whole denomination "
+                + "leaves the pool; the metered fee is taken FROM it (the new "
+                + "identity starts at denomination − fee), and any excess "
+                + "spent value returns to the pool as change. The Halo 2 proof "
+                + "takes tens of seconds — registration continues under "
+                + "Pending Registrations if you dismiss this sheet."
+            )
         }
     }
 
@@ -674,6 +800,22 @@ struct CreateIdentityView: View {
         }
     }
 
+    /// Per-key cost note for the DashPay-keys footer. The "+N duffs"
+    /// funding-minimum phrasing only applies to the asset-lock-style
+    /// paths (Core / Platform Payment), where the per-key surcharge
+    /// bumps the funding floor. The shielded path spends a FIXED
+    /// denomination and meters the fee FROM it, so there's no duff
+    /// minimum to add to — surface the per-key cost neutrally instead
+    /// of as a misleading "asset-lock minimum" bump.
+    private var dashpayKeysCostNote: String {
+        if fundingSelection == .shieldedBalance {
+            return "The two extra keys add their per-key creation cost to the metered fee taken from the chosen denomination."
+        }
+        let extraDuffs = currentMinFundingDuffs
+            - Self.minFundingDuffs(forKeyCount: Self.defaultKeyCount)
+        return "Adds \(extraDuffs) duffs to the asset-lock minimum."
+    }
+
     /// Toggle for the optional DashPay encryption/decryption key
     /// pair. Default-on because DashPay is a first-class feature in
     /// this app and registering the keys after-the-fact requires
@@ -689,11 +831,9 @@ struct CreateIdentityView: View {
             } header: {
                 Text("DashPay Support")
             } footer: {
-                let extraDuffs = currentMinFundingDuffs
-                    - Self.minFundingDuffs(forKeyCount: Self.defaultKeyCount)
                 Text(
                     addDashPayKeys
-                    ? "Registers 2 additional keys at registration — one Encryption + one Decryption (both MEDIUM security, ECDSA secp256k1, bound to the DashPay system contract's `contactRequest` document type). Required for sending and accepting friend requests, sending payments to contacts, and DashPay profile flows. Adds \(extraDuffs) duffs to the asset-lock minimum."
+                    ? "Registers 2 additional keys at registration — one Encryption + one Decryption (both MEDIUM security, ECDSA secp256k1, bound to the DashPay system contract's `contactRequest` document type). Required for sending and accepting friend requests, sending payments to contacts, and DashPay profile flows. \(dashpayKeysCostNote)"
                     : "Identity will register with the default 3 authentication keys only. You can add DashPay encryption/decryption keys later via Add Identity Key on the identity detail screen — but flows like Add Friend won't work until those keys exist."
                 )
             }
@@ -786,6 +926,16 @@ struct CreateIdentityView: View {
                 let available = coreAccountBalanceDuffs(account)
                 return duffs >= currentMinFundingDuffs && duffs <= available
             }
+            if fundingSelection == .shieldedBalance {
+                // Re-check availability (the bound wallet / balance could
+                // have changed since the option was rendered), require a
+                // chosen denomination, and that the pool still covers it.
+                // The slot-collision check above already applies (the
+                // shielded path isn't `.unusedAssetLock`).
+                guard shieldedOptionAvailable(for: walletId) else { return false }
+                guard let denomination = selectedDenomination else { return false }
+                return denomination <= shieldedService.shieldedBalance
+            }
             return false
         default:
             return false
@@ -797,9 +947,12 @@ struct CreateIdentityView: View {
     /// Dispatches identity registration to the correct funding path.
     /// Platform-Payment funding uses `registerIdentityFromAddresses`;
     /// Core / CoinJoin funding uses `registerIdentityWithFunding`
-    /// (asset-lock proof built Rust-side from wallet UTXOs). Other
-    /// funding branches (unused asset-lock, walletless) stay disabled
-    /// via `canSubmit` until later iterations.
+    /// (asset-lock proof built Rust-side from wallet UTXOs); unused
+    /// asset-lock resume uses `resumeIdentityWithAssetLock`; and the
+    /// Shielded Balance path uses `shieldedIdentityCreateFromPool`
+    /// (Type-20, spends a fixed denomination from the Orchard pool).
+    /// The walletless raw-proof branch stays disabled via `canSubmit`
+    /// until its FFI entry point lands.
     private func submit() {
         guard
             let identityIndex = identityIndex,
@@ -925,6 +1078,15 @@ struct CreateIdentityView: View {
                 managedWallet: managedWallet,
                 network: network
             )
+        } else if fundingSelection == .shieldedBalance {
+            submitShieldedFunded(
+                walletId: walletId,
+                identityIndex: identityIndex,
+                identityPubkeys: identityPubkeys,
+                signer: signer,
+                managedWallet: managedWallet,
+                network: network
+            )
         } else {
             submitError = .init(message: "Selected funding source is not yet supported.")
         }
@@ -968,6 +1130,88 @@ struct CreateIdentityView: View {
                     identityIndex: identityIndex,
                     identityPubkeys: identityPubkeys,
                     signer: signer
+                )
+                return identityId
+            }
+        )
+
+        self.activeController = controller
+        observeController(
+            controller,
+            walletId: walletId,
+            identityIndex: identityIndex,
+            network: network
+        )
+    }
+
+    /// Shielded-pool funded registration (Type-20
+    /// IdentityCreateFromShieldedPool). Spends a fixed denomination from
+    /// the wallet's bound Orchard pool to fund a brand-new identity.
+    ///
+    /// Same coordinator-hosted shape as `submitCoreFunded` /
+    /// `submitResumed`: the body closure runs
+    /// `walletManager.shieldedIdentityCreateFromPool` (returns the new
+    /// identity id directly) and `observeController` drives the shared
+    /// `persistCreatedIdentity` + `markIdentitySlotUsed` side-effects.
+    /// The coordinator host matters MORE here than the other paths — the
+    /// Halo 2 proof takes tens of seconds, so a controller that survives
+    /// sheet dismissal (and shows under Pending Registrations) is the
+    /// right shape.
+    ///
+    /// Uses ZIP-32 account 0 (the app's shielded flows are account-0
+    /// default). The Rust wrapper registers the proof-verified identity
+    /// at `identityIndex` on success, so the `PersistentIdentity` row is
+    /// created by the persister callbacks before `persistCreatedIdentity`
+    /// patches its UI-only fields — same as the address-funded path.
+    private func submitShieldedFunded(
+        walletId: Data,
+        identityIndex: UInt32,
+        identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
+        signer: KeychainSigner,
+        managedWallet: ManagedPlatformWallet,
+        network: Network
+    ) {
+        guard let denomination = selectedDenomination else {
+            submitError = .init(message: "Pick a shielded denomination first.")
+            return
+        }
+        // The fallback failure address is REQUIRED for Type-20. Visibility
+        // of the option is already gated on this being non-nil
+        // (`shieldedOptionAvailable`), but re-resolve + guard here so the
+        // submit path is force-unwrap-free if state shifted underneath us.
+        guard let fallbackAddressBytes = shieldedFallbackAddressBytes(for: walletId) else {
+            submitError = .init(
+                message: "No Platform Payment address is available on this wallet to use as the required shielded creation-failure fallback. Generate one first."
+            )
+            return
+        }
+
+        isCreating = true
+
+        let coordinator = walletManager.registrationCoordinator
+        // Captured locally so the escaping body holds its own reference
+        // rather than re-reading the view's `walletManager` property from
+        // another isolation domain (mirrors how the other submit paths
+        // capture `managedWallet`).
+        let manager = walletManager
+        let controller = coordinator.startRegistration(
+            walletId: walletId,
+            identityIndex: identityIndex,
+            fundingKind: .shieldedPool,
+            body: {
+                // `shieldedIdentityCreateFromPool` lives on the manager
+                // (it's wallet-id-routed, unlike the per-wallet
+                // `ManagedPlatformWallet` registration methods) and
+                // returns the new identity id directly. Account 0 = the
+                // app's shielded default.
+                let identityId = try await manager.shieldedIdentityCreateFromPool(
+                    walletId: walletId,
+                    account: 0,
+                    identityIndex: identityIndex,
+                    identityPubkeys: identityPubkeys,
+                    denomination: denomination,
+                    sendToAddressOnCreationFailure: fallbackAddressBytes,
+                    identitySigner: signer
                 )
                 return identityId
             }
@@ -1376,6 +1620,51 @@ struct CreateIdentityView: View {
     /// account.
     private func accountBalance(_ account: PersistentAccount) -> UInt64 {
         account.platformAddresses.reduce(0) { $0 + $1.balance }
+    }
+
+    /// REQUIRED Type-20 fallback failure address for `walletId`, as raw
+    /// 21-byte `PlatformAddress` storage bytes (1-byte variant tag +
+    /// 20-byte hash). If identity creation fails a stateful check (a
+    /// pubkey hash already registered to another identity) the spend is
+    /// still finalized and the value lands at this address minus a
+    /// penalty — it's bound into the transition sighash, so it can't be
+    /// redirected after signing.
+    ///
+    /// Built from the wallet's Platform Payment account (type tag 14):
+    /// the lowest-`addressIndex` `PersistentPlatformAddress` row gives
+    /// `Data([row.addressType]) + row.addressHash`. This is the exact
+    /// `(addressType, hash)` pairing `buildInputs` feeds the
+    /// address-funded FFI, so the encoding matches
+    /// `PlatformAddress.toBytes()`. Returns `nil` when the wallet has no
+    /// Platform Payment address yet — the `.shieldedBalance` option is
+    /// gated on this being non-nil so `submit` can guard cleanly.
+    private func shieldedFallbackAddressBytes(for walletId: Data) -> Data? {
+        guard let account = allAccounts.first(where: {
+            $0.wallet.walletId == walletId && $0.accountType == 14
+        }) else {
+            return nil
+        }
+        guard let row = account.platformAddresses
+            .min(by: { $0.addressIndex < $1.addressIndex })
+        else {
+            return nil
+        }
+        return Data([row.addressType]) + row.addressHash
+    }
+
+    /// Whether the `.shieldedBalance` funding option should be offered
+    /// for `walletId`. Requires, ALL of:
+    ///   - the wallet is the one currently bound to `ShieldedService`,
+    ///   - that service reports the wallet as bound (`isBound`),
+    ///   - the bound shielded pool has a positive balance,
+    ///   - a fallback platform address exists (Type-20 requires it).
+    /// Gating visibility on the fallback lets `submit` guard without a
+    /// force-unwrap and surface a clear error path-free.
+    private func shieldedOptionAvailable(for walletId: Data) -> Bool {
+        shieldedService.boundWalletId == walletId
+            && shieldedService.isBound
+            && shieldedService.shieldedBalance > 0
+            && shieldedFallbackAddressBytes(for: walletId) != nil
     }
 
     /// Derive + Keychain-persist the DashPay encryption/decryption
@@ -1796,6 +2085,11 @@ private enum WalletSelection: Hashable {
 private enum FundingSelection: Hashable {
     case account(id: PersistentIdentifier)
     case unusedAssetLock
+    /// Fund the new identity from the wallet's bound shielded (Orchard)
+    /// pool via the Type-20 IdentityCreateFromShieldedPool transition.
+    /// Only offered when the wallet is the one currently bound to
+    /// `ShieldedService` and that pool has a positive balance.
+    case shieldedBalance
 }
 
 private struct FundingAccountOption: Identifiable {

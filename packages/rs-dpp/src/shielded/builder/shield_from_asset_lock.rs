@@ -20,6 +20,11 @@ use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver
 /// - `asset_lock_private_key` - Private key for the asset lock (signs the transition)
 /// - `prover` - Orchard prover (holds the Halo 2 proving key)
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
+/// - `sender_ovk` - The sender's outgoing viewing key (External scope). With `Some`, the
+///   recipient output's `out_ciphertext` is encrypted under it so the sender can later
+///   recover the sent note (recipient, value, memo) from chain data via OVK recovery —
+///   the Zcash outgoing-transaction-history convention. With `None`, a random outgoing
+///   cipher key is used and the sent note is unrecoverable by anyone.
 /// - `surplus_output` - Optional platform address that receives the asset-lock surplus
 ///   (`asset_lock_value − shield_amount − fee`); when `None`, the surplus is added to the fee
 ///   pools, capped at `shielded_implicit_fee_cap`
@@ -32,10 +37,11 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
     asset_lock_private_key: &[u8],
     prover: &P,
     memo: [u8; 36],
+    sender_ovk: Option<grovedb_commitment_tree::OutgoingViewingKey>,
     surplus_output: Option<PlatformAddress>,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
-    let bundle = build_output_only_bundle(recipient, shield_amount, memo, prover)?;
+    let bundle = build_output_only_bundle(recipient, shield_amount, memo, sender_ovk, prover)?;
     let sb = serialize_authorized_bundle(&bundle);
 
     // For output-only bundles, Orchard value_balance is negative (value flowing in).
@@ -77,6 +83,11 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
 /// - `asset_lock_signer` - External signer that produces the outer ECDSA signature
 /// - `prover` - Orchard prover (holds the Halo 2 proving key)
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
+/// - `sender_ovk` - The sender's outgoing viewing key (External scope). With `Some`, the
+///   recipient output's `out_ciphertext` is encrypted under it so the sender can later
+///   recover the sent note (recipient, value, memo) from chain data via OVK recovery —
+///   the Zcash outgoing-transaction-history convention. With `None`, a random outgoing
+///   cipher key is used and the sent note is unrecoverable by anyone.
 /// - `surplus_output` - Optional platform address that receives the asset-lock surplus
 ///   (`asset_lock_value − shield_amount − fee`); when `None`, the surplus is added to the fee
 ///   pools, capped at `shielded_implicit_fee_cap`
@@ -91,6 +102,7 @@ pub async fn build_shield_from_asset_lock_transition_with_signer<P, AS>(
     asset_lock_signer: &AS,
     prover: &P,
     memo: [u8; 36],
+    sender_ovk: Option<grovedb_commitment_tree::OutgoingViewingKey>,
     surplus_output: Option<PlatformAddress>,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError>
@@ -98,7 +110,7 @@ where
     P: OrchardProver,
     AS: ::key_wallet::signer::Signer,
 {
-    let bundle = build_output_only_bundle(recipient, shield_amount, memo, prover)?;
+    let bundle = build_output_only_bundle(recipient, shield_amount, memo, sender_ovk, prover)?;
     let sb = serialize_authorized_bundle(&bundle);
 
     // For output-only bundles, Orchard value_balance is negative (value flowing in).
@@ -141,7 +153,7 @@ mod tests {
         let recipient = test_orchard_address();
         let amount = 50_000u64;
 
-        let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], &TestProver)
+        let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], None, &TestProver)
             .expect("bundle should build successfully");
         let sb = serialize_authorized_bundle(&bundle);
 
@@ -169,7 +181,7 @@ mod tests {
     #[test]
     fn test_output_only_bundle_serializes_to_min_actions() {
         let recipient = test_orchard_address();
-        let bundle = build_output_only_bundle(&recipient, 50_000u64, [0u8; 36], &TestProver)
+        let bundle = build_output_only_bundle(&recipient, 50_000u64, [0u8; 36], None, &TestProver)
             .expect("bundle should build");
         let sb = serialize_authorized_bundle(&bundle);
         assert_eq!(
@@ -211,7 +223,7 @@ mod tests {
         // negative value_balance equal in magnitude to the requested amount.
         for amount in [1u64, 100, 1_000_000, u32::MAX as u64] {
             let recipient = test_orchard_address();
-            let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], &TestProver)
+            let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], None, &TestProver)
                 .expect("bundle should build");
             let sb = serialize_authorized_bundle(&bundle);
             assert_eq!(

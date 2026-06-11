@@ -12,12 +12,25 @@ import SwiftDashSDK
 /// runs on `@MainActor` so SwiftUI observers see consistent
 /// transitions.
 ///
-/// The 5-step progress bar in `RegistrationProgressView` derives its
-/// step from a combination of `phase` (Step 1, 4, 5) and the live
-/// `PersistentAssetLock` row queried via `@Query` filtered by
-/// `(walletId, identityIndex)` (Step 2/3, driven by `statusRaw`).
+/// The progress bar in `RegistrationProgressView` derives its step
+/// from `phase` plus `fundingKind`: asset-lock funding combines `phase`
+/// with the live `PersistentAssetLock` row (queried via `@Query` on
+/// `(walletId, identityIndex)`, driven by `statusRaw`); shielded-pool
+/// funding has no asset lock and is driven by `phase` + elapsed time
+/// since `lastSubmittedAt` (the Halo 2 proof is the long pole).
 @MainActor
 final class IdentityRegistrationController: ObservableObject {
+    /// How this registration is funded. Drives which step set the
+    /// progress view renders: the asset-lock funding paths (Core /
+    /// Platform-Payment / resume) emit a `PersistentAssetLock` row and
+    /// walk the build → IS/CL → register steps; the shielded-pool path
+    /// (Type-20 IdentityCreateFromShieldedPool) has no asset lock — its
+    /// long pole is the Halo 2 proof — so it needs its own step set.
+    enum FundingKind: Equatable {
+        case assetLock
+        case shieldedPool
+    }
+
     enum Phase: Equatable {
         /// Pre-submit. The controller exists but `submit` hasn't
         /// fired yet. Not surfaced by `RegistrationProgressView`
@@ -77,6 +90,12 @@ final class IdentityRegistrationController: ObservableObject {
     let walletId: Data
     let identityIndex: UInt32
 
+    /// Funding source for this registration. Read by
+    /// `RegistrationProgressSection` to pick the asset-lock vs shielded
+    /// step set. Defaults to `.assetLock` so existing call sites are
+    /// unchanged.
+    let fundingKind: FundingKind
+
     /// Timestamp of the most recent `submit` call. Used by the
     /// coordinator's TTL-based retention policy (`.completed` rows
     /// purge ~30s after the success transition).
@@ -89,9 +108,14 @@ final class IdentityRegistrationController: ObservableObject {
     /// off the same shape.
     private var task: Task<Void, Never>?
 
-    init(walletId: Data, identityIndex: UInt32) {
+    init(
+        walletId: Data,
+        identityIndex: UInt32,
+        fundingKind: FundingKind = .assetLock
+    ) {
         self.walletId = walletId
         self.identityIndex = identityIndex
+        self.fundingKind = fundingKind
     }
 
     /// Transition to `.preparingKeys`. Called by the caller before

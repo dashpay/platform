@@ -6,6 +6,7 @@ struct CreateWalletView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var walletManagerStore: WalletManagerStore
     @EnvironmentObject var platformState: AppState
 
     @State private var walletLabel: String = ""
@@ -313,7 +314,6 @@ struct CreateWalletView: View {
                 print("PIN length: \(walletPin.count)")
                 print("Import option enabled: \(showImportOption)")
 
-                // Determine primary network to create the wallet in (SDK enforces unique wallet per mnemonic)
                 let selectedNetworks: [Network] = [
                     createForMainnet ? Network.mainnet : nil,
                     createForTestnet ? Network.testnet : nil,
@@ -321,95 +321,176 @@ struct CreateWalletView: View {
                     (createForRegtest && shouldShowRegtest) ? Network.regtest : nil,
                 ].compactMap { $0 }
 
-                guard let platformNetwork = selectedNetworks.first else {
+                guard !selectedNetworks.isEmpty else {
                     struct MissingNetwork: LocalizedError {
                         var errorDescription: String? { "No network selected" }
                     }
                     throw MissingNetwork()
                 }
 
-                // Create exactly one wallet via PlatformWalletManager.
-                // The Rust-side wallet creation emits
-                // `persistWalletMetadata` + `setWalletName`, which
-                // the persister callback translates into a
-                // `PersistentWallet` SwiftData row — no separate
-                // HDWallet mirror to maintain. We only have to
-                // patch `isImported` after-the-fact because that
-                // flag is UI-cosmetic and the persister doesn't
-                // know about it.
+                // Create the wallet in EVERY ticked network. Each
+                // network has its own `PlatformWalletManager` (the
+                // Rust manager is network-locked at construction and
+                // stamps its own network onto the wallet), so routing
+                // through the active manager alone would ignore the
+                // passed `network`. `backgroundManager(for:)` returns
+                // the warm cached manager for the active network and
+                // builds one on demand for the others. The `walletId`
+                // is now network-scoped — the same mnemonic produces a
+                // DIFFERENT id per network — so the Keychain mnemonic +
+                // metadata must be written under EACH freshly-created
+                // network's id, and `isImported` stamped on each id's
+                // row.
                 try await MainActor.run {
-                    let managed = try walletManager.createWallet(
-                        mnemonic: mnemonicPhrase,
-                        network: platformNetwork,
-                        name: walletLabel
-                    )
-                    // Persist the mnemonic in the iOS Keychain keyed
-                    // by walletId so multiple wallets coexist and the
-                    // recovery flow can enumerate all of them on
-                    // launch. Best-effort — failure here doesn't
-                    // block wallet creation.
+                    // Per-network results for networks the wallet was
+                    // FRESHLY created on this pass — each carries the
+                    // scoped `walletId` Rust returned, which is the
+                    // Keychain key its mnemonic / metadata / `isImported`
+                    // writes hang off of.
+                    var createdWallets: [(network: Network, walletId: Data)] = []
+                    // Real (non-"already exists") failures, surfaced to
+                    // the user so a partial create isn't reported as
+                    // success.
+                    var failures: [(network: Network, message: String)] = []
+                    for net in selectedNetworks {
+                        do {
+                            let mgr = try walletManagerStore.backgroundManager(for: net)
+                            let managed = try mgr.createWallet(
+                                mnemonic: mnemonicPhrase,
+                                network: net,
+                                name: walletLabel
+                            )
+                            createdWallets.append((net, managed.walletId))
+                        } catch {
+                            // A typed `walletAlreadyExists` throw means the
+                            // wallet is already on this network — benign. We
+                            // do NOT resolve the existing scoped walletId to
+                            // re-store the mnemonic: a wallet that already
+                            // exists on this network had its mnemonic +
+                            // metadata stored under that scoped id at its
+                            // original creation, so there is nothing to
+                            // write. It is also not counted as a freshly-
+                            // created wallet. Any other error is a genuine
+                            // failure.
+                            if case PlatformWalletError.walletAlreadyExists = error {
+                                SDKLogger.error(
+                                    "Wallet already present on \(net.displayName); continuing"
+                                )
+                            } else {
+                                let message = error.localizedDescription
+                                failures.append((net, message))
+                                SDKLogger.error(
+                                    "Wallet creation failed for \(net.displayName): \(message)"
+                                )
+                            }
+                        }
+                    }
+
+                    guard !createdWallets.isEmpty else {
+                        // No wallet was freshly created. Two cases:
+                        if failures.isEmpty {
+                            // Every selected network reported "already
+                            // exists" — the wallet is present on all of
+                            // them and its per-network mnemonic/metadata
+                            // were stored at the original creation.
+                            // Re-importing is a benign no-op; dismiss
+                            // without a misleading "could not be created"
+                            // error.
+                            dismiss()
+                            return
+                        }
+                        // At least one network had a real failure and
+                        // none succeeded — surface the failure detail.
+                        struct AllNetworksFailed: LocalizedError {
+                            let detail: String
+                            var errorDescription: String? {
+                                "Wallet could not be created on any selected network.\n\(detail)"
+                            }
+                        }
+                        let detail = failures
+                            .map { "\($0.network.displayName): \($0.message)" }
+                            .joined(separator: "\n")
+                        throw AllNetworksFailed(detail: detail)
+                    }
+
+                    // For EACH freshly-created network, persist that
+                    // network's scoped walletId independently: store the
+                    // mnemonic in the iOS Keychain keyed by that id (so
+                    // the recovery flow can enumerate it on launch), stamp
+                    // `isImported` on its row, and mirror the wallet
+                    // metadata under that id. Each scoped wallet is
+                    // independently recoverable, so its metadata records
+                    // just THAT network. All writes are best-effort —
+                    // failures are logged, not fatal.
                     let storage = WalletStorage()
-                    do {
-                        try storage.storeMnemonic(
-                            mnemonicPhrase,
-                            for: managed.walletId
+                    for created in createdWallets {
+                        let walletId = created.walletId
+
+                        do {
+                            try storage.storeMnemonic(mnemonicPhrase, for: walletId)
+                        } catch {
+                            SDKLogger.error(
+                                "Failed to persist mnemonic to keychain for \(created.network.displayName): \(error.localizedDescription)"
+                            )
+                        }
+
+                        // Stamp `isImported` on the per-network row for
+                        // this scoped walletId. The persister callbacks
+                        // run synchronously from `createWallet` via the
+                        // background contexts; autosave propagates the
+                        // rows into the main context before this fetch.
+                        let descriptor = FetchDescriptor<PersistentWallet>(
+                            predicate: PersistentWallet.predicate(walletId: walletId)
                         )
-                    } catch {
-                        SDKLogger.error(
-                            "Failed to persist mnemonic to keychain: \(error.localizedDescription)"
-                        )
+                        let rows = (try? modelContext.fetch(descriptor)) ?? []
+                        for row in rows {
+                            row.isImported = showImportOption
+                        }
+                        if !rows.isEmpty {
+                            try? modelContext.save()
+                        }
+
+                        // Mirror name + birth height + just THIS network
+                        // into the keychain alongside the mnemonic so an
+                        // orphan-recovery after a wipe restores the
+                        // original label / network / birth height for this
+                        // scoped wallet.
+                        do {
+                            let metadata = WalletKeychainMetadata(
+                                name: walletLabel,
+                                walletDescription: nil,
+                                networks: [created.network.networkName],
+                                birthHeight: rows.first?.birthHeight
+                            )
+                            try storage.setMetadata(metadata, for: walletId)
+                        } catch {
+                            SDKLogger.error(
+                                "Failed to persist wallet metadata to keychain for \(created.network.displayName): \(error.localizedDescription)"
+                            )
+                        }
                     }
-                    // Stamp the `isImported` flag on the
-                    // just-created PersistentWallet row. The
-                    // persister callback runs synchronously from
-                    // `walletManager.createWallet` via the
-                    // background context; SwiftData's
-                    // `autosaveEnabled = true` on that context
-                    // propagates the row into the main context
-                    // before this fetch runs. If the row somehow
-                    // isn't there yet, the flag stays `false`
-                    // (the default on `PersistentWallet`) — a
-                    // cosmetic miss, not a correctness issue.
-                    let walletIdMatch = managed.walletId
-                    let descriptor = FetchDescriptor<PersistentWallet>(
-                        predicate: #Predicate { $0.walletId == walletIdMatch }
-                    )
-                    let row = try? modelContext.fetch(descriptor).first
-                    if let row = row {
-                        row.isImported = showImportOption
-                        try? modelContext.save()
+
+                    // If some (but not all) networks failed, the wallet
+                    // exists — but the user must know it wasn't added
+                    // everywhere they ticked. Surface the partial
+                    // failure instead of silently dismissing as success.
+                    if !failures.isEmpty {
+                        struct PartialCreate: LocalizedError {
+                            let detail: String
+                            var errorDescription: String? {
+                                "Wallet created, but not on every selected network:\n\(detail)"
+                            }
+                        }
+                        let detail = failures
+                            .map { "\($0.network.displayName): \($0.message)" }
+                            .joined(separator: "\n")
+                        throw PartialCreate(detail: detail)
                     }
-                    // Mirror the user-typed name + the networks the
-                    // user explicitly ticked + the SPV-tip-derived
-                    // birth height into the keychain alongside the
-                    // mnemonic. Read back by the orphan-mnemonic
-                    // recovery flow so a wipe + reinstall restores
-                    // the original label / networks / birth height
-                    // instead of resurrecting the wallet on testnet
-                    // with a synthetic genesis.
-                    //
-                    // `selectedNetworks` carries every network the
-                    // user ticked even though `walletManager` only
-                    // currently consumes the first; persisting the
-                    // full list now means the multi-network TODO on
-                    // the Rust side won't need a metadata migration.
-                    do {
-                        let metadata = WalletKeychainMetadata(
-                            name: walletLabel,
-                            walletDescription: nil,
-                            networks: selectedNetworks.map { $0.networkName },
-                            birthHeight: row?.birthHeight
-                        )
-                        try storage.setMetadata(metadata, for: managed.walletId)
-                    } catch {
-                        SDKLogger.error(
-                            "Failed to persist wallet metadata to keychain: \(error.localizedDescription)"
-                        )
-                    }
+
                     dismiss()
                 }
 
-                print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(platformNetwork.displayName) ===")
+                print("=== WALLET CREATION SUCCESS - networks: \(selectedNetworks.map { $0.displayName }) ===")
             } catch {
                 print("=== WALLET CREATION ERROR ===")
                 print("Error: \(error)")
@@ -417,6 +498,11 @@ struct CreateWalletView: View {
                 await MainActor.run {
                     self.error = error
                     isCreating = false
+                    // Pop the pushed `SeedBackupView` so the error alert
+                    // (bound to this view) is actually visible — otherwise
+                    // the backup screen sits on top with its submit button
+                    // stuck disabled and no feedback.
+                    showBackupScreen = false
                 }
             }
         }
