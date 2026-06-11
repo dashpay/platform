@@ -702,6 +702,163 @@ fn seed_p2p_peers(config: &mut ClientConfig, address_list: &AddressList, port: u
     }
 }
 
+/// F1 falsification — gap-limit sweep. Rebuilds the default wallet's
+/// CoinJoin External pool at a chosen gap limit `g` (initial watch window
+/// exactly `0..g-1`), syncs the real testnet chain to the cutoff, and
+/// reports the ACTUAL CoinJoin External `highest_used`. The block-atomic
+/// single-apply diagnosis predicts a SPECIFIC stall per `g` (computed
+/// offline from the `h(i)` per-block funding); the naive "any gap > the
+/// max unused run (12) finds everything" predicts the full range for any
+/// `g >= 13`. The two diverge sharply (e.g. `g=13`: model ~12 vs naive
+/// ~1799), so this run discriminates them.
+///
+/// Gap is read from `F1_COINJOIN_GAP` (default 30 — the anchor that
+/// empirically stalls at 59). `#[ignore]`: heavyweight real sync, run with
+/// `--ignored` and `F1_COINJOIN_GAP=<g>` set.
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "F1 falsification: heavyweight real testnet sync; run with --ignored and F1_COINJOIN_GAP set"]
+async fn found_coinjoin_gap_limit_sweep_f1() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,platform_wallet=warn".into()),
+        )
+        .with_test_writer()
+        .try_init();
+
+    let gap: u32 = std::env::var("F1_COINJOIN_GAP")
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(DEFAULT_COINJOIN_GAP_LIMIT);
+
+    let network = Network::Testnet;
+    let sdk = build_testnet_sdk(network);
+    let manager = Arc::new(PlatformWalletManager::new(
+        Arc::clone(&sdk),
+        Arc::new(NoopPersister),
+        vec![Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>],
+    ));
+
+    let mnemonic: Mnemonic = TEST_MNEMONIC.parse().expect("valid BIP-39 mnemonic");
+    let seed = mnemonic.to_seed("");
+    let mut coinjoin = std::collections::BTreeSet::new();
+    coinjoin.insert(0u32);
+    let mut bip44 = std::collections::BTreeSet::new();
+    bip44.insert(0u32);
+    let wallet = manager
+        .create_wallet_from_seed_bytes(
+            network,
+            seed,
+            WalletAccountCreationOptions::AllAccounts(
+                bip44,
+                Default::default(),
+                coinjoin,
+                Default::default(),
+                Default::default(),
+            ),
+            Some(0),
+        )
+        .await
+        .expect("create sweep wallet");
+
+    set_coinjoin_gap_limit(&wallet, gap).await;
+
+    sync_capped(&manager, network, &sdk, &format!("F1g{gap}")).await;
+
+    let state = wallet.state().await;
+    let (highest_used, highest_generated, confirmed) =
+        coinjoin_external_pool_state(&state).expect("CoinJoin External pool present");
+
+    println!("\n=== F1 gap-limit sweep ===");
+    println!(
+        "gap={gap}: CoinJoin External actual highest_used={highest_used:?} \
+         highest_generated={highest_generated:?} confirmed={confirmed} duffs"
+    );
+    tracing::info!(
+        target: "platform_wallet::e2e::cases::found_coinjoin_gap_limit_sync",
+        gap,
+        ?highest_used,
+        ?highest_generated,
+        confirmed,
+        "F1 gap-limit sweep result"
+    );
+}
+
+/// Rebuild the wallet's CoinJoin account-0 External pool at gap limit
+/// `gap`, regenerating exactly indices `0..gap-1` so the initial watch
+/// window matches a wallet created with that gap. Production hardcodes
+/// `DEFAULT_COINJOIN_GAP_LIMIT` at account construction (key-wallet
+/// `managed_account_collection.rs:595`), so this reaches the otherwise
+/// fixed knob directly via the pool's public fields.
+async fn set_coinjoin_gap_limit(wallet: &Arc<platform_wallet::PlatformWallet>, gap: u32) {
+    use key_wallet::account::AccountType as AT;
+    use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+    let wallet_id = wallet.wallet_id();
+    let mut wm = wallet.wallet_manager().write().await;
+    let (managed_wallet, info) = wm
+        .get_wallet_mut_and_info_mut(&wallet_id)
+        .expect("wallet present in manager");
+
+    let key_source = managed_wallet
+        .accounts
+        .coinjoin_accounts
+        .get(&0)
+        .map(|a| KeySource::Public(a.account_xpub))
+        .expect("coinjoin account 0 xpub");
+    let network = managed_wallet.network;
+
+    for funds in info.core_wallet.accounts.all_funding_accounts_mut() {
+        if !matches!(
+            funds.managed_account_type().to_account_type(),
+            AT::CoinJoin { .. }
+        ) {
+            continue;
+        }
+        for pool in funds.managed_account_type_mut().address_pools_mut() {
+            if pool.pool_type != AddressPoolType::External {
+                continue;
+            }
+            // Rebuild from the existing base path so the rebuilt pool
+            // derives the identical scripts, with exactly `gap` generated.
+            *pool = AddressPool::new(
+                pool.base_path.clone(),
+                AddressPoolType::External,
+                gap,
+                network,
+                &key_source,
+            )
+            .expect("rebuild CoinJoin External pool at chosen gap");
+        }
+    }
+}
+
+/// `(highest_used, highest_generated, confirmed)` of the CoinJoin
+/// account-0 External pool from a read guard.
+fn coinjoin_external_pool_state(
+    state: &platform_wallet::wallet::platform_wallet::WalletStateReadGuard<'_>,
+) -> Option<(Option<u32>, Option<u32>, u64)> {
+    use key_wallet::account::AccountType as AT;
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+    for funds in state.core_wallet.accounts.all_funding_accounts() {
+        if matches!(
+            funds.managed_account_type().to_account_type(),
+            AT::CoinJoin { .. }
+        ) {
+            let confirmed = funds.balance.confirmed();
+            for pool in funds.managed_account_type().address_pools() {
+                if pool.pool_type == AddressPoolType::External {
+                    return Some((pool.highest_used, pool.highest_generated, confirmed));
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Ground-truth index↔height analysis for the CoinJoin External
 /// keychain. Syncs a wallet that watches every used index from genesis,
 /// extracts `h(i)` = first funding block height per used index, then runs
