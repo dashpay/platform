@@ -1,8 +1,33 @@
-//! Found — CoinJoin gap-limit hides funds at the default configuration.
+//! Found — CoinJoin funds invisible to a default wallet because SPV
+//! compact-filter discovery is forward-only within the active batch
+//! window.
 //!
 //! Reproduction (diagnose-only) for the report: a testnet wallet with
-//! CoinJoin funds does not fully sync at the default gap limit — some
-//! funds stay invisible.
+//! deep CoinJoin usage does not fully sync under default settings — most
+//! CoinJoin funds stay invisible.
+//!
+//! ## Root cause (NOT the gap limit)
+//!
+//! The CoinJoin gap limit (`DEFAULT_COINJOIN_GAP_LIMIT` = 30) is ample.
+//! On this wallet the CoinJoin External keychain is used *densely and
+//! effectively contiguously* in address index — up to index 1727, with
+//! the largest unused run only 12 and no unused run >= 30 anywhere (see
+//! the gap table the test prints). Gap size is not the problem.
+//!
+//! The defect is in dash-spv historical discovery: the compact-filter
+//! rescan is **forward-only within the active batch window**
+//! (~`MAX_LOOKAHEAD_BATCHES` (3) × `BATCH_PROCESSING_SIZE` (5000) ≈
+//! 15 000 blocks). Addresses derived mid-scan to maintain the gap window
+//! (`maintain_gap_limit`) are only re-matched against batches still in
+//! the live window; already-committed batches are evicted and never
+//! revisited. So discovery has a dependency on the *index* axis — to
+//! learn index `N + gap` you must first match the block that used index
+//! `N` — while the rescan progresses on the *height/batch* axis. Those
+//! axes are orthogonal. CoinJoin first-use blocks are scattered across
+//! years of history, so as soon as the block that first uses the next
+//! index falls outside the live window, discovery snaps shut. Wallet A
+//! advances exactly one gap step (highest_used=59, highest_generated=89)
+//! and then stalls, missing 1578 of 1638 used CoinJoin indices.
 //!
 //! ## What this proves
 //!
@@ -11,23 +36,43 @@
 //! the last testnet block of Sunday 2026-06-07 UTC) against the same
 //! chain window:
 //!
-//! - **Wallet A** — [`WalletAccountCreationOptions::Default`]. The
-//!   default creation gives CoinJoin account 0 a `DEFAULT_COINJOIN_GAP_LIMIT`
-//!   (30) address window; only those 30 addresses are monitored.
+//! - **Wallet A** — [`WalletAccountCreationOptions::Default`]. CoinJoin
+//!   account 0 starts with a `DEFAULT_COINJOIN_GAP_LIMIT` (30) address
+//!   window and relies on mid-scan discovery to extend it; that
+//!   discovery is what fails.
 //! - **Wallet B** — [`WalletAccountCreationOptions::AllAccounts`] with
-//!   CoinJoin account 0, plus a WIDE pre-derivation
-//!   ([`WIDE_DERIVATION`] = 200) across every funding keychain (BIP-44
-//!   external/internal AND the testnet CoinJoin path `m/9'/1'/4'`),
-//!   generated BEFORE sync so the SPV bloom filter watches them.
+//!   CoinJoin account 0, plus a [`WIDE_DERIVATION`] pre-derivation across
+//!   every funding keychain (BIP-44 external/internal AND the testnet
+//!   CoinJoin path `m/9'/1'/4'`), generated BEFORE sync so the bloom
+//!   filter watches those scripts from the first batch — no mid-scan
+//!   discovery is needed for the pre-derived range.
 //!
 //! Same seed + same network yields an IDENTICAL wallet id, so A and B
 //! cannot coexist in one manager (`WalletManager` keys on wallet id).
 //! Each therefore lives in its own [`PlatformWalletManager`] (sharing
 //! one SDK) and runs its own capped pass. The per-wallet bloom filter is
 //! built from that wallet's `monitored_addresses` (all generated
-//! addresses across every account). If CoinJoin funds sit beyond index
-//! 30 on the CoinJoin keychain, Wallet A never watches them while
-//! Wallet B does — i.e. `balance_B > balance_A`.
+//! addresses across every account), so Wallet B sees CoinJoin funds that
+//! Wallet A's forward-only discovery never reaches — `balance_B >
+//! balance_A`.
+//!
+//! ## Non-determinism of the delta
+//!
+//! The observed delta varies run to run (447M / 739M / 2022M duffs seen)
+//! because Wallet A's outcome depends on a race between gap-limit
+//! derivation latency and batch commit/eviction — a derived address can
+//! win or lose against the eviction of its using-block's batch. The test
+//! therefore asserts only the qualitative `balance_B > balance_A`, never
+//! an exact amount.
+//!
+//! ## Reliable workaround (not asserted here)
+//!
+//! Pre-derive CoinJoin addresses BEYOND the highest used index (~1727,
+//! e.g. 2500) BEFORE sync, so every script is watched from scan start
+//! and no mid-scan discovery is needed. A fixed shallow pre-derivation
+//! ([`WIDE_DERIVATION`] = 200) is only a *probabilistic* mitigation —
+//! it widens the window but does not cover the full used range, which is
+//! why Wallet B's exact result still varies.
 //!
 //! ## Why bypass `setup()`
 //!
@@ -73,9 +118,12 @@ const TEST_MNEMONIC: &str =
 /// so the comparison is taken BEFORE any later transfers move funds.
 const SYNC_CUTOFF_HEIGHT: u32 = 1_491_827;
 
-/// Wide pre-derivation depth for Wallet B. 200 ≫ the default CoinJoin
-/// gap limit (30), so any CoinJoin UTXO landing within the first 200
-/// indices is watched by B but missed by A.
+/// Pre-derivation depth for Wallet B, generated before sync so the
+/// first 200 indices on every keychain are watched from the first
+/// batch — no mid-scan discovery needed for that range. This is a
+/// PROBABILISTIC mitigation, not a fix: the CoinJoin keychain is used
+/// up to index 1727, so 200 only widens the window. Watching the full
+/// used range (~2500) before sync would be the reliable workaround.
 const WIDE_DERIVATION: u32 = 200;
 
 /// Cold genesis-scan budget. The harness's own SPV cold-cache floor is
@@ -195,9 +243,9 @@ async fn found_coinjoin_gap_limit_sync() {
         .await
         .expect("create Wallet B (AllAccounts + CoinJoin)");
 
-    // Wide pre-derivation on EVERY funding keychain of Wallet B,
-    // BEFORE sync, so the bloom filter watches indices well past the
-    // default gap limit (incl. the CoinJoin path m/9'/1'/4').
+    // Pre-derive on EVERY funding keychain of Wallet B BEFORE sync, so
+    // those scripts (incl. the CoinJoin path m/9'/1'/4') are in the
+    // bloom filter from the first batch and need no mid-scan discovery.
     pre_derive_wide(&wallet_b, WIDE_DERIVATION).await;
 
     let watched_a = monitored_count(&wallet_a).await;
@@ -271,14 +319,16 @@ async fn found_coinjoin_gap_limit_sync() {
         println!("{line}");
     }
 
-    // The reproduction assertion: the default configuration hides funds
-    // that the wide configuration reveals.
+    // The reproduction assertion: pre-watching the scripts (Wallet B)
+    // reveals CoinJoin funds that the default wallet's forward-only
+    // mid-scan discovery (Wallet A) never reaches. Qualitative only —
+    // the delta is non-deterministic (see module docs).
     assert!(
         balance_b > balance_a,
         "BUG NOT REPRODUCED: expected balance_B ({balance_b}) > balance_A ({balance_a}). \
-         Either the CoinJoin funds did not land beyond the default gap limit at this \
-         cutoff height, or the wide pre-derivation did not widen the watched set. \
-         Check the per-account reports above for where the funds sit."
+         Either the CoinJoin funds did not require mid-scan discovery at this cutoff \
+         height, or the pre-derivation did not widen the watched set. Check the \
+         per-account reports above for where the funds sit."
     );
 }
 
@@ -301,8 +351,9 @@ fn build_testnet_sdk(network: Network) -> Arc<dash_sdk::Sdk> {
 }
 
 /// Pre-derive `count` addresses on every funding keychain of the wallet
-/// (BIP-44 external/internal, CoinJoin) so the SPV bloom filter watches
-/// well past the default gap limit. Generation happens against the
+/// (BIP-44 external/internal, CoinJoin) so their scripts are in the
+/// bloom filter from scan start, sidestepping the forward-only mid-scan
+/// discovery for the pre-derived range. Generation happens against the
 /// account's public xpub (`KeySource::Public`).
 async fn pre_derive_wide(wallet: &Arc<platform_wallet::PlatformWallet>, count: u32) {
     let wallet_id = wallet.wallet_id();
