@@ -96,10 +96,13 @@ final class RegistrationCoordinator: ObservableObject {
         let key = SlotKey(walletId: walletId, identityIndex: identityIndex)
         if let existing = controllers[key] {
             switch existing.phase {
-            case .preparingKeys, .inFlight, .completed:
-                // Active or just-completed — don't re-enter. Returning
-                // the existing controller lets the caller bind to its
-                // progress / terminal state without disrupting it.
+            case .preparingKeys, .inFlight, .completed, .unconfirmed:
+                // Active, just-completed, or unconfirmed — don't re-enter.
+                // Returning the existing controller lets the caller bind to
+                // its progress / terminal state without disrupting it. For
+                // `.unconfirmed` in particular, re-submitting would race a
+                // duplicate registration against an identity that's probably
+                // already live on chain.
                 return existing
             case .idle, .failed:
                 // Legitimate restart paths: a brand-new idle
@@ -166,10 +169,11 @@ final class RegistrationCoordinator: ObservableObject {
                         }
                         return
                     }
-                case .failed:
-                    // Keep indefinitely; the user dismisses manually
-                    // via the "Dismiss" action. Return so the poll
-                    // loop doesn't spin.
+                case .failed, .unconfirmed:
+                    // Keep indefinitely; the user dismisses manually via the
+                    // "Dismiss" action (for `.unconfirmed`, only after the
+                    // identity row appears via sync). Return so the poll loop
+                    // doesn't spin.
                     return
                 default:
                     completedAt = nil

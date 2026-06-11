@@ -51,6 +51,7 @@ use dpp::shielded::{
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
+use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use crate::check_ptr;
@@ -467,6 +468,13 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 /// `out_identity_id`. The id is deterministic in the spent notes, so the host can also predict it
 /// independently if needed.
 ///
+/// `out_identity_id` is ALSO written on the [`ErrorShieldedBroadcastUnconfirmed`] result code: the
+/// broadcast was accepted but its execution result couldn't be confirmed, so the derived id is
+/// handed back (the identity may already exist on chain) and the host must hold the slot rather than
+/// treat the registration as failed. On every other error code `out_identity_id` is left untouched.
+///
+/// [`ErrorShieldedBroadcastUnconfirmed`]: crate::error::PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed
+///
 /// `send_to_address_on_creation_failure_bytes` is the REQUIRED fallback platform address, supplied
 /// as raw `PlatformAddress` storage bytes (21 bytes: 1-byte variant tag + 20-byte hash — the
 /// encoding `PlatformAddress::to_bytes()` produces and `PlatformAddressWasm`/the Swift wrapper
@@ -484,7 +492,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 /// - `signer_identity_handle` must be a valid, non-destroyed `*mut SignerHandle` (a
 ///   `VTableSigner` with the callback variant) that outlives this call; the caller retains
 ///   ownership.
-/// - `out_identity_id` must point to 32 writable bytes.
+/// - `out_identity_id` must point to 32 writable bytes. It is written on `Success` AND on the
+///   `ErrorShieldedBroadcastUnconfirmed` result code (and only those); on all other codes it is
+///   left as the caller initialized it.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_pool(
@@ -584,6 +594,28 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
             *out_identity_id = identity_id.to_buffer();
             PlatformWalletFFIResult::ok()
         }
+        // Broadcast accepted but its execution result couldn't be confirmed and a direct fetch came
+        // back empty. The identity MAY exist on chain, so — unlike every other error arm — we still
+        // write the derived id to `out_identity_id` (see the `# Safety` note) so the caller can hold
+        // the slot against re-submission and surface the pending identity. The notes' reservations
+        // were intentionally NOT released wallet-side.
+        Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+            identity_id,
+            ref reason,
+        }) => {
+            *out_identity_id = identity_id.to_buffer();
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed,
+                format!(
+                    "shielded identity-create-from-pool broadcast unconfirmed (identity {identity_id} may exist on chain): {reason}"
+                ),
+            )
+        }
+        // Definitive failure: the transition was not executed and the spent notes were released.
+        Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
+            format!("shielded identity-create-from-pool failed: {e}"),
+        ),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded identity-create-from-pool failed: {e}"),

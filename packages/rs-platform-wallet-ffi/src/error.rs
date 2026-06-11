@@ -97,6 +97,22 @@ pub enum PlatformWalletFFIResultCode {
     /// to re-persist. The typed Display rendering still survives as the
     /// result message for logging/detail.
     ErrorWalletAlreadyExists = 15,
+    /// Maps `PlatformWalletError::ShieldedBroadcastFailed`. The shielded
+    /// identity-create transition was DEFINITIVELY not executed — either the
+    /// relay/CheckTx rejected the broadcast, or Platform reported the
+    /// transition's own execution error. The new identity does NOT exist, the
+    /// spent notes' reservations were released, and the caller is free to
+    /// retry. `out_identity_id` is left untouched (still zeroed).
+    ErrorShieldedBroadcastFailed = 16,
+    /// Maps `PlatformWalletError::ShieldedBroadcastUnconfirmed`. The broadcast
+    /// was ACCEPTED by the relay but the SDK could not confirm its execution
+    /// result (a transient result-proof fetch/verify failure, not a platform
+    /// rejection), and a direct fetch of the derived id also came back empty.
+    /// The identity may already exist on chain, so the caller must NOT treat
+    /// it as unregistered or re-submit. UNLIKE every other error code,
+    /// `out_identity_id` IS written (the 32-byte derived id) on this code so
+    /// the caller can hold the slot and surface the pending identity.
+    ErrorShieldedBroadcastUnconfirmed = 17,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,

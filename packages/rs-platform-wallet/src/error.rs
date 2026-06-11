@@ -186,6 +186,22 @@ pub enum PlatformWalletError {
     #[error("Shielded broadcast failed: {0}")]
     ShieldedBroadcastFailed(String),
 
+    /// The shielded identity-create transition was **broadcast and accepted by the relay**, but the
+    /// SDK could not confirm its execution result (the result-proof fetch/verify failed — e.g. a
+    /// transient DAPI/proof error, not a platform rejection). The identity with `identity_id` may
+    /// already exist on chain, so the caller must NOT treat it as unregistered: the slot stays held
+    /// against re-submission and the spent notes' reservations are left in place (the next nullifier
+    /// sync reconciles them). `reason` carries the underlying SDK error for diagnostics.
+    #[error(
+        "Shielded broadcast succeeded but its execution result could not be confirmed; \
+         identity {identity_id} may already exist on chain — do not re-submit \
+         (it will appear after the next sync): {reason}"
+    )]
+    ShieldedBroadcastUnconfirmed {
+        identity_id: Identifier,
+        reason: String,
+    },
+
     #[error("Shielded sync failed: {0}")]
     ShieldedSyncFailed(String),
 

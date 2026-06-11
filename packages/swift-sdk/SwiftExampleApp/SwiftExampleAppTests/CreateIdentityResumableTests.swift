@@ -293,5 +293,14 @@ final class CreateIdentityResumableTests: XCTestCase {
         )
         XCTAssertFalse(IdentityRegistrationController.Phase.failed("nope").isActive,
                        ".failed: user is expected to retry — let the lock resurface")
+        XCTAssertTrue(
+            IdentityRegistrationController.Phase
+                .unconfirmed(
+                    identityId: Data(repeating: 0xDD, count: 32),
+                    message: "pending"
+                )
+                .isActive,
+            ".unconfirmed: identity is probably live on chain — keep the slot held so a re-submission can't burn funds against the registered-key-hash check"
+        )
     }
 }

@@ -21,6 +21,15 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorArithmeticOverflow = 13
     case errorNoSelectableInputs = 14
     case errorWalletAlreadyExists = 15
+    /// Definitive shielded-broadcast failure: the Type-20 transition was not
+    /// executed (relay/CheckTx rejection or a platform-reported execution
+    /// error), the spent notes were released, and the caller may retry.
+    case errorShieldedBroadcastFailed = 16
+    /// Shielded broadcast accepted but its execution result could not be
+    /// confirmed; the identity may already exist on chain. The FFI also fills
+    /// the derived id into `outIdentityId` on this code, so the caller can
+    /// hold the slot rather than treat the registration as failed.
+    case errorShieldedBroadcastUnconfirmed = 17
     case notFound = 98
     case errorUnknown = 99
 
@@ -58,6 +67,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorNoSelectableInputs
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_WALLET_ALREADY_EXISTS:
             self = .errorWalletAlreadyExists
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BROADCAST_FAILED:
+            self = .errorShieldedBroadcastFailed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BROADCAST_UNCONFIRMED:
+            self = .errorShieldedBroadcastUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -136,6 +149,16 @@ public enum PlatformWalletError: LocalizedError {
     case arithmeticOverflow(String)
     case noSelectableInputs(String)
     case walletAlreadyExists(String)
+    /// Definitive shielded-broadcast failure: the Type-20 transition was not
+    /// executed and the spent notes were released; safe to retry.
+    case shieldedBroadcastFailed(String)
+    /// Shielded broadcast accepted but its execution result could not be
+    /// confirmed; the identity may already exist on chain. Callers that need
+    /// the derived id should special-case the
+    /// `.errorShieldedBroadcastUnconfirmed` result code (which carries
+    /// `outIdentityId`) before falling back to this error — see
+    /// `ShieldedIdentityCreateUnconfirmedError`.
+    case shieldedBroadcastUnconfirmed(String)
     case notFound(String)
     case unknown(String)
 
@@ -149,7 +172,8 @@ public enum PlatformWalletError: LocalizedError {
              .identityNotFound(let m), .contactNotFound(let m), .utf8Conversion(let m),
              .serialization(let m), .deserialization(let m), .memoryAllocation(let m),
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
-             .walletAlreadyExists(let m),
+             .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
+             .shieldedBroadcastUnconfirmed(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -177,6 +201,8 @@ public enum PlatformWalletError: LocalizedError {
         case .errorArithmeticOverflow: self = .arithmeticOverflow(detail)
         case .errorNoSelectableInputs: self = .noSelectableInputs(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
+        case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
+        case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }
