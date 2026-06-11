@@ -1224,6 +1224,77 @@ extension ManagedPlatformWallet {
             }
         }.value
     }
+
+    /// Load the identity registered for this wallet at a single,
+    /// known BIP-9 identity index and fold it into the local identity
+    /// manager.
+    ///
+    /// Derives the MASTER authentication public key at key index 0 for
+    /// the given `identityIndex` and asks Platform "is there an identity
+    /// registered with this pubkey hash?" (unique-hash lookup). Unlike
+    /// `discoverIdentities`, this probes exactly ONE index rather than
+    /// gap-limit scanning a range — the two share the same DIP-9 MASTER
+    /// slot, so they resolve the same identity at the same index. If an
+    /// identity is found it is persisted via the existing identity
+    /// persister callback, so SwiftData `@Query` views refresh
+    /// automatically once this call returns.
+    ///
+    /// - Parameters:
+    ///   - identityIndex: The BIP-9 identity index to probe.
+    ///   - storage: `WalletStorage` instance used by the resolver
+    ///     callback to read the BIP-39 mnemonic from iOS Keychain.
+    ///     Defaults to a fresh `WalletStorage()` — overridable for
+    ///     tests.
+    /// - Returns: The identifier of the identity registered at
+    ///   `identityIndex`, or `nil` if none is registered there.
+    ///
+    /// # Key source: resolver
+    ///
+    /// App wallets are loaded into the in-process `WalletManager` as
+    /// `ExternalSignable` — their seed lives in iOS Keychain, not in
+    /// process — so the Rust load can't derive the identity-auth key from
+    /// the resident wallet (it fails with `External signable wallet has
+    /// no private key`). A [`MnemonicResolver`] is passed to the FFI so
+    /// Rust resolves the mnemonic on demand (keyed by this wallet's own
+    /// `walletId`) and derives the probe key from it — the same mechanism
+    /// identity discovery and registration use. No mnemonic / derivation
+    /// pipeline runs in Swift; this stays a thin bridge per
+    /// `swift-sdk/CLAUDE.md`.
+    public func loadIdentity(
+        atIndex identityIndex: UInt32,
+        storage: WalletStorage = WalletStorage()
+    ) async throws -> Identifier? {
+        let handle = self.handle
+        // The resolver reads the mnemonic from iOS Keychain on demand;
+        // Rust pins it to this wallet handle's own `walletId`, so no
+        // wallet-id argument is passed. `MnemonicResolver` is
+        // `@unchecked Sendable`; capture it in the detached closure and
+        // wrap the FFI call in `withExtendedLifetime` so ARC keeps it
+        // alive for the synchronous call's duration (its FFI ctx is a
+        // `passUnretained` pointer — see the type's "Lifetime
+        // contract").
+        let resolver = MnemonicResolver(storage: storage)
+        return try await Task.detached(priority: .userInitiated) {
+            () -> Identifier? in
+            try withExtendedLifetime(resolver) {
+                var found = false
+                var idBytes = [UInt8](repeating: 0, count: 32)
+                let result = idBytes.withUnsafeMutableBufferPointer {
+                    idBuf -> PlatformWalletFFIResult in
+                    platform_wallet_load_identity_at_index(
+                        handle,
+                        resolver.handle,
+                        identityIndex,
+                        &found,
+                        idBuf.baseAddress!
+                    )
+                }
+                try result.check()
+                guard found else { return nil }
+                return Data(idBytes)
+            }
+        }.value
+    }
 }
 
 // MARK: - DPNS operations
