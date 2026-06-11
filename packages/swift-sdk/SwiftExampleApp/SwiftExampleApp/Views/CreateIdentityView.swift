@@ -423,6 +423,46 @@ struct CreateIdentityView: View {
                         .textSelection(.enabled)
                 }
             }
+        case .unconfirmed(let identityId, let message):
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(
+                        "Broadcast succeeded — confirmation pending",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundColor(.orange)
+                    .font(.headline)
+                    Text(identityId.toBase58String())
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                    Text(message)
+                        .font(.callout)
+                        .foregroundColor(.primary)
+                        .textSelection(.enabled)
+                    Text(
+                        "The transition was broadcast and accepted, but its "
+                        + "execution-result proof couldn't be confirmed. The "
+                        + "identity will appear in the Identities tab after the "
+                        + "next sync. Do NOT re-register these keys — the slot "
+                        + "is held to prevent burning funds."
+                    )
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    // Plain sheet dismiss only — leave the controller on the
+                    // coordinator so the entry stays in Pending Registrations
+                    // until the identity row appears via sync and the user
+                    // dismisses it there.
+                    Button {
+                        dismiss()
+                    } label: {
+                        Text("Close")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .padding(.top, 4)
+                }
+            }
         default:
             EmptyView()
         }
@@ -1422,6 +1462,23 @@ struct CreateIdentityView: View {
                     // controller so the destination can render
                     // the inline failure state.
                     return
+                case .unconfirmed:
+                    // Broadcast landed but its result couldn't be
+                    // confirmed; the identity is probably already live on
+                    // chain. Mark the slot used (same as `.completed`) so
+                    // the next registration can't reuse these keys and
+                    // burn funds against the registered-key-hash stateful
+                    // check. We do NOT persist a `PersistentIdentity` row
+                    // here — the proof-verified identity wasn't returned;
+                    // the next sync writes the row once the identity is
+                    // confirmed on chain.
+                    markIdentitySlotUsed(
+                        walletId: walletId,
+                        identityIndex: identityIndex
+                    )
+                    try? modelContext.save()
+                    self.isCreating = false
+                    return
                 default:
                     continue
                 }
@@ -1448,7 +1505,7 @@ struct CreateIdentityView: View {
                         lastEmitted = phase
                     }
                     switch phase {
-                    case .completed, .failed:
+                    case .completed, .failed, .unconfirmed:
                         continuation.finish()
                         return
                     default:

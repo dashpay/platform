@@ -757,21 +757,89 @@ where
 
         let identity_id = build.identity_id;
 
-        trace!("IdentityCreateFromShieldedPool: built, broadcasting via SDK helper...");
-        // Broadcast through the SDK helper, which re-assembles the transition from the PoP-signed
-        // keys + bundle params (preserving the per-key signatures) and waits for proven execution.
-        // It returns a `VerifiedIdentityWithShieldedNullifiers` proof result carrying the
-        // proof-verified `Identity` (and the consumed nullifiers).
-        let proof_result = sdk
-            .identity_create_from_shielded_pool(
+        trace!("IdentityCreateFromShieldedPool: built, broadcasting via SDK...");
+        // Stage the broadcast and the result-wait SEPARATELY (instead of one `broadcast_and_wait`)
+        // so the two failure shapes can be told apart:
+        //   - a broadcast-time rejection (relay/CheckTx refused the tx) means it never executed, so
+        //     releasing the note reservations is correct;
+        //   - a post-broadcast wait failure is AMBIGUOUS — the relay accepted the tx and it may well
+        //     have executed; treating it as "unregistered" + releasing the notes is the
+        //     orphaned-identity + double-spend hazard this split exists to avoid.
+        // The transition is built once from the PoP-signed keys + bundle params (preserving the
+        // per-key signatures); the binding signature already committed `identity_id`, the
+        // denomination, and the full key set.
+        let st = sdk
+            .identity_create_from_shielded_pool_transition(
                 build.public_keys,
                 denomination,
                 send_to_address_on_creation_failure,
                 build.bundle,
-                None,
             )
+            .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+
+        // Broadcast (relay-ACK only). A failure here is definitive: the tx was NOT accepted, so the
+        // spend never happened — map to `ShieldedBroadcastFailed` and let the outer match release
+        // the reservation, exactly as before.
+        st.broadcast(sdk, None)
             .await
             .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
+
+        // Wait for proven execution. Classify the failure:
+        //   - `StateTransitionBroadcastError` = Platform DEFINITIVELY reported the transition's own
+        //     execution error (it ran and was rejected on its merits). The identity does not exist;
+        //     keep today's behavior (release the reservation via `ShieldedBroadcastFailed`).
+        //   - any other error (DriveProofError / Proof / InvalidProvedResponse / TimeoutReached /
+        //     DapiClientError / …) = AMBIGUOUS: the broadcast was accepted and the transition may
+        //     have executed even though we couldn't fetch/verify its result proof (this is exactly
+        //     the #3859 result-proof incident). Fall back to fetching the identity by its
+        //     pre-derived id before deciding it doesn't exist.
+        let proof_result = match st
+            .wait_for_response::<StateTransitionProofResult>(sdk, None)
+            .await
+        {
+            Ok(result) => result,
+            Err(dash_sdk::Error::StateTransitionBroadcastError(e)) => {
+                return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
+            }
+            Err(wait_err) => {
+                warn!(
+                    derived_id = %identity_id,
+                    error = %wait_err,
+                    "IdentityCreateFromShieldedPool: broadcast accepted but result confirmation \
+                     failed; falling back to fetching the identity by its derived id"
+                );
+                // Fetch the identity directly. The id is committed in the sighash and derived
+                // deterministically from the spent nullifiers, so if the transition landed the row
+                // is queryable. A freshly-included identity can take a moment to index on the DAPI
+                // node we hit, so retry a few times with a short, fixed backoff before concluding
+                // it's truly absent — long enough to ride out routine indexing/replica lag, short
+                // enough not to wedge the caller's UI for minutes.
+                match fetch_identity_with_retries(sdk, identity_id).await {
+                    Some(mut identity) => {
+                        info!(
+                            derived_id = %identity_id,
+                            "IdentityCreateFromShieldedPool: result confirmation failed but the \
+                             identity was found on chain by its derived id; treating as success"
+                        );
+                        // Same defensive empty-`public_keys` fill as the proven-result path below,
+                        // so downstream auth-key checks see the committed key set immediately.
+                        if identity.public_keys().is_empty() {
+                            identity.set_public_keys(submitted_public_keys.clone());
+                        }
+                        return Ok::<(Identifier, Identity), PlatformWalletError>((
+                            identity.id(),
+                            identity,
+                        ));
+                    }
+                    None => {
+                        return Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                            identity_id,
+                            reason: wait_err.to_string(),
+                        });
+                    }
+                }
+            }
+        };
 
         // Pull the verified `Identity` out of the proof result. The expected variant is
         // `VerifiedIdentityWithShieldedNullifiers`; if drive-abci ever returns a different one the
@@ -846,11 +914,71 @@ where
             );
             Ok((identity_id, identity))
         }
+        // The broadcast was accepted but its result couldn't be confirmed and the identity wasn't
+        // found by a direct fetch. Do NOT `cancel_pending` here: `pending_nullifiers` is in-memory
+        // only (see `SubwalletState`, "never persisted; the next sync after a crash reconciles"),
+        // and `mark_spent` during nullifier sync clears matching reservations. So if the transition
+        // actually executed, the next sync promotes these notes to spent; if it truly never landed,
+        // an app restart drops the in-memory reservation and frees them. Releasing them now would
+        // invite double-spend attempts against notes that may already be consumed on chain — the
+        // very hazard this variant exists to prevent.
+        Err(e @ PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }) => Err(e),
         Err(e) => {
             cancel_pending(store, id, &selected_notes).await;
             Err(e)
         }
     }
+}
+
+/// Number of times [`identity_create_from_shielded_pool`] re-fetches the new identity by its
+/// derived id after a post-broadcast result-confirmation failure, before declaring the broadcast
+/// unconfirmed.
+const IDENTITY_CREATE_FETCH_RETRIES: usize = 4;
+
+/// Fixed backoff between identity fetch attempts. Four attempts ~3 s apart (~9 s of fetch window
+/// total) is enough to ride out routine DAPI indexing / replica lag for a freshly-included identity
+/// without wedging the caller's UI for minutes.
+const IDENTITY_CREATE_FETCH_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// Fetch an identity by id with a few fixed-interval retries.
+///
+/// Used only on the ambiguous post-broadcast path: the result-proof fetch failed, so we don't know
+/// whether the transition executed. The identity id is derived deterministically from the spent
+/// notes' nullifiers and committed in the transition sighash, so a successful fetch is positive
+/// proof the transition landed. Returns `Some(identity)` on the first hit, or `None` if every
+/// attempt comes back empty or errors (transport hiccup, not-yet-indexed, …) — the caller then
+/// surfaces `ShieldedBroadcastUnconfirmed` rather than a hard failure.
+async fn fetch_identity_with_retries(
+    sdk: &Arc<dash_sdk::Sdk>,
+    identity_id: Identifier,
+) -> Option<Identity> {
+    use dash_sdk::platform::Fetch;
+
+    for attempt in 0..IDENTITY_CREATE_FETCH_RETRIES {
+        match Identity::fetch(sdk, identity_id).await {
+            Ok(Some(identity)) => return Some(identity),
+            Ok(None) => {
+                trace!(
+                    %identity_id,
+                    attempt,
+                    "IdentityCreateFromShieldedPool confirmation fetch: not found yet"
+                );
+            }
+            Err(e) => {
+                trace!(
+                    %identity_id,
+                    attempt,
+                    error = %e,
+                    "IdentityCreateFromShieldedPool confirmation fetch errored; will retry"
+                );
+            }
+        }
+        // Skip the trailing sleep after the final attempt — nothing follows it.
+        if attempt + 1 < IDENTITY_CREATE_FETCH_RETRIES {
+            tokio::time::sleep(IDENTITY_CREATE_FETCH_RETRY_DELAY).await;
+        }
+    }
+    None
 }
 
 // -------------------------------------------------------------------------
