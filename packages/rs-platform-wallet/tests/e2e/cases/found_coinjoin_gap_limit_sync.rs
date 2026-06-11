@@ -1,36 +1,55 @@
-//! Found — CoinJoin funds invisible to a default wallet because SPV
-//! compact-filter discovery is forward-only within the active batch
-//! window.
+//! Found — CoinJoin funds invisible to a default wallet because a matched
+//! block is applied to a wallet exactly once, so addresses derived from
+//! that block's own matches are never tested against it.
 //!
 //! Reproduction (diagnose-only) for the report: a testnet wallet with
 //! deep CoinJoin usage does not fully sync under default settings — most
 //! CoinJoin funds stay invisible.
 //!
-//! ## Root cause (NOT the gap limit)
+//! ## Root cause (NOT the gap limit, NOT scattered history)
 //!
 //! The CoinJoin gap limit (`DEFAULT_COINJOIN_GAP_LIMIT` = 30) is ample.
 //! On this wallet the CoinJoin External keychain is used *densely and
 //! effectively contiguously* in address index — up to index 1727, with
 //! the largest unused run only 12 and no unused run >= 30 anywhere (see
-//! the gap table the test prints). Gap size is not the problem.
+//! the gap table the test prints). The funding is also dense in HEIGHT,
+//! not scattered: block 1415403 first-funds indices 0..=51 (52 outputs in
+//! one block), block 1415404 funds 52..=139, and there is no index↔height
+//! inversion below 1767. Neither gap size nor block spread is the problem.
 //!
-//! The defect is in dash-spv historical discovery: compact-filter
-//! matching is **block-atomic and forward-only**. A block is matched
-//! once against the bloom filter active when it is scanned; the gap
-//! window only extends AFTER the block is processed, and the
-//! newly-derived addresses (`maintain_gap_limit`) are checked only
-//! against LATER blocks — the just-committed block is never re-matched
-//! against them. The ground-truth `h(i)` data shows CoinJoin funding is
-//! densely packed: block 1415403 first-uses indices 0..=51 (52 in one
-//! block), block 1415404 uses 52..=139, etc. So a wallet watching 0..30
-//! matches only 0..29 in block 1415403, extends to watch 0..59, then in
-//! block 1415404 matches 52..59 — landing at highest_used = **59**,
-//! exactly the empirical stall. Indices 30..51 (used only in the
-//! already-committed block 1415403) are never recovered. The
+//! The defect is that a matched block is APPLIED to a given wallet exactly
+//! ONCE, against only the addresses GENERATED at that instant:
+//!
+//! 1. When a block is applied, `check_transaction_for_match` recognises
+//!    only already-generated addresses (key-wallet
+//!    `account_checker.rs:651-654`). For block 1415403 the wallet has
+//!    generated 0..29 (the gap window), so only outputs paying 0..29 are
+//!    seen; outputs paying 30..51 in the SAME block are invisible. The
+//!    matched 0..29 are marked used, then `maintain_gap_limit` derives
+//!    30..59.
+//! 2. On batch commit, `rescan_batch` re-matches the block's OWN filters
+//!    against the newly-derived scripts (dash-spv `manager.rs:479`), and
+//!    indices 30..51 genuinely match. BUT the per-`(wallet, BLOCK)` gate
+//!    `BlockMatchTracker` (`manager.rs:667-668` →
+//!    `block_match_tracker.rs:78-82`) returns `AlreadyProcessed` — the
+//!    wallet was recorded done for this block at `sync_manager.rs:178` —
+//!    so the block is skipped and NEVER re-applied. The gate is keyed by
+//!    `(wallet, block)`, not `(wallet, address)`: that is the bug.
+//!
+//! So the watch ceiling lifts exactly one gap step per dense block. Block
+//! 1415404 then adds only 52..59 (now watched), and discovery stalls at
+//! `highest_used = 59` (= 29 initial watch + 30 gap) — deterministically.
+//! Indices 30..51 (used only in the already-committed block 1415403) are
+//! never recovered. The
 //! [`found_coinjoin_gap_limit_sync_height_analysis`] test's block-atomic
-//! simulation reproduces this 59 from the live data. The defeat is
-//! intra-block index density + zero backward re-scan, NOT an index gap
-//! and NOT the gap limit.
+//! simulation reproduces this 59 from the live `h(i)` data.
+//!
+//! Fix direction (not implemented here): make `BlockMatchTracker` track
+//! the processed SCRIPTS per block so a new-script residual re-queues the
+//! block, OR re-test the block's own outputs against newly-derived
+//! addresses to a fixpoint inside `process_block` BEFORE `record_processed`.
+//! The full-rescan simulation below shows either recovers the entire
+//! range 0..1727.
 //!
 //! ## What this proves
 //!
@@ -56,7 +75,7 @@
 //! one SDK) and runs its own capped pass. The per-wallet bloom filter is
 //! built from that wallet's `monitored_addresses` (all generated
 //! addresses across every account), so Wallet B sees CoinJoin funds that
-//! Wallet A's forward-only discovery never reaches — `balance_B >
+//! Wallet A's once-per-block discovery never reaches — `balance_B >
 //! balance_A`.
 //!
 //! ## Non-determinism of the delta
@@ -138,13 +157,17 @@ const WIDE_DERIVATION: u32 = 200;
 /// condition.
 const COINJOIN_GROUND_TRUTH_DEPTH: u32 = 2500;
 
-/// Backward re-scan depth (in blocks) the windowed simulation grants a
-/// freshly-watched address against already-committed blocks. The real
-/// dash-spv historical scan does **zero** backward re-scan once a block
-/// is committed — empirically validated: `0` reproduces the observed
-/// stall at index 59, whereas any value `>= 1` would recover the full
-/// pre-cutoff range. Kept as a named constant so the model's defining
-/// assumption is explicit.
+/// Effective backward re-scan depth (in blocks) the windowed simulation
+/// grants a freshly-watched address against already-committed blocks.
+///
+/// `0` because the real dash-spv `rescan_batch` re-match (which would
+/// catch the new scripts) is gated out per block: `BlockMatchTracker`
+/// returns `AlreadyProcessed` for a `(wallet, block)` already recorded,
+/// so the block is never re-applied even though its outputs now match.
+/// The wallet's net behaviour is therefore zero effective backward
+/// re-scan — empirically validated: `0` reproduces the observed stall at
+/// index 59, whereas any value `>= 1` (the fixed behaviour) would recover
+/// the full pre-cutoff range.
 const SPV_BACKWARD_RESCAN_BLOCKS: u32 = 0;
 
 /// Cold genesis-scan budget. The harness's own SPV cold-cache floor is
@@ -780,14 +803,14 @@ async fn found_coinjoin_gap_limit_sync_height_analysis() {
         );
     }
 
-    // Sim WINDOWED: block-atomic forward scan with the real system's
-    // zero backward re-scan. Should reproduce the empirical stall at 59.
+    // Sim WINDOWED: block-atomic once-per-block apply with no effective
+    // re-test (the AlreadyProcessed gate). Reproduces the stall at 59.
     let windowed = sim_windowed(
         &by_index,
         DEFAULT_COINJOIN_GAP_LIMIT,
         SPV_BACKWARD_RESCAN_BLOCKS,
     );
-    println!("\n=== SIM WINDOWED (block-atomic, models the real forward-only system) ===");
+    println!("\n=== SIM WINDOWED (block-atomic once-per-block, models the real system) ===");
     println!(
         "  discovered {} of {} used indices; stall (highest discovered) = {}",
         windowed.discovered_count,
@@ -981,27 +1004,29 @@ fn min_initial_depth_windowed(by_index: &[(u32, u32)], gap: u32, backward_blocks
 }
 
 /// WINDOWED simulation with a configurable initial watch depth — the
-/// faithful model of dash-spv forward-only discovery.
+/// faithful model of dash-spv once-per-block discovery.
 ///
 /// Sweeps funding events forward in height order (the scan frontier =
 /// current event height; it only increases). The watch ceiling starts at
 /// `max(gap, initial_depth)` (indices `0..ceiling` watched from genesis).
 ///
-/// **Block-atomic** — this is the key fidelity point. A block is matched
-/// once against the bloom filter snapshot active when the block is
-/// scanned. Within a block, only indices below the ceiling *as it stood
+/// **Block-atomic** — this is the key fidelity point. A block is applied
+/// to the wallet once, against only the addresses generated at that
+/// instant. Within a block, only indices below the ceiling *as it stood
 /// before the block* are discovered; the gap window extends AFTER the
 /// whole block is processed, and the newly-watched addresses apply only
-/// to LATER blocks (the real system does not re-scan a committed block
-/// against addresses derived from that same block's matches). This is
-/// what reproduces the empirical stall at 59: CoinJoin packs dozens of
+/// to LATER blocks. In the real system the block's own `rescan_batch`
+/// re-match would catch them, but the per-`(wallet, block)`
+/// `BlockMatchTracker` returns `AlreadyProcessed` and skips re-applying
+/// the block — so the net effect is no re-test of the committed block.
+/// This reproduces the empirical stall at 59: CoinJoin packs dozens of
 /// indices per block, so one gap-30 extension reaches at most ~30 new
 /// indices into the next block and silently misses every index used only
-/// in the just-scanned block above the prior ceiling.
+/// in the just-applied block above the prior ceiling.
 ///
-/// `backward_blocks` models an optional re-scan of recently-committed
-/// blocks: `0` = no backward re-scan (the real system); `N` = re-scan the
-/// last `N` processed blocks against the extended watch set, to fixpoint.
+/// `backward_blocks` models the FIXED behaviour as a tunable: `0` = the
+/// current gated system (no effective re-test); `N` = re-test the last
+/// `N` processed blocks against the extended watch set, to fixpoint.
 fn sim_windowed_with_initial(
     by_index: &[(u32, u32)],
     gap: u32,
@@ -1075,11 +1100,12 @@ mod sim_tests {
     use super::*;
 
     /// DENSE-BLOCK defeat — the real mechanism. Many contiguous indices
-    /// packed into ONE block defeat the block-atomic forward scan with
-    /// zero backward re-scan: the block matches only the pre-watched
-    /// 0..gap, the ceiling extends to 2*gap-1 AFTER the block, but the
-    /// indices used only in that just-committed block (gap..) are never
-    /// re-matched. A single backward block (re-scan the just-finished
+    /// packed into ONE block defeat once-per-block discovery: the block is
+    /// applied once, matching only the pre-watched 0..gap; the ceiling
+    /// extends to 2*gap-1 AFTER the block, but the indices used only in
+    /// that just-applied block (gap..) are never re-applied (the
+    /// `AlreadyProcessed` gate skips the block). Modelling a single
+    /// backward block (the fixed behaviour — re-test the just-finished
     /// block once) recovers everything.
     #[test]
     fn windowed_stalls_on_dense_block_backward_one_recovers() {
