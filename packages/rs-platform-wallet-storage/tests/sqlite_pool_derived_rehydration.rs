@@ -995,6 +995,19 @@ fn undeclared_unspent_utxo_at_apply_level_is_skipped_not_fatal() {
     }
 
     let conn = persister.lock_conn_for_test();
+
+    // The expected account index of the good address, read from the derived
+    // map `apply_pools` mirrored — the same source the UTXO writer joins.
+    let derived = core_state::list_derived_addresses_for_test(&conn, &w).unwrap();
+    let expected_index = u32::try_from(
+        derived
+            .iter()
+            .find(|r| r.address == good_addr.to_string())
+            .expect("the good pool address must be in the derived map")
+            .account_index,
+    )
+    .expect("a Standard account index fits in u32");
+
     let by_account = core_state::list_unspent_utxos(&conn, &w).unwrap();
     let all: Vec<_> = by_account.values().flatten().collect();
     assert_eq!(
@@ -1002,8 +1015,15 @@ fn undeclared_unspent_utxo_at_apply_level_is_skipped_not_fatal() {
         1,
         "the declared-address UTXO commits; the undeclared one is skipped"
     );
-    assert!(
-        all.iter().all(|r| r.value == 100_000),
+    let survivor = all[0];
+    assert_eq!(
+        survivor.value, 100_000,
         "the committed UTXO is the one at the declared pool address"
+    );
+    // Skipping the undeclared row must leave the good row's attribution
+    // intact — it resolves to the pool's account index, not a placeholder.
+    assert_eq!(
+        survivor.account_index, expected_index,
+        "the surviving UTXO must keep its resolved account index"
     );
 }
