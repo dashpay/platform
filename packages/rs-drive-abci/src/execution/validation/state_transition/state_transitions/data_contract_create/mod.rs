@@ -1760,11 +1760,13 @@ mod tests {
                     )
                     .expect("expected to process state transition");
 
-                // INTENDED: creation is rejected with a consensus error, not executed.
+                // INTENDED: creation is rejected during basic structure validation,
+                // before paid execution can run.
                 assert_matches!(
                     processing_result.execution_results().as_slice(),
-                    [StateTransitionExecutionResult::UnpaidConsensusError(_)
-                        | StateTransitionExecutionResult::PaidConsensusError { .. }]
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(_)
+                    )]
                 );
 
                 platform
