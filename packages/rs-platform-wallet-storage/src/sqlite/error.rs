@@ -227,16 +227,16 @@ pub enum WalletStorageError {
     #[error("unspent utxo address {address} is not in core_derived_addresses")]
     UtxoAddressNotDerived { address: String },
 
-    /// An unspent UTXO named an address this wallet's persisted
-    /// `account_address_pools` DECLARE, yet it is missing from
-    /// `core_derived_addresses` — the eager-mirror (`apply_pools`) /
-    /// load-time reconcile invariant is broken. A declared address must
-    /// always carry a derived-index row, so a miss here is a logic
-    /// regression, never a benign SPV gap; failing loud surfaces it
-    /// instead of silently mis-filing or dropping live money.
+    /// A live `addresses_derived` entry arrived without its address in the
+    /// wallet's `account_address_pools` manifest. The emitter must attach a
+    /// full pool snapshot in-band with every derivation, so a derived
+    /// address absent from the manifest means the emitter contract is
+    /// broken — a logic regression, not a benign SPV gap. Failing loud at
+    /// the storage trust boundary surfaces it instead of persisting a row
+    /// the manifest can't vouch for.
     #[error(
-        "derived-index invariant violated: pool-declared address {address} is missing from \
-         core_derived_addresses (eager-mirror/reconcile broken)"
+        "emitter contract violated: derived address {address} is absent from the \
+         account_address_pools manifest (pool snapshot not emitted in-band)"
     )]
     DerivedIndexInvariantViolated { address: String },
 

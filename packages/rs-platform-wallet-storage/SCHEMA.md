@@ -404,38 +404,39 @@ finalized. Rows are removed when the transaction becomes confirmed.
 
 ### `core_derived_addresses`
 
-Address-to-account-index map the UTXO writer joins to resolve a UTXO's
-`account_index` by address. Populated from three sources, all routed
-through the shared `core_state::upsert_derived_address_row` helper so the
-rows are identical regardless of origin:
+A live-fed indexed read-cache the UTXO writer joins to resolve a UTXO's
+`account_index` by address. The authoritative manifest is
+`account_address_pools` (kept complete and in-band by the
+`core_bridge` emitter); this table is the fast B-tree probe in front of it.
+Fed by exactly one source:
 
-1. **Live `addresses_derived` events** — written before UTXOs in the same
-   transaction so the writer sees fresh rows.
-2. **`apply_pools` registration mirror** — every pool-snapshot address is
-   mirrored here at registration, so a UTXO landing on a registered
-   address resolves even before its live derive event arrives
-   (genesis-rescan).
-3. **Load-time reconcile** — on load, pool snapshots fill any address the
-   table is missing, purely additively (`INSERT OR IGNORE`), so an
-   authoritative live/mirrored row is never overwritten and a would-be
-   `UNIQUE(address)` collision is skipped rather than aborting the load.
+- **Live `addresses_derived` events** — written before UTXOs in the same
+  transaction so the writer sees fresh rows.
 
-An unspent UTXO whose address is absent from this table cannot resolve an
-account. The writer tells two cases apart by the wallet's
-`account_address_pools`:
+UTXO resolution for an unspent UTXO:
 
-- **Declared but unmapped** — the address IS in a persisted pool snapshot
-  yet missing here, so the eager-mirror (`apply_pools`) / load-time
-  reconcile invariant "declared ⟹ mapped" is broken. This is a **fatal**
-  `DerivedIndexInvariantViolated` error: silently skipping would drop live
-  money over a logic regression no one would notice.
-- **Truly undeclared** — the address is in no pool (not ours, or a
-  registration changeset not yet applied — an SPV gap-limit edge). The
-  writer **skips** it (with a `warn`) so one unresolvable row never aborts a
-  whole flush; its balance re-warms once the address is later derived.
+1. **Cache hit** — resolve from this table.
+2. **Cache miss, manifest hit** — fall back to `account_address_pools`
+   (the in-band snapshot is applied earlier in the same tx). Resolved.
+3. **Miss in both** — a genuinely undeclared address (not ours, or an SPV
+   gap-limit edge). The writer **skips** it (with a `warn`) so one
+   unresolvable row never aborts a whole flush; its balance re-warms once
+   the address is later derived.
 
-(The spent-only synthetic-row path is exempt from both: a spent row uses an
-inert `account_index` placeholder and is excluded from reads.)
+(The spent-only synthetic-row path is exempt: a spent row uses an inert
+`account_index` placeholder and is excluded from reads.)
+
+A live `addresses_derived` entry whose address is absent from the manifest
+is a **fatal** `DerivedIndexInvariantViolated` — the emitter must attach
+the pool snapshot in-band with every derivation, so this can only fire on
+an emitter bug, never on a benign gap.
+
+> The non-ECDSA pool gap (BLS/EdDSA addresses are dropped from the event
+> projection, so they never produce an `addresses_derived` entry) cannot
+> manifest here: only ECDSA Standard/CoinJoin External/Internal addresses
+> are ever classified `Received`/`Change`, so a non-ECDSA address can never
+> be a `new_utxos` UTXO address. This is an upstream classifier property
+> (`key-wallet` `account_checker`), not enforceable at the storage layer.
 
 - PK: `(wallet_id, account_type, pool_type, derivation_index)` — the BIP32
   leaf identity (one row per derived address).

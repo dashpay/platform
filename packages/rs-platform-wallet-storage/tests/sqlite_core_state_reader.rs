@@ -13,9 +13,10 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
+use key_wallet::AddressInfo;
 use key_wallet::Utxo;
 use platform_wallet::changeset::{
-    CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
+    AccountAddressPoolEntry, CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet_storage::sqlite::schema::core_state;
 use platform_wallet_storage::WalletStorageError;
@@ -88,6 +89,27 @@ fn derived_for(address: &dashcore::Address) -> platform_wallet::DerivedAddress {
     }
 }
 
+/// The in-band pool snapshot the emitter ships with the derivation above —
+/// `core_state::apply` now requires every `addresses_derived` address to be
+/// in the `account_address_pools` manifest. Matches `derived_for`'s slot.
+fn manifest_for(address: &dashcore::Address) -> AccountAddressPoolEntry {
+    let info = AddressInfo::new_from_script_pubkey_p2pkh(
+        address.script_pubkey(),
+        0,
+        Default::default(),
+        key_wallet::Network::Testnet,
+    )
+    .expect("p2pkh AddressInfo");
+    AccountAddressPoolEntry {
+        account_type: key_wallet::account::AccountType::Standard {
+            index: 0,
+            standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+        },
+        pool_type: key_wallet::managed_account::address_pool::AddressPoolType::External,
+        addresses: vec![info],
+    }
+}
+
 /// A non-zero balance survives store → drop → reopen → load, guarding
 /// against a silent-zero-balance reconstruction.
 #[test]
@@ -107,6 +129,7 @@ fn rt2_nonzero_balance_survives_reopen() {
             synced_height: Some(200),
             ..Default::default()
         }),
+        account_address_pools: vec![manifest_for(&utxo.address)],
         ..Default::default()
     };
     persister.store(w, cs).unwrap();
@@ -161,6 +184,7 @@ fn b2_spent_utxo_excluded() {
                     spent_utxos: vec![u_spent.clone()],
                     ..Default::default()
                 }),
+                account_address_pools: vec![manifest_for(&u_unspent.address)],
                 ..Default::default()
             },
         )
@@ -268,11 +292,12 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
             PlatformWalletChangeSet {
                 core: Some(CoreChangeSet {
                     addresses_derived: vec![derived_for(&utxo.address)],
-                    new_utxos: vec![utxo],
+                    new_utxos: vec![utxo.clone()],
                     last_processed_height: Some(60),
                     synced_height: Some(60),
                     ..Default::default()
                 }),
+                account_address_pools: vec![manifest_for(&utxo.address)],
                 ..Default::default()
             },
         )
