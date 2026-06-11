@@ -172,8 +172,6 @@ impl PlatformWallet {
                 hex::encode(self.wallet_id())
             )));
         }
-        let recipient = self.seed_pool_recipient(account).await?;
-
         // Snapshot the starting count so the batch-total estimate is
         // stable for the whole run.
         let sdk = self.sdk_arc();
@@ -204,6 +202,11 @@ impl PlatformWallet {
             });
             return Ok(outcome);
         }
+
+        // Resolved only once seeding is actually needed, so the
+        // already-satisfied no-op path above works even when the
+        // shielded sub-wallet isn't bound.
+        let recipient = self.seed_pool_recipient(account).await?;
 
         // One prover handle for the whole run (zero-sized; shares the
         // process-global cached proving key).

@@ -82,6 +82,12 @@ struct SeedShieldedPoolView: View {
                 }
             }
             .onAppear(perform: autoSelectDefaults)
+            // The seeding Task keeps running if the sheet goes away; with
+            // no progress/failure surface the user could also start a
+            // second concurrent run. Block swipe-to-dismiss while a run
+            // is in flight (the toolbar Cancel is disabled for the same
+            // reason).
+            .interactiveDismissDisabled(phase == .inFlight)
         }
     }
 
@@ -150,7 +156,9 @@ struct SeedShieldedPoolView: View {
             if let target = parsedTarget {
                 // Mirrors MAX_ACTIONS_PER_BATCH (6) in seed_pool.rs — the
                 // most actions that fit the 20 KiB transition-size limit.
-                let batches = (target + 5) / 6
+                // Ceiling division without `target + 5`, which would trap
+                // on a pasted UInt64.max target.
+                let batches = target / 6 + (target % 6 == 0 ? 0 : 1)
                 Text(
                     "Drive the pool up to \(target) notes — about \(batches) "
                         + "ShieldFromAssetLock batches. Already-present notes count toward "
@@ -188,8 +196,11 @@ struct SeedShieldedPoolView: View {
                 }
                 if let p = progress {
                     ProgressView(value: progressFraction(p))
+                    // `batchIndex` counts COMPLETED batches (the Rust side
+                    // emits it before and after each batch), so present it
+                    // as a completed count, not a 1-based "current batch".
                     Text(
-                        "Batch \(p.batchIndex)/~\(p.batchesTotalEstimate) · "
+                        "\(p.batchIndex)/~\(p.batchesTotalEstimate) batches completed · "
                             + "\(p.poolNotesNow)/\(p.target) notes"
                     )
                     .font(.caption)
