@@ -1197,6 +1197,10 @@ struct CreateIdentityView: View {
         let controller = coordinator.startRegistration(
             walletId: walletId,
             identityIndex: identityIndex,
+            // Type-20 path: no asset lock exists, so the progress view
+            // renders the shielded-pool step list (notes → proof →
+            // broadcast → register) instead of the asset-lock pipeline.
+            fundingMode: .shieldedPool,
             body: {
                 // `shieldedIdentityCreateFromPool` lives on the manager
                 // (it's wallet-id-routed, unlike the per-wallet
