@@ -52,6 +52,7 @@ use dpp::shielded::builder::{
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::StateTransition;
 use dpp::withdrawal::Pooling;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
@@ -301,11 +302,15 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
     trace!("Shield credits: state transition built, broadcasting...");
     let network = sdk.network;
     // Wait for proven execution (not just relay-ACK) so the host only
-    // sees success once Platform has actually included the transition —
-    // matching the spend-side flows (unshield/transfer/withdraw). A
+    // sees success once Platform has actually included the transition. A
     // DAPI-level ACK alone could otherwise mask a later Platform
     // rejection. The proven result is discarded; we only need the
-    // confirmation.
+    // confirmation. Unlike the note-spending flows (unshield / transfer /
+    // withdraw — see `broadcast_shielded_spend`), shield deliberately
+    // keeps the one-shot helper: it takes no note reservation, so an
+    // ambiguous post-broadcast wait failure has no local state to strand.
+    // Its inputs are transparent address claims guarded by on-chain
+    // nonces, and a host-level retry re-fetches those nonces.
     state_transition
         .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
         .await
@@ -383,8 +388,10 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         "Unshield"
     );
 
-    // From here on every error path must release the reservation
-    // taken by `reserve_unspent_notes`.
+    // From here on every error path must release the reservation taken
+    // by `reserve_unspent_notes` — except the ambiguous
+    // `ShieldedSpendUnconfirmed` one, which intentionally leaves it in
+    // place (see the outer match below).
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
 
@@ -411,11 +418,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         );
 
         trace!("Unshield: state transition built, broadcasting...");
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
-            .await
-            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
-        Ok::<(), PlatformWalletError>(())
+        broadcast_shielded_spend(sdk, &state_transition, "unshield").await
     }
     .await;
 
@@ -448,6 +451,15 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             info!(account, credits = amount, "Unshield broadcast succeeded");
             Ok(())
         }
+        // The broadcast was accepted but its execution result couldn't be
+        // confirmed: the spend may well have executed, so do NOT release
+        // the reservation. `pending_nullifiers` is in-memory only — if the
+        // spend landed, the next nullifier sync's `mark_spent` promotes the
+        // notes to spent (clearing the reservation); if it never landed, an
+        // app restart drops the reservation and frees the notes. Releasing
+        // them now would invite re-selecting notes whose nullifiers may
+        // already be consumed on chain.
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
         Err(e) => {
             cancel_pending(store, id, &selected_notes).await;
             Err(e)
@@ -518,11 +530,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
         );
 
         trace!("Shielded transfer: state transition built, broadcasting...");
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
-            .await
-            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
-        Ok::<(), PlatformWalletError>(())
+        broadcast_shielded_spend(sdk, &state_transition, "transfer").await
     }
     .await;
 
@@ -545,6 +553,9 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             );
             Ok(())
         }
+        // Ambiguous post-broadcast confirmation failure: leave the
+        // reservation in place (see `unshield`'s outer match).
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
         Err(e) => {
             cancel_pending(store, id, &selected_notes).await;
             Err(e)
@@ -623,11 +634,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
         );
 
         trace!("Shielded withdrawal: state transition built, broadcasting...");
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
-            .await
-            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
-        Ok::<(), PlatformWalletError>(())
+        broadcast_shielded_spend(sdk, &state_transition, "withdraw").await
     }
     .await;
 
@@ -650,6 +657,9 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             );
             Ok(())
         }
+        // Ambiguous post-broadcast confirmation failure: leave the
+        // reservation in place (see `unshield`'s outer match).
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
         Err(e) => {
             cancel_pending(store, id, &selected_notes).await;
             Err(e)
@@ -734,7 +744,9 @@ where
         .map(|(key, _)| (key.id(), key.clone()))
         .collect();
 
-    // From here on every error path must release the reservation taken above.
+    // From here on every error path must release the reservation taken above — except the
+    // ambiguous `ShieldedBroadcastUnconfirmed` one, which intentionally leaves it in place
+    // (see the outer match below).
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
 
@@ -1205,6 +1217,62 @@ async fn cancel_pending<S: ShieldedStore>(
                 error = %e,
                 "cancel_pending: clear_pending failed; the next note scan will reconcile"
             );
+        }
+    }
+}
+
+/// Broadcast a built shielded spend transition (unshield / transfer /
+/// withdraw) and wait for proven execution, staging the two SDK calls
+/// separately so the caller's reservation rollback only runs when the
+/// spend DEFINITIVELY did not happen:
+///
+/// - a broadcast-time rejection (relay/CheckTx refused the tx), or a
+///   `StateTransitionBroadcastError` from the result wait (Platform ran
+///   the transition and rejected it on its merits), means the spend
+///   never executed → [`PlatformWalletError::ShieldedBroadcastFailed`],
+///   and the caller releases the note reservations via
+///   [`cancel_pending`];
+/// - any other wait failure (result-proof fetch/verify error, timeout,
+///   transport error, …) is AMBIGUOUS — the relay accepted the tx and
+///   it may well have executed →
+///   [`PlatformWalletError::ShieldedSpendUnconfirmed`], and the caller
+///   must leave the reservations in place (each spend flow's outer
+///   match has a dedicated arm for this).
+///
+/// Mirrors the staging in [`identity_create_from_shielded_pool`], minus
+/// its fetch-by-derived-id fallback: a spend leaves no artifact as
+/// cheaply queryable as an identity row, so ambiguity is surfaced
+/// directly and reconciled by the next nullifier sync. The proven
+/// result is discarded; only the confirmation matters.
+async fn broadcast_shielded_spend(
+    sdk: &Arc<dash_sdk::Sdk>,
+    state_transition: &StateTransition,
+    operation: &'static str,
+) -> Result<(), PlatformWalletError> {
+    state_transition
+        .broadcast(sdk, None)
+        .await
+        .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
+
+    match state_transition
+        .wait_for_response::<StateTransitionProofResult>(sdk, None)
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(dash_sdk::Error::StateTransitionBroadcastError(e)) => {
+            Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))
+        }
+        Err(wait_err) => {
+            warn!(
+                operation,
+                error = %wait_err,
+                "Shielded spend broadcast accepted but result confirmation failed; \
+                 leaving the note reservations in place"
+            );
+            Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation,
+                reason: wait_err.to_string(),
+            })
         }
     }
 }
