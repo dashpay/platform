@@ -258,6 +258,19 @@ async fn found_coinjoin_gap_limit_sync() {
         println!("  {line}");
     }
 
+    // --- Gap analysis on Wallet B's synced state: the unused-index runs
+    // between consecutive USED addresses, contrasted against the index
+    // Wallet A's default scan actually reached on the CoinJoin keychain.
+    let default_ceiling = coinjoin_external_highest_used(&wallet_a).await;
+    let gap_report = gap_analysis_report(&wallet_b, default_ceiling).await;
+    for line in &gap_report {
+        tracing::info!(target: "platform_wallet::e2e::cases::found_coinjoin_gap_limit_sync", "{line}");
+    }
+    println!("\n=== Wallet B gap analysis (used-index runs per keychain) ===");
+    for line in &gap_report {
+        println!("{line}");
+    }
+
     // The reproduction assertion: the default configuration hides funds
     // that the wide configuration reveals.
     assert!(
@@ -368,6 +381,140 @@ async fn per_account_report(wallet: &Arc<platform_wallet::PlatformWallet>) -> Ve
             "{account_type:?}: confirmed={confirmed} duffs; pools={}",
             pools.join(", ")
         ));
+    }
+    out
+}
+
+/// Read the `highest_used` index of the wallet's CoinJoin account 0
+/// External pool — the depth its scan actually reached. `None` when the
+/// wallet has no CoinJoin account or the pool saw no usage.
+async fn coinjoin_external_highest_used(
+    wallet: &Arc<platform_wallet::PlatformWallet>,
+) -> Option<u32> {
+    use key_wallet::account::AccountType as AT;
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+    let state = wallet.state().await;
+    for funds in state.core_wallet.accounts.all_funding_accounts() {
+        if matches!(
+            funds.managed_account_type().to_account_type(),
+            AT::CoinJoin { .. }
+        ) {
+            for pool in funds.managed_account_type().address_pools() {
+                if pool.pool_type == AddressPoolType::External {
+                    return pool.highest_used;
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Per-keychain gap analysis: for every funding pool, the sorted USED
+/// indices, the leading unused run (index 0 → first used), the unused
+/// run between each consecutive used pair, and a summary tying the
+/// pattern to what the default-configured Wallet A actually observed.
+///
+/// `default_observed_ceiling` is the `highest_used` Wallet A reached on
+/// the matching keychain (e.g. CoinJoin External = 59), so the report
+/// can quantify the indices the default scan never touched even though
+/// the wide wallet (B) used them.
+async fn gap_analysis_report(
+    wallet: &Arc<platform_wallet::PlatformWallet>,
+    coinjoin_external_default_ceiling: Option<u32>,
+) -> Vec<String> {
+    use key_wallet::account::AccountType as AT;
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+    let state = wallet.state().await;
+    let mut out = Vec::new();
+    for funds in state.core_wallet.accounts.all_funding_accounts() {
+        let account_type = funds.managed_account_type().to_account_type();
+        for pool in funds.managed_account_type().address_pools() {
+            let mut used: Vec<u32> = pool.used_indices.iter().copied().collect();
+            used.sort_unstable();
+
+            out.push(format!(
+                "── {account_type:?} / {:?} (gap_limit={}) ──",
+                pool.pool_type, pool.gap_limit
+            ));
+            if used.is_empty() {
+                out.push("   used indices: (none)".to_string());
+                continue;
+            }
+            out.push(format!("   used indices ({}): {used:?}", used.len()));
+
+            // Leading run: index 0 → first used. A first-used index >= the
+            // gap limit would itself defeat a from-zero scan.
+            let first = used[0];
+            if first > 0 {
+                let lead_flag = if first >= DEFAULT_COINJOIN_GAP_LIMIT {
+                    "  <<< LEADING GAP >= 30"
+                } else {
+                    ""
+                };
+                out.push(format!(
+                    "   leading run 0 → {first}: {first} unused address(es){lead_flag}"
+                ));
+            }
+
+            // Inter-used unused runs; report only the non-zero ones to
+            // keep the table readable, and the max so the reader sees the
+            // largest canyon at a glance.
+            let mut max_gap = 0u32;
+            let mut gaps_ge_30 = 0u32;
+            for win in used.windows(2) {
+                let (prev, next) = (win[0], win[1]);
+                let gap = next - prev - 1;
+                max_gap = max_gap.max(gap);
+                if gap > 0 {
+                    let flag = if gap >= DEFAULT_COINJOIN_GAP_LIMIT {
+                        gaps_ge_30 += 1;
+                        "  <<< GAP >= 30 (a from-zero gap-30 follow cannot bridge this)"
+                    } else {
+                        ""
+                    };
+                    out.push(format!(
+                        "   used {prev} → {next}: {gap} unused address(es){flag}"
+                    ));
+                }
+            }
+
+            let highest = *used.last().expect("non-empty");
+            out.push(format!(
+                "   summary: {} used indices, span [{first}..{highest}], \
+                 max inter-used unused run = {max_gap}, runs >= 30 = {gaps_ge_30}",
+                used.len()
+            ));
+
+            // For CoinJoin External, contrast against Wallet A's observed
+            // ceiling — the headline finding of this reproduction.
+            let is_coinjoin_external = matches!(account_type, AT::CoinJoin { .. })
+                && pool.pool_type == AddressPoolType::External;
+            if is_coinjoin_external {
+                if let Some(ceiling) = coinjoin_external_default_ceiling {
+                    let hidden = used.iter().filter(|&&i| i > ceiling).count();
+                    out.push(format!(
+                        "   ⇒ DEFAULT WALLET (Wallet A) stalled at highest_used={ceiling}; \
+                         {hidden} of these {} used indices sit ABOVE that ceiling and were \
+                         INVISIBLE to the default scan — even though the usage here is \
+                         {} (max inter-used run = {max_gap}). The defeat is the shallow \
+                         initial pre-derivation window (gap_limit={}) plus the SPV \
+                         historical scan failing to advance the watched window across a \
+                         deep CoinJoin run, NOT an inter-address gap >= 30.",
+                        used.len(),
+                        if gaps_ge_30 == 0 {
+                            "effectively contiguous"
+                        } else {
+                            "punctuated by some large runs"
+                        },
+                        pool.gap_limit,
+                    ));
+                }
+            }
+        }
     }
     out
 }
