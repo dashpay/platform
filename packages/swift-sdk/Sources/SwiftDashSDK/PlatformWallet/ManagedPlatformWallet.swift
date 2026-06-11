@@ -749,12 +749,28 @@ extension ManagedPlatformWallet {
     ///     Pass `nil` to defer to the Rust default
     ///     (`IDENTITY_GAP_LIMIT`, currently 5) so the preview
     ///     aligns with the scan window `discoverIdentities` walks.
+    ///   - storage: `WalletStorage` instance used by the resolver
+    ///     callback to read the BIP-39 mnemonic from iOS Keychain.
+    ///     Defaults to a fresh `WalletStorage()` — overridable for
+    ///     tests.
     ///
     /// - Throws: `PlatformWalletError` if the wallet handle is
     ///   invalid or Rust-side derivation fails.
+    ///
+    /// # Key source: resolver
+    ///
+    /// Like `discoverIdentities`, the preview derive needs the wallet's
+    /// seed, which for these `ExternalSignable` wallets lives in iOS
+    /// Keychain rather than the in-process `WalletManager`. A
+    /// [`MnemonicResolver`] is passed so Rust resolves the mnemonic on
+    /// demand (keyed by this wallet's own `walletId`) and derives the
+    /// preview rows from it — the same mechanism the scan and
+    /// registration use. The local `resolver` outlives this synchronous
+    /// FFI call by construction.
     public func previewIdentityRegistrationKeys(
         startIndex: UInt32 = 0,
-        count: UInt32? = nil
+        count: UInt32? = nil,
+        storage: WalletStorage = WalletStorage()
     ) throws -> [IdentityRegistrationKeyPreview] {
         // `-1` tells Rust to pick the crate-level IDENTITY_GAP_LIMIT
         // default. Any supplied value passes through as-is, clamped
@@ -767,9 +783,15 @@ extension ManagedPlatformWallet {
             countOrNeg1 = -1
         }
 
+        // The resolver reads the mnemonic from iOS Keychain on demand,
+        // pinned by Rust to this wallet handle's own `walletId`. The
+        // local binding keeps it alive for the synchronous FFI call.
+        let resolver = MnemonicResolver(storage: storage)
+
         var out = IdentityKeyPreviewsFFI()
         let result = platform_wallet_preview_identity_registration_keys(
             handle,
+            resolver.handle,
             startIndex,
             countOrNeg1,
             &out
@@ -1138,38 +1160,68 @@ extension ManagedPlatformWallet {
     ///   - gapLimit: Maximum consecutive empty identity indices to
     ///     tolerate before stopping. Defaults to the Rust default
     ///     (`IDENTITY_GAP_LIMIT`, currently 5) when omitted.
+    ///   - storage: `WalletStorage` instance used by the resolver
+    ///     callback to read the BIP-39 mnemonic from iOS Keychain.
+    ///     Defaults to a fresh `WalletStorage()` — overridable for
+    ///     tests.
     /// - Returns: The identifiers of any identities the scan
     ///   discovered that weren't already in the local manager.
     ///   Identities already tracked are not re-reported.
+    ///
+    /// # Key source: resolver
+    ///
+    /// App wallets are loaded into the in-process `WalletManager` as
+    /// `ExternalSignable` — their seed lives in iOS Keychain, not in
+    /// process — so the Rust scan can't derive identity-auth keys from
+    /// the resident wallet (it fails with `External signable wallet has
+    /// no private key`). A [`MnemonicResolver`] is passed to the FFI so
+    /// Rust resolves the mnemonic on demand (keyed by this wallet's own
+    /// `walletId`) and derives the scan keys from it — the same
+    /// mechanism identity registration uses. No mnemonic / derivation
+    /// pipeline runs in Swift; this stays a thin bridge per
+    /// `swift-sdk/CLAUDE.md`.
     public func discoverIdentities(
         startIndex: UInt32? = nil,
-        gapLimit: UInt32? = nil
+        gapLimit: UInt32? = nil,
+        storage: WalletStorage = WalletStorage()
     ) async throws -> [Identifier] {
         let handle = self.handle
         let startArg: Int64 = startIndex.map(Int64.init) ?? -1
         let gapArg: UInt32 = gapLimit ?? 0
+        // The resolver reads the mnemonic from iOS Keychain on demand;
+        // Rust pins it to this wallet handle's own `walletId`, so no
+        // wallet-id argument is passed. `MnemonicResolver` is
+        // `@unchecked Sendable`; capture it in the detached closure and
+        // wrap the FFI call in `withExtendedLifetime` so ARC keeps it
+        // alive for the synchronous call's duration (its FFI ctx is a
+        // `passUnretained` pointer — see the type's "Lifetime
+        // contract").
+        let resolver = MnemonicResolver(storage: storage)
         return try await Task.detached(priority: .userInitiated) {
             () -> [Identifier] in
-            var found = DiscoveredIdentityIdsFFI()
-            let result = platform_wallet_discover_identities(
-                handle,
-                startArg,
-                gapArg,
-                &found
-            )
-            defer { platform_wallet_discover_identities_free(&found) }
-            try result.check()
-            guard let base = found.ids, found.count > 0 else {
-                return []
+            try withExtendedLifetime(resolver) {
+                var found = DiscoveredIdentityIdsFFI()
+                let result = platform_wallet_discover_identities(
+                    handle,
+                    resolver.handle,
+                    startArg,
+                    gapArg,
+                    &found
+                )
+                defer { platform_wallet_discover_identities_free(&found) }
+                try result.check()
+                guard let base = found.ids, found.count > 0 else {
+                    return []
+                }
+                var ids: [Identifier] = []
+                ids.reserveCapacity(Int(found.count))
+                for i in 0..<Int(found.count) {
+                    var tuple = base[i]
+                    let data = Swift.withUnsafeBytes(of: &tuple) { Data($0) }
+                    ids.append(data)
+                }
+                return ids
             }
-            var ids: [Identifier] = []
-            ids.reserveCapacity(Int(found.count))
-            for i in 0..<Int(found.count) {
-                var tuple = base[i]
-                let data = Swift.withUnsafeBytes(of: &tuple) { Data($0) }
-                ids.append(data)
-            }
-            return ids
         }.value
     }
 }
