@@ -217,6 +217,12 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
                 path: PathBuf::from("/tmp/x"),
             },
         ),
+        (
+            "DerivedIndexInvariantViolated",
+            WalletStorageError::DerivedIndexInvariantViolated {
+                address: "yMockAddress".into(),
+            },
+        ),
     ];
 
     for (label, err) in fatal_cases {

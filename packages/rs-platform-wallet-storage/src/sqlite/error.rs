@@ -227,6 +227,19 @@ pub enum WalletStorageError {
     #[error("unspent utxo address {address} is not in core_derived_addresses")]
     UtxoAddressNotDerived { address: String },
 
+    /// An unspent UTXO named an address this wallet's persisted
+    /// `account_address_pools` DECLARE, yet it is missing from
+    /// `core_derived_addresses` — the eager-mirror (`apply_pools`) /
+    /// load-time reconcile invariant is broken. A declared address must
+    /// always carry a derived-index row, so a miss here is a logic
+    /// regression, never a benign SPV gap; failing loud surfaces it
+    /// instead of silently mis-filing or dropping live money.
+    #[error(
+        "derived-index invariant violated: pool-declared address {address} is missing from \
+         core_derived_addresses (eager-mirror/reconcile broken)"
+    )]
+    DerivedIndexInvariantViolated { address: String },
+
     /// `PRAGMA foreign_keys = ON` was issued on open but the read-back
     /// reported the constraint enforcement is still off — the linked
     /// SQLite build silently ignores the pragma (no FK support compiled
@@ -375,6 +388,7 @@ impl WalletStorageError {
             | Self::AssetLockEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
             | Self::UtxoAddressNotDerived { .. }
+            | Self::DerivedIndexInvariantViolated { .. }
             | Self::IntegerOverflow { .. } => false,
         }
     }
@@ -452,6 +466,7 @@ impl WalletStorageError {
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::UtxoAddressNotDerived { .. } => "utxo_address_not_derived",
+            Self::DerivedIndexInvariantViolated { .. } => "derived_index_invariant_violated",
             Self::IntegerOverflow { .. } => "integer_overflow",
         }
     }

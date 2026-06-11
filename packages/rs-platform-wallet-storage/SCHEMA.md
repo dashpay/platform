@@ -421,9 +421,21 @@ rows are identical regardless of origin:
    `UNIQUE(address)` collision is skipped rather than aborting the load.
 
 An unspent UTXO whose address is absent from this table cannot resolve an
-account; the writer **skips** it (with a `warn`) rather than erroring, so
-one unresolvable row never aborts a whole flush. Its balance re-warms once
-the address is later derived.
+account. The writer tells two cases apart by the wallet's
+`account_address_pools`:
+
+- **Declared but unmapped** — the address IS in a persisted pool snapshot
+  yet missing here, so the eager-mirror (`apply_pools`) / load-time
+  reconcile invariant "declared ⟹ mapped" is broken. This is a **fatal**
+  `DerivedIndexInvariantViolated` error: silently skipping would drop live
+  money over a logic regression no one would notice.
+- **Truly undeclared** — the address is in no pool (not ours, or a
+  registration changeset not yet applied — an SPV gap-limit edge). The
+  writer **skips** it (with a `warn`) so one unresolvable row never aborts a
+  whole flush; its balance re-warms once the address is later derived.
+
+(The spent-only synthetic-row path is exempt from both: a spent row uses an
+inert `account_index` placeholder and is excluded from reads.)
 
 - PK: `(wallet_id, account_type, pool_type, derivation_index)` — the BIP32
   leaf identity (one row per derived address).

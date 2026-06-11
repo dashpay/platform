@@ -74,11 +74,25 @@ pub fn apply(
             false,
         )?;
     }
+    // Lazily-built set of every address this wallet's `account_address_pools`
+    // declare, used only to discriminate an unspent-miss (see
+    // `execute_upsert_utxo`). Built at most once per `apply`, on the first
+    // miss across both UTXO loops; `None` until then so a miss-free flush
+    // never decodes a snapshot blob.
+    let mut pool_addrs: Option<std::collections::HashSet<String>> = None;
     if !cs.new_utxos.is_empty() {
         let mut stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
         let mut lookup_stmt = tx.prepare_cached(ACCOUNT_INDEX_BY_ADDRESS_SQL)?;
         for utxo in &cs.new_utxos {
-            execute_upsert_utxo(&mut stmt, &mut lookup_stmt, wallet_id, utxo, false)?;
+            execute_upsert_utxo(
+                tx,
+                &mut stmt,
+                &mut lookup_stmt,
+                wallet_id,
+                utxo,
+                false,
+                &mut pool_addrs,
+            )?;
         }
     }
     if !cs.spent_utxos.is_empty() {
@@ -101,7 +115,15 @@ pub fn apply(
                 // Spent-only synthetic row: best-effort account_index. A wrong
                 // index is inert since spent rows are excluded from
                 // `list_unspent_utxos`.
-                execute_upsert_utxo(&mut upsert_stmt, &mut lookup_stmt, wallet_id, utxo, true)?;
+                execute_upsert_utxo(
+                    tx,
+                    &mut upsert_stmt,
+                    &mut lookup_stmt,
+                    wallet_id,
+                    utxo,
+                    true,
+                    &mut pool_addrs,
+                )?;
             }
         }
     }
@@ -144,12 +166,15 @@ const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         account_index = excluded.account_index, \
         spent = excluded.spent";
 
+#[allow(clippy::too_many_arguments)]
 fn execute_upsert_utxo(
+    tx: &Transaction<'_>,
     stmt: &mut rusqlite::CachedStatement<'_>,
     lookup_stmt: &mut rusqlite::CachedStatement<'_>,
     wallet_id: &WalletId,
     utxo: &Utxo,
     spent: bool,
+    pool_addrs: &mut Option<std::collections::HashSet<String>>,
 ) -> Result<(), WalletStorageError> {
     let op = blob::encode_outpoint(&utxo.outpoint)?;
     let address = utxo.address.to_string();
@@ -159,19 +184,33 @@ fn execute_upsert_utxo(
         .optional()?;
     let account_index: i64 = match looked_up {
         Some(idx) => idx,
-        // Skip an unspent UTXO whose address we never derived: bucketing it
-        // under account 0 would mis-file live money, and erroring would abort
-        // the whole flush (genesis-rescan can match a UTXO before its derive
-        // event lands). Funds-safe: the balance re-warms only once the
-        // address is later derived (gap-limit dependent), not unconditionally.
-        // The spent-only arm keeps the inert fallback.
+        // An unspent miss is one of two cases, told apart by the pools:
+        //
+        // 1. The address IS declared in this wallet's `account_address_pools`
+        //    but absent from `core_derived_addresses` — the eager-mirror /
+        //    load-time reconcile invariant ("declared ⟹ mapped") is broken.
+        //    Fatal: silently skipping would drop live money over a logic
+        //    regression no one would ever notice.
+        // 2. The address is NOT declared (not ours, or a registration
+        //    changeset not yet applied — an SPV gap-limit edge). Benign:
+        //    skip (warn) so one unresolvable row never aborts a whole flush;
+        //    the balance re-warms once the address is later derived.
+        //
+        // The spent-only arm keeps the inert fallback regardless.
         None if !spent => {
+            let pools = match pool_addrs {
+                Some(set) => &*set,
+                None => pool_addrs.insert(pool_declared_addresses(tx, wallet_id)?),
+            };
+            if pools.contains(&address) {
+                return Err(WalletStorageError::DerivedIndexInvariantViolated { address });
+            }
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 address = %address,
                 txid = %utxo.outpoint.txid,
                 vout = utxo.outpoint.vout,
-                "skipping unspent UTXO at an address absent from core_derived_addresses; balance re-warms only once the address is later derived"
+                "skipping unspent UTXO at an undeclared address absent from core_derived_addresses; balance re-warms only once the address is later derived"
             );
             return Ok(());
         }
@@ -245,6 +284,40 @@ pub(crate) fn upsert_derived_address_row(
         used,
     ])?;
     Ok(())
+}
+
+/// Every address this wallet's persisted `account_address_pools` snapshots
+/// declare, as a membership set. Used to discriminate an unspent-UTXO miss:
+/// a declared address absent from `core_derived_addresses` is a broken-mirror
+/// invariant violation, an undeclared one is a benign skip. Reuses the
+/// snapshot-decode pattern of [`rehydrate_derived_addresses_from_pools`];
+/// a corrupt snapshot is fail-hard (never skipped).
+fn pool_declared_addresses(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+) -> Result<std::collections::HashSet<String>, WalletStorageError> {
+    let snapshots: Vec<Vec<u8>> = {
+        let mut stmt = tx.prepare_cached(
+            "SELECT snapshot_blob FROM account_address_pools WHERE wallet_id = ?1",
+        )?;
+        let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+            row.get::<_, Vec<u8>>(0)
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        out
+    };
+
+    let mut set = std::collections::HashSet::new();
+    for payload in snapshots {
+        let entry: platform_wallet::changeset::AccountAddressPoolEntry = blob::decode(&payload)?;
+        for info in &entry.addresses {
+            set.insert(info.address.to_string());
+        }
+    }
+    Ok(set)
 }
 
 /// Reconcile `core_derived_addresses` for `wallet_id` against its

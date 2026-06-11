@@ -862,3 +862,148 @@ fn load_reconcile_silently_skips_unique_address_collision() {
         "reconcile must not clear the live row's used flag"
     );
 }
+
+/// Derived-index invariant goes FATAL: an address this wallet's persisted
+/// `account_address_pools` DECLARE, yet that the eager-mirror/reconcile
+/// failed to write into `core_derived_addresses`, must NOT be silently
+/// skipped. A UTXO landing on that declared-but-unmapped address aborts the
+/// flush with [`WalletStorageError::DerivedIndexInvariantViolated`]
+/// (non-transient → `Fatal`), surfacing the broken invariant instead of
+/// dropping live money. This is the loud counterpart to the quiet skip for a
+/// genuinely-undeclared address.
+#[test]
+fn pool_declared_address_missing_from_derived_is_fatal() {
+    use platform_wallet::changeset::PersistenceErrorKind;
+    use platform_wallet_storage::WalletStorageError;
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xE0);
+    ensure_wallet_meta(&persister, &w);
+
+    let (snapshots, target) = wallet_with_pools(0x77);
+    let addr = target.address.clone();
+
+    // Register the pool: `apply_pools` writes the snapshot AND mirrors its
+    // addresses into `core_derived_addresses`.
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: snapshots,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    // Simulate a broken mirror/reconcile: keep the pool snapshot but wipe
+    // the derived rows it should have produced. The invariant
+    // "declared ⟹ mapped" is now violated.
+    {
+        let conn = persister.lock_conn_for_test();
+        conn.execute(
+            "DELETE FROM core_derived_addresses WHERE wallet_id = ?1",
+            rusqlite::params![w.as_slice()],
+        )
+        .unwrap();
+        let derived = core_state::list_derived_addresses_for_test(&conn, &w).unwrap();
+        assert!(
+            derived.iter().all(|r| r.address != addr.to_string()),
+            "precondition: the declared address must be missing from the derived index"
+        );
+    }
+
+    // A UTXO at the declared-but-unmapped address must abort the flush.
+    let err = {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        core_state::apply(
+            &tx,
+            &w,
+            &CoreChangeSet {
+                new_utxos: vec![utxo_at(&addr, 0, 555_000)],
+                ..Default::default()
+            },
+        )
+        .expect_err("a pool-declared address missing from the derived index must be fatal")
+    };
+
+    match &err {
+        WalletStorageError::DerivedIndexInvariantViolated { address } => {
+            assert_eq!(
+                *address,
+                addr.to_string(),
+                "the violation must name the declared address"
+            );
+        }
+        other => panic!("expected DerivedIndexInvariantViolated, got {other:?}"),
+    }
+    assert!(
+        !err.is_transient(),
+        "an invariant violation is a logic regression, never a retryable failure"
+    );
+    assert_eq!(
+        err.persistence_kind(),
+        PersistenceErrorKind::Fatal,
+        "the invariant violation must classify Fatal at the trait boundary"
+    );
+}
+
+/// The guard does not over-fire: a UTXO at a genuinely-undeclared address
+/// (in NO pool, never derived) is still SKIPPED quietly — no error escapes,
+/// and the rest of the batch persists. Guards against the invariant guard
+/// firing on a benign SPV gap-limit miss.
+#[test]
+fn undeclared_unspent_utxo_at_apply_level_is_skipped_not_fatal() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xE1);
+    ensure_wallet_meta(&persister, &w);
+
+    // Register a pool so `account_address_pools` is NON-empty (the guard
+    // must decode it, find the address absent, and still skip).
+    let (snapshots, good) = wallet_with_pools(0x88);
+    let good_addr = good.address.clone();
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: snapshots,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    // An address in NO pool and never derived.
+    let undeclared = addr_from(0x9A);
+    assert_ne!(undeclared, good_addr, "fixture sanity");
+
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let tx = conn.transaction().unwrap();
+        core_state::apply(
+            &tx,
+            &w,
+            &CoreChangeSet {
+                new_utxos: vec![
+                    utxo_at(&good_addr, 0, 100_000),
+                    utxo_at(&undeclared, 9, 200_000),
+                ],
+                ..Default::default()
+            },
+        )
+        .expect("a genuinely-undeclared address must be skipped, not fatal");
+        tx.commit().unwrap();
+    }
+
+    let conn = persister.lock_conn_for_test();
+    let by_account = core_state::list_unspent_utxos(&conn, &w).unwrap();
+    let all: Vec<_> = by_account.values().flatten().collect();
+    assert_eq!(
+        all.len(),
+        1,
+        "the declared-address UTXO commits; the undeclared one is skipped"
+    );
+    assert!(
+        all.iter().all(|r| r.value == 100_000),
+        "the committed UTXO is the one at the declared pool address"
+    );
+}
