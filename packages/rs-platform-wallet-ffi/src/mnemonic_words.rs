@@ -74,14 +74,6 @@ fn word_in_any_list(w: &str) -> bool {
         .any(|&l| key_wallet::Mnemonic::is_word_in_language(w, l))
 }
 
-/// Exact wordlist membership for a specific `language` — wraps key-wallet's
-/// `is_word_in_language`. Replaces the old English-hardcoded `word_in_english`:
-/// which language counts as "local" is the app's call, so it is a parameter
-/// now (review feedback on the former `wordIsLocal` FFI export).
-fn word_in_language(w: &str, language: L) -> bool {
-    key_wallet::Mnemonic::is_word_in_language(w, language)
-}
-
 /// Map a BCP-47-ish language code to a key-wallet `Language`. Covers all 10
 /// key-wallet wordlists; `None` for an unrecognized code (the FFI entry point
 /// then reports the word as not-in-language).
@@ -99,13 +91,6 @@ fn language_from_code(code: &str) -> Option<L> {
         "zh-hant" | "zh-tw" | "chinesetraditional" => Some(L::ChineseTraditional),
         _ => None,
     }
-}
-
-/// `normalizePhrase:` (m:387-408) — NFKD + lowercase + whitespace-collapse.
-/// Delegates to key-wallet's lenient input normalization (byte-identical to
-/// the prior in-crate impl).
-fn normalize_phrase_impl(input: &str) -> String {
-    key_wallet::Mnemonic::normalize_phrase(input)
 }
 
 /// `phraseIsValid:` (m:284-298) — true if the (already-normalized) phrase
@@ -149,7 +134,7 @@ fn cleanup_phrase_impl(phrase: &str) -> String {
 
     // (5) normalize + validity check; if valid, return the cleaned (pre-
     //     normalize) string verbatim — DashSync `return s;`
-    let normalized = normalize_phrase_impl(&s);
+    let normalized = key_wallet::Mnemonic::normalize_phrase(&s);
     if phrase_is_valid_impl(&normalized) {
         return s;
     }
@@ -254,7 +239,7 @@ pub unsafe extern "C" fn platform_wallet_mnemonic_word_is_in_language(
         Err(_) => return false,
     };
     match language_from_code(code) {
-        Some(lang) => word_in_language(w, lang),
+        Some(lang) => key_wallet::Mnemonic::is_word_in_language(w, lang),
         None => false,
     }
 }
@@ -276,7 +261,7 @@ pub unsafe extern "C" fn platform_wallet_mnemonic_normalize_phrase(
     *out_string = std::ptr::null_mut();
 
     let p = unwrap_result_or_return!(CStr::from_ptr(phrase).to_str());
-    let normalized = normalize_phrase_impl(p);
+    let normalized = key_wallet::Mnemonic::normalize_phrase(p);
     let c = unwrap_result_or_return!(CString::new(normalized));
     *out_string = c.into_raw();
     PlatformWalletFFIResult::ok()
@@ -324,10 +309,13 @@ mod tests {
             .to_string()
     }
 
-    /// Test convenience: English-wordlist membership. Production code uses the
-    /// language-parameterized `word_in_language` — "local" is the app's choice.
+    /// Test conveniences. The production facade now calls key-wallet directly
+    /// (no pass-through wrappers); these keep the existing test bodies readable.
+    fn normalize_phrase_impl(input: &str) -> String {
+        key_wallet::Mnemonic::normalize_phrase(input)
+    }
     fn word_in_english(w: &str) -> bool {
-        word_in_language(w, L::English)
+        key_wallet::Mnemonic::is_word_in_language(w, L::English)
     }
 
     const EN_ZERO: &str =
@@ -352,11 +340,17 @@ mod tests {
     #[test]
     fn word_in_language_is_language_specific() {
         // Membership is per-language, not a global union.
-        assert!(word_in_language("abandon", L::English));
-        assert!(!word_in_language("abandon", L::Japanese));
+        assert!(key_wallet::Mnemonic::is_word_in_language(
+            "abandon",
+            L::English
+        ));
+        assert!(!key_wallet::Mnemonic::is_word_in_language(
+            "abandon",
+            L::Japanese
+        ));
         let ja = first_word(L::Japanese);
-        assert!(word_in_language(&ja, L::Japanese));
-        assert!(!word_in_language(&ja, L::English));
+        assert!(key_wallet::Mnemonic::is_word_in_language(&ja, L::Japanese));
+        assert!(!key_wallet::Mnemonic::is_word_in_language(&ja, L::English));
         // Code mapping: recognized codes resolve (case-insensitive); else None.
         assert!(matches!(language_from_code("EN"), Some(L::English)));
         assert!(matches!(
