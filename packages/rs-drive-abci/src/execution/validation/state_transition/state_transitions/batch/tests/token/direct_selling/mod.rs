@@ -980,4 +980,88 @@ mod token_selling_tests {
             .expect("expected to fetch token balance");
         assert_eq!(token_balance, None);
     }
+
+    /// Companion to the empty-`SetPrices` regression test: a NON-empty tiered
+    /// schedule whose smallest tier is above the requested amount must be
+    /// rejected as below the minimum sale amount (the `Some` arm of the same
+    /// no-matching-tier branch), not panic.
+    #[tokio::test]
+    async fn test_direct_purchase_below_minimum_sale_amount() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(12345);
+        let (seller, seller_signer, seller_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
+        let (buyer, buyer_signer, buyer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(10.0));
+
+        // Tiered schedule whose smallest tier requires at least 100 tokens.
+        let tiered = TokenPricingSchedule::SetPrices(BTreeMap::from([
+            (100, dash_to_credits!(10)),
+            (500, dash_to_credits!(5)),
+        ]));
+
+        let mut identity_contract_nonce: u64 = 2;
+        let (contract, token_id) = create_token_with_pricing(
+            platform_version,
+            &mut platform,
+            &seller,
+            &seller_signer,
+            &seller_key,
+            Some(tiered),
+            &mut identity_contract_nonce,
+        )
+        .await;
+
+        // Buyer asks for 3 tokens — below the smallest (100-token) tier, so
+        // `range(..=3).next_back()` is `None` and the smallest defined tier (100)
+        // is reported as the minimum sale amount.
+        let platform_state = platform.state.load();
+        let purchase_transition = BatchTransition::new_token_direct_purchase_transition(
+            token_id,
+            buyer.id(),
+            contract.id(),
+            0,
+            3,
+            dash_to_credits!(3),
+            &buyer_key,
+            2,
+            0,
+            &buyer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let processing_result = process_test_state_transition(
+            &mut platform,
+            purchase_transition,
+            &platform_state,
+            platform_version,
+        );
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenAmountUnderMinimumSaleAmount(_)),
+                ..
+            }]
+        );
+
+        let token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                buyer.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+        assert_eq!(token_balance, None);
+    }
 }
