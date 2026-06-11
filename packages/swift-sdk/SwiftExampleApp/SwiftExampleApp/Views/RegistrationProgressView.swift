@@ -7,11 +7,10 @@ import SwiftDashSDK
 /// render cleanly. For the standalone navigation destination see
 /// `RegistrationProgressView` below.
 ///
-/// The step list + step derivation depend on
-/// `controller.fundingMode`:
+/// Renders one of two step sets keyed off `controller.fundingKind`:
 ///
-/// `.assetLock` — 5 steps, driven by the live `PersistentAssetLock`
-/// row plus elapsed-time heuristics:
+/// Asset-lock funding (5 steps, `statusRaw`-driven from the live
+/// `PersistentAssetLock` row):
 ///
 ///   1. Building asset-lock tx        → activeLock `statusRaw == 0`
 ///   2. Broadcasting                  → activeLock `statusRaw == 1` and
@@ -29,28 +28,20 @@ import SwiftDashSDK
 ///   5. Registering identity          → activeLock `statusRaw == 2 or 3`
 ///                                      AND controller still `.inFlight`
 ///
-/// `.shieldedPool` — 4 steps, Type-20 IdentityCreateFromShieldedPool.
-/// There is NO asset-lock row and no per-stage signal from Rust (one
-/// opaque async FFI call), so the active step is derived from `phase`
-/// plus elapsed time since `lastSubmittedAt` (see
-/// `shieldedCurrentStep`):
+/// Shielded-pool funding (4 steps, phase + elapsed-time driven — there
+/// is no asset lock and no per-stage signal from Rust during the opaque
+/// FFI call; see `shieldedCurrentStep`):
 ///
-///   1. Selecting shielded notes      → `.idle`/`.preparingKeys`, or
-///                                      `.inFlight` < `shieldedSelectWindow`
-///   2. Building shielded proof       → `.inFlight` up to
-///                                      `shieldedProofWindow` (the Halo 2
-///                                      spend proof, ~30 s)
-///   3. Broadcasting state transition → `.inFlight` up to
-///                                      `shieldedBroadcastWindow`
-///   4. Registering identity          → `.inFlight` afterwards
+///   1. Selecting shielded notes  2. Generating Halo 2 proof
+///   3. Broadcasting transition   4. Registering identity
 ///
-/// In both modes `.completed` is the *terminal* state and is not a
-/// separate step; `RegistrationProgressView` renders the "Identity
-/// created" banner + "View Identity" navigation below this section in
-/// its own terminalSection. `.failed` marks the heuristically-current
-/// step with the error icon + message. The `.skipped` (faded
-/// checkmark) rendering for steps 3/4 is asset-lock-only — it
-/// communicates which half of the IS/CL proof round was bypassed.
+/// `.completed` is the *terminal* state and is not a separate step;
+/// `RegistrationProgressView` renders the "Identity created" banner
+/// + "View Identity" navigation below this section in its own
+/// terminalSection. `.failed` marks the current step with the error
+/// icon + message. Step 4 is shown as `.skipped` (faded checkmark)
+/// when the IS branch came back fast so the user can see step 4 was
+/// passed through without engaging the CL fallback.
 struct RegistrationProgressSection: View {
     @ObservedObject var controller: IdentityRegistrationController
 
@@ -73,30 +64,6 @@ struct RegistrationProgressSection: View {
     /// active to communicate the shift.
     private static let instantLockTimeout: TimeInterval = 300.0
 
-    // MARK: Shielded-pool display windows
-    //
-    // `.shieldedPool` mode has no progress signal from Rust — the
-    // whole Type-20 flow is one opaque async FFI call. These cutoffs
-    // are pure display heuristics, measured as elapsed seconds since
-    // `controller.lastSubmittedAt`, anchored to the Halo 2 spend
-    // proof's typical ~30 s duration (the dominant cost). Same spirit
-    // as `broadcastingWindow` on the asset-lock path: the numbers
-    // exist to make the step list feel honest, not to gate any logic.
-
-    /// Step 1 ("Selecting shielded notes") window. Note selection is
-    /// near-instant; kept brief so step 1 doesn't visually linger.
-    private static let shieldedSelectWindow: TimeInterval = 2.0
-
-    /// End of step 2 ("Building shielded proof"). The Halo 2 spend
-    /// proof typically takes ~30 s; we hold step 2 active until just
-    /// past that so the long pause reads as "building the proof".
-    private static let shieldedProofWindow: TimeInterval = 35.0
-
-    /// End of step 3 ("Broadcasting state transition") — a short
-    /// window after the proof completes before we advance to the
-    /// final "Registering identity" step.
-    private static let shieldedBroadcastWindow: TimeInterval = 38.0
-
     init(controller: IdentityRegistrationController) {
         self.controller = controller
         let walletId = controller.walletId
@@ -110,29 +77,38 @@ struct RegistrationProgressSection: View {
         )
     }
 
+    /// Number of visual steps for the active funding source. The
+    /// asset-lock path has 5 (build → broadcast → IS → CL → register);
+    /// the shielded-pool path has 4 (select notes → Halo 2 proof →
+    /// broadcast → register).
+    private var stepCount: Int {
+        switch controller.fundingKind {
+        case .assetLock: return 5
+        case .shieldedPool: return 4
+        }
+    }
+
     var body: some View {
         // `TimelineView` re-fires the body every 1 s so the
         // elapsed-time heuristic that distinguishes step 2 / 3 / 4
-        // refreshes without an external timer. The lock row's
-        // `updatedAt` is the anchor.
+        // (asset-lock) or step 1 / 2 (shielded) refreshes without an
+        // external timer. The asset-lock anchor is the lock row's
+        // `updatedAt`; the shielded anchor is `controller.lastSubmittedAt`.
         TimelineView(.periodic(from: .now, by: 1.0)) { timeline in
             let now = timeline.date
+            let count = stepCount
             let step = currentStep(now: now)
             let isFailed = isFailed
             let errorMessage = failureMessage
 
-            let stepCount = self.stepCount
-
             Section {
-                ForEach(1...stepCount, id: \.self) { idx in
+                ForEach(1...count, id: \.self) { idx in
                     stepRow(
                         index: idx,
                         title: stepTitle(idx),
                         state: stepState(idx, currentStep: step, isFailed: isFailed)
                     )
-                    // Error text hangs under the last step regardless
-                    // of mode (asset-lock = step 5, shielded = step 4).
-                    if idx == stepCount, let message = errorMessage {
+                    if idx == count, let message = errorMessage {
                         Text(message)
                             .font(.caption)
                             .foregroundColor(.red)
@@ -151,32 +127,17 @@ struct RegistrationProgressSection: View {
 
     // MARK: - Step computation
 
-    /// Number of visual steps for the active funding mode.
-    private var stepCount: Int {
-        switch controller.fundingMode {
-        case .assetLock: return 5
-        case .shieldedPool: return 4
-        }
-    }
-
-    /// Current active step (1-based). On `.completed` we report
-    /// `stepCount + 1` (one past the last visual step) so all rows
-    /// render as `.done`; the terminal "Identity created" banner is
-    /// rendered by the parent `RegistrationProgressView`. Dispatches
-    /// to the per-mode computation.
+    /// 1...5, current active step. On `.completed` we report 6 (one
+    /// past the last visual step) so all rows render as `.done`;
+    /// the terminal "Identity created" banner is rendered by the
+    /// parent `RegistrationProgressView`, not by this section.
+    /// `now` is the time-of-rendering, used to drive the
+    /// Broadcasting → Waiting-IS → Waiting-CL transition within
+    /// `statusRaw == 1`.
     private func currentStep(now: Date) -> Int {
-        switch controller.fundingMode {
-        case .assetLock:
-            return assetLockCurrentStep(now: now)
-        case .shieldedPool:
+        if controller.fundingKind == .shieldedPool {
             return shieldedCurrentStep(now: now)
         }
-    }
-
-    /// `.assetLock` step derivation. `now` is the time-of-rendering,
-    /// used to drive the Broadcasting → Waiting-IS → Waiting-CL
-    /// transition within `statusRaw == 1`.
-    private func assetLockCurrentStep(now: Date) -> Int {
         switch controller.phase {
         case .idle, .preparingKeys:
             return 1
@@ -232,52 +193,6 @@ struct RegistrationProgressSection: View {
         }
     }
 
-    /// `.shieldedPool` step derivation (1...4). No asset-lock row and
-    /// no per-stage signal from Rust, so the active step is a pure
-    /// `phase` + elapsed-time heuristic anchored on `lastSubmittedAt`,
-    /// using the shielded display windows (mirrors the
-    /// `broadcastSubStep` style on the asset-lock path):
-    ///   - `.idle`/`.preparingKeys` → step 1.
-    ///   - `.inFlight`: < `shieldedSelectWindow` → step 1; <
-    ///     `shieldedProofWindow` → step 2 (the ~30 s Halo 2 proof); <
-    ///     `shieldedBroadcastWindow` → step 3; else step 4.
-    ///   - `.completed` → 5 (past the last step; all rows `.done`).
-    ///   - `.failed` → the step we were displaying *at the failure
-    ///     instant*, frozen via `controller.terminalAt`. A failed row
-    ///     lingers until dismissed, so anchoring on live `now` (as
-    ///     `.inFlight` does) would drift the failed icon forward as
-    ///     wall-clock time passed.
-    private func shieldedCurrentStep(now: Date) -> Int {
-        switch controller.phase {
-        case .idle, .preparingKeys:
-            return 1
-        case .completed:
-            // One past the last visual step (4) so every row is `.done`.
-            return 5
-        case .inFlight:
-            // `lastSubmittedAt` is set the instant `submit` flips to
-            // `.inFlight`; treat a missing anchor as "just started".
-            return shieldedStep(elapsedTo: now)
-        case .failed:
-            // Freeze the elapsed-time clock at the failure instant so
-            // the failed icon stays on the step we were showing when it
-            // failed, instead of drifting as `now` keeps advancing.
-            let anchor = controller.terminalAt ?? now
-            return shieldedStep(elapsedTo: anchor)
-        }
-    }
-
-    /// Map elapsed time since `lastSubmittedAt` (up to `anchor`) onto a
-    /// shielded step (1...4) via the display windows. Shared by the
-    /// live `.inFlight` path and the frozen `.failed` path.
-    private func shieldedStep(elapsedTo anchor: Date) -> Int {
-        let elapsed = anchor.timeIntervalSince(controller.lastSubmittedAt ?? anchor)
-        if elapsed < Self.shieldedSelectWindow { return 1 }
-        if elapsed < Self.shieldedProofWindow { return 2 }
-        if elapsed < Self.shieldedBroadcastWindow { return 3 }
-        return 4
-    }
-
     /// Resolve which of steps 2/3/4 is "active" while the lock is
     /// at `statusRaw == 1`. Uses elapsed time since the row's last
     /// update as the anchor: brief broadcasting window first, then
@@ -287,6 +202,47 @@ struct RegistrationProgressSection: View {
         if elapsed < Self.broadcastingWindow { return 2 }
         if elapsed < Self.instantLockTimeout { return 3 }
         return 4
+    }
+
+    /// Visually-brief window (seconds since `lastSubmittedAt`) for the
+    /// shielded "Selecting notes" step before the long Halo 2 proof
+    /// step takes over. Note selection is sub-second on the Rust side;
+    /// this just lets the user see step 1 register before step 2 spins.
+    private static let shieldedNoteSelectionWindow: TimeInterval = 2.0
+
+    /// Step 1...4 for the shielded-pool funding path. There is NO
+    /// per-stage signal from Rust during the opaque
+    /// `platform_wallet_manager_shielded_identity_create_from_pool`
+    /// call (note-select → Halo 2 proof → broadcast → confirm all run
+    /// inside one blocking FFI call), so transitions are driven from
+    /// `controller.phase` plus elapsed time since `lastSubmittedAt`:
+    ///
+    ///   1. Selecting shielded notes  → `.idle` / `.preparingKeys`, or
+    ///      the first `shieldedNoteSelectionWindow` seconds of `.inFlight`.
+    ///   2. Generating Halo 2 proof   → `.inFlight` after that window.
+    ///      Kept active for the rest of the call: broadcast + confirm
+    ///      (steps 3/4) can't be observed separately, so they stay
+    ///      `.pending` rather than flipping to a green check for work
+    ///      that may not have happened yet.
+    ///   On `.completed` return 5 (one past the last step) so all rows
+    ///   render `.done`. On `.failed` mark the step we'd reached.
+    private func shieldedCurrentStep(now: Date) -> Int {
+        switch controller.phase {
+        case .idle, .preparingKeys:
+            return 1
+        case .completed:
+            return 5
+        case .inFlight:
+            guard let submittedAt = controller.lastSubmittedAt else { return 1 }
+            let elapsed = now.timeIntervalSince(submittedAt)
+            return elapsed < Self.shieldedNoteSelectionWindow ? 1 : 2
+        case .failed:
+            // Fail on the proof step unless we never left note
+            // selection (no submit timestamp yet).
+            guard let submittedAt = controller.lastSubmittedAt else { return 1 }
+            let elapsed = now.timeIntervalSince(submittedAt)
+            return elapsed < Self.shieldedNoteSelectionWindow ? 1 : 2
+        }
     }
 
     /// True when step 4 should appear "skipped" rather than
@@ -342,24 +298,22 @@ struct RegistrationProgressSection: View {
     }
 
     private func stepTitle(_ idx: Int) -> String {
-        switch controller.fundingMode {
-        case .assetLock:
-            switch idx {
-            case 1: return "Building asset-lock transaction"
-            case 2: return "Broadcasting"
-            case 3: return "Waiting for InstantSend proof"
-            case 4: return "Waiting for ChainLock proof"
-            case 5: return "Registering identity"
-            default: return ""
-            }
-        case .shieldedPool:
+        if controller.fundingKind == .shieldedPool {
             switch idx {
             case 1: return "Selecting shielded notes"
-            case 2: return "Building shielded proof"
-            case 3: return "Broadcasting state transition"
+            case 2: return "Generating Halo 2 proof"
+            case 3: return "Broadcasting transition"
             case 4: return "Registering identity"
             default: return ""
             }
+        }
+        switch idx {
+        case 1: return "Building asset-lock transaction"
+        case 2: return "Broadcasting"
+        case 3: return "Waiting for InstantSend proof"
+        case 4: return "Waiting for ChainLock proof"
+        case 5: return "Registering identity"
+        default: return ""
         }
     }
 
@@ -384,9 +338,9 @@ struct RegistrationProgressSection: View {
             // symmetric carve-out keeps the icons honest — without
             // it, the CL-success path renders a green "InstantSend
             // proof received ✅" check even though no IS proof was
-            // ever observed. Asset-lock-only: the shielded path has no
-            // skipped steps (every stage is genuinely traversed).
-            if controller.fundingMode == .assetLock {
+            // ever observed. Asset-lock only — the shielded path's
+            // steps 3/4 (broadcast / register) have no IS/CL duality.
+            if controller.fundingKind == .assetLock {
                 if idx == 3 && step3WasSkipped {
                     return .skipped
                 }
@@ -466,24 +420,22 @@ struct RegistrationProgressSection: View {
         if isFailed {
             return "Tap Dismiss in Pending Registrations to clear this entry."
         }
-        switch controller.fundingMode {
-        case .assetLock:
+        if controller.fundingKind == .shieldedPool {
             switch step {
-            case 1: return "Building a Core asset-lock transaction from wallet funds."
-            case 2: return "Sending the asset-lock transaction to peers."
-            case 3: return "Waiting for the InstantSend lock so the asset-lock proof is final."
-            case 4: return "InstantSend timed out; falling back to ChainLock finality (~2 min)."
-            case 5: return "Submitting the IdentityCreate state transition to Platform."
+            case 1: return "Selecting shielded notes to spend from the pool."
+            case 2: return "Generating the Halo 2 proof — this can take ~1–2 minutes."
+            case 3: return "Broadcasting the IdentityCreateFromShieldedPool transition."
+            case 4: return "Registering the proof-verified identity on Platform."
             default: return ""
             }
-        case .shieldedPool:
-            switch step {
-            case 1: return "Selecting notes from the wallet's shielded (Orchard) pool."
-            case 2: return "Building the Halo 2 spend proof — this typically takes ~30 seconds."
-            case 3: return "Submitting the IdentityCreateFromShieldedPool state transition to Platform."
-            case 4: return "Waiting for Platform to confirm the new identity."
-            default: return ""
-            }
+        }
+        switch step {
+        case 1: return "Building a Core asset-lock transaction from wallet funds."
+        case 2: return "Sending the asset-lock transaction to peers."
+        case 3: return "Waiting for the InstantSend lock so the asset-lock proof is final."
+        case 4: return "InstantSend timed out; falling back to ChainLock finality (~2 min)."
+        case 5: return "Submitting the IdentityCreate state transition to Platform."
+        default: return ""
         }
     }
 }
@@ -491,7 +443,8 @@ struct RegistrationProgressSection: View {
 /// Standalone navigation destination for a registration in flight,
 /// completed, or failed. Pushed from `CreateIdentityView` on submit
 /// and from the "Pending Registrations" row on the identities tab.
-/// Renders the 7-step progress, plus the terminal section on
+/// Renders the funding-source-specific progress steps (see
+/// `RegistrationProgressSection`), plus the terminal section on
 /// `.completed` (success banner + "View Identity" navigation) or
 /// `.failed` (inline error). Embedders that already render a
 /// `Form` should use `RegistrationProgressSection` directly.

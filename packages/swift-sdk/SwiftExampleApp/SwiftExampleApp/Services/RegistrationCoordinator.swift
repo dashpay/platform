@@ -87,15 +87,10 @@ final class RegistrationCoordinator: ObservableObject {
     /// returns — so during the lock-broadcast-to-identity-write
     /// window, the same slot was visible in both Pending and
     /// Resumable surfaces and could be double-tapped.
-    /// `fundingMode` only takes effect when a fresh controller is
-    /// created for the slot; when reusing an existing controller its
-    /// already-fixed mode is kept (the mode is a `let` on the
-    /// controller and a slot's funding source doesn't change between
-    /// retries of the same attempt).
     func startRegistration(
         walletId: Data,
         identityIndex: UInt32,
-        fundingMode: IdentityRegistrationController.FundingMode = .assetLock,
+        fundingKind: IdentityRegistrationController.FundingKind = .assetLock,
         body: @escaping () async throws -> Data
     ) -> IdentityRegistrationController {
         let key = SlotKey(walletId: walletId, identityIndex: identityIndex)
@@ -120,7 +115,7 @@ final class RegistrationCoordinator: ObservableObject {
         let controller = IdentityRegistrationController(
             walletId: walletId,
             identityIndex: identityIndex,
-            fundingMode: fundingMode
+            fundingKind: fundingKind
         )
         controllers[key] = controller
         controller.enterPreparingKeys()

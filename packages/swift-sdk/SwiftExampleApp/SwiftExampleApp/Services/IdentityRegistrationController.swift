@@ -13,24 +13,20 @@ import SwiftDashSDK
 /// transitions.
 ///
 /// The progress bar in `RegistrationProgressView` derives its step
-/// from `phase` plus, in `.assetLock` mode, the live
-/// `PersistentAssetLock` row queried via `@Query` filtered by
-/// `(walletId, identityIndex)`. In `.shieldedPool` mode there is no
-/// per-stage signal from Rust (one opaque async FFI call), so the
-/// progress view falls back to a `phase` + elapsed-time heuristic
-/// anchored on `lastSubmittedAt`.
+/// from `phase` plus `fundingKind`: asset-lock funding combines `phase`
+/// with the live `PersistentAssetLock` row (queried via `@Query` on
+/// `(walletId, identityIndex)`, driven by `statusRaw`); shielded-pool
+/// funding has no asset lock and is driven by `phase` + elapsed time
+/// since `lastSubmittedAt` (the Halo 2 proof is the long pole).
 @MainActor
 final class IdentityRegistrationController: ObservableObject {
-    /// How this registration is funded. Decides which step list +
-    /// progress derivation `RegistrationProgressView` renders:
-    ///   - `.assetLock`: Core asset-lock pipeline (5 steps, driven by
-    ///     the live `PersistentAssetLock` row).
-    ///   - `.shieldedPool`: Type-20 IdentityCreateFromShieldedPool (4
-    ///     steps, derived from `phase` + elapsed time — no asset-lock
-    ///     row exists for this path).
-    /// Set once at init and never mutated; a slot's funding mode is
-    /// fixed for the lifetime of the attempt.
-    enum FundingMode {
+    /// How this registration is funded. Drives which step set the
+    /// progress view renders: the asset-lock funding paths (Core /
+    /// Platform-Payment / resume) emit a `PersistentAssetLock` row and
+    /// walk the build → IS/CL → register steps; the shielded-pool path
+    /// (Type-20 IdentityCreateFromShieldedPool) has no asset lock — its
+    /// long pole is the Halo 2 proof — so it needs its own step set.
+    enum FundingKind: Equatable {
         case assetLock
         case shieldedPool
     }
@@ -94,24 +90,16 @@ final class IdentityRegistrationController: ObservableObject {
     let walletId: Data
     let identityIndex: UInt32
 
-    /// Funding mode for this slot. Fixed at init; the progress view
-    /// branches on it to pick the asset-lock vs shielded-pool step list.
-    let fundingMode: FundingMode
+    /// Funding source for this registration. Read by
+    /// `RegistrationProgressSection` to pick the asset-lock vs shielded
+    /// step set. Defaults to `.assetLock` so existing call sites are
+    /// unchanged.
+    let fundingKind: FundingKind
 
     /// Timestamp of the most recent `submit` call. Used by the
     /// coordinator's TTL-based retention policy (`.completed` rows
     /// purge ~30s after the success transition).
     private(set) var lastSubmittedAt: Date?
-
-    /// Timestamp at which `phase` first reached a terminal state
-    /// (`.completed` / `.failed`). Freezes the elapsed-time display
-    /// anchor for the `.shieldedPool` progress heuristic: a `.failed`
-    /// row is retained until the user dismisses it, so without this
-    /// frozen anchor the heuristic's live `now` would keep advancing
-    /// and drift the failed-step icon forward as wall-clock time
-    /// passes. Reset to `nil` when a retry starts so a re-submitted
-    /// slot doesn't reuse a stale anchor.
-    private(set) var terminalAt: Date?
 
     /// Active registration task. Holds a reference so the
     /// coordinator's stash retains the work until completion;
@@ -123,11 +111,11 @@ final class IdentityRegistrationController: ObservableObject {
     init(
         walletId: Data,
         identityIndex: UInt32,
-        fundingMode: FundingMode = .assetLock
+        fundingKind: FundingKind = .assetLock
     ) {
         self.walletId = walletId
         self.identityIndex = identityIndex
-        self.fundingMode = fundingMode
+        self.fundingKind = fundingKind
     }
 
     /// Transition to `.preparingKeys`. Called by the caller before
@@ -162,19 +150,14 @@ final class IdentityRegistrationController: ObservableObject {
         }
         phase = .inFlight
         lastSubmittedAt = Date()
-        // Clear any frozen anchor from a prior failed attempt so this
-        // retry's shielded heuristic re-measures from `lastSubmittedAt`.
-        terminalAt = nil
         task = Task { [weak self] in
             do {
                 let identityId = try await body()
                 await MainActor.run {
-                    self?.terminalAt = Date()
                     self?.phase = .completed(identityId: identityId)
                 }
             } catch {
                 await MainActor.run {
-                    self?.terminalAt = Date()
                     self?.phase = .failed(error.localizedDescription)
                 }
             }

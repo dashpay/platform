@@ -497,6 +497,124 @@ fn failure_path_charge_executes_through_execute_event() {
     );
 }
 
+/// BLOCKING regression for the 2026-06-10 devnet paloma chain halt (height 788): CheckTx fee
+/// estimation must NEVER mutate committed GroveDB state.
+///
+/// `check_tx_v0` estimates fees via `validate_fees_of_event(event, last_block_info,
+/// transaction: None, ...)` -> `apply_drive_operations(ops, apply: false, ..., transaction: None)`.
+/// Pre-#3823, the `ShieldedPoolOperationType::InsertNullifiers` low-level converter arm eagerly
+/// called `drive.store_nullifiers_for_block(...)` — a direct write — with whatever
+/// `TransactionArg` it was handed, on the assumption it always ran under the block transaction.
+/// During CheckTx that argument is `None`, so the eager write committed DIRECTLY to disk on every
+/// node that validated the gossiped type-20 transition; the on-disk root diverged from the signed
+/// app hash and every proposer panicked ("drive and platform state app hash mismatch" in
+/// `prepare_proposal.rs`) — and restarts panic forever in `info.rs` because the write is durable.
+/// #3823 made the converter pure; this test pins the invariant for the exact event/op shape that
+/// halted paloma. No Halo 2 proving is needed — the event is built from a synthetic action.
+#[test]
+fn check_tx_fee_estimation_does_not_mutate_committed_state() {
+    use crate::execution::types::execution_event::ExecutionEvent;
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
+    use crate::test::helpers::state_mutation_guard::assert_committed_root_hash_unchanged;
+    use dpp::block::epoch::Epoch;
+    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+    use drive::util::batch::drive_op_batch::ShieldedPoolOperationType;
+    use drive::util::batch::DriveOperation;
+
+    let platform_version = PlatformVersion::latest();
+    let platform = setup_platform();
+
+    set_pool_total_balance(&platform, DENOMINATION * 10);
+    insert_anchor_into_state(&platform, &ANCHOR);
+    let min_notes = platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants
+        .minimum_pool_notes_for_outgoing;
+    insert_dummy_encrypted_notes(&platform, min_notes.max(1));
+
+    // Unlike the validate_state tests above, fee estimation CONVERTS the `AddNewIdentity` op,
+    // which parses the key bytes — so the key must be a real secp256k1 point, not dummy zeros.
+    let (valid_master_key, _) =
+        IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(11), platform_version)
+            .expect("expected a valid master key");
+    let key_in_creation = IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+        id: 0,
+        key_type: valid_master_key.key_type(),
+        purpose: valid_master_key.purpose(),
+        security_level: valid_master_key.security_level(),
+        contract_bounds: None,
+        read_only: false,
+        data: valid_master_key.data().clone(),
+        signature: BinaryData::default(),
+    });
+
+    let st = transition(vec![key_in_creation], vec![action(40), action(41)]);
+    let mut execution_context =
+        StateTransitionExecutionContext::default_for_platform_version(platform_version)
+            .expect("execution context");
+    let success_action =
+        build_success_action(&platform, &st, &mut execution_context, platform_version);
+
+    let event = ExecutionEvent::create_from_state_transition_action(
+        StateTransitionAction::IdentityCreateFromShieldedPoolAction(success_action),
+        None,
+        &Epoch::new(0).unwrap(),
+        execution_context,
+        platform_version,
+    )
+    .expect("create execution event");
+
+    // The event must carry ALL the shielded converter ops that ran on paloma — InsertNullifiers
+    // (the arm that held the eager write), InsertNote and UpdateTotalBalance — so estimation
+    // exercises every arm of the shielded low-level converter.
+    let ExecutionEvent::PaidFromShieldedPoolToNewIdentity { operations, .. } = &event else {
+        panic!("expected a PaidFromShieldedPoolToNewIdentity execution event");
+    };
+    let has_op = |pred: fn(&ShieldedPoolOperationType) -> bool| {
+        operations.iter().any(|op| match op {
+            DriveOperation::ShieldedPoolOperation(shielded_op) => pred(shielded_op),
+            _ => false,
+        })
+    };
+    assert!(
+        has_op(|op| matches!(op, ShieldedPoolOperationType::InsertNullifiers { .. })),
+        "event must carry InsertNullifiers (the arm that eagerly wrote pre-#3823)"
+    );
+    assert!(
+        has_op(|op| matches!(op, ShieldedPoolOperationType::InsertNote { .. })),
+        "event must carry InsertNote"
+    );
+    assert!(
+        has_op(|op| matches!(op, ShieldedPoolOperationType::UpdateTotalBalance { .. })),
+        "event must carry UpdateTotalBalance"
+    );
+
+    // Run the EXACT CheckTx estimation call (transaction = None, apply = false) and assert the
+    // committed root hash is byte-identical: a single eager write in any converter arm trips this.
+    let platform_state = platform.state.load();
+    let fee_versions = CachedEpochIndexFeeVersions::new();
+    let fee_result = assert_committed_root_hash_unchanged(
+        &platform.drive,
+        platform_version,
+        "validate_fees_of_event (type-20 pool->new-identity, CheckTx estimation mode)",
+        || {
+            platform.platform.validate_fees_of_event(
+                &event,
+                platform_state.last_block_info(),
+                None,
+                platform_version,
+                &fee_versions,
+            )
+        },
+    )
+    .expect("fee estimation must not error");
+    assert!(
+        fee_result.data.is_some(),
+        "estimation must produce a fee result"
+    );
+}
+
 /// Sum-tree credit-conservation regression for the pool->new-identity exit.
 ///
 /// Applies the converter's high-level drive operations through a REAL Drive and asserts the
