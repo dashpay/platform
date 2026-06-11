@@ -756,13 +756,14 @@ mod tests {
     use assert_matches::assert_matches;
     use platform_value::platform_value;
 
-    mod nested_property_position_does_not_panic {
+    mod nested_property_position_handling {
         use super::*;
         use platform_value::Value;
 
         /// Builds `outer(object) -> { inner_a(string, position = <pos>), inner_b(string,
-        /// position = 1) }`. Two nested sub-properties are required so the property sort would
-        /// run, and the poison `position` lives on a *nested* property.
+        /// position = 1) }`. Two nested sub-properties are required so the (now-removed) property
+        /// sort would have invoked its comparator, with the candidate `position` on a *nested*
+        /// property.
         fn schema_with_nested_position(inner_a_position: Value) -> Value {
             let string_prop = |position: Value| {
                 Value::Map(vec![
@@ -818,25 +819,57 @@ mod tests {
             )
         }
 
-        /// A nested property `position` that is a zero-fraction float (`0.0`) is accepted by the
-        /// document meta-schema but rejected by `get_integer::<u64>()`. Parsing such a schema in
-        /// block-execution mode (`full_validation = true`) used to panic in the nested-property
-        /// sort and halt the node. It must now parse without panicking.
+        /// A nested-property `position` that is a zero-fraction float (`0.0`) is a valid integer
+        /// per the document meta-schema (JSON-Schema "integer" admits `0.0`); nested positions are
+        /// not otherwise consensus-relevant, so it parses in both modes. Previously the property
+        /// sort's `.expect()` panicked on it — the pinned contract is now: parse, never panic.
         #[test]
-        fn nested_float_position_does_not_panic_full_validation() {
-            // Must not panic (before the fix this aborted via `.expect()`).
-            let _ = parse(schema_with_nested_position(Value::Float(0.0)), true);
+        fn nested_float_position_parses_in_both_modes() {
+            assert_matches!(
+                parse(schema_with_nested_position(Value::Float(0.0)), true),
+                Ok(_)
+            );
+            assert_matches!(
+                parse(schema_with_nested_position(Value::Float(0.0)), false),
+                Ok(_)
+            );
         }
 
-        /// On the `check_tx` path (`full_validation = false`) the meta-schema is skipped, so a
-        /// wider set of malformed nested positions reached the same panic. None may panic now.
+        /// On the `check_tx` path (`full_validation = false`) the meta-schema is skipped and nested
+        /// positions are not read, so malformed nested positions are admitted to the mempool (they
+        /// are caught under full validation — see below). Pinned contract: parse, never panic.
         #[test]
-        fn malformed_nested_positions_do_not_panic_check_tx() {
-            let _ = parse(schema_with_nested_position(Value::Float(0.0)), false);
-            let _ = parse(schema_with_nested_position(Value::I64(-1)), false);
-            let _ = parse(
-                schema_with_nested_position(Value::U128(u64::MAX as u128 + 1)),
-                false,
+        fn malformed_nested_positions_admitted_in_check_tx() {
+            assert_matches!(
+                parse(schema_with_nested_position(Value::I64(-1)), false),
+                Ok(_)
+            );
+            assert_matches!(
+                parse(
+                    schema_with_nested_position(Value::U128(u64::MAX as u128 + 1)),
+                    false
+                ),
+                Ok(_)
+            );
+        }
+
+        /// Under full validation (block execution) the meta-schema rejects out-of-range nested
+        /// positions with a clean consensus error — never a panic. This pins the rejection path
+        /// the old `.expect()` short-circuited.
+        #[test]
+        fn out_of_range_nested_positions_rejected_under_full_validation() {
+            // Negative position -> meta-schema `minimum: 0`.
+            assert_matches!(
+                parse(schema_with_nested_position(Value::I64(-1)), true),
+                Err(ProtocolError::ConsensusError(_))
+            );
+            // Position > u64::MAX -> integer-out-of-bounds during meta-schema value conversion.
+            assert_matches!(
+                parse(
+                    schema_with_nested_position(Value::U128(u64::MAX as u128 + 1)),
+                    true
+                ),
+                Err(ProtocolError::ConsensusError(_))
             );
         }
 

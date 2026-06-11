@@ -205,10 +205,14 @@ fn insert_values_nested(
                             ))?;
 
                     // Nested properties are emitted below in source-map order (the
-                    // `properties.iter()` loop). A previous `position`-based `sort_by` here was
-                    // dead code — its sorted result was never read — and it read `position` with
-                    // `.expect()`, which could panic on adversarial schema input during block
-                    // execution. Removed (ordering unchanged); do not reintroduce a panicking
+                    // `properties.iter()` loop), and that `IndexMap` insertion order is
+                    // consensus-observable: historical contracts were committed in source-map
+                    // order, so re-sorting nested properties by `position` would soft-fork any
+                    // contract whose source order differs from its position order. A previous
+                    // `position`-based `sort_by` here was dead code (its sorted result was never
+                    // read) and read `position` with `.expect()`, which could panic on adversarial
+                    // schema input during block execution. Removed (ordering unchanged). Do NOT
+                    // reintroduce a nested-property sort — even a correct one — nor a panicking
                     // `position` read here.
 
                     // Create a new set with the prefix removed from the keys
