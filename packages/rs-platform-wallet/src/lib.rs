@@ -18,7 +18,6 @@ pub mod changeset;
 pub mod error;
 pub mod events;
 pub mod manager;
-pub mod mnemonic;
 pub mod spv;
 pub mod wallet;
 

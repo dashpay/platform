@@ -150,25 +150,25 @@ public class Mnemonic {
         return count
     }
 
-    // MARK: - Recover-flow word helpers (DashSync DSBIP39Mnemonic parity)
+    // MARK: - Recover-flow word/phrase helpers (DashSync DSBIP39Mnemonic parity)
 
-    /// `true` if `word` is a BIP-39 word in any bundled language
-    /// (DashSync `wordIsValid:`). Exact wordlist membership — callers
-    /// normalize first via `normalizePhrase` / `cleanupPhrase`.
-    public static func wordIsValid(_ word: String) -> Bool {
-        word.withCString { platform_wallet_mnemonic_word_is_valid($0) }
-    }
-
-    /// `true` if `word` is a BIP-39 word in `language` (exact wordlist
-    /// membership; callers normalize first). Wraps key-wallet's
-    /// `is_word_in_language`. Which language is "local" is the caller's choice —
-    /// the SDK no longer hardcodes English (replaces the former `wordIsLocal`).
-    public static func wordIsInLanguage(_ word: String, language: MnemonicLanguage) -> Bool {
-        word.withCString { wordPtr in
-            language.code.withCString { langPtr in
-                platform_wallet_mnemonic_word_is_in_language(wordPtr, langPtr)
-            }
+    /// Raw BIP-39 wordlist (2048 words) for `language` — the low-level
+    /// primitive the recover flow composes its word-validity checks from. The
+    /// any-language "valid" union and the per-language "local" check now live
+    /// in the app, not the SDK (callers build `Set`s from these lists). Returns
+    /// `[]` only on the UTF-8/allocation error paths that never occur for a
+    /// real wordlist.
+    public static func wordList(language: MnemonicLanguage) -> [String] {
+        var outPtr: UnsafeMutablePointer<CChar>? = nil
+        do {
+            try platform_wallet_mnemonic_word_list(language.ffiMnemonicValue, &outPtr).check()
+        } catch {
+            return []
         }
+        guard let cStr = outPtr else { return [] }
+        let joined = String(cString: cStr)
+        platform_wallet_free_string(cStr)
+        return joined.split(separator: "\n").map(String.init)
     }
 
     /// NFKD + lowercase + whitespace-collapse (DashSync `normalizePhrase:`).
