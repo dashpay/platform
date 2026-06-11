@@ -14,20 +14,23 @@
 //! the largest unused run only 12 and no unused run >= 30 anywhere (see
 //! the gap table the test prints). Gap size is not the problem.
 //!
-//! The defect is in dash-spv historical discovery: the compact-filter
-//! rescan is **forward-only within the active batch window**
-//! (~`MAX_LOOKAHEAD_BATCHES` (3) × `BATCH_PROCESSING_SIZE` (5000) ≈
-//! 15 000 blocks). Addresses derived mid-scan to maintain the gap window
-//! (`maintain_gap_limit`) are only re-matched against batches still in
-//! the live window; already-committed batches are evicted and never
-//! revisited. So discovery has a dependency on the *index* axis — to
-//! learn index `N + gap` you must first match the block that used index
-//! `N` — while the rescan progresses on the *height/batch* axis. Those
-//! axes are orthogonal. CoinJoin first-use blocks are scattered across
-//! years of history, so as soon as the block that first uses the next
-//! index falls outside the live window, discovery snaps shut. Wallet A
-//! advances exactly one gap step (highest_used=59, highest_generated=89)
-//! and then stalls, missing 1578 of 1638 used CoinJoin indices.
+//! The defect is in dash-spv historical discovery: compact-filter
+//! matching is **block-atomic and forward-only**. A block is matched
+//! once against the bloom filter active when it is scanned; the gap
+//! window only extends AFTER the block is processed, and the
+//! newly-derived addresses (`maintain_gap_limit`) are checked only
+//! against LATER blocks — the just-committed block is never re-matched
+//! against them. The ground-truth `h(i)` data shows CoinJoin funding is
+//! densely packed: block 1415403 first-uses indices 0..=51 (52 in one
+//! block), block 1415404 uses 52..=139, etc. So a wallet watching 0..30
+//! matches only 0..29 in block 1415403, extends to watch 0..59, then in
+//! block 1415404 matches 52..59 — landing at highest_used = **59**,
+//! exactly the empirical stall. Indices 30..51 (used only in the
+//! already-committed block 1415403) are never recovered. The
+//! [`found_coinjoin_gap_limit_sync_height_analysis`] test's block-atomic
+//! simulation reproduces this 59 from the live data. The defeat is
+//! intra-block index density + zero backward re-scan, NOT an index gap
+//! and NOT the gap limit.
 //!
 //! ## What this proves
 //!
@@ -58,10 +61,12 @@
 //!
 //! ## Non-determinism of the delta
 //!
-//! The observed delta varies run to run (447M / 739M / 2022M duffs seen)
-//! because Wallet A's outcome depends on a race between gap-limit
-//! derivation latency and batch commit/eviction — a derived address can
-//! win or lose against the eviction of its using-block's batch. The test
+//! Wallet A's CoinJoin stall is deterministic (highest_used = 59 every
+//! run — block-atomic discovery has no race there). The reported delta
+//! still varies run to run (447M / 739M / 2022M duffs seen) because of
+//! the BIP-44 side and the cap-overshoot tail: chainlock promotion runs
+//! a little past the filter cap during teardown, so each run captures a
+//! slightly different set of recent CoinJoin/BIP-44 txs. The test
 //! therefore asserts only the qualitative `balance_B > balance_A`, never
 //! an exact amount.
 //!
@@ -125,6 +130,22 @@ const SYNC_CUTOFF_HEIGHT: u32 = 1_491_827;
 /// up to index 1727, so 200 only widens the window. Watching the full
 /// used range (~2500) before sync would be the reliable workaround.
 const WIDE_DERIVATION: u32 = 200;
+
+/// CoinJoin External pre-derivation depth for the height-analysis test.
+/// Past the highest-used index (~1799 once the cap-overshoot tail is
+/// counted) so EVERY used index is watched from genesis and none can be
+/// missed regardless of block ordering — the ground-truth completeness
+/// condition.
+const COINJOIN_GROUND_TRUTH_DEPTH: u32 = 2500;
+
+/// Backward re-scan depth (in blocks) the windowed simulation grants a
+/// freshly-watched address against already-committed blocks. The real
+/// dash-spv historical scan does **zero** backward re-scan once a block
+/// is committed — empirically validated: `0` reproduces the observed
+/// stall at index 59, whereas any value `>= 1` would recover the full
+/// pre-cutoff range. Kept as a named constant so the model's defining
+/// assumption is explicit.
+const SPV_BACKWARD_RESCAN_BLOCKS: u32 = 0;
 
 /// Cold genesis-scan budget. The harness's own SPV cold-cache floor is
 /// 600 s; this gives headroom over that for the capped historical walk.
@@ -655,5 +676,496 @@ fn seed_p2p_peers(config: &mut ClientConfig, address_list: &AddressList, port: u
                 config.add_peer(SocketAddr::new(ip, port));
             }
         }
+    }
+}
+
+/// Ground-truth index↔height analysis for the CoinJoin External
+/// keychain. Syncs a wallet that watches every used index from genesis,
+/// extracts `h(i)` = first funding block height per used index, then runs
+/// the inversion analysis and two discovery simulations over that data.
+///
+/// `#[ignore]` because it is a heavyweight (~8 min) diagnostic, not a
+/// pass/fail gate; run it explicitly with `--ignored`. The pure
+/// simulation logic is covered by unit tests below without any sync.
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "heavyweight diagnostic: cold testnet sync + full index/height analysis; run with --ignored"]
+async fn found_coinjoin_gap_limit_sync_height_analysis() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,platform_wallet=info".into()),
+        )
+        .with_test_writer()
+        .try_init();
+
+    let network = Network::Testnet;
+    let sdk = build_testnet_sdk(network);
+    let manager = Arc::new(PlatformWalletManager::new(
+        Arc::clone(&sdk),
+        Arc::new(NoopPersister),
+        vec![Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>],
+    ));
+
+    let mnemonic: Mnemonic = TEST_MNEMONIC.parse().expect("valid BIP-39 mnemonic");
+    let seed = mnemonic.to_seed("");
+    let mut coinjoin = std::collections::BTreeSet::new();
+    coinjoin.insert(0u32);
+    let mut bip44 = std::collections::BTreeSet::new();
+    bip44.insert(0u32);
+    let wallet = manager
+        .create_wallet_from_seed_bytes(
+            network,
+            seed,
+            WalletAccountCreationOptions::AllAccounts(
+                bip44,
+                Default::default(),
+                coinjoin,
+                Default::default(),
+                Default::default(),
+            ),
+            Some(0),
+        )
+        .await
+        .expect("create ground-truth wallet");
+
+    // Deep CoinJoin pre-derivation past highest-used so nothing is missed.
+    pre_derive_wide(&wallet, COINJOIN_GROUND_TRUTH_DEPTH).await;
+    sync_capped(&manager, network, &sdk, "GT").await;
+
+    // h(i): first funding height per used CoinJoin External index.
+    let mut by_index = coinjoin_external_first_funding_heights(&wallet).await;
+    by_index.sort_unstable_by_key(|(i, _)| *i);
+
+    let highest_used = by_index.last().map(|(i, _)| *i).unwrap_or(0);
+    println!("\n=== CoinJoin External index↔height ground truth ===");
+    println!(
+        "used indices discovered: {}, highest_used index: {highest_used}",
+        by_index.len()
+    );
+    assert!(
+        highest_used >= 1727,
+        "ground-truth wallet only reached index {highest_used} (< 1727); \
+         increase COINJOIN_GROUND_TRUTH_DEPTH and re-run"
+    );
+
+    println!("\n--- (index, first_funding_height) sorted by INDEX ---");
+    for (i, h) in &by_index {
+        println!("  i={i:>5}  h={h}");
+    }
+
+    let mut by_height = by_index.clone();
+    by_height.sort_by_key(|(i, h)| (*h, *i));
+    println!("\n--- (index, first_funding_height) sorted by HEIGHT ---");
+    for (i, h) in &by_height {
+        println!("  h={h}  i={i}");
+    }
+
+    // Inversion analysis: walk ascending height; flag every tx whose
+    // index exceeds the running discovery ceiling (gap-30 follow).
+    println!("\n=== INVERSION analysis (ascending height, ceiling = highest_used+1+30) ===");
+    let inversions = inversions(&by_index, DEFAULT_COINJOIN_GAP_LIMIT);
+    if inversions.is_empty() {
+        println!("  none — no index ever outran the gap-30 ceiling.");
+    } else {
+        for inv in &inversions {
+            println!(
+                "  height {} funded index {}, but ceiling was only {} (gap {})",
+                inv.height, inv.index, inv.ceiling, inv.gap
+            );
+        }
+        let first = &inversions[0];
+        println!(
+            "  ⇒ FIRST inversion (predicted stall): index {} at height {} vs ceiling {}",
+            first.index, first.height, first.ceiling
+        );
+    }
+
+    // Sim WINDOWED: block-atomic forward scan with the real system's
+    // zero backward re-scan. Should reproduce the empirical stall at 59.
+    let windowed = sim_windowed(
+        &by_index,
+        DEFAULT_COINJOIN_GAP_LIMIT,
+        SPV_BACKWARD_RESCAN_BLOCKS,
+    );
+    println!("\n=== SIM WINDOWED (block-atomic, models the real forward-only system) ===");
+    println!(
+        "  discovered {} of {} used indices; stall (highest discovered) = {}",
+        windowed.discovered_count,
+        by_index.len(),
+        windowed.highest_discovered
+    );
+
+    // Sim FULL-RESCAN: on every ceiling extension, re-match the extended
+    // watch set against the ENTIRE scanned range; iterate to fixpoint.
+    let full = sim_full_rescan(&by_index, DEFAULT_COINJOIN_GAP_LIMIT);
+    println!("\n=== SIM FULL-RESCAN (models the proposed fix) ===");
+    println!(
+        "  discovered {} of {} used indices; highest discovered = {}",
+        full.discovered_count,
+        by_index.len(),
+        full.highest_discovered
+    );
+
+    // Minimum initial pre-derivation depth that lets the block-atomic
+    // gap-follow reach the highest used index under the real model.
+    let min_depth = min_initial_depth_windowed(
+        &by_index,
+        DEFAULT_COINJOIN_GAP_LIMIT,
+        SPV_BACKWARD_RESCAN_BLOCKS,
+    );
+    println!("\n=== RECOVERY DEPTH ===");
+    println!(
+        "  minimum initial pre-derivation depth for the windowed model to reach \
+         index {highest_used}: {min_depth}"
+    );
+}
+
+/// Extract `(index, first_funding_height)` for every USED CoinJoin
+/// External (account 0) address. Walks the account's full transaction
+/// history (retained under `keep-finalized-transactions`), resolving each
+/// `Received` output's address to its derivation index via the pool, and
+/// keeps the minimum block height per index.
+async fn coinjoin_external_first_funding_heights(
+    wallet: &Arc<platform_wallet::PlatformWallet>,
+) -> Vec<(u32, u32)> {
+    use key_wallet::account::AccountType as AT;
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use key_wallet::managed_account::transaction_record::OutputRole;
+
+    let state = wallet.state().await;
+    let mut first_height: std::collections::BTreeMap<u32, u32> = std::collections::BTreeMap::new();
+
+    for funds in state.core_wallet.accounts.all_funding_accounts() {
+        if !matches!(
+            funds.managed_account_type().to_account_type(),
+            AT::CoinJoin { .. }
+        ) {
+            continue;
+        }
+        // CoinJoin is single-pool (External). Snapshot the address→index
+        // map once, then scan transactions.
+        let Some(pool) = funds
+            .managed_account_type()
+            .address_pools()
+            .into_iter()
+            .find(|p| p.pool_type == AddressPoolType::External)
+        else {
+            continue;
+        };
+
+        for record in funds.transactions().values() {
+            let Some(height) = record.height() else {
+                continue;
+            };
+            for out in &record.output_details {
+                if out.role != OutputRole::Received {
+                    continue;
+                }
+                let Some(addr) = out.address.as_ref() else {
+                    continue;
+                };
+                let Some(index) = pool.address_index(addr) else {
+                    continue;
+                };
+                first_height
+                    .entry(index)
+                    .and_modify(|h| *h = (*h).min(height))
+                    .or_insert(height);
+            }
+        }
+    }
+
+    first_height.into_iter().collect()
+}
+
+/// One detected inversion: a funding tx whose address index outran the
+/// running discovery ceiling at the height it appeared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Inversion {
+    height: u32,
+    index: u32,
+    ceiling: u32,
+    gap: u32,
+}
+
+/// Walk `by_index` in ascending HEIGHT order with a gap-limit ceiling
+/// (ceiling starts at `gap` = watching indices `0..gap`; each in-window
+/// hit advances it to `highest_used_so_far + 1 + gap`). Returns every tx
+/// whose index exceeds the ceiling at its height. Pure; `by_index` is
+/// `(index, first_funding_height)` and need not be pre-sorted.
+fn inversions(by_index: &[(u32, u32)], gap: u32) -> Vec<Inversion> {
+    let mut by_height: Vec<(u32, u32)> = by_index.to_vec();
+    by_height.sort_by_key(|(i, h)| (*h, *i));
+
+    let mut ceiling = gap; // watching 0..gap (indices 0..=gap-1)
+    let mut highest_used: Option<u32> = None;
+    let mut out = Vec::new();
+    for (index, height) in by_height {
+        if index < ceiling {
+            highest_used = Some(highest_used.map_or(index, |h| h.max(index)));
+            if let Some(hu) = highest_used {
+                ceiling = hu + 1 + gap;
+            }
+        } else {
+            out.push(Inversion {
+                height,
+                index,
+                ceiling,
+                gap: index - ceiling + 1,
+            });
+        }
+    }
+    out
+}
+
+/// Outcome of a discovery simulation over `(index, height)` data.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SimResult {
+    discovered_count: usize,
+    highest_discovered: u32,
+}
+
+/// WINDOWED simulation — models the real block-atomic forward-only system
+/// with the default initial watch depth (`gap`). See
+/// [`sim_windowed_with_initial`].
+fn sim_windowed(by_index: &[(u32, u32)], gap: u32, backward_blocks: u32) -> SimResult {
+    sim_windowed_with_initial(by_index, gap, backward_blocks, gap)
+}
+
+/// FULL-RESCAN simulation — models the proposed fix. Every time the
+/// ceiling extends, re-match newly-watched indices against the ENTIRE
+/// scanned range (no eviction); iterate to fixpoint. With unlimited
+/// backward reach the height ordering no longer matters: any used index
+/// within the running ceiling is found, so the only thing that can stop
+/// it is a true index gap `>= gap` with no used index in between.
+fn sim_full_rescan(by_index: &[(u32, u32)], gap: u32) -> SimResult {
+    let used: std::collections::BTreeSet<u32> = by_index.iter().map(|(i, _)| *i).collect();
+    let mut ceiling = gap;
+    loop {
+        // Highest used index reachable under the current ceiling.
+        let highest = used.range(..ceiling).next_back().copied();
+        let next_ceiling = highest.map_or(ceiling, |h| h + 1 + gap);
+        if next_ceiling <= ceiling {
+            break;
+        }
+        ceiling = next_ceiling;
+    }
+    let highest_discovered = used.range(..ceiling).next_back().copied().unwrap_or(0);
+    SimResult {
+        discovered_count: used.range(..ceiling).count(),
+        highest_discovered,
+    }
+}
+
+/// Minimum initial pre-derivation depth `d` (watch indices `0..d` from
+/// genesis) such that the block-atomic gap-follow reaches the highest
+/// used index. Found by scanning candidate depths and returning the
+/// smallest that discovers the full used set.
+fn min_initial_depth_windowed(by_index: &[(u32, u32)], gap: u32, backward_blocks: u32) -> u32 {
+    let target = by_index.iter().map(|(i, _)| *i).max().unwrap_or(0);
+    let total = by_index.len();
+    // Candidate depths: each used index + 1 is a meaningful boundary; the
+    // answer is one of those (or the trivial `gap`). Scan ascending.
+    let mut candidates: Vec<u32> = by_index.iter().map(|(i, _)| *i + 1).collect();
+    candidates.push(gap);
+    candidates.sort_unstable();
+    candidates.dedup();
+    for &d in &candidates {
+        let r = sim_windowed_with_initial(by_index, gap, backward_blocks, d);
+        if r.highest_discovered >= target && r.discovered_count == total {
+            return d;
+        }
+    }
+    target + 1
+}
+
+/// WINDOWED simulation with a configurable initial watch depth — the
+/// faithful model of dash-spv forward-only discovery.
+///
+/// Sweeps funding events forward in height order (the scan frontier =
+/// current event height; it only increases). The watch ceiling starts at
+/// `max(gap, initial_depth)` (indices `0..ceiling` watched from genesis).
+///
+/// **Block-atomic** — this is the key fidelity point. A block is matched
+/// once against the bloom filter snapshot active when the block is
+/// scanned. Within a block, only indices below the ceiling *as it stood
+/// before the block* are discovered; the gap window extends AFTER the
+/// whole block is processed, and the newly-watched addresses apply only
+/// to LATER blocks (the real system does not re-scan a committed block
+/// against addresses derived from that same block's matches). This is
+/// what reproduces the empirical stall at 59: CoinJoin packs dozens of
+/// indices per block, so one gap-30 extension reaches at most ~30 new
+/// indices into the next block and silently misses every index used only
+/// in the just-scanned block above the prior ceiling.
+///
+/// `backward_blocks` models an optional re-scan of recently-committed
+/// blocks: `0` = no backward re-scan (the real system); `N` = re-scan the
+/// last `N` processed blocks against the extended watch set, to fixpoint.
+fn sim_windowed_with_initial(
+    by_index: &[(u32, u32)],
+    gap: u32,
+    backward_blocks: u32,
+    initial_depth: u32,
+) -> SimResult {
+    use std::collections::BTreeMap;
+
+    // Group used indices by block height (ascending).
+    let mut blocks: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+    for &(index, height) in by_index {
+        blocks.entry(height).or_default().push(index);
+    }
+    let block_list: Vec<Vec<u32>> = blocks.into_values().collect();
+
+    let mut ceiling = gap.max(initial_depth);
+    let mut highest_discovered: Option<u32> = None;
+    let mut discovered: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+
+    let extend =
+        |disc: &std::collections::BTreeSet<u32>, ceiling: &mut u32, hd: &mut Option<u32>| {
+            if let Some(&max) = disc.iter().next_back() {
+                *hd = Some(max);
+                let nc = max + 1 + gap;
+                if nc > *ceiling {
+                    *ceiling = nc;
+                }
+            }
+        };
+
+    for (bi, idxs) in block_list.iter().enumerate() {
+        // Atomic match against the ceiling as it stood before this block.
+        let watch_before = ceiling;
+        for &idx in idxs {
+            if idx < watch_before {
+                discovered.insert(idx);
+            }
+        }
+        extend(&discovered, &mut ceiling, &mut highest_discovered);
+
+        // Optional backward re-scan of the last `backward_blocks` blocks
+        // (including this one) against the extended watch set, to fixpoint.
+        if backward_blocks > 0 {
+            loop {
+                let mut changed = false;
+                let lo = (bi + 1).saturating_sub(backward_blocks as usize);
+                for prev in &block_list[lo..=bi] {
+                    for &idx in prev {
+                        if idx < ceiling && discovered.insert(idx) {
+                            changed = true;
+                        }
+                    }
+                }
+                if changed {
+                    extend(&discovered, &mut ceiling, &mut highest_discovered);
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    SimResult {
+        discovered_count: discovered.len(),
+        highest_discovered: highest_discovered.unwrap_or(0),
+    }
+}
+
+#[cfg(test)]
+mod sim_tests {
+    use super::*;
+
+    /// DENSE-BLOCK defeat — the real mechanism. Many contiguous indices
+    /// packed into ONE block defeat the block-atomic forward scan with
+    /// zero backward re-scan: the block matches only the pre-watched
+    /// 0..gap, the ceiling extends to 2*gap-1 AFTER the block, but the
+    /// indices used only in that just-committed block (gap..) are never
+    /// re-matched. A single backward block (re-scan the just-finished
+    /// block once) recovers everything.
+    #[test]
+    fn windowed_stalls_on_dense_block_backward_one_recovers() {
+        let gap = 30;
+        // indices 0..=200 all funded in ONE block (height 1000).
+        let by_index: Vec<(u32, u32)> = (0..=200u32).map(|i| (i, 1000)).collect();
+
+        let w0 = sim_windowed(&by_index, gap, 0);
+        // Pre-watched 0..30 match; ceiling → 59; nothing left to scan
+        // (single block already committed) → highest_discovered = 29.
+        assert_eq!(
+            w0.highest_discovered, 29,
+            "dense block stalls at gap-1: {w0:?}"
+        );
+        assert_eq!(w0.discovered_count, 30);
+
+        let w1 = sim_windowed(&by_index, gap, 1);
+        assert_eq!(
+            w1.highest_discovered, 200,
+            "one backward block recovers all: {w1:?}"
+        );
+        assert_eq!(w1.discovered_count, 201);
+    }
+
+    /// Two dense blocks reproduce the shape behind the empirical stall:
+    /// block A uses 0..=51, block B uses 52..=139. With zero backward
+    /// re-scan, A matches 0..30 (ceiling→59), B then matches 52..59
+    /// (ceiling→89) — final highest_used = 59, exactly the observed value.
+    #[test]
+    fn windowed_reproduces_empirical_fifty_nine_stall_shape() {
+        let gap = 30;
+        let mut by_index: Vec<(u32, u32)> = (0..=51u32).map(|i| (i, 1000)).collect();
+        by_index.extend((52..=139u32).map(|i| (i, 1001)));
+        let w = sim_windowed(&by_index, gap, 0);
+        assert_eq!(
+            w.highest_discovered, 59,
+            "two dense blocks stall at 59: {w:?}"
+        );
+    }
+
+    /// FULL-RESCAN recovers all contiguous indices regardless of block
+    /// packing/ordering; its only residual limit is a true index gap
+    /// `>= gap`.
+    #[test]
+    fn full_rescan_recovers_dense_blocks_but_stalls_on_true_gap() {
+        let gap = 30;
+        // Dense, contiguous 0..=200 in one block → full rescan gets all.
+        let dense: Vec<(u32, u32)> = (0..=200u32).map(|i| (i, 1000)).collect();
+        let f = sim_full_rescan(&dense, gap);
+        assert_eq!(
+            f.discovered_count, 201,
+            "full rescan recovers dense block: {f:?}"
+        );
+        assert_eq!(f.highest_discovered, 200);
+
+        // 0..=20 then a 39-index gap to 60 → even full rescan stalls at 20.
+        let mut gapped: Vec<(u32, u32)> = (0..=20u32).map(|i| (i, 100 + i)).collect();
+        gapped.push((60, 50));
+        let g = sim_full_rescan(&gapped, gap);
+        assert_eq!(
+            g.highest_discovered, 20,
+            "true index gap stalls rescan: {g:?}"
+        );
+        assert_eq!(g.discovered_count, 21);
+    }
+
+    /// One index per block in forward height order is fully discovered —
+    /// confirms the block-atomic model doesn't spuriously stall when each
+    /// block introduces at most one new index within the gap window.
+    #[test]
+    fn windowed_recovers_one_index_per_block_forward() {
+        let by_index: Vec<(u32, u32)> = (0..=100u32).map(|i| (i, 100 + i)).collect();
+        let w = sim_windowed(&by_index, 30, 0);
+        assert_eq!(w.discovered_count, 101);
+        assert_eq!(w.highest_discovered, 100);
+    }
+
+    /// Inversion detector flags the first index that outruns the ceiling.
+    #[test]
+    fn inversions_flags_first_outrunner() {
+        // index 50 appears (in height order) before the ceiling can cover
+        // it — ceiling starts at 30, only 0..29 watched.
+        let by_index = vec![(0u32, 10u32), (50u32, 11u32)];
+        let inv = inversions(&by_index, 30);
+        assert_eq!(inv.len(), 1);
+        assert_eq!(inv[0].index, 50);
+        assert_eq!(inv[0].ceiling, 31); // after discovering index 0: 0+1+30
     }
 }
