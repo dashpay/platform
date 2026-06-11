@@ -159,10 +159,16 @@ public class Mnemonic {
         word.withCString { platform_wallet_mnemonic_word_is_valid($0) }
     }
 
-    /// `true` if `word` is in the default (English) wordlist
-    /// (DashSync `wordIsLocal:`).
-    public static func wordIsLocal(_ word: String) -> Bool {
-        word.withCString { platform_wallet_mnemonic_word_is_local($0) }
+    /// `true` if `word` is a BIP-39 word in `language` (exact wordlist
+    /// membership; callers normalize first). Wraps key-wallet's
+    /// `is_word_in_language`. Which language is "local" is the caller's choice —
+    /// the SDK no longer hardcodes English (replaces the former `wordIsLocal`).
+    public static func wordIsInLanguage(_ word: String, language: MnemonicLanguage) -> Bool {
+        word.withCString { wordPtr in
+            language.code.withCString { langPtr in
+                platform_wallet_mnemonic_word_is_in_language(wordPtr, langPtr)
+            }
+        }
     }
 
     /// NFKD + lowercase + whitespace-collapse (DashSync `normalizePhrase:`).

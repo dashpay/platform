@@ -5,7 +5,8 @@
 //! sister methods). Parity reference (read alongside this file):
 //! `DashSync/shared/Models/Wallet/DSBIP39Mnemonic.m`:
 //!   - `wordIsValid:`      (m:258-261) -> [`platform_wallet_mnemonic_word_is_valid`]
-//!   - `wordIsLocal:`      (m:278-281) -> [`platform_wallet_mnemonic_word_is_local`]
+//!   - `wordIsLocal:`      (m:278-281) -> generalized to
+//!                                        [`platform_wallet_mnemonic_word_is_in_language`]
 //!   - `normalizePhrase:`  (m:387-408) -> [`platform_wallet_mnemonic_normalize_phrase`]
 //!   - `cleanupPhrase:`    (m:325-384) -> [`platform_wallet_mnemonic_cleanup_phrase`]
 //!
@@ -49,8 +50,8 @@ use crate::{check_ptr, unwrap_result_or_return};
 const IDEO_SP: &str = "\u{3000}";
 
 /// The 7 languages DashSync bundles as `BIP39Words.plist` localizations.
-/// `wordIsValid` checks the union; `wordIsLocal` uses only English (the
-/// recover flow's default language).
+/// `wordIsValid` checks the union. (DashSync's English-only `wordIsLocal` is
+/// generalized to `word_is_in_language`, so the caller picks the language.)
 const LANGS: [L; 7] = [
     L::English,
     L::French,
@@ -73,9 +74,31 @@ fn word_in_any_list(w: &str) -> bool {
         .any(|&l| key_wallet::Mnemonic::is_word_in_language(w, l))
 }
 
-/// `wordIsLocal:` (m:278-281) — member of the default (English) wordlist.
-fn word_in_english(w: &str) -> bool {
-    key_wallet::Mnemonic::is_word_in_language(w, L::English)
+/// Exact wordlist membership for a specific `language` — wraps key-wallet's
+/// `is_word_in_language`. Replaces the old English-hardcoded `word_in_english`:
+/// which language counts as "local" is the app's call, so it is a parameter
+/// now (review feedback on the former `wordIsLocal` FFI export).
+fn word_in_language(w: &str, language: L) -> bool {
+    key_wallet::Mnemonic::is_word_in_language(w, language)
+}
+
+/// Map a BCP-47-ish language code to a key-wallet `Language`. Covers all 10
+/// key-wallet wordlists; `None` for an unrecognized code (the FFI entry point
+/// then reports the word as not-in-language).
+fn language_from_code(code: &str) -> Option<L> {
+    match code.to_ascii_lowercase().as_str() {
+        "en" | "english" => Some(L::English),
+        "fr" | "french" => Some(L::French),
+        "es" | "spanish" => Some(L::Spanish),
+        "it" | "italian" => Some(L::Italian),
+        "ja" | "japanese" => Some(L::Japanese),
+        "ko" | "korean" => Some(L::Korean),
+        "pt" | "portuguese" => Some(L::Portuguese),
+        "cs" | "czech" => Some(L::Czech),
+        "zh-hans" | "zh" | "zh-cn" | "chinesesimplified" => Some(L::ChineseSimplified),
+        "zh-hant" | "zh-tw" | "chinesetraditional" => Some(L::ChineseTraditional),
+        _ => None,
+    }
 }
 
 /// `normalizePhrase:` (m:387-408) — NFKD + lowercase + whitespace-collapse.
@@ -203,19 +226,36 @@ pub unsafe extern "C" fn platform_wallet_mnemonic_word_is_valid(word: *const c_c
     }
 }
 
-/// `true` if `word` is in the default (English) wordlist (DashSync
-/// `wordIsLocal:`). NULL / invalid-UTF-8 input returns `false`.
+/// `true` if `word` is a BIP-39 word in the given `language` (exact wordlist
+/// membership; caller pre-normalizes). `language` is a BCP-47-ish code such as
+/// `"en"`, `"ja"`, or `"zh-hans"`. NULL / invalid-UTF-8 / unrecognized-language
+/// input returns `false`.
+///
+/// Replaces the former `platform_wallet_mnemonic_word_is_local`: which language
+/// is "local" is an app-level choice, so the caller passes it explicitly
+/// (wraps key-wallet's `is_word_in_language`, per review feedback).
 ///
 /// # Safety
-/// `word` must be NULL or a valid null-terminated UTF-8 C string.
+/// `word` and `language` must each be NULL or a valid null-terminated UTF-8 C string.
 #[no_mangle]
-pub unsafe extern "C" fn platform_wallet_mnemonic_word_is_local(word: *const c_char) -> bool {
-    if word.is_null() {
+pub unsafe extern "C" fn platform_wallet_mnemonic_word_is_in_language(
+    word: *const c_char,
+    language: *const c_char,
+) -> bool {
+    if word.is_null() || language.is_null() {
         return false;
     }
-    match CStr::from_ptr(word).to_str() {
-        Ok(w) => word_in_english(w),
-        Err(_) => false,
+    let w = match CStr::from_ptr(word).to_str() {
+        Ok(w) => w,
+        Err(_) => return false,
+    };
+    let code = match CStr::from_ptr(language).to_str() {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    match language_from_code(code) {
+        Some(lang) => word_in_language(w, lang),
+        None => false,
     }
 }
 
@@ -284,6 +324,12 @@ mod tests {
             .to_string()
     }
 
+    /// Test convenience: English-wordlist membership. Production code uses the
+    /// language-parameterized `word_in_language` — "local" is the app's choice.
+    fn word_in_english(w: &str) -> bool {
+        word_in_language(w, L::English)
+    }
+
     const EN_ZERO: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
@@ -301,6 +347,25 @@ mod tests {
         let w = first_word(L::Japanese);
         assert!(word_in_any_list(&w));
         assert!(!word_in_english(&w));
+    }
+
+    #[test]
+    fn word_in_language_is_language_specific() {
+        // Membership is per-language, not a global union.
+        assert!(word_in_language("abandon", L::English));
+        assert!(!word_in_language("abandon", L::Japanese));
+        let ja = first_word(L::Japanese);
+        assert!(word_in_language(&ja, L::Japanese));
+        assert!(!word_in_language(&ja, L::English));
+        // Code mapping: recognized codes resolve (case-insensitive); else None.
+        assert!(matches!(language_from_code("EN"), Some(L::English)));
+        assert!(matches!(
+            language_from_code("zh-Hans"),
+            Some(L::ChineseSimplified)
+        ));
+        assert!(matches!(language_from_code("ja"), Some(L::Japanese)));
+        assert!(language_from_code("xx").is_none());
+        assert!(language_from_code("").is_none());
     }
 
     #[test]
@@ -419,12 +484,30 @@ mod tests {
         // bool fns
         let valid = CString::new("abandon").unwrap();
         let invalid = CString::new("notaword").unwrap();
+        let en = CString::new("en").unwrap();
+        let ja = CString::new("ja").unwrap();
         unsafe {
             assert!(platform_wallet_mnemonic_word_is_valid(valid.as_ptr()));
             assert!(!platform_wallet_mnemonic_word_is_valid(invalid.as_ptr()));
-            assert!(platform_wallet_mnemonic_word_is_local(valid.as_ptr()));
             assert!(!platform_wallet_mnemonic_word_is_valid(std::ptr::null()));
-            assert!(!platform_wallet_mnemonic_word_is_local(std::ptr::null()));
+            // word_is_in_language: English word is in "en", not in "ja"; NULL
+            // word / NULL language / unrecognized language all return false.
+            assert!(platform_wallet_mnemonic_word_is_in_language(
+                valid.as_ptr(),
+                en.as_ptr()
+            ));
+            assert!(!platform_wallet_mnemonic_word_is_in_language(
+                valid.as_ptr(),
+                ja.as_ptr()
+            ));
+            assert!(!platform_wallet_mnemonic_word_is_in_language(
+                std::ptr::null(),
+                en.as_ptr()
+            ));
+            assert!(!platform_wallet_mnemonic_word_is_in_language(
+                valid.as_ptr(),
+                std::ptr::null()
+            ));
         }
 
         // string fn: normalize

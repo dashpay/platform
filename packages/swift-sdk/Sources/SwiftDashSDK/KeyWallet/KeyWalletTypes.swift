@@ -74,6 +74,23 @@ public enum MnemonicLanguage: UInt32 {
     init(ffiLanguage: FFILanguage) {
         self = MnemonicLanguage(rawValue: ffiLanguage.rawValue) ?? .english
     }
+
+    /// BCP-47-ish language code passed to the platform mnemonic FFI
+    /// (`platform_wallet_mnemonic_word_is_in_language`).
+    var code: String {
+        switch self {
+        case .english: return "en"
+        case .chineseSimplified: return "zh-hans"
+        case .chineseTraditional: return "zh-hant"
+        case .czech: return "cs"
+        case .french: return "fr"
+        case .italian: return "it"
+        case .japanese: return "ja"
+        case .korean: return "ko"
+        case .portuguese: return "pt"
+        case .spanish: return "es"
+        }
+    }
 }
 
 // MARK: - Account Creation Options
