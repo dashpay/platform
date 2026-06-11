@@ -31,9 +31,12 @@ use std::collections::{BTreeMap, BTreeSet};
 ///    the cached balance went away after a chain reset, and the stale
 ///    value lingers as an identity-creation funding source.
 ///
-/// `found` and `absent` are disjoint per pass (the SDK proves an address
-/// either present or absent, never both), so the two loops can't both
-/// emit for the same address.
+/// `found` and `absent` are NOT guaranteed disjoint: the SDK's full
+/// scan can prove an address absent at the trunk/branch checkpoint and
+/// then re-find it during incremental catch-up (a credit op between
+/// checkpoint and tip inserts into `found` without removing the earlier
+/// absent proof). The catch-up find reflects the chain tip, so it wins —
+/// the zero-emission loop skips any address that is also in `found`.
 pub(crate) fn compute_address_balance_diff(
     before: &BTreeMap<PlatformAddressTag, AddressFunds>,
     found: &BTreeMap<(PlatformAddressTag, PlatformP2PKHAddress), AddressFunds>,
@@ -59,6 +62,11 @@ pub(crate) fn compute_address_balance_diff(
     // 2. Absent-but-previously-funded — zero out cached balances that the
     //    new chain no longer knows about.
     for &(tag, p2pkh) in absent {
+        // Absent at the checkpoint but re-found during incremental
+        // catch-up — the find is newer (tip), so never zero it.
+        if found.contains_key(&(tag, p2pkh)) {
+            continue;
+        }
         // Only emit when we actually had non-default cached funds for the
         // address. An address that was already empty (or never cached)
         // doesn't need a zeroing write.
@@ -127,11 +135,13 @@ impl PlatformAddressWallet {
             .sync_address_balances(&mut *provider, config, last_sync_timestamp)
             .await?;
 
-        let mut cs = PlatformAddressChangeSet::default();
         // Found-and-changed entries plus zeroing entries for addresses
         // proven absent this pass that previously carried cached funds.
         // The latter is what zeroes a stale balance after a chain reset.
-        cs.addresses = compute_address_balance_diff(&before, &result.found, &result.absent);
+        let mut cs = PlatformAddressChangeSet {
+            addresses: compute_address_balance_diff(&before, &result.found, &result.absent),
+            ..Default::default()
+        };
         if result.new_sync_height > 0 {
             cs.sync_height = Some(result.new_sync_height);
         }
@@ -265,6 +275,30 @@ mod tests {
         assert_eq!(entries[0].address_index, 0);
         assert_eq!(entries[0].address, p2pkh(10));
         assert_eq!(entries[0].funds, funds(150, 2));
+    }
+
+    /// An address can be proven absent at the full-scan checkpoint and
+    /// then re-found during incremental catch-up, landing in BOTH
+    /// `found` and `absent`. The find reflects the chain tip, so the
+    /// fresh funds must be emitted and no zeroing entry may follow it —
+    /// downstream changeset application is order-sensitive and a
+    /// trailing zero would clobber the real balance.
+    #[test]
+    fn address_in_both_found_and_absent_keeps_found_entry() {
+        let mut before = BTreeMap::new();
+        before.insert(tag(0), funds(100, 1));
+
+        let mut found = BTreeMap::new();
+        found.insert((tag(0), p2pkh(1)), funds(250, 2));
+
+        let mut absent = BTreeSet::new();
+        absent.insert((tag(0), p2pkh(1)));
+
+        let entries = compute_address_balance_diff(&before, &found, &absent);
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].address, p2pkh(1));
+        assert_eq!(entries[0].funds, funds(250, 2));
     }
 
     /// Combined pass: one address found with a new balance and a
