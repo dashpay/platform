@@ -286,10 +286,12 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
         // Borrowed per-row key source. The two derivation paths are
         // symmetric in shape: both hand `derive_material` a borrowed
         // source and get back `RowMaterial`. The resident-wallet
-        // variant borrows the `&Wallet` looked up ONCE before the loop
-        // (under a read guard held for the loop's whole duration — the
-        // derive is pure compute, matching pre-PR behavior); the master
-        // variant borrows the resolved master xpriv.
+        // variant borrows the `&Wallet` looked up under a read guard
+        // re-acquired for the loop's duration (the derive is pure
+        // compute, so holding it across the loop is fine — but the guard
+        // is NEVER held across the Swift resolver callback, see below);
+        // the master variant borrows the resolved master xpriv and needs
+        // no guard at all.
         enum DeriveSource<'a> {
             /// In-process wallet holds resident private keys — derive
             /// each row directly from it (no per-row lock acquisition).
@@ -322,7 +324,7 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
                 }
                 DeriveSource::Resident(key_wallet) => {
                     // Resident-wallet path: derive from the in-process
-                    // wallet. The read guard + `&Wallet` were acquired
+                    // wallet. The read guard + `&Wallet` were re-acquired
                     // once before the loop (see below) so this is a
                     // pure secp256k1 pass with no per-row locking.
                     let (path, ext_priv, public_key) = derive_identity_auth_keypair(
@@ -341,33 +343,49 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
         };
 
         // Everything from here on can fail with a `PlatformWalletFFIResult`;
-        // run it in a closure returning `Result<Vec<_>, _>` so the
-        // wallet-manager read guard (`wm`, declared inside) drops at the
-        // closure's end regardless of which branch returns.
+        // run it in a closure returning `Result<Vec<_>, _>`.
+        //
+        // Two-phase locking, mirroring the discovery path
+        // (`platform_wallet_discover_identities`):
+        //   1. A SHORT read-guard block scoped to the capability check
+        //      only — read the wallet's shape, capture
+        //      `wallet_has_resident_keys`, then DROP the guard.
+        //   2. The wallet-manager read guard is NEVER held across the
+        //      Swift resolver callback (`resolve_master_from_resolver`
+        //      synchronously re-enters Swift and reads the iOS Keychain,
+        //      which can stall on biometric unlock) — invariant called
+        //      out in review.
+        //   3. Only the resident branch re-acquires the guard, and only
+        //      for the loop's duration (its `derive_material` borrows
+        //      `&Wallet`). The master branch holds no guard past the
+        //      capability check.
         let build_result = (|| -> Result<Vec<IdentityKeyPreviewFFI>, PlatformWalletFFIResult> {
-            // Select the derivation source by the in-process wallet's
-            // capability (see the module docs). Read the wallet's shape
-            // under a short read-lock, then keep the guard for the
-            // resident path so the per-row derive holds it for the
-            // loop's duration.
-            let wm = wallet.wallet_manager().blocking_read();
-            let key_wallet = wm.get_wallet(&wallet.wallet_id()).ok_or_else(|| {
-                PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorInvalidHandle,
-                    "Wallet not found in wallet manager",
-                )
-            })?;
-
-            // Resident private keys (Mnemonic / Seed / ExtendedPrivKey) →
-            // historical in-process derive; the resolver is never touched
-            // (also skips a pointless iOS Keychain read). Otherwise the
-            // master xpriv resolved from the wallet's mnemonic is required.
-            let wallet_has_resident_keys =
-                !key_wallet.is_external_signable() && !key_wallet.is_watch_only();
+            // Phase 1 — short capability-check guard. Read the wallet's
+            // shape under a read-lock and DROP it before any resolver
+            // interaction. Resident private keys (Mnemonic / Seed /
+            // ExtendedPrivKey) → historical in-process derive; the
+            // resolver is never touched (also skips a pointless iOS
+            // Keychain read). Otherwise the master xpriv resolved from
+            // the wallet's mnemonic is required.
+            let wallet_has_resident_keys = {
+                let wm = wallet.wallet_manager().blocking_read();
+                match wm.get_wallet(&wallet.wallet_id()) {
+                    Some(key_wallet) => {
+                        !key_wallet.is_external_signable() && !key_wallet.is_watch_only()
+                    }
+                    None => {
+                        return Err(PlatformWalletFFIResult::err(
+                            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                            "Wallet not found in wallet manager",
+                        ));
+                    }
+                }
+            };
 
             // For the resolver path, resolve the mnemonic once and build
-            // the master xpriv up front; the per-row derive then reuses
-            // it. Self-pin on the wallet handle's own `wallet_id` (same
+            // the master xpriv up front (NO guard held — see the
+            // two-phase note above); the per-row derive then reuses it.
+            // Self-pin on the wallet handle's own `wallet_id` (same
             // rationale as `dash_sdk_derive_identity_key_at_slot_with_resolver`).
             //
             // `master_opt` outlives `source` below (which borrows it),
@@ -392,16 +410,34 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
                 });
             }
 
-            let source = match master_opt.as_ref() {
-                Some(master) => DeriveSource::Master(master),
-                None => DeriveSource::Resident(key_wallet),
-            };
+            // Phase 3 — derive + build every row from the borrowed key
+            // source, inside a block so both the borrowed `source` and
+            // the resident-path read guard release at the block's end —
+            // BEFORE we wipe the resolved master's scalar below. The
+            // master branch needs no guard. The resident branch
+            // re-acquires the read guard and re-looks-up the `&Wallet`,
+            // both living through the loop via a guard binding so the
+            // borrow outlives `derive_material`'s calls.
+            //
+            // On any failure we free the rows appended so far and capture
+            // the error — we must still wipe the master's scalar below,
+            // so the loop result is captured rather than `?`-returned.
+            let loop_result = {
+                let mut loop_guard = None;
+                let source = match master_opt.as_ref() {
+                    Some(master) => DeriveSource::Master(master),
+                    None => {
+                        let wm = loop_guard.insert(wallet.wallet_manager().blocking_read());
+                        let key_wallet = wm.get_wallet(&wallet.wallet_id()).ok_or_else(|| {
+                            PlatformWalletFFIResult::err(
+                                PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                                "Wallet not found in wallet manager",
+                            )
+                        })?;
+                        DeriveSource::Resident(key_wallet)
+                    }
+                };
 
-            // Derive + build every row. On any failure we free the rows
-            // appended so far and capture the error — we must still wipe
-            // the resolved master's scalar below, so the loop result is
-            // captured rather than `?`-returned directly.
-            let loop_result =
                 (|| -> Result<Vec<IdentityKeyPreviewFFI>, PlatformWalletFFIResult> {
                     let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(count as usize);
                     for offset in 0..count {
@@ -429,20 +465,21 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
                         }
                     }
                     Ok(rows)
-                })();
+                })()
+                // `source` (and `loop_guard`, the resident-path read
+                // guard) drop at this block's end, releasing the
+                // wallet-manager read lock held across the loop and the
+                // borrow into `master_opt` — so the master wipe below is
+                // free to mutate it.
+            };
 
             // TODO(upstream): `ExtendedPrivKey` has no `Drop` / `Zeroize`;
             // wipe the resolved master's inner secp256k1 scalar
             // explicitly. Same hygiene as the discovery resolver path.
             // No-op on the resident path (no master was resolved).
-            // `source` borrows `master_opt`, so drop it first to release
-            // that borrow before we mutate the master.
-            drop(source);
             if let Some(mut master) = master_opt {
                 master.private_key.non_secure_erase();
             }
-            // `wm` (the read guard) drops here at the closure's end,
-            // releasing the wallet-manager read lock held across the loop.
             loop_result
         })();
 
