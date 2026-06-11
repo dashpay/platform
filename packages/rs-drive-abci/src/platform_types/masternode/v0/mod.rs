@@ -153,6 +153,7 @@ impl From<DMNState> for MasternodeStateV0 {
             platform_node_id,
             platform_p2p_port,
             platform_http_port,
+            ..
         } = value;
 
         Self {
@@ -205,6 +206,7 @@ impl From<MasternodeStateV0> for DMNState {
             platform_node_id,
             platform_p2p_port,
             platform_http_port,
+            addresses: None,
         }
     }
 }

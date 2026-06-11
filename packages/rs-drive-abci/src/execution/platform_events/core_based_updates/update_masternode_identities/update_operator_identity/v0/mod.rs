@@ -544,6 +544,7 @@ mod tests {
                 platform_node_id: Some(node_id_bytes),
                 platform_p2p_port: None,
                 platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -621,6 +622,7 @@ mod tests {
                 platform_node_id: Some(node_id),
                 platform_p2p_port: None,
                 platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -681,6 +683,7 @@ mod tests {
                 platform_node_id: Some(node_id),
                 platform_p2p_port: None,
                 platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -754,6 +757,7 @@ mod tests {
                 platform_node_id: Some(node_id_bytes),
                 platform_p2p_port: None,
                 platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -831,6 +835,7 @@ mod tests {
                 platform_node_id: Some(original_node_id),
                 platform_p2p_port: None,
                 platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -892,6 +897,7 @@ mod tests {
                 platform_node_id: Some(new_platform_node_id),
                 platform_p2p_port: None,
                 platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -980,6 +986,7 @@ mod tests {
                 platform_node_id: Some(node_id_bytes),
                 platform_p2p_port: None,
                 platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -1110,6 +1117,7 @@ mod tests {
                 platform_node_id: Some(node_id_bytes),
                 platform_p2p_port: None,
                 platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -1211,6 +1219,7 @@ mod tests {
                 platform_node_id: Some(node_id_bytes),
                 platform_p2p_port: None,
                 platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -1272,6 +1281,7 @@ mod tests {
                 platform_node_id: Some(node_id_bytes),
                 platform_p2p_port: None,
                 platform_http_port: None,
+                addresses: None,
             },
         };
 

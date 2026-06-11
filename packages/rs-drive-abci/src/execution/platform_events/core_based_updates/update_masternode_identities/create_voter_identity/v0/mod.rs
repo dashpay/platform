@@ -76,6 +76,7 @@ mod tests {
                 platform_node_id: None,
                 platform_p2p_port: None,
                 platform_http_port: None,
+                addresses: None,
             },
         }
     }
