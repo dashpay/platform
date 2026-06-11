@@ -39,6 +39,7 @@ use key_wallet::Language as L;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use unicode_normalization::char::is_combining_mark;
+use unicode_normalization::UnicodeNormalization;
 
 use crate::error::PlatformWalletFFIResult;
 use crate::{check_ptr, unwrap_result_or_return};
@@ -133,6 +134,17 @@ fn cleanup_phrase_impl(phrase: &str) -> String {
     // (6) CJK auto-split: walk the words of the *normalized* phrase; for each
     //     word starting at/after U+3000 that isn't already a whole valid word,
     //     scan substrings (len ≤ 8) and wrap valid matches in `s` with U+3000.
+    //
+    //     `s` still holds the caller's original Unicode form (e.g. NFC, which
+    //     iOS Japanese IMEs emit), but the candidates below are sliced from
+    //     `normalized` (NFKD). `String::replace` is exact-byte, so an NFKD
+    //     candidate never matches an NFC `s` and nothing would be wrapped — the
+    //     no-space phrase would come back unsplit. NFKD `s` here so the replace
+    //     can hit. NFKD is the BIP-39 canonical form (the wordlist + `to_seed`
+    //     use it), so emitting it from the split path is correct. (DSBIP39-
+    //     Mnemonic has the same original-vs-NFKD mismatch; this fixes it.)
+    s = s.nfkd().collect::<String>();
+
     let dbl_ideo = format!("{IDEO_SP}{IDEO_SP}");
     for word in normalized.split(' ') {
         let wchars: Vec<char> = word.chars().collect();
@@ -340,6 +352,50 @@ mod tests {
         assert!(
             cleanup_phrase_impl(&nospace).contains(IDEO_SP),
             "cleanup should insert ideographic spaces into a no-space CJK phrase"
+        );
+    }
+
+    #[test]
+    fn nfc_japanese_no_space_autosplit() {
+        // Regression guard for the NFC/NFKD mismatch in `cleanup_phrase_impl`:
+        // iOS Japanese IMEs emit precomposed (NFC) text, while the BIP-39
+        // wordlist is NFKD. A no-space NFC Japanese phrase must still auto-split
+        // — the CJK loop NFKDs the working buffer so the exact-byte replace can
+        // hit. The other CJK fixtures build from `from_entropy(..).phrase()`,
+        // which is already NFKD, so only this NFC fixture exercises the bug.
+        let entropy = [
+            0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x0f, 0x1e, 0x2d, 0x3c, 0x4b, 0x5a,
+            0x69, 0x78,
+        ];
+        let phrase = key_wallet::Mnemonic::from_entropy(&entropy, L::Japanese)
+            .unwrap()
+            .phrase();
+        // No-space, in both Unicode forms.
+        let nfkd_nospace: String = phrase.split(' ').collect();
+        let nfc_nospace: String = nfkd_nospace.nfc().collect();
+        // The fixture must actually be NFC (different bytes) or it wouldn't
+        // exercise the mismatch — this phrase contains voiced kana (dakuten).
+        assert_ne!(
+            nfc_nospace, nfkd_nospace,
+            "fixture must be NFC (distinct from NFKD) to cover the bug"
+        );
+
+        let from_nfc = cleanup_phrase_impl(&nfc_nospace);
+        let from_nfkd = cleanup_phrase_impl(&nfkd_nospace);
+        assert!(
+            from_nfc.contains(IDEO_SP),
+            "NFC no-space Japanese phrase should still get ideographic spaces"
+        );
+        // The crux: NFC input must auto-split *identically* to the equivalent
+        // NFKD input. `.contains(IDEO_SP)` alone is too weak — the unvoiced
+        // words in the phrase split fine even without the fix; only the voiced
+        // (NFC-precomposed) words are skipped. Comparing the two full splits
+        // catches that. Once the fix NFKDs the working buffer the NFC path
+        // becomes byte-identical to the NFKD path; without it the voiced words
+        // stay glued and the splits diverge.
+        assert_eq!(
+            from_nfc, from_nfkd,
+            "NFC input must auto-split the same as NFKD input"
         );
     }
 
