@@ -22,6 +22,7 @@ pub mod found_021_instant_lock_dropped_on_context_promotion;
 pub mod found_022_asset_lock_builder_consumes_change_index_on_failure;
 pub mod found_024_transfer_foreign_pollution;
 pub mod found_025_address_sync_silent_discard;
+pub mod found_coinjoin_gap_limit_sync;
 pub mod id_001_register_identity_from_addresses;
 pub mod id_002_top_up_identity;
 pub mod id_002b_asset_lock_top_up;

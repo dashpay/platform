@@ -42,6 +42,11 @@ pub struct SpvRuntime {
     /// built-in (the standard / porter devnet genesis). Only consulted
     /// when the client config's network is [`Network::Devnet`].
     devnet_genesis: StdMutex<DevnetGenesisOverride>,
+    /// Optional terminal sync height. `None` (the default) syncs to
+    /// chain tip exactly as before. `Some(h)` makes [`run`] halt once
+    /// the confirmed filter height reaches `h`. See
+    /// [`set_terminal_height`](Self::set_terminal_height).
+    terminal_height: StdMutex<Option<u32>>,
 }
 // TODO: We want it better
 impl SpvRuntime {
@@ -56,7 +61,25 @@ impl SpvRuntime {
             client: RwLock::new(None),
             background_cancel: StdMutex::new(None),
             devnet_genesis: StdMutex::new(DevnetGenesisOverride::default()),
+            terminal_height: StdMutex::new(None),
         }
+    }
+
+    /// Set an optional terminal sync height.
+    ///
+    /// `None` (the default) keeps the production behaviour: [`run`]
+    /// syncs to chain tip and only returns when [`stop`] is called.
+    /// `Some(h)` makes the next [`run`] halt the client once the
+    /// confirmed filter height (the height up to which compact-filter
+    /// batches have been fully committed to the wallet) reaches `h`,
+    /// so a caller can sync a fixed historical window without racing
+    /// the live tip. Must be set before [`run`] / [`spawn_in_background`]
+    /// to take effect on that sync.
+    pub fn set_terminal_height(&self, height: Option<u32>) {
+        *self
+            .terminal_height
+            .lock()
+            .expect("terminal_height poisoned") = height;
     }
 
     /// Override the devnet genesis header pre-seeded on [`start`].
@@ -211,15 +234,78 @@ impl SpvRuntime {
             .clone();
         drop(client_guard);
 
-        let result = client
-            .run()
-            .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()));
+        let terminal_height = *self
+            .terminal_height
+            .lock()
+            .expect("terminal_height poisoned");
+
+        let result = match terminal_height {
+            // Production path: sync to tip, return only on `stop()`.
+            None => client
+                .run()
+                .await
+                .map_err(|e| PlatformWalletError::SpvError(e.to_string())),
+            // Capped path: race the sync loop against a watcher that
+            // stops the client once filters are committed up to `target`.
+            // `client.stop()` flips the run-loop's running flag, so
+            // `client.run()` then returns cleanly with the same result it
+            // would on an external `stop()`.
+            Some(target) => {
+                let watcher_client = client.clone();
+                let result = tokio::select! {
+                    res = client.run() => {
+                        res.map_err(|e| PlatformWalletError::SpvError(e.to_string()))
+                    }
+                    _ = Self::watch_terminal_height(&watcher_client, target) => {
+                        if let Err(e) = watcher_client.stop().await {
+                            tracing::warn!(
+                                target,
+                                error = %e,
+                                "terminal-height stop returned error"
+                            );
+                        }
+                        Ok(())
+                    }
+                };
+                result
+            }
+        };
 
         let mut client = self.client.write().await;
         let _ = client.take();
 
         result
+    }
+
+    /// Poll the client's sync progress until the confirmed filter
+    /// height reaches `target`. Resolves once the cap is met; the
+    /// caller is responsible for stopping the client afterwards.
+    ///
+    /// Confirmed filter height = `FiltersProgress::committed_height`,
+    /// the height up to which compact-filter batches have been fully
+    /// committed to the wallet — the right gate for "all funds visible
+    /// up to here". Polls every `TERMINAL_HEIGHT_POLL` so the cost is
+    /// negligible against a multi-minute scan.
+    async fn watch_terminal_height(client: &SpvClient, target: u32) {
+        const TERMINAL_HEIGHT_POLL: std::time::Duration = std::time::Duration::from_millis(500);
+        loop {
+            let committed = client
+                .sync_progress()
+                .await
+                .filters()
+                .ok()
+                .map(|f| f.committed_height())
+                .unwrap_or(0);
+            if committed >= target {
+                tracing::info!(
+                    target,
+                    committed,
+                    "terminal sync height reached; stopping SPV client"
+                );
+                return;
+            }
+            tokio::time::sleep(TERMINAL_HEIGHT_POLL).await;
+        }
     }
 
     /// Synchronously fire the background `run()` task's cancellation
