@@ -473,7 +473,7 @@ impl WasmSdk {
     ///
     /// # Example
     /// ```javascript
-    /// const tokenId = sdk.calculateTokenIdFromContract("Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv", 0);
+    /// const tokenId = WasmSdk.calculateTokenIdFromContract("Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv", 0);
     /// const info = await sdk.getTokenContractInfo(tokenId);
     /// ```
     #[wasm_bindgen(js_name = "getTokenContractInfo")]
