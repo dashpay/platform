@@ -251,7 +251,14 @@ impl TokenDirectPurchaseTransitionActionV0 {
                         required_total
                     }
                     None => {
-                        // Token count is below all defined thresholds — this is an invalid purchase
+                        // `range(..=token_count).next_back()` returns `None` in two situations:
+                        //   1. the schedule has tiers but the smallest one is above `token_count`
+                        //      (the buyer is under the minimum sale amount), or
+                        //   2. the schedule is empty — the token has no usable direct-sale price.
+                        // Both are invalid purchases. We must NOT assume the map is non-empty here:
+                        // an empty `SetPrices` schedule can be set and stored (its structure/state
+                        // validation does not reject the price), so `.expect()`-ing a key would panic
+                        // during block execution on every validator and halt the chain.
                         let bump_action =
                             BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
                                 base,
@@ -261,18 +268,27 @@ impl TokenDirectPurchaseTransitionActionV0 {
                         let batched_action =
                             BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
 
+                        let error = match set_prices.keys().next() {
+                            // At least one tier exists: the buyer is below the minimum sale amount.
+                            Some(minimum_sale_amount) => ConsensusError::StateError(
+                                StateError::TokenAmountUnderMinimumSaleAmount(
+                                    TokenAmountUnderMinimumSaleAmount::new(
+                                        base.token_id(),
+                                        *token_count,
+                                        *minimum_sale_amount,
+                                    ),
+                                ),
+                            ),
+                            // Empty schedule: the token has no direct-sale price at all.
+                            None => ConsensusError::StateError(StateError::TokenNotForDirectSale(
+                                TokenNotForDirectSale::new(base.token_id()),
+                            )),
+                        };
+
                         return Ok((
                             ConsensusValidationResult::new_with_data_and_errors(
                                 batched_action,
-                                vec![ConsensusError::StateError(
-                                    StateError::TokenAmountUnderMinimumSaleAmount(
-                                        TokenAmountUnderMinimumSaleAmount::new(
-                                            base.token_id(),
-                                            *token_count,
-                                            *set_prices.keys().next().expect("Map is not empty"),
-                                        ),
-                                    ),
-                                )],
+                                vec![error],
                             ),
                             fee_result,
                         ));
