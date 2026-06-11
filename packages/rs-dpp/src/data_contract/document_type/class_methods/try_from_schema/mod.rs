@@ -204,17 +204,12 @@ fn insert_values_nested(
                                 "properties must be a map".to_string(),
                             ))?;
 
-                    let mut sorted_properties: Vec<_> = properties.iter().collect();
-
-                    sorted_properties.sort_by(|(_, value_1), (_, value_2)| {
-                        let pos_1: u64 = value_1
-                            .get_integer(property_names::POSITION)
-                            .expect("expected a position");
-                        let pos_2: u64 = value_2
-                            .get_integer(property_names::POSITION)
-                            .expect("expected a position");
-                        pos_1.cmp(&pos_2)
-                    });
+                    // Nested properties are emitted below in source-map order (the
+                    // `properties.iter()` loop). A previous `position`-based `sort_by` here was
+                    // dead code — its sorted result was never read — and it read `position` with
+                    // `.expect()`, which could panic on adversarial schema input during block
+                    // execution. Removed (ordering unchanged); do not reintroduce a panicking
+                    // `position` read here.
 
                     // Create a new set with the prefix removed from the keys
                     let stripped_required: BTreeSet<String> = known_required
