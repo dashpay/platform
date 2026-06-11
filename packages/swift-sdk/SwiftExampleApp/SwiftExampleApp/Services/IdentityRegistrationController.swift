@@ -142,6 +142,17 @@ final class IdentityRegistrationController: ObservableObject {
     /// purge ~30s after the success transition).
     private(set) var lastSubmittedAt: Date?
 
+    /// Timestamp of the most recent terminal transition
+    /// (`.completed` / `.failed` / `.unconfirmed`). Freezes the
+    /// elapsed-time anchor
+    /// for `RegistrationProgressView`'s shielded step heuristic: a
+    /// `.failed` row is retained until the user dismisses it, and
+    /// deriving its step from live `Date()` would let the failed
+    /// icon drift to a later step as wall-clock time passes. Reset
+    /// on every `submit` so a retried slot re-measures from the new
+    /// attempt.
+    private(set) var terminalAt: Date?
+
     /// Active registration task. Holds a reference so the
     /// coordinator's stash retains the work until completion;
     /// cancellation isn't wired today (the FFI call doesn't yet
@@ -198,10 +209,12 @@ final class IdentityRegistrationController: ObservableObject {
         // attempt before this one runs.
         failureStage = nil
         lastSubmittedAt = Date()
+        terminalAt = nil
         task = Task { [weak self] in
             do {
                 let identityId = try await body()
                 await MainActor.run {
+                    self?.terminalAt = Date()
                     self?.phase = .completed(identityId: identityId)
                 }
             } catch let unconfirmed as ShieldedIdentityCreateUnconfirmedError {
@@ -209,6 +222,7 @@ final class IdentityRegistrationController: ObservableObject {
                 // Rust's direct fetch came back empty. Hold the slot; the
                 // identity probably exists and will surface on the next sync.
                 await MainActor.run {
+                    self?.terminalAt = Date()
                     self?.phase = .unconfirmed(
                         identityId: unconfirmed.identityId,
                         message: unconfirmed.message
@@ -228,6 +242,7 @@ final class IdentityRegistrationController: ObservableObject {
                 }
                 await MainActor.run {
                     self?.failureStage = stage
+                    self?.terminalAt = Date()
                     self?.phase = .failed(error.localizedDescription)
                 }
             }

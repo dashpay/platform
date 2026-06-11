@@ -439,8 +439,10 @@ impl Drive {
 
                 // Prove BOTH the spent nullifiers AND the newly-created identity in a single merged
                 // multi-root proof. Built STRICT from day one (per #3812): the verifier rebuilds this
-                // exact merged query and verifies it with `verify_query_with_absence_proof`, so the
-                // proof cannot carry any branch beyond {nullifiers, identity}.
+                // exact merged query and verifies it with `verify_query` (succinctness on), so the
+                // proof cannot carry any branch beyond {nullifiers, identity}. The absence-proof
+                // variant is unusable here: it enumerates the query's terminal keys, which is
+                // impossible for `full_identity_query`'s unbounded all-keys range.
                 let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
                 let mut nf_query = grovedb::Query::new();
                 nf_query.insert_keys(nullifier_keys);
