@@ -29,41 +29,40 @@
 //! explicit turbofish so the mock recorder knows which response
 //! type to register.
 //!
-//! Count / `group_by` need a v3.1+ version, so tests build via
-//! [`count_capable_mock_sdk`], which pins PV12 (the mock short-circuits the
-//! verifier, so auto-detect never ratchets these tests on its own).
+//! Count / `group_by` need the latest (v3.1+) wire, so tests build via
+//! [`count_capable_mock_sdk`], which boots a plain auto-detect mock SDK and then
+//! ratchets it up via a cheap proven `fetch_current` — exactly as production
+//! converges to the network's real protocol version on its first proven response.
 
 use std::sync::Arc;
 
-use super::common::{mock_data_contract, mock_document_type};
+use super::common::{bootstrap_mock_sdk_to_latest, mock_data_contract, mock_document_type};
 use dash_sdk::{
     platform::{documents::document_query::DocumentQuery, Fetch},
     Sdk, SdkBuilder,
 };
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::Value;
-use dpp::version::PlatformVersion;
 use drive::query::conditions::{WhereClause, WhereOperator};
 use drive::query::ordering::OrderClause;
 use drive::query::SelectProjection;
 use drive_proof_verifier::{DocumentCount, DocumentSplitCounts, SplitCountEntry};
 
-/// Mock SDK pinned to PV12 — the first release wiring `DRIVE_ABCI_QUERY_VERSIONS_V1`
-/// (V1 documents wire), so Count / `group_by` encode. The mock transport short-circuits
-/// the wire verifier, so auto-detect never ratchets here; `with_version` pins the fixed
-/// wire version this test needs.
-fn count_capable_mock_sdk() -> Sdk {
-    let pv = PlatformVersion::get(dpp::version::v12::PROTOCOL_VERSION_12)
-        .expect("PROTOCOL_VERSION_12 is a known version");
-    SdkBuilder::new_mock()
-        .with_version(pv)
+/// Auto-detect mock SDK ratcheted to the latest protocol version (the first release
+/// wiring `DRIVE_ABCI_QUERY_VERSIONS_V1`, so Count / `group_by` encode). The mock
+/// short-circuits the wire verifier, so the proven `fetch_current` bootstrap is what
+/// teaches the SDK the network version — no fixed pin needed.
+async fn count_capable_mock_sdk() -> Sdk {
+    let mut sdk = SdkBuilder::new_mock()
         .build()
-        .expect("mock Sdk should be created")
+        .expect("mock Sdk should be created");
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
+    sdk
 }
 
 #[tokio::test]
 async fn test_mock_fetch_document_count_returns_expected() {
-    let mut sdk = count_capable_mock_sdk();
+    let mut sdk = count_capable_mock_sdk().await;
 
     let document_type = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
@@ -89,7 +88,7 @@ async fn test_mock_fetch_document_count_returns_expected() {
 
 #[tokio::test]
 async fn test_mock_fetch_document_count_zero() {
-    let mut sdk = count_capable_mock_sdk();
+    let mut sdk = count_capable_mock_sdk().await;
 
     let document_type = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
@@ -114,7 +113,7 @@ async fn test_mock_fetch_document_count_zero() {
 
 #[tokio::test]
 async fn test_mock_fetch_document_count_not_found() {
-    let mut sdk = count_capable_mock_sdk();
+    let mut sdk = count_capable_mock_sdk().await;
 
     let document_type = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
@@ -144,7 +143,7 @@ async fn test_mock_fetch_document_count_not_found() {
 /// per-value shape.
 #[tokio::test]
 async fn test_mock_fetch_document_split_counts_with_in_clause() {
-    let mut sdk = count_capable_mock_sdk();
+    let mut sdk = count_capable_mock_sdk().await;
 
     let document_type = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
@@ -196,7 +195,7 @@ async fn test_mock_fetch_document_split_counts_with_in_clause() {
 /// requests to the server's `RangeDistinctProof` dispatch.
 #[tokio::test]
 async fn test_mock_fetch_document_split_counts_with_distinct_range() {
-    let mut sdk = count_capable_mock_sdk();
+    let mut sdk = count_capable_mock_sdk().await;
 
     let document_type = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
@@ -254,7 +253,7 @@ async fn test_mock_fetch_document_split_counts_with_distinct_range() {
 /// the dispatch even when the caller asks for a single `u64`.
 #[tokio::test]
 async fn test_mock_fetch_document_count_with_distinct_range_sums_entries() {
-    let mut sdk = count_capable_mock_sdk();
+    let mut sdk = count_capable_mock_sdk().await;
 
     let document_type = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
@@ -296,7 +295,7 @@ async fn test_mock_fetch_document_count_with_distinct_range_sums_entries() {
 /// entries silently would fail here.
 #[tokio::test]
 async fn test_mock_fetch_document_split_counts_preserves_none_for_absent_in_values() {
-    let mut sdk = count_capable_mock_sdk();
+    let mut sdk = count_capable_mock_sdk().await;
 
     let document_type = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
