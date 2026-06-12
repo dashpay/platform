@@ -6,17 +6,21 @@ import SwiftData
 /// identity-create, …).
 ///
 /// Mirrors `platform_wallet::wallet::shielded::ShieldedActivityEntry`
-/// from the Rust side. Written two ways, both keyed by `entryId`:
+/// from the Rust side. Written two ways, both scoped by
+/// `(walletId, accountIndex, entryId)`:
 /// - **live** — each shielded operation records a rich entry at execution
 ///   time (exact kind, amount, fee, counterparty, memo, identity id);
 /// - **scan-derived** — on a restored wallet the sync pass reconstructs
 ///   entries best-effort from persisted notes / outgoing notes.
 ///
-/// The persister callback upserts by `entryId`, so a `Pending` row flips
-/// to `Confirmed`/`Failed` in place, and a coarse scan-derived
-/// `ShieldedSpend` can be refined to a specific kind when a richer entry
-/// re-emits the same id (the id = sha256 of the visible output cmxs is
-/// identical across both paths by construction).
+/// The persister callback upserts by that tuple — `entryId` alone is not
+/// globally unique across accounts (an intra-wallet transfer writes a
+/// Sent row on the sending account and a Received row on the receiving
+/// account sharing one `entryId`). Re-persisting the same tuple flips a
+/// `Pending` row to `Confirmed`/`Failed` in place, and a coarse
+/// scan-derived `ShieldedSpend` can be refined to a specific kind when a
+/// richer entry re-emits the same id (the id = sha256 of the visible
+/// output cmxs is identical across both paths by construction).
 ///
 /// On cold start the matching `loadShieldedActivity` callback streams
 /// every row back to Rust so the scan deriver's dedupe set includes it
@@ -24,9 +28,10 @@ import SwiftData
 @Model
 public final class PersistentShieldedActivity {
     /// Composite uniqueness on `(walletId, accountIndex, entryId)` — at
-    /// most one activity row per operation. `entryId` alone is the
-    /// natural key (it's a content hash), but scoping by subwallet
-    /// matches how the row is addressed on both persist and load paths.
+    /// most one activity row per operation PER subwallet. The subwallet
+    /// scope is required, not cosmetic: `entryId` is a content hash that
+    /// two accounts of one wallet legitimately share (intra-wallet
+    /// transfer → Sent on the sender, Received on the receiver).
     #Unique<PersistentShieldedActivity>([\.walletId, \.accountIndex, \.entryId])
     /// Index `(walletId, accountIndex)` so per-subwallet history scans
     /// hit an index instead of the full table.

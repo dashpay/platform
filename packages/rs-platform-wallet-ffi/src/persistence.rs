@@ -355,9 +355,11 @@ pub struct PersistenceCallbacks {
         ) -> i32,
     >,
     /// Persist a batch of derived activity-log entries. The host upserts
-    /// each by `entry_id` (Pending→Confirmed/Failed flips and scan-kind
-    /// refinements re-emit the same id). Mirrors the other
-    /// `on_persist_shielded_*` callbacks.
+    /// each by `(wallet_id, account_index, entry_id)` — `entry_id` alone
+    /// is not globally unique across accounts (see [`ShieldedActivityFFI`]).
+    /// Pending→Confirmed/Failed flips and scan-kind refinements re-emit
+    /// the same tuple. Mirrors the other `on_persist_shielded_*`
+    /// callbacks.
     #[cfg(feature = "shielded")]
     pub on_persist_shielded_activity_fn: Option<
         unsafe extern "C" fn(
