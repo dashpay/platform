@@ -6,12 +6,7 @@ struct IdentityDetailView: View {
     let identityId: Data
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
-    @EnvironmentObject var appUIState: AppUIState
     @Environment(\.modelContext) private var modelContext
-
-    /// Mirrors DashPayTabView's stored picker selection — written
-    /// here so the "Contacts" deep-link lands on this identity.
-    @AppStorage("dashpay.activeIdentityId") private var dashPayActiveIdentityId: String = ""
 
     /// Reactively observe the `PersistentIdentity` row for
     /// `identityId`. `@Query` with a targeted predicate — when any
@@ -183,28 +178,6 @@ struct IdentityDetailView: View {
                         Text("Local Only")
                             .foregroundColor(.secondary)
                     }
-                }
-            }
-
-            // DashPay Section — deep-links to the DashPay tab with
-            // this identity pre-selected (contacts/requests/payments
-            // all live there now; the legacy per-identity Friends
-            // screen was removed). The richer "DashPay Profile"
-            // section further down still owns profile reads/edits.
-            //
-            // Hidden when the identity isn't backed by a loaded
-            // local wallet — the DashPay tab only operates on
-            // wallet-backed identities.
-            if let walletId = identity.wallet?.walletId,
-               walletManager.wallet(for: walletId) != nil {
-                Section("DashPay") {
-                    Button {
-                        dashPayActiveIdentityId = identity.identityIdBase58
-                        appUIState.selectedTab = .dashpay
-                    } label: {
-                        Label("Contacts", systemImage: "person.2")
-                    }
-                    .accessibilityIdentifier("identity.openDashPay")
                 }
             }
 
