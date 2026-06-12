@@ -474,8 +474,11 @@ mod mod_tests {
     // output-only bundle to its 2-action minimum) and the dummies are
     // zero-value, so the bundle's `value_balance` still equals exactly
     // the real recipient amount. This is the invariant the pool-seeding
-    // flow relies on: one transition can publish up to 16 actions, all
-    // but one carrying no value.
+    // flow relies on: one transition publishes up to 6 actions (the most
+    // that fits the 20 KiB transition-size limit), all but one carrying
+    // no value. The cases stop at 5 dummies — the seeding maximum — to
+    // keep this real-proving test inside the CI shielded-step budget
+    // (proof cost grows with the action count).
     // ------------------------------------------------------------------
 
     #[test]
@@ -484,7 +487,7 @@ mod mod_tests {
         let amount = 10_000u64;
 
         // (dummy_outputs, expected on-wire action count).
-        for (dummies, expected_actions) in [(0usize, 2usize), (1, 2), (15, 16)] {
+        for (dummies, expected_actions) in [(0usize, 2usize), (1, 2), (5, 6)] {
             let bundle =
                 build_output_only_bundle(&recipient, amount, [0u8; 36], None, dummies, &TestProver)
                     .expect("bundle should build");

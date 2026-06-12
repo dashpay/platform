@@ -262,48 +262,6 @@ async fn build_shield_from_asset_lock_transition_with_signer_end_to_end() {
 }
 
 #[tokio::test]
-async fn build_shield_from_asset_lock_transition_with_signer_dummy_outputs_pad_actions() {
-    // Pool-seeding path: `dummy_outputs = 15` makes a 16-action
-    // (1 real + 15 zero-value filler) ShieldFromAssetLock. The on-wire
-    // action count is what consensus prices the fee from, and the real
-    // recipient amount stays the transition's `value_balance` (the
-    // fillers carry no value).
-    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
-
-    let recipient = test_orchard_address();
-    let signer = FixedKeySigner::new([7u8; 32]);
-    let path = DerivationPath::default();
-    let shield_amount = 50_000u64;
-
-    let st = build_shield_from_asset_lock_transition_with_signer(
-        &recipient,
-        shield_amount,
-        make_chain_asset_lock_proof(),
-        &path,
-        &signer,
-        &TestProver,
-        [0u8; 36],
-        None, // sender_ovk
-        None, // surplus_output
-        15,   // dummy_outputs -> 16 on-wire actions
-        PlatformVersion::latest(),
-    )
-    .await
-    .expect("builder should succeed");
-
-    let v0 = extract_v0(st);
-    assert_eq!(
-        v0.actions.len(),
-        16,
-        "1 real + 15 dummy outputs must serialize to 16 Orchard actions",
-    );
-    assert_eq!(
-        v0.value_balance, shield_amount,
-        "dummy outputs are zero-value: value_balance must equal the real amount",
-    );
-}
-
-#[tokio::test]
 async fn seed_pool_batch_fits_max_state_transition_size() {
     // The pool-seeding batch size (MAX_ACTIONS_PER_BATCH = 6 in
     // rs-platform-wallet's seed_pool.rs) is bounded by the 20 KiB
@@ -348,5 +306,13 @@ async fn seed_pool_batch_fits_max_state_transition_size() {
     );
 
     let v0 = extract_v0(st);
-    assert_eq!(v0.actions.len(), 6);
+    assert_eq!(
+        v0.actions.len(),
+        6,
+        "1 real + 5 dummy outputs must serialize to 6 Orchard actions",
+    );
+    assert_eq!(
+        v0.value_balance, 50_000,
+        "dummy outputs are zero-value: value_balance must equal the real amount",
+    );
 }
