@@ -1477,6 +1477,16 @@ mod tests {
         }
 
         #[test]
+        fn rejects_removing_max_items_from_fixed_byte_array() {
+            // Removing `maxItems` turns a fixed (raw, no length prefix) byte array
+            // into a variable (varint length-prefixed) one, so it must be rejected.
+            assert_rejected(
+                platform_value!({"type":"array","byteArray":true,"minItems":32,"maxItems":32,"position":0}),
+                platform_value!({"type":"array","byteArray":true,"minItems":32,"position":0}),
+            );
+        }
+
+        #[test]
         fn accepts_unchanged_fixed_byte_array() {
             assert_accepted(
                 platform_value!({"type":"array","byteArray":true,"minItems":32,"maxItems":32,"position":0}),

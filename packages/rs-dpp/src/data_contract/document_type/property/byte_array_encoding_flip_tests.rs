@@ -94,7 +94,7 @@ fn build_contract_with_byte_array(
 
 /// Builds a document whose byteArray `data` field is a 32-byte value whose FIRST
 /// byte is `0xFF` (a varint continuation byte).
-fn build_document_with_ff_prefixed_bytes(contract: &DataContract) -> Document {
+fn build_document_with_ff_prefixed_bytes(_contract: &DataContract) -> Document {
     let mut bytes = [0u8; 32];
     bytes[0] = 0xFF;
 
@@ -104,7 +104,6 @@ fn build_document_with_ff_prefixed_bytes(contract: &DataContract) -> Document {
     // happy-path round-trip comparison exact.
     properties.insert(BYTE_ARRAY_FIELD.to_string(), Value::Bytes32(bytes));
 
-    let _ = contract; // keep signature symmetric / future-proof
     DocumentV0 {
         id: Identifier::new([1; 32]),
         owner_id: Identifier::new([2; 32]),
