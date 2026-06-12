@@ -404,3 +404,88 @@ fn test_concurrent_bidirectional_requests() {
     assert_eq!(managed_a.sent_contact_requests.len(), 0);
     assert_eq!(managed_b.sent_contact_requests.len(), 0);
 }
+
+/// G3 receive side: a rotation request (same sender, bumped
+/// accountReference) must supersede the tracked state instead of being
+/// dropped as a duplicate.
+///
+/// - Established contact: the incoming request is replaced with the
+///   rotated one and `payment_channel_broken` is cleared — a
+///   superseding request is exactly the recovery the broken flag's
+///   contract promises ("wait for the contact to send a new request").
+/// - Pending incoming (not yet accepted): the entry is replaced so a
+///   later Accept uses the freshest key material.
+#[test]
+fn test_rotation_request_rekeys_established_contact_and_clears_broken_flag() {
+    let identity_a = create_test_identity([1u8; 32]);
+    let identity_b = create_test_identity([2u8; 32]);
+    let id_a = identity_a.id();
+    let id_b = identity_b.id();
+
+    let mut managed_a = ManagedIdentity::new(identity_a, 0);
+
+    // Establish A <-> B (A sent, then B's reciprocal arrives).
+    let request_a_to_b = create_contact_request(id_a, id_b, 0, 1000);
+    let request_b_to_a = create_contact_request(id_b, id_a, 0, 1001);
+    managed_a.add_sent_contact_request(request_a_to_b, &noop_persister());
+    managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister());
+    assert_eq!(managed_a.established_contacts.len(), 1);
+
+    // Simulate a broken payment channel (G1c) — e.g. the old request's
+    // xpub stopped decrypting after B rotated keys.
+    managed_a
+        .established_contacts
+        .get_mut(&id_b)
+        .expect("established contact")
+        .payment_channel_broken = true;
+
+    // B rotates: a new request with a different accountReference.
+    let rotated = create_contact_request(id_b, id_a, 7, 2000);
+    let rekeyed = managed_a.apply_rotated_incoming_request(rotated.clone(), &noop_persister());
+
+    assert!(rekeyed, "an established contact must report re-keying");
+    let contact = managed_a
+        .established_contacts
+        .get(&id_b)
+        .expect("contact still established");
+    assert_eq!(
+        contact.incoming_request.account_reference, 7,
+        "the rotated request must supersede the tracked incoming request"
+    );
+    assert_eq!(
+        contact.incoming_request.created_at, 2000,
+        "the rotated request's payload must be the new one"
+    );
+    assert!(
+        !contact.payment_channel_broken,
+        "a superseding request must clear the broken-channel flag"
+    );
+
+    // Pending-incoming variant: a not-yet-accepted request is replaced.
+    let identity_c = create_test_identity([3u8; 32]);
+    let id_c = identity_c.id();
+    let pending = create_contact_request(id_c, id_a, 0, 3000);
+    managed_a.add_incoming_contact_request(pending, &noop_persister());
+    let rotated_pending = create_contact_request(id_c, id_a, 4, 3001);
+    let rekeyed =
+        managed_a.apply_rotated_incoming_request(rotated_pending, &noop_persister());
+    assert!(!rekeyed, "pending (non-established) rotation is not a re-key");
+    assert_eq!(
+        managed_a
+            .incoming_contact_requests
+            .get(&id_c)
+            .expect("pending request still tracked")
+            .account_reference,
+        4,
+        "the pending entry must be replaced by the rotated request"
+    );
+
+    // Unknown sender: a no-op (fresh requests go through
+    // add_incoming_contact_request).
+    let identity_d = create_test_identity([4u8; 32]);
+    let stranger = create_contact_request(identity_d.id(), id_a, 0, 4000);
+    assert!(!managed_a.apply_rotated_incoming_request(stranger, &noop_persister()));
+    assert!(!managed_a
+        .incoming_contact_requests
+        .contains_key(&identity_d.id()));
+}

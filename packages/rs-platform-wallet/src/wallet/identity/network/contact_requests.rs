@@ -153,6 +153,53 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             (xpub, ecdh_key)
         };
 
+        // 4b. Mask the accountReference per DIP-15 (G3): the low 28
+        //     bits are the account index XOR'd with a PRF of the
+        //     compact xpub keyed by our ECDH private key; the top 4
+        //     bits carry the rotation version. The version starts at 0
+        //     and bumps past the previous sent request's version when
+        //     re-sending to the same recipient — the contract's unique
+        //     index `($ownerId, toUserId, accountReference)` rejects an
+        //     identical resend, so the bump is what makes a superseding
+        //     (rotation) request broadcastable.
+        let account_reference = {
+            let secret = ecdh_private_key.secret_bytes();
+            let previous_version = {
+                let wm = self.wallet_manager.read().await;
+                wm.get_wallet_info(&self.wallet_id)
+                    .and_then(|info| info.identity_manager.managed_identity(sender_identity_id))
+                    .and_then(|managed| managed.sent_contact_requests.get(recipient_identity_id))
+                    .map(|prior| {
+                        crate::wallet::identity::crypto::dip14::unmask_account_reference(
+                            prior.account_reference,
+                            &secret,
+                            &xpub_bytes,
+                        )
+                        .0
+                    })
+            };
+            let version = match previous_version {
+                // 4-bit field; saturate rather than wrap so a 16th
+                // rotation fails loudly at the unique index instead of
+                // silently colliding with version 0.
+                Some(v) if v >= 15 => {
+                    tracing::warn!(
+                        recipient = %recipient_identity_id,
+                        "accountReference rotation version saturated at 15"
+                    );
+                    15
+                }
+                Some(v) => v + 1,
+                None => 0,
+            };
+            crate::wallet::identity::crypto::dip14::calculate_account_reference(
+                &secret,
+                &xpub_bytes,
+                account_index,
+                version,
+            )
+        };
+
         // 5. Build the signing key reference for document signing.
         let identity_public_key = sender_identity
             // Contact-request send writes a document state transition,
@@ -186,7 +233,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 recipient_identity,
                 sender_key_index,
                 recipient_key_index,
-                account_reference: account_index,
+                account_reference,
                 account_label,
                 auto_accept_proof,
                 ecdh_private_key,
@@ -357,14 +404,17 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             //     candidates; then DROP the guard before registering. ---
             let candidates = {
                 let mut wm = self.wallet_manager.write().await;
-                let info = match wm.get_wallet_info_mut(&self.wallet_id) {
-                    Some(i) => i,
-                    None => continue,
+                let Some((wallet, info)) = wm.get_wallet_mut_and_info_mut(&self.wallet_id) else {
+                    continue;
                 };
                 let managed = match info.identity_manager.managed_identity_mut(&identity_id) {
                     Some(m) => m,
                     None => continue,
                 };
+                // Established contacts re-keyed by a rotation request in
+                // this pass — their stale external accounts are torn down
+                // below so the build sweep re-registers from the new xpub.
+                let mut rotated_contacts: Vec<Identifier> = Vec::new();
 
                 // (1) Ingest received requests.
                 for (doc_id, maybe_doc) in received_docs.iter() {
@@ -382,12 +432,23 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
                     // G1a: do NOT skip just because the sender is in
                     // `sent_contact_requests` — that is the reciprocal we
-                    // need to let through to auto-establish. Skip only when
-                    // already tracked as incoming or established (true
-                    // dedup), or suppressed by a rejected-request tombstone.
-                    if managed.incoming_contact_requests.contains_key(&sender_id)
-                        || managed.established_contacts.contains_key(&sender_id)
-                    {
+                    // need to let through to auto-establish. True dedup is
+                    // (sender, accountReference): the SAME reference as the
+                    // tracked incoming/established state is a re-ingest of a
+                    // known doc; a DIFFERENT reference from a known sender
+                    // is a rotation request (G3 receive side) and must get
+                    // through.
+                    let tracked_reference = managed
+                        .incoming_contact_requests
+                        .get(&sender_id)
+                        .map(|r| r.account_reference)
+                        .or_else(|| {
+                            managed
+                                .established_contacts
+                                .get(&sender_id)
+                                .map(|c| c.incoming_request.account_reference)
+                        });
+                    if tracked_reference == Some(contact_request.account_reference) {
                         continue;
                     }
                     // G5 stage 1: a rejected request (same sender +
@@ -400,6 +461,20 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                             account_reference = contact_request.account_reference,
                             "Skipping rejected contact request (tombstoned); doc {doc_id}"
                         );
+                        continue;
+                    }
+
+                    if tracked_reference.is_some() {
+                        // Rotation: supersede the tracked request. When an
+                        // established contact was re-keyed, queue the stale
+                        // external account for teardown so the build sweep
+                        // below re-registers it from the new xpub.
+                        if managed
+                            .apply_rotated_incoming_request(contact_request.clone(), &self.persister)
+                        {
+                            rotated_contacts.push(sender_id);
+                        }
+                        all_requests.push(contact_request);
                         continue;
                     }
 
@@ -429,6 +504,28 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         continue;
                     };
                     managed.add_sent_contact_request(contact_request, &self.persister);
+                }
+
+                // (2b) Tear down stale external accounts for contacts that
+                //      rotated in this pass: both the immutable Account
+                //      (old xpub — `send_payment`'s derivation source) and
+                //      the managed wrapper (old address pool). The
+                //      candidate collection below then re-queues them and
+                //      the build step re-registers from the NEW encrypted
+                //      xpub. The persisted account row is upserted (same
+                //      unique key) when the re-registration round lands.
+                for contact_id in &rotated_contacts {
+                    use key_wallet::account::account_collection::DashpayAccountKey;
+                    let key = DashpayAccountKey {
+                        index: 0,
+                        user_identity_id: identity_id.to_buffer(),
+                        friend_identity_id: contact_id.to_buffer(),
+                    };
+                    wallet.accounts.dashpay_external_accounts.remove(&key);
+                    info.core_wallet
+                        .accounts
+                        .dashpay_external_accounts
+                        .remove(&key);
                 }
 
                 // (3) Collect account-building candidates: every established

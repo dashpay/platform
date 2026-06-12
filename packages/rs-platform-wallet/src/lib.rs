@@ -62,7 +62,7 @@ pub use wallet::identity::network::{
     derive_identity_auth_keypair, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
 pub use wallet::identity::{
-    calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
+    calculate_account_reference, unmask_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
     derive_contact_payment_addresses, derive_contact_xpub, BlockTime, ContactRequest,
     ContactXpubData, DashPayProfile, DpnsNameInfo, EstablishedContact, IdentityLocation,
     IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateKeyData, ProfileUpdate,

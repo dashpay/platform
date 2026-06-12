@@ -214,6 +214,77 @@ impl ManagedIdentity {
         }
     }
 
+    /// Apply a **rotation** contact request (G3 receive side, DIP-15
+    /// §"sender rotated their addresses"): a request from a sender we
+    /// already track, carrying a *different* `accountReference` than
+    /// the tracked one. The new request supersedes the old —
+    /// last-write-wins per pair; simultaneous multi-account
+    /// relationships ride `accepted_accounts` later (M3 task 13).
+    ///
+    /// - **Established contact**: replace `incoming_request` (the new
+    ///   encrypted xpub + key indices) and clear
+    ///   `payment_channel_broken` — a superseding request is exactly
+    ///   the "wait for a new request" recovery the broken flag's
+    ///   docs promise. The caller is responsible for tearing down the
+    ///   stale external account so the build sweep re-registers it
+    ///   from the new xpub.
+    /// - **Pending incoming** (not yet accepted): replace the entry —
+    ///   accepting later uses the freshest key material.
+    ///
+    /// No-op if the sender isn't tracked at all (callers route fresh
+    /// requests through [`Self::add_incoming_contact_request`]).
+    /// Persists the resulting changeset. Returns `true` when an
+    /// established contact was re-keyed (the caller's signal to tear
+    /// down the stale external account).
+    pub fn apply_rotated_incoming_request(
+        &mut self,
+        request: ContactRequest,
+        persister: &WalletPersister,
+    ) -> bool {
+        let owner_id = self.id();
+        let sender_id = request.sender_id;
+        let mut cs = ContactChangeSet::default();
+
+        let rekeyed_established = if let Some(contact) = self.established_contacts.get_mut(&sender_id) {
+            tracing::info!(
+                owner = %owner_id,
+                sender = %sender_id,
+                old_reference = contact.incoming_request.account_reference,
+                new_reference = request.account_reference,
+                "Contact rotated their addresses — re-keying the established contact"
+            );
+            contact.incoming_request = request;
+            contact.payment_channel_broken = false;
+            cs.established.insert(
+                SentContactRequestKey {
+                    owner_id,
+                    recipient_id: sender_id,
+                },
+                contact.clone(),
+            );
+            true
+        } else if self.incoming_contact_requests.contains_key(&sender_id) {
+            cs.incoming_requests.insert(
+                ReceivedContactRequestKey {
+                    owner_id,
+                    sender_id,
+                },
+                ContactRequestEntry {
+                    request: request.clone(),
+                },
+            );
+            self.incoming_contact_requests.insert(sender_id, request);
+            false
+        } else {
+            return false;
+        };
+
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
+        rekeyed_established
+    }
+
     /// Remove an incoming contact request.
     ///
     /// Returns the removed request (if any) and a tombstone changeset.
