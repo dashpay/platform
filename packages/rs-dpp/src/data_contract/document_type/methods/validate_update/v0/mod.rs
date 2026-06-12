@@ -1496,6 +1496,17 @@ mod tests {
         }
 
         #[test]
+        fn rejects_tightening_variable_to_fixed_byte_array() {
+            // The reverse flip: a variable (varint length-prefixed) byte array
+            // narrowed to fixed (raw) also changes the on-disk layout -- old docs
+            // carry a length prefix the new fixed type would misread.
+            assert_rejected(
+                platform_value!({"type":"array","byteArray":true,"minItems":1,"maxItems":32,"position":0}),
+                platform_value!({"type":"array","byteArray":true,"minItems":32,"maxItems":32,"position":0}),
+            );
+        }
+
+        #[test]
         fn accepts_unchanged_fixed_byte_array() {
             assert_accepted(
                 platform_value!({"type":"array","byteArray":true,"minItems":32,"maxItems":32,"position":0}),
