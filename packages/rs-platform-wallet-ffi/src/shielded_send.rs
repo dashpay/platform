@@ -315,13 +315,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
             .shielded_transfer_to(&coordinator, account, &recipient, amount, memo, &prover)
             .await
     });
-    if let Err(e) = result {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded transfer failed: {e}"),
-        );
-    }
-    PlatformWalletFFIResult::ok()
+    map_spend_result(result, "shielded transfer")
 }
 
 /// Unshield: spend shielded notes and send `amount` credits to a
@@ -373,13 +367,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
             .shielded_unshield_to(&coordinator, account, &to_addr_str, amount, &prover)
             .await
     });
-    if let Err(e) = result {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded unshield failed: {e}"),
-        );
-    }
-    PlatformWalletFFIResult::ok()
+    map_spend_result(result, "shielded unshield")
 }
 
 /// Withdraw: spend shielded notes and send `amount` credits to a
@@ -435,13 +423,40 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
             )
             .await
     });
-    if let Err(e) = result {
-        return PlatformWalletFFIResult::err(
+    map_spend_result(result, "shielded withdraw")
+}
+
+/// Map a shielded spend outcome (unshield / transfer / withdraw) to a typed
+/// FFI result, mirroring the identity-create sibling's code split so hosts
+/// can tell "definitively failed, safe to retry" from "may have executed,
+/// do NOT retry".
+fn map_spend_result(
+    result: Result<(), PlatformWalletError>,
+    operation: &str,
+) -> PlatformWalletFFIResult {
+    match result {
+        Ok(()) => PlatformWalletFFIResult::ok(),
+        // Ambiguous: the broadcast was accepted but its execution result
+        // couldn't be confirmed. The notes stay reserved wallet-side and the
+        // next nullifier sync (or an app restart) reconciles them; the typed
+        // Display already carries the operation name and guidance.
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
+                e.to_string(),
+            )
+        }
+        // Definitive failure: the transition was not executed and the notes
+        // were released; the host may retry.
+        Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
+            format!("{operation} failed: {e}"),
+        ),
+        Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded withdraw failed: {e}"),
-        );
+            format!("{operation} failed: {e}"),
+        ),
     }
-    PlatformWalletFFIResult::ok()
 }
 
 /// IdentityCreateFromShieldedPool (Type 20): spend `account`'s shielded notes to fund a brand-new

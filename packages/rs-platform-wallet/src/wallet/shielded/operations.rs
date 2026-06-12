@@ -797,20 +797,24 @@ where
             .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
 
         // Wait for proven execution. Classify the failure:
-        //   - `StateTransitionBroadcastError` = Platform DEFINITIVELY reported the transition's own
-        //     execution error (it ran and was rejected on its merits). The identity does not exist;
-        //     keep today's behavior (release the reservation via `ShieldedBroadcastFailed`).
+        //   - `StateTransitionBroadcastError` WITH a consensus `cause` = Platform DEFINITIVELY
+        //     reported the transition's own execution error (it ran and was rejected on its
+        //     merits; the serialized consensus error is the verdict). The identity does not
+        //     exist; keep today's behavior (release the reservation via
+        //     `ShieldedBroadcastFailed`).
         //   - any other error (DriveProofError / Proof / InvalidProvedResponse / TimeoutReached /
         //     DapiClientError / …) = AMBIGUOUS: the broadcast was accepted and the transition may
         //     have executed even though we couldn't fetch/verify its result proof (this is exactly
-        //     the #3859 result-proof incident). Fall back to fetching the identity by its
-        //     pre-derived id before deciding it doesn't exist.
+        //     the #3859 result-proof incident). That includes cause-less
+        //     `StateTransitionBroadcastError`s — DAPI encodes its own wait-side failures
+        //     (timeouts, internal errors) that way, with empty consensus data. Fall back to
+        //     fetching the identity by its pre-derived id before deciding it doesn't exist.
         let proof_result = match st
             .wait_for_response::<StateTransitionProofResult>(sdk, None)
             .await
         {
             Ok(result) => result,
-            Err(dash_sdk::Error::StateTransitionBroadcastError(e)) => {
+            Err(dash_sdk::Error::StateTransitionBroadcastError(e)) if e.cause.is_some() => {
                 return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
             }
             Err(wait_err) => {
@@ -1227,11 +1231,11 @@ async fn cancel_pending<S: ShieldedStore>(
 /// spend DEFINITIVELY did not happen:
 ///
 /// - a broadcast-time rejection (relay/CheckTx refused the tx), or a
-///   `StateTransitionBroadcastError` from the result wait (Platform ran
-///   the transition and rejected it on its merits), means the spend
-///   never executed → [`PlatformWalletError::ShieldedBroadcastFailed`],
-///   and the caller releases the note reservations via
-///   [`cancel_pending`];
+///   `StateTransitionBroadcastError` carrying a consensus `cause`
+///   (Platform ran the transition and rejected it on its merits), means
+///   the spend never executed →
+///   [`PlatformWalletError::ShieldedBroadcastFailed`], and the caller
+///   releases the note reservations via [`cancel_pending`];
 /// - any other wait failure (result-proof fetch/verify error, timeout,
 ///   transport error, …) is AMBIGUOUS — the relay accepted the tx and
 ///   it may well have executed →
@@ -1254,25 +1258,47 @@ async fn broadcast_shielded_spend(
         .await
         .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
 
-    match state_transition
+    state_transition
         .wait_for_response::<StateTransitionProofResult>(sdk, None)
         .await
-    {
-        Ok(_) => Ok(()),
-        Err(dash_sdk::Error::StateTransitionBroadcastError(e)) => {
-            Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))
+        .map(|_| ())
+        .map_err(|wait_err| classify_spend_wait_failure(operation, &wait_err))
+}
+
+/// Classify a `wait_for_response` failure for an already-broadcast
+/// shielded spend (see [`broadcast_shielded_spend`]).
+///
+/// Only a `StateTransitionBroadcastError` with a populated consensus
+/// `cause` proves Platform executed the transition and rejected it on
+/// its merits — the serialized consensus error is the verdict. DAPI
+/// encodes its own wait-side failures (timeouts, internal errors; see
+/// `build_wait_for_state_transition_error_response` in rs-dapi) as
+/// `StateTransitionBroadcastError`s with EMPTY consensus data, which
+/// the SDK surfaces as `cause: None` — those are ambiguous, not
+/// rejections, and must keep the note reservations. Erring this way is
+/// the safe direction: misreading a rejection as ambiguous only delays
+/// note release until the next sync or restart, while misreading a
+/// timeout as a rejection re-frees notes whose nullifiers may already
+/// be consumed on chain.
+fn classify_spend_wait_failure(
+    operation: &'static str,
+    wait_err: &dash_sdk::Error,
+) -> PlatformWalletError {
+    match wait_err {
+        dash_sdk::Error::StateTransitionBroadcastError(e) if e.cause.is_some() => {
+            PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
         }
-        Err(wait_err) => {
+        _ => {
             warn!(
                 operation,
                 error = %wait_err,
                 "Shielded spend broadcast accepted but result confirmation failed; \
                  leaving the note reservations in place"
             );
-            Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+            PlatformWalletError::ShieldedSpendUnconfirmed {
                 operation,
                 reason: wait_err.to_string(),
-            })
+            }
         }
     }
 }
@@ -1328,6 +1354,73 @@ fn deserialize_note(data: &[u8]) -> Option<grovedb_commitment_tree::Note> {
     let rseed = RandomSeed::from_bytes(rseed_bytes, &rho).into_option()?;
 
     Note::from_parts(recipient, value, rho, rseed).into_option()
+}
+
+#[cfg(test)]
+mod classify_spend_wait_failure_tests {
+    use super::*;
+    use dash_sdk::error::StateTransitionBroadcastError;
+    use dpp::consensus::basic::decode::ProtocolVersionParsingError;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
+
+    fn broadcast_err(cause: Option<ConsensusError>) -> dash_sdk::Error {
+        dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+            code: 13,
+            message: "context deadline exceeded".to_string(),
+            cause,
+        })
+    }
+
+    #[test]
+    fn consensus_cause_is_a_definitive_rejection() {
+        let cause = ConsensusError::BasicError(BasicError::ProtocolVersionParsingError(
+            ProtocolVersionParsingError::new("bad version".to_string()),
+        ));
+        let err = classify_spend_wait_failure("unshield", &broadcast_err(Some(cause)));
+        assert!(
+            matches!(err, PlatformWalletError::ShieldedBroadcastFailed(_)),
+            "a broadcast error carrying a consensus cause means Platform ran and \
+             rejected the transition; the caller may release the reservation"
+        );
+    }
+
+    #[test]
+    fn causeless_broadcast_error_is_ambiguous() {
+        // DAPI maps its own wait failures (e.g. `DapiError::Timeout`) to a
+        // `StateTransitionBroadcastError` with EMPTY consensus data, which the
+        // SDK decodes as `cause: None`. The spend may still execute after the
+        // wait gave up, so this must NOT release the note reservations.
+        let err = classify_spend_wait_failure("unshield", &broadcast_err(None));
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::ShieldedSpendUnconfirmed {
+                    operation: "unshield",
+                    ..
+                }
+            ),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn transport_errors_are_ambiguous() {
+        let err = classify_spend_wait_failure(
+            "withdraw",
+            &dash_sdk::Error::TimeoutReached(
+                std::time::Duration::from_secs(80),
+                "waiting for response".to_string(),
+            ),
+        );
+        assert!(matches!(
+            err,
+            PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "withdraw",
+                ..
+            }
+        ));
+    }
 }
 
 #[cfg(test)]
