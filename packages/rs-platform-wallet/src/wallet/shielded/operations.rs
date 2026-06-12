@@ -789,12 +789,31 @@ where
             )
             .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
-        // Broadcast (relay-ACK only). A failure here is definitive: the tx was NOT accepted, so the
-        // spend never happened — map to `ShieldedBroadcastFailed` and let the outer match release
-        // the reservation, exactly as before.
-        st.broadcast(sdk, None)
-            .await
-            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
+        // Broadcast (relay-ACK only). Only a consensus-verdict rejection is definitive here —
+        // CheckTx evaluated the transition and refused it, so it sits in no mempool and the outer
+        // match may release the reservation via `ShieldedBroadcastFailed`, exactly as before. Any
+        // other failure leaves the outcome unknown: the dapi-client retries the broadcast across
+        // addresses, so a transport error or timeout cannot prove the request never reached a node
+        // (the ACK may simply have been lost), and `AlreadyExists` proves the transition IS already
+        // in the mempool or on chain. Surface those as `ShieldedBroadcastUnconfirmed` with the
+        // derived id so the caller holds the slot and keeps the note reservations — the same
+        // recovery path as a wait-stage ambiguity (the next sync reconciles).
+        st.broadcast(sdk, None).await.map_err(|e| {
+            if carries_consensus_rejection(&e) {
+                PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
+            } else {
+                warn!(
+                    derived_id = %identity_id,
+                    error = %e,
+                    "IdentityCreateFromShieldedPool: broadcast outcome unknown (no consensus \
+                     rejection); holding the slot and keeping the note reservations"
+                );
+                PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                    identity_id,
+                    reason: e.to_string(),
+                }
+            }
+        })?;
 
         // Wait for proven execution. Classify the failure:
         //   - `StateTransitionBroadcastError` WITH a consensus `cause` = Platform DEFINITIVELY
@@ -1225,20 +1244,47 @@ async fn cancel_pending<S: ShieldedStore>(
     }
 }
 
+/// Whether an SDK error carries Platform's own consensus verdict on the
+/// transition. Two shapes qualify:
+///
+/// - `Error::Protocol(ProtocolError::ConsensusError(_))` — DAPI attached the
+///   serialized consensus error as gRPC metadata
+///   (`dash-serialized-consensus-error-bin`), which the dapi-client decodes
+///   on any failed request. This is how a CheckTx rejection of the
+///   transition surfaces from `broadcast()` (rs-dapi's
+///   `map_broadcast_error` decodes the consensus error from Tenderdash's
+///   `info` field and `TenderdashStatus` re-attaches it as metadata);
+/// - a `StateTransitionBroadcastError` whose `cause` deserialized from
+///   non-empty consensus `data` — the wait-stream error envelope for a
+///   transition Platform executed and rejected on its merits.
+///
+/// Only these prove the transition was evaluated and REJECTED. Everything
+/// else — transport errors, timeouts, `AlreadyExists` (which proves the
+/// opposite: the transition is already in the mempool or on chain),
+/// DAPI-internal failures, cause-less broadcast envelopes (the shape DAPI
+/// uses for its own wait-side timeouts) — leaves the outcome unknown.
+fn carries_consensus_rejection(err: &dash_sdk::Error) -> bool {
+    match err {
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(_)) => true,
+        dash_sdk::Error::StateTransitionBroadcastError(e) => e.cause.is_some(),
+        _ => false,
+    }
+}
+
 /// Broadcast a built shielded spend transition (unshield / transfer /
 /// withdraw) and wait for proven execution, staging the two SDK calls
 /// separately so the caller's reservation rollback only runs when the
 /// spend DEFINITIVELY did not happen:
 ///
-/// - a broadcast-time rejection (relay/CheckTx refused the tx), or a
-///   `StateTransitionBroadcastError` carrying a consensus `cause`
-///   (Platform ran the transition and rejected it on its merits), means
-///   the spend never executed →
-///   [`PlatformWalletError::ShieldedBroadcastFailed`], and the caller
-///   releases the note reservations via [`cancel_pending`];
-/// - any other wait failure (result-proof fetch/verify error, timeout,
-///   transport error, …) is AMBIGUOUS — the relay accepted the tx and
-///   it may well have executed →
+/// - a consensus-verdict rejection at either stage (CheckTx refused the
+///   broadcast, or Platform ran the transition and rejected it on its
+///   merits — see [`carries_consensus_rejection`]) means the spend never
+///   executed → [`PlatformWalletError::ShieldedBroadcastFailed`], and the
+///   caller releases the note reservations via [`cancel_pending`];
+/// - any other failure at either stage (transport error, timeout,
+///   `AlreadyExists`, result-proof fetch/verify error, …) is AMBIGUOUS —
+///   the dapi-client retries across addresses, so even a failed
+///   `broadcast()` call may have delivered the transition to a node →
 ///   [`PlatformWalletError::ShieldedSpendUnconfirmed`], and the caller
 ///   must leave the reservations in place (each spend flow's outer
 ///   match has a dedicated arm for this).
@@ -1256,7 +1302,7 @@ async fn broadcast_shielded_spend(
     state_transition
         .broadcast(sdk, None)
         .await
-        .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
+        .map_err(|broadcast_err| classify_spend_broadcast_failure(operation, &broadcast_err))?;
 
     state_transition
         .wait_for_response::<StateTransitionProofResult>(sdk, None)
@@ -1265,13 +1311,46 @@ async fn broadcast_shielded_spend(
         .map_err(|wait_err| classify_spend_wait_failure(operation, &wait_err))
 }
 
+/// Classify a `broadcast()` failure for a shielded spend — the
+/// broadcast-stage sibling of [`classify_spend_wait_failure`].
+///
+/// Only a consensus verdict ([`carries_consensus_rejection`]) is
+/// definitive at this stage: CheckTx evaluated the transition and refused
+/// it, so it sits in no mempool and the reservations may be released.
+/// Anything else is ambiguous even before the wait: the dapi-client
+/// retries the broadcast across addresses, so a transport failure or
+/// timeout cannot prove the request never reached a node (the ACK may
+/// simply have been lost), and `AlreadyExists` proves the transition IS
+/// already in the mempool or on chain. Keep the reservations; the next
+/// nullifier sync (or an app restart, since reservations are in-memory)
+/// reconciles them.
+fn classify_spend_broadcast_failure(
+    operation: &'static str,
+    broadcast_err: &dash_sdk::Error,
+) -> PlatformWalletError {
+    if carries_consensus_rejection(broadcast_err) {
+        PlatformWalletError::ShieldedBroadcastFailed(broadcast_err.to_string())
+    } else {
+        warn!(
+            operation,
+            error = %broadcast_err,
+            "Shielded spend broadcast outcome unknown (no consensus rejection); \
+             leaving the note reservations in place"
+        );
+        PlatformWalletError::ShieldedSpendUnconfirmed {
+            operation,
+            reason: broadcast_err.to_string(),
+        }
+    }
+}
+
 /// Classify a `wait_for_response` failure for an already-broadcast
 /// shielded spend (see [`broadcast_shielded_spend`]).
 ///
-/// Only a `StateTransitionBroadcastError` with a populated consensus
-/// `cause` proves Platform executed the transition and rejected it on
-/// its merits — the serialized consensus error is the verdict. DAPI
-/// encodes its own wait-side failures (timeouts, internal errors; see
+/// Only a consensus verdict ([`carries_consensus_rejection`]) proves
+/// Platform executed the transition and rejected it on its merits — the
+/// serialized consensus error is the verdict. DAPI encodes its own
+/// wait-side failures (timeouts, internal errors; see
 /// `build_wait_for_state_transition_error_response` in rs-dapi) as
 /// `StateTransitionBroadcastError`s with EMPTY consensus data, which
 /// the SDK surfaces as `cause: None` — those are ambiguous, not
@@ -1284,21 +1363,18 @@ fn classify_spend_wait_failure(
     operation: &'static str,
     wait_err: &dash_sdk::Error,
 ) -> PlatformWalletError {
-    match wait_err {
-        dash_sdk::Error::StateTransitionBroadcastError(e) if e.cause.is_some() => {
-            PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
-        }
-        _ => {
-            warn!(
-                operation,
-                error = %wait_err,
-                "Shielded spend broadcast accepted but result confirmation failed; \
-                 leaving the note reservations in place"
-            );
-            PlatformWalletError::ShieldedSpendUnconfirmed {
-                operation,
-                reason: wait_err.to_string(),
-            }
+    if carries_consensus_rejection(wait_err) {
+        PlatformWalletError::ShieldedBroadcastFailed(wait_err.to_string())
+    } else {
+        warn!(
+            operation,
+            error = %wait_err,
+            "Shielded spend broadcast accepted but result confirmation failed; \
+             leaving the note reservations in place"
+        );
+        PlatformWalletError::ShieldedSpendUnconfirmed {
+            operation,
+            reason: wait_err.to_string(),
         }
     }
 }
@@ -1412,6 +1488,74 @@ mod classify_spend_wait_failure_tests {
                 std::time::Duration::from_secs(80),
                 "waiting for response".to_string(),
             ),
+        );
+        assert!(matches!(
+            err,
+            PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "withdraw",
+                ..
+            }
+        ));
+    }
+
+    /// The shape a CheckTx rejection takes when it reaches the SDK from
+    /// `broadcast()`: DAPI re-attaches the serialized consensus error as
+    /// gRPC metadata and the dapi-client decodes it into
+    /// `Error::Protocol(ConsensusError)`.
+    fn consensus_metadata_rejection() -> dash_sdk::Error {
+        let cause = ConsensusError::BasicError(BasicError::ProtocolVersionParsingError(
+            ProtocolVersionParsingError::new("bad version".to_string()),
+        ));
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(cause)))
+    }
+
+    /// A CheckTx consensus rejection surfacing from `broadcast()` IS
+    /// definitive: the transition was evaluated and refused, it sits in no
+    /// mempool, and the caller may release the reservations and retry.
+    #[test]
+    fn broadcast_consensus_rejection_is_definitive() {
+        let err = classify_spend_broadcast_failure("transfer", &consensus_metadata_rejection());
+        assert!(matches!(
+            err,
+            PlatformWalletError::ShieldedBroadcastFailed(_)
+        ));
+        // The same verdict shape is definitive on the wait stage too.
+        let err = classify_spend_wait_failure("transfer", &consensus_metadata_rejection());
+        assert!(matches!(
+            err,
+            PlatformWalletError::ShieldedBroadcastFailed(_)
+        ));
+    }
+
+    /// A transport/timeout failure of the `broadcast()` call itself is
+    /// AMBIGUOUS: the dapi-client retries across addresses, so the request
+    /// may have been delivered to a node whose ACK was lost. Releasing the
+    /// reservations here would let a retry select other unreserved notes
+    /// and double-send if the original broadcast landed.
+    #[test]
+    fn broadcast_transport_failure_is_ambiguous() {
+        let err = classify_spend_broadcast_failure(
+            "unshield",
+            &dash_sdk::Error::Generic("transport error: connection reset".to_string()),
+        );
+        assert!(matches!(
+            err,
+            PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "unshield",
+                ..
+            }
+        ));
+    }
+
+    /// `AlreadyExists` from `broadcast()` proves the transition IS already
+    /// in the mempool or on chain (e.g. an internal dapi-client retry after
+    /// an ambiguous first delivery), so it must NOT release the
+    /// reservations — the spend is in flight.
+    #[test]
+    fn broadcast_already_exists_is_ambiguous() {
+        let err = classify_spend_broadcast_failure(
+            "withdraw",
+            &dash_sdk::Error::AlreadyExists("state transition already in mempool".to_string()),
         );
         assert!(matches!(
             err,
