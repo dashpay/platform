@@ -7,6 +7,18 @@
 //! flagged (by the app) as having used CoinJoin in DashSync, the app widens the
 //! gap — matching DashSync's `SEQUENCE_GAP_LIMIT_INITIAL_COINJOIN` of 400 —
 //! before starting SPV, runs the recovery scan, then reverts to the default.
+//!
+//! ## Scope: external CoinJoin chain only
+//!
+//! This widens only the CoinJoin account's external pool (`.../0/i`). DashSync
+//! CoinJoin also puts mixing *change* on the internal chain (`.../1/i`), but the
+//! SDK's CoinJoin account models only the external chain, and a migrated wallet's
+//! internal-chain mixed coins arrive as **imported spendable UTXOs** — not via an
+//! SPV address scan — so no gap widening is needed to discover them. The sweep
+//! still signs them regardless of chain: `coinjoin_sweep_path_map` (in
+//! `core::broadcast`) re-derives both `/0/` and `/1/` from the account xpub. If a
+//! future migration path instead relied on SPV to *re-discover* internal-chain
+//! coins, this recovery would also need to materialize the internal pool.
 
 use key_wallet::gap_limit::MAX_GAP_LIMIT;
 use key_wallet::managed_account::address_pool::KeySource;

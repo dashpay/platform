@@ -241,6 +241,17 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 (acct.account_xpub, acct.account_type, acct.network)
             };
 
+            // Fund-safety invariant owned by the sweep itself, not just the FFI
+            // boundary: refuse to drain every CoinJoin UTXO to a destination that
+            // isn't valid on this wallet's network. The sweep is irreversible, so
+            // any non-FFI Rust caller (tests, future wrappers) is covered here by
+            // construction.
+            if !dest.as_unchecked().is_valid_for_network(network) {
+                return Err(PlatformWalletError::AddressOperation(format!(
+                    "CoinJoin sweep destination is not valid for the wallet network {network:?}"
+                )));
+            }
+
             let current_height = info.core_wallet.synced_height();
 
             let managed_account = info
@@ -287,8 +298,20 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             )?;
 
             let fee_rate = FeeRate::normal();
-            const BASE_SIZE_1_OUTPUT_NO_CHANGE: usize = 8 + 1 + 1 + 34;
-            const INPUT_SIZE: usize = 148;
+            // Upper bounds for the serialized size of a (N-input, 1-output,
+            // no-change) tx. `FeeRate::normal()` is exactly 1 duff/byte — the
+            // relay minimum, with no headroom — so this size estimate must never
+            // undershoot the real transaction or the chunk pays below the minimum
+            // fee and gets rejected. The maximum compressed-P2PKH input is 149 B
+            // (36 outpoint + 1 script-len + 108 scriptSig at a 73-byte low-S DER
+            // signature + 4 sequence); the input-count CompactSize is sized per
+            // chunk below (it grows from 1 to 3 bytes at 253 inputs). Slightly
+            // over-paying on an all-funds sweep is harmless — the single output
+            // just absorbs the difference.
+            const VERSION_PLUS_LOCKTIME: usize = 8;
+            const OUTPUT_COUNT_VARINT: usize = 1; // exactly one output
+            const ONE_P2PKH_OUTPUT: usize = 34;
+            const MAX_P2PKH_INPUT_SIZE: usize = 149;
 
             // Balanced chunks of <= MAX_INPUTS_PER_SWEEP so no transaction
             // exceeds the relay size limit. `chunks()` over disjoint slices
@@ -301,13 +324,18 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 let input_count = chunk_utxos.len();
                 let total_input: u64 = chunk_utxos.iter().map(|u| u.value()).sum();
 
-                // Exact fee for (input_count inputs, 1 output, no change).
-                // Mirrors key-wallet's `calculate_base_size()` (8 + input-
-                // varint + output-varint + 34) and the selector's 148 B/input,
-                // so `total_input - fee` yields a single output with zero
-                // change for this chunk.
-                let fee =
-                    fee_rate.calculate_fee(BASE_SIZE_1_OUTPUT_NO_CHANGE + input_count * INPUT_SIZE);
+                // Upper-bound fee for (input_count inputs, 1 output, no change)
+                // at the 1 duff/byte relay minimum, so `total_input - fee` is a
+                // single zero-change output that always clears relay. The
+                // input-count CompactSize is 1 byte below 253 inputs and 3 bytes
+                // for 253..=MAX_INPUTS_PER_SWEEP (500).
+                let input_count_varint = if input_count < 253 { 1 } else { 3 };
+                let tx_size = VERSION_PLUS_LOCKTIME
+                    + input_count_varint
+                    + OUTPUT_COUNT_VARINT
+                    + ONE_P2PKH_OUTPUT
+                    + input_count * MAX_P2PKH_INPUT_SIZE;
+                let fee = fee_rate.calculate_fee(tx_size);
 
                 if total_input <= fee {
                     return Err(PlatformWalletError::TransactionBuild(format!(
@@ -388,7 +416,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                          with remaining chunks (caller can re-run): {}",
                         e
                     );
-                    last_err = Some(e);
+                    // Keep the FIRST failure (usually the root cause); the later
+                    // chunk errors are already surfaced via the warn! above.
+                    last_err.get_or_insert(e);
                 }
             }
         }
