@@ -67,7 +67,7 @@ use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedErr
 use dpp::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, InvalidKeyPurposeForContractBoundsError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
 use dpp::consensus::basic::overflow_error::OverflowError;
-use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError, DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError, InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError, TokenNoteOnlyAllowedWhenProposerError, TokenTransferToOurselfError, InvalidTokenDistributionTimeIntervalNotMinuteAlignedError, InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenDistributionBlockIntervalTooShortError};
+use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError, DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError, InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError, TokenNoteOnlyAllowedWhenProposerError, TokenPricingScheduleEmptyError, TokenTransferToOurselfError, InvalidTokenDistributionTimeIntervalNotMinuteAlignedError, InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenDistributionBlockIntervalTooShortError};
 use dpp::consensus::state::data_contract::data_contract_not_found_error::DataContractNotFoundError;
 use dpp::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
@@ -969,6 +969,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::ShieldedInvalidDenominationError(e) => {
             generic_consensus_error!(ShieldedInvalidDenominationError, e).into()
+        }
+        BasicError::TokenPricingScheduleEmptyError(e) => {
+            generic_consensus_error!(TokenPricingScheduleEmptyError, e).into()
         }
     }
 }

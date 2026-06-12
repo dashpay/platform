@@ -2143,6 +2143,17 @@ pub(in crate::execution) mod tests {
             .serialize_to_bytes()
             .expect("expected documents batch serialized state transition");
 
+        // CheckTx root-invariance guard (devnet paloma h788): `check_tx` asserts under
+        // cfg(test) that it never mutates committed grovedb state, so every valid vote
+        // fixture going through this shared helper pins the invariant for masternode votes.
+        if expect_error.is_none() {
+            crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels(
+                platform,
+                &masternode_vote_serialized_transition,
+                "masternode vote",
+            );
+        }
+
         let transaction = platform.drive.grove.start_transaction();
 
         let processing_result = platform

@@ -118,8 +118,6 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V8: DriveAbciMethodVersions = DriveAbciMeth
         validate_fees_of_event: 0,
         store_address_balances_to_recent_block_storage: Some(0),
         cleanup_recent_block_storage_address_balances: Some(0),
-        store_nullifiers_to_recent_block_storage: Some(0),
-        cleanup_recent_block_storage_nullifiers: Some(0),
     },
     epoch: DriveAbciEpochMethodVersions {
         gather_epoch_info: 0,

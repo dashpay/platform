@@ -488,6 +488,21 @@ mod tests {
                 output_script,
             );
 
+            // CheckTx root-invariance guard (devnet paloma h788): `check_tx` asserts under
+            // cfg(test) that it never mutates committed grovedb state, so running the
+            // canonical valid fixture through it pins the invariant for this transition type.
+            {
+                use dpp::serialization::PlatformSerializable;
+                let guard_serialized_transition = transition
+                    .serialize_to_bytes()
+                    .expect("expected to serialize transition for the check_tx guard");
+                crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels(
+                    &platform,
+                    &guard_serialized_transition,
+                    "shielded withdrawal",
+                );
+            }
+
             let processing_result = process_transition(&platform, transition, platform_version);
 
             assert_matches!(
