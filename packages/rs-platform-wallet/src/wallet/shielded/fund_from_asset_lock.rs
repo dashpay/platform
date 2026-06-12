@@ -508,6 +508,18 @@ impl PlatformWallet {
     /// Record a confirmed `ShieldFromAssetLock` (Type 18) activity entry
     /// over the landed bundle's `actions`.
     ///
+    /// Deliberately records ONLY the landed bundle (no Pending row before
+    /// broadcast, no Failed row after): `submit_with_cl_height_retry`
+    /// re-builds and re-randomizes the Orchard bundle on every attempt,
+    /// so each attempt has different output cmxs — and the activity id is
+    /// keyed to those cmxs. A pre-broadcast Pending row would orphan
+    /// (unconfirmable forever, its cmxs never on-chain) whenever a retry
+    /// is the attempt that lands. In-flight and failed Type 18s are
+    /// surfaced through the tracked asset-lock lifecycle instead
+    /// (Built/Broadcast/Locked/Consumed + the resumable-funding UI),
+    /// which tracks the L1 lock — the artifact that actually carries the
+    /// recoverable value on failure.
+    ///
     /// Best-effort and non-fatal: the broadcast already succeeded, so a
     /// recording miss (no bound shielded keyset, or no wallet-visible
     /// output cmx in the bundle) must not turn the funding into a

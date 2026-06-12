@@ -457,53 +457,96 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
     // sees success once Platform has actually included the transition. A
     // DAPI-level ACK alone could otherwise mask a later Platform
     // rejection. The proven result is discarded; we only need the
-    // confirmation. Unlike the note-spending flows (unshield / transfer /
-    // withdraw — see `broadcast_shielded_spend`), shield deliberately
-    // keeps the one-shot helper: it takes no note reservation, so an
-    // ambiguous post-broadcast wait failure has no local state to strand.
-    // Its inputs are transparent address claims guarded by on-chain
+    // confirmation. Staged like `broadcast_shielded_spend`: only a
+    // DEFINITIVE verdict (CheckTx rejection / refused admission) marks
+    // the activity row Failed — an ambiguous wait failure (timeout,
+    // result-proof fetch error) leaves it Pending, because the shield
+    // may still land and the scan's cmx-overlap confirmation will flip
+    // the row when its note appears on-chain. Shield takes no note
+    // reservation, so the ambiguous arm strands no local spend state;
+    // its inputs are transparent address claims guarded by on-chain
     // nonces, and a host-level retry re-fetches those nonces.
-    let broadcast_result = state_transition
-        .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
-        .await
-        .map_err(|e| {
-            if let Some(rich) = addresses_not_enough_funds(&e) {
-                let claimed = claimed_inputs
-                    .iter()
-                    .map(|(addr, (nonce, credits))| {
-                        format!(
-                            "{}=(nonce {nonce}, {credits} credits)",
-                            addr.to_bech32m_string(network)
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                PlatformWalletError::ShieldedBroadcastFailed(format!(
-                    "addresses not enough funds: required {} credits; \
-                     claimed inputs [{}]; platform sees [{}]",
-                    rich.required_balance(),
-                    claimed,
-                    format_addresses_with_info(rich.addresses_with_info(), network),
-                ))
-            } else {
-                PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
-            }
-        });
+    let enrich = |e: &dash_sdk::Error| -> PlatformWalletError {
+        if let Some(rich) = addresses_not_enough_funds(e) {
+            let claimed = claimed_inputs
+                .iter()
+                .map(|(addr, (nonce, credits))| {
+                    format!(
+                        "{}=(nonce {nonce}, {credits} credits)",
+                        addr.to_bech32m_string(network)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            PlatformWalletError::ShieldedBroadcastFailed(format!(
+                "addresses not enough funds: required {} credits; \
+                 claimed inputs [{}]; platform sees [{}]",
+                rich.required_balance(),
+                claimed,
+                format_addresses_with_info(rich.addresses_with_info(), network),
+            ))
+        } else {
+            PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
+        }
+    };
 
-    if let Err(e) = broadcast_result {
-        // `broadcast_and_wait` failed: shield holds no note reservation,
-        // so there's nothing to roll back — just mark the activity Failed.
-        record_activity_status(
-            store,
-            persister,
-            wallet_id,
-            id,
-            &pending_entry,
-            ShieldedActivityStatus::Failed,
-            None,
-        )
-        .await;
-        return Err(e);
+    match state_transition.broadcast(sdk, None).await {
+        Ok(()) => {}
+        Err(e) if broadcast_definitely_failed(&e) => {
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                &pending_entry,
+                ShieldedActivityStatus::Failed,
+                None,
+            )
+            .await;
+            return Err(enrich(&e));
+        }
+        Err(e) => {
+            warn!(
+                account,
+                error = %e,
+                "Shield broadcast returned no verdict; the transition may have been \
+                 admitted — falling through to the result wait"
+            );
+        }
+    }
+
+    if let Err(wait_err) = state_transition
+        .wait_for_response::<StateTransitionProofResult>(sdk, None)
+        .await
+    {
+        if carries_consensus_rejection(&wait_err) {
+            // A consensus verdict in the result: the shield definitively
+            // did not execute.
+            record_activity_status(
+                store,
+                persister,
+                wallet_id,
+                id,
+                &pending_entry,
+                ShieldedActivityStatus::Failed,
+                None,
+            )
+            .await;
+            return Err(enrich(&wait_err));
+        }
+        // Ambiguous: admitted but unconfirmed. Leave the activity row
+        // Pending — the scan's confirmation pass flips it when the
+        // shielded note lands on-chain.
+        warn!(
+            account,
+            error = %wait_err,
+            "Shield broadcast accepted but result confirmation failed; \
+             leaving the activity row pending"
+        );
+        return Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+            operation: "shield",
+            reason: wait_err.to_string(),
+        });
     }
 
     record_activity_status(
