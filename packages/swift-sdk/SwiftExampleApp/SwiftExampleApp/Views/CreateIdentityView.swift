@@ -1608,9 +1608,14 @@ struct CreateIdentityView: View {
     }
 
     /// Flip `isUsed` on the consumed identity-registration slot so
-    /// the next call to `unusedIdentityIndices` skips it. Silent
-    /// no-op if the slot isn't found — this is cosmetic bookkeeping
-    /// and the Rust side is already the source of truth.
+    /// `usedIdentityIndices` (which unions the flag with the
+    /// `PersistentIdentity` rows) skips it. For confirmed registrations
+    /// this is redundant with the identity row, but for `.unconfirmed`
+    /// Type-20 broadcasts it is the ONLY persisted reservation holding
+    /// the slot until the next sync writes the identity row — losing it
+    /// would offer the same index for a duplicate submission. Silent
+    /// no-op if the slot row isn't found (an index beyond the derived
+    /// lookahead); the Rust side remains the on-chain source of truth.
     private func markIdentitySlotUsed(
         walletId: Data,
         identityIndex: UInt32
@@ -2001,23 +2006,39 @@ struct CreateIdentityView: View {
         }
     }
 
-    /// Unused identity-registration key indices on the wallet's
-    /// Identity Registration account (FFI type tag 2). Each
-    /// `PersistentCoreAddress` under that account represents one
-    /// registration slot keyed by `addressIndex`; `isUsed` flips to
-    /// true once the slot has been consumed by a prior identity
-    /// creation. Returns an ascending list of the remaining slots.
-    /// Identity-registration indices currently claimed by an existing
-    /// `PersistentIdentity` on this wallet. Single source of truth —
-    /// the deprecated `PersistentCoreAddress.isUsed` flag was a
-    /// denormalized cache that drifted (discovered identities never
-    /// flipped it).
+    /// Identity-registration indices that must not be offered for a new
+    /// registration on this wallet: every index claimed by an existing
+    /// `PersistentIdentity`, UNIONED with the persisted
+    /// `PersistentCoreAddress.isUsed` reservations on the
+    /// identity-registration account.
+    ///
+    /// The union matters for `.unconfirmed` Type-20 registrations: the
+    /// broadcast landed but no `PersistentIdentity` row exists until the
+    /// next sync confirms the identity, so `markIdentitySlotUsed`'s
+    /// persisted `isUsed` flag is the ONLY artifact holding the slot once
+    /// the in-memory controller is gone. Without it the same index would
+    /// be offered again and a duplicate submission would burn funds
+    /// against the registered-key-hash stateful check.
+    ///
+    /// Identity rows stay authoritative for confirmed identities; the flag
+    /// is monotonic extra coverage. Its historical drift (discovered
+    /// identities never flipped it) only under-reports, which the identity
+    /// rows cover, and over-reporting merely skips an index — registration
+    /// indices aren't gap-limited, so a skipped index costs nothing.
     private func usedIdentityIndices(for walletId: Data) -> Set<UInt32> {
-        Set(
+        var used = Set(
             allIdentities
                 .filter { $0.wallet?.walletId == walletId }
                 .map { $0.identityIndex }
         )
+        if let account = identityRegistrationAccount(for: walletId) {
+            used.formUnion(
+                account.coreAddresses
+                    .filter(\.isUsed)
+                    .map(\.addressIndex)
+            )
+        }
+        return used
     }
 
     /// One past the highest used registration index on this wallet,

@@ -21,9 +21,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorArithmeticOverflow = 13
     case errorNoSelectableInputs = 14
     case errorWalletAlreadyExists = 15
-    /// Definitive shielded-broadcast failure: the Type-20 transition was not
-    /// executed (relay/CheckTx rejection or a platform-reported execution
-    /// error), the spent notes were released, and the caller may retry.
+    /// Definitive shielded-broadcast failure: the shielded transition
+    /// (identity-create, unshield, transfer, or withdrawal) was not executed
+    /// (relay/CheckTx rejection or a platform-reported execution error), the
+    /// spent notes were released, and the caller may retry.
     case errorShieldedBroadcastFailed = 16
     /// Shielded broadcast accepted but its execution result could not be
     /// confirmed; the identity may already exist on chain. The FFI also fills
@@ -158,8 +159,9 @@ public enum PlatformWalletError: LocalizedError {
     case arithmeticOverflow(String)
     case noSelectableInputs(String)
     case walletAlreadyExists(String)
-    /// Definitive shielded-broadcast failure: the Type-20 transition was not
-    /// executed and the spent notes were released; safe to retry.
+    /// Definitive shielded-broadcast failure: the shielded transition
+    /// (identity-create or a spend — unshield / transfer / withdrawal) was
+    /// not executed and the spent notes were released; safe to retry.
     case shieldedBroadcastFailed(String)
     /// Shielded broadcast accepted but its execution result could not be
     /// confirmed; the identity may already exist on chain. Callers that need
