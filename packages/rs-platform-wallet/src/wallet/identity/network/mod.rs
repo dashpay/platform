@@ -46,9 +46,9 @@ mod tokens;
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use identity_handle::{
-    derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_keypair,
-    identity_auth_derivation_path_for_type, DerivedIdentityAuthKey, IdentityWallet,
-    IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
+    derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_key_hash_from_master,
+    derive_identity_auth_keypair, identity_auth_derivation_path_for_type, DerivedIdentityAuthKey,
+    IdentityWallet, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
 
 // Helpers declared on `identity_handle.rs` that siblings reach
