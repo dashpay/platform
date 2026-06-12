@@ -3281,10 +3281,139 @@ fn build_wallet_identity_bucket(
         managed.wallet_id = Some(entry.wallet_id);
         managed.dpns_names = dpns_names;
         managed.contested_dpns_names = contested_dpns_names;
+        unsafe { restore_dashpay_contacts(spec, &identifier, &mut managed) };
         bucket.insert(spec.identity_index, managed);
     }
 
     Ok(bucket)
+}
+
+/// Rebuild the per-identity DashPay contact state from the SwiftData
+/// contact rows the load callback hands back: pending sent / incoming
+/// requests, and established contacts (a pair of rows per contact —
+/// one per direction) with their owner-private metadata
+/// (alias / note / hidden — contactInfo, M3) and broken-channel flag.
+///
+/// Direct map inserts, NO persister rounds — this runs inside `load()`
+/// and the rows ARE the persisted state. Without this restore,
+/// contacts only re-derive from chain on the first sync sweep, which
+/// (a) leaves the Contacts UI empty on offline launches and (b) wipes
+/// contactInfo metadata during the DIP-15 deferred-publish window:
+/// the re-establish round emitted `alias = None` over the SwiftData
+/// rows (the M3 part-3 relaunch-durability gap).
+///
+/// # Safety
+///
+/// `spec.contacts` must be either null or point at
+/// `spec.contacts_count` valid `ContactRequestFFI` rows whose byte
+/// buffers and strings Swift owns for the duration of the load
+/// callback.
+unsafe fn restore_dashpay_contacts(
+    spec: &IdentityRestoreEntryFFI,
+    owner_id: &Identifier,
+    managed: &mut ManagedIdentity,
+) {
+    use platform_wallet::{ContactRequest, EstablishedContact};
+
+    if spec.contacts.is_null() || spec.contacts_count == 0 {
+        return;
+    }
+    let rows = slice::from_raw_parts(spec.contacts, spec.contacts_count);
+
+    /// Per-contact accumulator while pairing the direction rows.
+    #[derive(Default)]
+    struct PairAccumulator {
+        outgoing: Option<ContactRequest>,
+        incoming: Option<ContactRequest>,
+        payment_channel_broken: bool,
+        alias: Option<String>,
+        note: Option<String>,
+        is_hidden: bool,
+    }
+
+    let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
+        if ptr.is_null() {
+            None
+        } else {
+            Some(
+                std::ffi::CStr::from_ptr(ptr)
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+        }
+    };
+    let opt_bytes = |ptr: *const u8, len: usize| -> Option<Vec<u8>> {
+        if ptr.is_null() || len == 0 {
+            None
+        } else {
+            Some(slice::from_raw_parts(ptr, len).to_vec())
+        }
+    };
+
+    let mut by_contact: BTreeMap<[u8; 32], PairAccumulator> = BTreeMap::new();
+    for row in rows {
+        let contact_id = Identifier::from(row.contact_id);
+        let (sender_id, recipient_id) = if row.is_outgoing {
+            (*owner_id, contact_id)
+        } else {
+            (contact_id, *owner_id)
+        };
+        let mut request = ContactRequest::new(
+            sender_id,
+            recipient_id,
+            row.sender_key_index,
+            row.recipient_key_index,
+            row.account_reference,
+            opt_bytes(row.encrypted_public_key, row.encrypted_public_key_len)
+                .unwrap_or_default(),
+            row.core_height_created_at,
+            row.created_at,
+        );
+        request.encrypted_account_label =
+            opt_bytes(row.encrypted_account_label, row.encrypted_account_label_len);
+        request.auto_accept_proof = opt_bytes(row.auto_accept_proof, row.auto_accept_proof_len);
+
+        let acc = by_contact.entry(row.contact_id).or_default();
+        if row.is_outgoing {
+            acc.outgoing = Some(request);
+        } else {
+            acc.incoming = Some(request);
+        }
+        // Relationship-level properties are replicated onto both rows
+        // by the persist projection; OR / first-non-null is the safe
+        // re-fold.
+        acc.payment_channel_broken |= row.payment_channel_broken;
+        acc.is_hidden |= row.is_hidden;
+        if acc.alias.is_none() {
+            acc.alias = opt_string(row.alias);
+        }
+        if acc.note.is_none() {
+            acc.note = opt_string(row.note);
+        }
+    }
+
+    for (contact_id_bytes, acc) in by_contact {
+        let contact_id = Identifier::from(contact_id_bytes);
+        match (acc.outgoing, acc.incoming) {
+            (Some(outgoing), Some(incoming)) => {
+                let mut contact = EstablishedContact::new(contact_id, outgoing, incoming);
+                contact.alias = acc.alias;
+                contact.note = acc.note;
+                contact.is_hidden = acc.is_hidden;
+                contact.payment_channel_broken = acc.payment_channel_broken;
+                managed.established_contacts.insert(contact_id, contact);
+            }
+            (Some(outgoing), None) => {
+                managed.sent_contact_requests.insert(contact_id, outgoing);
+            }
+            (None, Some(incoming)) => {
+                managed
+                    .incoming_contact_requests
+                    .insert(contact_id, incoming);
+            }
+            (None, None) => unreachable!("accumulator entries always hold at least one row"),
+        }
+    }
 }
 
 /// Translate the `keys` array hanging off an `IdentityRestoreEntryFFI`

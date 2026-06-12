@@ -288,6 +288,20 @@ pub struct IdentityRestoreEntryFFI {
     /// hasn't completed).
     pub keys: *const IdentityKeyRestoreFFI,
     pub keys_count: usize,
+    /// DashPay contact rows owned by this identity, assembled from the
+    /// per-identity `PersistentDashpayContactRequest` SwiftData rows.
+    /// Reuses the persist-side [`crate::contact_persistence::ContactRequestFFI`]
+    /// shape (Swift-owned for the callback window — the byte buffers
+    /// and metadata strings ride the load allocation, NOT the Rust
+    /// destructors). Restores pending sent / incoming requests and
+    /// established contacts (pairs of rows, both directions) with
+    /// their owner-private metadata — without this, contacts only
+    /// re-derive from chain on the first sync sweep and the
+    /// contactInfo metadata is wiped during the deferred-publish
+    /// window (the relaunch-durability gap in M3 task 13 part 3).
+    /// `null` / `0` when the identity has no persisted contact rows.
+    pub contacts: *const crate::contact_persistence::ContactRequestFFI,
+    pub contacts_count: usize,
 }
 
 /// One unspent UTXO row to rehydrate into a funds-bearing account's

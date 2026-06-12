@@ -4268,6 +4268,62 @@ public class PlatformWalletPersistenceHandler {
                 allocation.identityKeyArrays.append((keyBuf, sortedKeys.count))
             }
 
+            // DashPay contact rows — restores pending + established
+            // contacts (with their contactInfo metadata) into the
+            // Rust state at load. Without this, contacts re-derive
+            // from chain on the first sweep and the re-establish
+            // round wipes alias/note/hidden during the DIP-15
+            // deferred-publish window (M3 relaunch-durability gap).
+            let contactRows = identity.contactRequests
+            if contactRows.isEmpty {
+                entry.contacts = nil
+                entry.contacts_count = 0
+            } else {
+                let contactBuf = UnsafeMutablePointer<ContactRequestFFI>.allocate(
+                    capacity: contactRows.count
+                )
+                for (c, contact) in contactRows.enumerated() {
+                    var row = ContactRequestFFI()
+                    copyBytes(contact.ownerIdentityId, into: &row.owner_id)
+                    copyBytes(contact.contactIdentityId, into: &row.contact_id)
+                    row.is_outgoing = contact.isOutgoing
+                    row.sender_key_index = contact.senderKeyIndex
+                    row.recipient_key_index = contact.recipientKeyIndex
+                    row.account_reference = contact.accountReference
+                    row.core_height_created_at = contact.coreHeightCreatedAt
+                    row.created_at = contact.createdAtMillis
+                    row.payment_channel_broken = contact.paymentChannelBroken
+                    row.is_hidden = contact.contactHidden
+
+                    let payloads: [(Data?, WritableKeyPath<ContactRequestFFI, UnsafePointer<UInt8>?>, WritableKeyPath<ContactRequestFFI, UInt>)] = [
+                        (contact.encryptedPublicKey, \.encrypted_public_key, \.encrypted_public_key_len),
+                        (contact.encryptedAccountLabel, \.encrypted_account_label, \.encrypted_account_label_len),
+                        (contact.autoAcceptProof, \.auto_accept_proof, \.auto_accept_proof_len),
+                    ]
+                    for (data, ptrPath, lenPath) in payloads {
+                        if let data, !data.isEmpty {
+                            let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: data.count)
+                            data.copyBytes(to: buf, count: data.count)
+                            row[keyPath: ptrPath] = UnsafePointer(buf)
+                            row[keyPath: lenPath] = UInt(data.count)
+                            allocation.scalarBuffers.append((buf, data.count))
+                        }
+                    }
+
+                    if let alias = contact.contactAlias, !alias.isEmpty {
+                        row.alias = UnsafePointer(duplicateCString(alias, allocation: allocation))
+                    }
+                    if let note = contact.contactNote, !note.isEmpty {
+                        row.note = UnsafePointer(duplicateCString(note, allocation: allocation))
+                    }
+
+                    contactBuf[c] = row
+                }
+                entry.contacts = UnsafePointer(contactBuf)
+                entry.contacts_count = UInt(contactRows.count)
+                allocation.contactArrays.append((contactBuf, contactRows.count))
+            }
+
             buf[j] = entry
         }
         allocation.identityArrays.append((buf, identities.count))
@@ -4531,6 +4587,12 @@ private final class LoadAllocation {
     /// `scalarBuffers` (same `UnsafeMutablePointer<UInt8>.allocate`
     /// shape as xpub bytes).
     var identityKeyArrays: [(UnsafeMutablePointer<IdentityKeyRestoreFFI>, Int)] = []
+    /// Per-identity `ContactRequestFFI` arrays (DashPay contact
+    /// restore — M3). Byte payloads live in `scalarBuffers`; the
+    /// alias/note strings live in `cStringBuffers`. NOTE: these rows
+    /// are load-allocation-owned — Rust's `free_contact_requests_ffi`
+    /// must never run on them (it owns only persist-side rows).
+    var contactArrays: [(UnsafeMutablePointer<ContactRequestFFI>, Int)] = []
     /// Byte buffers backing `root_xpub_bytes` and `account_xpub_bytes`.
     var scalarBuffers: [(UnsafeMutablePointer<UInt8>, Int)] = []
     /// NUL-terminated c-string buffers carried by identity entries
@@ -4587,6 +4649,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in identityKeyArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in contactArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
