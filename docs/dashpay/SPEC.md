@@ -743,6 +743,44 @@ See Part 6 for the screen design. Tasks:
     ABI — never a raw private key; see G4) so M4's implementation doesn't churn
     the wallet API.
 
+    **DONE (2026-06-12) — design:**
+    - **ABI surface (one new callback on the existing host-signer table** —
+      the same registration path external-signable wallets already use for
+      transaction signing**):**
+      ```c
+      int32_t (*ecdh_shared_secret_fn)(
+          void *context,
+          const uint8_t (*wallet_id)[32],
+          const uint8_t (*identity_id)[32],
+          uint32_t key_id,                      // sender's encryption key id
+          const uint8_t (*counterparty_pubkey)[33],
+          uint8_t (*out_shared_secret)[32]);    // SHA256((y&1|2)||x) — finished secret
+      ```
+      The host derives the identity encryption private key for
+      `(identity_id, key_id)` from its keychain/secure element and computes
+      the **finished DIP-15 shared secret host-side**. The private key never
+      crosses the ABI (the `rs-sdk-ffi` `DashSDKContactRequestParams.
+      sender_private_key` field is the antipattern this replaces; flagged for
+      its own audit). Non-zero return = "host cannot produce the secret"
+      (locked keychain, missing key): the operation fails with a typed
+      `EcdhUnavailable` error and is NOT treated as a broken payment channel
+      (our side failed, not the contact's request).
+    - **Rust routing:** `send_contact_request` /
+      `register_external_contact_account` branch on wallet key-residency:
+      seed-resident wallets keep today's in-process derivation
+      (`EcdhProvider::SdkSide`); external-signable wallets route
+      `EcdhProvider::ClientSide { get_shared_secret }` where the closure
+      calls the FFI hook. No public wallet-API signature changes — the
+      provider choice is internal, which is what de-risks M4.
+    - **Zeroization:** Rust wipes `out_shared_secret` (`Zeroizing`) after
+      deriving the AES key; hosts are instructed to do the same with their
+      intermediate private key (Swift: `withUnsafeTemporaryAllocation` +
+      explicit reset, mirroring the signer callback's key handling).
+    - **Same hook serves decrypt-side** (`register_external_contact_account`
+      needs ECDH with the *contact's* pubkey at OUR key id) — the
+      `counterparty_pubkey` parameter covers both directions; no second
+      callback needed.
+
 ### Milestone 4 — Hardening / cleanup
 
 16. **G4:** watch-only ECDH via `EcdhProvider::ClientSide` pushed across FFI
