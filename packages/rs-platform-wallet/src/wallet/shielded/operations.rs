@@ -789,31 +789,29 @@ where
             )
             .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
-        // Broadcast (relay-ACK only). Only a consensus-verdict rejection is definitive here —
-        // CheckTx evaluated the transition and refused it, so it sits in no mempool and the outer
-        // match may release the reservation via `ShieldedBroadcastFailed`, exactly as before. Any
-        // other failure leaves the outcome unknown: the dapi-client retries the broadcast across
-        // addresses, so a transport error or timeout cannot prove the request never reached a node
-        // (the ACK may simply have been lost), and `AlreadyExists` proves the transition IS already
-        // in the mempool or on chain. Surface those as `ShieldedBroadcastUnconfirmed` with the
-        // derived id so the caller holds the slot and keeps the note reservations — the same
-        // recovery path as a wait-stage ambiguity (the next sync reconciles).
-        st.broadcast(sdk, None).await.map_err(|e| {
-            if carries_consensus_rejection(&e) {
-                PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
-            } else {
+        // Broadcast (relay-ACK only). Definitive failures — a consensus-verdict CheckTx
+        // rejection, or a transport failure that proves nothing was delivered (see
+        // `broadcast_definitely_failed`; connect-refused/offline is the common case) — map to
+        // `ShieldedBroadcastFailed` and let the outer match release the reservation, exactly as
+        // before. No-verdict failures (`AlreadyExists` proves the transition IS already in the
+        // mempool or on chain after a lost-ACK retry; timeouts merely allow it) fall through to
+        // the result wait below, whose ambiguous arm already owns the fetch-by-derived-id
+        // fallback — so the in-flight tx gets confirmed (or held as unconfirmed) instead of
+        // being reported as failed.
+        match st.broadcast(sdk, None).await {
+            Ok(()) => {}
+            Err(e) if broadcast_definitely_failed(&e) => {
+                return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
+            }
+            Err(e) => {
                 warn!(
                     derived_id = %identity_id,
                     error = %e,
-                    "IdentityCreateFromShieldedPool: broadcast outcome unknown (no consensus \
-                     rejection); holding the slot and keeping the note reservations"
+                    "IdentityCreateFromShieldedPool: broadcast returned no verdict; the \
+                     transition may have been admitted — falling through to the result wait"
                 );
-                PlatformWalletError::ShieldedBroadcastUnconfirmed {
-                    identity_id,
-                    reason: e.to_string(),
-                }
             }
-        })?;
+        }
 
         // Wait for proven execution. Classify the failure:
         //   - `StateTransitionBroadcastError` WITH a consensus `cause` = Platform DEFINITIVELY
@@ -1276,15 +1274,20 @@ fn carries_consensus_rejection(err: &dash_sdk::Error) -> bool {
 /// separately so the caller's reservation rollback only runs when the
 /// spend DEFINITIVELY did not happen:
 ///
-/// - a consensus-verdict rejection at either stage (CheckTx refused the
-///   broadcast, or Platform ran the transition and rejected it on its
-///   merits — see [`carries_consensus_rejection`]) means the spend never
-///   executed → [`PlatformWalletError::ShieldedBroadcastFailed`], and the
-///   caller releases the note reservations via [`cancel_pending`];
-/// - any other failure at either stage (transport error, timeout,
-///   `AlreadyExists`, result-proof fetch/verify error, …) is AMBIGUOUS —
-///   the dapi-client retries across addresses, so even a failed
-///   `broadcast()` call may have delivered the transition to a node →
+/// - a definitive `broadcast()` failure ([`broadcast_definitely_failed`]:
+///   a consensus-verdict CheckTx rejection, or a transport failure that
+///   proves nothing was delivered), or a wait-stage consensus rejection
+///   (Platform ran the transition and rejected it on its merits — see
+///   [`carries_consensus_rejection`]), means the spend never executed →
+///   [`PlatformWalletError::ShieldedBroadcastFailed`], and the caller
+///   releases the note reservations via [`cancel_pending`];
+/// - a no-verdict `broadcast()` failure (`AlreadyExists` proves the tx IS
+///   in the mempool after a lost-ACK retry; timeouts merely allow it)
+///   falls through to the result wait, which either proves execution or
+///   classifies the residual ambiguity;
+/// - any other wait failure (transport error, timeout, result-proof
+///   fetch/verify error, …) is AMBIGUOUS — the relay accepted (or may
+///   have accepted) the tx and it may well have executed →
 ///   [`PlatformWalletError::ShieldedSpendUnconfirmed`], and the caller
 ///   must leave the reservations in place (each spend flow's outer
 ///   match has a dedicated arm for this).
@@ -1299,10 +1302,20 @@ async fn broadcast_shielded_spend(
     state_transition: &StateTransition,
     operation: &'static str,
 ) -> Result<(), PlatformWalletError> {
-    state_transition
-        .broadcast(sdk, None)
-        .await
-        .map_err(|broadcast_err| classify_spend_broadcast_failure(operation, &broadcast_err))?;
+    match state_transition.broadcast(sdk, None).await {
+        Ok(()) => {}
+        Err(e) if broadcast_definitely_failed(&e) => {
+            return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
+        }
+        Err(e) => {
+            warn!(
+                operation,
+                error = %e,
+                "Shielded spend broadcast returned no verdict; the transition may have been \
+                 admitted — falling through to the result wait"
+            );
+        }
+    }
 
     state_transition
         .wait_for_response::<StateTransitionProofResult>(sdk, None)
@@ -1311,36 +1324,60 @@ async fn broadcast_shielded_spend(
         .map_err(|wait_err| classify_spend_wait_failure(operation, &wait_err))
 }
 
-/// Classify a `broadcast()` failure for a shielded spend — the
-/// broadcast-stage sibling of [`classify_spend_wait_failure`].
+/// Whether a failed `broadcast()` call DEFINITIVELY left the transition
+/// out of every mempool, so any note reservations may be released and the
+/// caller may rebuild and retry:
 ///
-/// Only a consensus verdict ([`carries_consensus_rejection`]) is
-/// definitive at this stage: CheckTx evaluated the transition and refused
-/// it, so it sits in no mempool and the reservations may be released.
-/// Anything else is ambiguous even before the wait: the dapi-client
-/// retries the broadcast across addresses, so a transport failure or
-/// timeout cannot prove the request never reached a node (the ACK may
-/// simply have been lost), and `AlreadyExists` proves the transition IS
-/// already in the mempool or on chain. Keep the reservations; the next
-/// nullifier sync (or an app restart, since reservations are in-memory)
-/// reconciles them.
-fn classify_spend_broadcast_failure(
-    operation: &'static str,
-    broadcast_err: &dash_sdk::Error,
-) -> PlatformWalletError {
-    if carries_consensus_rejection(broadcast_err) {
-        PlatformWalletError::ShieldedBroadcastFailed(broadcast_err.to_string())
-    } else {
-        warn!(
-            operation,
-            error = %broadcast_err,
-            "Shielded spend broadcast outcome unknown (no consensus rejection); \
-             leaving the note reservations in place"
-        );
-        PlatformWalletError::ShieldedSpendUnconfirmed {
-            operation,
-            reason: broadcast_err.to_string(),
+/// - a consensus verdict ([`carries_consensus_rejection`]): CheckTx
+///   evaluated the transition and refused it;
+/// - a gRPC response whose status code is a server-side rejection or a
+///   connection-establishment failure. `Unavailable` is the shape every
+///   connect-refused/offline attempt takes — classifying it as definitive
+///   keeps the common no-network failure's notes immediately re-spendable
+///   instead of stranding them until the next restart — and rejection
+///   codes (`InvalidArgument`, `ResourceExhausted` = mempool full, …) are
+///   verdicts that the tx was refused admission;
+/// - no usable DAPI addresses at all (nothing was ever sent).
+///
+/// Everything else leaves the outcome unknown and the caller must fall
+/// through to the result wait instead of failing: `AlreadyExists` proves
+/// the tx IS in the mempool or on chain (a lost-ACK attempt was re-sent
+/// by the dapi-client retry and hit tenderdash's dedupe), and
+/// timeout/cancellation/no-response shapes (`TimeoutReached`,
+/// `Cancelled`, gRPC `DeadlineExceeded`/`Cancelled`, plus
+/// `Internal`/`Unknown`/`Aborted`/`DataLoss`, which DAPI also uses for
+/// its own tenderdash-side failures that can postdate delivery) allow
+/// the request to have outlived its lost ACK.
+fn broadcast_definitely_failed(e: &dash_sdk::Error) -> bool {
+    use dash_sdk::dapi_client::transport::TransportError;
+    use dash_sdk::dapi_client::DapiClientError;
+    use dash_sdk::dapi_grpc::tonic::Code;
+
+    fn status_is_verdict(t: &TransportError) -> bool {
+        let TransportError::Grpc(status) = t;
+        !matches!(
+            status.code(),
+            Code::DeadlineExceeded
+                | Code::Cancelled
+                | Code::Unknown
+                | Code::Internal
+                | Code::Aborted
+                | Code::DataLoss
+        )
+    }
+
+    if carries_consensus_rejection(e) {
+        return true;
+    }
+    match e {
+        dash_sdk::Error::AlreadyExists(_) => false,
+        dash_sdk::Error::DapiClientError(DapiClientError::Transport(t)) => status_is_verdict(t),
+        dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses) => true,
+        dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(t)) => {
+            status_is_verdict(t)
         }
+        dash_sdk::Error::NoAvailableAddressesToRetry(inner) => broadcast_definitely_failed(inner),
+        _ => false,
     }
 }
 
@@ -1514,11 +1551,7 @@ mod classify_spend_wait_failure_tests {
     /// mempool, and the caller may release the reservations and retry.
     #[test]
     fn broadcast_consensus_rejection_is_definitive() {
-        let err = classify_spend_broadcast_failure("transfer", &consensus_metadata_rejection());
-        assert!(matches!(
-            err,
-            PlatformWalletError::ShieldedBroadcastFailed(_)
-        ));
+        assert!(broadcast_definitely_failed(&consensus_metadata_rejection()));
         // The same verdict shape is definitive on the wait stage too.
         let err = classify_spend_wait_failure("transfer", &consensus_metadata_rejection());
         assert!(matches!(
@@ -1527,42 +1560,72 @@ mod classify_spend_wait_failure_tests {
         ));
     }
 
-    /// A transport/timeout failure of the `broadcast()` call itself is
-    /// AMBIGUOUS: the dapi-client retries across addresses, so the request
-    /// may have been delivered to a node whose ACK was lost. Releasing the
-    /// reservations here would let a retry select other unreserved notes
-    /// and double-send if the original broadcast landed.
+    fn grpc_err(code: dash_sdk::dapi_grpc::tonic::Code) -> dash_sdk::Error {
+        use dash_sdk::dapi_client::transport::TransportError;
+        use dash_sdk::dapi_client::DapiClientError;
+        dash_sdk::Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(
+            dash_sdk::dapi_grpc::tonic::Status::new(code, "boom"),
+        )))
+    }
+
+    /// Connection-establishment failures and non-consensus server
+    /// rejections of `broadcast()` ARE definitive: nothing was admitted to
+    /// a mempool. The offline case (connect refused → `Unavailable`) in
+    /// particular must release the notes immediately rather than strand
+    /// them until restart.
     #[test]
-    fn broadcast_transport_failure_is_ambiguous() {
-        let err = classify_spend_broadcast_failure(
-            "unshield",
-            &dash_sdk::Error::Generic("transport error: connection reset".to_string()),
-        );
-        assert!(matches!(
-            err,
-            PlatformWalletError::ShieldedSpendUnconfirmed {
-                operation: "unshield",
-                ..
-            }
+    fn broadcast_connection_failures_and_rejections_are_definitive() {
+        use dash_sdk::dapi_grpc::tonic::Code;
+        assert!(broadcast_definitely_failed(&grpc_err(Code::Unavailable)));
+        // Mempool full / malformed request: server verdicts refusing admission.
+        assert!(broadcast_definitely_failed(&grpc_err(
+            Code::ResourceExhausted
+        )));
+        assert!(broadcast_definitely_failed(&grpc_err(
+            Code::InvalidArgument
+        )));
+    }
+
+    /// No-response shapes of the `broadcast()` call itself are NOT
+    /// definitive: the dapi-client retries across addresses, so the request
+    /// may have been delivered to a node whose ACK was lost. The caller
+    /// falls through to the result wait instead of releasing the
+    /// reservations (which would let a retry select other unreserved notes
+    /// and double-send if the original broadcast landed).
+    #[test]
+    fn broadcast_no_response_shapes_are_inconclusive() {
+        use dash_sdk::dapi_grpc::tonic::Code;
+        assert!(!broadcast_definitely_failed(&grpc_err(
+            Code::DeadlineExceeded
+        )));
+        // DAPI maps its own tenderdash-side failures (which can postdate
+        // delivery) to Internal.
+        assert!(!broadcast_definitely_failed(&grpc_err(Code::Internal)));
+        assert!(!broadcast_definitely_failed(
+            &dash_sdk::Error::TimeoutReached(
+                std::time::Duration::from_secs(30),
+                "broadcast".to_string(),
+            )
+        ));
+        assert!(!broadcast_definitely_failed(&dash_sdk::Error::Generic(
+            "transport error: connection reset".to_string()
+        )));
+        // …including as the terminal error of an exhausted retry loop.
+        assert!(!broadcast_definitely_failed(
+            &dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(grpc_err(
+                Code::DeadlineExceeded
+            )))
         ));
     }
 
     /// `AlreadyExists` from `broadcast()` proves the transition IS already
     /// in the mempool or on chain (e.g. an internal dapi-client retry after
-    /// an ambiguous first delivery), so it must NOT release the
-    /// reservations — the spend is in flight.
+    /// an ambiguous first delivery), so it must NOT be treated as a failure
+    /// — the spend is in flight and the result wait will confirm it.
     #[test]
-    fn broadcast_already_exists_is_ambiguous() {
-        let err = classify_spend_broadcast_failure(
-            "withdraw",
-            &dash_sdk::Error::AlreadyExists("state transition already in mempool".to_string()),
-        );
-        assert!(matches!(
-            err,
-            PlatformWalletError::ShieldedSpendUnconfirmed {
-                operation: "withdraw",
-                ..
-            }
+    fn broadcast_already_exists_is_in_flight() {
+        assert!(!broadcast_definitely_failed(
+            &dash_sdk::Error::AlreadyExists("state transition already in mempool".to_string())
         ));
     }
 }
