@@ -103,11 +103,15 @@ pub struct ShieldedSyncedIndexFFI {
 /// One derived shielded-activity entry for the host to persist.
 ///
 /// Mirror of `platform_wallet::wallet::shielded::ShieldedActivityEntry`.
-/// The host writes one row keyed by `entry_id` (sha256 of the visible
-/// output cmxs); re-persisting the same `entry_id` is an upsert that
-/// refines the row (Pending→Confirmed/Failed, or a scan-derived
-/// `ShieldedSpend` upgraded to a richer kind). All pointers are valid
-/// only for the callback window — the host must copy.
+/// The host writes one row keyed by `(wallet_id, account_index,
+/// entry_id)` — NOT `entry_id` alone: the same entry id (sha256 of the
+/// visible output cmxs) legitimately appears under two accounts of one
+/// wallet, e.g. an intra-wallet transfer producing a Sent row on the
+/// sending account and a Received row on the receiving account.
+/// Re-persisting the same tuple is an upsert that refines the row
+/// (Pending→Confirmed/Failed, or a scan-derived `ShieldedSpend`
+/// upgraded to a richer kind). All pointers are valid only for the
+/// callback window — the host must copy.
 ///
 /// `Option<T>` fields are flattened to a value + a `has_*` flag (`u8`,
 /// 1 = present) rather than a sentinel, so `0`/empty is unambiguous.
@@ -117,7 +121,8 @@ pub struct ShieldedActivityFFI {
     pub wallet_id: [u8; 32],
     /// ZIP-32 account index.
     pub account_index: u32,
-    /// Entry id (sha256 of sorted visible output cmxs). Primary key.
+    /// Entry id (sha256 of sorted visible output cmxs). Unique only
+    /// within `(wallet_id, account_index)` — see the struct doc.
     pub entry_id: [u8; 32],
     /// Kind discriminant (see `ShieldedActivityKind::tag`):
     /// 0 Shield, 1 ShieldFromAssetLock, 2 Received, 3 Sent, 4 Unshield,
