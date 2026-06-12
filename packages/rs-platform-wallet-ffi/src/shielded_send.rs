@@ -437,9 +437,11 @@ fn map_spend_result(
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
         // Ambiguous: the broadcast was accepted but its execution result
-        // couldn't be confirmed. The notes stay reserved wallet-side and the
-        // next nullifier sync (or an app restart) reconciles them; the typed
-        // Display already carries the operation name and guidance.
+        // couldn't be confirmed — the host must NOT re-submit. For the
+        // spend-based operations the notes stay reserved wallet-side; a
+        // shield reserves nothing. Either way the next sync (or an app
+        // restart) reconciles the outcome; the typed Display already
+        // carries the operation name and guidance.
         Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
             PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
