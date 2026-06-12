@@ -285,9 +285,9 @@ Citations are abbreviated; full detail in `research/02..05`.
 | Accept (reciprocal send + register external account) | ✅ | `network/contact_requests.rs:466` |
 | Reject | 🟡 **G5** (local-only) | `network/contact_requests.rs:678` |
 | Auto-establish on reciprocal match | ✅ | `state/managed_identity/contact_requests.rs` |
-| Register receiving / external account | ✅ | `network/contacts.rs:100,322` |
+| Register receiving / external account | ✅ (UAT 2026-06-12: now also **persisted** — registrations were in-memory only, so accounts vanished on relaunch and restored friendship UTXOs were dropped `dropped_no_account`) | `network/contacts.rs` |
 | Send money to contact | ✅ | `network/payments.rs:93` |
-| Record incoming payment | ✅ | `network/payments.rs:26` |
+| Record incoming payment | ✅ (UAT 2026-06-12: the old `try_record_incoming_payment` had **zero callers** — receiver history was always empty. Replaced by live recording in the wallet-event adapter + an idempotent `reconcile_incoming_payments` step in the recurring sync) | `network/payments.rs`, `changeset/core_bridge.rs` |
 | Crypto: DIP-14 xpub / payment addrs | ✅ | `crypto/dip14.rs` |
 | Crypto: `accountReference` | 🟡 **G3/G7** (correct but unused; send hardcodes 0) | `crypto/dip14.rs:147` |
 | Crypto: auto-accept proof | 🟡 **G7** (dead code, `// TODO` at `auto_accept.rs:39`) | `crypto/auto_accept.rs` |
@@ -679,6 +679,31 @@ Ordered so the test seam exists before the TDD-gated tasks that need it.
 ### Milestone 2 — Swift UI (first-class, polished) + Swift tests
 
 See Part 6 for the screen design. Tasks:
+
+> **STATUS (2026-06-10): tasks 7–10 DONE** (Phases A–D on
+> `feat/dashpay-m1-sync-correctness`). Delivered: FFI sync-control surface
+> (`platform_wallet_manager_dashpay_sync_{start,stop,is_running,is_syncing,
+> last_sync_unix_seconds,set_interval,sync_now}`), persister payload extended
+> (callback arity 8→10: `payment_channel_broken` on `ContactRequestFFI`,
+> `ContactRequestRejectionFFI` tombstones), payment-history getter
+> (`managed_identity_get_dashpay_payments`); Swift SDK wrappers +
+> `PersistentDashpayPayment` + `@Published dashPaySyncIsSyncing`; the full
+> DashPay tab (`Views/DashPay/` — 7 files) with all §6.4 states and
+> `dashpay.*` accessibility ids; simulator BUILD SUCCEEDED.
+> **Spec deltas accepted:** (1) alias/note/hide are a UserDefaults-backed
+> device-local store until M3's `contactInfo` (no SwiftData model added);
+> (2) contact DPNS labels captured as an add-time hint (not persisted
+> elsewhere); (3) AddContact ID-mode preview is cache-only (no
+> fetch-profile-by-id FFI). Task 11 (tests) = Phase D.
+> **Task 11 DONE (2026-06-10):** 15 SDK unit tests (persister bridge: broken-flag
+> on both rows, tombstone scoped to `(owner,sender,accountReference)` w/ rotation
+> survival, 10-arg C-callback round-trip, payment upserts, FFI marshalling) + 2
+> UI smoke tests (§6.4 picker states; passed on-simulator). Phase D also found &
+> fixed a changeset-atomicity defect (`persistDashpayPayments` missing the
+> `!inChangeset` guard — red→green). Totals: swift test 29/29; app tests 237
+> passed / 18 pre-existing network-gated skips; UI smoke green; BUILD SUCCEEDED.
+> Full add→approve→pay XCUITest = documented TODO gated on funded testnet
+> identities (tracks `dp_003`).
 
 7. Add `RootTab.dashpay` + `DashPayTabView` with an active-identity picker
    (`ContentView.swift`, `SwiftExampleAppApp.swift`) — picker states per §6.4.
