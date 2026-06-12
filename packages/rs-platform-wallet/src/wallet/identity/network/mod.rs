@@ -36,6 +36,7 @@ mod contact_requests;
 mod contacts;
 mod dashpay_sync;
 mod payments;
+pub(crate) use payments::record_incoming_dashpay_payments;
 mod profile;
 pub(crate) mod sdk_writer;
 

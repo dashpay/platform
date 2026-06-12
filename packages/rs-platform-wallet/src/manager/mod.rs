@@ -1,6 +1,7 @@
 //! Multi-wallet manager with SPV coordination.
 
 pub mod accessors;
+mod attach_seed;
 pub mod dashpay_sync;
 pub mod identity_sync;
 mod load;

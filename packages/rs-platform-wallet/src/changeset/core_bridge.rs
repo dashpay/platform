@@ -96,6 +96,26 @@ where
                                     "Persister rejected core changeset; state will be re-emitted on next sync round"
                                 );
                             }
+                            // Live receiver-side DashPay payment recording:
+                            // outputs paying a DashpayReceivingFunds address
+                            // become `Received` PaymentEntries on the owning
+                            // managed identity. After the core store so the
+                            // tx/UTXO rows land first.
+                            if let WalletEvent::TransactionDetected { record, .. } = &event {
+                                let wallet_persister =
+                                    crate::wallet::persister::WalletPersister::new(
+                                        wallet_id,
+                                        Arc::clone(&persister)
+                                            as Arc<dyn PlatformWalletPersistence>,
+                                    );
+                                crate::wallet::identity::network::record_incoming_dashpay_payments(
+                                    &wallet_manager,
+                                    &wallet_id,
+                                    &wallet_persister,
+                                    record,
+                                )
+                                .await;
+                            }
                         }
                         Err(RecvError::Closed) if cancel.is_cancelled() => break,
                         Err(RecvError::Closed) => {

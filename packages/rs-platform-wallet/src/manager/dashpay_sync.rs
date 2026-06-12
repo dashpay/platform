@@ -202,6 +202,15 @@ impl DashPaySyncManager {
         let this = self;
         std::thread::Builder::new()
             .name("dashpay-sync".into())
+            // DashPay sync verifies GroveDB *document-query* proofs
+            // (contactRequest / profile fetches), whose recursive
+            // `verify_layer_proof_v1` descent overflows the platform
+            // default thread stack (SIGBUS on the stack guard, observed
+            // on-device 2026-06-12). The sibling sync threads survive on
+            // the default only because their proofs are shallower; match
+            // the FFI worker convention (`runtime.rs` WORKER_STACK_BYTES)
+            // since `Handle::block_on` polls the future on THIS thread.
+            .stack_size(8 * 1024 * 1024)
             .spawn(move || {
                 handle.block_on(async move {
                     loop {

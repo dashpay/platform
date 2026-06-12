@@ -143,6 +143,22 @@ pub enum PlatformWalletError {
     #[error("Wallet is locked — unlock it before performing this operation")]
     WalletLocked,
 
+    #[error(
+        "Seed does not match wallet {wallet_id}: re-derived id {derived_id} \
+         from the supplied seed (refusing to attach the wrong seed)"
+    )]
+    /// The seed handed to [`PlatformWalletManager::attach_wallet_seed`]
+    /// re-derives a network-scoped wallet id that does not equal the
+    /// target wallet's id. Attaching it would graft the wrong key
+    /// material onto a wallet whose persisted account xpubs came from a
+    /// different seed, so the upgrade is rejected outright.
+    SeedMismatch {
+        /// Hex of the wallet id the caller asked to upgrade.
+        wallet_id: String,
+        /// Hex of the id the supplied seed actually derives to.
+        derived_id: String,
+    },
+
     #[error("SPV is already running — stop it before starting again")]
     SpvAlreadyRunning,
 

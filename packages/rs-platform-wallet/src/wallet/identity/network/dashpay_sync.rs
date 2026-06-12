@@ -46,6 +46,20 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             );
         }
 
+        // Local-only third step: derive any missing `Received` payment
+        // entries from the receival accounts' restored UTXO sets (see
+        // `reconcile_incoming_payments`). Runs after the contact step so
+        // freshly established contacts' accounts are registered first.
+        // Never fails the pass — it touches no network and its error is
+        // a wallet-lookup miss at worst.
+        if let Err(e) = self.reconcile_incoming_payments().await {
+            tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id()),
+                error = %e,
+                "DashPay incoming-payment reconcile failed"
+            );
+        }
+
         // Surface the first error (if any) so the recurring sweep records
         // a failed outcome for this wallet; both steps have already run.
         contact_result?;

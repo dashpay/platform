@@ -9,10 +9,47 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
+use crate::changeset::{
+    AccountAddressPoolEntry, AccountRegistrationEntry, PlatformWalletChangeSet,
+};
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::types::dashpay::payment::DashpayAddressMatch;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
+
+/// Build the persistence round for a newly registered DashPay account
+/// (`DashpayReceivingFunds` / `DashpayExternalAccount`): the
+/// [`AccountRegistrationEntry`] plus the account's initial address-pool
+/// snapshot — the same shape `wallet_lifecycle` emits at wallet
+/// creation. Without this round the account exists only in memory and
+/// vanishes on relaunch, so its persisted UTXOs are dropped at the next
+/// load (`load: ... dropped_no_account`) and received-payment history
+/// can't be rebuilt.
+fn dashpay_account_registration_changeset(
+    account_type: AccountType,
+    account_xpub: key_wallet::bip32::ExtendedPubKey,
+    managed: &key_wallet::managed_account::ManagedCoreFundsAccount,
+) -> PlatformWalletChangeSet {
+    let mut cs = PlatformWalletChangeSet {
+        account_registrations: vec![AccountRegistrationEntry {
+            account_type,
+            account_xpub,
+        }],
+        ..Default::default()
+    };
+    for pool in managed.managed_account_type().address_pools() {
+        let addresses: Vec<key_wallet::AddressInfo> = pool.addresses.values().cloned().collect();
+        if addresses.is_empty() {
+            continue;
+        }
+        cs.account_address_pools.push(AccountAddressPoolEntry {
+            account_type,
+            pool_type: pool.pool_type,
+            addresses,
+        });
+    }
+    cs
+}
 
 // ---------------------------------------------------------------------------
 // Established contacts accessor
@@ -111,6 +148,30 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
         // Derive the account xpub and add to both Wallet and ManagedWalletInfo
         let mut wm = self.wallet_manager.write().await;
+
+        // Early-exit if the account already exists — keeps the recurring
+        // sweep's re-registration a true no-op (no duplicate persistence
+        // round, no managed-state churn).
+        {
+            use key_wallet::account::account_collection::DashpayAccountKey;
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let key = DashpayAccountKey {
+                index: account_index,
+                user_identity_id: our_identity_id.to_buffer(),
+                friend_identity_id: contact_identity_id.to_buffer(),
+            };
+            if info
+                .core_wallet
+                .accounts
+                .dashpay_receival_accounts
+                .contains_key(&key)
+            {
+                return Ok(());
+            }
+        }
+
         let wallet = wm
             .get_wallet(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
@@ -135,14 +196,42 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             is_watch_only: false,
         };
 
-        // Add managed wrapper to ManagedWalletInfo (address pools, state tracking)
-        let info = wm
-            .get_wallet_info_mut(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
         // DashPay accounts are funds-bearing; use the typed
         // `insert_funds_bearing_account` API exposed by the post-split
         // collection rather than wrapping in `OwnedManagedCoreAccount`.
         let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
+
+        // Persist the registration BEFORE the in-memory inserts: a store
+        // failure aborts with nothing mutated, while an insert failure
+        // after a successful store leaves only a benign extra row that
+        // the next load restores into a valid (empty) account.
+        self.persister
+            .store(dashpay_account_registration_changeset(
+                account_type,
+                account_xpub,
+                &managed,
+            ))
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to persist contact account registration: {e}"
+                ))
+            })?;
+
+        let (wallet, info) = wm
+            .get_wallet_mut_and_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+
+        // Mirror the restored shape: the immutable `wallet.accounts`
+        // collection holds the Account (like `build_wallet_start_state`
+        // recreates it at load), the managed collection holds pools +
+        // UTXO state.
+        wallet
+            .add_account(account_type, Some(account_xpub))
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to add contact account to wallet: {e}"
+                ))
+            })?;
         info.core_wallet
             .accounts
             .insert_funds_bearing_account(managed)
@@ -151,6 +240,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     "Failed to register contact account: {e}"
                 ))
             })?;
+
+        tracing::info!(
+            our_identity = %our_identity_id,
+            contact = %contact_identity_id,
+            "Registered DashpayReceivingFunds account for receiving payments from contact"
+        );
 
         Ok(())
     }
@@ -502,6 +597,22 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         // DashpayExternalAccount is funds-bearing; insert via the
         // typed `insert_funds` API after the upstream split.
         let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
+
+        // Persist the registration BEFORE the in-memory inserts (same
+        // rationale as `register_contact_account`): without this round
+        // the account vanishes on relaunch and `send_payment` loses its
+        // xpub + derived-address state until the next sweep rebuilds it.
+        self.persister
+            .store(dashpay_account_registration_changeset(
+                account_type,
+                contact_xpub,
+                &managed,
+            ))
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to persist external contact account registration: {e}"
+                ))
+            })?;
 
         let mut wm = self.wallet_manager.write().await;
         let (wallet, info) = wm
