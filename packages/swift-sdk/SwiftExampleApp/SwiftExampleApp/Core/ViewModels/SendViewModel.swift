@@ -33,6 +33,11 @@ enum SendFlow: Equatable {
         }
     }
 
+    /// Static fee estimate. Authoritative only for the non-shielded
+    /// flows (`coreToCore`, `platformToPlatform`); the shielded flows are
+    /// consensus-pinned and resolved through the Rust FFI estimator in
+    /// `SendViewModel.estimateFee(for:)`, so their values here are only
+    /// the FFI-unavailable fallback (the real fee is ~500x larger).
     var estimatedFee: UInt64 {
         switch self {
         case .coreToCore: return 500_000             // ~0.005 DASH
@@ -214,7 +219,36 @@ class SendViewModel: ObservableObject {
         default:
             detectedFlow = nil
         }
-        estimatedFee = detectedFlow?.estimatedFee
+        estimatedFee = detectedFlow.map(estimateFee(for:))
+    }
+
+    /// Resolve the estimated fee (in the flow's settlement unit) for the
+    /// active flow. The shielded flows are consensus-pinned and computed
+    /// in Rust (`compute_*_shielded_fee` via the FFI estimator), so this
+    /// bridges to that rather than re-deriving the constants in Swift.
+    ///
+    /// `numActions: 2` — the exact action count isn't known until the
+    /// builder selects notes; a single-note spend with change (the common
+    /// case) serializes to 2 Orchard actions. The transparent `Shield`
+    /// (`platformToShielded`) reserves the same `compute_minimum_shielded_fee(2)`
+    /// base as its structure-check minimum, so it shares the transfer kind.
+    /// On an FFI error we fall back to the static enum placeholder rather
+    /// than surfacing a fee of nil for a flow we can otherwise send.
+    private func estimateFee(for flow: SendFlow) -> UInt64 {
+        let kind: PlatformWalletManager.ShieldedFeeKind?
+        switch flow {
+        case .shieldedToShielded, .platformToShielded:
+            kind = .transfer
+        case .shieldedToPlatform:
+            kind = .unshield
+        case .shieldedToCore:
+            kind = .withdrawal
+        case .coreToCore, .platformToPlatform:
+            kind = nil
+        }
+        guard let kind else { return flow.estimatedFee }
+        return (try? PlatformWalletManager.estimateShieldedFee(kind: kind, numActions: 2))
+            ?? flow.estimatedFee
     }
 
     // MARK: - Send Execution
@@ -465,6 +499,16 @@ class SendViewModel: ObservableObject {
                 successMessage = "Shielding complete"
             }
 
+        } catch PlatformWalletError.shieldedSpendUnconfirmed {
+            // The shielded spend (unshield / transfer / withdraw) was broadcast
+            // and accepted, but its execution result couldn't be confirmed — it
+            // may already be on chain. Rust intentionally KEEPS the spent notes'
+            // reservations, so this must NOT be presented as a retryable failure:
+            // retrying would select other unreserved notes and double-send the
+            // payment. Surface it through the non-error (success) path so the UI
+            // doesn't invite a retry; the next shielded sync reconciles the notes.
+            successMessage = "Transaction may have gone through — waiting for "
+                + "the next shielded sync to confirm. Do not retry."
         } catch {
             self.error = error.localizedDescription
         }

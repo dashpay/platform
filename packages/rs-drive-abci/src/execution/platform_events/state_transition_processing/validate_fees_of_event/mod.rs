@@ -44,7 +44,22 @@ where
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
-        match platform_version
+        // Fee validation with `transaction: None` is the CheckTx estimation mode: it runs
+        // OUTSIDE any block transaction, so it must NEVER mutate committed GroveDB state —
+        // an eager write inside an op converter here commits straight to disk and halts the
+        // chain (devnet paloma, height 788 — see test::helpers::state_mutation_guard). In
+        // tests, every transactionless call asserts the committed root hash is byte-identical
+        // around the call, so every event/op shape estimated in tests picks up the invariant
+        // automatically.
+        #[cfg(test)]
+        let committed_root_hash_before_estimation = transaction.is_none().then(|| {
+            crate::test::helpers::state_mutation_guard::committed_root_hash(
+                &self.drive,
+                platform_version,
+            )
+        });
+
+        let result = match platform_version
             .drive_abci
             .methods
             .state_transition_processing
@@ -62,6 +77,23 @@ where
                 known_versions: vec![0],
                 received: version,
             })),
+        };
+
+        #[cfg(test)]
+        if let Some(root_hash_before) = committed_root_hash_before_estimation {
+            assert_eq!(
+                root_hash_before,
+                crate::test::helpers::state_mutation_guard::committed_root_hash(
+                    &self.drive,
+                    platform_version,
+                ),
+                "validate_fees_of_event with transaction = None mutated committed grovedb \
+                 state: an eager write on the estimation path commits straight to disk, \
+                 diverging the root from the signed app hash and halting the chain (devnet \
+                 paloma, height 788)"
+            );
         }
+
+        result
     }
 }
