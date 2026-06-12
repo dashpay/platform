@@ -1330,12 +1330,24 @@ impl PlatformWalletPersistence for FFIPersister {
             //    host upserts by `entry_id`.
             if !shielded_cs.activity_entries.is_empty() {
                 if let Some(cb) = self.callbacks.on_persist_shielded_activity_fn {
-                    // Concatenated cmx / nullifier buffers, kept alive for
-                    // the callback window. One owned `Vec<u8>` per entry's
-                    // note_cmxs and spent_nullifiers.
-                    let mut backing: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
-                    for entries in shielded_cs.activity_entries.values() {
-                        for e in entries {
+                    // One pass pairs each entry with its owned cmx /
+                    // nullifier buffers STRUCTURALLY (same tuple), so the
+                    // pointer-into-backing invariant can't silently
+                    // mis-pair if either side is ever filtered or
+                    // reordered. The buffers live in `rows` (immutable
+                    // once built) for the whole callback window; an inner
+                    // `Vec<u8>`'s heap allocation is stable even as the
+                    // outer Vec grows.
+                    let rows: Vec<(
+                        &platform_wallet::wallet::shielded::SubwalletId,
+                        &platform_wallet::wallet::shielded::ShieldedActivityEntry,
+                        Vec<u8>,
+                        Vec<u8>,
+                    )> = shielded_cs
+                        .activity_entries
+                        .iter()
+                        .flat_map(|(id, entries)| entries.iter().map(move |e| (id, e)))
+                        .map(|(id, e)| {
                             let mut cmx_buf = Vec::with_capacity(e.note_cmxs.len() * 32);
                             for c in &e.note_cmxs {
                                 cmx_buf.extend_from_slice(c);
@@ -1344,20 +1356,12 @@ impl PlatformWalletPersistence for FFIPersister {
                             for n in &e.spent_nullifiers {
                                 nf_buf.extend_from_slice(n);
                             }
-                            backing.push((cmx_buf, nf_buf));
-                        }
-                    }
-                    let mut backing_iter = backing.iter();
-                    let entries: Vec<ShieldedActivityFFI> = shielded_cs
-                        .activity_entries
-                        .iter()
-                        .flat_map(|(id, entries)| {
-                            entries.iter().map(move |e| (id, e))
+                            (id, e, cmx_buf, nf_buf)
                         })
-                        .map(|(id, e)| {
-                            let (cmx_buf, nf_buf) = backing_iter
-                                .next()
-                                .expect("backing has one entry per activity entry");
+                        .collect();
+                    let entries: Vec<ShieldedActivityFFI> = rows
+                        .iter()
+                        .map(|(id, e, cmx_buf, nf_buf)| {
                             let (identity_id, has_identity_id) = match &e.kind {
                                 platform_wallet::wallet::shielded::ShieldedActivityKind::IdentityCreate {
                                     identity_id,
@@ -1427,9 +1431,9 @@ impl PlatformWalletPersistence for FFIPersister {
                         );
                         round_success = false;
                     }
-                    // `backing` and `entries` drop here, after the callback
+                    // `rows` and `entries` drop here, after the callback
                     // has copied everything it needs.
-                    drop(backing);
+                    drop(rows);
                 }
             }
         }

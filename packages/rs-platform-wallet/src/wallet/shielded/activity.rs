@@ -601,7 +601,7 @@ pub fn derive_activity_from_scan_data(
 /// Return `Some(memo)` when `memo` is non-empty and not all-zero;
 /// `None` otherwise. A zero-filled 36-byte `DashMemo` is the "no memo"
 /// sentinel and shouldn't surface as an attached memo.
-fn non_zero_memo(memo: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn non_zero_memo(memo: &[u8]) -> Option<Vec<u8>> {
     if memo.is_empty() || memo.iter().all(|&b| b == 0) {
         None
     } else {
@@ -609,19 +609,30 @@ fn non_zero_memo(memo: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-/// Sort entries for display: confirmed/failed by `block_height`
-/// descending with pendings (no height) floated to the very top, then
-/// tiebreak by `created_at_ms` descending, then by `id` for a total
-/// order. Mutates in place.
+/// Sort entries for display: `Pending` STATUS rows float to the very
+/// top, then confirmed/failed by `block_height` descending (height-less
+/// rows — live successes whose height the scan hasn't backfilled yet —
+/// above heighted ones), then tiebreak by `created_at_ms` descending,
+/// then by `id` for a total order. Mutates in place.
+///
+/// Pending is a status, not "missing height": the live recorder flips
+/// successful ops to `Confirmed` with `block_height: None` and the scan
+/// fills the height later, so keying the pending band on height would
+/// misfile the common success shape (the Swift UI partitions by status
+/// for the same reason).
 pub fn sort_activity_for_display(entries: &mut [ShieldedActivityEntry]) {
     entries.sort_by(|a, b| {
-        // Pendings (block_height == None) first. Among heights, larger
-        // (more recent) first.
-        match (a.block_height, b.block_height) {
-            (None, Some(_)) => std::cmp::Ordering::Less,
-            (Some(_), None) => std::cmp::Ordering::Greater,
-            (Some(ah), Some(bh)) => bh.cmp(&ah),
-            (None, None) => std::cmp::Ordering::Equal,
+        let a_pending = a.status == ShieldedActivityStatus::Pending;
+        let b_pending = b.status == ShieldedActivityStatus::Pending;
+        match (a_pending, b_pending) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => match (a.block_height, b.block_height) {
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (Some(_), None) => std::cmp::Ordering::Greater,
+                (Some(ah), Some(bh)) => bh.cmp(&ah),
+                (None, None) => std::cmp::Ordering::Equal,
+            },
         }
         // Tiebreak: more recent record time first.
         .then_with(|| b.created_at_ms.cmp(&a.created_at_ms))
@@ -933,17 +944,30 @@ mod tests {
             note_cmxs: vec![[id; 32]],
             spent_nullifiers: vec![],
         };
+        // A live success: Confirmed but the scan hasn't backfilled the
+        // height yet. Must NOT land in the pending band (status is the
+        // discriminator), but sorts above heighted settled rows.
+        let mut confirmed_no_height = mk(None, 4, 5);
+        confirmed_no_height.status = ShieldedActivityStatus::Confirmed;
+
         let mut v = vec![
             mk(Some(100), 1, 1),
             mk(None, 5, 2), // pending — must float to top
             mk(Some(300), 2, 3),
             mk(Some(200), 3, 4),
+            confirmed_no_height,
         ];
         sort_activity_for_display(&mut v);
+        assert_eq!(v[0].status, ShieldedActivityStatus::Pending);
         assert_eq!(v[0].block_height, None, "pending floats to top");
-        assert_eq!(v[1].block_height, Some(300));
-        assert_eq!(v[2].block_height, Some(200));
-        assert_eq!(v[3].block_height, Some(100));
+        assert_eq!(
+            (v[1].status, v[1].block_height),
+            (ShieldedActivityStatus::Confirmed, None),
+            "confirmed-without-height sorts at the top of the settled band, not as pending"
+        );
+        assert_eq!(v[2].block_height, Some(300));
+        assert_eq!(v[3].block_height, Some(200));
+        assert_eq!(v[4].block_height, Some(100));
     }
 
     #[test]

@@ -753,43 +753,67 @@ impl NetworkShieldedCoordinator {
     ) -> Result<(), crate::error::PlatformWalletError> {
         use super::activity::{derive_activity_from_scan_data, ScanDeriveInput};
 
-        let mut store = self.store.write().await;
         for (id, views) in subwallets {
-            let notes = store.get_all_notes(*id).map_err(|e| {
-                crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
-            })?;
-            let outgoing = store.get_outgoing_notes(*id).map_err(|e| {
-                crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
-            })?;
-            if notes.is_empty() && outgoing.is_empty() {
+            // Read pass: snapshot the inputs under a shared lock, then
+            // release it before the CPU-bound classification — holding
+            // the WRITE lock across the whole derivation would serialize
+            // every other store consumer for the full window. The
+            // derivation is idempotent (overlap dedupe + upsert-by-id),
+            // so anything that lands between the read and write passes
+            // is reconciled on the next pass.
+            let (input, existing_cmxs) = {
+                let store = self.store.read().await;
+                let notes = store.get_all_notes(*id).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+                let outgoing = store.get_outgoing_notes(*id).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+                if notes.is_empty() && outgoing.is_empty() {
+                    continue;
+                }
+
+                // Own-recipient set: an outgoing note whose recipient the
+                // subwallet's IVK recognizes is self-change, not a payment
+                // out.
+                let own_addresses: Vec<Vec<u8>> = outgoing
+                    .iter()
+                    .filter(|o| is_own_orchard_recipient(views, &o.recipient))
+                    .map(|o| o.recipient.clone())
+                    .collect();
+
+                // Map every stored entry's visible output cmx to the owning
+                // entry id, so the deriver can dedupe by cmx OVERLAP (not
+                // exact id): a same-block cluster that merges two live ops
+                // hashes to an id matching neither, but its cmxs still
+                // overlap both.
+                let existing_cmxs: BTreeMap<[u8; 32], [u8; 32]> = store
+                    .get_activity(*id, 0, usize::MAX)
+                    .map_err(|e| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                    })?
+                    .into_iter()
+                    .flat_map(|entry| entry.note_cmxs.into_iter().map(move |c| (c, entry.id)))
+                    .collect();
+
+                (
+                    ScanDeriveInput {
+                        notes,
+                        outgoing,
+                        own_addresses,
+                    },
+                    existing_cmxs,
+                )
+            };
+
+            // Lock-free classification.
+            let derived = derive_activity_from_scan_data(&input, &existing_cmxs);
+            if derived.new_entries.is_empty() && derived.confirmations.is_empty() {
                 continue;
             }
 
-            // Own-recipient set: an outgoing note whose recipient the
-            // subwallet's IVK recognizes is self-change, not a payment out.
-            let own_addresses: Vec<Vec<u8>> = outgoing
-                .iter()
-                .filter(|o| is_own_orchard_recipient(views, &o.recipient))
-                .map(|o| o.recipient.clone())
-                .collect();
-
-            // Map every stored entry's visible output cmx to the owning
-            // entry id, so the deriver can dedupe by cmx OVERLAP (not exact
-            // id): a same-block cluster that merges two live ops hashes to
-            // an id matching neither, but its cmxs still overlap both.
-            let existing_cmxs: BTreeMap<[u8; 32], [u8; 32]> = store
-                .get_activity(*id, 0, usize::MAX)
-                .map_err(|e| crate::error::PlatformWalletError::ShieldedStoreError(e.to_string()))?
-                .into_iter()
-                .flat_map(|entry| entry.note_cmxs.into_iter().map(move |c| (c, entry.id)))
-                .collect();
-
-            let input = ScanDeriveInput {
-                notes,
-                outgoing,
-                own_addresses,
-            };
-            let derived = derive_activity_from_scan_data(&input, &existing_cmxs);
+            // Write pass: only the upserts hold the write lock.
+            let mut store = self.store.write().await;
             for entry in derived.new_entries {
                 store.save_activity(*id, &entry).map_err(|e| {
                     crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())

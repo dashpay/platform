@@ -150,15 +150,12 @@ pub fn with_status(
 }
 
 /// Convert a fixed 36-byte memo into `Some(memo)` when it carries
-/// content, or `None` when it's the all-zero "no memo" sentinel. Shared
-/// by the operation paths so a zero memo never surfaces as an attached
-/// note.
+/// content, or `None` when it's the all-zero "no memo" sentinel. Thin
+/// fixed-array adapter over the scan deriver's slice-keyed helper so
+/// the sentinel logic exists exactly once and the live and scan paths
+/// can never drift.
 pub fn non_zero_memo(memo: &[u8; 36]) -> Option<Vec<u8>> {
-    if memo.iter().all(|&b| b == 0) {
-        None
-    } else {
-        Some(memo.to_vec())
-    }
+    super::activity::non_zero_memo(&memo[..])
 }
 
 /// Ship one entry to the host persister through a fresh
