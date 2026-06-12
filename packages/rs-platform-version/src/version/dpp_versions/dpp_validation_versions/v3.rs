@@ -23,7 +23,7 @@ pub const DPP_VALIDATION_VERSIONS_V3: DPPValidationVersions = DPPValidationVersi
         validate_localizations: 0,
     },
     document_type: DocumentTypeValidationVersions {
-        validate_update: 1,
+        validate_update: 0,
         contested_index_limit: 1,
         unique_index_limit: 10,
     },

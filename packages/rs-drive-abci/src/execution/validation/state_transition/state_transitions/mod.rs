@@ -3431,11 +3431,10 @@ pub(in crate::execution) mod tests {
 
                 // Apply the widened contract directly to grovedb to simulate the
                 // corrupt on-disk state that WOULD result if such an update were
-                // committed. On a real chain `validate_update` (feature version 1,
-                // active from protocol 12) now rejects this update at the source
-                // (see the rs-dpp validate_update::v1 tests), so the resolver is
-                // never reached with corrupt bytes; this reproduces the
-                // consequence the fix prevents.
+                // committed. On a real chain `validate_update` now rejects this
+                // update at the source (see the rs-dpp validate_byte_array_encoding
+                // tests), so the resolver is never reached with corrupt bytes;
+                // this reproduces the consequence the fix prevents.
                 // The derived `properties` for `preorderSalt` flip to the
                 // variable-length (varint-prefixed) decode path.
                 let widened_contract = setup_contract(
@@ -3489,11 +3488,10 @@ pub(in crate::execution) mod tests {
         /// the per-block vote-poll resolver returns `Err`, which propagates out of
         /// the bare-`?` per-block event handler and halts every validator.
         ///
-        /// The fix prevents that state at the source: `validate_update` (feature
-        /// version 1, active from protocol 12) now rejects the widening (see the
-        /// rs-dpp validate_update::v1 tests). This test deliberately writes the
-        /// corrupt state directly to grovedb (bypassing validation) to reproduce
-        /// the consequence the
+        /// The fix prevents that state at the source: `validate_update` now
+        /// rejects the widening (see the rs-dpp validate_byte_array_encoding
+        /// tests). This test deliberately writes the corrupt state directly to
+        /// grovedb (bypassing validation) to reproduce the consequence the
         /// validation fix prevents.
         #[tokio::test]
         async fn widening_byte_array_max_items_halts_vote_poll_resolver() {
