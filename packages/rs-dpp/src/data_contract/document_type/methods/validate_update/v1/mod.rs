@@ -42,8 +42,13 @@ impl DocumentTypeRef<'_> {
         &self,
         new_document_type: DocumentTypeRef,
     ) -> SimpleConsensusValidationResult {
-        // `Some(n)` => fixed raw encoding of length `n`; `None` => variable
-        // (varint length-prefixed) encoding.
+        // Mirror the encoder/decoder exactly (see `encode_value_ref_with_size`):
+        // the raw, no-length-prefix path is used ONLY when BOTH bounds are present
+        // and equal. Any other shape -- including an omitted `minItems` (`None`) --
+        // is varint length-prefixed, so an implicit `minItems: 0` must NOT be
+        // treated as fixed-length here or this guard would diverge from the actual
+        // on-disk layout. `Some(n)` => fixed raw encoding of length `n`; `None` =>
+        // variable (varint length-prefixed) encoding.
         fn fixed_length(sizes: &ByteArrayPropertySizes) -> Option<u16> {
             match (sizes.min_size, sizes.max_size) {
                 (Some(min), Some(max)) if min == max => Some(min),
@@ -215,6 +220,19 @@ mod tests {
         assert_accepted(
             platform_value!({"type":"array","byteArray":true,"minItems":32,"maxItems":32,"position":0}),
             platform_value!({"type":"array","byteArray":true,"minItems":32,"maxItems":32,"position":0}),
+        );
+    }
+
+    #[test]
+    fn accepts_max_items_change_when_min_items_is_omitted() {
+        // With `minItems` omitted (None) the encoder always uses the variable
+        // (varint length-prefixed) path regardless of `maxItems` -- the raw path
+        // requires BOTH bounds present and equal. So changing `maxItems` does not
+        // change the on-disk encoding and must stay allowed. An implicit
+        // `minItems: 0` is NOT fixed-length (it mirrors encode_value_ref_with_size).
+        assert_accepted(
+            platform_value!({"type":"array","byteArray":true,"maxItems":0,"position":0}),
+            platform_value!({"type":"array","byteArray":true,"maxItems":1,"position":0}),
         );
     }
 
