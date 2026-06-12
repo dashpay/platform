@@ -874,6 +874,7 @@ where
             }
         };
 
+
         // Pull the verified `Identity` out of the proof result. The expected variant is
         // `VerifiedIdentityWithShieldedNullifiers`; if drive-abci ever returns a different one the
         // broadcast still SUCCEEDED, so we don't turn it into an error — we synthesize the identity
@@ -957,10 +958,29 @@ where
         // very hazard this variant exists to prevent.
         Err(e @ PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }) => Err(e),
         Err(e) => {
-            cancel_pending(store, id, &selected_notes).await;
+            if error_releases_note_reservation(&e) {
+                cancel_pending(store, id, &selected_notes).await;
+            }
             Err(e)
         }
     }
+}
+
+/// Whether a failed identity-create should release the notes reserved for it.
+///
+/// `false` ONLY for [`PlatformWalletError::ShieldedBroadcastUnconfirmed`]: the broadcast was
+/// accepted and the transition may have executed, so the reservation must be retained. Releasing it
+/// now would invite double-spend attempts against notes that may already be consumed on chain — the
+/// very hazard that variant exists to prevent. `pending_nullifiers` is in-memory only (see
+/// `SubwalletState`, "never persisted; the next sync after a crash reconciles") and `mark_spent`
+/// during nullifier sync clears matching reservations, so if the transition actually executed the
+/// next sync promotes these notes to spent; if it truly never landed, an app restart drops the
+/// in-memory reservation and frees them.
+///
+/// Everything else is a definitive pre-execution / build / rejection failure: the spend never
+/// happened, so the reservation must be released.
+fn error_releases_note_reservation(e: &PlatformWalletError) -> bool {
+    !matches!(e, PlatformWalletError::ShieldedBroadcastUnconfirmed { .. })
 }
 
 /// Number of times [`identity_create_from_shielded_pool`] re-fetches the new identity by its
@@ -1684,5 +1704,43 @@ mod reserve_shield_fee_tests {
         inputs.insert(addr(1), u64::MAX);
         let err = reserve_shield_fee_on_input_0(inputs, 1).expect_err("overflow must reject");
         assert!(matches!(err, PlatformWalletError::ShieldedBuildError(_)));
+    }
+}
+
+#[cfg(test)]
+mod note_reservation_release_tests {
+    use super::*;
+
+    /// `ShieldedBroadcastUnconfirmed` is the one failure that must NOT release the reservation: the
+    /// broadcast was accepted and the transition may have executed, so freeing the notes invites a
+    /// double-spend against notes that may already be consumed on chain. The next nullifier sync
+    /// reconciles them.
+    #[test]
+    fn unconfirmed_broadcast_retains_reservation() {
+        let e = PlatformWalletError::ShieldedBroadcastUnconfirmed {
+            identity_id: Identifier::from([7u8; 32]),
+            reason: "result proof unavailable".to_string(),
+        };
+        assert!(
+            !error_releases_note_reservation(&e),
+            "ShieldedBroadcastUnconfirmed must retain the note reservation"
+        );
+    }
+
+    /// Every other failure is a definitive pre-execution / build / rejection failure — the spend
+    /// never happened, so the reservation must be released.
+    #[test]
+    fn definitive_failures_release_reservation() {
+        let releasing: Vec<PlatformWalletError> = vec![
+            PlatformWalletError::ShieldedBroadcastFailed("rejected on merits".to_string()),
+            PlatformWalletError::ShieldedBuildError("note selection failed".to_string()),
+            PlatformWalletError::ShieldedStoreError("store write failed".to_string()),
+        ];
+        for e in &releasing {
+            assert!(
+                error_releases_note_reservation(e),
+                "{e:?} must release the note reservation"
+            );
+        }
     }
 }

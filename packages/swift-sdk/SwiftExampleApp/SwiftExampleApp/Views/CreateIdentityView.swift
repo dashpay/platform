@@ -1463,15 +1463,20 @@ struct CreateIdentityView: View {
                     // the inline failure state.
                     return
                 case .unconfirmed:
-                    // Broadcast landed but its result couldn't be
-                    // confirmed; the identity is probably already live on
-                    // chain. Mark the slot used (same as `.completed`) so
-                    // the next registration can't reuse these keys and
-                    // burn funds against the registered-key-hash stateful
-                    // check. We do NOT persist a `PersistentIdentity` row
-                    // here — the proof-verified identity wasn't returned;
-                    // the next sync writes the row once the identity is
-                    // confirmed on chain.
+                    // Broadcast landed but its result couldn't be confirmed;
+                    // the identity is probably already live on chain. Mark the
+                    // slot used (same as `.completed`) — `usedIdentityIndices`
+                    // unions the persisted `isUsed` reservation with the
+                    // `PersistentIdentity` rows, so this is the reservation
+                    // that holds the slot across app restarts until the next
+                    // sync writes the identity row. It is best-effort (silent
+                    // no-op when the slot row is beyond the derived
+                    // lookahead), so the live `.unconfirmed` controller and
+                    // the dismissibility gate in `PendingRegistrationsList`
+                    // remain as defense in depth. We do NOT persist a
+                    // `PersistentIdentity` row here — the proof-verified
+                    // identity wasn't returned; the next sync writes the row
+                    // once the identity is confirmed on chain.
                     markIdentitySlotUsed(
                         walletId: walletId,
                         identityIndex: identityIndex

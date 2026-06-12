@@ -303,4 +303,75 @@ final class CreateIdentityResumableTests: XCTestCase {
             ".unconfirmed: identity is probably live on chain — keep the slot held so a re-submission can't burn funds against the registered-key-hash check"
         )
     }
+
+    // MARK: - network-switch gate
+
+    /// The network picker's `.disabled(_:)` gate reads
+    /// `RegistrationCoordinator.hasInFlightRegistrations`. That predicate
+    /// must hold for an `.unconfirmed` slot (the same reason the dismissal
+    /// gate does): switching networks tears down the
+    /// `PlatformWalletManager` and with it the coordinator + the Rust-side
+    /// note reservation, so releasing the gate for an `.unconfirmed`
+    /// controller lets the same HD slot be re-selected and burn funds
+    /// against the registered-key-hash check.
+    ///
+    /// The gate is implemented as `controller.phase.isActive` so it
+    /// cannot list a different set of phases than the slot-occupancy
+    /// model. Reaching `.unconfirmed` directly requires throwing the
+    /// SDK's `ShieldedIdentityCreateUnconfirmedError`, whose initializer
+    /// is `internal` to `SwiftDashSDK` and not constructible here — so
+    /// the `.unconfirmed → gate held` leg is pinned transitively: the
+    /// exhaustive `testControllerPhaseIsActivePredicate` already asserts
+    /// `.unconfirmed.isActive == true`, and this test pins that the gate
+    /// is exactly `isActive` over the map (true iff some controller is
+    /// active, false when all are terminal-non-active).
+    @MainActor
+    func testNetworkSwitchGateMatchesPhaseIsActive() async throws {
+        let coordinator = RegistrationCoordinator()
+        let walletId = Data(repeating: 0xAB, count: 32)
+
+        XCTAssertFalse(
+            coordinator.hasInFlightRegistrations,
+            "empty coordinator holds nothing in flight"
+        )
+
+        // A controller that fails terminally is `.failed` (isActive ==
+        // false): the gate must release once it's the only entry.
+        let failing = coordinator.startRegistration(
+            walletId: walletId,
+            identityIndex: 1,
+            fundingKind: .shieldedPool
+        ) {
+            throw PlatformWalletError.shieldedBroadcastFailed("rejected on merits")
+        }
+        for _ in 0..<200 {
+            if case .failed = failing.phase { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        guard case .failed = failing.phase else {
+            return XCTFail("controller did not reach .failed in time")
+        }
+        XCTAssertFalse(failing.phase.isActive)
+        XCTAssertFalse(
+            coordinator.hasInFlightRegistrations,
+            "a lone .failed controller must not hold the network-switch gate (it's not isActive)"
+        )
+
+        // A controller stuck `.inFlight` (isActive == true) — the gate
+        // must hold. Use a never-returning body so the phase stays
+        // `.inFlight` for the duration of the assertion.
+        let inFlight = coordinator.startRegistration(
+            walletId: walletId,
+            identityIndex: 2,
+            fundingKind: .shieldedPool
+        ) {
+            try await Task.sleep(nanoseconds: 60_000_000_000)
+            return Data()
+        }
+        XCTAssertTrue(inFlight.phase.isActive)
+        XCTAssertTrue(
+            coordinator.hasInFlightRegistrations,
+            "an active (.inFlight) controller must hold the network-switch gate; the gate is exactly phase.isActive, which also covers .unconfirmed"
+        )
+    }
 }

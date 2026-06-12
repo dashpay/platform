@@ -218,6 +218,25 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::WalletAlreadyExists(..) => {
                 PlatformWalletFFIResultCode::ErrorWalletAlreadyExists
             }
+            // The two shielded broadcast/wait variants. Today nothing routes
+            // them through this blanket impl — the dedicated match in
+            // `platform_wallet_manager_shielded_identity_create_from_pool`
+            // (`shielded_send.rs`) owns them so it can also write
+            // `out_identity_id` on the unconfirmed code. But any *future* FFI
+            // entry point that propagates these via `?` / `.into()` would
+            // otherwise silently flatten them to `ErrorUnknown` and defeat the
+            // slot-holding contract. A blanket conversion can't write
+            // `out_identity_id` (it has no out-param), so the most it can do is
+            // keep the typed code alive — which is what these arms guarantee.
+            PlatformWalletError::ShieldedBroadcastFailed(..) => {
+                PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed
+            }
+            PlatformWalletError::ShieldedBroadcastUnconfirmed { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed
+            }
+            PlatformWalletError::ShieldedSpendUnconfirmed { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
+            }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
         PlatformWalletFFIResult::err(code, error.to_string())
@@ -519,6 +538,61 @@ mod tests {
             msg, rendered,
             "Display payload must survive the FFI boundary verbatim"
         );
+    }
+
+    /// The two shielded broadcast/wait variants map to their dedicated FFI
+    /// codes through the blanket `From` impl rather than flattening to
+    /// `ErrorUnknown`. The dedicated `shielded_send.rs` match owns the live
+    /// path (it also writes `out_identity_id` on the unconfirmed code), but
+    /// any future entry point propagating these via `?` / `.into()` must keep
+    /// the typed code — these arms guarantee that. The typed Display rendering
+    /// still survives as the message.
+    #[test]
+    fn shielded_broadcast_variants_map_to_dedicated_codes() {
+        let failed = PlatformWalletError::ShieldedBroadcastFailed("relay rejected".to_string());
+        let rendered = failed.to_string();
+        let result: PlatformWalletFFIResult = failed.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
+            "ShieldedBroadcastFailed should map to ErrorShieldedBroadcastFailed (rendered: {rendered})"
+        );
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered, "Display payload must survive verbatim");
+
+        let unconfirmed = PlatformWalletError::ShieldedBroadcastUnconfirmed {
+            identity_id: dpp::prelude::Identifier::from([7u8; 32]),
+            reason: "result proof fetch failed".to_string(),
+        };
+        let rendered = unconfirmed.to_string();
+        let result: PlatformWalletFFIResult = unconfirmed.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed,
+            "ShieldedBroadcastUnconfirmed should map to ErrorShieldedBroadcastUnconfirmed (rendered: {rendered})"
+        );
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered, "Display payload must survive verbatim");
+
+        let spend_unconfirmed = PlatformWalletError::ShieldedSpendUnconfirmed {
+            operation: "unshield",
+            reason: "wait timed out".to_string(),
+        };
+        let rendered = spend_unconfirmed.to_string();
+        let result: PlatformWalletFFIResult = spend_unconfirmed.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
+            "ShieldedSpendUnconfirmed should map to ErrorShieldedSpendUnconfirmed (rendered: {rendered})"
+        );
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered, "Display payload must survive verbatim");
     }
 
     /// Other wallet-error variants without a dedicated FFI arm still
