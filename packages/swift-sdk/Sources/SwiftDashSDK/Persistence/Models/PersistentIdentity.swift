@@ -118,6 +118,16 @@ public final class PersistentIdentity {
     @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayContactRequest.owner)
     public var contactRequests: [PersistentDashpayContactRequest] = []
 
+    /// DashPay payment-history rows owned by this identity.
+    /// Cascade-deleted from the parent. Same
+    /// query-by-denormalized-id pattern as `contactRequests`: filters
+    /// use `PersistentDashpayPayment.predicate(ownerIdentityId:)`
+    /// rather than walking this collection from a SwiftUI view.
+    /// Populated by `PlatformWalletManager.refreshDashPayPayments`
+    /// (FFI getter → upsert), not by the persister callback.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayPayment.owner)
+    public var dashpayPayments: [PersistentDashpayPayment] = []
+
     // Contracts in the local store that name this identity as their
     // owner. `.nullify` so deleting the identity leaves the contract
     // rows alive (with `ownerIdentity` nulled) — matches the user's
@@ -163,6 +173,7 @@ public final class PersistentIdentity {
         self.dpnsNames = []
         self.dashpayProfile = nil
         self.contactRequests = []
+        self.dashpayPayments = []
         self.ownedDataContracts = []
         self.createdAt = Date()
         self.lastUpdated = Date()

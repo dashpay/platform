@@ -6,7 +6,12 @@ struct IdentityDetailView: View {
     let identityId: Data
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var appUIState: AppUIState
     @Environment(\.modelContext) private var modelContext
+
+    /// Mirrors DashPayTabView's stored picker selection — written
+    /// here so the "Contacts" deep-link lands on this identity.
+    @AppStorage("dashpay.activeIdentityId") private var dashPayActiveIdentityId: String = ""
 
     /// Reactively observe the `PersistentIdentity` row for
     /// `identityId`. `@Query` with a targeted predicate — when any
@@ -181,25 +186,25 @@ struct IdentityDetailView: View {
                 }
             }
 
-            // DashPay Section — drill-in to the per-identity Friends
-            // screen. Sits up here next to "Identity Information"
-            // because it's the entry point to *this identity's*
-            // contacts; the richer "DashPay Profile" section further
-            // down still owns profile reads/edits separately.
+            // DashPay Section — deep-links to the DashPay tab with
+            // this identity pre-selected (contacts/requests/payments
+            // all live there now; the legacy per-identity Friends
+            // screen was removed). The richer "DashPay Profile"
+            // section further down still owns profile reads/edits.
             //
             // Hidden when the identity isn't backed by a loaded
-            // local wallet — `FriendsView.requireWallet` throws on
-            // every action there, and the failure is swallowed into
-            // a `@State errorMessage` that the body never renders.
-            // No-wallet identities (network-only fetches) would
-            // otherwise land on the empty placeholder with no path
-            // forward.
+            // local wallet — the DashPay tab only operates on
+            // wallet-backed identities.
             if let walletId = identity.wallet?.walletId,
                walletManager.wallet(for: walletId) != nil {
                 Section("DashPay") {
-                    NavigationLink(destination: FriendsView(identity: identity)) {
-                        Label("Friends", systemImage: "person.2")
+                    Button {
+                        dashPayActiveIdentityId = identity.identityIdBase58
+                        appUIState.selectedTab = .dashpay
+                    } label: {
+                        Label("Contacts", systemImage: "person.2")
                     }
+                    .accessibilityIdentifier("identity.openDashPay")
                 }
             }
 
@@ -1188,17 +1193,43 @@ struct DashPayProfileEditorView: View {
 
     private var isCreating: Bool { existing == nil }
 
+    /// DashPay `profile` contract limits — live counters below gate
+    /// Save instead of failing at broadcast time.
+    private static let displayNameLimit = 25
+    private static let publicMessageLimit = 140
+
+    private var overLimit: Bool {
+        displayName.count > Self.displayNameLimit
+            || publicMessage.count > Self.publicMessageLimit
+    }
+
     var body: some View {
         NavigationView {
             Form {
-                Section("Display name") {
+                Section {
                     TextField("e.g. Alice", text: $displayName)
                         .textInputAutocapitalization(.words)
+                        .accessibilityIdentifier("dashpay.profile.displayName")
+                } header: {
+                    Text("Display name")
+                } footer: {
+                    Text("\(displayName.count)/\(Self.displayNameLimit)")
+                        .foregroundColor(
+                            displayName.count > Self.displayNameLimit ? .red : .secondary
+                        )
                 }
 
-                Section("Public message") {
+                Section {
                     TextField("A short bio that contacts can see", text: $publicMessage, axis: .vertical)
                         .lineLimit(3, reservesSpace: true)
+                        .accessibilityIdentifier("dashpay.profile.publicMessage")
+                } header: {
+                    Text("Public message")
+                } footer: {
+                    Text("\(publicMessage.count)/\(Self.publicMessageLimit)")
+                        .foregroundColor(
+                            publicMessage.count > Self.publicMessageLimit ? .red : .secondary
+                        )
                 }
 
                 Section("Avatar URL") {
@@ -1206,6 +1237,7 @@ struct DashPayProfileEditorView: View {
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .accessibilityIdentifier("dashpay.profile.avatarUrl")
                     Text("Paste an HTTPS image URL. SHA-256 + dHash " +
                          "are computed client-side when you save — see " +
                          "DIP-15.")
@@ -1227,12 +1259,18 @@ struct DashPayProfileEditorView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
                         .disabled(isSaving)
+                        .accessibilityIdentifier("dashpay.profile.cancel")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
+                    // §6.4 save flow: Save replaced by a ProgressView
+                    // while in flight; success dismisses; failure
+                    // re-enables with the red caption in the form.
                     if isSaving {
                         ProgressView()
                     } else {
                         Button(isCreating ? "Create" : "Save") { save() }
+                            .disabled(overLimit)
+                            .accessibilityIdentifier("dashpay.profile.save")
                     }
                 }
             }

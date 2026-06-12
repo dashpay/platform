@@ -56,6 +56,18 @@ public class PlatformWalletManager: ObservableObject {
     /// a pass in flight.
     @Published public private(set) var shieldedSyncIsSyncing: Bool = false
 
+    /// Whether the Rust-owned DashPay sync coordinator currently has
+    /// a pass in flight. The §6.4 single sync-in-progress signal: all
+    /// three DashPay sync callers (`.task`, pull-to-refresh, the
+    /// background loop) observe this one flag, and a pull-to-refresh
+    /// during an in-flight sync attaches to it instead of
+    /// double-firing. Updated by the polling task started in
+    /// [`configure`]. Named after the `shieldedSyncIsSyncing` /
+    /// `platformAddressSyncIsSyncing` mirrors (the natural
+    /// `isDashPaySyncing` would collide with the wrapper method of
+    /// that name).
+    @Published public private(set) var dashPaySyncIsSyncing: Bool = false
+
     /// Last completed shielded sync event emitted by Rust.
     @Published public internal(set) var lastShieldedSyncEvent: ShieldedSyncEvent?
 
@@ -153,6 +165,7 @@ public class PlatformWalletManager: ObservableObject {
         if handle != NULL_HANDLE {
             platform_wallet_manager_platform_address_sync_stop(handle).discard()
             platform_wallet_manager_shielded_sync_stop(handle).discard()
+            platform_wallet_manager_dashpay_sync_stop(handle).discard()
             platform_wallet_manager_destroy(handle).discard()
         }
     }
@@ -321,15 +334,19 @@ public class PlatformWalletManager: ObservableObject {
     ///
     /// Calls `platform_wallet_manager_load_from_persistor` which fires
     /// the Swift-side `on_load_wallet_list_fn` callback. For each
-    /// persisted wallet, Rust reconstructs a **watch-only** `Wallet`
-    /// plus the wallet's persisted platform-address sync snapshot.
-    /// After the FFI returns, we call `platform_wallet_manager_get_wallet`
-    /// for each restored id so Swift gets a `ManagedPlatformWallet`
-    /// handle.
+    /// persisted wallet, Rust reconstructs an **external-signable**
+    /// (watch-only, no key material) `Wallet` plus the wallet's
+    /// persisted platform-address sync snapshot. After the FFI returns,
+    /// we call `platform_wallet_manager_get_wallet` for each restored id
+    /// so Swift gets a `ManagedPlatformWallet` handle.
     ///
-    /// Signing operations will fail until a future unlock flow
-    /// upgrades a watch-only wallet to a signing wallet via the
-    /// mnemonic stored in Keychain.
+    /// Each restored wallet is then upgraded back to signing-capable via
+    /// [`unlockWalletFromKeychain`](Self/unlockWalletFromKeychain(walletId:)):
+    /// the mnemonic stored in the Keychain is handed to Rust, which
+    /// re-derives the seed and grafts the key material onto the loaded
+    /// wallet in place. Wallets with no stored mnemonic (genuine
+    /// watch-only) stay watch-only — the unlock is best-effort per
+    /// wallet and never fails the restore.
     ///
     /// Idempotent: if there's no persisted state, does nothing and
     /// leaves `self.wallets` untouched. Safe to call before any
@@ -373,6 +390,26 @@ public class PlatformWalletManager: ObservableObject {
                 let managedWallet = ManagedPlatformWallet(handle: walletHandle, walletId: walletId)
                 restored.append(managedWallet)
                 self.wallets[walletId] = managedWallet
+
+                // Upgrade the just-restored external-signable (watch-only)
+                // wallet back to signing-capable using the mnemonic in the
+                // Keychain. Best-effort, per wallet: a wallet with no stored
+                // mnemonic (genuine watch-only) stays watch-only, and any
+                // unlock error is logged-and-continued so one wallet can't
+                // fail the whole restore. Without this, signing operations
+                // (DashPay contact-xpub derivation, identity-key signing)
+                // fail after every relaunch with "External signable wallet
+                // has no private key".
+                do {
+                    let unlocked = try unlockWalletFromKeychain(walletId: walletId)
+                    print(
+                        "🔓 wallet unlock \(walletId.toHexString().prefix(8)): "
+                            + (unlocked ? "seed attached" : "no mnemonic — stays watch-only")
+                    )
+                } catch {
+                    print("❌ wallet unlock failed \(walletId.toHexString().prefix(8)): \(error)")
+                    self.lastError = error
+                }
             } catch {
                 // Log and skip — one wallet failing doesn't fail the
                 // whole restore. Usually means wallet_id / xpub
@@ -395,6 +432,78 @@ public class PlatformWalletManager: ObservableObject {
         catchUpStuckAssetLocks(wallets: restored)
 
         return restored
+    }
+
+    // MARK: - Keychain seed unlock
+
+    /// Upgrade a restored watch-only wallet to signing-capable using the
+    /// mnemonic stored in the Keychain.
+    ///
+    /// The persisted-restore path (`loadFromPersistor`) rehydrates every
+    /// wallet **external-signable** — per-account xpubs only, no key
+    /// material. Signing operations (DashPay contact-xpub derivation,
+    /// identity-key signing) then fail until the seed is re-attached.
+    /// This reads the wallet's mnemonic from `WalletStorage` (the
+    /// per-wallet Keychain entry) and hands it to
+    /// `platform_wallet_manager_attach_wallet_seed_from_mnemonic`, which
+    /// re-derives the seed in Rust and grafts the key material onto the
+    /// loaded wallet in place — preserving all loaded state.
+    ///
+    /// Per the Swift-SDK FFI boundary rules, the mnemonic → seed
+    /// conversion and the wallet-id safety check happen entirely in Rust;
+    /// Swift only fetches the Keychain string (the one allowed Keychain
+    /// exception) and bridges it across.
+    ///
+    /// - Parameter walletId: the 32-byte network-scoped wallet id.
+    /// - Returns: `true` if the wallet was unlocked (or was already
+    ///   signing-capable — the Rust side is idempotent); `false` if no
+    ///   mnemonic is stored for this wallet (a genuine watch-only
+    ///   wallet), without throwing.
+    /// - Throws: `PlatformWalletError` if the FFI call fails for a reason
+    ///   other than a missing mnemonic (e.g. a mismatched seed, or an
+    ///   unregistered wallet id).
+    @discardableResult
+    public func unlockWalletFromKeychain(walletId: Data) throws -> Bool {
+        try ensureConfigured()
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be 32 bytes, got \(walletId.count)"
+            )
+        }
+
+        // Fetch the mnemonic from the Keychain. A genuine watch-only
+        // wallet (imported by xpub, never holding a seed) has none —
+        // return false rather than throwing so the caller treats it as
+        // "stays watch-only".
+        let mnemonic: String
+        do {
+            mnemonic = try WalletStorage().retrieveMnemonic(for: walletId)
+        } catch WalletStorageError.mnemonicNotFound {
+            return false
+        }
+
+        try mnemonic.withCString { mnemonicPtr in
+            try walletId.withUnsafeBytes { raw in
+                // C signature is `const uint8_t (*wallet_id)[32]`, imported
+                // by Swift as `UnsafePointer<FFIByteTuple32>?`. Rebind the
+                // raw 32-byte buffer to the 32-tuple shape so the call
+                // type-checks (same marshalling as `get_wallet`).
+                guard let base = raw.baseAddress?.assumingMemoryBound(to: FFIByteTuple32.self) else {
+                    throw PlatformWalletError.nullPointer(
+                        "wallet_id buffer base address was nil"
+                    )
+                }
+                // `passphrase` is nullable; this app's wallets use no
+                // BIP-39 passphrase, so pass null (Rust treats it as "").
+                try platform_wallet_manager_attach_wallet_seed_from_mnemonic(
+                    handle,
+                    base,
+                    mnemonicPtr,
+                    nil
+                ).check()
+            }
+        }
+        return true
     }
 
     /// For every persisted asset lock at `statusRaw < 2` (Built /
@@ -818,6 +927,10 @@ public class PlatformWalletManager: ObservableObject {
                 if let isSyncing = try? self.isShieldedSyncing(),
                    isSyncing != self.shieldedSyncIsSyncing {
                     self.shieldedSyncIsSyncing = isSyncing
+                }
+                if let isSyncing = try? self.isDashPaySyncing(),
+                   isSyncing != self.dashPaySyncIsSyncing {
+                    self.dashPaySyncIsSyncing = isSyncing
                 }
                 let tip = (try? self.currentSpvTipBlockTime()) ?? nil
                 if tip != self.spvTipBlockTime {

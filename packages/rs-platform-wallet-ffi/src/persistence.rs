@@ -34,7 +34,8 @@ use crate::asset_lock_persistence::{
     build_asset_lock_entries, outpoint_to_bytes, AssetLockEntryFFI,
 };
 use crate::contact_persistence::{
-    free_contact_requests_ffi, ContactRequestFFI, ContactRequestRemovalFFI,
+    free_contact_requests_ffi, ContactRequestFFI, ContactRequestRejectionFFI,
+    ContactRequestRemovalFFI,
 };
 use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI};
 use crate::core_wallet_types::{free_wallet_changeset_ffi, WalletChangeSetFFI};
@@ -272,8 +273,10 @@ pub struct PersistenceCallbacks {
         ) -> i32,
     >,
     /// Called with a flat `ContactChangeSet` projection — sent /
-    /// incoming / established contact requests in `upserts`, plus
-    /// parallel sent / incoming tombstone arrays.
+    /// incoming / established contact requests in `upserts`, parallel
+    /// sent / incoming removal tombstone arrays, plus a `rejected`
+    /// tombstone array (G5 stage 1) keyed `(owner, sender,
+    /// account_reference)`.
     ///
     /// `ContactChangeSet` is a top-level (not per-identity)
     /// changeset, but the callback is still wallet-scoped via
@@ -299,6 +302,8 @@ pub struct PersistenceCallbacks {
             removed_sent_count: usize,
             removed_incoming_ptr: *const ContactRequestRemovalFFI,
             removed_incoming_count: usize,
+            rejected_ptr: *const ContactRequestRejectionFFI,
+            rejected_count: usize,
         ) -> i32,
     >,
     // ── Shielded (Orchard) persistence ─────────────────────────────────
@@ -1014,15 +1019,22 @@ impl PlatformWalletPersistence for FFIPersister {
                     ));
                 }
                 for (key, established) in &contacts_cs.established {
-                    upserts.push(ContactRequestFFI::from_outgoing(
+                    // Replicate the relationship's broken-channel flag
+                    // onto BOTH the outgoing and incoming row — it is a
+                    // property of the established pair, not of one
+                    // direction, so the Swift handler persists it on
+                    // each `(owner, contact, is_outgoing)` row.
+                    upserts.push(ContactRequestFFI::from_established_outgoing(
                         key.owner_id.to_buffer(),
                         key.recipient_id.to_buffer(),
                         &established.outgoing_request,
+                        established.payment_channel_broken,
                     ));
-                    upserts.push(ContactRequestFFI::from_incoming(
+                    upserts.push(ContactRequestFFI::from_established_incoming(
                         key.owner_id.to_buffer(),
                         key.recipient_id.to_buffer(),
                         &established.incoming_request,
+                        established.payment_channel_broken,
                     ));
                 }
                 let removed_sent: Vec<ContactRequestRemovalFFI> = contacts_cs
@@ -1041,7 +1053,20 @@ impl PlatformWalletPersistence for FFIPersister {
                         contact_id: key.sender_id.to_buffer(),
                     })
                     .collect();
-                if !upserts.is_empty() || !removed_sent.is_empty() || !removed_incoming.is_empty() {
+                // Rejected-incoming tombstones (G5 stage 1). The map is
+                // keyed `(owner, sender, account_reference)`; the value
+                // carries the same triple plus an optional document id,
+                // so we project the values directly.
+                let rejected: Vec<ContactRequestRejectionFFI> = contacts_cs
+                    .rejected
+                    .values()
+                    .map(ContactRequestRejectionFFI::from_rejected)
+                    .collect();
+                if !upserts.is_empty()
+                    || !removed_sent.is_empty()
+                    || !removed_incoming.is_empty()
+                    || !rejected.is_empty()
+                {
                     let result = unsafe {
                         cb(
                             self.callbacks.context,
@@ -1064,6 +1089,12 @@ impl PlatformWalletPersistence for FFIPersister {
                                 removed_incoming.as_ptr()
                             },
                             removed_incoming.len(),
+                            if rejected.is_empty() {
+                                std::ptr::null()
+                            } else {
+                                rejected.as_ptr()
+                            },
+                            rejected.len(),
                         )
                     };
                     // Release every heap-allocated payload before the

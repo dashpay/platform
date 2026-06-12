@@ -455,4 +455,29 @@ public final class ManagedIdentity: @unchecked Sendable {
         guard hasProfile else { return nil }
         return DashPayProfile(ffi: ffiProfile)
     }
+
+    // MARK: - DashPay payment history
+
+    /// Read this identity's DashPay payment history — the
+    /// `dashpay_payments` map (keyed by txid) maintained by the Rust
+    /// wallet — as Swift-owned values.
+    ///
+    /// Sync, lock-free read of the in-memory cache. The source
+    /// `PaymentEntry` carries no timestamp, so entries are unordered
+    /// beyond the map's txid keying. Empty array when no payments
+    /// have been recorded.
+    public func getDashPayPayments() throws -> [DashPayPayment] {
+        var array = DashpayPaymentArray()
+        try managed_identity_get_dashpay_payments(handle, &array).check()
+        defer { dashpay_payment_array_free(&array) }
+        guard let items = array.items, array.count > 0 else {
+            return []
+        }
+        var payments: [DashPayPayment] = []
+        payments.reserveCapacity(Int(array.count))
+        for i in 0..<Int(array.count) {
+            payments.append(DashPayPayment(ffi: items[i]))
+        }
+        return payments
+    }
 }

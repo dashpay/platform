@@ -1,0 +1,260 @@
+import SwiftUI
+import SwiftData
+import Combine
+import SwiftDashSDK
+
+/// Established-contacts list for the DashPay tab (SPEC §6.2).
+///
+/// `@Query`-driven: a contact is *established* when both direction
+/// rows exist for the same `(owner, contact)` pair — the Rust
+/// `established` map projects both the sent and the incoming
+/// request, so the join on `contactIdentityId` is the local
+/// equivalent of that map (see the persister's upsert notes on
+/// `PersistentDashpayContactRequest`).
+struct ContactsView: View {
+    let identity: PersistentIdentity
+
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var contactMeta: DashPayContactMetaStore
+
+    /// Every contact-request row owned by this identity, both
+    /// directions. Grouped into established pairs in `contacts`.
+    @Query private var requestRows: [PersistentDashpayContactRequest]
+
+    @State private var searchText = ""
+
+    init(identity: PersistentIdentity) {
+        self.identity = identity
+        _requestRows = Query(
+            filter: PersistentDashpayContactRequest.predicate(
+                ownerIdentityId: identity.identityId
+            )
+        )
+    }
+
+    /// One row per established contact. Joins the local alias /
+    /// DPNS hint (meta store) and the wallet-cache DashPay profile
+    /// for display, and ORs the pair's `paymentChannelBroken` flags.
+    private var contacts: [EstablishedContactItem] {
+        // Reading through the meta store ties this computation to
+        // its published `version`, so alias/hide edits re-render.
+        _ = contactMeta.version
+        let byContact = Dictionary(grouping: requestRows, by: \.contactIdentityId)
+        return byContact.compactMap { contactId, rows -> EstablishedContactItem? in
+            guard rows.contains(where: { $0.isOutgoing }),
+                  rows.contains(where: { !$0.isOutgoing }) else {
+                return nil
+            }
+            guard !contactMeta.isHidden(
+                network: identity.network,
+                owner: identity.identityId,
+                contact: contactId
+            ) else {
+                return nil
+            }
+            let profile = cachedProfile(contactId)
+            let name = dashPayContactDisplayName(
+                contactId: contactId,
+                alias: contactMeta.alias(
+                    network: identity.network,
+                    owner: identity.identityId,
+                    contact: contactId
+                ),
+                profileDisplayName: profile?.displayName,
+                dpnsLabel: contactMeta.dpnsHint(
+                    network: identity.network,
+                    owner: identity.identityId,
+                    contact: contactId
+                )
+            )
+            return EstablishedContactItem(
+                contactId: contactId,
+                displayName: name,
+                avatarUrl: profile?.avatarUrl,
+                dpnsName: contactMeta.dpnsHint(
+                    network: identity.network,
+                    owner: identity.identityId,
+                    contact: contactId
+                ),
+                paymentChannelBroken: rows.contains(where: \.paymentChannelBroken)
+            )
+        }
+        .sorted {
+            $0.displayName.localizedCaseInsensitiveCompare($1.displayName)
+                == .orderedAscending
+        }
+    }
+
+    private var filteredContacts: [EstablishedContactItem] {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return contacts }
+        return contacts.filter { contact in
+            contact.displayName.localizedCaseInsensitiveContains(trimmed)
+                || (contact.dpnsName?.localizedCaseInsensitiveContains(trimmed) ?? false)
+                || contact.contactId.toHexString().hasPrefix(trimmed.lowercased())
+        }
+    }
+
+    var body: some View {
+        // `SwiftUI.Group` — unqualified `Group` resolves to the
+        // Codable DPP type from SwiftDashSDK.
+        SwiftUI.Group {
+            if contacts.isEmpty {
+                List {
+                    DashPayListEmptyRow(
+                        icon: "person.2.slash",
+                        title: "No contacts yet",
+                        message: "Add your first contact to send Dash by username."
+                    )
+                }
+                .listStyle(.insetGrouped)
+            } else {
+                List {
+                    Section {
+                        searchField
+                        ForEach(filteredContacts) { contact in
+                            NavigationLink {
+                                ContactDetailView(
+                                    identity: identity,
+                                    contactId: contact.contactId
+                                )
+                            } label: {
+                                ContactListRow(contact: contact)
+                            }
+                            .accessibilityIdentifier(
+                                "dashpay.contact.\(contact.contactId.toBase58String())"
+                            )
+                        }
+                    } header: {
+                        Text("Contacts (\(filteredContacts.count))")
+                    }
+                }
+                .listStyle(.insetGrouped)
+            }
+        }
+        .refreshable {
+            await attachOrStartSync(walletManager)
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundColor(.secondary)
+            TextField("Search contacts", text: $searchText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier("dashpay.search")
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("dashpay.search.clear")
+            }
+        }
+    }
+
+    /// Cache-only profile read off the wallet handle (no network).
+    /// Misses are common — contacts' profiles only populate after a
+    /// profile sync has seen them.
+    private func cachedProfile(_ contactId: Data) -> DashPayProfile? {
+        guard let walletId = identity.wallet?.walletId,
+              let wallet = walletManager.wallet(for: walletId) else {
+            return nil
+        }
+        return (try? wallet.getDashPayProfile(identityId: contactId)) ?? nil
+    }
+}
+
+// MARK: - Pull-to-refresh sync attach (§6.4)
+
+/// §6.4 single sync-in-progress signal: a pull-to-refresh during an
+/// in-flight sync *attaches* to it (waits for `dashPaySyncIsSyncing`
+/// to clear) instead of double-firing; otherwise it starts one pass.
+/// Shared by ContactsView and ContactRequestsView.
+@MainActor
+func attachOrStartSync(_ walletManager: PlatformWalletManager) async {
+    if walletManager.dashPaySyncIsSyncing {
+        for await syncing in walletManager.$dashPaySyncIsSyncing.values where !syncing {
+            break
+        }
+    } else {
+        _ = try? await walletManager.dashPaySyncNow()
+    }
+}
+
+// MARK: - Row model + view
+
+/// UI model for one established contact row, resolved from the
+/// request-row pair + profile cache + local metadata.
+struct EstablishedContactItem: Identifiable {
+    let contactId: Data
+    let displayName: String
+    let avatarUrl: String?
+    let dpnsName: String?
+    let paymentChannelBroken: Bool
+
+    var id: Data { contactId }
+}
+
+struct ContactListRow: View {
+    let contact: EstablishedContactItem
+
+    var body: some View {
+        HStack(spacing: 10) {
+            DashPayAvatarView(
+                avatarUrl: contact.avatarUrl,
+                displayName: contact.displayName
+            )
+            VStack(alignment: .leading, spacing: 2) {
+                Text(contact.displayName)
+                    .font(.headline)
+                Text(contact.dpnsName
+                    ?? String(contact.contactId.toHexString().prefix(12)) + "…")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            if contact.paymentChannelBroken {
+                // §6.4 broken payment channel — warning badge; the
+                // detail view explains and disables Send Dash.
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                    .accessibilityLabel("Payment channel broken")
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Empty-row helper
+
+/// Inline empty state rendered as a list row, shared by the
+/// Contacts / Requests lists so pull-to-refresh keeps working on an
+/// empty list (a bare VStack outside a List loses `.refreshable`).
+struct DashPayListEmptyRow: View {
+    let icon: String
+    let title: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 40))
+                .foregroundColor(.gray)
+            Text(title)
+                .font(.headline)
+            Text(message)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+        .listRowBackground(Color.clear)
+    }
+}

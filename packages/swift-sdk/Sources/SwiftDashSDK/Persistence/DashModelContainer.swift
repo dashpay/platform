@@ -10,6 +10,7 @@ public enum DashModelContainer {
             PersistentDPNSName.self,
             PersistentDashpayProfile.self,
             PersistentDashpayContactRequest.self,
+            PersistentDashpayPayment.self,
             PersistentDocument.self,
             PersistentDataContract.self,
             PersistentPublicKey.self,
@@ -155,6 +156,17 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 ///     `(network, owner, contact, isOutgoing)` quad. Existing dev
 ///     stores predate the row collection and rebuild on next
 ///     DashPay contact sync.
+///   - `PersistentDashpayContactRequest` gained the additive
+///     `paymentChannelBroken` column (defaulted `false`) so the G1c
+///     broken-channel flag projected by the persister survives
+///     restarts. Additive-with-default ⇒ lightweight migration.
+///   - `PersistentDashpayPayment` was added (cascade-owned by
+///     `PersistentIdentity` via the new `dashpayPayments`
+///     collection). Mirrors the per-identity `dashpay_payments` map
+///     read through `managed_identity_get_dashpay_payments`; rows are
+///     refreshed by `PlatformWalletManager.refreshDashPayPayments`
+///     (the persister doesn't project payment history). Additive
+///     model + additive relationship ⇒ lightweight migration.
 ///   - `PersistentAccount` gained `#Unique<…>([\.wallet, \.accountType,
 ///     \.accountIndex, \.userIdentityId, \.friendIdentityId])` plus
 ///     `@Attribute(.unique)` on `accountExtendedPubKeyBytes`. The

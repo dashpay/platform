@@ -1625,6 +1625,15 @@ public class PlatformWalletPersistenceHandler {
     ///   stamped per row), so the upsert path is direction-agnostic.
     /// - Each `removedSent` row drops the matching outgoing row.
     /// - Each `removedIncoming` row drops the matching incoming row.
+    /// - Each `rejected` tombstone (G5 stage 1) drops the matching
+    ///   incoming row **only when its `accountReference` matches** —
+    ///   a rotated (bumped-`accountReference`) request from the same
+    ///   sender must survive. Deletion (rather than a `rejected` flag
+    ///   on the row) is the smallest design consistent with the
+    ///   existing tombstone handling: the Rust-side SQLite pipeline
+    ///   owns rejection suppression across re-syncs, so a rejected
+    ///   request never re-enters `upserts`; SwiftData only has to
+    ///   stop showing it.
     ///
     /// The owner identity is required to exist in SwiftData before
     /// the row is inserted — the relationship is non-optional and
@@ -1642,7 +1651,8 @@ public class PlatformWalletPersistenceHandler {
         walletId: Data,
         upserts: [ContactRequestSnapshot],
         removedSent: [ContactRequestRemovalSnapshot],
-        removedIncoming: [ContactRequestRemovalSnapshot]
+        removedIncoming: [ContactRequestRemovalSnapshot],
+        rejected: [ContactRequestRejectionSnapshot]
     ) {
         onQueue {
             for entry in upserts {
@@ -1692,6 +1702,7 @@ public class PlatformWalletPersistenceHandler {
                     existing.autoAcceptProof = entry.autoAcceptProof
                     existing.coreHeightCreatedAt = entry.coreHeightCreatedAt
                     existing.createdAtMillis = entry.createdAtMillis
+                    existing.paymentChannelBroken = entry.paymentChannelBroken
                     if existing.owner !== owner {
                         existing.owner = owner
                     }
@@ -1708,7 +1719,8 @@ public class PlatformWalletPersistenceHandler {
                         encryptedAccountLabel: entry.encryptedAccountLabel,
                         autoAcceptProof: entry.autoAcceptProof,
                         coreHeightCreatedAt: entry.coreHeightCreatedAt,
-                        createdAtMillis: entry.createdAtMillis
+                        createdAtMillis: entry.createdAtMillis,
+                        paymentChannelBroken: entry.paymentChannelBroken
                     )
                     backgroundContext.insert(row)
                 }
@@ -1726,6 +1738,13 @@ public class PlatformWalletPersistenceHandler {
                     ownerId: tomb.ownerIdentityId,
                     contactId: tomb.contactIdentityId,
                     isOutgoing: false
+                )
+            }
+            for tomb in rejected {
+                deleteRejectedIncomingRow(
+                    ownerId: tomb.ownerIdentityId,
+                    senderId: tomb.senderIdentityId,
+                    accountReference: tomb.accountReference
                 )
             }
             // No save() — bracketed by changesetBegin/End from the
@@ -1757,6 +1776,35 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
+    /// Apply one rejection tombstone (G5 stage 1): delete the
+    /// incoming-request row matching `(ownerId, senderId,
+    /// accountReference)` so a rejected request doesn't linger in the
+    /// UI store. The `accountReference` gate mirrors the Rust-side
+    /// suppression key — a rotated (bumped-`accountReference`)
+    /// request from the same sender is a *different* request and its
+    /// row must survive. Silent on miss: tombstones replay across
+    /// rounds, and an already-removed row is the success state.
+    ///
+    /// Assumes it's already running on `serialQueue`.
+    private func deleteRejectedIncomingRow(
+        ownerId: Data,
+        senderId: Data,
+        accountReference: UInt32
+    ) {
+        let reference = accountReference
+        let descriptor = FetchDescriptor<PersistentDashpayContactRequest>(
+            predicate: #Predicate {
+                $0.ownerIdentityId == ownerId
+                    && $0.contactIdentityId == senderId
+                    && $0.isOutgoing == false
+                    && $0.accountReference == reference
+            }
+        )
+        if let existing = try? backgroundContext.fetch(descriptor).first {
+            backgroundContext.delete(existing)
+        }
+    }
+
     /// Owned snapshot of a `ContactRequestFFI` row. Decouples the
     /// lifetime of the encrypted-key buffers from the Rust-side
     /// allocation: the callback copies them into Swift `Data` before
@@ -1773,6 +1821,7 @@ public class PlatformWalletPersistenceHandler {
         let autoAcceptProof: Data?
         let coreHeightCreatedAt: UInt32
         let createdAtMillis: UInt64
+        let paymentChannelBroken: Bool
     }
 
     /// Owned snapshot of a `ContactRequestRemovalFFI` row. Carries
@@ -1782,6 +1831,98 @@ public class PlatformWalletPersistenceHandler {
     struct ContactRequestRemovalSnapshot {
         let ownerIdentityId: Data
         let contactIdentityId: Data
+    }
+
+    /// Owned snapshot of a `ContactRequestRejectionFFI` tombstone
+    /// (G5 stage 1). The suppression key is `(owner, sender,
+    /// accountReference)` — the `documentId` is audit-only metadata
+    /// (`nil` mirrors the FFI's `has_document_id == false`) and is
+    /// not used for row matching.
+    struct ContactRequestRejectionSnapshot {
+        let ownerIdentityId: Data
+        let senderIdentityId: Data
+        let accountReference: UInt32
+        let documentId: Data?
+    }
+
+    // MARK: - DashPay payment-history persistence
+
+    /// Upsert DashPay payment-history rows for one owner identity.
+    ///
+    /// NOT a persister-callback path — the Rust persister doesn't
+    /// project payment history. Called by
+    /// `PlatformWalletManager.refreshDashPayPayments` after reading
+    /// the `managed_identity_get_dashpay_payments` getter, so the UI
+    /// can `@Query` `PersistentDashpayPayment` rows reactively.
+    ///
+    /// Upsert-only: the Rust `dashpay_payments` map is append-only
+    /// history (keyed by txid), so a refresh never has to delete
+    /// rows; cascade from the owner identity handles wallet wipes.
+    /// Rows are keyed `(networkRaw, ownerIdentityId, txid)`. Skips
+    /// silently when the owner identity row doesn't exist yet —
+    /// the next refresh after the identity flush replays it.
+    ///
+    /// Saves immediately when no changeset round is open — same
+    /// convention as the other app-facing writers (`setWalletName`):
+    /// mid-round calls leave the commit/rollback to `endChangeset`.
+    public func persistDashpayPayments(
+        ownerIdentityId: Data,
+        payments: [DashPayPayment]
+    ) {
+        onQueue {
+            let ownerId = ownerIdentityId
+            let ownerDescriptor = FetchDescriptor<PersistentIdentity>(
+                predicate: #Predicate { $0.identityId == ownerId }
+            )
+            guard let owner = try? backgroundContext.fetch(ownerDescriptor).first else {
+                return
+            }
+            let networkRaw = owner.networkRaw
+
+            for payment in payments {
+                guard !payment.txid.isEmpty else { continue }
+                let txid = payment.txid
+                let descriptor = FetchDescriptor<PersistentDashpayPayment>(
+                    predicate: #Predicate {
+                        $0.networkRaw == networkRaw
+                            && $0.ownerIdentityId == ownerId
+                            && $0.txid == txid
+                    }
+                )
+                if let existing = try? backgroundContext.fetch(descriptor).first {
+                    // Refresh in place — the FFI snapshot is
+                    // authoritative for the underlying `PaymentEntry`.
+                    // `status` is the field that actually moves
+                    // (Pending → Confirmed / Failed).
+                    existing.counterpartyIdentityId = payment.counterpartyId
+                    existing.amountDuffs = payment.amountDuffs
+                    existing.directionRaw = payment.direction.rawValue
+                    existing.statusRaw = payment.status.rawValue
+                    existing.memo = payment.memo
+                    if existing.owner !== owner {
+                        existing.owner = owner
+                    }
+                    existing.lastUpdated = Date()
+                } else {
+                    let row = PersistentDashpayPayment(
+                        owner: owner,
+                        counterpartyIdentityId: payment.counterpartyId,
+                        amountDuffs: payment.amountDuffs,
+                        direction: payment.direction,
+                        status: payment.status,
+                        txid: payment.txid,
+                        memo: payment.memo
+                    )
+                    backgroundContext.insert(row)
+                }
+            }
+            // Same guard as the other app-facing writers
+            // (`setWalletName`, …): a refresh landing while a Rust
+            // persister round is open must ride that round's
+            // endChangeset commit/rollback instead of flushing the
+            // half-applied round early.
+            if !self.inChangeset { try? backgroundContext.save() }
+        }
     }
 
     // MARK: - Identity private-key derivation
@@ -5134,6 +5275,10 @@ private func persistAssetLocksCallback(
 /// parallel `*const ContactRequestRemovalFFI` slots; we keep them
 /// separate through the snapshot too because the handler uses the
 /// arrival bucket to decide which `is_outgoing` row to delete.
+///
+/// The trailing `rejected` array carries the G5 stage-1 rejection
+/// tombstones — POD rows (no heap payloads), copied into snapshots
+/// like everything else.
 private func persistContactsCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
@@ -5142,7 +5287,9 @@ private func persistContactsCallback(
     removedSentPtr: UnsafePointer<ContactRequestRemovalFFI>?,
     removedSentCount: UInt,
     removedIncomingPtr: UnsafePointer<ContactRequestRemovalFFI>?,
-    removedIncomingCount: UInt
+    removedIncomingCount: UInt,
+    rejectedPtr: UnsafePointer<ContactRequestRejectionFFI>?,
+    rejectedCount: UInt
 ) -> Int32 {
     guard let context = context,
           let walletIdPtr = walletIdPtr else {
@@ -5198,7 +5345,8 @@ private func persistContactsCallback(
                 encryptedAccountLabel: encryptedAccountLabel,
                 autoAcceptProof: autoAcceptProof,
                 coreHeightCreatedAt: e.core_height_created_at,
-                createdAtMillis: e.created_at
+                createdAtMillis: e.created_at,
+                paymentChannelBroken: e.payment_channel_broken
             ))
         }
     }
@@ -5227,11 +5375,26 @@ private func persistContactsCallback(
         }
     }
 
+    var rejected: [PlatformWalletPersistenceHandler.ContactRequestRejectionSnapshot] = []
+    if rejectedCount > 0, let rejectedPtr = rejectedPtr {
+        rejected.reserveCapacity(Int(rejectedCount))
+        for i in 0..<Int(rejectedCount) {
+            let r = rejectedPtr[i]
+            rejected.append(.init(
+                ownerIdentityId: dataFromTuple32(r.owner_id),
+                senderIdentityId: dataFromTuple32(r.sender_id),
+                accountReference: r.account_reference,
+                documentId: r.has_document_id ? dataFromTuple32(r.document_id) : nil
+            ))
+        }
+    }
+
     handler.persistContacts(
         walletId: walletId,
         upserts: upserts,
         removedSent: removedSent,
-        removedIncoming: removedIncoming
+        removedIncoming: removedIncoming,
+        rejected: rejected
     )
     return 0
 }

@@ -4,7 +4,7 @@ import SwiftData
 import LocalAuthentication
 
 enum RootTab: Hashable {
-    case sync, wallets, identities, contracts, settings
+    case sync, wallets, identities, dashpay, contracts, settings
 }
 
 struct ContentView: View {
@@ -25,7 +25,14 @@ struct ContentView: View {
     /// re-derive or delete.
     @Query private var persistentWallets: [PersistentWallet]
 
-    @State private var selectedTab: RootTab = .sync
+    /// Root tab selection — owned by AppUIState so deep views (e.g.
+    /// IdentityDetailView's Contacts row) can switch tabs.
+    private var selectedTab: Binding<RootTab> {
+        Binding(
+            get: { appUIState.selectedTab },
+            set: { appUIState.selectedTab = $0 }
+        )
+    }
 
     // Orphan-mnemonic recovery flow. The whole batch surfaces in one
     // alert + one sheet now: the primary "Recover Wallets?" alert
@@ -73,7 +80,7 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            TabView(selection: $selectedTab) {
+            TabView(selection: selectedTab) {
                 // Tab 1: Sync Status
                 SyncStatusView()
                     .tabItem {
@@ -96,9 +103,22 @@ struct ContentView: View {
                     }
                     .tag(RootTab.identities)
 
-                // Tab 4: Contracts (locally-persisted data contracts +
-                // their tokens). Friends moved to a per-identity drill-in
-                // under the DashPay section of IdentityDetailView.
+                // Tab 4: DashPay — first-class contacts / requests /
+                // payments surface (SPEC Part 6). The root-tab
+                // selection binding lets its §6.4 empty states
+                // deep-link to the Wallets / Identities tabs.
+                DashPayTabView(
+                    network: platformState.currentNetwork,
+                    selectedTab: selectedTab
+                )
+                .accessibilityIdentifier("dashpay.tab")
+                .tabItem {
+                    Label("DashPay", systemImage: "person.2.fill")
+                }
+                .tag(RootTab.dashpay)
+
+                // Tab 5: Contracts (locally-persisted data contracts +
+                // their tokens).
                 //
                 // The current network is threaded in so the contracts +
                 // tokens lists stay scoped to it — `PersistentDataContract`
@@ -110,7 +130,7 @@ struct ContentView: View {
                     }
                     .tag(RootTab.contracts)
 
-                // Tab 5: Settings (includes Platform section)
+                // Tab 6: Settings (includes Platform section)
                 SettingsView()
                     .tabItem {
                         Label("Settings", systemImage: "gearshape")
@@ -120,7 +140,7 @@ struct ContentView: View {
             .overlay(alignment: .top) {
                 let state = walletManager.spvProgress.overallState
                 if state == .syncing || state == .waitingForConnections {
-                    GlobalSyncIndicator(showDetails: selectedTab == .sync && appUIState.showWalletsSyncDetails)
+                    GlobalSyncIndicator(showDetails: appUIState.selectedTab == .sync && appUIState.showWalletsSyncDetails)
                 }
             }
             .onAppear { checkForOrphanMnemonic() }

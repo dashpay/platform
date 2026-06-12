@@ -94,6 +94,20 @@ public final class PersistentDashpayContactRequest {
     /// request document was created.
     public var createdAtMillis: UInt64
 
+    /// Whether the established relationship this row belongs to has a
+    /// **permanently broken** payment channel (G1c). Mirrors
+    /// `ContactRequestFFI::payment_channel_broken`: only meaningful
+    /// for rows projected from the `established` map — both
+    /// directions of an established pair carry the same flag (it's a
+    /// property of the relationship, not of one direction). Always
+    /// `false` for pending rows. The UI reads it to disable "Send
+    /// Dash" and surface "payment channel broken — ask the contact to
+    /// send a new request".
+    ///
+    /// Defaulted so existing rows ride SwiftData's lightweight
+    /// migration (additive column, non-destructive).
+    public var paymentChannelBroken: Bool = false
+
     // MARK: - Relationships
 
     /// Owning identity — the wallet-managed identity this row's
@@ -120,7 +134,8 @@ public final class PersistentDashpayContactRequest {
         encryptedAccountLabel: Data? = nil,
         autoAcceptProof: Data? = nil,
         coreHeightCreatedAt: UInt32,
-        createdAtMillis: UInt64
+        createdAtMillis: UInt64,
+        paymentChannelBroken: Bool = false
     ) {
         self.owner = owner
         self.networkRaw = owner.networkRaw
@@ -135,6 +150,7 @@ public final class PersistentDashpayContactRequest {
         self.autoAcceptProof = autoAcceptProof
         self.coreHeightCreatedAt = coreHeightCreatedAt
         self.createdAtMillis = createdAtMillis
+        self.paymentChannelBroken = paymentChannelBroken
         self.createdAt = Date()
         self.lastUpdated = Date()
     }

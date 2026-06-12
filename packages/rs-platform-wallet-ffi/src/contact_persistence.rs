@@ -101,6 +101,20 @@ pub struct ContactRequestFFI {
     pub core_height_created_at: u32,
     /// `ContactRequest::created_at` — Unix-millis timestamp.
     pub created_at: u64,
+    /// Whether the [`EstablishedContact`] this row was projected from
+    /// has a **permanently broken** payment channel (G1c).
+    ///
+    /// Only meaningful for rows projected from the `established` map —
+    /// both the outgoing and incoming row of an established pair carry
+    /// the same flag (it's a property of the relationship, not of one
+    /// direction). Always `false` for rows projected from pending
+    /// `sent_requests` / `incoming_requests` (a pending request has no
+    /// channel yet). The Swift handler persists it on both rows; the UI
+    /// reads it to disable "Send Dash" and surface "payment channel
+    /// broken — ask the contact to send a new request".
+    ///
+    /// [`EstablishedContact`]: platform_wallet::EstablishedContact
+    pub payment_channel_broken: bool,
 }
 
 /// Composite identifier for [`ContactChangeSet::removed_sent`] and
@@ -119,6 +133,41 @@ pub struct ContactRequestFFI {
 pub struct ContactRequestRemovalFFI {
     pub owner_id: [u8; 32],
     pub contact_id: [u8; 32],
+}
+
+/// Flat C mirror of a [`RejectedContactRequest`] tombstone (G5 stage 1)
+/// for the `rejected` array on [`OnPersistContactsFn`].
+///
+/// The suppression key is `(owner_id, sender_id, account_reference)` —
+/// deliberately **not** bare sender id, so a rotated (bumped
+/// `accountReference`) request from the same sender is still let
+/// through. The Swift handler persists one row per tombstone keyed on
+/// that triple so a once-rejected request stays suppressed across a
+/// recurring re-sync.
+///
+/// `document_id` is carried for audit / exact-match purposes only; it
+/// is **not** part of the suppression key. `has_document_id` gates it
+/// (`false` ⇒ the source `Option` was `None` and `document_id` is
+/// zero-filled).
+///
+/// [`RejectedContactRequest`]: platform_wallet::changeset::RejectedContactRequest
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ContactRequestRejectionFFI {
+    /// The wallet-owned identity that rejected the request (recipient).
+    pub owner_id: [u8; 32],
+    /// The identity whose request was rejected (the sender).
+    pub sender_id: [u8; 32],
+    /// The `accountReference` of the rejected request — part of the
+    /// suppression key. A request from the same sender with a different
+    /// `accountReference` is NOT suppressed.
+    pub account_reference: u32,
+    /// Whether [`Self::document_id`] carries a real id. `false` ⇒ the
+    /// source `Option<Identifier>` was `None`.
+    pub has_document_id: bool,
+    /// The rejected document's id when known, else zero-filled (gated by
+    /// [`Self::has_document_id`]). Not part of the suppression key.
+    pub document_id: [u8; 32],
 }
 
 // Compile-time guards. Pin the expected layouts so any reshape on
@@ -143,14 +192,50 @@ pub struct ContactRequestRemovalFFI {
 //   128..=131 core_height_created_at         u32
 //   132..=135 (padding to 8)
 //   136..=143 created_at                     u64
+//   144       payment_channel_broken         bool
+//   145..=151 (tail padding to alignment 8)
 //
-// Total size = 144, alignment = 8 (from u64 / pointer fields).
-const _: [u8; 144] = [0u8; std::mem::size_of::<ContactRequestFFI>()];
+// Total size = 152, alignment = 8 (from u64 / pointer fields).
+const _: [u8; 152] = [0u8; std::mem::size_of::<ContactRequestFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<ContactRequestFFI>()];
 
 // Expected `ContactRequestRemovalFFI` layout: 64 bytes, alignment 1.
 const _: [u8; 64] = [0u8; std::mem::size_of::<ContactRequestRemovalFFI>()];
 const _: [u8; 1] = [0u8; std::mem::align_of::<ContactRequestRemovalFFI>()];
+
+// Expected `ContactRequestRejectionFFI` layout on all targets:
+//
+//   0..=31    owner_id            [u8; 32]
+//   32..=63   sender_id           [u8; 32]
+//   64..=67   account_reference   u32
+//   68        has_document_id     bool
+//   69..=100  document_id         [u8; 32]
+//   101..=103 (tail padding to alignment 4)
+//
+// Total size = 104, alignment = 4 (from the u32 field).
+const _: [u8; 104] = [0u8; std::mem::size_of::<ContactRequestRejectionFFI>()];
+const _: [u8; 4] = [0u8; std::mem::align_of::<ContactRequestRejectionFFI>()];
+
+impl ContactRequestRejectionFFI {
+    /// Project a [`RejectedContactRequest`] onto its flat C mirror.
+    /// `document_id` is zero-filled with `has_document_id == false`
+    /// when the source `Option` is `None`.
+    ///
+    /// [`RejectedContactRequest`]: platform_wallet::changeset::RejectedContactRequest
+    pub fn from_rejected(rejected: &platform_wallet::changeset::RejectedContactRequest) -> Self {
+        let (has_document_id, document_id) = match rejected.document_id {
+            Some(id) => (true, id.to_buffer()),
+            None => (false, [0u8; 32]),
+        };
+        Self {
+            owner_id: rejected.owner_id.to_buffer(),
+            sender_id: rejected.sender_id.to_buffer(),
+            account_reference: rejected.account_reference,
+            has_document_id,
+            document_id,
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Conversions
@@ -173,7 +258,7 @@ impl ContactRequestFFI {
         contact_id: [u8; 32],
         request: &platform_wallet::ContactRequest,
     ) -> Self {
-        Self::from_parts(owner_id, contact_id, true, request)
+        Self::from_parts(owner_id, contact_id, true, request, false)
     }
 
     /// Sibling of [`Self::from_outgoing`] for the incoming direction
@@ -183,7 +268,33 @@ impl ContactRequestFFI {
         contact_id: [u8; 32],
         request: &platform_wallet::ContactRequest,
     ) -> Self {
-        Self::from_parts(owner_id, contact_id, false, request)
+        Self::from_parts(owner_id, contact_id, false, request, false)
+    }
+
+    /// Build the **outgoing** row of an established contact, stamping
+    /// the relationship's `payment_channel_broken` flag onto the row.
+    ///
+    /// Used by the persister's `established` projection (one outgoing +
+    /// one incoming row per entry), where the broken flag is a property
+    /// of the relationship and is therefore replicated onto both rows.
+    pub fn from_established_outgoing(
+        owner_id: [u8; 32],
+        contact_id: [u8; 32],
+        request: &platform_wallet::ContactRequest,
+        payment_channel_broken: bool,
+    ) -> Self {
+        Self::from_parts(owner_id, contact_id, true, request, payment_channel_broken)
+    }
+
+    /// Sibling of [`Self::from_established_outgoing`] for the **incoming**
+    /// row of an established contact.
+    pub fn from_established_incoming(
+        owner_id: [u8; 32],
+        contact_id: [u8; 32],
+        request: &platform_wallet::ContactRequest,
+        payment_channel_broken: bool,
+    ) -> Self {
+        Self::from_parts(owner_id, contact_id, false, request, payment_channel_broken)
     }
 
     fn from_parts(
@@ -191,6 +302,7 @@ impl ContactRequestFFI {
         contact_id: [u8; 32],
         is_outgoing: bool,
         request: &platform_wallet::ContactRequest,
+        payment_channel_broken: bool,
     ) -> Self {
         let (encrypted_public_key, encrypted_public_key_len) =
             allocate_byte_buffer(&request.encrypted_public_key);
@@ -219,6 +331,7 @@ impl ContactRequestFFI {
             auto_accept_proof_len,
             core_height_created_at: request.core_height_created_at,
             created_at: request.created_at,
+            payment_channel_broken,
         }
     }
 }
@@ -305,6 +418,13 @@ fn free_byte_buffer(slot: &mut *const u8, len_slot: &mut usize) {
 ///   rows (sent requests explicitly removed by the owner).
 /// - `removed_incoming` / `removed_incoming_count`: tombstones for
 ///   incoming rows.
+/// - `rejected` / `rejected_count`: rejected-incoming-request tombstones
+///   (G5 stage 1), keyed `(owner, sender, account_reference)`. The host
+///   persists these so a once-rejected request stays suppressed across
+///   a recurring re-sync, while a rotated (bumped-`accountReference`)
+///   request from the same sender is still let through. Pointer is
+///   valid only for the duration of the callback; rows are POD (no heap
+///   payloads), so the host must copy any it wants to retain.
 ///
 /// Return code: `0` on success, non-zero to flag the round as failed
 /// for the bracketing changeset begin/end transaction.
@@ -317,6 +437,8 @@ pub type OnPersistContactsFn = unsafe extern "C" fn(
     removed_sent_count: usize,
     removed_incoming: *const ContactRequestRemovalFFI,
     removed_incoming_count: usize,
+    rejected: *const ContactRequestRejectionFFI,
+    rejected_count: usize,
 ) -> i32;
 
 #[cfg(test)]
@@ -364,6 +486,8 @@ mod tests {
         assert_eq!(ffi.auto_accept_proof_len, 4);
         assert_eq!(ffi.core_height_created_at, 100_000);
         assert_eq!(ffi.created_at, 1_700_000_000_000);
+        // Pending (non-established) rows are never broken.
+        assert!(!ffi.payment_channel_broken);
 
         unsafe { free_contact_requests_ffi(&mut ffi as *mut ContactRequestFFI, 1) };
         assert!(ffi.encrypted_public_key.is_null());
@@ -386,5 +510,78 @@ mod tests {
         assert!(ffi.auto_accept_proof.is_null());
         assert_eq!(ffi.auto_accept_proof_len, 0);
         unsafe { free_contact_requests_ffi(&mut ffi as *mut ContactRequestFFI, 1) };
+    }
+
+    /// The `established_*` constructors stamp the relationship's
+    /// `payment_channel_broken` flag onto BOTH the outgoing and incoming
+    /// row. This pins the M1 G1c flag survives the persister projection
+    /// (the plain `from_outgoing`/`from_incoming` pending constructors
+    /// always emit `false` — verified above), so a Swift `@Query`-driven
+    /// contact row can render the broken-channel badge without consulting
+    /// a live handle getter.
+    #[test]
+    fn established_rows_carry_payment_channel_broken_flag() {
+        let request = sample_request();
+        let owner = [3u8; 32];
+        let contact = [4u8; 32];
+
+        // Broken relationship: both projected rows must carry the flag.
+        let mut out =
+            ContactRequestFFI::from_established_outgoing(owner, contact, &request, true);
+        let mut inc =
+            ContactRequestFFI::from_established_incoming(owner, contact, &request, true);
+        assert!(out.is_outgoing);
+        assert!(!inc.is_outgoing);
+        assert!(out.payment_channel_broken);
+        assert!(inc.payment_channel_broken);
+
+        // Healthy relationship: both rows clear.
+        let mut healthy =
+            ContactRequestFFI::from_established_outgoing(owner, contact, &request, false);
+        assert!(!healthy.payment_channel_broken);
+
+        unsafe {
+            free_contact_requests_ffi(&mut out as *mut ContactRequestFFI, 1);
+            free_contact_requests_ffi(&mut inc as *mut ContactRequestFFI, 1);
+            free_contact_requests_ffi(&mut healthy as *mut ContactRequestFFI, 1);
+        }
+    }
+
+    /// `ContactRequestRejectionFFI::from_rejected` must carry the full
+    /// `(owner, sender, account_reference)` suppression key plus the
+    /// optional document id. When the source `document_id` is `Some`,
+    /// `has_document_id` is true and the bytes round-trip; when `None`,
+    /// `has_document_id` is false and the buffer is zero-filled. Pins the
+    /// G5 tombstone projection so the Swift handler can persist the exact
+    /// suppression key.
+    #[test]
+    fn rejection_ffi_round_trips_key_and_optional_document_id() {
+        use platform_wallet::changeset::RejectedContactRequest;
+        use dpp::prelude::Identifier;
+
+        let with_doc = RejectedContactRequest {
+            owner_id: Identifier::from([7u8; 32]),
+            sender_id: Identifier::from([8u8; 32]),
+            account_reference: 42,
+            document_id: Some(Identifier::from([9u8; 32])),
+        };
+        let ffi = ContactRequestRejectionFFI::from_rejected(&with_doc);
+        assert_eq!(ffi.owner_id, [7u8; 32]);
+        assert_eq!(ffi.sender_id, [8u8; 32]);
+        assert_eq!(ffi.account_reference, 42);
+        assert!(ffi.has_document_id);
+        assert_eq!(ffi.document_id, [9u8; 32]);
+
+        let without_doc = RejectedContactRequest {
+            owner_id: Identifier::from([1u8; 32]),
+            sender_id: Identifier::from([2u8; 32]),
+            account_reference: 0,
+            document_id: None,
+        };
+        let ffi = ContactRequestRejectionFFI::from_rejected(&without_doc);
+        assert!(!ffi.has_document_id);
+        // Gated off — the buffer is zero-filled, not garbage.
+        assert_eq!(ffi.document_id, [0u8; 32]);
+        assert_eq!(ffi.account_reference, 0);
     }
 }

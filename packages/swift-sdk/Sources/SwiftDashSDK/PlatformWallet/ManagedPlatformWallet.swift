@@ -1730,6 +1730,23 @@ extension ManagedPlatformWallet {
         return DashPayProfile(ffi: ffiProfile)
     }
 
+    /// Read the DashPay payment history for `identityId` directly
+    /// from this wallet's live state.
+    ///
+    /// Convenient for UI layers that track identities by ID and don't
+    /// hold a live `ManagedIdentity` handle. Throws
+    /// `.identityNotFound` when the wallet doesn't know this
+    /// identity; returns an empty array when no payments have been
+    /// recorded.
+    ///
+    /// Sync, lock-free read of the in-memory cache. To land the rows
+    /// in SwiftData for `@Query` consumption, go through
+    /// `PlatformWalletManager.refreshDashPayPayments(walletId:identityId:)`
+    /// instead.
+    public func getDashPayPayments(identityId: Identifier) throws -> [DashPayPayment] {
+        try managedIdentity(identityId: identityId).getDashPayPayments()
+    }
+
     /// Refresh every managed identity's DashPay profile cache from
     /// Platform.
     ///
