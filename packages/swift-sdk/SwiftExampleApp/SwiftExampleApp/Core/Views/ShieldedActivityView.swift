@@ -159,14 +159,20 @@ struct ShieldedActivityListView: View {
                     description: Text("Shielded sends, receives, and other private operations appear here.")
                 )
             }
+            // Key rows by MODEL identity, not `entryId`: the table is
+            // uniqued on (walletId, accountIndex, entryId), so one
+            // wallet-level list can legitimately hold the same entryId
+            // twice — e.g. an intra-wallet transfer writes a Sent row on
+            // the sending account and a Received row on the receiving
+            // account for the same visible outputs.
             if !pending.isEmpty {
                 Section("Pending") {
-                    ForEach(pending, id: \.entryId) { row($0) }
+                    ForEach(pending, id: \.persistentModelID) { row($0) }
                 }
             }
             if !settled.isEmpty {
                 Section("History") {
-                    ForEach(settled, id: \.entryId) { row($0) }
+                    ForEach(settled, id: \.persistentModelID) { row($0) }
                 }
             }
         }

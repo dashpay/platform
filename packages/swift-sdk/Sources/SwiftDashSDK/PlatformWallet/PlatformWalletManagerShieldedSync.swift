@@ -568,6 +568,13 @@ extension PlatformWalletManager {
     ///
     /// Heavy CPU work (Halo 2 proof + per-input signing) runs on a
     /// detached task so the caller's actor isn't blocked.
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed — the shield may already be on chain, so the caller
+    /// must NOT retry (a retry would rebuild the bundle and could
+    /// double-shield; the next sync reconciles the outcome). A shield
+    /// spends no notes, so nothing is reserved wallet-side.
     public func shieldedShield(
         walletId: Data,
         shieldedAccount: UInt32 = 0,
