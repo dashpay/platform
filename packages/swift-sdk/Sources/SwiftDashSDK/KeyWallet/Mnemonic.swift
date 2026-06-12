@@ -1,6 +1,5 @@
 import Foundation
 import DashSDKFFI
-import os
 
 private func scrubMnemonicBytes(_ bytes: inout [UInt8]) {
     bytes.withUnsafeMutableBufferPointer { buffer in
@@ -11,10 +10,6 @@ private func scrubMnemonicBytes(_ bytes: inout [UInt8]) {
 
 /// Utility class for mnemonic operations
 public class Mnemonic {
-
-    /// Diagnostics for the recover-flow helpers' FFI error paths. Logs only the
-    /// FFI error — never phrase content — so seed words can't leak to the log.
-    private static let log = Logger(subsystem: "org.dash.SwiftDashSDK", category: "Mnemonic")
 
     /// Generate a new mnemonic phrase
     /// - Parameters:
@@ -165,12 +160,11 @@ public class Mnemonic {
     /// real wordlist.
     public static func wordList(language: MnemonicLanguage) -> [String] {
         var outPtr: UnsafeMutablePointer<CChar>? = nil
-        do {
-            try platform_wallet_mnemonic_word_list(language.ffiMnemonicValue, &outPtr).check()
-        } catch {
-            Self.log.error("wordList FFI error: \(error.localizedDescription, privacy: .public)")
-            return []
-        }
+        // The FFI can only error on a NULL out-param or an interior NUL in the
+        // result — neither is reachable here (we pass &outPtr; BIP-39 words
+        // contain no NUL). A failure would be a real bug, so trap rather than
+        // mask it.
+        try! platform_wallet_mnemonic_word_list(language.ffiMnemonicValue, &outPtr).check()
         guard let cStr = outPtr else { return [] }
         let joined = String(cString: cStr)
         platform_wallet_free_string(cStr)
@@ -178,21 +172,18 @@ public class Mnemonic {
     }
 
     /// NFKD + lowercase + whitespace-collapse (DashSync `normalizePhrase:`).
-    /// Returns the input unchanged on the UTF-8/allocation error paths that
-    /// DashSync never hits for valid `NSString` input.
+    /// An embedded-NUL phrase passes through unchanged; otherwise the FFI
+    /// cannot fail, so a failure would be a bug and traps.
     public static func normalizePhrase(_ phrase: String) -> String {
         // An embedded NUL truncates the C string at the first \0, so the FFI
         // would normalize only the prefix — a different phrase than passed in.
-        // Pass through unchanged instead (matches the error fallback below).
+        // Pass through unchanged instead.
         guard !phrase.utf8.contains(0) else { return phrase }
         var outPtr: UnsafeMutablePointer<CChar>? = nil
-        do {
-            try phrase.withCString { cPhrase in
-                try platform_wallet_mnemonic_normalize_phrase(cPhrase, &outPtr).check()
-            }
-        } catch {
-            Self.log.error("normalizePhrase FFI error: \(error.localizedDescription, privacy: .public); returning input unchanged")
-            return phrase
+        // Past the NUL guard the FFI cannot fail (valid UTF-8 in, NUL-free NFKD
+        // out, non-NULL out-param), so trap on the impossible error.
+        try! phrase.withCString { cPhrase in
+            try platform_wallet_mnemonic_normalize_phrase(cPhrase, &outPtr).check()
         }
         guard let cStr = outPtr else { return phrase }
         let result = String(cString: cStr)
@@ -207,13 +198,10 @@ public class Mnemonic {
         // Pass through unchanged instead (matches the error fallback below).
         guard !phrase.utf8.contains(0) else { return phrase }
         var outPtr: UnsafeMutablePointer<CChar>? = nil
-        do {
-            try phrase.withCString { cPhrase in
-                try platform_wallet_mnemonic_cleanup_phrase(cPhrase, &outPtr).check()
-            }
-        } catch {
-            Self.log.error("cleanupPhrase FFI error: \(error.localizedDescription, privacy: .public); returning input unchanged")
-            return phrase
+        // Past the NUL guard the FFI cannot fail (valid UTF-8 in, NUL-free
+        // output, non-NULL out-param), so trap on the impossible error.
+        try! phrase.withCString { cPhrase in
+            try platform_wallet_mnemonic_cleanup_phrase(cPhrase, &outPtr).check()
         }
         guard let cStr = outPtr else { return phrase }
         let result = String(cString: cStr)
