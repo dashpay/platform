@@ -798,8 +798,10 @@ where
             .await
         {
             Ok(result) => result,
-            Err(dash_sdk::Error::StateTransitionBroadcastError(e)) => {
-                return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
+            Err(wait_err) if wait_error_is_definitive_rejection(&wait_err) => {
+                return Err(PlatformWalletError::ShieldedBroadcastFailed(
+                    wait_err.to_string(),
+                ));
             }
             Err(wait_err) => {
                 warn!(
@@ -928,6 +930,21 @@ where
             Err(e)
         }
     }
+}
+
+/// Whether a wait-stage error is a DEFINITIVE platform rejection — the transition executed and was
+/// rejected on its merits, so the identity does not exist and releasing the note reservations is
+/// correct — as opposed to an AMBIGUOUS confirmation failure, where the broadcast was accepted and
+/// the transition may have executed even though we couldn't fetch/verify its result proof (so the
+/// reservation must be retained until a direct id fetch or the next nullifier sync resolves it).
+///
+/// Only `StateTransitionBroadcastError` is definitive: it carries Platform's own report of the
+/// transition's execution error. Everything else — `DriveProofError` / `Proof` /
+/// `InvalidProvedResponse` / `TimeoutReached` / `DapiClientError` / `Config` / … — is ambiguous
+/// (this is exactly the #3859 result-proof incident: the transition landed but the result proof
+/// couldn't be confirmed).
+fn wait_error_is_definitive_rejection(e: &dash_sdk::Error) -> bool {
+    matches!(e, dash_sdk::Error::StateTransitionBroadcastError(_))
 }
 
 /// Number of times [`identity_create_from_shielded_pool`] re-fetches the new identity by its
@@ -1304,5 +1321,51 @@ mod reserve_shield_fee_tests {
         inputs.insert(addr(1), u64::MAX);
         let err = reserve_shield_fee_on_input_0(inputs, 1).expect_err("overflow must reject");
         assert!(matches!(err, PlatformWalletError::ShieldedBuildError(_)));
+    }
+}
+
+#[cfg(test)]
+mod wait_error_classification_tests {
+    use super::*;
+
+    /// `StateTransitionBroadcastError` is the one wait-stage error Platform raises after the
+    /// transition *ran* and was rejected on its merits. It must be classified definitive so the
+    /// caller releases the note reservations (the identity does not exist).
+    #[test]
+    fn state_transition_broadcast_error_is_definitive() {
+        let e = dash_sdk::Error::StateTransitionBroadcastError(
+            dash_sdk::error::StateTransitionBroadcastError {
+                code: 1,
+                message: "rejected on merits".to_string(),
+                cause: None,
+            },
+        );
+        assert!(
+            wait_error_is_definitive_rejection(&e),
+            "StateTransitionBroadcastError must be treated as a definitive rejection"
+        );
+    }
+
+    /// Every other wait-stage error is ambiguous: the broadcast was accepted, so the transition may
+    /// have executed even though the result proof couldn't be fetched/verified. Classifying any of
+    /// these definitive would release reservations for notes that may already be spent on chain —
+    /// the orphaned-identity + double-spend hazard. Cover the result-proof shapes (#3859) plus a
+    /// timeout and a misconfiguration to pin the table.
+    #[test]
+    fn other_wait_errors_are_ambiguous() {
+        let ambiguous: Vec<dash_sdk::Error> = vec![
+            dash_sdk::Error::TimeoutReached(
+                std::time::Duration::from_secs(30),
+                "wait timed out".to_string(),
+            ),
+            dash_sdk::Error::InvalidProvedResponse("result proof did not verify".to_string()),
+            dash_sdk::Error::Config("misconfigured sdk".to_string()),
+        ];
+        for e in &ambiguous {
+            assert!(
+                !wait_error_is_definitive_rejection(e),
+                "{e:?} must be treated as ambiguous (reservation retained)"
+            );
+        }
     }
 }

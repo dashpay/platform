@@ -1463,15 +1463,22 @@ struct CreateIdentityView: View {
                     // the inline failure state.
                     return
                 case .unconfirmed:
-                    // Broadcast landed but its result couldn't be
-                    // confirmed; the identity is probably already live on
-                    // chain. Mark the slot used (same as `.completed`) so
-                    // the next registration can't reuse these keys and
-                    // burn funds against the registered-key-hash stateful
-                    // check. We do NOT persist a `PersistentIdentity` row
-                    // here — the proof-verified identity wasn't returned;
-                    // the next sync writes the row once the identity is
-                    // confirmed on chain.
+                    // Broadcast landed but its result couldn't be confirmed;
+                    // the identity is probably already live on chain. We do NOT
+                    // persist a `PersistentIdentity` row here — the
+                    // proof-verified identity wasn't returned; the next sync
+                    // writes the row once the identity is confirmed on chain.
+                    //
+                    // `markIdentitySlotUsed` is called for consistency with
+                    // `.completed`, but it does NOT actually protect the slot:
+                    // it only flips the deprecated `PersistentCoreAddress.isUsed`
+                    // flag, which the picker's `usedIdentityIndices` ignores
+                    // (that reads persisted `PersistentIdentity` rows only). The
+                    // real guards keeping this index un-selectable until the
+                    // identity row appears are the live `.unconfirmed`
+                    // controller (held in the coordinator) and the
+                    // `.unconfirmed` dismissibility gate in
+                    // `PendingRegistrationsList`.
                     markIdentitySlotUsed(
                         walletId: walletId,
                         identityIndex: identityIndex

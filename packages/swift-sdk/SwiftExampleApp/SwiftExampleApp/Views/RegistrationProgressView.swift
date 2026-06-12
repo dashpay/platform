@@ -253,13 +253,15 @@ struct RegistrationProgressSection: View {
     ///   On `.completed` return 6 (one past the last step) so all rows
     ///   render `.done`. On `.unconfirmed` return 4 ("Waiting for platform
     ///   confirmation") so that step carries the warning. On `.failed`
-    ///   attribute the step: a `broadcastRejected` failure marks step 3
-    ///   ("Broadcasting transition"); anything else keeps the
-    ///   note-selection vs Halo 2 elapsed-time heuristic, measured *at
-    ///   the failure instant* (anchored on `controller.terminalAt`) —
-    ///   failed rows are retained until dismissed, so measuring against
-    ///   live `now` would let the failed icon drift from step 1 to
-    ///   step 2 once the note-selection window lapses on the wall clock.
+    ///   attribute the step: a `.broadcastRejected` failure marks step 3
+    ///   ("Broadcasting transition"); an UNATTRIBUTED failure
+    ///   (`failureStage == nil` — build / Halo 2 proof errors, or any other
+    ///   error we can't confidently place) keeps the note-selection vs Halo 2
+    ///   elapsed-time heuristic, measured *at the failure instant* (anchored
+    ///   on `controller.terminalAt`) — failed rows are retained until
+    ///   dismissed, so measuring against live `now` would let the failed icon
+    ///   drift from step 1 to step 2 once the note-selection window lapses on
+    ///   the wall clock.
     private func shieldedCurrentStep(now: Date) -> Int {
         switch controller.phase {
         case .idle, .preparingKeys:
@@ -273,12 +275,14 @@ struct RegistrationProgressSection: View {
         case .inFlight:
             return shieldedStep(elapsedTo: now)
         case .failed:
-            // A definitive broadcast rejection is attributed to the
-            // broadcast step (3). Build / Halo 2 proof errors fail before
-            // the broadcast, so keep the elapsed-time heuristic
-            // (note-selection vs proof) for them — frozen at the failure
-            // instant; fall back to `now` only if the terminal timestamp
-            // is missing (pre-submit failure shapes never set it).
+            // A definitive broadcast rejection (`failureStage ==
+            // .broadcastRejected`) is attributed to the broadcast step (3).
+            // For an unattributed failure (`failureStage == nil` — build /
+            // Halo 2 proof errors, or any other error we can't confidently
+            // place), keep the elapsed-time heuristic (note-selection vs
+            // proof) — frozen at the failure instant; fall back to `now` only
+            // if the terminal timestamp is missing (pre-submit failure shapes
+            // never set it).
             if controller.failureStage == .broadcastRejected {
                 return 3
             }

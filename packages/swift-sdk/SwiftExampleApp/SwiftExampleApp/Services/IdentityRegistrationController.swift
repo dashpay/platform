@@ -100,15 +100,19 @@ final class IdentityRegistrationController: ObservableObject {
 
     /// Which stage a shielded `.failed` terminal state failed at, so
     /// `RegistrationProgressView` can attribute the red marker to the
-    /// right step instead of always blaming the Halo 2 proof step.
-    /// Only meaningful for `fundingKind == .shieldedPool` and only set
-    /// alongside a `.failed` phase.
+    /// right step. Only meaningful for `fundingKind == .shieldedPool`.
+    ///
+    /// Deliberately only ONE case: `.broadcastRejected` is the single
+    /// failure shape we can attribute with confidence (a typed
+    /// `PlatformWalletError.shieldedBroadcastFailed`). We cannot honestly
+    /// claim a "before broadcast" stage by elimination — Rust build/proof
+    /// errors arrive as a generic `.walletOperation`, indistinguishable at
+    /// this layer from an invalid handle, a marshalling failure, or any other
+    /// non-broadcast error. So `failureStage` is left `nil` for everything
+    /// else and the progress view falls back to its elapsed-time heuristic.
+    /// Extensible: add a case here only when a new typed error actually lets
+    /// us attribute the stage with certainty.
     enum FailureStage {
-        /// Failed before or during the broadcast itself — build / proof
-        /// error, or a relay/CheckTx broadcast rejection. The shielded
-        /// progress view keeps the existing elapsed-time heuristic
-        /// (note-selection vs Halo 2 proof) for the pre-broadcast slice.
-        case beforeBroadcast
         /// Platform definitively rejected the broadcast transition (a
         /// `PlatformWalletError.shieldedBroadcastFailed`). Attributed to
         /// the "Broadcasting transition" step.
@@ -120,9 +124,13 @@ final class IdentityRegistrationController: ObservableObject {
     /// `.completed(id) | .failed(message) | .unconfirmed(id, message)`.
     @Published private(set) var phase: Phase = .idle
 
-    /// Stage attribution for a shielded `.failed` phase. `nil` whenever
-    /// the phase is not a shielded failure. Reset at the start of every
-    /// `submit` so a retry doesn't inherit the previous attempt's stage.
+    /// Stage attribution for a shielded `.failed` phase. `nil` means
+    /// "unattributed" — either the phase isn't a shielded failure, or the
+    /// failure wasn't a confidently-attributable broadcast rejection. On a
+    /// `nil` shielded failure the progress view falls back to its
+    /// elapsed-time heuristic (note-selection vs Halo 2 proof). Reset at the
+    /// start of every `submit` so a retry doesn't inherit the previous
+    /// attempt's stage.
     @Published private(set) var failureStage: FailureStage?
 
     /// Slot this controller is bound to. Stored so the coordinator
@@ -195,8 +203,11 @@ final class IdentityRegistrationController: ObservableObject {
     /// `body` performs the actual FFI call. It runs detached on a
     /// background priority and reports the identity id on success
     /// or rethrows on failure. The controller flips `phase` to
-    /// `.completed` / `.unconfirmed` / `.failed` accordingly, and on a
-    /// shielded `.failed` records `failureStage` for step attribution.
+    /// `.completed` / `.unconfirmed` / `.failed` accordingly. On a shielded
+    /// `.failed` it records `failureStage = .broadcastRejected` ONLY for a
+    /// `PlatformWalletError.shieldedBroadcastFailed`; every other error leaves
+    /// `failureStage` nil (unattributed — the progress view uses its
+    /// elapsed-time heuristic) rather than guessing a stage by elimination.
     func submit(body: @escaping () async throws -> Data) {
         switch phase {
         case .idle, .preparingKeys, .failed:
@@ -229,16 +240,17 @@ final class IdentityRegistrationController: ObservableObject {
                     )
                 }
             } catch {
-                // Attribute the failure stage so the shielded progress view
-                // can point the red marker at the right step. A
-                // `shieldedBroadcastFailed` is a definitive platform/relay
-                // rejection of the broadcast; everything else (build / Halo 2
-                // proof errors) failed before the broadcast.
-                let stage: FailureStage
+                // Only a `shieldedBroadcastFailed` is a confidently-attributable
+                // broadcast rejection → mark the broadcast step. Everything else
+                // (Rust build / Halo 2 proof errors, which surface as a generic
+                // `.walletOperation`, plus invalid-handle / marshalling failures)
+                // is indistinguishable at this layer, so leave `failureStage` nil
+                // and let the progress view's elapsed-time heuristic place it.
+                let stage: FailureStage?
                 if case PlatformWalletError.shieldedBroadcastFailed = error {
                     stage = .broadcastRejected
                 } else {
-                    stage = .beforeBroadcast
+                    stage = nil
                 }
                 await MainActor.run {
                     self?.failureStage = stage
