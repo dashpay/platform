@@ -757,10 +757,9 @@ impl NetworkShieldedCoordinator {
             // Read pass: snapshot the inputs under a shared lock, then
             // release it before the CPU-bound classification — holding
             // the WRITE lock across the whole derivation would serialize
-            // every other store consumer for the full window. The
-            // derivation is idempotent (overlap dedupe + upsert-by-id),
-            // so anything that lands between the read and write passes
-            // is reconciled on the next pass.
+            // every other store consumer for the full window. Anything a
+            // live recorder lands between the two passes is caught by the
+            // overlap re-check under the write lock below.
             let (input, existing_cmxs) = {
                 let store = self.store.read().await;
                 let notes = store.get_all_notes(*id).map_err(|e| {
@@ -814,7 +813,35 @@ impl NetworkShieldedCoordinator {
 
             // Write pass: only the upserts hold the write lock.
             let mut store = self.store.write().await;
+            // Re-check cmx overlap against the CURRENT activity rows
+            // before inserting: a live recorder may have written a richer
+            // row (kind / fee / memo / created identity id) for the same
+            // cmx set between the read snapshot and here. Saving the
+            // scan-derived entry anyway would either clobber that row
+            // (id collision) or duplicate it (id mismatch), and scan-only
+            // data can never reconstruct the lost live fields. Overlapped
+            // clusters degrade to confirmation sightings instead — same
+            // treatment the classifier gives overlaps it can see.
+            let current_cmxs: BTreeMap<[u8; 32], [u8; 32]> = store
+                .get_activity(*id, 0, usize::MAX)
+                .map_err(|e| crate::error::PlatformWalletError::ShieldedStoreError(e.to_string()))?
+                .into_iter()
+                .flat_map(|entry| entry.note_cmxs.into_iter().map(move |c| (c, entry.id)))
+                .collect();
+            let mut confirmations = derived.confirmations;
             for entry in derived.new_entries {
+                let overlapped: std::collections::BTreeSet<[u8; 32]> = entry
+                    .note_cmxs
+                    .iter()
+                    .filter_map(|c| current_cmxs.get(c))
+                    .copied()
+                    .collect();
+                if !overlapped.is_empty() {
+                    if let Some(height) = entry.block_height {
+                        confirmations.extend(overlapped.into_iter().map(|eid| (eid, height)));
+                    }
+                    continue;
+                }
                 store.save_activity(*id, &entry).map_err(|e| {
                     crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
                 })?;
@@ -828,7 +855,7 @@ impl NetworkShieldedCoordinator {
             // upgrade rewrites the STORED entry via `with_status`, so the
             // live entry's richer fields (kind / fee / memo /
             // counterparty) survive untouched.
-            for (entry_id, height) in derived.confirmations {
+            for (entry_id, height) in confirmations {
                 let stored = store
                     .get_activity_by_entry_id(*id, &entry_id)
                     .map_err(|e| {

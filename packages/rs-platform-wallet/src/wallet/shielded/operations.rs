@@ -271,6 +271,14 @@ async fn record_pending_activity<S: ShieldedStore>(
 /// the persister, so a `Pending` row becomes `Confirmed` / `Failed` in
 /// place. No-op when `entry` is `None` (nothing was recorded for this
 /// operation).
+///
+/// The flip is applied to the CURRENT stored row (read under the same
+/// write lock as the save), not the captured pre-broadcast entry: a
+/// concurrent scan pass can upgrade the row to `Confirmed` at a real
+/// height between broadcast and the result-wait, and rewriting the stale
+/// capture would erase that scan-learned height. A row the scan already
+/// confirmed WITH a height is chain truth and is left untouched
+/// entirely — nothing the result-wait knows can improve on it.
 async fn record_activity_status<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
@@ -283,8 +291,28 @@ async fn record_activity_status<S: ShieldedStore>(
     let Some(entry) = entry else {
         return;
     };
-    let next = with_status(entry, status, block_height);
-    queue_shielded_activity(store, persister, wallet_id, id, next).await;
+    let next = {
+        let mut store = store.write().await;
+        let stored = store
+            .get_activity_by_entry_id(id, &entry.id)
+            .unwrap_or_default();
+        let base = stored.as_ref().unwrap_or(entry);
+        if base.status == ShieldedActivityStatus::Confirmed && base.block_height.is_some() {
+            return;
+        }
+        // `with_status` keeps `base.block_height` when `block_height` is
+        // `None`, so a height the scan populated survives the flip.
+        let next = with_status(base, status, block_height);
+        if let Err(e) = store.save_activity(id, &next) {
+            warn!(
+                entry_id = %hex::encode(next.id),
+                error = %e,
+                "live activity status flip: in-memory save_activity failed; persister still queued"
+            );
+        }
+        next
+    };
+    queue_shielded_changeset(persister, wallet_id, changeset_for_entry(id, next));
 }
 
 // -------------------------------------------------------------------------
@@ -2165,5 +2193,105 @@ mod note_reservation_release_tests {
                 "{e:?} must release the note reservation"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod record_activity_status_tests {
+    use super::*;
+    use crate::wallet::shielded::activity::{
+        ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection,
+    };
+    use crate::wallet::shielded::store::InMemoryShieldedStore;
+
+    fn sub() -> SubwalletId {
+        SubwalletId::new([0xCC; 32], 0)
+    }
+
+    /// The Pending entry a live recorder captures before broadcast.
+    fn captured_pending() -> ShieldedActivityEntry {
+        ShieldedActivityEntry {
+            id: [0xAA; 32],
+            kind: ShieldedActivityKind::Shield,
+            direction: ShieldedDirection::In,
+            amount: 1_000,
+            fee: Some(10),
+            counterparty: None,
+            memo: None,
+            block_height: None,
+            status: ShieldedActivityStatus::Pending,
+            created_at_ms: 1,
+            note_cmxs: vec![[0x01; 32]],
+            spent_nullifiers: vec![],
+        }
+    }
+
+    /// A scan pass that confirmed the row at a real height between the
+    /// broadcast and the result-wait must win over the post-wait flip:
+    /// the stale captured entry must not overwrite the stored
+    /// `Confirmed`-with-height row (neither downgrading it to `Failed`
+    /// nor erasing the scan-learned height).
+    #[tokio::test]
+    async fn flip_does_not_clobber_scan_confirmed_row() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = sub();
+        let pending = captured_pending();
+        let scan_confirmed = with_status(&pending, ShieldedActivityStatus::Confirmed, Some(777));
+        store
+            .write()
+            .await
+            .save_activity(id, &scan_confirmed)
+            .unwrap();
+
+        record_activity_status(
+            &store,
+            None,
+            id.wallet_id,
+            id,
+            &Some(pending),
+            ShieldedActivityStatus::Failed,
+            None,
+        )
+        .await;
+
+        let stored = store
+            .read()
+            .await
+            .get_activity_by_entry_id(id, &[0xAA; 32])
+            .unwrap()
+            .expect("row must still exist");
+        assert_eq!(stored.status, ShieldedActivityStatus::Confirmed);
+        assert_eq!(stored.block_height, Some(777));
+    }
+
+    /// No concurrent scan: the flip applies to the stored Pending row
+    /// (and falls back to the captured entry when the store has none),
+    /// writing the new status into the in-memory store.
+    #[tokio::test]
+    async fn flip_applies_when_row_is_still_pending() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = sub();
+        let pending = captured_pending();
+        store.write().await.save_activity(id, &pending).unwrap();
+
+        record_activity_status(
+            &store,
+            None,
+            id.wallet_id,
+            id,
+            &Some(pending),
+            ShieldedActivityStatus::Confirmed,
+            Some(900),
+        )
+        .await;
+
+        let stored = store
+            .read()
+            .await
+            .get_activity_by_entry_id(id, &[0xAA; 32])
+            .unwrap()
+            .expect("row must exist");
+        assert_eq!(stored.status, ShieldedActivityStatus::Confirmed);
+        assert_eq!(stored.block_height, Some(900));
     }
 }

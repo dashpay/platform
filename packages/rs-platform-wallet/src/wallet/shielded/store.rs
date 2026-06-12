@@ -67,7 +67,10 @@ pub struct ShieldedNote {
     pub cmx: [u8; 32],
     /// Nullifier for detecting when spent (32 bytes).
     pub nullifier: [u8; 32],
-    /// Block height where the note appeared.
+    /// Proven platform height of the chunk fetch that surfaced the note.
+    /// Stamped per-batch — the SAME height OVK-recovered outgoing notes
+    /// from that chunk get — so the activity deriver can cluster one
+    /// bundle's incoming change and outgoing send together by height.
     pub block_height: u64,
     /// Whether the nullifier was seen on-chain (spent).
     pub is_spent: bool,

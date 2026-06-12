@@ -306,8 +306,11 @@ fn note_rho(note_data: &[u8]) -> Option<[u8; 32]> {
 
 /// Cluster a subwallet's events by block height.
 ///
-/// Receipts and sends carry a real `block_height` from the scan, so they
-/// cluster cleanly. Spends are the hard case: a note's stored
+/// Receipts and sends carry a `block_height` from the scan — the proven
+/// height of the chunk that surfaced them, stamped per-batch on BOTH
+/// sides (see `ShieldedNote::block_height`) so a bundle's incoming
+/// change and OVK-recovered send agree on the key and cluster
+/// together. Spends are the hard case: a note's stored
 /// `block_height` is its *receipt* height, and scan-based spend
 /// detection flips `is_spent` without recording *when* it was spent
 /// (the spend height isn't persisted anywhere the wallet layer can read
