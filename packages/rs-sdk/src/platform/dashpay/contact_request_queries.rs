@@ -10,7 +10,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use dpp::platform_value::platform_value;
 use dpp::prelude::Identifier;
-use drive::query::{WhereClause, WhereOperator};
+use drive::query::{OrderClause, WhereClause, WhereOperator};
 use drive_proof_verifier::types::Documents;
 
 /// Result of a contact request query containing the parsed documents
@@ -51,7 +51,17 @@ impl Sdk {
             }],
             group_by: vec![],
             having: vec![],
-            order_by_clauses: vec![],
+            // Load-bearing: a bare secondary-index equality with no
+            // order-by is silently proven ABSENT by drive (observed
+            // against drive 4.0.0-rc.2, 2026-06-12: `toUserId ==`
+            // returned a verified empty result for an existing document;
+            // the same query with this order-by returns it). The clause
+            // also pins the query to the contract's
+            // `(field, $createdAt)` index, giving a deterministic order.
+            order_by_clauses: vec![OrderClause {
+                field: "$createdAt".to_string(),
+                ascending: true,
+            }],
             limit: limit.unwrap_or(100),
             start: None,
         };
@@ -93,7 +103,17 @@ impl Sdk {
             }],
             group_by: vec![],
             having: vec![],
-            order_by_clauses: vec![],
+            // Load-bearing: a bare secondary-index equality with no
+            // order-by is silently proven ABSENT by drive (observed
+            // against drive 4.0.0-rc.2, 2026-06-12: `toUserId ==`
+            // returned a verified empty result for an existing document;
+            // the same query with this order-by returns it). The clause
+            // also pins the query to the contract's
+            // `(field, $createdAt)` index, giving a deterministic order.
+            order_by_clauses: vec![OrderClause {
+                field: "$createdAt".to_string(),
+                ascending: true,
+            }],
             limit: limit.unwrap_or(100),
             start: None,
         };

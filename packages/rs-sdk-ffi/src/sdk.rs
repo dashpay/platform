@@ -92,6 +92,12 @@ fn init_or_get_runtime() -> Result<Arc<Runtime>, String> {
     let mut builder = tokio::runtime::Builder::new_multi_thread();
     builder.thread_name("dash-sdk-worker");
     builder.worker_threads(1); // Reduce threads for mobile
+    // GroveDB document-query proof verification recurses deeply
+    // (`verify_layer_proof_v1` → merk decode); tokio's default 2 MiB
+    // worker stack overflows on real devnet/testnet proofs (SIGBUS on
+    // the stack guard, observed on-device 2026-06-12). Match
+    // platform-wallet-ffi's `WORKER_STACK_BYTES` convention.
+    builder.thread_stack_size(8 * 1024 * 1024);
     builder.enable_all();
     let rt = builder
         .build()
