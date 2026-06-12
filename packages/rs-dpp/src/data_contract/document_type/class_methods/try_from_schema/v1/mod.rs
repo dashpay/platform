@@ -756,6 +756,136 @@ mod tests {
     use assert_matches::assert_matches;
     use platform_value::platform_value;
 
+    mod nested_property_position_handling {
+        use super::*;
+        use platform_value::Value;
+
+        /// Builds `outer(object) -> { inner_a(string, position = <pos>), inner_b(string,
+        /// position = 1) }`. Two nested sub-properties are required so the (now-removed) property
+        /// sort would have invoked its comparator, with the candidate `position` on a *nested*
+        /// property.
+        fn schema_with_nested_position(inner_a_position: Value) -> Value {
+            let string_prop = |position: Value| {
+                Value::Map(vec![
+                    (Value::Text("type".into()), Value::Text("string".into())),
+                    (Value::Text("position".into()), position),
+                    (Value::Text("maxLength".into()), Value::U64(10)),
+                ])
+            };
+            let outer = Value::Map(vec![
+                (Value::Text("type".into()), Value::Text("object".into())),
+                (Value::Text("position".into()), Value::U64(0)),
+                (
+                    Value::Text("properties".into()),
+                    Value::Map(vec![
+                        (Value::Text("inner_a".into()), string_prop(inner_a_position)),
+                        (Value::Text("inner_b".into()), string_prop(Value::U64(1))),
+                    ]),
+                ),
+                (
+                    Value::Text("additionalProperties".into()),
+                    Value::Bool(false),
+                ),
+            ]);
+            Value::Map(vec![
+                (Value::Text("type".into()), Value::Text("object".into())),
+                (
+                    Value::Text("properties".into()),
+                    Value::Map(vec![(Value::Text("outer".into()), outer)]),
+                ),
+                (
+                    Value::Text("additionalProperties".into()),
+                    Value::Bool(false),
+                ),
+            ])
+        }
+
+        fn parse(schema: Value, full_validation: bool) -> Result<DocumentTypeV1, ProtocolError> {
+            let platform_version = PlatformVersion::latest();
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+            DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                config.version(),
+                "test_doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                full_validation,
+                &mut vec![],
+                platform_version,
+            )
+        }
+
+        /// A nested-property `position` that is a zero-fraction float (`0.0`) is a valid integer
+        /// per the document meta-schema (JSON-Schema "integer" admits `0.0`); nested positions are
+        /// not otherwise consensus-relevant, so it parses in both modes. Previously the property
+        /// sort's `.expect()` panicked on it — the pinned contract is now: parse, never panic.
+        #[test]
+        fn nested_float_position_parses_in_both_modes() {
+            assert_matches!(
+                parse(schema_with_nested_position(Value::Float(0.0)), true),
+                Ok(_)
+            );
+            assert_matches!(
+                parse(schema_with_nested_position(Value::Float(0.0)), false),
+                Ok(_)
+            );
+        }
+
+        /// On the `check_tx` path (`full_validation = false`) the meta-schema is skipped and nested
+        /// positions are not read, so malformed nested positions are admitted to the mempool (they
+        /// are caught under full validation — see below). Pinned contract: parse, never panic.
+        #[test]
+        fn malformed_nested_positions_admitted_in_check_tx() {
+            assert_matches!(
+                parse(schema_with_nested_position(Value::I64(-1)), false),
+                Ok(_)
+            );
+            assert_matches!(
+                parse(
+                    schema_with_nested_position(Value::U128(u64::MAX as u128 + 1)),
+                    false
+                ),
+                Ok(_)
+            );
+        }
+
+        /// Under full validation (block execution) the meta-schema rejects out-of-range nested
+        /// positions with a clean consensus error — never a panic. This pins the rejection path
+        /// the old `.expect()` short-circuited.
+        #[test]
+        fn out_of_range_nested_positions_rejected_under_full_validation() {
+            // Negative position -> meta-schema `minimum: 0`.
+            assert_matches!(
+                parse(schema_with_nested_position(Value::I64(-1)), true),
+                Err(ProtocolError::ConsensusError(_))
+            );
+            // Position > u64::MAX -> integer-out-of-bounds during meta-schema value conversion.
+            assert_matches!(
+                parse(
+                    schema_with_nested_position(Value::U128(u64::MAX as u128 + 1)),
+                    true
+                ),
+                Err(ProtocolError::ConsensusError(_))
+            );
+        }
+
+        /// A well-formed schema with valid integer nested positions still parses successfully:
+        /// removing the dead sort did not change accepted-contract behavior.
+        #[test]
+        fn valid_nested_positions_still_parse() {
+            let result = parse(schema_with_nested_position(Value::U64(0)), true);
+            assert!(
+                result.is_ok(),
+                "valid nested positions must still parse: {:?}",
+                result.err()
+            );
+        }
+    }
+
     mod document_meta_schema_version {
         use super::*;
 
