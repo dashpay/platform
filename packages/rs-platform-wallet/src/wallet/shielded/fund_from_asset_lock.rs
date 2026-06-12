@@ -451,7 +451,10 @@ impl PlatformWallet {
     ///
     /// `num_actions` is the on-wire Orchard action count of the bundle
     /// (`shield_from_asset_lock_num_actions(dummy_outputs)` — `2` for the
-    /// classic single-output bundle, up to `16` for a pool-seeding batch).
+    /// classic single-output bundle, up to `6` for a pool-seeding batch
+    /// (the 20 KiB `max_state_transition_size` cap, see
+    /// `MAX_ACTIONS_PER_BATCH` in `seed_pool.rs`; not the 16-action
+    /// consensus cap)).
     /// `asset_lock_base_cost` (`albc`) is the same constant Type 14 (address
     /// funding) uses, read from `dpp.state_transitions.identities.asset_locks`
     /// and converted duffs→credits.
