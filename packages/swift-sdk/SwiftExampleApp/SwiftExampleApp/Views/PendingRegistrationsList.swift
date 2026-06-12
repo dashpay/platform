@@ -97,9 +97,10 @@ struct PendingRegistrationRow: View {
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             // `.failed` is always dismissable. `.unconfirmed` only becomes
             // dismissable once the matching `PersistentIdentity` row appears
-            // via sync (see `isDismissable`): while unconfirmed-and-unpersisted
-            // the live controller is the ONLY guard keeping the slot
-            // un-selectable, so dismissing it would let the same index be
+            // via sync (see `isDismissable`): the persisted `isUsed`
+            // reservation is best-effort, so until the identity row lands the
+            // live controller is a load-bearing guard keeping the slot
+            // un-selectable — dismissing it early could let the same index be
             // re-selected and burn funds against the registered-key-hash check.
             // Dismissing only drops the Pending row; it never undoes the
             // on-chain registration.
@@ -126,12 +127,14 @@ struct PendingRegistrationRow: View {
         case .unconfirmed:
             // The slot is held to block a re-submission that would burn funds
             // (the identity is probably live on chain). The picker's
-            // `usedIdentityIndices` consults ONLY persisted `PersistentIdentity`
-            // rows, not the controller, so the live controller is the ONLY
-            // thing keeping this index un-selectable until that row lands.
-            // Allow dismiss only once the identity-sync has written the
-            // `PersistentIdentity` row — after that the slot is protected by
-            // the persisted row and dropping the controller is safe.
+            // `usedIdentityIndices` unions the persisted `isUsed` reservation
+            // with the `PersistentIdentity` rows, but the reservation write is
+            // best-effort (silent no-op when the slot row is beyond the
+            // derived lookahead), so the live controller remains a
+            // load-bearing guard. Allow dismiss only once the identity-sync
+            // has written the `PersistentIdentity` row — after that the slot
+            // is protected by the persisted row and dropping the controller
+            // is safe.
             return !slotIdentities.isEmpty
         default:
             return false

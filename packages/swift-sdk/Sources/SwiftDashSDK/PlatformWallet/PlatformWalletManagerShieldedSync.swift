@@ -491,6 +491,12 @@ extension PlatformWalletManager {
     /// a non-empty memo's UTF-8 byte length must be at most 32 or
     /// Rust rejects it. The 36-byte on-chain encoding is done on the
     /// Rust side.
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed — the spend may already be on chain, so the caller
+    /// must NOT retry (the spent notes stay reserved Rust-side; the
+    /// next shielded sync reconciles them).
     public func shieldedTransfer(
         walletId: Data,
         account: UInt32 = 0,
@@ -607,6 +613,12 @@ extension PlatformWalletManager {
     /// string (`"dash1…"` on mainnet, `"tdash1…"` on testnet). Rust
     /// parses and network-checks the address; hosts don't have to
     /// hand-roll the bincode storage variant tag.
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed — the spend may already be on chain, so the caller
+    /// must NOT retry (the spent notes stay reserved Rust-side; the
+    /// next shielded sync reconciles them).
     public func shieldedUnshield(
         walletId: Data,
         account: UInt32 = 0,
@@ -649,6 +661,12 @@ extension PlatformWalletManager {
     /// shielded balance and creates an L1 withdrawal to
     /// `toCoreAddress` (Base58Check string). `coreFeePerByte` is
     /// the L1 fee rate in duffs/byte (`1` is the dashmate default).
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed — the spend may already be on chain, so the caller
+    /// must NOT retry (the spent notes stay reserved Rust-side; the
+    /// next shielded sync reconciles them).
     public func shieldedWithdraw(
         walletId: Data,
         account: UInt32 = 0,

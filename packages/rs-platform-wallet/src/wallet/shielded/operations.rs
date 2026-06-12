@@ -52,6 +52,7 @@ use dpp::shielded::builder::{
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::StateTransition;
 use dpp::withdrawal::Pooling;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
@@ -301,11 +302,15 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
     trace!("Shield credits: state transition built, broadcasting...");
     let network = sdk.network;
     // Wait for proven execution (not just relay-ACK) so the host only
-    // sees success once Platform has actually included the transition —
-    // matching the spend-side flows (unshield/transfer/withdraw). A
+    // sees success once Platform has actually included the transition. A
     // DAPI-level ACK alone could otherwise mask a later Platform
     // rejection. The proven result is discarded; we only need the
-    // confirmation.
+    // confirmation. Unlike the note-spending flows (unshield / transfer /
+    // withdraw — see `broadcast_shielded_spend`), shield deliberately
+    // keeps the one-shot helper: it takes no note reservation, so an
+    // ambiguous post-broadcast wait failure has no local state to strand.
+    // Its inputs are transparent address claims guarded by on-chain
+    // nonces, and a host-level retry re-fetches those nonces.
     state_transition
         .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
         .await
@@ -383,8 +388,10 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         "Unshield"
     );
 
-    // From here on every error path must release the reservation
-    // taken by `reserve_unspent_notes`.
+    // From here on every error path must release the reservation taken
+    // by `reserve_unspent_notes` — except the ambiguous
+    // `ShieldedSpendUnconfirmed` one, which intentionally leaves it in
+    // place (see the outer match below).
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
 
@@ -411,11 +418,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         );
 
         trace!("Unshield: state transition built, broadcasting...");
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
-            .await
-            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
-        Ok::<(), PlatformWalletError>(())
+        broadcast_shielded_spend(sdk, &state_transition, "unshield").await
     }
     .await;
 
@@ -448,6 +451,15 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             info!(account, credits = amount, "Unshield broadcast succeeded");
             Ok(())
         }
+        // The broadcast was accepted but its execution result couldn't be
+        // confirmed: the spend may well have executed, so do NOT release
+        // the reservation. `pending_nullifiers` is in-memory only — if the
+        // spend landed, the next nullifier sync's `mark_spent` promotes the
+        // notes to spent (clearing the reservation); if it never landed, an
+        // app restart drops the reservation and frees the notes. Releasing
+        // them now would invite re-selecting notes whose nullifiers may
+        // already be consumed on chain.
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
         Err(e) => {
             cancel_pending(store, id, &selected_notes).await;
             Err(e)
@@ -518,11 +530,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
         );
 
         trace!("Shielded transfer: state transition built, broadcasting...");
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
-            .await
-            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
-        Ok::<(), PlatformWalletError>(())
+        broadcast_shielded_spend(sdk, &state_transition, "transfer").await
     }
     .await;
 
@@ -545,6 +553,9 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             );
             Ok(())
         }
+        // Ambiguous post-broadcast confirmation failure: leave the
+        // reservation in place (see `unshield`'s outer match).
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
         Err(e) => {
             cancel_pending(store, id, &selected_notes).await;
             Err(e)
@@ -623,11 +634,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
         );
 
         trace!("Shielded withdrawal: state transition built, broadcasting...");
-        state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
-            .await
-            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
-        Ok::<(), PlatformWalletError>(())
+        broadcast_shielded_spend(sdk, &state_transition, "withdraw").await
     }
     .await;
 
@@ -650,6 +657,9 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             );
             Ok(())
         }
+        // Ambiguous post-broadcast confirmation failure: leave the
+        // reservation in place (see `unshield`'s outer match).
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
         Err(e) => {
             cancel_pending(store, id, &selected_notes).await;
             Err(e)
@@ -734,7 +744,9 @@ where
         .map(|(key, _)| (key.id(), key.clone()))
         .collect();
 
-    // From here on every error path must release the reservation taken above.
+    // From here on every error path must release the reservation taken above — except the
+    // ambiguous `ShieldedBroadcastUnconfirmed` one, which intentionally leaves it in place
+    // (see the outer match below).
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
 
@@ -777,31 +789,50 @@ where
             )
             .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
-        // Broadcast (relay-ACK only). A failure here is definitive: the tx was NOT accepted, so the
-        // spend never happened — map to `ShieldedBroadcastFailed` and let the outer match release
-        // the reservation, exactly as before.
-        st.broadcast(sdk, None)
-            .await
-            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
+        // Broadcast (relay-ACK only). Definitive failures — a consensus-verdict CheckTx
+        // rejection, or a transport failure that proves nothing was delivered (see
+        // `broadcast_definitely_failed`; connect-refused/offline is the common case) — map to
+        // `ShieldedBroadcastFailed` and let the outer match release the reservation, exactly as
+        // before. No-verdict failures (`AlreadyExists` proves the transition IS already in the
+        // mempool or on chain after a lost-ACK retry; timeouts merely allow it) fall through to
+        // the result wait below, whose ambiguous arm already owns the fetch-by-derived-id
+        // fallback — so the in-flight tx gets confirmed (or held as unconfirmed) instead of
+        // being reported as failed.
+        match st.broadcast(sdk, None).await {
+            Ok(()) => {}
+            Err(e) if broadcast_definitely_failed(&e) => {
+                return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
+            }
+            Err(e) => {
+                warn!(
+                    derived_id = %identity_id,
+                    error = %e,
+                    "IdentityCreateFromShieldedPool: broadcast returned no verdict; the \
+                     transition may have been admitted — falling through to the result wait"
+                );
+            }
+        }
 
         // Wait for proven execution. Classify the failure:
-        //   - `StateTransitionBroadcastError` = Platform DEFINITIVELY reported the transition's own
-        //     execution error (it ran and was rejected on its merits). The identity does not exist;
-        //     keep today's behavior (release the reservation via `ShieldedBroadcastFailed`).
+        //   - `StateTransitionBroadcastError` WITH a consensus `cause` = Platform DEFINITIVELY
+        //     reported the transition's own execution error (it ran and was rejected on its
+        //     merits; the serialized consensus error is the verdict). The identity does not
+        //     exist; keep today's behavior (release the reservation via
+        //     `ShieldedBroadcastFailed`).
         //   - any other error (DriveProofError / Proof / InvalidProvedResponse / TimeoutReached /
         //     DapiClientError / …) = AMBIGUOUS: the broadcast was accepted and the transition may
         //     have executed even though we couldn't fetch/verify its result proof (this is exactly
-        //     the #3859 result-proof incident). Fall back to fetching the identity by its
-        //     pre-derived id before deciding it doesn't exist.
+        //     the #3859 result-proof incident). That includes cause-less
+        //     `StateTransitionBroadcastError`s — DAPI encodes its own wait-side failures
+        //     (timeouts, internal errors) that way, with empty consensus data. Fall back to
+        //     fetching the identity by its pre-derived id before deciding it doesn't exist.
         let proof_result = match st
             .wait_for_response::<StateTransitionProofResult>(sdk, None)
             .await
         {
             Ok(result) => result,
-            Err(wait_err) if wait_error_is_definitive_rejection(&wait_err) => {
-                return Err(PlatformWalletError::ShieldedBroadcastFailed(
-                    wait_err.to_string(),
-                ));
+            Err(dash_sdk::Error::StateTransitionBroadcastError(e)) if e.cause.is_some() => {
+                return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
             }
             Err(wait_err) => {
                 warn!(
@@ -842,6 +873,7 @@ where
                 }
             }
         };
+
 
         // Pull the verified `Identity` out of the proof result. The expected variant is
         // `VerifiedIdentityWithShieldedNullifiers`; if drive-abci ever returns a different one the
@@ -916,6 +948,15 @@ where
             );
             Ok((identity_id, identity))
         }
+        // The broadcast was accepted but its result couldn't be confirmed and the identity wasn't
+        // found by a direct fetch. Do NOT `cancel_pending` here: `pending_nullifiers` is in-memory
+        // only (see `SubwalletState`, "never persisted; the next sync after a crash reconciles"),
+        // and `mark_spent` during nullifier sync clears matching reservations. So if the transition
+        // actually executed, the next sync promotes these notes to spent; if it truly never landed,
+        // an app restart drops the in-memory reservation and frees them. Releasing them now would
+        // invite double-spend attempts against notes that may already be consumed on chain — the
+        // very hazard this variant exists to prevent.
+        Err(e @ PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }) => Err(e),
         Err(e) => {
             if error_releases_note_reservation(&e) {
                 cancel_pending(store, id, &selected_notes).await;
@@ -940,21 +981,6 @@ where
 /// happened, so the reservation must be released.
 fn error_releases_note_reservation(e: &PlatformWalletError) -> bool {
     !matches!(e, PlatformWalletError::ShieldedBroadcastUnconfirmed { .. })
-}
-
-/// Whether a wait-stage error is a DEFINITIVE platform rejection — the transition executed and was
-/// rejected on its merits, so the identity does not exist and releasing the note reservations is
-/// correct — as opposed to an AMBIGUOUS confirmation failure, where the broadcast was accepted and
-/// the transition may have executed even though we couldn't fetch/verify its result proof (so the
-/// reservation must be retained until a direct id fetch or the next nullifier sync resolves it).
-///
-/// Only `StateTransitionBroadcastError` is definitive: it carries Platform's own report of the
-/// transition's execution error. Everything else — `DriveProofError` / `Proof` /
-/// `InvalidProvedResponse` / `TimeoutReached` / `DapiClientError` / `Config` / … — is ambiguous
-/// (this is exactly the #3859 result-proof incident: the transition landed but the result proof
-/// couldn't be confirmed).
-fn wait_error_is_definitive_rejection(e: &dash_sdk::Error) -> bool {
-    matches!(e, dash_sdk::Error::StateTransitionBroadcastError(_))
 }
 
 /// Number of times [`identity_create_from_shielded_pool`] re-fetches the new identity by its
@@ -1236,6 +1262,192 @@ async fn cancel_pending<S: ShieldedStore>(
     }
 }
 
+/// Whether an SDK error carries Platform's own consensus verdict on the
+/// transition. Two shapes qualify:
+///
+/// - `Error::Protocol(ProtocolError::ConsensusError(_))` — DAPI attached the
+///   serialized consensus error as gRPC metadata
+///   (`dash-serialized-consensus-error-bin`), which the dapi-client decodes
+///   on any failed request. This is how a CheckTx rejection of the
+///   transition surfaces from `broadcast()` (rs-dapi's
+///   `map_broadcast_error` decodes the consensus error from Tenderdash's
+///   `info` field and `TenderdashStatus` re-attaches it as metadata);
+/// - a `StateTransitionBroadcastError` whose `cause` deserialized from
+///   non-empty consensus `data` — the wait-stream error envelope for a
+///   transition Platform executed and rejected on its merits.
+///
+/// Only these prove the transition was evaluated and REJECTED. Everything
+/// else — transport errors, timeouts, `AlreadyExists` (which proves the
+/// opposite: the transition is already in the mempool or on chain),
+/// DAPI-internal failures, cause-less broadcast envelopes (the shape DAPI
+/// uses for its own wait-side timeouts) — leaves the outcome unknown.
+fn carries_consensus_rejection(err: &dash_sdk::Error) -> bool {
+    match err {
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(_)) => true,
+        dash_sdk::Error::StateTransitionBroadcastError(e) => e.cause.is_some(),
+        _ => false,
+    }
+}
+
+/// Broadcast a built shielded spend transition (unshield / transfer /
+/// withdraw) and wait for proven execution, staging the two SDK calls
+/// separately so the caller's reservation rollback only runs when the
+/// spend DEFINITIVELY did not happen:
+///
+/// - a definitive `broadcast()` failure ([`broadcast_definitely_failed`]:
+///   a consensus-verdict CheckTx rejection, or a transport failure that
+///   proves nothing was delivered), or a wait-stage consensus rejection
+///   (Platform ran the transition and rejected it on its merits — see
+///   [`carries_consensus_rejection`]), means the spend never executed →
+///   [`PlatformWalletError::ShieldedBroadcastFailed`], and the caller
+///   releases the note reservations via [`cancel_pending`];
+/// - a no-verdict `broadcast()` failure (`AlreadyExists` proves the tx IS
+///   in the mempool after a lost-ACK retry; timeouts merely allow it)
+///   falls through to the result wait, which either proves execution or
+///   classifies the residual ambiguity;
+/// - any other wait failure (transport error, timeout, result-proof
+///   fetch/verify error, …) is AMBIGUOUS — the relay accepted (or may
+///   have accepted) the tx and it may well have executed →
+///   [`PlatformWalletError::ShieldedSpendUnconfirmed`], and the caller
+///   must leave the reservations in place (each spend flow's outer
+///   match has a dedicated arm for this).
+///
+/// Mirrors the staging in [`identity_create_from_shielded_pool`], minus
+/// its fetch-by-derived-id fallback: a spend leaves no artifact as
+/// cheaply queryable as an identity row, so ambiguity is surfaced
+/// directly and reconciled by the next nullifier sync. The proven
+/// result is discarded; only the confirmation matters.
+async fn broadcast_shielded_spend(
+    sdk: &Arc<dash_sdk::Sdk>,
+    state_transition: &StateTransition,
+    operation: &'static str,
+) -> Result<(), PlatformWalletError> {
+    match state_transition.broadcast(sdk, None).await {
+        Ok(()) => {}
+        Err(e) if broadcast_definitely_failed(&e) => {
+            return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
+        }
+        Err(e) => {
+            warn!(
+                operation,
+                error = %e,
+                "Shielded spend broadcast returned no verdict; the transition may have been \
+                 admitted — falling through to the result wait"
+            );
+        }
+    }
+
+    state_transition
+        .wait_for_response::<StateTransitionProofResult>(sdk, None)
+        .await
+        .map(|_| ())
+        .map_err(|wait_err| classify_spend_wait_failure(operation, &wait_err))
+}
+
+/// Whether a failed `broadcast()` call DEFINITIVELY left the transition
+/// out of every mempool, so any note reservations may be released and the
+/// caller may rebuild and retry:
+///
+/// - a consensus verdict ([`carries_consensus_rejection`]): CheckTx
+///   evaluated the transition and refused it;
+/// - a gRPC response whose status code is a server-side rejection or a
+///   connection-establishment failure. `Unavailable` is the common shape
+///   of a connect-refused/offline attempt — classifying it as definitive
+///   keeps the no-network failure's notes immediately re-spendable
+///   instead of stranding them until the next restart — and rejection
+///   codes (`InvalidArgument`, `ResourceExhausted` = mempool full, …) are
+///   verdicts that the tx was refused admission;
+/// - no usable DAPI addresses at all (nothing was ever sent).
+///
+/// `Unavailable` is NOT an absolute never-delivered guarantee: HTTP/2
+/// stream resets after the request bytes left can surface the same code,
+/// and the dapi-client's cross-address retry only retains the LAST
+/// transport error, so an earlier-attempt delivery can hide behind a
+/// later attempt's `Unavailable`. Releasing the notes in that residual
+/// window is still fund-safe — the authoritative no-reuse guarantee is
+/// the on-chain nullifier set, so a re-selected note at worst wastes a
+/// ~30 s proof on a nullifier-already-used rejection (see the
+/// `finalize_pending` downgrade rationale in `unshield`); never fund
+/// loss. The trade is deliberate: UX for the dominant offline case over
+/// strict conservatism in a rare race.
+///
+/// Everything else leaves the outcome unknown and the caller must fall
+/// through to the result wait instead of failing: `AlreadyExists` proves
+/// the tx IS in the mempool or on chain (a lost-ACK attempt was re-sent
+/// by the dapi-client retry and hit tenderdash's dedupe), and
+/// timeout/cancellation/no-response shapes (`TimeoutReached`,
+/// `Cancelled`, gRPC `DeadlineExceeded`/`Cancelled`, plus
+/// `Internal`/`Unknown`/`Aborted`/`DataLoss`, which DAPI also uses for
+/// its own tenderdash-side failures that can postdate delivery) allow
+/// the request to have outlived its lost ACK.
+fn broadcast_definitely_failed(e: &dash_sdk::Error) -> bool {
+    use dash_sdk::dapi_client::transport::TransportError;
+    use dash_sdk::dapi_client::DapiClientError;
+    use dash_sdk::dapi_grpc::tonic::Code;
+
+    fn status_is_verdict(t: &TransportError) -> bool {
+        let TransportError::Grpc(status) = t;
+        !matches!(
+            status.code(),
+            Code::DeadlineExceeded
+                | Code::Cancelled
+                | Code::Unknown
+                | Code::Internal
+                | Code::Aborted
+                | Code::DataLoss
+        )
+    }
+
+    if carries_consensus_rejection(e) {
+        return true;
+    }
+    match e {
+        dash_sdk::Error::AlreadyExists(_) => false,
+        dash_sdk::Error::DapiClientError(DapiClientError::Transport(t)) => status_is_verdict(t),
+        dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses) => true,
+        dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(t)) => {
+            status_is_verdict(t)
+        }
+        dash_sdk::Error::NoAvailableAddressesToRetry(inner) => broadcast_definitely_failed(inner),
+        _ => false,
+    }
+}
+
+/// Classify a `wait_for_response` failure for an already-broadcast
+/// shielded spend (see [`broadcast_shielded_spend`]).
+///
+/// Only a consensus verdict ([`carries_consensus_rejection`]) proves
+/// Platform executed the transition and rejected it on its merits — the
+/// serialized consensus error is the verdict. DAPI encodes its own
+/// wait-side failures (timeouts, internal errors; see
+/// `build_wait_for_state_transition_error_response` in rs-dapi) as
+/// `StateTransitionBroadcastError`s with EMPTY consensus data, which
+/// the SDK surfaces as `cause: None` — those are ambiguous, not
+/// rejections, and must keep the note reservations. Erring this way is
+/// the safe direction: misreading a rejection as ambiguous only delays
+/// note release until the next sync or restart, while misreading a
+/// timeout as a rejection re-frees notes whose nullifiers may already
+/// be consumed on chain.
+fn classify_spend_wait_failure(
+    operation: &'static str,
+    wait_err: &dash_sdk::Error,
+) -> PlatformWalletError {
+    if carries_consensus_rejection(wait_err) {
+        PlatformWalletError::ShieldedBroadcastFailed(wait_err.to_string())
+    } else {
+        warn!(
+            operation,
+            error = %wait_err,
+            "Shielded spend broadcast accepted but result confirmation failed; \
+             leaving the note reservations in place"
+        );
+        PlatformWalletError::ShieldedSpendUnconfirmed {
+            operation,
+            reason: wait_err.to_string(),
+        }
+    }
+}
+
 /// Helper to clone selection results out from under the store lock.
 trait SelectionResultOwned {
     fn into_owned(self) -> (Vec<ShieldedNote>, u64, u64);
@@ -1290,6 +1502,167 @@ fn deserialize_note(data: &[u8]) -> Option<grovedb_commitment_tree::Note> {
 }
 
 #[cfg(test)]
+mod classify_spend_wait_failure_tests {
+    use super::*;
+    use dash_sdk::error::StateTransitionBroadcastError;
+    use dpp::consensus::basic::decode::ProtocolVersionParsingError;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
+
+    fn broadcast_err(cause: Option<ConsensusError>) -> dash_sdk::Error {
+        dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+            code: 13,
+            message: "context deadline exceeded".to_string(),
+            cause,
+        })
+    }
+
+    #[test]
+    fn consensus_cause_is_a_definitive_rejection() {
+        let cause = ConsensusError::BasicError(BasicError::ProtocolVersionParsingError(
+            ProtocolVersionParsingError::new("bad version".to_string()),
+        ));
+        let err = classify_spend_wait_failure("unshield", &broadcast_err(Some(cause)));
+        assert!(
+            matches!(err, PlatformWalletError::ShieldedBroadcastFailed(_)),
+            "a broadcast error carrying a consensus cause means Platform ran and \
+             rejected the transition; the caller may release the reservation"
+        );
+    }
+
+    #[test]
+    fn causeless_broadcast_error_is_ambiguous() {
+        // DAPI maps its own wait failures (e.g. `DapiError::Timeout`) to a
+        // `StateTransitionBroadcastError` with EMPTY consensus data, which the
+        // SDK decodes as `cause: None`. The spend may still execute after the
+        // wait gave up, so this must NOT release the note reservations.
+        let err = classify_spend_wait_failure("unshield", &broadcast_err(None));
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::ShieldedSpendUnconfirmed {
+                    operation: "unshield",
+                    ..
+                }
+            ),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn transport_errors_are_ambiguous() {
+        let err = classify_spend_wait_failure(
+            "withdraw",
+            &dash_sdk::Error::TimeoutReached(
+                std::time::Duration::from_secs(80),
+                "waiting for response".to_string(),
+            ),
+        );
+        assert!(matches!(
+            err,
+            PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "withdraw",
+                ..
+            }
+        ));
+    }
+
+    /// The shape a CheckTx rejection takes when it reaches the SDK from
+    /// `broadcast()`: DAPI re-attaches the serialized consensus error as
+    /// gRPC metadata and the dapi-client decodes it into
+    /// `Error::Protocol(ConsensusError)`.
+    fn consensus_metadata_rejection() -> dash_sdk::Error {
+        let cause = ConsensusError::BasicError(BasicError::ProtocolVersionParsingError(
+            ProtocolVersionParsingError::new("bad version".to_string()),
+        ));
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(cause)))
+    }
+
+    /// A CheckTx consensus rejection surfacing from `broadcast()` IS
+    /// definitive: the transition was evaluated and refused, it sits in no
+    /// mempool, and the caller may release the reservations and retry.
+    #[test]
+    fn broadcast_consensus_rejection_is_definitive() {
+        assert!(broadcast_definitely_failed(&consensus_metadata_rejection()));
+        // The same verdict shape is definitive on the wait stage too.
+        let err = classify_spend_wait_failure("transfer", &consensus_metadata_rejection());
+        assert!(matches!(
+            err,
+            PlatformWalletError::ShieldedBroadcastFailed(_)
+        ));
+    }
+
+    fn grpc_err(code: dash_sdk::dapi_grpc::tonic::Code) -> dash_sdk::Error {
+        use dash_sdk::dapi_client::transport::TransportError;
+        use dash_sdk::dapi_client::DapiClientError;
+        dash_sdk::Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(
+            dash_sdk::dapi_grpc::tonic::Status::new(code, "boom"),
+        )))
+    }
+
+    /// Connection-establishment failures and non-consensus server
+    /// rejections of `broadcast()` ARE definitive: nothing was admitted to
+    /// a mempool. The offline case (connect refused → `Unavailable`) in
+    /// particular must release the notes immediately rather than strand
+    /// them until restart.
+    #[test]
+    fn broadcast_connection_failures_and_rejections_are_definitive() {
+        use dash_sdk::dapi_grpc::tonic::Code;
+        assert!(broadcast_definitely_failed(&grpc_err(Code::Unavailable)));
+        // Mempool full / malformed request: server verdicts refusing admission.
+        assert!(broadcast_definitely_failed(&grpc_err(
+            Code::ResourceExhausted
+        )));
+        assert!(broadcast_definitely_failed(&grpc_err(
+            Code::InvalidArgument
+        )));
+    }
+
+    /// No-response shapes of the `broadcast()` call itself are NOT
+    /// definitive: the dapi-client retries across addresses, so the request
+    /// may have been delivered to a node whose ACK was lost. The caller
+    /// falls through to the result wait instead of releasing the
+    /// reservations (which would let a retry select other unreserved notes
+    /// and double-send if the original broadcast landed).
+    #[test]
+    fn broadcast_no_response_shapes_are_inconclusive() {
+        use dash_sdk::dapi_grpc::tonic::Code;
+        assert!(!broadcast_definitely_failed(&grpc_err(
+            Code::DeadlineExceeded
+        )));
+        // DAPI maps its own tenderdash-side failures (which can postdate
+        // delivery) to Internal.
+        assert!(!broadcast_definitely_failed(&grpc_err(Code::Internal)));
+        assert!(!broadcast_definitely_failed(
+            &dash_sdk::Error::TimeoutReached(
+                std::time::Duration::from_secs(30),
+                "broadcast".to_string(),
+            )
+        ));
+        assert!(!broadcast_definitely_failed(&dash_sdk::Error::Generic(
+            "transport error: connection reset".to_string()
+        )));
+        // …including as the terminal error of an exhausted retry loop.
+        assert!(!broadcast_definitely_failed(
+            &dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(grpc_err(
+                Code::DeadlineExceeded
+            )))
+        ));
+    }
+
+    /// `AlreadyExists` from `broadcast()` proves the transition IS already
+    /// in the mempool or on chain (e.g. an internal dapi-client retry after
+    /// an ambiguous first delivery), so it must NOT be treated as a failure
+    /// — the spend is in flight and the result wait will confirm it.
+    #[test]
+    fn broadcast_already_exists_is_in_flight() {
+        assert!(!broadcast_definitely_failed(
+            &dash_sdk::Error::AlreadyExists("state transition already in mempool".to_string())
+        ));
+    }
+}
+
+#[cfg(test)]
 mod reserve_shield_fee_tests {
     use super::*;
 
@@ -1331,52 +1704,6 @@ mod reserve_shield_fee_tests {
         inputs.insert(addr(1), u64::MAX);
         let err = reserve_shield_fee_on_input_0(inputs, 1).expect_err("overflow must reject");
         assert!(matches!(err, PlatformWalletError::ShieldedBuildError(_)));
-    }
-}
-
-#[cfg(test)]
-mod wait_error_classification_tests {
-    use super::*;
-
-    /// `StateTransitionBroadcastError` is the one wait-stage error Platform raises after the
-    /// transition *ran* and was rejected on its merits. It must be classified definitive so the
-    /// caller releases the note reservations (the identity does not exist).
-    #[test]
-    fn state_transition_broadcast_error_is_definitive() {
-        let e = dash_sdk::Error::StateTransitionBroadcastError(
-            dash_sdk::error::StateTransitionBroadcastError {
-                code: 1,
-                message: "rejected on merits".to_string(),
-                cause: None,
-            },
-        );
-        assert!(
-            wait_error_is_definitive_rejection(&e),
-            "StateTransitionBroadcastError must be treated as a definitive rejection"
-        );
-    }
-
-    /// Every other wait-stage error is ambiguous: the broadcast was accepted, so the transition may
-    /// have executed even though the result proof couldn't be fetched/verified. Classifying any of
-    /// these definitive would release reservations for notes that may already be spent on chain —
-    /// the orphaned-identity + double-spend hazard. Cover the result-proof shapes (#3859) plus a
-    /// timeout and a misconfiguration to pin the table.
-    #[test]
-    fn other_wait_errors_are_ambiguous() {
-        let ambiguous: Vec<dash_sdk::Error> = vec![
-            dash_sdk::Error::TimeoutReached(
-                std::time::Duration::from_secs(30),
-                "wait timed out".to_string(),
-            ),
-            dash_sdk::Error::InvalidProvedResponse("result proof did not verify".to_string()),
-            dash_sdk::Error::Config("misconfigured sdk".to_string()),
-        ];
-        for e in &ambiguous {
-            assert!(
-                !wait_error_is_definitive_rejection(e),
-                "{e:?} must be treated as ambiguous (reservation retained)"
-            );
-        }
     }
 }
 

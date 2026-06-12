@@ -44,13 +44,15 @@ final class RegistrationCoordinator: ObservableObject {
     /// - `.preparingKeys` / `.inFlight`: switching testnet ↔ mainnet
     ///   mid-flight tears down the FFI manager and would abort the
     ///   in-flight call mid-stream.
-    /// - `.unconfirmed`: the identity is probably live on chain, but the
-    ///   picker's `usedIdentityIndices` consults ONLY persisted
-    ///   `PersistentIdentity` rows — so the live controller is the ONLY
-    ///   thing keeping the slot un-selectable until that row lands via
-    ///   sync. Switching networks tears down the `PlatformWalletManager`
-    ///   and with it this coordinator, dropping the controller (and the
-    ///   Rust-side note reservation); the same HD slot would become
+    /// - `.unconfirmed`: the identity is probably live on chain. The
+    ///   picker's `usedIdentityIndices` unions the persisted `isUsed`
+    ///   reservation with the `PersistentIdentity` rows, but that
+    ///   reservation write is best-effort (silent no-op when the slot row
+    ///   is beyond the derived lookahead) — so the live controller remains
+    ///   a load-bearing guard until the identity row lands via sync.
+    ///   Switching networks tears down the `PlatformWalletManager` and
+    ///   with it this coordinator, dropping the controller (and the
+    ///   Rust-side note reservation); the same HD slot could become
     ///   selectable and a re-submission would be rejected by the
     ///   registered-key-hash stateful check and burn the funded spend.
     ///
