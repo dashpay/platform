@@ -383,10 +383,12 @@ impl Sdk {
     /// no network response has been received yet to teach the SDK the real network version.
     ///
     /// The actual network version is learned only *after* proof parsing succeeds, when
-    /// [`Self::verify_response_metadata()`] processes `metadata.protocol_version`.  If the
-    /// connected network runs an older protocol version **and** proof interpretation differs
-    /// between that version and `latest()`, the very first request may fail before the SDK can
-    /// correct itself.  Subsequent requests will use the correct version.
+    /// [`Self::verify_response_metadata()`] processes `metadata.protocol_version`.  Because the
+    /// SDK seeds at the floor ([`DEFAULT_INITIAL_PROTOCOL_VERSION`]), the bootstrap risk is the
+    /// **newer**-network direction: if the connected network runs a version newer than the floor
+    /// **and** proof interpretation differs between the floor and that newer version, the very
+    /// first request may fail before the ratchet lifts the SDK to the network version.
+    /// Subsequent requests use the ratcheted version.
     ///
     /// This is a known bootstrap limitation.  Callers that must guarantee correct version
     /// behaviour on the first request should pin the version explicitly via
