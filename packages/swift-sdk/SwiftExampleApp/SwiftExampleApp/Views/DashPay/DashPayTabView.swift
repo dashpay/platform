@@ -182,6 +182,13 @@ struct DashPayTabView: View {
                 loadOwnProfileFromCache()
             }
         }
+        .onChange(of: storedIdentityId) { _, _ in
+            // The optimistic pending-sent overlay is per-identity
+            // state — without this reset, a send from identity A
+            // ghosts as an outgoing row under identity B after a
+            // picker switch (observed live in UAT 2026-06-13).
+            optimisticSentIds.removeAll()
+        }
     }
 
     // MARK: - Content states (§6.4 identity picker)
