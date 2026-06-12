@@ -178,6 +178,8 @@ impl BroadcastStateTransition for StateTransition {
             .wrap_to_execution_result(&response)?
             .inner;
 
+            // The current `FromProof` impl always yields `Some`; this guards only a future
+            // impl change, so it stays a typed error rather than an unwrap.
             let result: StateTransitionProofResult = maybe_result
                 .ok_or_else(|| {
                     Error::InvalidProvedResponse(
