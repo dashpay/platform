@@ -1,5 +1,6 @@
 import Foundation
 import DashSDKFFI
+import os
 
 private func scrubMnemonicBytes(_ bytes: inout [UInt8]) {
     bytes.withUnsafeMutableBufferPointer { buffer in
@@ -10,6 +11,10 @@ private func scrubMnemonicBytes(_ bytes: inout [UInt8]) {
 
 /// Utility class for mnemonic operations
 public class Mnemonic {
+
+    /// Diagnostics for the recover-flow helpers' FFI error paths. Logs only the
+    /// FFI error — never phrase content — so seed words can't leak to the log.
+    private static let log = Logger(subsystem: "org.dash.SwiftDashSDK", category: "Mnemonic")
 
     /// Generate a new mnemonic phrase
     /// - Parameters:
@@ -163,6 +168,7 @@ public class Mnemonic {
         do {
             try platform_wallet_mnemonic_word_list(language.ffiMnemonicValue, &outPtr).check()
         } catch {
+            Self.log.error("wordList FFI error: \(error.localizedDescription, privacy: .public)")
             return []
         }
         guard let cStr = outPtr else { return [] }
@@ -175,12 +181,17 @@ public class Mnemonic {
     /// Returns the input unchanged on the UTF-8/allocation error paths that
     /// DashSync never hits for valid `NSString` input.
     public static func normalizePhrase(_ phrase: String) -> String {
+        // An embedded NUL truncates the C string at the first \0, so the FFI
+        // would normalize only the prefix — a different phrase than passed in.
+        // Pass through unchanged instead (matches the error fallback below).
+        guard !phrase.utf8.contains(0) else { return phrase }
         var outPtr: UnsafeMutablePointer<CChar>? = nil
         do {
             try phrase.withCString { cPhrase in
                 try platform_wallet_mnemonic_normalize_phrase(cPhrase, &outPtr).check()
             }
         } catch {
+            Self.log.error("normalizePhrase FFI error: \(error.localizedDescription, privacy: .public); returning input unchanged")
             return phrase
         }
         guard let cStr = outPtr else { return phrase }
@@ -191,12 +202,17 @@ public class Mnemonic {
 
     /// Minimal cleanup + CJK ideographic auto-split (DashSync `cleanupPhrase:`).
     public static func cleanupPhrase(_ phrase: String) -> String {
+        // An embedded NUL truncates the C string at the first \0, so the FFI
+        // would clean only the prefix — a different phrase than passed in.
+        // Pass through unchanged instead (matches the error fallback below).
+        guard !phrase.utf8.contains(0) else { return phrase }
         var outPtr: UnsafeMutablePointer<CChar>? = nil
         do {
             try phrase.withCString { cPhrase in
                 try platform_wallet_mnemonic_cleanup_phrase(cPhrase, &outPtr).check()
             }
         } catch {
+            Self.log.error("cleanupPhrase FFI error: \(error.localizedDescription, privacy: .public); returning input unchanged")
             return phrase
         }
         guard let cStr = outPtr else { return phrase }
