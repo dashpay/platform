@@ -75,7 +75,7 @@ fn option_string_to_c(s: Option<&str>) -> *mut c_char {
     }
 }
 
-unsafe fn decode_opt_c_str(ptr: *const c_char) -> Result<Option<String>, PlatformWalletFFIResult> {
+pub(crate) unsafe fn decode_opt_c_str(ptr: *const c_char) -> Result<Option<String>, PlatformWalletFFIResult> {
     if ptr.is_null() {
         return Ok(None);
     }

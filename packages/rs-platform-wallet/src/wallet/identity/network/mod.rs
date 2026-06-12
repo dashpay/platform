@@ -32,6 +32,7 @@ mod withdrawal;
 
 // DashPay-contract operations (same `IdentityWallet` impl blocks).
 mod account_labels;
+mod contact_info;
 mod contact_requests;
 mod contacts;
 mod dashpay_sync;

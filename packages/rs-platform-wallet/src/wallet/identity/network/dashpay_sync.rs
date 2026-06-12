@@ -46,6 +46,17 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             );
         }
 
+        // Step 3: contactInfo (alias/note/hidden) — cross-device
+        // metadata. Log-and-continue like the steps above; a failure
+        // here must not abort the payment reconcile below.
+        if let Err(e) = self.sync_contact_infos().await {
+            tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id()),
+                error = %e,
+                "DashPay contactInfo sync failed"
+            );
+        }
+
         // Local-only third step: derive any missing `Received` payment
         // entries from the receival accounts' restored UTXO sets (see
         // `reconcile_incoming_payments`). Runs after the contact step so

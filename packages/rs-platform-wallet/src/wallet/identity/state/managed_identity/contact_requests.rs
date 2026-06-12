@@ -214,6 +214,48 @@ impl ManagedIdentity {
         }
     }
 
+    /// Set the owner-private metadata (alias / note / hidden) on an
+    /// established contact and persist the changeset.
+    ///
+    /// This is the local half of `contactInfo` (M3 task 13): callers
+    /// route user edits AND decrypted on-platform `contactInfo`
+    /// payloads through here so SwiftData mirrors either source.
+    /// Returns `false` (no-op) when the contact isn't established.
+    pub fn set_contact_metadata(
+        &mut self,
+        contact_id: &Identifier,
+        alias: Option<String>,
+        note: Option<String>,
+        is_hidden: bool,
+        persister: &WalletPersister,
+    ) -> bool {
+        let owner_id = self.id();
+        let Some(contact) = self.established_contacts.get_mut(contact_id) else {
+            return false;
+        };
+        if contact.alias == alias && contact.note == note && contact.is_hidden == is_hidden {
+            // Unchanged — skip the persister round (the recurring sync
+            // calls this for every decrypted doc on every pass).
+            return true;
+        }
+        contact.alias = alias;
+        contact.note = note;
+        contact.is_hidden = is_hidden;
+
+        let mut cs = ContactChangeSet::default();
+        cs.established.insert(
+            SentContactRequestKey {
+                owner_id,
+                recipient_id: *contact_id,
+            },
+            contact.clone(),
+        );
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
+        true
+    }
+
     /// Apply a **rotation** contact request (G3 receive side, DIP-15
     /// §"sender rotated their addresses"): a request from a sender we
     /// already track, carrying a *different* `accountReference` than
