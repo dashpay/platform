@@ -225,7 +225,12 @@ struct RegistrationProgressSection: View {
     ///      `.pending` rather than flipping to a green check for work
     ///      that may not have happened yet.
     ///   On `.completed` return 5 (one past the last step) so all rows
-    ///   render `.done`. On `.failed` mark the step we'd reached.
+    ///   render `.done`. On `.failed` mark the step we'd reached *at
+    ///   the failure instant*, anchored on `controller.terminalAt` —
+    ///   failed rows are retained until dismissed, so measuring
+    ///   against live `now` would let the failed icon drift from step
+    ///   1 to step 2 once the note-selection window lapses on the
+    ///   wall clock.
     private func shieldedCurrentStep(now: Date) -> Int {
         switch controller.phase {
         case .idle, .preparingKeys:
@@ -233,16 +238,22 @@ struct RegistrationProgressSection: View {
         case .completed:
             return 5
         case .inFlight:
-            guard let submittedAt = controller.lastSubmittedAt else { return 1 }
-            let elapsed = now.timeIntervalSince(submittedAt)
-            return elapsed < Self.shieldedNoteSelectionWindow ? 1 : 2
+            return shieldedStep(elapsedTo: now)
         case .failed:
-            // Fail on the proof step unless we never left note
-            // selection (no submit timestamp yet).
-            guard let submittedAt = controller.lastSubmittedAt else { return 1 }
-            let elapsed = now.timeIntervalSince(submittedAt)
-            return elapsed < Self.shieldedNoteSelectionWindow ? 1 : 2
+            // Freeze at the failure instant; fall back to `now` only
+            // if the terminal timestamp is missing (pre-submit
+            // failure shapes never set it).
+            return shieldedStep(elapsedTo: controller.terminalAt ?? now)
         }
+    }
+
+    /// Map elapsed time since `lastSubmittedAt` (measured up to
+    /// `anchor`) onto shielded step 1 or 2. Without a submit
+    /// timestamp we never left note selection.
+    private func shieldedStep(elapsedTo anchor: Date) -> Int {
+        guard let submittedAt = controller.lastSubmittedAt else { return 1 }
+        let elapsed = anchor.timeIntervalSince(submittedAt)
+        return elapsed < Self.shieldedNoteSelectionWindow ? 1 : 2
     }
 
     /// True when step 4 should appear "skipped" rather than

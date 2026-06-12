@@ -16,17 +16,27 @@
 //! (`MASTER_KEY_INDEX`), so a load and a discovery scan resolve the same
 //! identity at the same index.
 //!
-//! # Key source: resolver vs. resident wallet
+//! # Key source: chosen by wallet capability
 //!
-//! The DIP-9 derivation needs the wallet's private key material. App
-//! wallets are loaded into the in-process `WalletManager` as
-//! `key_wallet::WalletType::ExternalSignable` — their seed lives in iOS
-//! Keychain, NOT in process — so deriving from the resident wallet fails
-//! with `External signable wallet has no private key` (the bug this
-//! entry point's resolver path fixes).
+//! The DIP-9 derivation needs the wallet's private key material. The
+//! source is selected by the in-process wallet's shape, NOT by whether
+//! a resolver handle was supplied — the resolver is a *capability* the
+//! Rust side consults only when it can't derive locally, not a command
+//! that forces the resolver path (same dispatch as
+//! [`crate::identity_discovery::platform_wallet_discover_identities`]):
 //!
-//! - **`mnemonic_resolver_handle` non-null:** resolve the wallet's
-//!   mnemonic on demand via the Swift-owned
+//! - **In-process wallet holds resident private keys** (`WalletType::
+//!   Mnemonic` / `Seed` / `ExtendedPrivKey` — NOT external-signable and
+//!   NOT watch-only): drive the historical resident-wallet derive
+//!   (`load_identity_by_index`). The resolver handle is never touched,
+//!   which also skips a pointless iOS Keychain read. This keeps
+//!   `createWallet(seed:)` / raw-seed wallets working even when no
+//!   BIP-39 mnemonic was ever persisted to `WalletStorage`.
+//! - **In-process wallet is external-signable / watch-only:** its seed
+//!   lives in iOS Keychain, NOT in process, so the resident derive would
+//!   fail with `External signable wallet has no private key`. In that
+//!   case, if `mnemonic_resolver_handle` is non-null, resolve the
+//!   wallet's mnemonic on demand via the Swift-owned
 //!   [`MnemonicResolverHandle`] (its `resolve` callback reads the
 //!   mnemonic from iOS Keychain keyed by the wallet handle's own
 //!   `wallet_id`), build the master `ExtendedPrivKey`, and drive
@@ -34,11 +44,9 @@
 //!   scalar all live in `Zeroizing` buffers (the master's `private_key`
 //!   is explicitly `non_secure_erase`d — `ExtendedPrivKey` has no
 //!   `Drop`) and are scrubbed before this function returns. This is the
-//!   path the iOS app takes.
-//! - **`mnemonic_resolver_handle` null:** fall back to the historical
-//!   resident-wallet derive (`load_identity_by_index`). Valid only for
-//!   wallets with in-process key material; kept for key-resident
-//!   consumers / other callers.
+//!   path the iOS app takes. If the resolver is null for such a wallet,
+//!   the call returns an error hinting that a mnemonic resolver handle
+//!   is required for this wallet shape.
 //!
 //! A discovered identity lands in the wallet's `IdentityManager` and is
 //! forwarded to Swift via the existing persister callback
@@ -61,17 +69,26 @@ use rs_sdk_ffi::MnemonicResolverHandle;
 /// identity index by deriving the DIP-9 MASTER authentication key at
 /// that index and querying Platform for its pubkey hash.
 ///
+/// The derivation source is chosen by the in-process wallet's
+/// capability (see the module docs): resident-key wallets probe via the
+/// in-process derive and never touch the resolver; external-signable /
+/// watch-only wallets consult the resolver. The resolver is only
+/// *needed* for the latter shape.
+///
 /// # Parameters
 /// - `wallet_handle` — platform-wallet handle.
 /// - `mnemonic_resolver_handle` — Swift-owned
-///   [`MnemonicResolverHandle`]. When **non-null**, the wallet's
-///   mnemonic is resolved on demand (keyed by the wallet handle's own
-///   `wallet_id`), a master `ExtendedPrivKey` is built, and the probe
-///   hash is derived from that master — the path that works for the iOS
-///   Keychain-backed `WalletType::ExternalSignable` shape whose seed is
-///   not in process. When **null**, the probe is derived from the
-///   resident in-process wallet (the historical path; valid only for
-///   wallets with in-memory key material).
+///   [`MnemonicResolverHandle`], consulted **only** when the in-process
+///   wallet lacks resident private keys (external-signable / watch-only
+///   — the iOS Keychain-backed `WalletType::ExternalSignable` shape
+///   whose seed is not in process). For such a wallet, when non-null
+///   the mnemonic is resolved on demand (keyed by the wallet handle's
+///   own `wallet_id`), a master `ExtendedPrivKey` is built, and the
+///   probe hash is derived from that master; when null the call errors
+///   with a hint that a resolver handle is required for this wallet
+///   shape. For a wallet that holds resident private keys this argument
+///   is ignored and the probe derives from the in-process wallet (the
+///   historical path).
 /// - `identity_index` — BIP-9 identity index to probe.
 /// - `out_found` — set to `true` iff an identity was registered at this
 ///   index, `false` otherwise. Always written on success.
@@ -106,13 +123,49 @@ pub unsafe extern "C" fn platform_wallet_load_identity_at_index(
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
 
-        if mnemonic_resolver_handle.is_null() {
-            // Resident-wallet derive (historical path). Valid only for
-            // wallets with in-process key material.
+        // Select the derivation source by the in-process wallet's
+        // capability (see the module docs), NOT by whether a resolver
+        // was supplied. Read the wallet's shape under a short read-lock
+        // and DROP the guard before `block_on_worker` — the load future
+        // is `Send + 'static`, so the guard must not be held across it.
+        let wallet_has_resident_keys = {
+            let wm = wallet.wallet_manager().blocking_read();
+            match wm.get_wallet(&wallet.wallet_id()) {
+                Some(key_wallet) => {
+                    !key_wallet.is_external_signable() && !key_wallet.is_watch_only()
+                }
+                None => {
+                    return Err(PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                        "Wallet not found in wallet manager",
+                    ));
+                }
+            }
+        };
+
+        if wallet_has_resident_keys {
+            // Resident private keys (Mnemonic / Seed / ExtendedPrivKey) →
+            // historical in-process derive. The resolver is never touched
+            // (also skips a pointless iOS Keychain read), so raw-seed /
+            // mnemonic wallets keep working even when no mnemonic was ever
+            // persisted to `WalletStorage`.
             return block_on_worker(async move {
                 identity.load_identity_by_index(identity_index).await
             })
             .map_err(PlatformWalletFFIResult::from);
+        }
+
+        // External-signable / watch-only wallet: its seed lives in iOS
+        // Keychain, not in process, so the resident derive would fail with
+        // `External signable wallet has no private key`. A resolver is
+        // required here.
+        if mnemonic_resolver_handle.is_null() {
+            return Err(PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                "this wallet has no resident private keys (external-signable / \
+                 watch-only); a mnemonic resolver handle is required to load \
+                 its identity",
+            ));
         }
 
         // Resolver path: resolve the wallet's mnemonic → build master
