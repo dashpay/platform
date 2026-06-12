@@ -948,6 +948,8 @@ impl PlatformWallet {
         })?;
         super::shielded::operations::shield(
             &self.sdk,
+            Some(&self.persister),
+            self.wallet_id,
             keyset,
             shielded_account,
             inputs,

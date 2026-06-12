@@ -414,6 +414,15 @@ impl NetworkShieldedCoordinator {
                     crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
                 })?;
             }
+            // Rehydrate persisted activity entries so the scan deriver's
+            // dedupe set (`existing_ids`) includes them this session — a
+            // rich live entry restored here is never clobbered by a
+            // coarser re-derivation. Idempotent (upsert by `entry.id`).
+            for entry in &sub.activity {
+                store.save_activity(*id, entry).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+            }
             store
                 .set_last_synced_note_index(*id, sub.last_synced_index)
                 .map_err(|e| {
@@ -618,6 +627,22 @@ impl NetworkShieldedCoordinator {
             Err(e) => return self.fail_all_wallets(&subwallets, &e),
         };
 
+        // Restore-path activity derivation: reconstruct per-operation
+        // activity entries best-effort from the notes / outgoing notes
+        // this pass (and earlier passes) persisted. Runs every pass so it
+        // doubles as the one-time backfill over an already-populated
+        // store — `derive_activity_from_scan_data` skips clusters whose
+        // id a live entry already owns, and `save_activity` upserts by
+        // id, so re-running is idempotent. Failures are logged and
+        // swallowed: a derivation miss must never fail a sync pass.
+        let mut notes = notes;
+        if let Err(e) = self
+            .derive_activity_into_changeset(&subwallets, &mut notes.changeset)
+            .await
+        {
+            tracing::warn!(error = %e, "Shielded activity derivation failed; skipping this pass");
+        }
+
         // The note-side changeset already carries saves, synced
         // indices, AND the scan-detected spends, so split it per
         // WalletId directly — each per-wallet `WalletPersister.store`
@@ -703,6 +728,69 @@ impl NetworkShieldedCoordinator {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0)
+    }
+
+    /// Derive best-effort activity entries from each subwallet's
+    /// persisted scan data and add the new ones to `changeset`.
+    ///
+    /// For each subwallet: read all notes + OVK-recovered outgoing notes
+    /// from the store, classify the recipient of each outgoing note as
+    /// own-vs-external by testing it against the subwallet's IVK (the
+    /// `diversifier_index` check — Orchard addresses are diversified, so
+    /// a fixed address list can't be used), build the
+    /// [`super::activity::ScanDeriveInput`], and run
+    /// [`super::activity::derive_activity_from_scan_data`] against the
+    /// entry ids already on file (live entries win). Newly derived
+    /// entries are saved to the store and recorded on `changeset` so they
+    /// reach the host persister on this pass's flush.
+    ///
+    /// All client-side (Option B): no node / DAPI query, only data the
+    /// store already holds.
+    async fn derive_activity_into_changeset(
+        &self,
+        subwallets: &[(SubwalletId, AccountViewingKeys)],
+        changeset: &mut crate::changeset::ShieldedChangeSet,
+    ) -> Result<(), crate::error::PlatformWalletError> {
+        use super::activity::{derive_activity_from_scan_data, ScanDeriveInput};
+
+        let mut store = self.store.write().await;
+        for (id, views) in subwallets {
+            let notes = store.get_all_notes(*id).map_err(|e| {
+                crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+            })?;
+            let outgoing = store.get_outgoing_notes(*id).map_err(|e| {
+                crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+            })?;
+            if notes.is_empty() && outgoing.is_empty() {
+                continue;
+            }
+
+            // Own-recipient set: an outgoing note whose recipient the
+            // subwallet's IVK recognizes is self-change, not a payment out.
+            let own_addresses: Vec<Vec<u8>> = outgoing
+                .iter()
+                .filter(|o| is_own_orchard_recipient(views, &o.recipient))
+                .map(|o| o.recipient.clone())
+                .collect();
+
+            let existing_ids = store.get_activity_ids(*id).map_err(|e| {
+                crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+            })?;
+
+            let input = ScanDeriveInput {
+                notes,
+                outgoing,
+                own_addresses,
+            };
+            let derived = derive_activity_from_scan_data(&input, &existing_ids);
+            for entry in derived {
+                store.save_activity(*id, &entry).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+                changeset.record_activity_entry(*id, entry);
+            }
+        }
+        Ok(())
     }
 
     /// Build a pass summary in which every registered wallet is
@@ -802,6 +890,30 @@ fn build_per_wallet_summary(
         );
     }
     summary
+}
+
+/// Whether a 43-byte raw Orchard `recipient` belongs to the subwallet's
+/// own viewing keys — i.e. it's a self-change output, not a payment to
+/// someone else. Orchard addresses are diversified, so this can't be a
+/// fixed-address comparison; it tests the recipient against the IVK via
+/// `diversifier_index` (mirrors the `sender_ovk` account-selection check
+/// in `fund_from_asset_lock.rs`). A malformed recipient (wrong length /
+/// off-curve) returns `false` (treated as external) so a corrupt row
+/// can't silently mask a real send.
+fn is_own_orchard_recipient(views: &AccountViewingKeys, recipient: &[u8]) -> bool {
+    let raw: [u8; 43] = match recipient.try_into() {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    let Some(addr) = Option::<grovedb_commitment_tree::PaymentAddress>::from(
+        grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(&raw),
+    ) else {
+        return false;
+    };
+    views
+        .incoming_viewing_key
+        .diversifier_index(&addr)
+        .is_some()
 }
 
 #[cfg(test)]

@@ -194,3 +194,67 @@ async fn shield_built_note_ovk_recovers_and_persists_as_outgoing() {
         "a foreign OVK must not recover the wallet's send"
     );
 }
+
+/// The live activity recorder must recover at least one visible output
+/// cmx from a real built bundle — the same recovery the scan runs. A
+/// `None` here means every live entry silently vanishes (the exact
+/// failure mode debugged on devnet 2026-06-12).
+#[tokio::test]
+async fn live_recorder_builds_entry_from_real_shield_bundle() {
+    use crate::wallet::shielded::activity::{ShieldedActivityKind, ShieldedDirection};
+    use crate::wallet::shielded::activity_recorder::{
+        build_pending_entry, visible_output_cmxs, LiveEntryParams,
+    };
+
+    let seed = [0x42u8; 32];
+    let keys = OrchardKeySet::from_seed(&seed, Network::Testnet, 0)
+        .expect("ZIP-32 derivation from a fixed seed should succeed");
+    let recipient = OrchardAddress::from_raw_bytes(&keys.default_address.to_raw_address_bytes())
+        .expect("default address must convert to OrchardAddress");
+
+    let mut inputs = BTreeMap::new();
+    inputs.insert(
+        PlatformAddress::P2pkh([0xAB; 20]),
+        (0u32, 500_000_000_000u64),
+    );
+    let prover = CachedOrchardProver::new();
+    let st = build_shield_transition(
+        &recipient,
+        200_000_000_000,
+        inputs,
+        vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+        &DummySigner,
+        0,
+        &&prover,
+        [0u8; 36],
+        Some(keys.outgoing_viewing_key.clone()),
+        PlatformVersion::latest(),
+    )
+    .await
+    .expect("shield transition build should succeed");
+
+    let StateTransition::Shield(ShieldTransition::V0(v0)) = st else {
+        panic!("expected a Shield state transition");
+    };
+
+    let cmxs = visible_output_cmxs(&v0.actions, &keys);
+    assert!(
+        !cmxs.is_empty(),
+        "recorder must recover the wallet-visible output cmx from a real bundle"
+    );
+
+    let entry = build_pending_entry(
+        &keys,
+        LiveEntryParams {
+            kind: ShieldedActivityKind::Shield,
+            direction: ShieldedDirection::In,
+            amount: 200_000_000_000,
+            fee: None,
+            counterparty: None,
+            memo: None,
+            actions: &v0.actions,
+            spent_notes: &[],
+        },
+    );
+    assert!(entry.is_some(), "live entry must build from a real bundle");
+}

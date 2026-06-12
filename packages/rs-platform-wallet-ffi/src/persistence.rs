@@ -354,6 +354,19 @@ pub struct PersistenceCallbacks {
             count: usize,
         ) -> i32,
     >,
+    /// Persist a batch of derived activity-log entries. The host upserts
+    /// each by `entry_id` (Pending→Confirmed/Failed flips and scan-kind
+    /// refinements re-emit the same id). Mirrors the other
+    /// `on_persist_shielded_*` callbacks.
+    #[cfg(feature = "shielded")]
+    pub on_persist_shielded_activity_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            entries: *const crate::shielded_persistence::ShieldedActivityFFI,
+            count: usize,
+        ) -> i32,
+    >,
     /// Restore-on-load: every persisted shielded note. Host
     /// allocates the array; Rust calls the matching free
     /// callback after copying. Same lifetime contract as
@@ -411,6 +424,26 @@ pub struct PersistenceCallbacks {
         unsafe extern "C" fn(
             context: *mut c_void,
             entries: *const crate::shielded_persistence::ShieldedSubwalletSyncStateFFI,
+            count: usize,
+        ),
+    >,
+    /// Restore-on-load: every persisted activity-log entry. Same
+    /// host-allocates / Rust-frees lifetime contract as
+    /// `on_load_shielded_notes_fn`. Inlined so cbindgen emits the
+    /// referenced struct in the header.
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_activity_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            out_entries: *mut *const crate::shielded_persistence::ShieldedActivityRestoreFFI,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_activity_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            entries: *const crate::shielded_persistence::ShieldedActivityRestoreFFI,
             count: usize,
         ),
     >,
@@ -542,6 +575,8 @@ impl Default for PersistenceCallbacks {
             #[cfg(feature = "shielded")]
             on_persist_shielded_synced_indices_fn: None,
             #[cfg(feature = "shielded")]
+            on_persist_shielded_activity_fn: None,
+            #[cfg(feature = "shielded")]
             on_load_shielded_notes_fn: None,
             #[cfg(feature = "shielded")]
             on_load_shielded_notes_free_fn: None,
@@ -553,6 +588,10 @@ impl Default for PersistenceCallbacks {
             on_load_shielded_sync_states_fn: None,
             #[cfg(feature = "shielded")]
             on_load_shielded_sync_states_free_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_activity_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_activity_free_fn: None,
         }
     }
 }
@@ -1282,6 +1321,103 @@ impl PlatformWalletPersistence for FFIPersister {
                     }
                 }
             }
+
+            // 5) activity entries (derived activity log). The variable-
+            //    length fields (counterparty / memo / cmx + nullifier
+            //    arrays) borrow into `backing`, a Vec of owned byte
+            //    buffers that outlives the callback — same pointer-validity
+            //    discipline as `note_data_ptr` / `memo_ptr` above. The
+            //    host upserts by `entry_id`.
+            if !shielded_cs.activity_entries.is_empty() {
+                if let Some(cb) = self.callbacks.on_persist_shielded_activity_fn {
+                    // Concatenated cmx / nullifier buffers, kept alive for
+                    // the callback window. One owned `Vec<u8>` per entry's
+                    // note_cmxs and spent_nullifiers.
+                    let mut backing: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+                    for entries in shielded_cs.activity_entries.values() {
+                        for e in entries {
+                            let mut cmx_buf = Vec::with_capacity(e.note_cmxs.len() * 32);
+                            for c in &e.note_cmxs {
+                                cmx_buf.extend_from_slice(c);
+                            }
+                            let mut nf_buf = Vec::with_capacity(e.spent_nullifiers.len() * 32);
+                            for n in &e.spent_nullifiers {
+                                nf_buf.extend_from_slice(n);
+                            }
+                            backing.push((cmx_buf, nf_buf));
+                        }
+                    }
+                    let mut backing_iter = backing.iter();
+                    let entries: Vec<ShieldedActivityFFI> = shielded_cs
+                        .activity_entries
+                        .iter()
+                        .flat_map(|(id, entries)| {
+                            entries.iter().map(move |e| (id, e))
+                        })
+                        .map(|(id, e)| {
+                            let (cmx_buf, nf_buf) = backing_iter
+                                .next()
+                                .expect("backing has one entry per activity entry");
+                            let (identity_id, has_identity_id) = match &e.kind {
+                                platform_wallet::wallet::shielded::ShieldedActivityKind::IdentityCreate {
+                                    identity_id,
+                                } => (*identity_id, 1u8),
+                                _ => ([0u8; 32], 0u8),
+                            };
+                            let (counterparty_ptr, counterparty_len) = match &e.counterparty {
+                                Some(c) if !c.is_empty() => (c.as_ptr(), c.len()),
+                                _ => (std::ptr::null(), 0),
+                            };
+                            let (memo_ptr, memo_len) = match &e.memo {
+                                Some(m) if !m.is_empty() => (m.as_ptr(), m.len()),
+                                _ => (std::ptr::null(), 0),
+                            };
+                            ShieldedActivityFFI {
+                                wallet_id: id.wallet_id,
+                                account_index: id.account_index,
+                                entry_id: e.id,
+                                kind_tag: e.kind.tag(),
+                                direction: activity_direction_tag(&e.direction),
+                                status: activity_status_tag(&e.status),
+                                amount: e.amount,
+                                fee: e.fee.unwrap_or(0),
+                                has_fee: u8::from(e.fee.is_some()),
+                                block_height: e.block_height.unwrap_or(0),
+                                has_block_height: u8::from(e.block_height.is_some()),
+                                created_at_ms: e.created_at_ms,
+                                identity_id,
+                                has_identity_id,
+                                counterparty_ptr,
+                                counterparty_len,
+                                memo_ptr,
+                                memo_len,
+                                note_cmxs_ptr: cmx_buf.as_ptr(),
+                                note_cmxs_count: cmx_buf.len() / 32,
+                                spent_nullifiers_ptr: nf_buf.as_ptr(),
+                                spent_nullifiers_count: nf_buf.len() / 32,
+                            }
+                        })
+                        .collect();
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            entries.as_ptr(),
+                            entries.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Shielded activity persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
+                    // `backing` and `entries` drop here, after the callback
+                    // has copied everything it needs.
+                    drop(backing);
+                }
+            }
         }
 
         // Close the round. Clients use this to commit (if
@@ -1405,7 +1541,8 @@ impl PlatformWalletPersistence for FFIPersister {
             use crate::shielded_persistence::*;
             use platform_wallet::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
             use platform_wallet::wallet::shielded::{
-                ShieldedNote, ShieldedOutgoingNote, SubwalletId,
+                ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus,
+                ShieldedDirection, ShieldedNote, ShieldedOutgoingNote, SubwalletId,
             };
 
             let mut shielded_state = ShieldedSyncStartState::default();
@@ -1624,6 +1761,134 @@ impl PlatformWalletPersistence for FFIPersister {
                 }
             }
 
+            // 4) derived activity entries
+            if self.callbacks.on_load_shielded_activity_fn.is_some()
+                != self.callbacks.on_load_shielded_activity_free_fn.is_some()
+            {
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_activity_fn and on_load_shielded_activity_free_fn must be \
+                     provided together",
+                ));
+            }
+            if let Some(load_activity) = self.callbacks.on_load_shielded_activity_fn {
+                let mut act_ptr: *const ShieldedActivityRestoreFFI = std::ptr::null();
+                let mut act_count: usize = 0;
+                let rc =
+                    unsafe { load_activity(self.callbacks.context, &mut act_ptr, &mut act_count) };
+                if rc != 0 {
+                    return Err(PersistenceError::backend(format!(
+                        "on_load_shielded_activity_fn returned error code {}",
+                        rc
+                    )));
+                }
+                struct ActivityGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedActivityRestoreFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedActivityRestoreFFI,
+                    count: usize,
+                }
+                impl Drop for ActivityGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _activity_guard = ActivityGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_activity_free_fn,
+                    entries: act_ptr,
+                    count: act_count,
+                };
+                if !act_ptr.is_null() && act_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(act_ptr, act_count) };
+                    for ffi in slice {
+                        let kind = match ffi.kind_tag {
+                            0 => ShieldedActivityKind::Shield,
+                            1 => ShieldedActivityKind::ShieldFromAssetLock,
+                            2 => ShieldedActivityKind::Received,
+                            3 => ShieldedActivityKind::Sent,
+                            4 => ShieldedActivityKind::Unshield,
+                            5 => ShieldedActivityKind::Withdrawal,
+                            6 => ShieldedActivityKind::IdentityCreate {
+                                identity_id: ffi.identity_id,
+                            },
+                            // 7 and any unknown tag fall back to the
+                            // residual — a forward-compat tag we don't yet
+                            // model still loads as an opaque spend rather
+                            // than getting dropped.
+                            _ => ShieldedActivityKind::ShieldedSpend,
+                        };
+                        let direction = match ffi.direction {
+                            0 => ShieldedDirection::In,
+                            1 => ShieldedDirection::Out,
+                            _ => ShieldedDirection::SelfTransfer,
+                        };
+                        let status = match ffi.status {
+                            0 => ShieldedActivityStatus::Pending,
+                            1 => ShieldedActivityStatus::Confirmed,
+                            _ => ShieldedActivityStatus::Failed,
+                        };
+                        let counterparty = if ffi.counterparty_ptr.is_null()
+                            || ffi.counterparty_len == 0
+                        {
+                            None
+                        } else {
+                            Some(unsafe {
+                                slice::from_raw_parts(ffi.counterparty_ptr, ffi.counterparty_len)
+                                    .to_vec()
+                            })
+                        };
+                        let memo = if ffi.memo_ptr.is_null() || ffi.memo_len == 0 {
+                            None
+                        } else {
+                            Some(unsafe {
+                                slice::from_raw_parts(ffi.memo_ptr, ffi.memo_len).to_vec()
+                            })
+                        };
+                        let note_cmxs =
+                            unsafe { decode_cmx_array(ffi.note_cmxs_ptr, ffi.note_cmxs_count) };
+                        let spent_nullifiers = unsafe {
+                            decode_cmx_array(ffi.spent_nullifiers_ptr, ffi.spent_nullifiers_count)
+                        };
+
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        let entry = shielded_state
+                            .per_subwallet
+                            .entry(id)
+                            .or_insert_with(ShieldedSubwalletStartState::default);
+                        entry.activity.push(ShieldedActivityEntry {
+                            id: ffi.entry_id,
+                            kind,
+                            direction,
+                            amount: ffi.amount,
+                            fee: if ffi.has_fee != 0 {
+                                Some(ffi.fee)
+                            } else {
+                                None
+                            },
+                            counterparty,
+                            memo,
+                            block_height: if ffi.has_block_height != 0 {
+                                Some(ffi.block_height)
+                            } else {
+                                None
+                            },
+                            status,
+                            created_at_ms: ffi.created_at_ms,
+                            note_cmxs,
+                            spent_nullifiers,
+                        });
+                    }
+                }
+            }
+
             out.shielded = shielded_state;
         }
 
@@ -1833,6 +2098,51 @@ impl PlatformWalletPersistence for FFIPersister {
 }
 
 /// Flatten an `AccountType` + encoded xpub into the C-flat
+/// Decode `count` contiguous 32-byte commitments / nullifiers from a
+/// host buffer into `Vec<[u8; 32]>`. A null pointer or a length that
+/// isn't a clean multiple of 32 yields an empty vec (the buffer is
+/// Rust-written on persist and host-round-tripped on load, so a
+/// malformed length means a corrupt row — drop the linkage rather than
+/// read past the buffer).
+///
+/// # Safety
+/// `ptr` must point to at least `count * 32` valid bytes for the call,
+/// or be null.
+#[cfg(feature = "shielded")]
+unsafe fn decode_cmx_array(ptr: *const u8, count: usize) -> Vec<[u8; 32]> {
+    if ptr.is_null() || count == 0 {
+        return Vec::new();
+    }
+    let bytes = slice::from_raw_parts(ptr, count * 32);
+    bytes
+        .chunks_exact(32)
+        .filter_map(|c| <[u8; 32]>::try_from(c).ok())
+        .collect()
+}
+
+/// Discriminant byte for a `ShieldedDirection` (FFI: 0 In, 1 Out, 2 Self).
+#[cfg(feature = "shielded")]
+fn activity_direction_tag(d: &platform_wallet::wallet::shielded::ShieldedDirection) -> u8 {
+    use platform_wallet::wallet::shielded::ShieldedDirection::*;
+    match d {
+        In => 0,
+        Out => 1,
+        SelfTransfer => 2,
+    }
+}
+
+/// Discriminant byte for a `ShieldedActivityStatus` (FFI: 0 Pending,
+/// 1 Confirmed, 2 Failed).
+#[cfg(feature = "shielded")]
+fn activity_status_tag(s: &platform_wallet::wallet::shielded::ShieldedActivityStatus) -> u8 {
+    use platform_wallet::wallet::shielded::ShieldedActivityStatus::*;
+    match s {
+        Pending => 0,
+        Confirmed => 1,
+        Failed => 2,
+    }
+}
+
 /// [`AccountSpecFFI`] layout.
 ///
 /// The returned struct borrows `xpub_bytes` — caller must keep the

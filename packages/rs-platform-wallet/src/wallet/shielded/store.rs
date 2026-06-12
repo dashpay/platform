@@ -186,6 +186,46 @@ pub trait ShieldedStore: Send + Sync {
     fn get_outgoing_notes(&self, id: SubwalletId)
         -> Result<Vec<ShieldedOutgoingNote>, Self::Error>;
 
+    // ── Derived activity log (per-subwallet) ───────────────────────────
+
+    /// Upsert a derived [`ShieldedActivityEntry`] for `id`, keyed by
+    /// `entry.id` (the sha256 of the visible output cmxs — see
+    /// [`crate::wallet::shielded::activity`]).
+    ///
+    /// Re-saving an entry with the same `entry.id` overwrites the
+    /// existing one in place. This is what lets a coarse scan-derived
+    /// `ShieldedSpend` be upgraded to a specific kind when a later live
+    /// entry (or correlation pass) re-emits the same id, and what lets a
+    /// `Pending` entry flip to `Confirmed`/`Failed`.
+    fn save_activity(
+        &mut self,
+        id: SubwalletId,
+        entry: &super::activity::ShieldedActivityEntry,
+    ) -> Result<(), Self::Error>;
+
+    /// Return a page of derived activity for `id`, sorted for display
+    /// (pendings first, then by `block_height` desc, tiebreak by
+    /// `created_at_ms` then `id`), sliced by `[offset, offset+limit)`.
+    /// `limit == 0` returns an empty page.
+    fn get_activity(
+        &self,
+        id: SubwalletId,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<super::activity::ShieldedActivityEntry>, Self::Error>;
+
+    /// Look up a single activity entry by its `entry.id`. `None` if no
+    /// entry with that id exists for `id`.
+    fn get_activity_by_entry_id(
+        &self,
+        id: SubwalletId,
+        entry_id: &[u8; 32],
+    ) -> Result<Option<super::activity::ShieldedActivityEntry>, Self::Error>;
+
+    /// Return the set of all entry ids already recorded for `id`. Used by
+    /// the scan deriver to skip clusters a live entry already owns.
+    fn get_activity_ids(&self, id: SubwalletId) -> Result<BTreeSet<[u8; 32]>, Self::Error>;
+
     // ── Commitment tree (network-shared) ───────────────────────────────
 
     /// Append a note commitment to the shared tree.
@@ -309,6 +349,10 @@ pub(super) struct SubwalletState {
     /// `cmx` set of recorded outgoing notes, for O(log n) idempotency
     /// on `record_outgoing_note` (Orchard cmx is globally unique).
     pub outgoing_cmx_index: BTreeSet<[u8; 32]>,
+    /// Derived activity entries keyed by `entry.id` (sha256 of the
+    /// visible output cmxs). Upsert-by-id: a later live entry or a
+    /// correlation pass that re-emits the same id overwrites the row.
+    pub activity: BTreeMap<[u8; 32], super::activity::ShieldedActivityEntry>,
 }
 
 impl SubwalletState {
@@ -381,6 +425,37 @@ impl SubwalletState {
 
     pub(super) fn outgoing_notes(&self) -> Vec<ShieldedOutgoingNote> {
         self.outgoing_notes.clone()
+    }
+
+    /// Upsert a derived activity entry by `entry.id`.
+    pub(super) fn save_activity(&mut self, entry: &super::activity::ShieldedActivityEntry) {
+        self.activity.insert(entry.id, entry.clone());
+    }
+
+    /// Display-sorted page of activity entries.
+    pub(super) fn activity_page(
+        &self,
+        offset: usize,
+        limit: usize,
+    ) -> Vec<super::activity::ShieldedActivityEntry> {
+        if limit == 0 {
+            return Vec::new();
+        }
+        let mut all: Vec<super::activity::ShieldedActivityEntry> =
+            self.activity.values().cloned().collect();
+        super::activity::sort_activity_for_display(&mut all);
+        all.into_iter().skip(offset).take(limit).collect()
+    }
+
+    pub(super) fn activity_by_id(
+        &self,
+        entry_id: &[u8; 32],
+    ) -> Option<super::activity::ShieldedActivityEntry> {
+        self.activity.get(entry_id).cloned()
+    }
+
+    pub(super) fn activity_ids(&self) -> BTreeSet<[u8; 32]> {
+        self.activity.keys().copied().collect()
     }
 }
 
@@ -496,6 +571,47 @@ impl ShieldedStore for InMemoryShieldedStore {
             .subwallets
             .get(&id)
             .map(SubwalletState::outgoing_notes)
+            .unwrap_or_default())
+    }
+
+    fn save_activity(
+        &mut self,
+        id: SubwalletId,
+        entry: &super::activity::ShieldedActivityEntry,
+    ) -> Result<(), Self::Error> {
+        self.subwallets.entry(id).or_default().save_activity(entry);
+        Ok(())
+    }
+
+    fn get_activity(
+        &self,
+        id: SubwalletId,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<super::activity::ShieldedActivityEntry>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(|sw| sw.activity_page(offset, limit))
+            .unwrap_or_default())
+    }
+
+    fn get_activity_by_entry_id(
+        &self,
+        id: SubwalletId,
+        entry_id: &[u8; 32],
+    ) -> Result<Option<super::activity::ShieldedActivityEntry>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .and_then(|sw| sw.activity_by_id(entry_id)))
+    }
+
+    fn get_activity_ids(&self, id: SubwalletId) -> Result<BTreeSet<[u8; 32]>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::activity_ids)
             .unwrap_or_default())
     }
 
@@ -645,6 +761,86 @@ mod tests {
         store.append_commitment(&[2u8; 32], false).unwrap();
         store.checkpoint_tree(1).unwrap();
         assert_eq!(store.tree_anchor().unwrap(), [0u8; 32]);
+    }
+
+    #[test]
+    fn test_save_activity_upserts_and_paginates() {
+        use super::super::activity::{
+            ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
+        };
+
+        fn entry(
+            id: u8,
+            height: Option<u64>,
+            status: ShieldedActivityStatus,
+        ) -> ShieldedActivityEntry {
+            ShieldedActivityEntry {
+                id: [id; 32],
+                kind: ShieldedActivityKind::Sent,
+                direction: ShieldedDirection::Out,
+                amount: 1,
+                fee: None,
+                counterparty: None,
+                memo: None,
+                block_height: height,
+                status,
+                created_at_ms: 0,
+                note_cmxs: vec![[id; 32]],
+                spent_nullifiers: vec![],
+            }
+        }
+
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+
+        // Two confirmed at different heights + one pending.
+        store
+            .save_activity(id, &entry(1, Some(10), ShieldedActivityStatus::Confirmed))
+            .unwrap();
+        store
+            .save_activity(id, &entry(2, Some(20), ShieldedActivityStatus::Confirmed))
+            .unwrap();
+        store
+            .save_activity(id, &entry(3, None, ShieldedActivityStatus::Pending))
+            .unwrap();
+
+        // Display order: pending first, then height desc.
+        let page = store.get_activity(id, 0, 10).unwrap();
+        assert_eq!(page.len(), 3);
+        assert_eq!(page[0].id, [3u8; 32], "pending floats to top");
+        assert_eq!(page[1].id, [2u8; 32], "height 20 before 10");
+        assert_eq!(page[2].id, [1u8; 32]);
+
+        // Upsert by id: re-saving entry 1 as Pending replaces it in place
+        // (still 3 entries, but now 1 is pending and floats up).
+        store
+            .save_activity(id, &entry(1, None, ShieldedActivityStatus::Pending))
+            .unwrap();
+        let page = store.get_activity(id, 0, 10).unwrap();
+        assert_eq!(page.len(), 3, "upsert by id, not append");
+        assert_eq!(
+            store.get_activity_ids(id).unwrap().len(),
+            3,
+            "still exactly three distinct ids"
+        );
+
+        // Pagination: offset/limit slice the display-sorted list.
+        let first_two = store.get_activity(id, 0, 2).unwrap();
+        assert_eq!(first_two.len(), 2);
+        let last_one = store.get_activity(id, 2, 10).unwrap();
+        assert_eq!(last_one.len(), 1);
+        // limit 0 => empty page.
+        assert!(store.get_activity(id, 0, 0).unwrap().is_empty());
+
+        // Lookup by entry id.
+        assert!(store
+            .get_activity_by_entry_id(id, &[2u8; 32])
+            .unwrap()
+            .is_some());
+        assert!(store
+            .get_activity_by_entry_id(id, &[9u8; 32])
+            .unwrap()
+            .is_none());
     }
 
     #[test]
