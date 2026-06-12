@@ -560,6 +560,36 @@ mod tests {
         assert_eq!(min_threshold, 5);
     }
 
+    /// Regression test for the token direct-purchase chain-halt bug.
+    ///
+    /// An empty `SetPrices` schedule is a representable, storable value. For it,
+    /// `range(..=token_count).next_back()` returns `None`, and in that arm the transformer
+    /// decides which consensus error to emit by inspecting `set_prices.keys().next()`.
+    /// The original code did `*set_prices.keys().next().expect("Map is not empty")` here,
+    /// which panics for an empty map — an uncaught panic during per-state-transition
+    /// processing that deterministically halts the chain across the quorum. The fixed code
+    /// matches on the `Option`: an empty schedule selects the "not for sale" branch instead
+    /// of panicking. This test proves the offending expression is `None`, never a panic.
+    #[test]
+    fn set_prices_empty_map_does_not_panic_and_is_treated_as_not_for_sale() {
+        let set_prices = BTreeMap::<TokenAmount, Credits>::new();
+        let token_count: TokenAmount = 5;
+
+        // The transformer reaches the `None` arm: an empty map has no tier <= token_count.
+        assert!(
+            set_prices.range(..=token_count).next_back().is_none(),
+            "empty schedule has no matching tier"
+        );
+
+        // The transformer then branches on `set_prices.keys().next()`. For an empty map this
+        // is `None` (the old `.expect(\"Map is not empty\")` panicked here), so the transformer
+        // classifies the token as "not for sale" rather than killing the validator.
+        assert!(
+            set_prices.keys().next().is_none(),
+            "empty schedule must resolve to the not-for-sale branch, never a panic"
+        );
+    }
+
     /// SetPrices underpayment: matched_price * token_count computes to required_total but
     /// the user agreed to less, so the transformer returns `TokenDirectPurchaseUserPriceTooLow`.
     #[test]

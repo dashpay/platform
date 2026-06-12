@@ -104,7 +104,8 @@ use crate::consensus::basic::token::{
     InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
     InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenIdError,
     InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError,
-    TokenNoteOnlyAllowedWhenProposerError, TokenTransferToOurselfError,
+    TokenNoteOnlyAllowedWhenProposerError, TokenPricingScheduleEmptyError,
+    TokenTransferToOurselfError,
 };
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
@@ -692,6 +693,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     ShieldedInvalidDenominationError(ShieldedInvalidDenominationError),
+
+    #[error(transparent)]
+    TokenPricingScheduleEmptyError(TokenPricingScheduleEmptyError),
 }
 
 impl From<BasicError> for ConsensusError {
