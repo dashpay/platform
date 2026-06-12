@@ -35,20 +35,34 @@ final class RegistrationCoordinator: ObservableObject {
     /// observe map mutations via `objectWillChange`.
     @Published private(set) var controllers: [SlotKey: IdentityRegistrationController] = [:]
 
-    /// True when at least one slot is currently in flight (phase
-    /// `.preparingKeys` or `.inFlight`). Used by the network
-    /// toggle's `.disabled(_:)` modifier — switching testnet ↔
-    /// mainnet mid-flight tears down the FFI manager and would
-    /// abort the in-flight call mid-stream. The UI guards against
-    /// that race by reading this flag.
+    /// True when at least one slot is still holding itself against a
+    /// fresh registration — exactly `controller.phase.isActive`
+    /// (`.preparingKeys`, `.inFlight`, or `.unconfirmed`). Used by the
+    /// network toggle's `.disabled(_:)` modifier.
+    ///
+    /// Two reasons a slot must hold this gate:
+    /// - `.preparingKeys` / `.inFlight`: switching testnet ↔ mainnet
+    ///   mid-flight tears down the FFI manager and would abort the
+    ///   in-flight call mid-stream.
+    /// - `.unconfirmed`: the identity is probably live on chain, but the
+    ///   picker's `usedIdentityIndices` consults ONLY persisted
+    ///   `PersistentIdentity` rows — so the live controller is the ONLY
+    ///   thing keeping the slot un-selectable until that row lands via
+    ///   sync. Switching networks tears down the `PlatformWalletManager`
+    ///   and with it this coordinator, dropping the controller (and the
+    ///   Rust-side note reservation); the same HD slot would become
+    ///   selectable and a re-submission would be rejected by the
+    ///   registered-key-hash stateful check and burn the funded spend.
+    ///
+    /// Reading `isActive` directly (rather than re-listing the cases)
+    /// keeps this gate from drifting from the phase model, mirroring
+    /// `PendingRegistrationsList.isDismissable`. UX trade-off, by design
+    /// (same as the dismissal gate): an `.unconfirmed` row blocks network
+    /// switching until it becomes dismissable (the identity row arrives
+    /// via sync) or the app restarts.
     var hasInFlightRegistrations: Bool {
         controllers.contains { _, controller in
-            switch controller.phase {
-            case .preparingKeys, .inFlight:
-                return true
-            default:
-                return false
-            }
+            controller.phase.isActive
         }
     }
 
