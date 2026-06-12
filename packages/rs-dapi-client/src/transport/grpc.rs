@@ -114,6 +114,13 @@ impl CanRetry for dapi_grpc::tonic::Status {
                 | Aborted
                 | Internal
                 | Unavailable
+                // During a mixed-version network rollout, Unimplemented means this
+                // particular node runs an older build that doesn't expose the method
+                // yet; another node may serve it. Marking it retryable makes the
+                // executor ban the node and retry elsewhere. If no node implements
+                // the method, all addresses get exhausted and the error still
+                // surfaces as NoAvailableAddressesToRetry.
+                | Unimplemented
         )
     }
 }
