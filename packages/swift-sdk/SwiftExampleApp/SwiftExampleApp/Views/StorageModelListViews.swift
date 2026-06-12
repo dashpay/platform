@@ -517,6 +517,49 @@ struct DashpayContactRequestStorageListView: View {
     }
 }
 
+// MARK: - PersistentDashpayPayment
+
+struct DashpayPaymentStorageListView: View {
+    let network: Network
+    @Query(sort: \PersistentDashpayPayment.createdAt, order: .reverse)
+    private var records: [PersistentDashpayPayment]
+
+    private var scoped: [PersistentDashpayPayment] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
+    var body: some View {
+        let visible = scoped
+        List(visible) { record in
+            NavigationLink(destination: DashpayPaymentStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(record.direction == .sent ? "Sent" : "Received")
+                            .font(.body)
+                        Spacer()
+                        Text(String(format: "%.8f DASH", Double(record.amountDuffs) / 100_000_000))
+                            .font(.system(.caption, design: .monospaced))
+                    }
+                    Text(record.txid)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("DashPay Payments (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView(
+                    "No Records",
+                    systemImage: "arrow.left.arrow.right.circle"
+                )
+            }
+        }
+    }
+}
+
 // MARK: - PersistentToken
 
 struct TokenStorageListView: View {

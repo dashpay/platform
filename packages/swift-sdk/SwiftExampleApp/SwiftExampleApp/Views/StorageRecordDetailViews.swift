@@ -246,6 +246,58 @@ struct DashpayProfileStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentDashpayPayment
+
+/// Detail view for one DashPay payment-history row. Read-only dump
+/// of every column the persister bridge writes, mirroring the other
+/// storage detail views.
+struct DashpayPaymentStorageDetailView: View {
+    let record: PersistentDashpayPayment
+
+    var body: some View {
+        Form {
+            Section("Core") {
+                FieldRow(
+                    label: "Direction",
+                    value: record.direction == .sent ? "Sent" : "Received"
+                )
+                FieldRow(label: "Status", value: statusText)
+                FieldRow(
+                    label: "Amount",
+                    value: String(format: "%.8f DASH", Double(record.amountDuffs) / 100_000_000)
+                )
+                FieldRow(label: "Amount (duffs)", value: "\(record.amountDuffs)")
+                FieldRow(label: "Network", value: record.network.displayName)
+                FieldRow(label: "Memo", value: record.memo ?? "—")
+            }
+            Section("Transaction") {
+                FieldRow(label: "Txid", value: record.txid)
+            }
+            Section("Identities") {
+                FieldRow(label: "Owner", value: record.ownerIdentityId.map { String(format: "%02x", $0) }.joined())
+                FieldRow(
+                    label: "Counterparty",
+                    value: record.counterpartyIdentityId.map { String(format: "%02x", $0) }.joined()
+                )
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: AppDate.formatted(record.createdAt, dateStyle: .abbreviated, timeStyle: .standard))
+                FieldRow(label: "Updated", value: AppDate.formatted(record.lastUpdated, dateStyle: .abbreviated, timeStyle: .standard))
+            }
+        }
+        .navigationTitle("DashPay Payment")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var statusText: String {
+        switch record.status {
+        case .pending: return "Pending"
+        case .confirmed: return "Confirmed"
+        case .failed: return "Failed"
+        }
+    }
+}
+
 // MARK: - PersistentDashpayContactRequest
 
 /// Detail view for one DashPay contact-request row. Surfaces every
