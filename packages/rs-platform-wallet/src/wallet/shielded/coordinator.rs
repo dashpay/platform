@@ -783,11 +783,42 @@ impl NetworkShieldedCoordinator {
                 own_addresses,
             };
             let derived = derive_activity_from_scan_data(&input, &existing_ids);
-            for entry in derived {
+            for entry in derived.new_entries {
                 store.save_activity(*id, &entry).map_err(|e| {
                     crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
                 })?;
                 changeset.record_activity_entry(*id, entry);
+            }
+            // On-chain sightings of clusters that already have a row:
+            // upgrade still-`Pending` (or height-less) rows to Confirmed
+            // at the observed height. This is the flip the ambiguous
+            // post-broadcast paths (`ShieldedSpendUnconfirmed` /
+            // `ShieldedBroadcastUnconfirmed`) leave to the scan. The
+            // upgrade rewrites the STORED entry via `with_status`, so the
+            // live entry's richer fields (kind / fee / memo /
+            // counterparty) survive untouched.
+            for (entry_id, height) in derived.confirmations {
+                let stored = store
+                    .get_activity_by_entry_id(*id, &entry_id)
+                    .map_err(|e| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                    })?;
+                let Some(stored) = stored else { continue };
+                let needs_upgrade = stored.status
+                    == super::activity::ShieldedActivityStatus::Pending
+                    || stored.block_height.is_none();
+                if !needs_upgrade {
+                    continue;
+                }
+                let upgraded = super::activity_recorder::with_status(
+                    &stored,
+                    super::activity::ShieldedActivityStatus::Confirmed,
+                    Some(height),
+                );
+                store.save_activity(*id, &upgraded).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+                changeset.record_activity_entry(*id, upgraded);
             }
         }
         Ok(())

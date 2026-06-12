@@ -240,6 +240,20 @@ pub struct ScanDeriveInput {
     pub own_addresses: Vec<Vec<u8>>,
 }
 
+/// Output of [`derive_activity_from_scan_data`].
+#[derive(Debug, Clone, Default)]
+pub struct DerivedActivity {
+    /// Entries for clusters with no existing row — new history.
+    pub new_entries: Vec<ShieldedActivityEntry>,
+    /// `(entry_id, block_height)` sightings for clusters whose id
+    /// already has a row: the cluster was observed on-chain at that
+    /// height. The caller upgrades a still-`Pending` (or height-less)
+    /// stored row to `Confirmed` at the height — preserving the live
+    /// entry's richer fields — and ignores sightings for rows that are
+    /// already confirmed.
+    pub confirmations: Vec<([u8; 32], u64)>,
+}
+
 /// One block-height cluster of a subwallet's shielded events.
 ///
 /// Documented limitation (acceptable for v1): two same-wallet bundles
@@ -354,9 +368,14 @@ fn cluster_events(input: &ScanDeriveInput) -> BTreeMap<u64, HeightCluster> {
 /// correlation pass) can upgrade in place via the shared id.
 ///
 /// `existing_ids` are entry ids already on file (live entries win): a
-/// cluster whose computed id is present is skipped, so a live
+/// cluster whose computed id is present produces no NEW entry, so a live
 /// `IdentityCreate` / `Unshield` / `Withdrawal` is never clobbered by a
-/// coarser scan-derived `Sent` / `ShieldedSpend`.
+/// coarser scan-derived `Sent` / `ShieldedSpend`. It DOES produce a
+/// [`DerivedActivity::confirmations`] observation — the ambiguous
+/// post-broadcast paths leave their live row `Pending` with the explicit
+/// promise that a later scan finding the cluster on-chain flips it to
+/// `Confirmed` at the observed height (the caller performs that upgrade
+/// against the stored row so the live entry's richer fields survive).
 ///
 /// [`Sent`]: ShieldedActivityKind::Sent
 /// [`Received`]: ShieldedActivityKind::Received
@@ -364,9 +383,9 @@ fn cluster_events(input: &ScanDeriveInput) -> BTreeMap<u64, HeightCluster> {
 pub fn derive_activity_from_scan_data(
     input: &ScanDeriveInput,
     existing_ids: &std::collections::BTreeSet<[u8; 32]>,
-) -> Vec<ShieldedActivityEntry> {
+) -> DerivedActivity {
     let clusters = cluster_events(input);
-    let mut out = Vec::new();
+    let mut out = DerivedActivity::default();
     let now_ms = ShieldedActivityEntry::now_ms();
 
     // Own-nullifier → (value, cmx) lookup for the rho linkage: a cluster
@@ -398,6 +417,11 @@ pub fn derive_activity_from_scan_data(
         let id = compute_activity_id(&visible_cmxs);
         if existing_ids.contains(&id) {
             // A live entry (or an earlier scan) already owns this cluster.
+            // Don't synthesize a (coarser) duplicate — but DO report the
+            // on-chain sighting so the caller can flip a still-`Pending`
+            // row (the ambiguous post-broadcast paths) to Confirmed at
+            // this height.
+            out.confirmations.push((id, height));
             continue;
         }
 
@@ -520,7 +544,7 @@ pub fn derive_activity_from_scan_data(
                 spent_nullifiers: Vec::new(),
             }
         };
-        out.push(entry);
+        out.new_entries.push(entry);
     }
 
     out
@@ -634,15 +658,22 @@ mod tests {
         };
         let derived = derive_activity_from_scan_data(&input, &existing);
         assert!(
-            derived.is_empty(),
+            derived.new_entries.is_empty(),
             "scan must not re-emit a cluster a live entry already owns"
+        );
+        assert_eq!(
+            derived.confirmations,
+            vec![(live_id, 100)],
+            "...but it must report the on-chain sighting so a Pending \
+             live row can be confirmed at the observed height"
         );
 
         // With no live entry on file, the same scan DOES produce one entry,
         // and its id equals the live id (the dedupe contract).
         let derived2 = derive_activity_from_scan_data(&input, &BTreeSet::new());
-        assert_eq!(derived2.len(), 1);
-        assert_eq!(derived2[0].id, live_id);
+        assert_eq!(derived2.new_entries.len(), 1);
+        assert_eq!(derived2.new_entries[0].id, live_id);
+        assert!(derived2.confirmations.is_empty());
     }
 
     // ── classification table (scan path) ───────────────────────────
@@ -654,7 +685,7 @@ mod tests {
             outgoing: vec![],
             own_addresses: vec![addr(0x01)],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new());
+        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].kind, ShieldedActivityKind::Received);
         assert_eq!(d[0].direction, ShieldedDirection::In);
@@ -675,7 +706,7 @@ mod tests {
             outgoing: vec![outgoing(0x30, addr(0xEE), 200, 750, memo.clone())],
             own_addresses: vec![addr(0x01)],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new());
+        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].kind, ShieldedActivityKind::Sent);
         assert_eq!(d[0].direction, ShieldedDirection::Out);
@@ -694,7 +725,7 @@ mod tests {
             outgoing: vec![outgoing(0x42, addr(0xEE), 300, 600, vec![])], // payment
             own_addresses: vec![addr(0x01)],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new());
+        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].kind, ShieldedActivityKind::Sent);
         assert_eq!(d[0].amount, 600, "amount is the payment, not the change");
@@ -710,7 +741,7 @@ mod tests {
             outgoing: vec![outgoing(0x50, own.clone(), 400, 0, vec![])],
             own_addresses: vec![own],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new());
+        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].kind, ShieldedActivityKind::ShieldedSpend);
         assert_eq!(d[0].direction, ShieldedDirection::SelfTransfer);
@@ -726,7 +757,7 @@ mod tests {
             outgoing: vec![outgoing(0x60, addr(0xEE), 100, 500, vec![0u8; 36])],
             own_addresses: vec![addr(0x01)],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new());
+        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
         assert_eq!(d.len(), 1);
         assert!(d[0].memo.is_none(), "an all-zero memo must surface as None");
     }
@@ -735,7 +766,7 @@ mod tests {
     fn empty_cluster_visible_set_is_skipped() {
         // No notes, no outgoing → no clusters → no entries.
         let input = ScanDeriveInput::default();
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new());
+        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
         assert!(d.is_empty());
     }
 
@@ -751,7 +782,7 @@ mod tests {
             outgoing: vec![outgoing(0x72, addr(0xEE), 20, 800, vec![])],
             own_addresses: vec![addr(0x01)],
         };
-        let mut d = derive_activity_from_scan_data(&input, &BTreeSet::new());
+        let mut d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
         sort_activity_for_display(&mut d);
         assert_eq!(d.len(), 2);
         // After display sort, the more recent (h=20 Sent) comes first.
@@ -773,8 +804,15 @@ mod tests {
         let mut existing = BTreeSet::new();
         existing.insert(live_id);
         let d = derive_activity_from_scan_data(&input, &existing);
-        assert_eq!(d.len(), 1);
-        assert_eq!(d[0].block_height, Some(20));
+        assert_eq!(d.new_entries.len(), 1);
+        assert_eq!(d.new_entries[0].block_height, Some(20));
+        assert_eq!(
+            d.confirmations,
+            vec![(live_id, 10)],
+            "existing-id clusters must be reported as on-chain sightings \
+             with their observed height (the Pending->Confirmed promise \
+             the ambiguous post-broadcast paths rely on)"
+        );
     }
 
     // ── ordering ───────────────────────────────────────────────────
@@ -869,7 +907,7 @@ mod tests {
             outgoing: vec![outgoing(2, own.clone(), 113, 39_787_148_800, vec![0u8; 36])],
             own_addresses: vec![own],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new());
+        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
         let spend = d
             .iter()
             .find(|e| e.block_height == Some(113))
@@ -900,7 +938,7 @@ mod tests {
             ],
             own_addresses: vec![own],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new());
+        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
         let sent = d
             .iter()
             .find(|e| e.block_height == Some(20))
@@ -928,7 +966,7 @@ mod tests {
             outgoing: vec![outgoing(1, own.clone(), 30, 1_000_000, vec![0u8; 36])],
             own_addresses: vec![own],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new());
+        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].kind, ShieldedActivityKind::ShieldedSpend);
         assert_eq!(d[0].direction, ShieldedDirection::SelfTransfer);
@@ -946,7 +984,7 @@ mod tests {
             outgoing: vec![],
             own_addresses: vec![own],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new());
+        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].kind, ShieldedActivityKind::Received);
         assert_eq!(d[0].direction, ShieldedDirection::In);

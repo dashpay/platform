@@ -1391,9 +1391,23 @@ impl PlatformWalletPersistence for FFIPersister {
                                 counterparty_len,
                                 memo_ptr,
                                 memo_len,
-                                note_cmxs_ptr: cmx_buf.as_ptr(),
+                                // Match the documented "valid or null"
+                                // contract (and the counterparty/memo
+                                // siblings): an empty Vec's `as_ptr()` is
+                                // a dangling non-null sentinel, so emit a
+                                // real null when there's nothing to point
+                                // at.
+                                note_cmxs_ptr: if cmx_buf.is_empty() {
+                                    std::ptr::null()
+                                } else {
+                                    cmx_buf.as_ptr()
+                                },
                                 note_cmxs_count: cmx_buf.len() / 32,
-                                spent_nullifiers_ptr: nf_buf.as_ptr(),
+                                spent_nullifiers_ptr: if nf_buf.is_empty() {
+                                    std::ptr::null()
+                                } else {
+                                    nf_buf.as_ptr()
+                                },
                                 spent_nullifiers_count: nf_buf.len() / 32,
                             }
                         })
@@ -1828,12 +1842,35 @@ impl PlatformWalletPersistence for FFIPersister {
                         let direction = match ffi.direction {
                             0 => ShieldedDirection::In,
                             1 => ShieldedDirection::Out,
-                            _ => ShieldedDirection::SelfTransfer,
+                            2 => ShieldedDirection::SelfTransfer,
+                            other => {
+                                // Unlike kind_tag (whose residual
+                                // `ShieldedSpend` variant is a designed
+                                // forward-compat catch-all), direction has
+                                // no "unknown" bucket — make a corrupted /
+                                // future byte loud instead of silently
+                                // reading as a real classification.
+                                tracing::warn!(
+                                    direction = other,
+                                    "unknown shielded-activity direction byte on load;                                      folding to SelfTransfer"
+                                );
+                                ShieldedDirection::SelfTransfer
+                            }
                         };
                         let status = match ffi.status {
                             0 => ShieldedActivityStatus::Pending,
                             1 => ShieldedActivityStatus::Confirmed,
-                            _ => ShieldedActivityStatus::Failed,
+                            2 => ShieldedActivityStatus::Failed,
+                            other => {
+                                // Failed is materially distinct from
+                                // Pending/Confirmed — never let a stray
+                                // byte silently mark an operation failed.
+                                tracing::warn!(
+                                    status = other,
+                                    "unknown shielded-activity status byte on load;                                      folding to Pending so a scan can re-confirm it"
+                                );
+                                ShieldedActivityStatus::Pending
+                            }
                         };
                         let counterparty = if ffi.counterparty_ptr.is_null()
                             || ffi.counterparty_len == 0

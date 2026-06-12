@@ -530,9 +530,18 @@ impl PlatformWallet {
         let Some(keys_map) = guard.as_ref() else {
             return;
         };
-        // Prefer the account whose keyset recognizes a visible output;
-        // fall back to the lowest bound account.
-        let Some((&account, keyset)) = keys_map.iter().next() else {
+        // Prefer the account whose keyset actually recognizes a visible
+        // output in the landed bundle (the funded note decrypts under its
+        // IVK / recovers under its OVK) — the row must land under THAT
+        // account or the recorder builds with the wrong keys, recovers no
+        // cmx, and silently drops the entry; it would also break the
+        // shared-id natural key against the eventual scan-derived row.
+        // Fall back to the lowest bound account only when nothing
+        // matches (a shield to a fully external recipient).
+        let matched = keys_map.iter().find(|(_, ks)| {
+            !crate::wallet::shielded::activity_recorder::visible_output_cmxs(actions, ks).is_empty()
+        });
+        let Some((&account, keyset)) = matched.or_else(|| keys_map.iter().next()) else {
             return;
         };
 
