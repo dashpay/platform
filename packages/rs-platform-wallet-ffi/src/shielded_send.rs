@@ -426,10 +426,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
     map_spend_result(result, "shielded withdraw")
 }
 
-/// Map a shielded spend outcome (unshield / transfer / withdraw) to a typed
-/// FFI result, mirroring the identity-create sibling's code split so hosts
-/// can tell "definitively failed, safe to retry" from "may have executed,
-/// do NOT retry".
+/// Map a shielded operation outcome (shield / unshield / transfer /
+/// withdraw) to a typed FFI result, mirroring the identity-create sibling's
+/// code split so hosts can tell "definitively failed, safe to retry" from
+/// "may have executed, do NOT retry".
 fn map_spend_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
@@ -716,13 +716,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
             )
             .await
     });
-    if let Err(e) = result {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded shield failed: {e}"),
-        );
-    }
-    PlatformWalletFFIResult::ok()
+    map_spend_result(result, "shielded shield")
 }
 
 /// Fund the shielded pool from a Core L1 asset lock, orchestrated

@@ -254,12 +254,25 @@ pub struct DerivedActivity {
     pub confirmations: Vec<([u8; 32], u64)>,
 }
 
-/// One block-height cluster of a subwallet's shielded events.
+/// One height-keyed cluster of a subwallet's shielded events.
 ///
-/// Documented limitation (acceptable for v1): two same-wallet bundles
-/// landing in the *same block* merge into one cluster — height is the
-/// only join key available client-side without a note→transition index
-/// (which Option B forbids).
+/// The key is NOT a per-note mined height — the proven note data carries
+/// none. It is the fetch chunk's proof anchor height (the chain tip the
+/// response was proven at), stamped per-batch on incoming and outgoing
+/// notes alike, so "same height" really means "surfaced by the same
+/// fetch batch".
+///
+/// Documented limitation (acceptable for v1): events that share a batch
+/// merge into one cluster — the anchor height is the only join key
+/// available client-side without a note→transition index (which Option B
+/// forbids). For live syncing this approximates "same block" well (a
+/// near-tip pass fetches few new notes per chunk), but on a cold restore
+/// one chunk can span many historical blocks of unrelated operations,
+/// which then merge into a single synthetic entry with combined
+/// amount/kind/memo. Live-recorded entries are protected from this by
+/// the cmx-overlap dedupe; only restore-derived history aggregates. The
+/// real fix needs a per-note mined height in the note-fetch proof
+/// (node-side change).
 #[derive(Debug, Clone, Default)]
 struct HeightCluster {
     /// Own new notes that first appeared at this height.
@@ -304,13 +317,16 @@ fn note_rho(note_data: &[u8]) -> Option<[u8; 32]> {
     Some(rho)
 }
 
-/// Cluster a subwallet's events by block height.
+/// Cluster a subwallet's events by stored `block_height`.
 ///
-/// Receipts and sends carry a `block_height` from the scan — the proven
-/// height of the chunk that surfaced them, stamped per-batch on BOTH
-/// sides (see `ShieldedNote::block_height`) so a bundle's incoming
-/// change and OVK-recovered send agree on the key and cluster
-/// together. Spends are the hard case: a note's stored
+/// Receipts and sends carry a `block_height` from the scan — the fetch
+/// chunk's proof ANCHOR height, not a per-note mined height (none
+/// exists in the proven data), stamped per-batch on BOTH sides (see
+/// `ShieldedNote::block_height`) so a bundle's incoming change and
+/// OVK-recovered send agree on the key and cluster together. "Same
+/// height" therefore means "same fetch batch"; see [`HeightCluster`]
+/// for the cold-restore aggregation this implies. Spends are the hard
+/// case: a note's stored
 /// `block_height` is its *receipt* height, and scan-based spend
 /// detection flips `is_spent` without recording *when* it was spent
 /// (the spend height isn't persisted anywhere the wallet layer can read

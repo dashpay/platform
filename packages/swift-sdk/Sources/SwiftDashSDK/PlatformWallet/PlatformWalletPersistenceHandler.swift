@@ -3175,12 +3175,15 @@ public class PlatformWalletPersistenceHandler {
                     }
                 }
 
-                // Shielded (Orchard) per-wallet state. These three
+                // Shielded (Orchard) per-wallet state. These four
                 // tables are keyed by raw `walletId` (no relationship
                 // to `PersistentWallet`), so the wallet-row delete
                 // below does not cascade them — purge them explicitly
                 // or they leak after a wipe and could resurface /
-                // mis-attribute if the same `walletId` is reimported.
+                // mis-attribute if the same `walletId` is reimported
+                // (activity rows rehydrate into Rust via the
+                // `on_load_shielded_activity_fn` callback as ghost
+                // history and suppress fresh scan-derived entries).
                 let shieldedNoteDescriptor = FetchDescriptor<PersistentShieldedNote>(
                     predicate: #Predicate<PersistentShieldedNote> { $0.walletId == walletId }
                 )
@@ -3199,6 +3202,13 @@ public class PlatformWalletPersistenceHandler {
                     predicate: #Predicate<PersistentShieldedSyncState> { $0.walletId == walletId }
                 )
                 for row in try backgroundContext.fetch(shieldedSyncStateDescriptor) {
+                    backgroundContext.delete(row)
+                }
+
+                let shieldedActivityDescriptor = FetchDescriptor<PersistentShieldedActivity>(
+                    predicate: #Predicate<PersistentShieldedActivity> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(shieldedActivityDescriptor) {
                     backgroundContext.delete(row)
                 }
 

@@ -202,21 +202,23 @@ pub enum PlatformWalletError {
         reason: String,
     },
 
-    /// A shielded spend transition (`operation` is `"unshield"`, `"transfer"` or `"withdraw"`) was
-    /// **broadcast and accepted by the relay**, but the SDK could not confirm its execution result
-    /// (the result-proof fetch/verify failed — e.g. a transient DAPI/proof error or timeout, not a
-    /// platform rejection). The spend may already be executed on chain, so the spent notes'
-    /// reservations are intentionally left in place rather than released — releasing them would
-    /// invite re-selecting notes whose nullifiers may already be consumed. The next nullifier sync
-    /// (or an app restart, since reservations are in-memory only) reconciles them. `reason` carries
-    /// the underlying SDK error for diagnostics.
+    /// A shielded transition (`operation` is `"shield"`, `"unshield"`, `"transfer"` or
+    /// `"withdraw"`) was **broadcast and accepted by the relay**, but the SDK could not confirm
+    /// its execution result (the result-proof fetch/verify failed — e.g. a transient DAPI/proof
+    /// error or timeout, not a platform rejection). The operation may already be executed on
+    /// chain, so re-submitting risks a double-execution. For the spend-based operations the spent
+    /// notes' reservations are intentionally left in place rather than released — releasing them
+    /// would invite re-selecting notes whose nullifiers may already be consumed; a shield spends
+    /// no notes, so it has nothing reserved. The next sync (or an app restart, since reservations
+    /// are in-memory only) reconciles the outcome either way. `reason` carries the underlying SDK
+    /// error for diagnostics.
     ///
     /// The identity-create sibling is [`Self::ShieldedBroadcastUnconfirmed`], which additionally
     /// carries the derived identity id so the caller can hold the registration slot.
     #[error(
         "Shielded {operation} broadcast succeeded but its execution result could not be \
-         confirmed; the spend may already be executed on chain — do not re-submit \
-         (the next sync reconciles the spent notes): {reason}"
+         confirmed; it may already be executed on chain — do not re-submit \
+         (the next sync reconciles the outcome): {reason}"
     )]
     ShieldedSpendUnconfirmed {
         operation: &'static str,
