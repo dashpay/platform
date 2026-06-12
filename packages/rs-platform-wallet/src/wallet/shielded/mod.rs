@@ -31,6 +31,8 @@
 //! `BTreeMap<u32, OrchardKeySet>` (with the spend authority);
 //! `PlatformWallet` doesn't need a wrapper struct around it.
 
+pub mod activity;
+pub mod activity_recorder;
 pub mod coordinator;
 pub mod file_store;
 pub mod fund_from_asset_lock;
@@ -42,6 +44,11 @@ pub mod seed_pool;
 pub mod store;
 pub mod sync;
 
+pub use activity::{
+    compute_activity_id, derive_activity_from_scan_data, sort_activity_for_display,
+    ScanDeriveInput, ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus,
+    ShieldedDirection,
+};
 pub use coordinator::NetworkShieldedCoordinator;
 pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
 pub use keys::{AccountViewingKeys, OrchardKeySet};
