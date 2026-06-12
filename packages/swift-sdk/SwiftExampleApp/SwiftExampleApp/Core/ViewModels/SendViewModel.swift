@@ -499,6 +499,16 @@ class SendViewModel: ObservableObject {
                 successMessage = "Shielding complete"
             }
 
+        } catch PlatformWalletError.shieldedSpendUnconfirmed {
+            // The shielded spend (unshield / transfer / withdraw) was broadcast
+            // and accepted, but its execution result couldn't be confirmed — it
+            // may already be on chain. Rust intentionally KEEPS the spent notes'
+            // reservations, so this must NOT be presented as a retryable failure:
+            // retrying would select other unreserved notes and double-send the
+            // payment. Surface it through the non-error (success) path so the UI
+            // doesn't invite a retry; the next shielded sync reconciles the notes.
+            successMessage = "Transaction may have gone through — waiting for "
+                + "the next shielded sync to confirm. Do not retry."
         } catch {
             self.error = error.localizedDescription
         }

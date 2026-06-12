@@ -1154,4 +1154,70 @@ mod tests {
             );
         }
     }
+
+    /// Read the Rust-owned message out of an FFI result for assertions.
+    fn message_of(result: &PlatformWalletFFIResult) -> String {
+        assert!(
+            !result.message.is_null(),
+            "error result must carry a message"
+        );
+        unsafe { CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    /// `map_spend_result` pins the retry-relevant code split the three spend
+    /// entry points depend on:
+    /// - `ShieldedSpendUnconfirmed` → `ErrorShieldedSpendUnconfirmed` (host
+    ///   must NOT retry — the notes stay reserved; a retry could select other
+    ///   unreserved notes and double-send),
+    /// - `ShieldedBroadcastFailed` → `ErrorShieldedBroadcastFailed`
+    ///   (definitive failure; reservations released; safe to retry),
+    /// - any other variant → the generic `ErrorWalletOperation`.
+    ///
+    /// The typed `Display` rendering must survive into the result message in
+    /// every error arm so callers keep diagnostics across the boundary.
+    #[test]
+    fn map_spend_result_pins_retry_relevant_codes() {
+        let unconfirmed: Result<(), PlatformWalletError> =
+            Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "unshield",
+                reason: "transient proof fetch failed".to_string(),
+            });
+        let result = map_spend_result(unconfirmed, "shielded unshield");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
+        );
+        assert!(
+            message_of(&result).contains("transient proof fetch failed"),
+            "unconfirmed message must carry the wallet Display payload"
+        );
+
+        let failed: Result<(), PlatformWalletError> = Err(
+            PlatformWalletError::ShieldedBroadcastFailed("relay rejected".to_string()),
+        );
+        let result = map_spend_result(failed, "shielded transfer");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed
+        );
+        assert!(
+            message_of(&result).contains("relay rejected"),
+            "broadcast-failed message must carry the wallet Display payload"
+        );
+
+        let other: Result<(), PlatformWalletError> =
+            Err(PlatformWalletError::ShieldedNoUnspentNotes);
+        let result = map_spend_result(other, "shielded withdraw");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+
+        assert_eq!(
+            map_spend_result(Ok(()), "shielded transfer").code,
+            PlatformWalletFFIResultCode::Success
+        );
+    }
 }
