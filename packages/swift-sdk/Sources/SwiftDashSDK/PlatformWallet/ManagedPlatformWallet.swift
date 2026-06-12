@@ -2024,6 +2024,50 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Set the owner-private alias / note / hidden flag for an
+    /// established contact and publish the self-encrypted
+    /// `contactInfo` document (M3 task 13). Local state (and hence
+    /// the SwiftData contact rows) updates immediately; the network
+    /// write is deferred by the Rust side under DIP-15's
+    /// ≥2-established-contacts privacy rule.
+    public func setDashPayContactInfo(
+        identityId: Identifier,
+        contactId: Identifier,
+        alias: String?,
+        note: String?,
+        hidden: Bool,
+        signer: KeychainSigner
+    ) async throws {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contactBytes: [UInt8] = contactId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+
+        try await Task.detached(priority: .userInitiated) {
+            _ = signer
+            let result: PlatformWalletFFIResult = idBytes.withUnsafeBufferPointer { idBp in
+                contactBytes.withUnsafeBufferPointer { contactBp in
+                    invokeWithOptionalCStrings(alias, note, nil) { aliasPtr, notePtr, _ in
+                        platform_wallet_set_dashpay_contact_info_with_signer(
+                            handle,
+                            idBp.baseAddress!,
+                            contactBp.baseAddress!,
+                            aliasPtr,
+                            notePtr,
+                            hidden,
+                            signerHandle
+                        )
+                    }
+                }
+            }
+            try result.check()
+        }.value
+    }
+
 }
 
 // MARK: - In-memory state (Wallet Memory Explorer)

@@ -1020,21 +1020,29 @@ impl PlatformWalletPersistence for FFIPersister {
                 }
                 for (key, established) in &contacts_cs.established {
                     // Replicate the relationship's broken-channel flag
-                    // onto BOTH the outgoing and incoming row — it is a
-                    // property of the established pair, not of one
-                    // direction, so the Swift handler persists it on
-                    // each `(owner, contact, is_outgoing)` row.
+                    // and owner-private metadata (alias/note/hidden —
+                    // contactInfo, M3) onto BOTH the outgoing and
+                    // incoming row — they are properties of the
+                    // established pair, not of one direction, so the
+                    // Swift handler persists them on each
+                    // `(owner, contact, is_outgoing)` row.
                     upserts.push(ContactRequestFFI::from_established_outgoing(
                         key.owner_id.to_buffer(),
                         key.recipient_id.to_buffer(),
                         &established.outgoing_request,
                         established.payment_channel_broken,
+                        established.alias.as_deref(),
+                        established.note.as_deref(),
+                        established.is_hidden,
                     ));
                     upserts.push(ContactRequestFFI::from_established_incoming(
                         key.owner_id.to_buffer(),
                         key.recipient_id.to_buffer(),
                         &established.incoming_request,
                         established.payment_channel_broken,
+                        established.alias.as_deref(),
+                        established.note.as_deref(),
+                        established.is_hidden,
                     ));
                 }
                 let removed_sent: Vec<ContactRequestRemovalFFI> = contacts_cs

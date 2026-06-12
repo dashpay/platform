@@ -108,6 +108,20 @@ public final class PersistentDashpayContactRequest {
     /// migration (additive column, non-destructive).
     public var paymentChannelBroken: Bool = false
 
+    /// Owner-private alias for the contact — `contactInfo`-backed
+    /// (M3 task 13), synced across devices via Platform. Mirrors
+    /// `ContactRequestFFI::alias`; established rows only, replicated
+    /// onto both directions like `paymentChannelBroken`. Optional so
+    /// existing rows ride the lightweight migration.
+    public var contactAlias: String?
+
+    /// Owner-private note — same conventions as `contactAlias`.
+    public var contactNote: String?
+
+    /// `contactInfo.displayHidden` — whether the owner hid this
+    /// contact from the list. Defaulted for lightweight migration.
+    public var contactHidden: Bool = false
+
     // MARK: - Relationships
 
     /// Owning identity — the wallet-managed identity this row's

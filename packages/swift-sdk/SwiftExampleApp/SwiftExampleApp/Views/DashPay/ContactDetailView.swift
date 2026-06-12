@@ -4,14 +4,16 @@ import SwiftDashSDK
 
 /// Per-contact detail (SPEC §6.2): profile header, Send Dash (via
 /// the existing `SendDashPayPaymentSheet`), `@Query`-driven payment
-/// history, and the device-local alias / note / hide controls — all
-/// labeled "This device only" until M3's `contactInfo` backing.
+/// history, and the alias / note / hide controls — `contactInfo`-
+/// backed since M3: edits publish a self-encrypted document so they
+/// sync across devices and survive restore-from-seed.
 struct ContactDetailView: View {
     let identity: PersistentIdentity
     let contactId: Data
 
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var contactMeta: DashPayContactMetaStore
+    @Environment(\.modelContext) private var modelContext
 
     /// Payment history with this contact. Refreshed on demand via
     /// `refreshDashPayPayments` (the Rust map is read → upserted →
@@ -55,22 +57,17 @@ struct ContactDetailView: View {
         pairRows.contains(where: \.paymentChannelBroken)
     }
 
+    /// contactInfo-backed alias — read off the established contact
+    /// rows (both directions carry the same value; first non-nil
+    /// wins). Reactive via the `pairRows` `@Query`: the recurring
+    /// sync's decrypted contactInfo lands through the persister and
+    /// re-renders here.
     private var localAlias: String? {
-        _ = contactMeta.version
-        return contactMeta.alias(
-            network: identity.network,
-            owner: identity.identityId,
-            contact: contactId
-        )
+        pairRows.compactMap(\.contactAlias).first
     }
 
     private var localNote: String? {
-        _ = contactMeta.version
-        return contactMeta.note(
-            network: identity.network,
-            owner: identity.identityId,
-            contact: contactId
-        )
+        pairRows.compactMap(\.contactNote).first
     }
 
     private var dpnsHint: String? {
@@ -99,13 +96,13 @@ struct ContactDetailView: View {
     }
 
     private var isHidden: Bool {
-        _ = contactMeta.version
-        return contactMeta.isHidden(
-            network: identity.network,
-            owner: identity.identityId,
-            contact: contactId
-        )
+        pairRows.contains(where: \.contactHidden)
     }
+
+    /// In-flight contactInfo save — disables the controls so a slow
+    /// publish can't be double-submitted; errors render inline.
+    @State private var isSavingContactInfo = false
+    @State private var contactInfoError: String?
 
     var body: some View {
         List {
@@ -133,16 +130,11 @@ struct ContactDetailView: View {
             ContactLocalFieldEditor(
                 title: "Alias",
                 prompt: "e.g. Mom",
-                footer: "An alias overrides this contact's display name. This device only.",
+                footer: "An alias overrides this contact's display name. Synced to your other devices.",
                 initialValue: localAlias ?? "",
                 identifierPrefix: "dashpay.detail.alias",
                 onSave: { value in
-                    contactMeta.setAlias(
-                        value,
-                        network: identity.network,
-                        owner: identity.identityId,
-                        contact: contactId
-                    )
+                    saveContactInfo(alias: value, note: localNote, hidden: isHidden)
                 }
             )
         }
@@ -150,16 +142,11 @@ struct ContactDetailView: View {
             ContactLocalFieldEditor(
                 title: "Note",
                 prompt: "Anything to remember about this contact",
-                footer: "Notes are private. This device only.",
+                footer: "Notes are private (encrypted) and synced to your other devices.",
                 initialValue: localNote ?? "",
                 identifierPrefix: "dashpay.detail.note",
                 onSave: { value in
-                    contactMeta.setNote(
-                        value,
-                        network: identity.network,
-                        owner: identity.identityId,
-                        contact: contactId
-                    )
+                    saveContactInfo(alias: localAlias, note: value, hidden: isHidden)
                 }
             )
         }
@@ -313,23 +300,66 @@ struct ContactDetailView: View {
             Toggle(isOn: Binding(
                 get: { isHidden },
                 set: { hidden in
-                    contactMeta.setHidden(
-                        hidden,
-                        network: identity.network,
-                        owner: identity.identityId,
-                        contact: contactId
-                    )
+                    saveContactInfo(alias: localAlias, note: localNote, hidden: hidden)
                 }
             )) {
                 Label("Hide contact", systemImage: "eye.slash")
             }
+            .disabled(isSavingContactInfo)
             .accessibilityIdentifier("dashpay.detail.hideToggle")
+
+            if isSavingContactInfo {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Saving…")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            if let contactInfoError {
+                Text(contactInfoError)
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
         } header: {
-            Text("Local settings")
+            Text("Contact settings")
         } footer: {
-            // M2: device-local only — M3 backs these with synced
-            // `contactInfo` documents and drops the label.
-            Text("This device only — alias, note and hide are not synced to other devices.")
+            // contactInfo-backed (M3): self-encrypted on Platform, so
+            // these sync across devices and survive restore-from-seed.
+            // Note: until this identity has two established contacts,
+            // edits stay local (DIP-15 privacy rule) and publish later.
+            Text("Alias, note and hide are encrypted and synced to your other devices via Platform.")
+        }
+    }
+
+    /// Persist alias/note/hidden through the contactInfo pipeline:
+    /// local state updates immediately (the persister round lands in
+    /// the rows the `pairRows` query watches); the document publish
+    /// happens in the same call unless deferred by the DIP-15
+    /// ≥2-contacts privacy rule.
+    private func saveContactInfo(alias: String?, note: String?, hidden: Bool) {
+        guard let walletId = identity.wallet?.walletId,
+              let wallet = walletManager.wallet(for: walletId) else {
+            contactInfoError = "No wallet available for this identity"
+            return
+        }
+        isSavingContactInfo = true
+        contactInfoError = nil
+        Task { @MainActor in
+            defer { isSavingContactInfo = false }
+            do {
+                let signer = KeychainSigner(modelContainer: modelContext.container)
+                try await wallet.setDashPayContactInfo(
+                    identityId: identity.identityId,
+                    contactId: contactId,
+                    alias: alias?.isEmpty == true ? nil : alias,
+                    note: note?.isEmpty == true ? nil : note,
+                    hidden: hidden,
+                    signer: signer
+                )
+            } catch {
+                contactInfoError = "Save failed: \(error.localizedDescription)"
+            }
         }
     }
 

@@ -115,6 +115,17 @@ pub struct ContactRequestFFI {
     ///
     /// [`EstablishedContact`]: platform_wallet::EstablishedContact
     pub payment_channel_broken: bool,
+    /// Owner-private alias for the contact (`contactInfo`-backed, M3
+    /// task 13). Heap-allocated NUL-terminated UTF-8, or null when
+    /// unset. Only stamped on rows projected from the `established`
+    /// map (pending rows have no metadata); released by
+    /// [`free_contact_requests_ffi`].
+    pub alias: *const std::os::raw::c_char,
+    /// Owner-private note — same conventions as [`Self::alias`].
+    pub note: *const std::os::raw::c_char,
+    /// `contactInfo.displayHidden` — whether the owner hid this
+    /// contact. Established rows only; always `false` for pending.
+    pub is_hidden: bool,
 }
 
 /// Composite identifier for [`ContactChangeSet::removed_sent`] and
@@ -193,10 +204,14 @@ pub struct ContactRequestRejectionFFI {
 //   132..=135 (padding to 8)
 //   136..=143 created_at                     u64
 //   144       payment_channel_broken         bool
-//   145..=151 (tail padding to alignment 8)
+//   145..=151 (padding to 8)
+//   152..=159 alias                          *const c_char
+//   160..=167 note                           *const c_char
+//   168       is_hidden                      bool
+//   169..=175 (tail padding to alignment 8)
 //
-// Total size = 152, alignment = 8 (from u64 / pointer fields).
-const _: [u8; 152] = [0u8; std::mem::size_of::<ContactRequestFFI>()];
+// Total size = 176, alignment = 8 (from u64 / pointer fields).
+const _: [u8; 176] = [0u8; std::mem::size_of::<ContactRequestFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<ContactRequestFFI>()];
 
 // Expected `ContactRequestRemovalFFI` layout: 64 bytes, alignment 1.
@@ -258,7 +273,7 @@ impl ContactRequestFFI {
         contact_id: [u8; 32],
         request: &platform_wallet::ContactRequest,
     ) -> Self {
-        Self::from_parts(owner_id, contact_id, true, request, false)
+        Self::from_parts(owner_id, contact_id, true, request, false, None, None, false)
     }
 
     /// Sibling of [`Self::from_outgoing`] for the incoming direction
@@ -268,41 +283,73 @@ impl ContactRequestFFI {
         contact_id: [u8; 32],
         request: &platform_wallet::ContactRequest,
     ) -> Self {
-        Self::from_parts(owner_id, contact_id, false, request, false)
+        Self::from_parts(owner_id, contact_id, false, request, false, None, None, false)
     }
 
     /// Build the **outgoing** row of an established contact, stamping
-    /// the relationship's `payment_channel_broken` flag onto the row.
+    /// the relationship's `payment_channel_broken` flag and the
+    /// owner-private metadata (alias / note / hidden — contactInfo,
+    /// M3) onto the row.
     ///
     /// Used by the persister's `established` projection (one outgoing +
-    /// one incoming row per entry), where the broken flag is a property
-    /// of the relationship and is therefore replicated onto both rows.
+    /// one incoming row per entry), where these are properties of the
+    /// relationship and are therefore replicated onto both rows.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_established_outgoing(
         owner_id: [u8; 32],
         contact_id: [u8; 32],
         request: &platform_wallet::ContactRequest,
         payment_channel_broken: bool,
+        alias: Option<&str>,
+        note: Option<&str>,
+        is_hidden: bool,
     ) -> Self {
-        Self::from_parts(owner_id, contact_id, true, request, payment_channel_broken)
+        Self::from_parts(
+            owner_id,
+            contact_id,
+            true,
+            request,
+            payment_channel_broken,
+            alias,
+            note,
+            is_hidden,
+        )
     }
 
     /// Sibling of [`Self::from_established_outgoing`] for the **incoming**
     /// row of an established contact.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_established_incoming(
         owner_id: [u8; 32],
         contact_id: [u8; 32],
         request: &platform_wallet::ContactRequest,
         payment_channel_broken: bool,
+        alias: Option<&str>,
+        note: Option<&str>,
+        is_hidden: bool,
     ) -> Self {
-        Self::from_parts(owner_id, contact_id, false, request, payment_channel_broken)
+        Self::from_parts(
+            owner_id,
+            contact_id,
+            false,
+            request,
+            payment_channel_broken,
+            alias,
+            note,
+            is_hidden,
+        )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn from_parts(
         owner_id: [u8; 32],
         contact_id: [u8; 32],
         is_outgoing: bool,
         request: &platform_wallet::ContactRequest,
         payment_channel_broken: bool,
+        alias: Option<&str>,
+        note: Option<&str>,
+        is_hidden: bool,
     ) -> Self {
         let (encrypted_public_key, encrypted_public_key_len) =
             allocate_byte_buffer(&request.encrypted_public_key);
@@ -332,8 +379,33 @@ impl ContactRequestFFI {
             core_height_created_at: request.core_height_created_at,
             created_at: request.created_at,
             payment_channel_broken,
+            alias: allocate_c_string(alias),
+            note: allocate_c_string(note),
+            is_hidden,
         }
     }
+}
+
+/// Heap-allocate a NUL-terminated copy of `value`, or null for `None`
+/// / interior-NUL strings. Released by [`free_contact_requests_ffi`]
+/// via [`free_c_string`].
+fn allocate_c_string(value: Option<&str>) -> *const std::os::raw::c_char {
+    match value {
+        Some(v) => match std::ffi::CString::new(v) {
+            Ok(c) => c.into_raw(),
+            Err(_) => ptr::null(),
+        },
+        None => ptr::null(),
+    }
+}
+
+/// Reclaim a string previously published via [`allocate_c_string`].
+/// Idempotent on null slots.
+fn free_c_string(slot: &mut *const std::os::raw::c_char) {
+    if !slot.is_null() {
+        let _ = unsafe { std::ffi::CString::from_raw(*slot as *mut std::os::raw::c_char) };
+    }
+    *slot = ptr::null();
 }
 
 /// Heap-allocate a `Box<[u8]>` from `bytes` and return a `(ptr, len)`
@@ -384,6 +456,8 @@ pub unsafe fn free_contact_requests_ffi(entries: *mut ContactRequestFFI, count: 
             &mut entry.auto_accept_proof,
             &mut entry.auto_accept_proof_len,
         );
+        free_c_string(&mut entry.alias);
+        free_c_string(&mut entry.note);
     }
 }
 
@@ -525,26 +599,54 @@ mod tests {
         let owner = [3u8; 32];
         let contact = [4u8; 32];
 
-        // Broken relationship: both projected rows must carry the flag.
-        let mut out =
-            ContactRequestFFI::from_established_outgoing(owner, contact, &request, true);
-        let mut inc =
-            ContactRequestFFI::from_established_incoming(owner, contact, &request, true);
+        // Broken relationship: both projected rows must carry the flag —
+        // plus the owner-private metadata (contactInfo, M3).
+        let mut out = ContactRequestFFI::from_established_outgoing(
+            owner,
+            contact,
+            &request,
+            true,
+            Some("ally"),
+            Some("a note"),
+            true,
+        );
+        let mut inc = ContactRequestFFI::from_established_incoming(
+            owner,
+            contact,
+            &request,
+            true,
+            Some("ally"),
+            Some("a note"),
+            true,
+        );
         assert!(out.is_outgoing);
         assert!(!inc.is_outgoing);
         assert!(out.payment_channel_broken);
         assert!(inc.payment_channel_broken);
+        for row in [&out, &inc] {
+            let alias = unsafe { std::ffi::CStr::from_ptr(row.alias) };
+            assert_eq!(alias.to_str().unwrap(), "ally");
+            let note = unsafe { std::ffi::CStr::from_ptr(row.note) };
+            assert_eq!(note.to_str().unwrap(), "a note");
+            assert!(row.is_hidden);
+        }
 
-        // Healthy relationship: both rows clear.
-        let mut healthy =
-            ContactRequestFFI::from_established_outgoing(owner, contact, &request, false);
+        // Healthy relationship without metadata: flag clear, strings null.
+        let mut healthy = ContactRequestFFI::from_established_outgoing(
+            owner, contact, &request, false, None, None, false,
+        );
         assert!(!healthy.payment_channel_broken);
+        assert!(healthy.alias.is_null());
+        assert!(healthy.note.is_null());
+        assert!(!healthy.is_hidden);
 
         unsafe {
             free_contact_requests_ffi(&mut out as *mut ContactRequestFFI, 1);
             free_contact_requests_ffi(&mut inc as *mut ContactRequestFFI, 1);
             free_contact_requests_ffi(&mut healthy as *mut ContactRequestFFI, 1);
         }
+        assert!(out.alias.is_null(), "free must reclaim + null the alias");
+        assert!(out.note.is_null());
     }
 
     /// `ContactRequestRejectionFFI::from_rejected` must carry the full

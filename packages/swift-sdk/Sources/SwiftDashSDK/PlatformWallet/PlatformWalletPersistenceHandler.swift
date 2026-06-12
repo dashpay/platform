@@ -1741,6 +1741,9 @@ public class PlatformWalletPersistenceHandler {
                     existing.coreHeightCreatedAt = entry.coreHeightCreatedAt
                     existing.createdAtMillis = entry.createdAtMillis
                     existing.paymentChannelBroken = entry.paymentChannelBroken
+                    existing.contactAlias = entry.contactAlias
+                    existing.contactNote = entry.contactNote
+                    existing.contactHidden = entry.contactHidden
                     if existing.owner !== owner {
                         existing.owner = owner
                     }
@@ -1760,6 +1763,9 @@ public class PlatformWalletPersistenceHandler {
                         createdAtMillis: entry.createdAtMillis,
                         paymentChannelBroken: entry.paymentChannelBroken
                     )
+                    row.contactAlias = entry.contactAlias
+                    row.contactNote = entry.contactNote
+                    row.contactHidden = entry.contactHidden
                     backgroundContext.insert(row)
                 }
             }
@@ -1860,6 +1866,13 @@ public class PlatformWalletPersistenceHandler {
         let coreHeightCreatedAt: UInt32
         let createdAtMillis: UInt64
         let paymentChannelBroken: Bool
+        /// Owner-private alias (contactInfo-backed, M3). Established
+        /// rows only — nil for pending rows.
+        let contactAlias: String?
+        /// Owner-private note — same conventions as `contactAlias`.
+        let contactNote: String?
+        /// `contactInfo.displayHidden`.
+        let contactHidden: Bool
     }
 
     /// Owned snapshot of a `ContactRequestRemovalFFI` row. Carries
@@ -5384,7 +5397,10 @@ private func persistContactsCallback(
                 autoAcceptProof: autoAcceptProof,
                 coreHeightCreatedAt: e.core_height_created_at,
                 createdAtMillis: e.created_at,
-                paymentChannelBroken: e.payment_channel_broken
+                paymentChannelBroken: e.payment_channel_broken,
+                contactAlias: e.alias.map { String(cString: $0) },
+                contactNote: e.note.map { String(cString: $0) },
+                contactHidden: e.is_hidden
             ))
         }
     }

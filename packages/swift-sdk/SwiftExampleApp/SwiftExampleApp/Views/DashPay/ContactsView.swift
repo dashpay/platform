@@ -32,12 +32,15 @@ struct ContactsView: View {
         )
     }
 
-    /// One row per established contact. Joins the local alias /
-    /// DPNS hint (meta store) and the wallet-cache DashPay profile
-    /// for display, and ORs the pair's `paymentChannelBroken` flags.
+    /// One row per established contact. Alias / hidden come off the
+    /// contact rows themselves (contactInfo-backed since M3, so they
+    /// re-render reactively through the `requestRows` query); the
+    /// DPNS hint stays in the meta store (add-time UI hint, not
+    /// protocol state); profile display joins the wallet cache. ORs
+    /// the pair's `paymentChannelBroken` flags.
     private var contacts: [EstablishedContactItem] {
-        // Reading through the meta store ties this computation to
-        // its published `version`, so alias/hide edits re-render.
+        // DPNS hints still read through the meta store — tie the
+        // computation to its published `version` for those edits.
         _ = contactMeta.version
         let byContact = Dictionary(grouping: requestRows, by: \.contactIdentityId)
         return byContact.compactMap { contactId, rows -> EstablishedContactItem? in
@@ -45,37 +48,28 @@ struct ContactsView: View {
                   rows.contains(where: { !$0.isOutgoing }) else {
                 return nil
             }
-            guard !contactMeta.isHidden(
-                network: identity.network,
-                owner: identity.identityId,
-                contact: contactId
-            ) else {
+            // contactInfo displayHidden — hidden contacts stay
+            // established (and payable) but leave the list.
+            guard !rows.contains(where: \.contactHidden) else {
                 return nil
             }
             let profile = cachedProfile(contactId)
+            let dpnsHint = contactMeta.dpnsHint(
+                network: identity.network,
+                owner: identity.identityId,
+                contact: contactId
+            )
             let name = dashPayContactDisplayName(
                 contactId: contactId,
-                alias: contactMeta.alias(
-                    network: identity.network,
-                    owner: identity.identityId,
-                    contact: contactId
-                ),
+                alias: rows.compactMap(\.contactAlias).first,
                 profileDisplayName: profile?.displayName,
-                dpnsLabel: contactMeta.dpnsHint(
-                    network: identity.network,
-                    owner: identity.identityId,
-                    contact: contactId
-                )
+                dpnsLabel: dpnsHint
             )
             return EstablishedContactItem(
                 contactId: contactId,
                 displayName: name,
                 avatarUrl: profile?.avatarUrl,
-                dpnsName: contactMeta.dpnsHint(
-                    network: identity.network,
-                    owner: identity.identityId,
-                    contact: contactId
-                ),
+                dpnsName: dpnsHint,
                 paymentChannelBroken: rows.contains(where: \.paymentChannelBroken)
             )
         }
