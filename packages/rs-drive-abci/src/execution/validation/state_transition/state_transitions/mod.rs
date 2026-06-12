@@ -3431,10 +3431,11 @@ pub(in crate::execution) mod tests {
 
                 // Apply the widened contract directly to grovedb to simulate the
                 // corrupt on-disk state that WOULD result if such an update were
-                // committed. On a real chain `validate_update` now rejects this
-                // update at the source (see the `validate_byte_array_encoding`
-                // unit tests in rs-dpp), so the resolver is never reached with
-                // corrupt bytes; this reproduces the consequence the fix prevents.
+                // committed. On a real chain `validate_update` (feature version 1,
+                // active from protocol 12) now rejects this update at the source
+                // (see the rs-dpp validate_update::v1 tests), so the resolver is
+                // never reached with corrupt bytes; this reproduces the
+                // consequence the fix prevents.
                 // The derived `properties` for `preorderSalt` flip to the
                 // variable-length (varint-prefixed) decode path.
                 let widened_contract = setup_contract(
@@ -3488,10 +3489,11 @@ pub(in crate::execution) mod tests {
         /// the per-block vote-poll resolver returns `Err`, which propagates out of
         /// the bare-`?` per-block event handler and halts every validator.
         ///
-        /// The fix prevents that state at the source: `validate_update` now
-        /// rejects the widening (see the `validate_byte_array_encoding` unit tests
-        /// in rs-dpp). This test deliberately writes the corrupt state directly to
-        /// grovedb (bypassing validation) to reproduce the consequence the
+        /// The fix prevents that state at the source: `validate_update` (feature
+        /// version 1, active from protocol 12) now rejects the widening (see the
+        /// rs-dpp validate_update::v1 tests). This test deliberately writes the
+        /// corrupt state directly to grovedb (bypassing validation) to reproduce
+        /// the consequence the
         /// validation fix prevents.
         #[tokio::test]
         async fn widening_byte_array_max_items_halts_vote_poll_resolver() {
@@ -3505,18 +3507,15 @@ pub(in crate::execution) mod tests {
                  rejecting the update at the source. Got Ok instead."
             );
 
-            // Confirm it is a serialization/corruption-class failure, i.e. the
-            // encoding-flip decode error and not some unrelated error.
-            let err = result.unwrap_err();
-            let err_msg = format!("{:?}", err);
-            assert!(
-                err_msg.contains("Corrupted")
-                    || err_msg.contains("orrupted")
-                    || err_msg.contains("erializ")
-                    || err_msg.contains("ecod"),
-                "expected a serialization/corruption/decoding error from the \
-                 encoding flip, got: {}",
-                err_msg
+            // Confirm it is the expected decode-failure variant from the encoding
+            // flip, not some unrelated error. Matching the variant (rather than the
+            // Debug string) keeps the test robust to message/format changes.
+            assert_matches!(
+                result.unwrap_err(),
+                crate::error::Error::Protocol(dpp::ProtocolError::DataContractError(
+                    dpp::data_contract::errors::DataContractError::CorruptedSerialization(_)
+                        | dpp::data_contract::errors::DataContractError::DecodingContractError(_)
+                ))
             );
         }
 
