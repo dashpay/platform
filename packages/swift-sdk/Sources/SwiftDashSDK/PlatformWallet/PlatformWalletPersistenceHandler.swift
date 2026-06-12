@@ -2809,6 +2809,16 @@ public class PlatformWalletPersistenceHandler {
             var written = 0
             for row in rows {
                 guard row.walletId.count == 32, row.entryId.count == 32 else { continue }
+                // Exact conversion, not truncating: a stored tag outside
+                // u8 range (corruption / unmigrated future tag) must NOT
+                // wrap into a different valid-looking discriminant (256 →
+                // 0 = Shield/In/Pending) — that would bypass Rust's
+                // unknown-tag fallback. Drop the row instead.
+                guard let kindTagU8 = UInt8(exactly: row.kindTag),
+                      let directionU8 = UInt8(exactly: row.direction),
+                      let statusU8 = UInt8(exactly: row.status) else {
+                    continue
+                }
 
                 // Per-row variable-length buffers: counterparty, memo,
                 // noteCmxs, spentNullifiers. Allocate each and retain a
@@ -2837,9 +2847,9 @@ public class PlatformWalletPersistenceHandler {
                     wallet_id: walletIdTuple,
                     account_index: row.accountIndex,
                     entry_id: entryIdTuple,
-                    kind_tag: UInt8(truncatingIfNeeded: row.kindTag),
-                    direction: UInt8(truncatingIfNeeded: row.direction),
-                    status: UInt8(truncatingIfNeeded: row.status),
+                    kind_tag: kindTagU8,
+                    direction: directionU8,
+                    status: statusU8,
                     amount: row.amount,
                     fee: row.fee,
                     has_fee: row.hasFee ? 1 : 0,

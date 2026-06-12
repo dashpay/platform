@@ -293,9 +293,23 @@ async fn record_activity_status<S: ShieldedStore>(
     };
     let next = {
         let mut store = store.write().await;
-        let stored = store
-            .get_activity_by_entry_id(id, &entry.id)
-            .unwrap_or_default();
+        // A read FAILURE is not "no row": falling back to the captured
+        // entry on Err would queue exactly the stale overwrite this
+        // function exists to prevent, precisely when the invariant
+        // couldn't be checked. Skip the flip instead — the scan
+        // confirmation path reconciles the row's status later.
+        let stored = match store.get_activity_by_entry_id(id, &entry.id) {
+            Ok(stored) => stored,
+            Err(e) => {
+                warn!(
+                    entry_id = %hex::encode(entry.id),
+                    error = %e,
+                    "live activity status flip: get_activity_by_entry_id failed; \
+                     skipping flip to avoid clobbering a richer row"
+                );
+                return;
+            }
+        };
         let base = stored.as_ref().unwrap_or(entry);
         if base.status == ShieldedActivityStatus::Confirmed && base.block_height.is_some() {
             return;

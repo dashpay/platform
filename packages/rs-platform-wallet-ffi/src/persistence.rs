@@ -1329,7 +1329,7 @@ impl PlatformWalletPersistence for FFIPersister {
             //    arrays) borrow into `backing`, a Vec of owned byte
             //    buffers that outlives the callback — same pointer-validity
             //    discipline as `note_data_ptr` / `memo_ptr` above. The
-            //    host upserts by `entry_id`.
+            //    host upserts by `(wallet_id, account_index, entry_id)`.
             if !shielded_cs.activity_entries.is_empty() {
                 if let Some(cb) = self.callbacks.on_persist_shielded_activity_fn {
                     // One pass pairs each entry with its owned cmx /
