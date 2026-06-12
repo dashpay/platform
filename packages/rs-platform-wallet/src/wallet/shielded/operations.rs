@@ -168,15 +168,29 @@ fn queue_shielded_changeset(
     }
 }
 
-/// Queue a single activity entry to the host persister, for callers
-/// outside this module (the Type 18 orchestrator in
-/// `fund_from_asset_lock.rs`). Upserts by `entry.id`.
-pub(super) fn queue_shielded_activity(
+/// Write an activity entry to the in-memory store, then queue it to the
+/// host persister. For callers outside this module (the Type 18
+/// orchestrator in `fund_from_asset_lock.rs`). Upserts by `entry.id`.
+///
+/// The in-memory `save_activity` MUST happen before the persister queue so
+/// the same-session scan deriver's dedupe (which reads the in-memory store)
+/// sees this live row and never re-derives a coarser entry over it. A store
+/// write failure is logged but does not fail the op — the persister still
+/// gets the entry, and the next sync reconciles the in-memory side.
+pub(super) async fn queue_shielded_activity<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     id: SubwalletId,
     entry: super::activity::ShieldedActivityEntry,
 ) {
+    if let Err(e) = store.write().await.save_activity(id, &entry) {
+        warn!(
+            entry_id = %hex::encode(entry.id),
+            error = %e,
+            "live activity entry: in-memory save_activity failed; persister still queued"
+        );
+    }
     queue_shielded_changeset(persister, wallet_id, changeset_for_entry(id, entry));
 }
 
@@ -209,14 +223,21 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
     }
 }
 
-/// Record a live activity entry built from `params` for `id`, shipping
-/// it to the host persister via [`queue_shielded_changeset`]. Returns
-/// the recorded entry so the caller can flip its status later (the
+/// Record a live activity entry built from `params` for `id`, writing it
+/// to the in-memory `store` and then shipping it to the host persister.
+/// Returns the recorded entry so the caller can flip its status later (the
 /// status flip re-records by the same `entry.id`, an upsert).
+///
+/// The in-memory `save_activity` MUST land before the persister queue so
+/// the same-session scan deriver's dedupe (which reads the IN-MEMORY store
+/// — see `coordinator::derive_activity_into_changeset`) sees this live row
+/// and never re-derives a coarser entry that `save_activity` would upsert
+/// over it. See [`queue_shielded_activity`].
 ///
 /// Returns `None` (and queues nothing) when the bundle exposes no
 /// wallet-visible output cmx — see [`build_pending_entry`].
-fn record_pending_activity(
+async fn record_pending_activity<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     id: SubwalletId,
@@ -241,15 +262,17 @@ fn record_pending_activity(
         cmxs = entry.note_cmxs.len(),
         "live activity entry recorded (pending)"
     );
-    queue_shielded_changeset(persister, wallet_id, changeset_for_entry(id, entry.clone()));
+    queue_shielded_activity(store, persister, wallet_id, id, entry.clone()).await;
     Some(entry)
 }
 
 /// Re-record `entry` with a flipped status (and optional confirmed
-/// height) for `id`. Upserts by `entry.id` at the persister, so a
-/// `Pending` row becomes `Confirmed` / `Failed` in place. No-op when
-/// `entry` is `None` (nothing was recorded for this operation).
-fn record_activity_status(
+/// height) for `id`. Upserts by `entry.id` in the in-memory store and at
+/// the persister, so a `Pending` row becomes `Confirmed` / `Failed` in
+/// place. No-op when `entry` is `None` (nothing was recorded for this
+/// operation).
+async fn record_activity_status<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     id: SubwalletId,
@@ -261,7 +284,7 @@ fn record_activity_status(
         return;
     };
     let next = with_status(entry, status, block_height);
-    queue_shielded_changeset(persister, wallet_id, changeset_for_entry(id, next));
+    queue_shielded_activity(store, persister, wallet_id, id, next).await;
 }
 
 // -------------------------------------------------------------------------
@@ -303,8 +326,9 @@ fn reserve_shield_fee_on_input_0(
 /// shielded pool, with the resulting note assigned to `account`'s
 /// default Orchard payment address derived from `keys`.
 #[allow(clippy::too_many_arguments)]
-pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
+pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardProver>(
     sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
     wallet_id: WalletId,
     keys: &OrchardKeySet,
@@ -411,6 +435,7 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
     // which the scan later sees as an outgoing note recovered to self —
     // the ids line up.
     let pending_entry = record_pending_activity(
+        store,
         persister,
         wallet_id,
         id,
@@ -425,7 +450,8 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
             actions: shielded_actions(&state_transition),
             spent_notes: &[],
         },
-    );
+    )
+    .await;
 
     // Wait for proven execution (not just relay-ACK) so the host only
     // sees success once Platform has actually included the transition. A
@@ -468,24 +494,28 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
         // `broadcast_and_wait` failed: shield holds no note reservation,
         // so there's nothing to roll back — just mark the activity Failed.
         record_activity_status(
+            store,
             persister,
             wallet_id,
             id,
             &pending_entry,
             ShieldedActivityStatus::Failed,
             None,
-        );
+        )
+        .await;
         return Err(e);
     }
 
     record_activity_status(
+        store,
         persister,
         wallet_id,
         id,
         &pending_entry,
         ShieldedActivityStatus::Confirmed,
         None,
-    );
+    )
+    .await;
     info!(account, credits = amount, "Shield broadcast succeeded");
     Ok(())
 }
@@ -575,6 +605,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         // counterparty = the 21-byte serialized PlatformAddress, exact
         // fee = the builder's metered fee.
         pending_entry = record_pending_activity(
+            store,
             persister,
             wallet_id,
             id,
@@ -589,7 +620,8 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
                 actions: shielded_actions(&state_transition),
                 spent_notes: &selected_notes,
             },
-        );
+        )
+        .await;
 
         trace!("Unshield: state transition built, broadcasting...");
         broadcast_shielded_spend(sdk, &state_transition, "unshield").await
@@ -599,13 +631,15 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     match result {
         Ok(()) => {
             record_activity_status(
+                store,
                 persister,
                 wallet_id,
                 id,
                 &pending_entry,
                 ShieldedActivityStatus::Confirmed,
                 None,
-            );
+            )
+            .await;
             // Broadcast already succeeded; spent-state bookkeeping is
             // best-effort. Surfacing a local write failure as a send
             // failure here would invite duplicate retries — the next
@@ -651,13 +685,15 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             // Definitive failure: the spend never executed. Mark the
             // activity row Failed (upsert by id) before releasing notes.
             record_activity_status(
+                store,
                 persister,
                 wallet_id,
                 id,
                 &pending_entry,
                 ShieldedActivityStatus::Failed,
                 None,
-            );
+            )
+            .await;
             cancel_pending(store, id, &selected_notes).await;
             Err(e)
         }
@@ -731,6 +767,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
         // counterparty = the recipient's 43-byte raw Orchard address, memo
         // attached when non-zero.
         pending_entry = record_pending_activity(
+            store,
             persister,
             wallet_id,
             id,
@@ -745,7 +782,8 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
                 actions: shielded_actions(&state_transition),
                 spent_notes: &selected_notes,
             },
-        );
+        )
+        .await;
 
         trace!("Shielded transfer: state transition built, broadcasting...");
         broadcast_shielded_spend(sdk, &state_transition, "transfer").await
@@ -755,13 +793,15 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     match result {
         Ok(()) => {
             record_activity_status(
+                store,
                 persister,
                 wallet_id,
                 id,
                 &pending_entry,
                 ShieldedActivityStatus::Confirmed,
                 None,
-            );
+            )
+            .await;
             // Best-effort post-broadcast bookkeeping (see unshield).
             if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
             {
@@ -785,13 +825,15 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
         Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
         Err(e) => {
             record_activity_status(
+                store,
                 persister,
                 wallet_id,
                 id,
                 &pending_entry,
                 ShieldedActivityStatus::Failed,
                 None,
-            );
+            )
+            .await;
             cancel_pending(store, id, &selected_notes).await;
             Err(e)
         }
@@ -877,6 +919,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
         // Live activity: a Withdrawal (direction out), counterparty = the
         // Core output script bytes, exact metered fee.
         pending_entry = record_pending_activity(
+            store,
             persister,
             wallet_id,
             id,
@@ -891,7 +934,8 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
                 actions: shielded_actions(&state_transition),
                 spent_notes: &selected_notes,
             },
-        );
+        )
+        .await;
 
         trace!("Shielded withdrawal: state transition built, broadcasting...");
         broadcast_shielded_spend(sdk, &state_transition, "withdraw").await
@@ -901,13 +945,15 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     match result {
         Ok(()) => {
             record_activity_status(
+                store,
                 persister,
                 wallet_id,
                 id,
                 &pending_entry,
                 ShieldedActivityStatus::Confirmed,
                 None,
-            );
+            )
+            .await;
             // Best-effort post-broadcast bookkeeping (see unshield).
             if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
             {
@@ -931,13 +977,15 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
         Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => Err(e),
         Err(e) => {
             record_activity_status(
+                store,
                 persister,
                 wallet_id,
                 id,
                 &pending_entry,
                 ShieldedActivityStatus::Failed,
                 None,
-            );
+            )
+            .await;
             cancel_pending(store, id, &selected_notes).await;
             Err(e)
         }
@@ -1058,6 +1106,7 @@ where
         // The output cmxs are taken from the bundle the transition is built
         // from (the change note re-entering the pool, if any).
         pending_entry = record_pending_activity(
+            store,
             persister,
             wallet_id,
             id,
@@ -1074,7 +1123,8 @@ where
                 actions: &build.bundle.actions,
                 spent_notes: &selected_notes,
             },
-        );
+        )
+        .await;
 
         trace!("IdentityCreateFromShieldedPool: built, broadcasting via SDK...");
         // Stage the broadcast and the result-wait SEPARATELY (instead of one `broadcast_and_wait`)
@@ -1235,13 +1285,15 @@ where
     match result {
         Ok((identity_id, identity)) => {
             record_activity_status(
+                store,
                 persister,
                 wallet_id,
                 id,
                 &pending_entry,
                 ShieldedActivityStatus::Confirmed,
                 None,
-            );
+            )
+            .await;
             // Best-effort post-broadcast bookkeeping (see `unshield`): mark the spent notes so the
             // local balance reflects the exit immediately; any drift heals on the next nullifier
             // sync. The on-chain nullifier set — not this local mark — is the authoritative
@@ -1278,13 +1330,15 @@ where
                 // Definitive failure: the identity was never created. Mark
                 // the activity row Failed (upsert by id) before releasing.
                 record_activity_status(
+                    store,
                     persister,
                     wallet_id,
                     id,
                     &pending_entry,
                     ShieldedActivityStatus::Failed,
                     None,
-                );
+                )
+                .await;
                 cancel_pending(store, id, &selected_notes).await;
             }
             Err(e)

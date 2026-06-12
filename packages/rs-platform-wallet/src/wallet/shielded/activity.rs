@@ -367,22 +367,33 @@ fn cluster_events(input: &ScanDeriveInput) -> BTreeMap<u64, HeightCluster> {
 /// stays `ShieldedSpend`, which a later live entry (or a future
 /// correlation pass) can upgrade in place via the shared id.
 ///
-/// `existing_ids` are entry ids already on file (live entries win): a
-/// cluster whose computed id is present produces no NEW entry, so a live
+/// `existing_cmxs` maps every stored entry's visible output cmx to the
+/// id of the entry that owns it (live entries win). Dedupe is by cmx
+/// OVERLAP, not exact-id equality: a cluster whose visible cmxs intersect
+/// any stored entry's cmx set produces no NEW entry (so a live
 /// `IdentityCreate` / `Unshield` / `Withdrawal` is never clobbered by a
-/// coarser scan-derived `Sent` / `ShieldedSpend`. It DOES produce a
-/// [`DerivedActivity::confirmations`] observation — the ambiguous
-/// post-broadcast paths leave their live row `Pending` with the explicit
-/// promise that a later scan finding the cluster on-chain flips it to
-/// `Confirmed` at the observed height (the caller performs that upgrade
-/// against the stored row so the live entry's richer fields survive).
+/// coarser scan-derived `Sent` / `ShieldedSpend`), and instead emits a
+/// [`DerivedActivity::confirmations`] observation for EACH overlapped id.
+/// The ambiguous post-broadcast paths leave their live row `Pending` with
+/// the explicit promise that a later scan finding the cluster on-chain
+/// flips it to `Confirmed` at the observed height (the caller performs
+/// that upgrade against the stored row so the live entry's richer fields
+/// survive).
+///
+/// Overlap subsumes the exact-id case AND handles the same-block merge
+/// hazard: when one cluster merges two live ops (cmx sets A and B) its
+/// computed id `H(A∪B)` matches neither live id, but the overlap catches
+/// both and forgoes synthesizing a spurious aggregate row. The
+/// conservative trade: a same-block mix of an owned-op and an unrelated
+/// receive forgoes the receive's own row (it folds into the confirmation
+/// for the owned op) — acceptable to avoid both clobber and aggregates.
 ///
 /// [`Sent`]: ShieldedActivityKind::Sent
 /// [`Received`]: ShieldedActivityKind::Received
 /// [`ShieldedSpend`]: ShieldedActivityKind::ShieldedSpend
 pub fn derive_activity_from_scan_data(
     input: &ScanDeriveInput,
-    existing_ids: &std::collections::BTreeSet<[u8; 32]>,
+    existing_cmxs: &std::collections::BTreeMap<[u8; 32], [u8; 32]>,
 ) -> DerivedActivity {
     let clusters = cluster_events(input);
     let mut out = DerivedActivity::default();
@@ -422,13 +433,25 @@ pub fn derive_activity_from_scan_data(
             continue;
         }
         let id = compute_activity_id(&visible_cmxs);
-        if existing_ids.contains(&id) {
-            // A live entry (or an earlier scan) already owns this cluster.
-            // Don't synthesize a (coarser) duplicate — but DO report the
-            // on-chain sighting so the caller can flip a still-`Pending`
-            // row (the ambiguous post-broadcast paths) to Confirmed at
-            // this height.
-            out.confirmations.push((id, height));
+        // Overlap-based dedupe: any stored entry whose visible cmx set
+        // intersects this cluster's cmxs already owns (part of) the
+        // cluster. `BTreeSet` so each overlapped id is reported once even
+        // when several of the cluster's cmxs map to the same entry.
+        let overlapping: std::collections::BTreeSet<[u8; 32]> = visible_cmxs
+            .iter()
+            .filter_map(|c| existing_cmxs.get(c))
+            .copied()
+            .collect();
+        if !overlapping.is_empty() {
+            // A live entry (or an earlier scan) already owns this cluster
+            // (exactly, or as one of a same-block merge). Don't synthesize
+            // a (coarser, or spuriously aggregate) duplicate — but DO
+            // report the on-chain sighting for EACH overlapped id so the
+            // caller can flip a still-`Pending` row (the ambiguous
+            // post-broadcast paths) to Confirmed at this height.
+            for entry_id in overlapping {
+                out.confirmations.push((entry_id, height));
+            }
             continue;
         }
 
@@ -610,7 +633,7 @@ pub fn sort_activity_for_display(entries: &mut [ShieldedActivityEntry]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeSet;
+    use std::collections::BTreeMap;
 
     fn own_note(cmx: u8, nullifier: u8, height: u64, value: u64, spent: bool) -> ShieldedNote {
         ShieldedNote {
@@ -669,12 +692,13 @@ mod tests {
     fn live_entry_then_scan_of_same_cluster_yields_one_entry() {
         // Live recorder recorded a Sent for a bundle whose single visible
         // output cmx is `7`. The scan later sees the same cluster (one
-        // outgoing note with cmx `7`). Because the id matches and the live
-        // id is in `existing_ids`, the scan produces NOTHING for it.
+        // outgoing note with cmx `7`). Because the cluster's cmx overlaps
+        // the stored entry's cmx (mapped to `live_id` in `existing_cmxs`),
+        // the scan produces NOTHING for it.
         let cmx = [7u8; 32];
         let live_id = compute_activity_id(&[cmx]);
-        let mut existing = BTreeSet::new();
-        existing.insert(live_id);
+        let mut existing = BTreeMap::new();
+        existing.insert(cmx, live_id);
 
         let input = ScanDeriveInput {
             notes: vec![],
@@ -695,10 +719,49 @@ mod tests {
 
         // With no live entry on file, the same scan DOES produce one entry,
         // and its id equals the live id (the dedupe contract).
-        let derived2 = derive_activity_from_scan_data(&input, &BTreeSet::new());
+        let derived2 = derive_activity_from_scan_data(&input, &BTreeMap::new());
         assert_eq!(derived2.new_entries.len(), 1);
         assert_eq!(derived2.new_entries[0].id, live_id);
         assert!(derived2.confirmations.is_empty());
+    }
+
+    #[test]
+    fn same_block_merge_of_two_live_ops_confirms_both_without_new_entries() {
+        // Two existing live entries own cmxs {A} and {B} respectively. A
+        // later scan sees a single same-block cluster whose visible cmxs
+        // are {A, B} (the documented same-block merge). The merged
+        // cluster's own id `H(A∪B)` matches NEITHER live id, but overlap
+        // dedupe catches both: no new (spuriously aggregate) entry, and a
+        // confirmation for each overlapped id at the observed height.
+        let a = [0xA1u8; 32];
+        let b = [0xB2u8; 32];
+        let id_a = compute_activity_id(&[a]);
+        let id_b = compute_activity_id(&[b]);
+        let mut existing = BTreeMap::new();
+        existing.insert(a, id_a);
+        existing.insert(b, id_b);
+
+        // Cluster at height H carrying both cmxs as own received notes.
+        let height = 500u64;
+        let input = ScanDeriveInput {
+            notes: vec![
+                own_note(0xA1, 0x10, height, 1_000, false),
+                own_note(0xB2, 0x11, height, 2_000, false),
+            ],
+            outgoing: vec![],
+            own_addresses: vec![addr(0x01)],
+        };
+        let derived = derive_activity_from_scan_data(&input, &existing);
+        assert!(
+            derived.new_entries.is_empty(),
+            "a same-block merge of two owned ops must not synthesize an aggregate row"
+        );
+        // `confirmations` carries both overlapped ids at H (BTreeSet order:
+        // id_a sorts before id_b since 0xA1.. < 0xB2.. when hashed? — assert
+        // membership rather than order to stay robust).
+        assert_eq!(derived.confirmations.len(), 2);
+        assert!(derived.confirmations.contains(&(id_a, height)));
+        assert!(derived.confirmations.contains(&(id_b, height)));
     }
 
     // ── classification table (scan path) ───────────────────────────
@@ -710,7 +773,7 @@ mod tests {
             outgoing: vec![],
             own_addresses: vec![addr(0x01)],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].kind, ShieldedActivityKind::Received);
         assert_eq!(d[0].direction, ShieldedDirection::In);
@@ -731,7 +794,7 @@ mod tests {
             outgoing: vec![outgoing(0x30, addr(0xEE), 200, 750, memo.clone())],
             own_addresses: vec![addr(0x01)],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].kind, ShieldedActivityKind::Sent);
         assert_eq!(d[0].direction, ShieldedDirection::Out);
@@ -750,7 +813,7 @@ mod tests {
             outgoing: vec![outgoing(0x42, addr(0xEE), 300, 600, vec![])], // payment
             own_addresses: vec![addr(0x01)],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].kind, ShieldedActivityKind::Sent);
         assert_eq!(d[0].amount, 600, "amount is the payment, not the change");
@@ -770,7 +833,7 @@ mod tests {
             outgoing: vec![outgoing(0x50, own.clone(), 400, 0, vec![])],
             own_addresses: vec![own],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         let e = d
             .iter()
             .find(|e| e.block_height == Some(400))
@@ -789,7 +852,7 @@ mod tests {
             outgoing: vec![outgoing(0x60, addr(0xEE), 100, 500, vec![0u8; 36])],
             own_addresses: vec![addr(0x01)],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         assert_eq!(d.len(), 1);
         assert!(d[0].memo.is_none(), "an all-zero memo must surface as None");
     }
@@ -798,7 +861,7 @@ mod tests {
     fn empty_cluster_visible_set_is_skipped() {
         // No notes, no outgoing → no clusters → no entries.
         let input = ScanDeriveInput::default();
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         assert!(d.is_empty());
     }
 
@@ -814,7 +877,7 @@ mod tests {
             outgoing: vec![outgoing(0x72, addr(0xEE), 20, 800, vec![])],
             own_addresses: vec![addr(0x01)],
         };
-        let mut d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
+        let mut d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         sort_activity_for_display(&mut d);
         assert_eq!(d.len(), 2);
         // After display sort, the more recent (h=20 Sent) comes first.
@@ -833,17 +896,18 @@ mod tests {
             own_addresses: vec![addr(0x01)],
         };
         let live_id = compute_activity_id(&[[0x70u8; 32]]);
-        let mut existing = BTreeSet::new();
-        existing.insert(live_id);
+        let mut existing = BTreeMap::new();
+        existing.insert([0x70u8; 32], live_id);
         let d = derive_activity_from_scan_data(&input, &existing);
         assert_eq!(d.new_entries.len(), 1);
         assert_eq!(d.new_entries[0].block_height, Some(20));
         assert_eq!(
             d.confirmations,
             vec![(live_id, 10)],
-            "existing-id clusters must be reported as on-chain sightings \
-             with their observed height (the Pending->Confirmed promise \
-             the ambiguous post-broadcast paths rely on)"
+            "clusters overlapping an existing entry's cmxs must be reported \
+             as on-chain sightings with their observed height (the \
+             Pending->Confirmed promise the ambiguous post-broadcast paths \
+             rely on)"
         );
     }
 
@@ -939,7 +1003,7 @@ mod tests {
             outgoing: vec![outgoing(2, own.clone(), 113, 39_787_148_800, vec![0u8; 36])],
             own_addresses: vec![own],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         let spend = d
             .iter()
             .find(|e| e.block_height == Some(113))
@@ -970,7 +1034,7 @@ mod tests {
             ],
             own_addresses: vec![own],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         let sent = d
             .iter()
             .find(|e| e.block_height == Some(20))
@@ -1000,7 +1064,7 @@ mod tests {
             outgoing: vec![outgoing(1, own.clone(), 30, 1_000_000, vec![0u8; 36])],
             own_addresses: vec![own],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         let e = d
             .iter()
             .find(|e| e.block_height == Some(30))
@@ -1022,7 +1086,7 @@ mod tests {
             outgoing: vec![outgoing(1, own.clone(), 30, 1_000_000, vec![0u8; 36])],
             own_addresses: vec![own],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].kind, ShieldedActivityKind::Received);
         assert_eq!(d[0].direction, ShieldedDirection::In);
@@ -1040,7 +1104,7 @@ mod tests {
             outgoing: vec![],
             own_addresses: vec![own],
         };
-        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
+        let d = derive_activity_from_scan_data(&input, &BTreeMap::new()).new_entries;
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].kind, ShieldedActivityKind::Received);
         assert_eq!(d[0].direction, ShieldedDirection::In);

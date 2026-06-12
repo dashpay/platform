@@ -123,6 +123,7 @@ impl PlatformWallet {
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_fund_from_asset_lock<AS, P>(
         &self,
+        coordinator: &std::sync::Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
         funding: AssetLockFunding,
         recipients: Vec<(OrchardAddress, Option<Credits>)>,
         asset_lock_signer: &AS,
@@ -408,7 +409,7 @@ impl PlatformWallet {
         // by construction). Recorded Confirmed directly — `broadcast_and_
         // _wait` already proved inclusion. Best-effort: a recording miss
         // (no bound keyset, no recoverable output) just omits the row.
-        self.record_shield_from_asset_lock_activity(&landed_actions, shield_amount)
+        self.record_shield_from_asset_lock_activity(coordinator, &landed_actions, shield_amount)
             .await;
 
         // Step 5: cleanup. Consume the tracked asset lock. The
@@ -518,6 +519,7 @@ impl PlatformWallet {
     #[cfg(feature = "shielded")]
     async fn record_shield_from_asset_lock_activity(
         &self,
+        coordinator: &std::sync::Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
         actions: &[dpp::shielded::SerializedAction],
         shield_amount: Credits,
     ) {
@@ -568,11 +570,13 @@ impl PlatformWallet {
         let confirmed = with_status(&pending, ShieldedActivityStatus::Confirmed, None);
         let id = crate::wallet::shielded::SubwalletId::new(self.wallet_id(), account);
         crate::wallet::shielded::operations::queue_shielded_activity(
+            coordinator.store(),
             Some(self.persister()),
             self.wallet_id(),
             id,
             confirmed,
-        );
+        )
+        .await;
     }
 }
 

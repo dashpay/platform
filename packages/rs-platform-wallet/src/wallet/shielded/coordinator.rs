@@ -773,16 +773,23 @@ impl NetworkShieldedCoordinator {
                 .map(|o| o.recipient.clone())
                 .collect();
 
-            let existing_ids = store.get_activity_ids(*id).map_err(|e| {
-                crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
-            })?;
+            // Map every stored entry's visible output cmx to the owning
+            // entry id, so the deriver can dedupe by cmx OVERLAP (not exact
+            // id): a same-block cluster that merges two live ops hashes to
+            // an id matching neither, but its cmxs still overlap both.
+            let existing_cmxs: BTreeMap<[u8; 32], [u8; 32]> = store
+                .get_activity(*id, 0, usize::MAX)
+                .map_err(|e| crate::error::PlatformWalletError::ShieldedStoreError(e.to_string()))?
+                .into_iter()
+                .flat_map(|entry| entry.note_cmxs.into_iter().map(move |c| (c, entry.id)))
+                .collect();
 
             let input = ScanDeriveInput {
                 notes,
                 outgoing,
                 own_addresses,
             };
-            let derived = derive_activity_from_scan_data(&input, &existing_ids);
+            let derived = derive_activity_from_scan_data(&input, &existing_cmxs);
             for entry in derived.new_entries {
                 store.save_activity(*id, &entry).map_err(|e| {
                     crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
@@ -804,6 +811,16 @@ impl NetworkShieldedCoordinator {
                         crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
                     })?;
                 let Some(stored) = stored else { continue };
+                // Chain truth wins: a row marked Failed by a client-side
+                // post-broadcast error whose outputs are later observed
+                // on-chain was not actually a failure — upgrade it. (We
+                // observed exactly this on devnet: the rc.1 result-proof
+                // fetch failure marked an actually-landed identity-create
+                // as failed; the cluster's cmxs appearing on-chain is
+                // ground truth that the operation executed.) The gate is
+                // therefore `Pending || block_height.is_none()`, which
+                // also catches those Failed-no-height rows; only a
+                // Confirmed-with-height row is final.
                 let needs_upgrade = stored.status
                     == super::activity::ShieldedActivityStatus::Pending
                     || stored.block_height.is_none();

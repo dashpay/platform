@@ -1852,7 +1852,7 @@ impl PlatformWalletPersistence for FFIPersister {
                                 // reading as a real classification.
                                 tracing::warn!(
                                     direction = other,
-                                    "unknown shielded-activity direction byte on load;                                      folding to SelfTransfer"
+                                    "unknown shielded-activity direction byte on load; folding to SelfTransfer"
                                 );
                                 ShieldedDirection::SelfTransfer
                             }
@@ -1867,7 +1867,7 @@ impl PlatformWalletPersistence for FFIPersister {
                                 // byte silently mark an operation failed.
                                 tracing::warn!(
                                     status = other,
-                                    "unknown shielded-activity status byte on load;                                      folding to Pending so a scan can re-confirm it"
+                                    "unknown shielded-activity status byte on load; folding to Pending so a scan can re-confirm it"
                                 );
                                 ShieldedActivityStatus::Pending
                             }
@@ -2136,15 +2136,16 @@ impl PlatformWalletPersistence for FFIPersister {
 
 /// Flatten an `AccountType` + encoded xpub into the C-flat
 /// Decode `count` contiguous 32-byte commitments / nullifiers from a
-/// host buffer into `Vec<[u8; 32]>`. A null pointer or a length that
-/// isn't a clean multiple of 32 yields an empty vec (the buffer is
-/// Rust-written on persist and host-round-tripped on load, so a
-/// malformed length means a corrupt row — drop the linkage rather than
-/// read past the buffer).
+/// host buffer into `Vec<[u8; 32]>`. A null pointer, a zero count, or a
+/// `count` whose byte length overflows / exceeds `isize::MAX` (the
+/// `slice::from_raw_parts` bound) yields an empty vec — the buffer is
+/// Rust-written on persist and host-round-tripped on load, so an
+/// out-of-range count means a corrupt row, and the linkage is dropped
+/// rather than read past the buffer.
 ///
 /// # Safety
-/// `ptr` must point to at least `count * 32` valid bytes for the call,
-/// or be null.
+/// When non-null, `ptr` must point to at least `count * 32` valid
+/// bytes for the duration of the call.
 #[cfg(feature = "shielded")]
 unsafe fn decode_cmx_array(ptr: *const u8, count: usize) -> Vec<[u8; 32]> {
     if ptr.is_null() || count == 0 {
@@ -2152,8 +2153,13 @@ unsafe fn decode_cmx_array(ptr: *const u8, count: usize) -> Vec<[u8; 32]> {
     }
     // `count` is host-supplied: guard the multiplication so a corrupt
     // row degrades to a dropped linkage instead of an overflowed length
-    // handed to `from_raw_parts` (UB).
-    let Some(byte_len) = count.checked_mul(32) else {
+    // handed to `from_raw_parts` (UB). Also enforce `from_raw_parts`'
+    // documented bound that the slice length must not exceed
+    // `isize::MAX` bytes.
+    let Some(byte_len) = count
+        .checked_mul(32)
+        .filter(|&len| len <= isize::MAX as usize)
+    else {
         tracing::warn!(
             count,
             "shielded activity linkage count overflows on load; dropping linkage bytes"

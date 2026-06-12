@@ -837,6 +837,7 @@ impl PlatformWallet {
     #[cfg(feature = "shielded")]
     pub async fn shielded_shield_from_account<S, P>(
         &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
         shielded_account: u32,
         payment_account: u32,
         amount: u64,
@@ -948,6 +949,7 @@ impl PlatformWallet {
         })?;
         super::shielded::operations::shield(
             &self.sdk,
+            coordinator.store(),
             Some(&self.persister),
             self.wallet_id,
             keyset,
