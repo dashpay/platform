@@ -737,8 +737,29 @@ See Part 6 for the screen design. Tasks:
     `(counterparty, accountReference)` (see G3 scope note).
 13. **G10 + G5 stage 2:** `contactInfo` document support (SDK + wallet + FFI) →
     cross-device reject/hide + alias/note sync.
+
+    **DONE (2026-06-12), 4 commits:** crypto core (DIP-15 derivation
+    `root/65536'+65537'/idx'`, AES-256-ECB encToUserId, IV‖CBC privateData,
+    CBOR array per the deployed schema — conventions in `research/07`; no
+    reference client ever implemented contactInfo, so we set the wire
+    format), stateless doc↔contact resolution (decrypt every owned doc's
+    encToUserId), sync step 3 of the recurring pass, publish with the
+    DIP-15 ≥2-contacts privacy gate (deferred publishes update local state
+    only), FFI `platform_wallet_set_dashpay_contact_info_with_signer`,
+    persister round-trip (alias/note/hidden on the established rows, both
+    directions), and **contact restore at load** (new contacts array on
+    `IdentityRestoreEntryFFI`) — without which the re-establish sweep wiped
+    metadata during the deferred-publish window and contacts were invisible
+    on offline launches. Verified on-sim: alias save → relaunch → survives
+    and renders.
 14. Swift UI for alias/note edit (reuse `EditAliasView`) now backed by
     `contactInfo` — remove the M2 "This device only" labels.
+
+    **DONE (2026-06-12):** ContactDetailView reads alias/note/hidden off
+    the `@Query` contact rows and writes through
+    `ManagedPlatformWallet.setDashPayContactInfo`; ContactsView hidden
+    filter + alias display moved off the UserDefaults meta store (which
+    now only keeps the add-time DPNS hint); labels updated.
 15. **G4 design-only:** specify the FFI ECDH hook (shared-secret-only across the
     ABI — never a raw private key; see G4) so M4's implementation doesn't churn
     the wallet API.
