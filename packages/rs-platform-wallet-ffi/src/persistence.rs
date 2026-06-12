@@ -2150,7 +2150,17 @@ unsafe fn decode_cmx_array(ptr: *const u8, count: usize) -> Vec<[u8; 32]> {
     if ptr.is_null() || count == 0 {
         return Vec::new();
     }
-    let bytes = slice::from_raw_parts(ptr, count * 32);
+    // `count` is host-supplied: guard the multiplication so a corrupt
+    // row degrades to a dropped linkage instead of an overflowed length
+    // handed to `from_raw_parts` (UB).
+    let Some(byte_len) = count.checked_mul(32) else {
+        tracing::warn!(
+            count,
+            "shielded activity linkage count overflows on load; dropping linkage bytes"
+        );
+        return Vec::new();
+    };
+    let bytes = slice::from_raw_parts(ptr, byte_len);
     bytes
         .chunks_exact(32)
         .filter_map(|c| <[u8; 32]>::try_from(c).ok())

@@ -397,6 +397,13 @@ pub fn derive_activity_from_scan_data(
         .map(|n| (n.nullifier, (n.value, n.cmx)))
         .collect();
 
+    // Global "did this subwallet ever spend anything" signal. A self-pay
+    // cluster can only be change-from-a-spend if SOME own note was spent;
+    // a wallet with zero spent notes can only have produced it by
+    // shielding to itself, so the self-pay ambiguity collapses to a
+    // receive in that case.
+    let wallet_has_any_spend = input.notes.iter().any(|n| n.is_spent);
+
     for (height, cluster) in clusters {
         // Visible output cmxs for this cluster: own received-note cmxs +
         // recovered-send cmxs. This is exactly the set the live recorder
@@ -520,15 +527,33 @@ pub fn derive_activity_from_scan_data(
                 note_cmxs: visible_cmxs,
                 spent_nullifiers: Vec::new(),
             }
+        } else if !wallet_has_any_spend {
+            // SELF-PAY in a subwallet that has NEVER spent a note: change
+            // from a spend is impossible, so this is necessarily a shield
+            // to self — surface it as the inbound value it is.
+            ShieldedActivityEntry {
+                id,
+                kind: ShieldedActivityKind::Received,
+                direction: ShieldedDirection::In,
+                amount: change_total,
+                fee: None,
+                counterparty: None,
+                memo: None,
+                block_height: Some(height),
+                status: ShieldedActivityStatus::Confirmed,
+                created_at_ms: now_ms,
+                note_cmxs: visible_cmxs,
+                spent_nullifiers: Vec::new(),
+            }
         } else {
-            // SELF-PAY, UNLINKED: every output pays ourselves and no rho
-            // link fired. Two indistinguishable possibilities: a shield to
-            // self (Type 15/18 — the common case) or change from our own
-            // spend whose output landed in a different action than the
-            // real spend (the ~50% shuffle miss; see `note_rho`). Calling
-            // it `Received` would show a spend as money arriving, so this
-            // is surfaced as a self-transfer instead — honest for both
-            // readings and upgradeable in place by a live entry.
+            // SELF-PAY, UNLINKED, in a wallet that HAS spends: two
+            // indistinguishable possibilities — a shield to self (Type
+            // 15/18) or change from our own spend whose output landed in a
+            // different action than the real spend (the ~50% shuffle miss;
+            // see `note_rho`). Calling it `Received` would show a spend as
+            // money arriving, so this is surfaced as a self-transfer
+            // instead — honest for both readings and upgradeable in place
+            // by a live entry.
             ShieldedActivityEntry {
                 id,
                 kind: ShieldedActivityKind::ShieldedSpend,
@@ -733,19 +758,26 @@ mod tests {
 
     #[test]
     fn self_change_only_cluster_is_shielded_spend() {
-        // An outgoing note paying one of our OWN addresses, nothing else:
-        // a spend whose output is all self-change → residual ShieldedSpend.
+        // An outgoing note paying one of our OWN addresses, nothing else,
+        // in a wallet that HAS spent notes: a spend whose output is all
+        // self-change → residual ShieldedSpend. (In a never-spent wallet
+        // the same shape collapses to Received — see
+        // `self_pay_in_never_spent_wallet_is_received`.)
         let own = addr(0x01);
+        let spent_elsewhere = own_note(9, 0x99, 5, 7_000, true);
         let input = ScanDeriveInput {
-            notes: vec![],
+            notes: vec![spent_elsewhere],
             outgoing: vec![outgoing(0x50, own.clone(), 400, 0, vec![])],
             own_addresses: vec![own],
         };
         let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
-        assert_eq!(d.len(), 1);
-        assert_eq!(d[0].kind, ShieldedActivityKind::ShieldedSpend);
-        assert_eq!(d[0].direction, ShieldedDirection::SelfTransfer);
-        assert!(d[0].fee.is_none());
+        let e = d
+            .iter()
+            .find(|e| e.block_height == Some(400))
+            .expect("self-change cluster entry");
+        assert_eq!(e.kind, ShieldedActivityKind::ShieldedSpend);
+        assert_eq!(e.direction, ShieldedDirection::SelfTransfer);
+        assert!(e.fee.is_none());
     }
 
     // ── zero-value filler / memo exclusion ─────────────────────────
@@ -954,11 +986,35 @@ mod tests {
     }
 
     #[test]
-    fn unlinked_self_pay_is_self_transfer_not_received() {
-        // Self-pay cluster with no rho link: either a shield-to-self or
-        // change whose output landed in a different action than the real
-        // spend (the ~50% shuffle miss). Must NOT surface as `Received` —
-        // that would show a spend as money arriving.
+    fn unlinked_self_pay_is_self_transfer_when_wallet_has_spends() {
+        // Self-pay cluster with no rho link in a wallet that HAS spent
+        // notes: either a shield-to-self or change whose output landed in
+        // a different action than the real spend (the ~50% shuffle miss).
+        // Must NOT surface as `Received` — that would show a spend as
+        // money arriving.
+        let own = addr(0xAA);
+        let spent_elsewhere = own_note(9, 0x99, 5, 7_000, true);
+        let note = own_note(1, 7, 30, 1_000_000, false);
+        let input = ScanDeriveInput {
+            notes: vec![spent_elsewhere, note],
+            outgoing: vec![outgoing(1, own.clone(), 30, 1_000_000, vec![0u8; 36])],
+            own_addresses: vec![own],
+        };
+        let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
+        let e = d
+            .iter()
+            .find(|e| e.block_height == Some(30))
+            .expect("self-pay cluster entry");
+        assert_eq!(e.kind, ShieldedActivityKind::ShieldedSpend);
+        assert_eq!(e.direction, ShieldedDirection::SelfTransfer);
+        assert_eq!(e.amount, 1_000_000);
+    }
+
+    #[test]
+    fn self_pay_in_never_spent_wallet_is_received() {
+        // The same self-pay shape in a subwallet with ZERO spent notes:
+        // change-from-spend is impossible, so it is necessarily a shield
+        // to self and must read as inbound value, not a self-transfer.
         let own = addr(0xAA);
         let note = own_note(1, 7, 30, 1_000_000, false);
         let input = ScanDeriveInput {
@@ -968,8 +1024,8 @@ mod tests {
         };
         let d = derive_activity_from_scan_data(&input, &BTreeSet::new()).new_entries;
         assert_eq!(d.len(), 1);
-        assert_eq!(d[0].kind, ShieldedActivityKind::ShieldedSpend);
-        assert_eq!(d[0].direction, ShieldedDirection::SelfTransfer);
+        assert_eq!(d[0].kind, ShieldedActivityKind::Received);
+        assert_eq!(d[0].direction, ShieldedDirection::In);
         assert_eq!(d[0].amount, 1_000_000);
     }
 

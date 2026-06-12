@@ -2852,10 +2852,14 @@ public class PlatformWalletPersistenceHandler {
                     counterparty_len: UInt(cpLen),
                     memo_ptr: memoLen > 0 ? UnsafePointer(memoPtr) : nil,
                     memo_len: UInt(memoLen),
-                    note_cmxs_ptr: cmxLen > 0 ? UnsafePointer(cmxPtr) : nil,
-                    note_cmxs_count: UInt(cmxLen / 32),
-                    spent_nullifiers_ptr: nfLen > 0 ? UnsafePointer(nfPtr) : nil,
-                    spent_nullifiers_count: UInt(nfLen / 32)
+                    // A persisted blob that isn't a whole number of
+                    // 32-byte elements is corrupt — drop the linkage
+                    // (count 0, null ptr) rather than silently truncating
+                    // trailing bytes into a wrong-but-plausible array.
+                    note_cmxs_ptr: cmxLen > 0 && cmxLen % 32 == 0 ? UnsafePointer(cmxPtr) : nil,
+                    note_cmxs_count: cmxLen % 32 == 0 ? UInt(cmxLen / 32) : 0,
+                    spent_nullifiers_ptr: nfLen > 0 && nfLen % 32 == 0 ? UnsafePointer(nfPtr) : nil,
+                    spent_nullifiers_count: nfLen % 32 == 0 ? UInt(nfLen / 32) : 0
                 )
                 written += 1
                 allocation.entriesInitialized = written
@@ -5679,8 +5683,15 @@ private func persistShieldedActivityCallback(
             }
             let counterparty = data(e.counterparty_ptr, UInt(e.counterparty_len))
             let memo = data(e.memo_ptr, UInt(e.memo_len))
-            let noteCmxs = data(e.note_cmxs_ptr, UInt(e.note_cmxs_count) * 32)
-            let spentNullifiers = data(e.spent_nullifiers_ptr, UInt(e.spent_nullifiers_count) * 32)
+            // The counts are Rust-supplied: use checked multiplication so
+            // a corrupt row degrades to an empty linkage instead of a
+            // trapped overflow crashing the callback path.
+            func byteLen(_ count: UInt) -> UInt {
+                let (value, overflow) = count.multipliedReportingOverflow(by: 32)
+                return overflow ? 0 : value
+            }
+            let noteCmxs = data(e.note_cmxs_ptr, byteLen(UInt(e.note_cmxs_count)))
+            let spentNullifiers = data(e.spent_nullifiers_ptr, byteLen(UInt(e.spent_nullifiers_count)))
             let identityId = e.has_identity_id != 0 ? dataFromTuple32(e.identity_id) : Data()
             snapshots.append(.init(
                 walletId: dataFromTuple32(e.wallet_id),
