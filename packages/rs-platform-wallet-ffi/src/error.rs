@@ -97,6 +97,33 @@ pub enum PlatformWalletFFIResultCode {
     /// to re-persist. The typed Display rendering still survives as the
     /// result message for logging/detail.
     ErrorWalletAlreadyExists = 15,
+    /// Maps `PlatformWalletError::ShieldedBroadcastFailed`. The shielded
+    /// transition (identity-create, unshield, transfer, or withdrawal) was
+    /// DEFINITIVELY not executed — either the relay/CheckTx rejected the
+    /// broadcast, or Platform reported the transition's own execution error.
+    /// Any note reservations were released and the caller is free to retry.
+    /// For identity-create, the new identity does NOT exist and
+    /// `out_identity_id` is left untouched (still zeroed).
+    ErrorShieldedBroadcastFailed = 16,
+    /// Maps `PlatformWalletError::ShieldedBroadcastUnconfirmed`. The broadcast
+    /// was ACCEPTED by the relay but the SDK could not confirm its execution
+    /// result (a transient result-proof fetch/verify failure, not a platform
+    /// rejection), and a direct fetch of the derived id also came back empty.
+    /// The identity may already exist on chain, so the caller must NOT treat
+    /// it as unregistered or re-submit. UNLIKE every other error code,
+    /// `out_identity_id` IS written (the 32-byte derived id) on this code so
+    /// the caller can hold the slot and surface the pending identity.
+    ErrorShieldedBroadcastUnconfirmed = 17,
+    /// Maps `PlatformWalletError::ShieldedSpendUnconfirmed` (unshield /
+    /// shielded transfer / shielded withdrawal). The spend transition was
+    /// ACCEPTED by the relay but its execution result could not be confirmed
+    /// (DAPI wait timeout, result-proof fetch/verify failure, …). The spend
+    /// may have executed on chain, so the wallet intentionally KEEPS the
+    /// notes reserved: the next nullifier sync promotes them to spent if the
+    /// spend landed, and an app restart frees them if it never did. The host
+    /// must NOT auto-retry — a retry would select different unreserved notes
+    /// and could double-send if the original spend landed.
+    ErrorShieldedSpendUnconfirmed = 18,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,

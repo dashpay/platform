@@ -1,6 +1,30 @@
 import Foundation
 import DashSDKFFI
 
+/// Thrown by `shieldedIdentityCreateFromPool` when the Type-20
+/// transition was broadcast and ACCEPTED by the relay, but the SDK
+/// could not confirm its execution result and a direct fetch of the
+/// derived id also came back empty (the Rust side already retried).
+///
+/// This is NOT a registration failure: the identity may already exist
+/// on chain (the broadcast landed; only the result-proof confirmation
+/// failed — e.g. a transient DAPI/proof error). The caller MUST hold
+/// the slot against re-submission and surface the pending identity
+/// rather than treating it as unregistered — re-registering the same
+/// keys while the identity is live would fail the registered-key-hash
+/// stateful check and burn the funds. The note reservations were
+/// intentionally left in place wallet-side; the next nullifier sync
+/// reconciles them.
+///
+/// `identityId` is the 32-byte derived id the FFI filled into
+/// `outIdentityId` on this specific result code (valid, deterministic
+/// in the spent notes). `message` is the Rust-supplied diagnostic.
+public struct ShieldedIdentityCreateUnconfirmedError: LocalizedError {
+    public let identityId: Data
+    public let message: String
+    public var errorDescription: String? { message }
+}
+
 /// Per-wallet outcome from a completed shielded sync pass.
 ///
 /// Mirrors the Rust-side
@@ -467,6 +491,12 @@ extension PlatformWalletManager {
     /// a non-empty memo's UTF-8 byte length must be at most 32 or
     /// Rust rejects it. The 36-byte on-chain encoding is done on the
     /// Rust side.
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed — the spend may already be on chain, so the caller
+    /// must NOT retry (the spent notes stay reserved Rust-side; the
+    /// next shielded sync reconciles them).
     public func shieldedTransfer(
         walletId: Data,
         account: UInt32 = 0,
@@ -583,6 +613,12 @@ extension PlatformWalletManager {
     /// string (`"dash1…"` on mainnet, `"tdash1…"` on testnet). Rust
     /// parses and network-checks the address; hosts don't have to
     /// hand-roll the bincode storage variant tag.
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed — the spend may already be on chain, so the caller
+    /// must NOT retry (the spent notes stay reserved Rust-side; the
+    /// next shielded sync reconciles them).
     public func shieldedUnshield(
         walletId: Data,
         account: UInt32 = 0,
@@ -625,6 +661,12 @@ extension PlatformWalletManager {
     /// shielded balance and creates an L1 withdrawal to
     /// `toCoreAddress` (Base58Check string). `coreFeePerByte` is
     /// the L1 fee rate in duffs/byte (`1` is the dashmate default).
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed — the spend may already be on chain, so the caller
+    /// must NOT retry (the spent notes stay reserved Rust-side; the
+    /// next shielded sync reconciles them).
     public func shieldedWithdraw(
         walletId: Data,
         account: UInt32 = 0,
@@ -787,8 +829,30 @@ extension PlatformWalletManager {
                 }
             }
 
-            try result.check()
-            return withUnsafeBytes(of: outIdentityId) { Data($0) }
+            // Wrap the FFI result EXACTLY ONCE so its Rust-owned message is
+            // freed once in `deinit` (don't also call `result.check()`, which
+            // would construct a second wrapper over the same struct and
+            // double-free). Inspect the typed code directly:
+            //   - success: return the derived id.
+            //   - unconfirmed: the broadcast landed but its result couldn't be
+            //     confirmed; Rust filled `outIdentityId` with the derived id on
+            //     THIS code (and only this code). Throw the typed
+            //     `ShieldedIdentityCreateUnconfirmedError` so the caller holds
+            //     the slot instead of treating it as failed.
+            //   - any other non-success: throw the regular typed error.
+            let wrapped = PlatformWalletResult(result)
+            switch wrapped.code {
+            case .success:
+                return withUnsafeBytes(of: outIdentityId) { Data($0) }
+            case .errorShieldedBroadcastUnconfirmed:
+                let identityId = withUnsafeBytes(of: outIdentityId) { Data($0) }
+                throw ShieldedIdentityCreateUnconfirmedError(
+                    identityId: identityId,
+                    message: wrapped.message ?? "shielded identity-create broadcast unconfirmed"
+                )
+            default:
+                throw PlatformWalletError(result: wrapped)
+            }
         }.value
     }
 

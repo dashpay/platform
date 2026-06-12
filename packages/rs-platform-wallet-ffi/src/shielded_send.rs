@@ -51,6 +51,7 @@ use dpp::shielded::{
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
+use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use crate::check_ptr;
@@ -314,13 +315,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
             .shielded_transfer_to(&coordinator, account, &recipient, amount, memo, &prover)
             .await
     });
-    if let Err(e) = result {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded transfer failed: {e}"),
-        );
-    }
-    PlatformWalletFFIResult::ok()
+    map_spend_result(result, "shielded transfer")
 }
 
 /// Unshield: spend shielded notes and send `amount` credits to a
@@ -372,13 +367,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
             .shielded_unshield_to(&coordinator, account, &to_addr_str, amount, &prover)
             .await
     });
-    if let Err(e) = result {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded unshield failed: {e}"),
-        );
-    }
-    PlatformWalletFFIResult::ok()
+    map_spend_result(result, "shielded unshield")
 }
 
 /// Withdraw: spend shielded notes and send `amount` credits to a
@@ -434,13 +423,40 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
             )
             .await
     });
-    if let Err(e) = result {
-        return PlatformWalletFFIResult::err(
+    map_spend_result(result, "shielded withdraw")
+}
+
+/// Map a shielded spend outcome (unshield / transfer / withdraw) to a typed
+/// FFI result, mirroring the identity-create sibling's code split so hosts
+/// can tell "definitively failed, safe to retry" from "may have executed,
+/// do NOT retry".
+fn map_spend_result(
+    result: Result<(), PlatformWalletError>,
+    operation: &str,
+) -> PlatformWalletFFIResult {
+    match result {
+        Ok(()) => PlatformWalletFFIResult::ok(),
+        // Ambiguous: the broadcast was accepted but its execution result
+        // couldn't be confirmed. The notes stay reserved wallet-side and the
+        // next nullifier sync (or an app restart) reconciles them; the typed
+        // Display already carries the operation name and guidance.
+        Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
+                e.to_string(),
+            )
+        }
+        // Definitive failure: the transition was not executed and the notes
+        // were released; the host may retry.
+        Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
+            format!("{operation} failed: {e}"),
+        ),
+        Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded withdraw failed: {e}"),
-        );
+            format!("{operation} failed: {e}"),
+        ),
     }
-    PlatformWalletFFIResult::ok()
 }
 
 /// IdentityCreateFromShieldedPool (Type 20): spend `account`'s shielded notes to fund a brand-new
@@ -467,6 +483,13 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 /// `out_identity_id`. The id is deterministic in the spent notes, so the host can also predict it
 /// independently if needed.
 ///
+/// `out_identity_id` is ALSO written on the [`ErrorShieldedBroadcastUnconfirmed`] result code: the
+/// broadcast was accepted but its execution result couldn't be confirmed, so the derived id is
+/// handed back (the identity may already exist on chain) and the host must hold the slot rather than
+/// treat the registration as failed. On every other error code `out_identity_id` is left untouched.
+///
+/// [`ErrorShieldedBroadcastUnconfirmed`]: crate::error::PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed
+///
 /// `send_to_address_on_creation_failure_bytes` is the REQUIRED fallback platform address, supplied
 /// as raw `PlatformAddress` storage bytes (21 bytes: 1-byte variant tag + 20-byte hash — the
 /// encoding `PlatformAddress::to_bytes()` produces and `PlatformAddressWasm`/the Swift wrapper
@@ -484,7 +507,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 /// - `signer_identity_handle` must be a valid, non-destroyed `*mut SignerHandle` (a
 ///   `VTableSigner` with the callback variant) that outlives this call; the caller retains
 ///   ownership.
-/// - `out_identity_id` must point to 32 writable bytes.
+/// - `out_identity_id` must point to 32 writable bytes. It is written on `Success` AND on the
+///   `ErrorShieldedBroadcastUnconfirmed` result code (and only those); on all other codes it is
+///   left as the caller initialized it.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_pool(
@@ -584,6 +609,28 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
             *out_identity_id = identity_id.to_buffer();
             PlatformWalletFFIResult::ok()
         }
+        // Broadcast accepted but its execution result couldn't be confirmed and a direct fetch came
+        // back empty. The identity MAY exist on chain, so — unlike every other error arm — we still
+        // write the derived id to `out_identity_id` (see the `# Safety` note) so the caller can hold
+        // the slot against re-submission and surface the pending identity. The notes' reservations
+        // were intentionally NOT released wallet-side.
+        Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+            identity_id,
+            ref reason,
+        }) => {
+            *out_identity_id = identity_id.to_buffer();
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed,
+                format!(
+                    "shielded identity-create-from-pool broadcast unconfirmed (identity {identity_id} may exist on chain): {reason}"
+                ),
+            )
+        }
+        // Definitive failure: the transition was not executed and the spent notes were released.
+        Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
+            format!("shielded identity-create-from-pool failed: {e}"),
+        ),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded identity-create-from-pool failed: {e}"),
@@ -1245,5 +1292,71 @@ mod tests {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             );
         }
+    }
+
+    /// Read the Rust-owned message out of an FFI result for assertions.
+    fn message_of(result: &PlatformWalletFFIResult) -> String {
+        assert!(
+            !result.message.is_null(),
+            "error result must carry a message"
+        );
+        unsafe { CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    /// `map_spend_result` pins the retry-relevant code split the three spend
+    /// entry points depend on:
+    /// - `ShieldedSpendUnconfirmed` → `ErrorShieldedSpendUnconfirmed` (host
+    ///   must NOT retry — the notes stay reserved; a retry could select other
+    ///   unreserved notes and double-send),
+    /// - `ShieldedBroadcastFailed` → `ErrorShieldedBroadcastFailed`
+    ///   (definitive failure; reservations released; safe to retry),
+    /// - any other variant → the generic `ErrorWalletOperation`.
+    ///
+    /// The typed `Display` rendering must survive into the result message in
+    /// every error arm so callers keep diagnostics across the boundary.
+    #[test]
+    fn map_spend_result_pins_retry_relevant_codes() {
+        let unconfirmed: Result<(), PlatformWalletError> =
+            Err(PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: "unshield",
+                reason: "transient proof fetch failed".to_string(),
+            });
+        let result = map_spend_result(unconfirmed, "shielded unshield");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
+        );
+        assert!(
+            message_of(&result).contains("transient proof fetch failed"),
+            "unconfirmed message must carry the wallet Display payload"
+        );
+
+        let failed: Result<(), PlatformWalletError> = Err(
+            PlatformWalletError::ShieldedBroadcastFailed("relay rejected".to_string()),
+        );
+        let result = map_spend_result(failed, "shielded transfer");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed
+        );
+        assert!(
+            message_of(&result).contains("relay rejected"),
+            "broadcast-failed message must carry the wallet Display payload"
+        );
+
+        let other: Result<(), PlatformWalletError> =
+            Err(PlatformWalletError::ShieldedNoUnspentNotes);
+        let result = map_spend_result(other, "shielded withdraw");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+
+        assert_eq!(
+            map_spend_result(Ok(()), "shielded transfer").code,
+            PlatformWalletFFIResultCode::Success
+        );
     }
 }

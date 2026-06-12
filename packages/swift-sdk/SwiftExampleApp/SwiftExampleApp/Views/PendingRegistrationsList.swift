@@ -72,7 +72,11 @@ struct PendingRegistrationRow: View {
             .padding(.vertical, 2)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            if case .failed = controller.phase {
+            // Both terminal-but-retained states are user-dismissable.
+            // `.unconfirmed` stays until the user clears it (typically once
+            // the identity row appears via sync); dismissing it only drops
+            // the Pending row, it doesn't undo the on-chain registration.
+            if isDismissable {
                 Button {
                     walletManager.registrationCoordinator.dismiss(
                         walletId: controller.walletId,
@@ -86,11 +90,19 @@ struct PendingRegistrationRow: View {
         }
     }
 
+    private var isDismissable: Bool {
+        switch controller.phase {
+        case .failed, .unconfirmed: return true
+        default: return false
+        }
+    }
+
     private var phaseIcon: String {
         switch controller.phase {
         case .idle, .preparingKeys, .inFlight: return "clock.fill"
         case .completed: return "checkmark.circle.fill"
         case .failed: return "xmark.octagon.fill"
+        case .unconfirmed: return "exclamationmark.triangle.fill"
         }
     }
 
@@ -99,6 +111,7 @@ struct PendingRegistrationRow: View {
         case .idle, .preparingKeys, .inFlight: return .blue
         case .completed: return .green
         case .failed: return .red
+        case .unconfirmed: return .orange
         }
     }
 
@@ -109,6 +122,7 @@ struct PendingRegistrationRow: View {
         case .inFlight: return "In flight"
         case .completed: return "Registered"
         case .failed: return "Failed"
+        case .unconfirmed: return "Confirmation pending"
         }
     }
 }

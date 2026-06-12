@@ -53,6 +53,22 @@ final class IdentityRegistrationController: ObservableObject {
         /// the coordinator's map until the user dismisses it
         /// manually.
         case failed(String)
+        /// Broadcast-succeeded-but-confirmation-failed terminal state
+        /// (shielded Type-20 only). The transition was relayed and
+        /// accepted, but its execution-result proof couldn't be
+        /// confirmed and a direct fetch of the derived id also came
+        /// back empty (Rust already retried). The identity at
+        /// `identityId` MAY already be live on chain.
+        ///
+        /// This is NOT a red failure: treating it as unregistered is
+        /// the orphaned-identity hazard. Re-registering the same keys
+        /// while the identity is live would fail the
+        /// registered-key-hash stateful check and burn the funds to
+        /// the fallback address minus a penalty — so the slot must stay
+        /// held (see `isActive`) and the entry must linger in Pending
+        /// Registrations until the identity row appears via the next
+        /// sync and the user dismisses it.
+        case unconfirmed(identityId: Data, message: String)
 
         /// Whether the controller is currently holding its slot
         /// against a fresh registration. Used by the Resumable
@@ -69,9 +85,12 @@ final class IdentityRegistrationController: ObservableObject {
         /// which the identity-slot anti-join already covers.
         /// `.failed` is NOT active either: the user is expected
         /// to retry, so the lock should resurface for selection.
+        /// `.unconfirmed` IS active: the identity is probably live on
+        /// chain, so the slot must stay held to block a re-submission
+        /// that would burn funds against the registered-key-hash check.
         var isActive: Bool {
             switch self {
-            case .preparingKeys, .inFlight:
+            case .preparingKeys, .inFlight, .unconfirmed:
                 return true
             case .idle, .completed, .failed:
                 return false
@@ -79,10 +98,32 @@ final class IdentityRegistrationController: ObservableObject {
         }
     }
 
+    /// Which stage a shielded `.failed` terminal state failed at, so
+    /// `RegistrationProgressView` can attribute the red marker to the
+    /// right step instead of always blaming the Halo 2 proof step.
+    /// Only meaningful for `fundingKind == .shieldedPool` and only set
+    /// alongside a `.failed` phase.
+    enum FailureStage {
+        /// Failed before or during the broadcast itself — build / proof
+        /// error, or a relay/CheckTx broadcast rejection. The shielded
+        /// progress view keeps the existing elapsed-time heuristic
+        /// (note-selection vs Halo 2 proof) for the pre-broadcast slice.
+        case beforeBroadcast
+        /// Platform definitively rejected the broadcast transition (a
+        /// `PlatformWalletError.shieldedBroadcastFailed`). Attributed to
+        /// the "Broadcasting transition" step.
+        case broadcastRejected
+    }
+
     /// Current phase. Updates flow:
     /// `.idle` → `.preparingKeys` (caller) → `.inFlight` (submit) →
-    /// `.completed(id) | .failed(message)`.
+    /// `.completed(id) | .failed(message) | .unconfirmed(id, message)`.
     @Published private(set) var phase: Phase = .idle
+
+    /// Stage attribution for a shielded `.failed` phase. `nil` whenever
+    /// the phase is not a shielded failure. Reset at the start of every
+    /// `submit` so a retry doesn't inherit the previous attempt's stage.
+    @Published private(set) var failureStage: FailureStage?
 
     /// Slot this controller is bound to. Stored so the coordinator
     /// and the progress view can filter `PersistentAssetLock` rows
@@ -142,6 +183,9 @@ final class IdentityRegistrationController: ObservableObject {
     ///   - `.completed`: re-submitting after success would flip the
     ///     UI from "Done" back to a spinner before failing on the
     ///     consumed lock.
+    ///   - `.unconfirmed`: the identity is probably already live on
+    ///     chain; re-submitting the same keys would fail the
+    ///     registered-key-hash stateful check and burn the funds.
     /// `.idle`, `.preparingKeys`, and `.failed` are allowed — the
     /// coordinator drives the legitimate-restart flow through them
     /// (callers must call `enterPreparingKeys()` before `submit()`,
@@ -150,15 +194,19 @@ final class IdentityRegistrationController: ObservableObject {
     /// `body` performs the actual FFI call. It runs detached on a
     /// background priority and reports the identity id on success
     /// or rethrows on failure. The controller flips `phase` to
-    /// `.completed` / `.failed` accordingly.
+    /// `.completed` / `.unconfirmed` / `.failed` accordingly, and on a
+    /// shielded `.failed` records `failureStage` for step attribution.
     func submit(body: @escaping () async throws -> Data) {
         switch phase {
         case .idle, .preparingKeys, .failed:
             break
-        case .inFlight, .completed:
+        case .inFlight, .completed, .unconfirmed:
             return
         }
         phase = .inFlight
+        // Clear any stage attribution carried over from a previous failed
+        // attempt before this one runs.
+        failureStage = nil
         lastSubmittedAt = Date()
         terminalAt = nil
         task = Task { [weak self] in
@@ -168,8 +216,31 @@ final class IdentityRegistrationController: ObservableObject {
                     self?.terminalAt = Date()
                     self?.phase = .completed(identityId: identityId)
                 }
-            } catch {
+            } catch let unconfirmed as ShieldedIdentityCreateUnconfirmedError {
+                // Broadcast landed but its result couldn't be confirmed and
+                // Rust's direct fetch came back empty. Hold the slot; the
+                // identity probably exists and will surface on the next sync.
                 await MainActor.run {
+                    self?.terminalAt = Date()
+                    self?.phase = .unconfirmed(
+                        identityId: unconfirmed.identityId,
+                        message: unconfirmed.message
+                    )
+                }
+            } catch {
+                // Attribute the failure stage so the shielded progress view
+                // can point the red marker at the right step. A
+                // `shieldedBroadcastFailed` is a definitive platform/relay
+                // rejection of the broadcast; everything else (build / Halo 2
+                // proof errors) failed before the broadcast.
+                let stage: FailureStage
+                if case PlatformWalletError.shieldedBroadcastFailed = error {
+                    stage = .broadcastRejected
+                } else {
+                    stage = .beforeBroadcast
+                }
+                await MainActor.run {
+                    self?.failureStage = stage
                     self?.terminalAt = Date()
                     self?.phase = .failed(error.localizedDescription)
                 }

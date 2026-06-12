@@ -28,20 +28,30 @@ import SwiftDashSDK
 ///   5. Registering identity          → activeLock `statusRaw == 2 or 3`
 ///                                      AND controller still `.inFlight`
 ///
-/// Shielded-pool funding (4 steps, phase + elapsed-time driven — there
+/// Shielded-pool funding (5 steps, phase + elapsed-time driven — there
 /// is no asset lock and no per-stage signal from Rust during the opaque
 /// FFI call; see `shieldedCurrentStep`):
 ///
-///   1. Selecting shielded notes  2. Generating Halo 2 proof
-///   3. Broadcasting transition   4. Registering identity
+///   1. Selecting shielded notes      2. Generating Halo 2 proof
+///   3. Broadcasting transition       4. Waiting for platform confirmation
+///   5. Registering identity
+///
+/// Step 4 ("Waiting for platform confirmation") exists so a
+/// post-broadcast confirmation failure is attributed there — NOT to the
+/// Halo 2 proof step — and so the `.unconfirmed` terminal state (the
+/// broadcast landed but its result couldn't be confirmed) has a step to
+/// render an orange warning on while steps 1–3 stay done and step 5
+/// stays pending.
 ///
 /// `.completed` is the *terminal* state and is not a separate step;
 /// `RegistrationProgressView` renders the "Identity created" banner
 /// + "View Identity" navigation below this section in its own
 /// terminalSection. `.failed` marks the current step with the error
-/// icon + message. Step 4 is shown as `.skipped` (faded checkmark)
-/// when the IS branch came back fast so the user can see step 4 was
-/// passed through without engaging the CL fallback.
+/// icon + message. `.unconfirmed` marks step 4 with an orange warning
+/// triangle and renders its own terminalSection banner. (Asset-lock)
+/// step 4 is shown as `.skipped` (faded checkmark) when the IS branch
+/// came back fast so the user can see step 4 was passed through without
+/// engaging the CL fallback.
 struct RegistrationProgressSection: View {
     @ObservedObject var controller: IdentityRegistrationController
 
@@ -79,12 +89,12 @@ struct RegistrationProgressSection: View {
 
     /// Number of visual steps for the active funding source. The
     /// asset-lock path has 5 (build → broadcast → IS → CL → register);
-    /// the shielded-pool path has 4 (select notes → Halo 2 proof →
-    /// broadcast → register).
+    /// the shielded-pool path has 5 (select notes → Halo 2 proof →
+    /// broadcast → wait for confirmation → register).
     private var stepCount: Int {
         switch controller.fundingKind {
         case .assetLock: return 5
-        case .shieldedPool: return 4
+        case .shieldedPool: return 5
         }
     }
 
@@ -99,6 +109,7 @@ struct RegistrationProgressSection: View {
             let count = stepCount
             let step = currentStep(now: now)
             let isFailed = isFailed
+            let isUnconfirmed = isUnconfirmed
             let errorMessage = failureMessage
 
             Section {
@@ -106,9 +117,17 @@ struct RegistrationProgressSection: View {
                     stepRow(
                         index: idx,
                         title: stepTitle(idx),
-                        state: stepState(idx, currentStep: step, isFailed: isFailed)
+                        state: stepState(
+                            idx,
+                            currentStep: step,
+                            isFailed: isFailed,
+                            isUnconfirmed: isUnconfirmed
+                        )
                     )
-                    if idx == count, let message = errorMessage {
+                    // Only `.failed` renders an inline red message under the
+                    // last step; `.unconfirmed` gets its own orange
+                    // terminalSection banner instead.
+                    if idx == count, isFailed, let message = errorMessage {
                         Text(message)
                             .font(.caption)
                             .foregroundColor(.red)
@@ -118,7 +137,7 @@ struct RegistrationProgressSection: View {
             } header: {
                 Text("Registration Progress")
             } footer: {
-                Text(footerText(step: step, isFailed: isFailed))
+                Text(footerText(step: step, isFailed: isFailed, isUnconfirmed: isUnconfirmed))
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
@@ -160,6 +179,12 @@ struct RegistrationProgressSection: View {
                 default: return 1
                 }
             }
+            return 5
+        case .unconfirmed:
+            // `.unconfirmed` is a shielded-only terminal state and is
+            // handled in `shieldedCurrentStep`; it never reaches this
+            // asset-lock branch. Report the last (register) step so the
+            // switch is exhaustive and the rows render fully done.
             return 5
         case .inFlight:
             guard let lock = activeLocks.first else {
@@ -210,39 +235,54 @@ struct RegistrationProgressSection: View {
     /// this just lets the user see step 1 register before step 2 spins.
     private static let shieldedNoteSelectionWindow: TimeInterval = 2.0
 
-    /// Step 1...4 for the shielded-pool funding path. There is NO
+    /// Step 1...5 for the shielded-pool funding path. There is NO
     /// per-stage signal from Rust during the opaque
     /// `platform_wallet_manager_shielded_identity_create_from_pool`
-    /// call (note-select → Halo 2 proof → broadcast → confirm all run
-    /// inside one blocking FFI call), so transitions are driven from
-    /// `controller.phase` plus elapsed time since `lastSubmittedAt`:
+    /// call (note-select → Halo 2 proof → broadcast → confirm → register
+    /// all run inside one blocking FFI call), so transitions are driven
+    /// from `controller.phase` plus elapsed time since `lastSubmittedAt`:
     ///
     ///   1. Selecting shielded notes  → `.idle` / `.preparingKeys`, or
     ///      the first `shieldedNoteSelectionWindow` seconds of `.inFlight`.
     ///   2. Generating Halo 2 proof   → `.inFlight` after that window.
-    ///      Kept active for the rest of the call: broadcast + confirm
-    ///      (steps 3/4) can't be observed separately, so they stay
-    ///      `.pending` rather than flipping to a green check for work
-    ///      that may not have happened yet.
-    ///   On `.completed` return 5 (one past the last step) so all rows
-    ///   render `.done`. On `.failed` mark the step we'd reached *at
-    ///   the failure instant*, anchored on `controller.terminalAt` —
-    ///   failed rows are retained until dismissed, so measuring
-    ///   against live `now` would let the failed icon drift from step
-    ///   1 to step 2 once the note-selection window lapses on the
-    ///   wall clock.
+    ///      Kept active for the rest of the call: broadcast / confirm /
+    ///      register (steps 3/4/5) can't be observed separately while the
+    ///      single FFI call is in flight, so they stay `.pending` rather
+    ///      than flipping to a green check for work that may not have
+    ///      happened yet.
+    ///   On `.completed` return 6 (one past the last step) so all rows
+    ///   render `.done`. On `.unconfirmed` return 4 ("Waiting for platform
+    ///   confirmation") so that step carries the warning. On `.failed`
+    ///   attribute the step: a `broadcastRejected` failure marks step 3
+    ///   ("Broadcasting transition"); anything else keeps the
+    ///   note-selection vs Halo 2 elapsed-time heuristic, anchored on
+    ///   `controller.terminalAt` (the failure instant) — failed rows are
+    ///   retained until dismissed, so measuring against live `now` would
+    ///   let the failed icon drift from step 1 to step 2 once the
+    ///   note-selection window lapses on the wall clock.
     private func shieldedCurrentStep(now: Date) -> Int {
         switch controller.phase {
         case .idle, .preparingKeys:
             return 1
         case .completed:
-            return 5
+            return 6
+        case .unconfirmed:
+            // Broadcast landed; only the result confirmation failed.
+            // Attribute to the "Waiting for platform confirmation" step.
+            return 4
         case .inFlight:
             return shieldedStep(elapsedTo: now)
         case .failed:
-            // Freeze at the failure instant; fall back to `now` only
-            // if the terminal timestamp is missing (pre-submit
-            // failure shapes never set it).
+            // A definitive broadcast rejection is attributed to the
+            // broadcast step (3). Build / Halo 2 proof errors fail before
+            // the broadcast, so keep the elapsed-time heuristic
+            // (note-selection vs proof) for them — frozen at the failure
+            // instant, falling back to `now` only if the terminal
+            // timestamp is missing (pre-submit failure shapes never set
+            // it).
+            if controller.failureStage == .broadcastRejected {
+                return 3
+            }
             return shieldedStep(elapsedTo: controller.terminalAt ?? now)
         }
     }
@@ -303,6 +343,14 @@ struct RegistrationProgressSection: View {
         return false
     }
 
+    /// True only for the shielded `.unconfirmed` terminal state. Drives
+    /// the orange warning on step 4 (and keeps it distinct from
+    /// `isFailed`, which `.unconfirmed` is NOT).
+    private var isUnconfirmed: Bool {
+        if case .unconfirmed = controller.phase { return true }
+        return false
+    }
+
     private var failureMessage: String? {
         if case .failed(let msg) = controller.phase { return msg }
         return nil
@@ -314,7 +362,8 @@ struct RegistrationProgressSection: View {
             case 1: return "Selecting shielded notes"
             case 2: return "Generating Halo 2 proof"
             case 3: return "Broadcasting transition"
-            case 4: return "Registering identity"
+            case 4: return "Waiting for platform confirmation"
+            case 5: return "Registering identity"
             default: return ""
             }
         }
@@ -333,11 +382,27 @@ struct RegistrationProgressSection: View {
     /// the IS branch returned the proof without needing ChainLock
     /// fallback — visually distinguishable so users don't think
     /// the step "didn't happen yet" once we've moved past it.
-    enum StepState { case done, active, pending, skipped, failed }
+    /// `.warning` (orange triangle) marks the "Waiting for platform
+    /// confirmation" step when the broadcast landed but its result
+    /// couldn't be confirmed (the shielded `.unconfirmed` terminal
+    /// state) — distinct from `.failed` because nothing is actually
+    /// wrong; the identity is probably live on chain.
+    enum StepState { case done, active, pending, skipped, failed, warning }
 
-    private func stepState(_ idx: Int, currentStep: Int, isFailed: Bool) -> StepState {
+    private func stepState(
+        _ idx: Int,
+        currentStep: Int,
+        isFailed: Bool,
+        isUnconfirmed: Bool
+    ) -> StepState {
         if isFailed && idx == currentStep {
             return .failed
+        }
+        // `.unconfirmed` warns on its current step (step 4) while leaving
+        // the earlier steps `.done` (`idx < currentStep` below) and the
+        // register step `.pending` (`idx > currentStep`).
+        if isUnconfirmed && idx == currentStep {
+            return .warning
         }
         if idx < currentStep {
             // Steps 3 and 4 are the IS / CL halves of the proof
@@ -414,6 +479,12 @@ struct RegistrationProgressSection: View {
             Image(systemName: "xmark.octagon.fill")
                 .foregroundColor(.red)
                 .font(.title3)
+        case .warning:
+            // Broadcast landed but its result couldn't be confirmed —
+            // not an error, so an orange triangle, not the red octagon.
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.orange)
+                .font(.title3)
         }
     }
 
@@ -424,10 +495,17 @@ struct RegistrationProgressSection: View {
         case .pending: return .secondary
         case .skipped: return .secondary
         case .failed: return .red
+        case .warning: return .orange
         }
     }
 
-    private func footerText(step: Int, isFailed: Bool) -> String {
+    private func footerText(step: Int, isFailed: Bool, isUnconfirmed: Bool) -> String {
+        if isUnconfirmed {
+            return "The transition was broadcast, but confirmation of its "
+                + "result proof failed. The identity may already exist on "
+                + "chain and will appear after the next sync — do not "
+                + "re-submit."
+        }
         if isFailed {
             return "Tap Dismiss in Pending Registrations to clear this entry."
         }
@@ -436,7 +514,8 @@ struct RegistrationProgressSection: View {
             case 1: return "Selecting shielded notes to spend from the pool."
             case 2: return "Generating the Halo 2 proof — this can take ~1–2 minutes."
             case 3: return "Broadcasting the IdentityCreateFromShieldedPool transition."
-            case 4: return "Registering the proof-verified identity on Platform."
+            case 4: return "Waiting for Platform to confirm the transition's execution result."
+            case 5: return "Registering the proof-verified identity on Platform."
             default: return ""
             }
         }
@@ -519,6 +598,51 @@ struct RegistrationProgressView: View {
                         .font(.callout)
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
+                }
+            }
+        case .unconfirmed(let identityId, let message):
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(
+                        "Broadcast succeeded — confirmation pending",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundColor(.orange)
+                    .font(.headline)
+                    // Same base58 styling as the completed case — the id is
+                    // the derived identity id Rust handed back; the identity
+                    // is probably already live on chain.
+                    Text(identityId.toBase58String())
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                    Text(message)
+                        .font(.callout)
+                        .foregroundColor(.primary)
+                        .textSelection(.enabled)
+                    Text(
+                        "The transition was broadcast and accepted, but its "
+                        + "execution-result proof couldn't be confirmed. The "
+                        + "identity above will appear in the Identities tab "
+                        + "after the next sync. Do NOT re-submit — the slot is "
+                        + "held to prevent burning funds against a duplicate "
+                        + "registration."
+                    )
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    // Plain navigation dismiss only — it must NOT drop the
+                    // controller from the coordinator (that frees the slot).
+                    // The entry stays in Pending Registrations until the
+                    // identity row appears via sync and the user dismisses it
+                    // there.
+                    Button {
+                        dismiss()
+                    } label: {
+                        Text("Close")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .padding(.top, 4)
                 }
             }
         default:
