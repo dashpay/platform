@@ -1,3 +1,35 @@
+## [4.0.0-rc.2](https://github.com/dashpay/platform/compare/v4.0.0-rc.1...v4.0.0-rc.2) (2026-06-12)
+
+
+### Features
+
+* **swift-sdk:** seed shielded pool notes from the example app ([#3858](https://github.com/dashpay/platform/issues/3858))
+
+
+### Bug Fixes
+
+* **dpp:** harden nested document-property position parsing ([#3857](https://github.com/dashpay/platform/issues/3857))
+* **drive:** return error instead of panicking on empty SetPrices direct purchase ([#3856](https://github.com/dashpay/platform/issues/3856))
+* **drive:** verify identity-create-from-shielded-pool results without unbounded terminal-key queries ([#3859](https://github.com/dashpay/platform/issues/3859))
+* **platform-wallet:** keep note reservations on ambiguous shielded spend confirmation failures ([#3863](https://github.com/dashpay/platform/issues/3863))
+* **platform:** derive identity-rescan keys through the wallet signer ([#3860](https://github.com/dashpay/platform/issues/3860))
+* **platform:** load identity by index through the wallet signer ([#3861](https://github.com/dashpay/platform/issues/3861))
+* **platform:** zero cached platform-address balances absent from state ([#3855](https://github.com/dashpay/platform/issues/3855))
+* **swift-sdk:** attribute shielded registration errors to the right step and keep unconfirmed broadcasts safe ([#3862](https://github.com/dashpay/platform/issues/3862))
+* **swift-sdk:** fixed mempool tx categorization after restart ([#3777](https://github.com/dashpay/platform/issues/3777))
+* **swift-sdk:** freeze failed registration step at the failure instant ([#3854](https://github.com/dashpay/platform/issues/3854))
+* **wasm-sdk:** label getTokenContractInfo parameter as tokenId, not contractId ([#3851](https://github.com/dashpay/platform/issues/3851))
+
+
+### Miscellaneous Chores
+
+* **swift-sdk:** reduced swift-sdk static library size using Cargo profiles ([#3837](https://github.com/dashpay/platform/issues/3837))
+
+
+### Continuous Integration
+
+* retry docker metadata step on transient github api failures ([#3847](https://github.com/dashpay/platform/issues/3847))
+
 ## [4.0.0-rc.1](https://github.com/dashpay/platform/compare/v4.0.0-beta.4...v4.0.0-rc.1) (2026-06-10)
 
 
