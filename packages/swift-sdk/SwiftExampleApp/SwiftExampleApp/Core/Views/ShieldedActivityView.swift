@@ -124,17 +124,28 @@ struct ShieldedActivityListView: View {
     /// Pending rows first (most recent record time first), then confirmed
     /// / failed by block height descending — mirrors the Rust
     /// `sort_activity_for_display` contract.
+    ///
+    /// Partition by STATUS, not by `hasBlockHeight`: the live recorders
+    /// mark a successful broadcast `Confirmed` with `block_height: None`
+    /// (the scan backfills the height later), so a height-less row is
+    /// the COMMON success shape — only `status == 0` is actually
+    /// pending. Height-less confirmed rows sort by record time among
+    /// the settled (they're the newest).
     private var pending: [PersistentShieldedActivity] {
         entries
-            .filter { !$0.hasBlockHeight }
+            .filter { $0.status == 0 }
             .sorted { $0.createdAtMs > $1.createdAtMs }
     }
 
     private var settled: [PersistentShieldedActivity] {
         entries
-            .filter { $0.hasBlockHeight }
+            .filter { $0.status != 0 }
             .sorted {
-                if $0.blockHeight != $1.blockHeight { return $0.blockHeight > $1.blockHeight }
+                // Height-less (just-confirmed) rows float above
+                // height-bearing ones, then height desc, then recency.
+                let lh = $0.hasBlockHeight ? $0.blockHeight : UInt64.max
+                let rh = $1.hasBlockHeight ? $1.blockHeight : UInt64.max
+                if lh != rh { return lh > rh }
                 return $0.createdAtMs > $1.createdAtMs
             }
     }
@@ -193,7 +204,10 @@ struct ShieldedActivityListView: View {
                     Text(entry.signedAmountText)
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(entry.amountColor)
-                    if !entry.hasBlockHeight {
+                    // Badge by STATUS — a Confirmed row without a height
+                    // (live success awaiting the scan's height backfill)
+                    // must not read as Pending.
+                    if entry.status == 0 {
                         Text("Pending")
                             .font(.caption2)
                             .foregroundColor(.orange)
