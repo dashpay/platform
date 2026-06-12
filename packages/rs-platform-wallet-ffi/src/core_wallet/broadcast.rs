@@ -247,7 +247,11 @@ pub unsafe extern "C" fn core_wallet_set_coinjoin_gap_limit(
     PlatformWalletFFIResult::ok()
 }
 
-/// Free transaction bytes returned by `core_wallet_send_to_addresses`.
+/// Free a heap buffer returned by this crate's CoreWallet FFI:
+/// - the serialized transaction bytes from `core_wallet_send_to_addresses`
+///   (pass the returned `out_tx_len` as `len`), or
+/// - the contiguous `count * 32` byte txid buffer from
+///   `core_wallet_sweep_coinjoin` (pass `out_count * 32` as `len`).
 #[no_mangle]
 pub unsafe extern "C" fn core_wallet_free_tx_bytes(bytes: *mut u8, len: usize) {
     if !bytes.is_null() && len > 0 {
