@@ -9,6 +9,7 @@ compile_error!("network-testing or offline-testing must be enabled for tests");
 mod address_funds;
 mod address_sync;
 mod broadcast;
+mod broadcast_wait_signature;
 mod common;
 mod config;
 mod contested_resource;
