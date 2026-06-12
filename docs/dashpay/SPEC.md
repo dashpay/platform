@@ -1001,6 +1001,20 @@ From `research/05` §5 / `SwiftExampleApp/CLAUDE.md`:
 
 ---
 
+### Devnet UAT round 2 (2026-06-13) — rotation / reject / DPNS verified live
+
+On paloma with three identities: **reject + tombstone** (rejected request
+suppressed across forced re-sync), **G3 rotation end-to-end** (re-send from
+the rejected sender broadcast with a bumped accountReference — accepted by
+the unique index — and reappeared through the tombstone on the recipient:
+the dp_005 scenario, live), **DPNS register → live search → found preview →
+send** and the **not-found state** (inline + retry, no dead end), **accept
+of the rotation request** (re-established, accounts rebuilt). Findings
+fixed: optimistic pending-sent overlay leaked across identity switches
+(now reset on picker change). Open UX item: "SPV client is not running"
+dead-ends both Send Dash and identity creation — needs auto-start or a
+"Start & retry" affordance (product decision pending).
+
 ## Part 7 — Test plan
 
 Follow the repo TDD discipline (failing test first; red→green in the commit
