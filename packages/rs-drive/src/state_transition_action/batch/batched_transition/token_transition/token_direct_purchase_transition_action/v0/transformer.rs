@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use grovedb::TransactionArg;
 use dpp::block::block_info::BlockInfo;
@@ -8,6 +9,8 @@ use dpp::consensus::state::token::{TokenAmountUnderMinimumSaleAmount, TokenDirec
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_direct_purchase_transition::v0::TokenDirectPurchaseTransitionV0;
 use dpp::ProtocolError;
+use dpp::balances::credits::TokenAmount;
+use dpp::fee::Credits;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionAction;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_transition_action::v0::TokenDirectPurchaseTransitionActionV0;
@@ -189,76 +192,18 @@ impl TokenDirectPurchaseTransitionActionV0 {
                 required_price
             }
             TokenPricingSchedule::SetPrices(set_prices) => {
-                match set_prices.range(..=token_count).next_back() {
-                    Some((_matched_quantity, matched_price)) => {
-                        // Use matched_quantity and matched_price to compute required cost
-                        let required_total = match matched_price.checked_mul(*token_count) {
-                            Some(total) => total,
-                            None => {
-                                let bump_action =
-                                    BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                                        base,
-                                        owner_id,
-                                        user_fee_increase,
-                                    );
-                                let batched_action =
-                                    BatchedTransitionAction::BumpIdentityDataContractNonce(
-                                        bump_action,
-                                    );
-
-                                return Ok((
-                                    ConsensusValidationResult::new_with_data_and_errors(
-                                        batched_action,
-                                        vec![ConsensusError::BasicError(
-                                            dpp::consensus::basic::BasicError::OverflowError(
-                                                OverflowError::new(
-                                                    "overflow when calculating required total price in SetPrices direct purchase".to_string(),
-                                                ),
-                                            ),
-                                        )],
-                                    ),
-                                    fee_result,
-                                ));
-                            }
-                        };
-
-                        if *total_agreed_price < required_total {
-                            let bump_action =
-                                BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
-                                    base,
-                                    owner_id,
-                                    user_fee_increase,
-                                );
-                            let batched_action =
-                                BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-
-                            return Ok((
-                                ConsensusValidationResult::new_with_data_and_errors(
-                                    batched_action,
-                                    vec![ConsensusError::StateError(
-                                        StateError::TokenDirectPurchaseUserPriceTooLow(
-                                            TokenDirectPurchaseUserPriceTooLow::new(
-                                                base.token_id(),
-                                                *total_agreed_price,
-                                                required_total,
-                                            ),
-                                        ),
-                                    )],
-                                ),
-                                fee_result,
-                            ));
-                        }
-                        required_total
-                    }
-                    None => {
-                        // `range(..=token_count).next_back()` returns `None` in two situations:
-                        //   1. the schedule has tiers but the smallest one is above `token_count`
-                        //      (the buyer is under the minimum sale amount), or
-                        //   2. the schedule is empty — the token has no usable direct-sale price.
-                        // Both are invalid purchases. We must NOT assume the map is non-empty here:
-                        // an empty `SetPrices` schedule can be set and stored (its structure/state
-                        // validation does not reject the price), so `.expect()`-ing a key would panic
-                        // during block execution on every validator and halt the chain.
+                // All of the `SetPrices` resolution logic (tier lookup, overflow, under-minimum,
+                // and the empty-schedule case that must never `.expect()` a key) lives in a pure
+                // helper so it can be unit-tested directly. On rejection we bump the nonce and
+                // surface the consensus error.
+                match resolve_set_prices_direct_purchase_price(
+                    base.token_id(),
+                    &set_prices,
+                    *token_count,
+                    *total_agreed_price,
+                ) {
+                    Ok(required_total) => required_total,
+                    Err(error) => {
                         let bump_action =
                             BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
                                 base,
@@ -267,23 +212,6 @@ impl TokenDirectPurchaseTransitionActionV0 {
                             );
                         let batched_action =
                             BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-
-                        let error = match set_prices.keys().next() {
-                            // At least one tier exists: the buyer is below the minimum sale amount.
-                            Some(minimum_sale_amount) => ConsensusError::StateError(
-                                StateError::TokenAmountUnderMinimumSaleAmount(
-                                    TokenAmountUnderMinimumSaleAmount::new(
-                                        base.token_id(),
-                                        *token_count,
-                                        *minimum_sale_amount,
-                                    ),
-                                ),
-                            ),
-                            // Empty schedule: the token has no direct-sale price at all.
-                            None => ConsensusError::StateError(StateError::TokenNotForDirectSale(
-                                TokenNotForDirectSale::new(base.token_id()),
-                            )),
-                        };
 
                         return Ok((
                             ConsensusValidationResult::new_with_data_and_errors(
@@ -312,11 +240,82 @@ impl TokenDirectPurchaseTransitionActionV0 {
     }
 }
 
+/// Resolves the required total price for a `SetPrices` (tiered) direct purchase.
+///
+/// Returns the required total in credits on success, or the consensus error that must reject
+/// the purchase. This is a pure function so every rejection branch — in particular the
+/// empty-schedule case — can be unit-tested directly without standing up a `Drive`.
+///
+/// An empty `SetPrices` map is a representable, storable value, so this function must NOT
+/// assume the map is non-empty: the original inline code did
+/// `set_prices.keys().next().expect("Map is not empty")`, which panics on an empty map. That
+/// panic was uncaught during per-state-transition processing and would deterministically halt
+/// the chain across the quorum. Here an empty schedule resolves to `TokenNotForDirectSale`.
+fn resolve_set_prices_direct_purchase_price(
+    token_id: Identifier,
+    set_prices: &BTreeMap<TokenAmount, Credits>,
+    token_count: TokenAmount,
+    total_agreed_price: Credits,
+) -> Result<Credits, ConsensusError> {
+    match set_prices.range(..=token_count).next_back() {
+        Some((_matched_quantity, matched_price)) => {
+            // The user-set price is bounded in structure validation, so a failed multiplication
+            // here can only be a genuine u64 overflow.
+            let required_total = matched_price.checked_mul(token_count).ok_or_else(|| {
+                ConsensusError::BasicError(dpp::consensus::basic::BasicError::OverflowError(
+                    OverflowError::new(
+                        "overflow when calculating required total price in SetPrices direct purchase"
+                            .to_string(),
+                    ),
+                ))
+            })?;
+
+            if total_agreed_price < required_total {
+                return Err(ConsensusError::StateError(
+                    StateError::TokenDirectPurchaseUserPriceTooLow(
+                        TokenDirectPurchaseUserPriceTooLow::new(
+                            token_id,
+                            total_agreed_price,
+                            required_total,
+                        ),
+                    ),
+                ));
+            }
+
+            Ok(required_total)
+        }
+        // `range(..=token_count).next_back()` returns `None` in two situations:
+        //   1. the schedule has tiers but the smallest one is above `token_count`
+        //      (the buyer is under the minimum sale amount), or
+        //   2. the schedule is empty — the token has no usable direct-sale price.
+        None => Err(match set_prices.keys().next() {
+            // At least one tier exists: the buyer is below the minimum sale amount.
+            Some(minimum_sale_amount) => {
+                ConsensusError::StateError(StateError::TokenAmountUnderMinimumSaleAmount(
+                    TokenAmountUnderMinimumSaleAmount::new(
+                        token_id,
+                        token_count,
+                        *minimum_sale_amount,
+                    ),
+                ))
+            }
+            // Empty schedule: the token has no direct-sale price at all.
+            None => ConsensusError::StateError(StateError::TokenNotForDirectSale(
+                TokenNotForDirectSale::new(token_id),
+            )),
+        }),
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::nonminimal_bool)]
 mod tests {
+    use super::resolve_set_prices_direct_purchase_price;
     use dpp::balances::credits::TokenAmount;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
     use dpp::fee::Credits;
+    use dpp::identifier::Identifier;
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
     use std::collections::BTreeMap;
 
@@ -560,33 +559,114 @@ mod tests {
         assert_eq!(min_threshold, 5);
     }
 
-    /// Regression test for the token direct-purchase chain-halt bug.
+    /// Regression test for the token direct-purchase chain-halt bug, exercised through the
+    /// real resolution helper (not a `BTreeMap` re-implementation).
     ///
-    /// An empty `SetPrices` schedule is a representable, storable value. For it,
-    /// `range(..=token_count).next_back()` returns `None`, and in that arm the transformer
-    /// decides which consensus error to emit by inspecting `set_prices.keys().next()`.
-    /// The original code did `*set_prices.keys().next().expect("Map is not empty")` here,
-    /// which panics for an empty map — an uncaught panic during per-state-transition
-    /// processing that deterministically halts the chain across the quorum. The fixed code
-    /// matches on the `Option`: an empty schedule selects the "not for sale" branch instead
-    /// of panicking. This test proves the offending expression is `None`, never a panic.
+    /// An empty `SetPrices` schedule is a representable, storable value. The original inline
+    /// code did `set_prices.keys().next().expect("Map is not empty")`, which panics on an empty
+    /// map — an uncaught panic during per-state-transition processing that deterministically
+    /// halts the chain across the quorum. The helper must instead resolve an empty schedule to a
+    /// `TokenNotForDirectSale` consensus error. A future regression in the `None` arm (e.g.
+    /// reintroducing `.expect()`) fails this test rather than leaving it green.
     #[test]
-    fn set_prices_empty_map_does_not_panic_and_is_treated_as_not_for_sale() {
+    fn resolve_set_prices_empty_map_returns_not_for_sale_without_panicking() {
         let set_prices = BTreeMap::<TokenAmount, Credits>::new();
-        let token_count: TokenAmount = 5;
 
-        // The transformer reaches the `None` arm: an empty map has no tier <= token_count.
+        let result =
+            resolve_set_prices_direct_purchase_price(Identifier::default(), &set_prices, 5, 1_000);
+
         assert!(
-            set_prices.range(..=token_count).next_back().is_none(),
-            "empty schedule has no matching tier"
+            matches!(
+                result,
+                Err(ConsensusError::StateError(
+                    StateError::TokenNotForDirectSale(_)
+                ))
+            ),
+            "empty schedule must resolve to TokenNotForDirectSale, got {result:?}"
+        );
+    }
+
+    /// The other `None`-arm branch: a non-empty schedule whose smallest tier is above
+    /// `token_count` resolves to `TokenAmountUnderMinimumSaleAmount`. This proves the helper
+    /// distinguishes "empty" from "below minimum" through real code.
+    #[test]
+    fn resolve_set_prices_below_minimum_tier_returns_under_minimum_error() {
+        let mut set_prices = BTreeMap::<TokenAmount, Credits>::new();
+        set_prices.insert(5, 200);
+        set_prices.insert(10, 150);
+
+        let result =
+            resolve_set_prices_direct_purchase_price(Identifier::default(), &set_prices, 2, 1_000);
+
+        assert!(
+            matches!(
+                result,
+                Err(ConsensusError::StateError(
+                    StateError::TokenAmountUnderMinimumSaleAmount(_)
+                ))
+            ),
+            "below-minimum purchase must resolve to TokenAmountUnderMinimumSaleAmount, got {result:?}"
+        );
+    }
+
+    /// Happy path through the helper: `token_count` matches the highest applicable tier and the
+    /// agreed price covers it, so the required total is returned.
+    #[test]
+    fn resolve_set_prices_matched_tier_returns_required_total() {
+        let mut set_prices = BTreeMap::<TokenAmount, Credits>::new();
+        set_prices.insert(1, 100);
+        set_prices.insert(10, 80);
+
+        // token_count = 50 matches tier 10 (price 80) => required_total = 4_000.
+        let result =
+            resolve_set_prices_direct_purchase_price(Identifier::default(), &set_prices, 50, 4_000);
+
+        assert_eq!(result.expect("matched tier with sufficient payment"), 4_000);
+    }
+
+    /// Underpayment through the helper resolves to `TokenDirectPurchaseUserPriceTooLow`.
+    #[test]
+    fn resolve_set_prices_underpayment_returns_price_too_low() {
+        let mut set_prices = BTreeMap::<TokenAmount, Credits>::new();
+        set_prices.insert(1, 100);
+
+        // required_total = 100 * 5 = 500; the user only agreed to 499.
+        let result =
+            resolve_set_prices_direct_purchase_price(Identifier::default(), &set_prices, 5, 499);
+
+        assert!(
+            matches!(
+                result,
+                Err(ConsensusError::StateError(
+                    StateError::TokenDirectPurchaseUserPriceTooLow(_)
+                ))
+            ),
+            "underpayment must resolve to TokenDirectPurchaseUserPriceTooLow, got {result:?}"
+        );
+    }
+
+    /// Overflow through the helper resolves to an `OverflowError` rather than wrapping.
+    #[test]
+    fn resolve_set_prices_overflow_returns_overflow_error() {
+        let mut set_prices = BTreeMap::<TokenAmount, Credits>::new();
+        // price * token_count overflows u64: (u64::MAX/3 + 1) * 3 > u64::MAX.
+        set_prices.insert(1, u64::MAX / 3 + 1);
+
+        let result = resolve_set_prices_direct_purchase_price(
+            Identifier::default(),
+            &set_prices,
+            3,
+            u64::MAX,
         );
 
-        // The transformer then branches on `set_prices.keys().next()`. For an empty map this
-        // is `None` (the old `.expect(\"Map is not empty\")` panicked here), so the transformer
-        // classifies the token as "not for sale" rather than killing the validator.
         assert!(
-            set_prices.keys().next().is_none(),
-            "empty schedule must resolve to the not-for-sale branch, never a panic"
+            matches!(
+                result,
+                Err(ConsensusError::BasicError(
+                    dpp::consensus::basic::BasicError::OverflowError(_)
+                ))
+            ),
+            "overflowing required total must resolve to OverflowError, got {result:?}"
         );
     }
 
