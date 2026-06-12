@@ -24,12 +24,22 @@ struct AccountListView: View {
     /// than by raw `accountType` tag so BIP44 leads, PlatformPayment
     /// sits next, BIP32 follows, CoinJoin after, and every special-
     /// purpose account tails off in tag order.
+    ///
+    /// DashPay friendship accounts (tags 12 receiving / 13 external)
+    /// are hidden here: they're per-contact protocol plumbing, one
+    /// pair per friendship, and would crowd the list as contacts
+    /// grow. Their funds already roll into the wallet's Core
+    /// Balance, and the DashPay tab surfaces the received-from-
+    /// contacts number; the Storage Explorer still lists the raw
+    /// rows for debugging.
     private var orderedAccounts: [PersistentAccount] {
-        accounts.sorted { lhs, rhs in
-            let lhsKey = AccountListView.sortKey(for: lhs)
-            let rhsKey = AccountListView.sortKey(for: rhs)
-            return lhsKey < rhsKey
-        }
+        accounts
+            .filter { $0.accountType != 12 && $0.accountType != 13 }
+            .sorted { lhs, rhs in
+                let lhsKey = AccountListView.sortKey(for: lhs)
+                let rhsKey = AccountListView.sortKey(for: rhs)
+                return lhsKey < rhsKey
+            }
     }
 
     private static func sortKey(

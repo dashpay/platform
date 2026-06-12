@@ -217,6 +217,8 @@ struct DashPayTabView: View {
 
                 profileHeaderCard(identity: identity)
 
+                dashPayBalanceRow(identity: identity)
+
                 Picker("Section", selection: $segment) {
                     Text("Contacts").tag(DashPaySegment.contacts)
                     Text("Requests").tag(DashPaySegment.requests)
@@ -365,6 +367,35 @@ struct DashPayTabView: View {
             .padding(.vertical, 8)
             .accessibilityIdentifier("dashpay.profileHeader.setup")
         }
+    }
+
+    // MARK: - DashPay balance
+
+    /// Funds received from contacts — the sum of this identity's
+    /// `DashpayReceivingFunds` account balances (type tag 12), read
+    /// lock-free from Rust's in-memory account state (same call the
+    /// wallet account list uses). These coins already count toward
+    /// the wallet's Core Balance; this row answers the
+    /// DashPay-specific question "how much have contacts sent me".
+    private func dashPayBalanceRow(identity: PersistentIdentity) -> some View {
+        let duffs: UInt64 = {
+            guard let walletId = identity.wallet?.walletId else { return 0 }
+            return walletManager.accountBalances(for: walletId)
+                .filter { $0.typeTag == 12 && $0.userIdentityId == identity.identityId }
+                .reduce(0) { $0 + $1.confirmed + $1.unconfirmed }
+        }()
+        return HStack {
+            Label("Received from contacts", systemImage: "arrow.down.left.circle")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Spacer()
+            Text(String(format: "%.8f DASH", Double(duffs) / 100_000_000))
+                .font(.caption)
+                .fontWeight(.medium)
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 6)
+        .accessibilityIdentifier("dashpay.receivedBalance")
     }
 
     private func headerDisplayName(
