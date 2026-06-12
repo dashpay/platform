@@ -68,6 +68,7 @@ mod tests {
         ShieldedActionNote {
             nullifier: [0x11; 32],
             cmx: [0x22; 32],
+            cv_net: [0x22; 32],
             encrypted_note: vec![1, 2, 3],
         }
     }
@@ -176,6 +177,7 @@ mod tests {
         let realistic_note = |i: u8| ShieldedActionNote {
             nullifier: [i.wrapping_add(1); 32],
             cmx: [i.wrapping_add(101); 32],
+            cv_net: [i.wrapping_add(201); 32],
             encrypted_note: vec![0x77; 216],
         };
 

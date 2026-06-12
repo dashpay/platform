@@ -1,6 +1,30 @@
 import Foundation
 import DashSDKFFI
 
+/// Thrown by `shieldedIdentityCreateFromPool` when the Type-20
+/// transition was broadcast and ACCEPTED by the relay, but the SDK
+/// could not confirm its execution result and a direct fetch of the
+/// derived id also came back empty (the Rust side already retried).
+///
+/// This is NOT a registration failure: the identity may already exist
+/// on chain (the broadcast landed; only the result-proof confirmation
+/// failed — e.g. a transient DAPI/proof error). The caller MUST hold
+/// the slot against re-submission and surface the pending identity
+/// rather than treating it as unregistered — re-registering the same
+/// keys while the identity is live would fail the registered-key-hash
+/// stateful check and burn the funds. The note reservations were
+/// intentionally left in place wallet-side; the next nullifier sync
+/// reconciles them.
+///
+/// `identityId` is the 32-byte derived id the FFI filled into
+/// `outIdentityId` on this specific result code (valid, deterministic
+/// in the spent notes). `message` is the Rust-supplied diagnostic.
+public struct ShieldedIdentityCreateUnconfirmedError: LocalizedError {
+    public let identityId: Data
+    public let message: String
+    public var errorDescription: String? { message }
+}
+
 /// Per-wallet outcome from a completed shielded sync pass.
 ///
 /// Mirrors the Rust-side
@@ -423,17 +447,62 @@ extension PlatformWalletManager {
         platform_wallet_shielded_prover_is_ready()
     }
 
+    /// Which consensus fee formula a pool-paid shielded transition is
+    /// charged under. Mirrors the `kind` byte the Rust FFI
+    /// `platform_wallet_shielded_estimate_fee` dispatches on.
+    public enum ShieldedFeeKind: UInt8 {
+        /// ShieldedTransfer / Shield base (`compute_minimum_shielded_fee`).
+        case transfer = 0
+        /// Unshield (`compute_shielded_unshield_fee`).
+        case unshield = 1
+        /// ShieldedWithdrawal (`compute_shielded_withdrawal_fee`).
+        case withdrawal = 2
+    }
+
+    /// Consensus-pinned flat shielded fee (in credits) for a pool-paid
+    /// shielded transition with `numActions` Orchard actions. Pure
+    /// computation on the Rust side (no handle, no network) against
+    /// `PlatformVersion::latest()` — the same version the builders pin —
+    /// so the estimate can't drift from the carved fee. A single-note
+    /// spend with change is `numActions: 2`.
+    public static func estimateShieldedFee(
+        kind: ShieldedFeeKind,
+        numActions: Int = 2
+    ) throws -> UInt64 {
+        var fee: UInt64 = 0
+        // `num_actions` is `usize` on the Rust side → imported as `UInt`.
+        try platform_wallet_shielded_estimate_fee(
+            kind.rawValue,
+            UInt(numActions),
+            &fee
+        ).check()
+        return fee
+    }
+
     /// Shielded → Shielded transfer. Spends notes from `account`
     /// on `walletId` and creates a new note for `recipientRaw43`
     /// (the recipient's raw 43-byte Orchard payment address).
     /// Amount is in credits (1 DASH = 1e11). Heavy CPU work runs
     /// on a detached task so the caller's actor isn't blocked
     /// through the proof build.
+    ///
+    /// `memo` is an optional UTF-8 text note attached to the
+    /// recipient's note. `nil` (or an empty string) means no memo;
+    /// a non-empty memo's UTF-8 byte length must be at most 32 or
+    /// Rust rejects it. The 36-byte on-chain encoding is done on the
+    /// Rust side.
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed — the spend may already be on chain, so the caller
+    /// must NOT retry (the spent notes stay reserved Rust-side; the
+    /// next shielded sync reconciles them).
     public func shieldedTransfer(
         walletId: Data,
         account: UInt32 = 0,
         recipientRaw43: Data,
-        amount: UInt64
+        amount: UInt64,
+        memo: String? = nil
     ) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(
@@ -466,9 +535,19 @@ extension PlatformWalletManager {
                             "recipient baseAddress is nil"
                         )
                     }
-                    try platform_wallet_manager_shielded_transfer(
-                        handle, widPtr, account, recipientPtr, amount
-                    ).check()
+                    // `nil` / empty → null pointer (no memo); otherwise
+                    // pass the text as a C string. Rust validates the
+                    // 32-byte limit and does the 36-byte encoding.
+                    let send: (UnsafePointer<CChar>?) throws -> Void = { memoCStr in
+                        try platform_wallet_manager_shielded_transfer(
+                            handle, widPtr, account, recipientPtr, amount, memoCStr
+                        ).check()
+                    }
+                    if let memo, !memo.isEmpty {
+                        try memo.withCString { try send($0) }
+                    } else {
+                        try send(nil)
+                    }
                 }
             }
         }.value
@@ -534,6 +613,12 @@ extension PlatformWalletManager {
     /// string (`"dash1…"` on mainnet, `"tdash1…"` on testnet). Rust
     /// parses and network-checks the address; hosts don't have to
     /// hand-roll the bincode storage variant tag.
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed — the spend may already be on chain, so the caller
+    /// must NOT retry (the spent notes stay reserved Rust-side; the
+    /// next shielded sync reconciles them).
     public func shieldedUnshield(
         walletId: Data,
         account: UInt32 = 0,
@@ -576,6 +661,12 @@ extension PlatformWalletManager {
     /// shielded balance and creates an L1 withdrawal to
     /// `toCoreAddress` (Base58Check string). `coreFeePerByte` is
     /// the L1 fee rate in duffs/byte (`1` is the dashmate default).
+    ///
+    /// Throws `PlatformWalletError.shieldedSpendUnconfirmed` when the
+    /// broadcast was accepted but its execution result couldn't be
+    /// confirmed — the spend may already be on chain, so the caller
+    /// must NOT retry (the spent notes stay reserved Rust-side; the
+    /// next shielded sync reconciles them).
     public func shieldedWithdraw(
         walletId: Data,
         account: UInt32 = 0,
@@ -606,6 +697,161 @@ extension PlatformWalletManager {
                         handle, widPtr, account, addrCStr, amount, coreFeePerByte
                     ).check()
                 }
+            }
+        }.value
+    }
+
+    /// Shielded → new identity (Type 20). Spends notes from
+    /// `walletId`'s shielded balance to fund a brand-new Platform
+    /// identity. The whole `denomination` (a member of the versioned
+    /// exit-denomination set, in credits) leaves the pool and the
+    /// metered fee is taken from it, so the new identity is created
+    /// holding `denomination - totalFee`; any excess re-enters the
+    /// pool as a change note.
+    ///
+    /// `identityPubkeys` is the new identity's key set (the first row
+    /// should be the MASTER key). `identitySigner` is the host-side
+    /// `KeychainSigner` whose `.handle` produces each key's
+    /// proof-of-possession signature; the Orchard spend authority is
+    /// the bound wallet's own key. Returns the 32-byte new identity id
+    /// (`double_sha256(sorted nullifiers)`).
+    ///
+    /// `identityIndex` is the DIP-9 identity-registration slot the new
+    /// identity occupies. On a successful broadcast the Rust wallet
+    /// registers the proof-verified identity at this slot in its local
+    /// `IdentityManager` (mirroring address-funded registration), which
+    /// drives the persister callbacks that create the app's identity
+    /// row. This wrapper only marshals it across the FFI.
+    ///
+    /// `sendToAddressOnCreationFailure` is the REQUIRED fallback
+    /// platform address as raw `PlatformAddress` storage bytes (21
+    /// bytes: 1-byte variant tag + 20-byte hash, the encoding
+    /// `PlatformAddress.toBytes()` produces). If creation fails a
+    /// stateful check (a public-key hash already registered to another
+    /// identity) the spend is still finalized and the value is credited
+    /// to this address minus a penalty. It is bound into the transition
+    /// sighash, so it cannot be redirected after signing.
+    ///
+    /// Heavy CPU work (Halo 2 proof + per-key signing) runs on a
+    /// detached task so the caller's actor isn't blocked.
+    public func shieldedIdentityCreateFromPool(
+        walletId: Data,
+        account: UInt32 = 0,
+        identityIndex: UInt32,
+        identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
+        denomination: UInt64,
+        sendToAddressOnCreationFailure: Data,
+        identitySigner: KeychainSigner
+    ) async throws -> Data {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard !identityPubkeys.isEmpty else {
+            throw PlatformWalletError.invalidParameter(
+                "identityPubkeys is empty"
+            )
+        }
+        guard sendToAddressOnCreationFailure.count == 21 else {
+            throw PlatformWalletError.invalidParameter(
+                "sendToAddressOnCreationFailure must be exactly 21 PlatformAddress bytes"
+            )
+        }
+
+        let handle = self.handle
+        let identitySignerHandle = identitySigner.handle
+        let fallbackAddressBytes = sendToAddressOnCreationFailure
+
+        return try await Task.detached(priority: .userInitiated) { () -> Data in
+            var outIdentityId: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            )
+
+            // Pin every pubkey buffer simultaneously (and the
+            // wallet-id bytes), then hand the pinned
+            // `[IdentityPubkeyFFI]` rows + signer handle to the FFI.
+            // Reuses the same marshalling helper the address-funded
+            // registration path uses so the two can't drift.
+            let pubkeyBuffers: [Data] = identityPubkeys.map { $0.pubkeyBytes }
+            // KeychainSigner is passed to Rust via `passUnretained`, so the Rust ctx pointer dangles
+            // unless the Swift owner is kept alive across the FFI call. `_ = identitySigner` is
+            // folklore that the optimizer may elide in -O builds; `withExtendedLifetime` is the
+            // guaranteed keepalive (matches this module's signer-lifetime guidance).
+            let result = try withExtendedLifetime(identitySigner) {
+                try walletId.withUnsafeBytes { widRaw -> PlatformWalletFFIResult in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    // Pin the 21-byte fallback `PlatformAddress` bytes for the whole FFI call so the
+                    // pointer handed to Rust stays valid (validated `== 21` above).
+                    return try fallbackAddressBytes.withUnsafeBytes {
+                        fallbackRaw -> PlatformWalletFFIResult in
+                        guard let fallbackPtr = fallbackRaw.baseAddress?.assumingMemoryBound(
+                            to: UInt8.self
+                        ) else {
+                            throw PlatformWalletError.invalidParameter(
+                                "sendToAddressOnCreationFailure baseAddress is nil"
+                            )
+                        }
+                        return ManagedPlatformWallet.withPubkeyFFIArray(
+                            identityPubkeys,
+                            buffers: pubkeyBuffers
+                        ) { ffiRowsPtr, ffiRowsCount in
+                            platform_wallet_manager_shielded_identity_create_from_pool(
+                                handle,
+                                widPtr,
+                                account,
+                                identityIndex,
+                                ffiRowsPtr,
+                                UInt(ffiRowsCount),
+                                denomination,
+                                fallbackPtr,
+                                identitySignerHandle,
+                                &outIdentityId
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Wrap the FFI result EXACTLY ONCE so its Rust-owned message is
+            // freed once in `deinit` (don't also call `result.check()`, which
+            // would construct a second wrapper over the same struct and
+            // double-free). Inspect the typed code directly:
+            //   - success: return the derived id.
+            //   - unconfirmed: the broadcast landed but its result couldn't be
+            //     confirmed; Rust filled `outIdentityId` with the derived id on
+            //     THIS code (and only this code). Throw the typed
+            //     `ShieldedIdentityCreateUnconfirmedError` so the caller holds
+            //     the slot instead of treating it as failed.
+            //   - any other non-success: throw the regular typed error.
+            let wrapped = PlatformWalletResult(result)
+            switch wrapped.code {
+            case .success:
+                return withUnsafeBytes(of: outIdentityId) { Data($0) }
+            case .errorShieldedBroadcastUnconfirmed:
+                let identityId = withUnsafeBytes(of: outIdentityId) { Data($0) }
+                throw ShieldedIdentityCreateUnconfirmedError(
+                    identityId: identityId,
+                    message: wrapped.message ?? "shielded identity-create broadcast unconfirmed"
+                )
+            default:
+                throw PlatformWalletError(result: wrapped)
             }
         }.value
     }

@@ -17,7 +17,9 @@ use super::{build_spend_bundle, serialize_authorized_bundle, OrchardProver, Spen
 ///
 /// Spends existing notes and withdraws value to a core chain script output.
 /// The shielded fee is deducted from the spent notes. Any remaining value is
-/// returned to the shielded `change_address`.
+/// returned to the shielded `change_address`; the change note is encrypted
+/// with the sender's External-scope OVK (derived from `fvk`) so the wallet
+/// can recover it — including the structured memo — via OVK recovery.
 ///
 /// # Parameters
 /// - `spends` - Notes to spend with their Merkle paths
@@ -95,7 +97,8 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
         required,
         core_fee_per_byte,
         pooling,
-    );
+        platform_version,
+    )?;
 
     let bundle = build_spend_bundle(
         spends,

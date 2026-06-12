@@ -30,6 +30,8 @@ struct WalletDetailView: View {
     @State private var showWalletInfo = false
     @State private var showFundPlatformAddress = false
     @State private var showShieldFromAssetLock = false
+    /// Devnet/testnet-only shielded pool seeding sheet (Seed Pool Notes).
+    @State private var showSeedShieldedPool = false
     /// Set by `PendingPlatformFundFromAssetLocksList`'s Resume tap.
     @State private var resumingAssetLock: PersistentAssetLock?
 
@@ -110,6 +112,23 @@ struct WalletDetailView: View {
                 .buttonStyle(.bordered)
             }
             .padding(.horizontal)
+
+            // Devnet/testnet-only: seed the shielded pool's anonymity set
+            // so outgoing shielded transitions clear the 250-note minimum.
+            // Hidden on mainnet (the pool is seeded at genesis there, and
+            // the Rust side hard-errors on mainnet anyway).
+            if platformState.currentNetwork != .mainnet {
+                Button {
+                    showSeedShieldedPool = true
+                } label: {
+                    Label("Seed Pool Notes", systemImage: "square.stack.3d.up.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .accessibilityIdentifier("walletDetail.seedPoolNotesButton")
+            }
 
             PendingPlatformFundFromAssetLocksList(
                 coordinator: walletManager.addressFundFromAssetLockCoordinator,
@@ -208,6 +227,9 @@ struct WalletDetailView: View {
         .sheet(isPresented: $showShieldFromAssetLock) {
             ShieldedFundFromAssetLockView(wallet: wallet)
         }
+        .sheet(isPresented: $showSeedShieldedPool) {
+            SeedShieldedPoolView(wallet: wallet)
+        }
         .onAppear {
             appUIState.showWalletsSyncDetails = false
             // Repoint the singleton ShieldedService at THIS wallet —
@@ -229,6 +251,7 @@ struct WalletInfoView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) var modelContext
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var walletManagerStore: WalletManagerStore
     let wallet: PersistentWallet
     var onWalletDeleted: () -> Void = {}
 
@@ -583,6 +606,27 @@ struct WalletInfoView: View {
                 }
             }
         }
+        // Progress overlay shown while `enableNetwork` runs
+        // (`isUpdatingNetworks`) so the add-to-network create isn't silent.
+        .overlay {
+            if isUpdatingNetworks {
+                ZStack {
+                    Color.black.opacity(0.25)
+                        .ignoresSafeArea()
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .controlSize(.large)
+                        Text("Adding to network…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isUpdatingNetworks)
     }
 
     /// Prompt the user via biometric / passcode, then pull the
@@ -628,16 +672,35 @@ struct WalletInfoView: View {
     }
 
     private func loadNetworkStates() {
-        switch wallet.network ?? .testnet {
-        case .mainnet:
-            mainnetEnabled = true
-        case .testnet:
-            testnetEnabled = true
-        case .regtest:
-            regtestEnabled = true
-        case .devnet:
-            devnetEnabled = true
+        // A wallet now has one `PersistentWallet` row per network it
+        // lives on. Since network-scoping, those rows have DISTINCT
+        // `walletId`s (the network byte is folded into the digest), so
+        // they can't be matched by `walletId` anymore. They share a
+        // network-independent `walletGroupId` instead — group by that
+        // to reflect the actual set of rows rather than the single
+        // `wallet.network` this view was opened with.
+        let groupId = wallet.walletGroupId
+        let rows: [PersistentWallet]
+        if groupId.isEmpty {
+            // Legacy row (no group id): its `walletId` is the
+            // network-independent digest that siblings stamp as their
+            // `walletGroupId`, so find siblings by it instead of
+            // collapsing to this single row.
+            let siblings = (try? modelContext.fetch(FetchDescriptor<PersistentWallet>(
+                predicate: PersistentWallet.predicate(walletGroupId: wallet.walletId)
+            ))) ?? []
+            rows = [wallet] + siblings
+        } else {
+            let descriptor = FetchDescriptor<PersistentWallet>(
+                predicate: PersistentWallet.predicate(walletGroupId: groupId)
+            )
+            rows = (try? modelContext.fetch(descriptor)) ?? [wallet]
         }
+        let networks = Set(rows.compactMap { $0.network })
+        mainnetEnabled = networks.contains(.mainnet)
+        testnetEnabled = networks.contains(.testnet)
+        regtestEnabled = networks.contains(.regtest)
+        devnetEnabled = networks.contains(.devnet)
     }
 
     private func loadAccountCounts() {
@@ -715,18 +778,114 @@ struct WalletInfoView: View {
         isUpdatingNetworks = true
         defer { isUpdatingNetworks = false }
 
-        // TODO(platform-wallet): Proper multi-network wallet support once the
-        // Rust side exposes add-network. For now we only refresh UI state.
+        // `createWallet` below is a synchronous @MainActor FFI call that
+        // blocks the main thread, so without yielding first SwiftUI never
+        // paints the overlay. Let it render one frame before we block.
+        try? await Task.sleep(nanoseconds: 50_000_000) // ~50ms, one frame
+
+        // Add the existing wallet to another network by re-creating it
+        // from the stored mnemonic in that network's manager. The
+        // `walletId` is now network-scoped — the same mnemonic produces
+        // a DIFFERENT id on the target network — so the freshly-created
+        // wallet gets its OWN scoped id, and its mnemonic must be stored
+        // under that new id (the source wallet's keychain entry is keyed
+        // by the source network's id and won't be found when the new
+        // network's wallet looks itself up). Reusing
+        // `createWallet(mnemonic:)` keeps all derivation on the Rust side
+        // (no Swift orchestration); the keychain write below is the
+        // sanctioned Swift-owned persist step.
+        let mnemonic: String
         do {
-            try modelContext.save()
-            loadNetworkStates()
-            loadAccountCounts()
+            mnemonic = try WalletStorage().retrieveMnemonic(for: wallet.walletId)
         } catch {
-            await MainActor.run {
-                errorMessage = "Failed to enable network: \(error.localizedDescription)"
-                showError = true
-            }
+            errorMessage = "This wallet's recovery phrase isn't stored on this device, so it can't be added to another network."
+            showError = true
+            return
         }
+
+        do {
+            let mgr = try walletManagerStore.backgroundManager(for: network)
+            let created = try mgr.createWallet(
+                mnemonic: mnemonic,
+                network: network,
+                name: wallet.name ?? wallet.label
+            )
+            // Persist the mnemonic AND the per-wallet metadata under the
+            // newly-enabled network's scoped walletId so that wallet is
+            // independently recoverable and its own keychain lookups
+            // resolve. The metadata is load-bearing for orphan-recovery
+            // and the post-launch warmup: `ContentView.recoverWallet`
+            // and the bootstrap pre-warm pick the restore network from
+            // `metadata.resolvedNetworks`, so without it a wiped wallet
+            // falls back to whatever network is active and could be
+            // recreated on the wrong chain. Mirror the same blob shape
+            // `CreateWalletView` writes per network. Best-effort — a
+            // failure here doesn't undo the successful create.
+            let storage = WalletStorage()
+            do {
+                try storage.storeMnemonic(mnemonic, for: created.walletId)
+            } catch {
+                SDKLogger.error(
+                    "Failed to persist mnemonic to keychain for \(network.displayName): \(error.localizedDescription)"
+                )
+            }
+            do {
+                // Birth height is a chain-block number, so it must come
+                // from the TARGET network's freshly-created row — NOT the
+                // source `wallet`, whose `birthHeight` belongs to the
+                // network this detail screen was opened on. The persister
+                // stamps the right value on the new row synchronously
+                // during `createWallet`; read it back (same shape
+                // `CreateWalletView` uses) so orphan-recovery rescans the
+                // target chain from the correct height.
+                let createdId = created.walletId
+                let createdRow = try? modelContext.fetch(
+                    FetchDescriptor<PersistentWallet>(
+                        predicate: PersistentWallet.predicate(walletId: createdId)
+                    )
+                ).first
+                let metadata = WalletKeychainMetadata(
+                    name: wallet.name ?? wallet.label,
+                    walletDescription: wallet.walletDescription,
+                    networks: [network.networkName],
+                    birthHeight: createdRow?.birthHeight
+                )
+                try storage.setMetadata(metadata, for: created.walletId)
+            } catch {
+                SDKLogger.error(
+                    "Failed to persist wallet metadata to keychain for \(network.displayName): \(error.localizedDescription)"
+                )
+            }
+        } catch {
+            // A typed `walletAlreadyExists` throw means the wallet is
+            // already on this network — a genuine no-op, so fall through to
+            // refresh. Any other failure (SDK build error, Rust-side error,
+            // etc.) must surface to the user instead of silently doing
+            // nothing.
+            guard case PlatformWalletError.walletAlreadyExists = error else {
+                let description = error.localizedDescription
+                SDKLogger.error(
+                    "enableNetwork(\(network.displayName)) failed: \(description)"
+                )
+                errorMessage = "Failed to add \(network.displayName): \(description)"
+                showError = true
+                return
+            }
+            SDKLogger.error(
+                "enableNetwork(\(network.displayName)) create returned benign already-exists"
+            )
+        }
+
+        // Backfill a legacy row's group id (= its walletId) so it groups
+        // with the sibling just created — in both directions and across
+        // launches. Idempotent: only fires while empty.
+        if wallet.walletGroupId.isEmpty {
+            wallet.walletGroupId = wallet.walletId
+            try? modelContext.save()
+        }
+
+        loadNetworkStates()
+        loadAccountCounts()
     }
 
     private func deleteWallet() async {
@@ -881,8 +1040,10 @@ struct BalanceCardView: View {
                 // Shielded Balance row — mirrors the Platform
                 // Balance row's trailing `+` affordance. When
                 // `onFundShielded` is wired the user can open the
-                // Core L1 → shielded-pool funding sheet (Type 18,
-                // `ShieldFromAssetLockTransition`).
+                // shielding sheet, which now lets them choose the
+                // source: Core L1 → pool (Type 18,
+                // `ShieldFromAssetLockTransition`) or Platform credits
+                // → pool (Type 15, `shieldedShield`).
                 WalletBalanceRow(
                     label: "Shielded Balance",
                     amount: shieldedService.shieldedBalance,
@@ -892,7 +1053,7 @@ struct BalanceCardView: View {
                     trailingAction: onFundShielded.map { fund in
                         WalletBalanceRow.TrailingAction(
                             systemImage: "plus.circle.fill",
-                            accessibilityLabel: "Shield from Core Asset Lock",
+                            accessibilityLabel: "Add to Shielded Balance",
                             action: fund
                         )
                     }

@@ -479,6 +479,21 @@ mod tests {
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
+            // CheckTx root-invariance guard (devnet paloma h788): `check_tx` asserts under
+            // cfg(test) that it never mutates committed grovedb state, so running the
+            // canonical valid fixture through it pins the invariant for this transition type.
+            {
+                use dpp::serialization::PlatformSerializable;
+                let guard_serialized_transition = transition
+                    .serialize_to_bytes()
+                    .expect("expected to serialize transition for the check_tx guard");
+                crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels(
+                    &platform,
+                    &guard_serialized_transition,
+                    "identity credit transfer to addresses",
+                );
+            }
+
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(

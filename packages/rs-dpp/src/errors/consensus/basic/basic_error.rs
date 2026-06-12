@@ -80,10 +80,11 @@ use crate::consensus::basic::state_transition::{
     MissingStateTransitionTypeError, OutputAddressAlsoInputError, OutputBelowMinimumError,
     OutputsNotGreaterThanInputsError, ShieldedEmptyProofError,
     ShieldedEncryptedNoteSizeMismatchError, ShieldedImplicitFeeCapExceededError,
-    ShieldedInvalidValueBalanceError, ShieldedNoActionsError, ShieldedTooManyActionsError,
-    ShieldedZeroAnchorError, StateTransitionMaxSizeExceededError, StateTransitionNotActiveError,
-    TransitionNoInputsError, TransitionNoOutputsError, TransitionOverMaxInputsError,
-    TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError, WithdrawalBelowMinAmountError,
+    ShieldedInvalidDenominationError, ShieldedInvalidValueBalanceError, ShieldedNoActionsError,
+    ShieldedTooManyActionsError, ShieldedZeroAnchorError, StateTransitionMaxSizeExceededError,
+    StateTransitionNotActiveError, TransitionNoInputsError, TransitionNoOutputsError,
+    TransitionOverMaxInputsError, TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError,
+    WithdrawalBelowMinAmountError,
 };
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
@@ -103,7 +104,8 @@ use crate::consensus::basic::token::{
     InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
     InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenIdError,
     InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError,
-    TokenNoteOnlyAllowedWhenProposerError, TokenTransferToOurselfError,
+    TokenNoteOnlyAllowedWhenProposerError, TokenPricingScheduleEmptyError,
+    TokenTransferToOurselfError,
 };
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
@@ -688,6 +690,12 @@ pub enum BasicError {
     // (codes.rs) is independent of variant order.
     #[error(transparent)]
     ShieldedImplicitFeeCapExceededError(ShieldedImplicitFeeCapExceededError),
+
+    #[error(transparent)]
+    ShieldedInvalidDenominationError(ShieldedInvalidDenominationError),
+
+    #[error(transparent)]
+    TokenPricingScheduleEmptyError(TokenPricingScheduleEmptyError),
 }
 
 impl From<BasicError> for ConsensusError {

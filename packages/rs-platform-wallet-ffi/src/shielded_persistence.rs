@@ -59,6 +59,36 @@ pub struct ShieldedNullifierSpentFFI {
     pub nullifier: [u8; 32],
 }
 
+/// One outgoing (sent) note recovered via OVK for the host to persist.
+///
+/// Distinct from [`ShieldedNoteFFI`] (a received, spendable note):
+/// this is append-only send history with no nullifier / position /
+/// spend state. The host writes one row keyed by
+/// `(wallet_id, account_index, cmx)`; re-persisting the same `cmx`
+/// (a re-scan) is an idempotent upsert. The `recipient` is the 43-byte
+/// raw Orchard address; `memo_ptr` points at the raw Dash memo bytes
+/// (36 bytes), valid only for the callback window — the host must copy.
+#[repr(C)]
+pub struct ShieldedOutgoingNoteFFI {
+    /// 32-byte wallet identifier.
+    pub wallet_id: [u8; 32],
+    /// ZIP-32 account index.
+    pub account_index: u32,
+    /// Note commitment (cmx) of the sent note (32 bytes). Primary key.
+    pub cmx: [u8; 32],
+    /// Recipient's raw Orchard address (43 bytes).
+    pub recipient: [u8; 43],
+    /// Value sent, in credits.
+    pub value: u64,
+    /// Block height the sent note appeared at.
+    pub block_height: u64,
+    /// Pointer to the raw Dash memo bytes (36 bytes). Valid only for
+    /// the callback window — the host must copy.
+    pub memo_ptr: *const u8,
+    /// Length of `memo_ptr` in bytes (always 36 for a recovered note).
+    pub memo_len: usize,
+}
+
 /// One per-subwallet sync-watermark advance.
 #[repr(C)]
 pub struct ShieldedSyncedIndexFFI {
@@ -68,17 +98,6 @@ pub struct ShieldedSyncedIndexFFI {
     /// global commitment-tree index to scan (exclusive). `0` = nothing
     /// scanned yet.
     pub last_synced_index: u64,
-}
-
-/// One per-subwallet nullifier-sync checkpoint.
-#[repr(C)]
-pub struct ShieldedNullifierCheckpointFFI {
-    pub wallet_id: [u8; 32],
-    pub account_index: u32,
-    /// Block height of the most recent nullifier sync pass.
-    pub height: u64,
-    /// Block timestamp (Unix seconds) of the most recent pass.
-    pub timestamp: u64,
 }
 
 // ── Restore (load) ──────────────────────────────────────────────────────
@@ -101,18 +120,30 @@ pub struct ShieldedNoteRestoreFFI {
     pub note_data_len: usize,
 }
 
-/// One per-subwallet sync-watermark + nullifier-checkpoint snapshot.
-/// Restored alongside notes so the rehydrated `SubwalletState`
-/// resumes incremental sync from the right place.
+/// One persisted outgoing (sent) note as the host hands it back at
+/// boot. Mirrors [`ShieldedOutgoingNoteFFI`] but lives in a
+/// Swift-allocated array, so the buffer ownership / free contract
+/// differs (see the matching `on_load_shielded_outgoing_notes_free_fn`).
+#[repr(C)]
+pub struct ShieldedOutgoingNoteRestoreFFI {
+    pub wallet_id: [u8; 32],
+    pub account_index: u32,
+    pub cmx: [u8; 32],
+    pub recipient: [u8; 43],
+    pub value: u64,
+    pub block_height: u64,
+    pub memo_ptr: *const u8,
+    pub memo_len: usize,
+}
+
+/// One per-subwallet sync-watermark snapshot. Restored alongside
+/// notes so the rehydrated `SubwalletState` resumes incremental
+/// sync from the right place.
 #[repr(C)]
 pub struct ShieldedSubwalletSyncStateFFI {
     pub wallet_id: [u8; 32],
     pub account_index: u32,
     pub last_synced_index: u64,
-    /// `1` iff the optional `nullifier_checkpoint` is populated.
-    pub has_nullifier_checkpoint: u8,
-    pub nullifier_checkpoint_height: u64,
-    pub nullifier_checkpoint_timestamp: u64,
 }
 
 // The `on_load_shielded_*_fn` callback types are inlined inside

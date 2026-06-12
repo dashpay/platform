@@ -298,6 +298,15 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
+            identity_create_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
         },
         has_nonce_validation: 1,
         has_address_witness_validation: 0,
@@ -326,5 +335,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
             // tracks the per-action cost and the margin stays uniform as actions grow.
             shielded_per_action_processing_fee: 22_000_000,
             shielded_implicit_fee_cap: 20_000_000_000,
+            // 0.1, 0.3, 0.5, 1.0 DASH in credits (1 DASH = 10^8 duffs, CREDITS_PER_DUFF = 1000).
+            shielded_identity_create_denominations: &[
+                10_000_000_000,
+                30_000_000_000,
+                50_000_000_000,
+                100_000_000_000,
+            ],
         },
     };

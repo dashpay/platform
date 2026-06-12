@@ -20,14 +20,16 @@
 //!     &fvk.address_at(0, Scope::External).to_raw_address_bytes(),
 //! );
 //!
-//! // Build a shield transition
+//! // Build a shield transition; pass the sender's OVK so the wallet can
+//! // later recover its own send from chain data (None = unrecoverable)
 //! let pk = ProvingKey::build();
 //! let st = build_shield_transition(
 //!     &recipient, shield_amount, inputs, fee_strategy,
-//!     &signer, 0, &pk, [0u8; 36], platform_version,
+//!     &signer, 0, &pk, [0u8; 36], Some(fvk.to_ovk(Scope::External)), platform_version,
 //! )?;
 //! ```
 
+mod identity_create_from_shielded_pool;
 mod shield;
 mod shield_from_asset_lock;
 mod shielded_transfer;
@@ -35,6 +37,9 @@ mod shielded_withdrawal;
 mod unshield;
 
 pub use self::shield::build_shield_transition;
+pub use identity_create_from_shielded_pool::{
+    build_identity_create_from_shielded_pool_transition, IdentityCreateFromShieldedPoolBuildResult,
+};
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition;
 #[cfg(feature = "core_key_wallet")]
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition_with_signer;
@@ -44,9 +49,11 @@ pub use unshield::build_unshield_transition;
 
 use grovedb_commitment_tree::{
     Anchor, Authorized, Builder, Bundle, BundleType, DashMemo, Flags as OrchardFlags,
-    FullViewingKey, MerklePath, Note, NoteValue, PaymentAddress, ProvingKey, SpendAuthorizingKey,
+    FullViewingKey, MerklePath, Note, NoteValue, OutgoingViewingKey, PaymentAddress, ProvingKey,
+    Scope, SpendAuthorizingKey, SpendingKey,
 };
 use rand::rngs::OsRng;
+use rand::RngCore;
 
 use crate::address_funds::OrchardAddress;
 use crate::shielded::{compute_platform_sighash, SerializedAction};
@@ -137,14 +144,55 @@ pub fn serialize_authorized_bundle(bundle: &Bundle<Authorized, i64, DashMemo>) -
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/// Generates a fresh random Orchard payment address with no recoverable
+/// spending authority retained by anyone.
+///
+/// Draws 32 random bytes for an Orchard `SpendingKey` (retrying on the
+/// rare invalid draw — `SpendingKey::from_bytes` returns a `CtOption`),
+/// derives its `FullViewingKey`, and returns the External-scope address
+/// at diversifier index 0. The spending key is dropped here, so the
+/// resulting address is unspendable by this process — exactly what a
+/// zero-value anonymity-set filler output wants.
+fn random_orchard_payment_address() -> PaymentAddress {
+    let mut rng = OsRng;
+    loop {
+        let mut bytes = [0u8; 32];
+        rng.fill_bytes(&mut bytes);
+        if let Some(sk) = Option::<SpendingKey>::from(SpendingKey::from_bytes(bytes)) {
+            let fvk = FullViewingKey::from(&sk);
+            return fvk.address_at(0u32, Scope::External);
+        }
+    }
+}
+
 /// Builds an output-only Orchard bundle (no spends).
 ///
 /// Used by Shield and ShieldFromAssetLock transitions where funds enter
 /// the shielded pool from transparent sources.
+///
+/// `sender_ovk` encrypts the real output's `out_ciphertext` (Zcash
+/// outgoing-transaction-history convention): with `Some`, the sender can
+/// later recover the note (recipient, value, memo) from chain data via
+/// `try_recover_outgoing_note` under that OVK. With `None`, a random
+/// outgoing cipher key is used and the sent note is unrecoverable by
+/// anyone. Orchard's padding outputs always use `None`.
+///
+/// `dummy_outputs` adds that many extra **zero-value** outputs after the
+/// real one, each to a fresh random Orchard address with `sender_ovk =
+/// None` and an empty memo. They are unrecoverable by anyone (no party
+/// holds the spending key) — they exist purely as anonymity-set filler
+/// so a single transition can grow the on-chain note count. With
+/// `dummy_outputs == 0` the bundle is byte-class identical to the
+/// historical single-output form (Orchard still pads to its 2-action
+/// minimum). The on-wire action count is
+/// `max(1 + dummy_outputs, 2)` and the `value_balance` is unchanged
+/// (the dummies contribute zero value).
 pub(crate) fn build_output_only_bundle<P: OrchardProver>(
     recipient: &OrchardAddress,
     amount: u64,
     memo: [u8; 36],
+    sender_ovk: Option<OutgoingViewingKey>,
+    dummy_outputs: usize,
     prover: &P,
 ) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError> {
     let payment_address = PaymentAddress::from(recipient);
@@ -158,16 +206,36 @@ pub(crate) fn build_output_only_bundle<P: OrchardProver>(
     );
 
     builder
-        .add_output(None, payment_address, NoteValue::from_raw(amount), memo)
+        .add_output(
+            sender_ovk,
+            payment_address,
+            NoteValue::from_raw(amount),
+            memo,
+        )
         .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to add output: {:?}", e)))?;
+
+    // Anonymity-set filler: zero-value outputs to fresh random addresses,
+    // each with `None` OVK and an empty memo (unrecoverable by anyone).
+    for _ in 0..dummy_outputs {
+        let filler_address = random_orchard_payment_address();
+        builder
+            .add_output(None, filler_address, NoteValue::from_raw(0), [0u8; 36])
+            .map_err(|e| {
+                ProtocolError::ShieldedBuildError(format!("failed to add dummy output: {:?}", e))
+            })?;
+    }
 
     prove_and_sign_bundle(builder, prover, &[], &[])
 }
 
 /// Builds a spend+output Orchard bundle.
 ///
-/// Used by ShieldedTransfer, Unshield, and ShieldedWithdrawal where funds
-/// are spent from existing notes.
+/// Used by Unshield, ShieldedWithdrawal, and IdentityCreateFromShieldedPool
+/// where funds are spent from existing notes. The single shielded output is
+/// the spender's change note; its `out_ciphertext` is encrypted under the
+/// spender's own External-scope OVK (derived from `fvk`) so the wallet can
+/// recover the note — including its structured memo, which the compact IVK
+/// scan path never sees — from chain data alone.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_spend_bundle<P: OrchardProver>(
     spends: Vec<SpendableNote>,
@@ -180,6 +248,44 @@ pub(crate) fn build_spend_bundle<P: OrchardProver>(
     prover: &P,
     extra_sighash_data: &[u8],
 ) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError> {
+    let data = extra_sighash_data.to_vec();
+    build_spend_bundle_with(
+        spends,
+        recipient,
+        output_amount,
+        memo,
+        fvk,
+        ask,
+        anchor,
+        prover,
+        move |_| Ok(data),
+    )
+}
+
+/// Like [`build_spend_bundle`], but the extra sighash data is computed by a
+/// closure that receives the built bundle's published action nullifiers (in
+/// on-wire order, INCLUDING any padding actions' dummy nullifiers).
+///
+/// `IdentityCreateFromShieldedPool` needs this: its identity id is
+/// `double_sha256(sorted published nullifiers)`, and `BundleType::DEFAULT`
+/// pads single-spend bundles with a dummy action whose random nullifier only
+/// exists once the bundle is built — deriving the id from the real spends
+/// alone would diverge from the consensus re-derivation.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_spend_bundle_with<P: OrchardProver, F>(
+    spends: Vec<SpendableNote>,
+    recipient: &OrchardAddress,
+    output_amount: u64,
+    memo: [u8; 36],
+    fvk: &FullViewingKey,
+    ask: &SpendAuthorizingKey,
+    anchor: Anchor,
+    prover: &P,
+    extra_sighash_data: F,
+) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError>
+where
+    F: FnOnce(&[[u8; 32]]) -> Result<Vec<u8>, ProtocolError>,
+{
     let payment_address = PaymentAddress::from(recipient);
 
     let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
@@ -194,14 +300,14 @@ pub(crate) fn build_spend_bundle<P: OrchardProver>(
 
     builder
         .add_output(
-            None,
+            Some(fvk.to_ovk(Scope::External)),
             payment_address,
             NoteValue::from_raw(output_amount),
             memo,
         )
         .map_err(|e| ProtocolError::ShieldedBuildError(format!("failed to add output: {:?}", e)))?;
 
-    prove_and_sign_bundle(
+    prove_and_sign_bundle_with(
         builder,
         prover,
         std::slice::from_ref(ask),
@@ -217,6 +323,23 @@ pub(crate) fn prove_and_sign_bundle<P: OrchardProver>(
     signing_keys: &[SpendAuthorizingKey],
     extra_sighash_data: &[u8],
 ) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError> {
+    let data = extra_sighash_data.to_vec();
+    prove_and_sign_bundle_with(builder, prover, signing_keys, move |_| Ok(data))
+}
+
+/// Like [`prove_and_sign_bundle`], but the extra sighash data is computed by
+/// a closure receiving the built bundle's published action nullifiers (see
+/// [`build_spend_bundle_with`]). The closure runs after `Builder::build`
+/// fixes the action set (padding included) and before the sighash is bound.
+pub(crate) fn prove_and_sign_bundle_with<P: OrchardProver, F>(
+    builder: Builder<DashMemo>,
+    prover: &P,
+    signing_keys: &[SpendAuthorizingKey],
+    extra_sighash_data: F,
+) -> Result<Bundle<Authorized, i64, DashMemo>, ProtocolError>
+where
+    F: FnOnce(&[[u8; 32]]) -> Result<Vec<u8>, ProtocolError>,
+{
     let mut rng = OsRng;
 
     let (unauthorized, _) = builder
@@ -226,8 +349,15 @@ pub(crate) fn prove_and_sign_bundle<P: OrchardProver>(
             ProtocolError::ShieldedBuildError("bundle was empty after build".to_string())
         })?;
 
+    let nullifiers: Vec<[u8; 32]> = unauthorized
+        .actions()
+        .iter()
+        .map(|action| action.nullifier().to_bytes())
+        .collect();
+    let extra_sighash_data = extra_sighash_data(&nullifiers)?;
+
     let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-    let sighash = compute_platform_sighash(&bundle_commitment, extra_sighash_data);
+    let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
     let proven = unauthorized
         .create_proof(prover.proving_key(), &mut rng)
@@ -324,7 +454,7 @@ mod mod_tests {
     #[test]
     fn output_only_bundle_flags_and_value_balance() {
         let recipient = test_orchard_address();
-        let bundle = build_output_only_bundle(&recipient, 10_000, [0u8; 36], &TestProver)
+        let bundle = build_output_only_bundle(&recipient, 10_000, [0u8; 36], None, 0, &TestProver)
             .expect("bundle should build");
 
         // Spends are disabled for Shield / ShieldFromAssetLock bundles.
@@ -339,6 +469,43 @@ mod mod_tests {
     }
 
     // ------------------------------------------------------------------
+    // `build_output_only_bundle` dummy-output padding — the on-wire
+    // action count is `max(1 + dummy_outputs, 2)` (Orchard pads an
+    // output-only bundle to its 2-action minimum) and the dummies are
+    // zero-value, so the bundle's `value_balance` still equals exactly
+    // the real recipient amount. This is the invariant the pool-seeding
+    // flow relies on: one transition publishes up to 6 actions (the most
+    // that fits the 20 KiB transition-size limit), all but one carrying
+    // no value. The cases stop at 5 dummies — the seeding maximum — to
+    // keep this real-proving test inside the CI shielded-step budget
+    // (proof cost grows with the action count).
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn dummy_output_padding_action_count_and_value_balance() {
+        let recipient = test_orchard_address();
+        let amount = 10_000u64;
+
+        // (dummy_outputs, expected on-wire action count).
+        for (dummies, expected_actions) in [(0usize, 2usize), (1, 2), (5, 6)] {
+            let bundle =
+                build_output_only_bundle(&recipient, amount, [0u8; 36], None, dummies, &TestProver)
+                    .expect("bundle should build");
+            assert_eq!(
+                bundle.actions().len(),
+                expected_actions,
+                "dummy_outputs={dummies} should serialize to {expected_actions} actions"
+            );
+            // Dummies are zero-value: net value entering the pool is unchanged.
+            assert_eq!(
+                *bundle.value_balance(),
+                -(amount as i64),
+                "value_balance must equal the real amount regardless of dummy_outputs ({dummies})"
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
     // `serialize_authorized_bundle` — verify the mapping from a fully
     // authorized bundle into the raw state-transition fields.
     // ------------------------------------------------------------------
@@ -346,7 +513,7 @@ mod mod_tests {
     #[test]
     fn serialize_authorized_bundle_preserves_fields() {
         let recipient = test_orchard_address();
-        let bundle = build_output_only_bundle(&recipient, 7_777, [3u8; 36], &TestProver)
+        let bundle = build_output_only_bundle(&recipient, 7_777, [3u8; 36], None, 0, &TestProver)
             .expect("bundle should build");
         let sb = serialize_authorized_bundle(&bundle);
 
@@ -368,6 +535,77 @@ mod mod_tests {
             assert_eq!(action.rk.len(), 32);
             assert_eq!(action.spend_auth_sig.len(), 64);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // OVK outgoing-history round trip: an output built with the sender's
+    // OVK must recover (note, recipient, memo) under that same OVK — the
+    // Zcash convention that lets a wallet reconstruct its send history
+    // from chain data alone — and must stay opaque to any other OVK.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn output_built_with_sender_ovk_recovers_under_that_ovk_only() {
+        use grovedb_commitment_tree::{try_output_recovery_with_ovk, OrchardDomain, Scope};
+
+        let sk = SpendingKey::from_bytes([42u8; 32]).expect("valid spending key bytes");
+        let sender_ovk = FullViewingKey::from(&sk).to_ovk(Scope::External);
+
+        let recipient = test_orchard_address();
+        let amount = 31_337u64;
+        let mut memo = [0u8; 36];
+        memo[..9].copy_from_slice(b"ovk-round");
+
+        let bundle = build_output_only_bundle(
+            &recipient,
+            amount,
+            memo,
+            Some(sender_ovk.clone()),
+            0,
+            &TestProver,
+        )
+        .expect("bundle should build");
+
+        let recover_all = |ovk: &grovedb_commitment_tree::OutgoingViewingKey| {
+            bundle
+                .actions()
+                .iter()
+                .filter_map(|action| {
+                    let domain = OrchardDomain::<DashMemo>::for_action(action);
+                    try_output_recovery_with_ovk(
+                        &domain,
+                        ovk,
+                        action,
+                        action.cv_net(),
+                        &action.encrypted_note().out_ciphertext,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let recovered = recover_all(&sender_ovk);
+        assert_eq!(
+            recovered.len(),
+            1,
+            "exactly the real recipient output must recover; padding stays opaque"
+        );
+        let (note, recovered_addr, recovered_memo) = &recovered[0];
+        assert_eq!(note.value().inner(), amount, "recovered value mismatch");
+        assert_eq!(
+            recovered_addr.to_raw_address_bytes(),
+            recipient.inner().to_raw_address_bytes(),
+            "recovered recipient mismatch"
+        );
+        assert_eq!(*recovered_memo, memo, "recovered memo mismatch");
+
+        // A different wallet's OVK opens nothing — no false positives in
+        // anyone else's send history.
+        let other_sk = SpendingKey::from_bytes([7u8; 32]).expect("valid spending key bytes");
+        let other_ovk = FullViewingKey::from(&other_sk).to_ovk(Scope::External);
+        assert!(
+            recover_all(&other_ovk).is_empty(),
+            "a foreign OVK must not recover the output"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -455,6 +693,92 @@ mod mod_tests {
             Ok(_) => {}
             Err(ProtocolError::ShieldedBuildError(_)) => {}
             Err(e) => panic!("unexpected error kind: {:?}", e),
+        }
+    }
+
+    /// Builds an output-only builder the way `build_output_only_bundle` does (no merkle
+    /// witness needed): a single output, padded by `BundleType` to the 2-action minimum.
+    fn output_only_builder(amount: u64) -> Builder<DashMemo> {
+        let recipient = test_orchard_address();
+        let payment_address = PaymentAddress::from(&recipient);
+        let mut builder = Builder::<DashMemo>::new(
+            BundleType::Transactional {
+                flags: OrchardFlags::SPENDS_DISABLED,
+                bundle_required: false,
+            },
+            Anchor::empty_tree(),
+        );
+        builder
+            .add_output(
+                None,
+                payment_address,
+                NoteValue::from_raw(amount),
+                [0u8; 36],
+            )
+            .expect("add output");
+        builder
+    }
+
+    // ------------------------------------------------------------------
+    // `prove_and_sign_bundle_with` — the closure contract. The closure MUST
+    // receive the BUILT bundle's published action nullifiers (padding
+    // actions' dummy nullifiers included), in on-wire order: this is what
+    // lets `IdentityCreateFromShieldedPool` derive its identity id from the
+    // same nullifier set consensus re-derives it from. Deriving from the
+    // requested spends alone would diverge whenever the bundle is padded.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn prove_and_sign_bundle_with_closure_receives_published_nullifiers() {
+        let builder = output_only_builder(10_000);
+
+        let mut recorded: Option<Vec<[u8; 32]>> = None;
+        let bundle = prove_and_sign_bundle_with(builder, &TestProver, &[], |nullifiers| {
+            recorded = Some(nullifiers.to_vec());
+            Ok(vec![])
+        })
+        .expect("output-only bundle should prove");
+
+        let recorded = recorded.expect("the extra-sighash closure must run");
+        // A single output is padded to the 2-action minimum; every padded action
+        // publishes a (dummy) nullifier on the wire.
+        assert_eq!(
+            recorded.len(),
+            2,
+            "closure must see one nullifier per PUBLISHED action (incl. padding)"
+        );
+        assert_ne!(
+            recorded[0], recorded[1],
+            "padding dummy nullifiers are randomized per action"
+        );
+        // The recorded set must be exactly the authorized bundle's published
+        // nullifiers, in the same on-wire order.
+        let published: Vec<[u8; 32]> = bundle
+            .actions()
+            .iter()
+            .map(|action| action.nullifier().to_bytes())
+            .collect();
+        assert_eq!(
+            recorded, published,
+            "closure must receive the bundle's published nullifiers in on-wire order"
+        );
+    }
+
+    #[test]
+    fn prove_and_sign_bundle_with_closure_error_short_circuits_before_proving() {
+        let builder = output_only_builder(10_000);
+
+        let result = prove_and_sign_bundle_with(builder, &TestProver, &[], |_| {
+            Err(ProtocolError::ShieldedBuildError(
+                "closure rejected".to_string(),
+            ))
+        });
+
+        match result {
+            Err(ProtocolError::ShieldedBuildError(msg)) => {
+                assert_eq!(msg, "closure rejected", "closure error must pass through");
+            }
+            other => panic!("expected the closure's error to propagate, got {:?}", other),
         }
     }
 }

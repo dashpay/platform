@@ -1,3 +1,4 @@
+use super::VerifiedShieldedEncryptedNote;
 use crate::drive::shielded::paths::{shielded_credit_pool_path_vec, SHIELDED_NOTES_KEY};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -27,7 +28,6 @@ impl Drive {
     /// ..)` — field 0. This reuses the exact `PathQuery` + decode the
     /// standalone `GetShieldedNotesCount` verifier would use, but against
     /// the note-fetch proof we already have.
-    #[allow(clippy::type_complexity)]
     pub(super) fn verify_shielded_encrypted_notes_v0(
         proof: &[u8],
         start_index: u64,
@@ -35,7 +35,7 @@ impl Drive {
         max_elements: u32,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<(Vec<u8>, Vec<u8>, Vec<u8>)>, u64), Error> {
+    ) -> Result<(RootHash, Vec<VerifiedShieldedEncryptedNote>, u64), Error> {
         if max_elements == 0 {
             return Err(Error::Drive(DriveError::CorruptedElementType(
                 "max_elements must be greater than zero",
@@ -94,18 +94,38 @@ impl Drive {
         for (_, _key, maybe_element) in proved_key_values {
             match maybe_element {
                 Some(Element::Item(value, _)) => {
-                    // Value format: cmx (32) || nullifier (32) || encrypted_note (rest)
-                    if value.len() <= 64 {
-                        return Err(Error::Drive(DriveError::CorruptedElementType(
-                            "encrypted note value too short: expected more than 64 bytes (cmx + nullifier + encrypted_note)",
-                        )));
-                    }
-                    // Return (cmx, nullifier, encrypted_note)
-                    notes.push((
-                        value[..32].to_vec(),
-                        value[32..64].to_vec(),
-                        value[64..].to_vec(),
-                    ));
+                    // Fixed item layout:
+                    //   cmx(32) || nullifier(32) || cv_net(32) || encrypted_note(216) = 312 bytes.
+                    // The `get(..)` + `try_into()` extractions reject any item whose length
+                    // is not exactly that (cmx/nullifier/cv_net need >= 96 bytes; the trailing
+                    // encrypted_note `try_into::<[u8; 216]>` pins the total to 312).
+                    const BAD_NOTE_ITEM: &str = "shielded note item must be exactly 312 bytes (cmx 32 | nullifier 32 | cv_net 32 | encrypted_note 216)";
+                    notes.push(VerifiedShieldedEncryptedNote {
+                        cmx: value
+                            .get(..32)
+                            .and_then(|s| s.try_into().ok())
+                            .ok_or_else(|| {
+                                Error::Drive(DriveError::CorruptedElementType(BAD_NOTE_ITEM))
+                            })?,
+                        nullifier: value
+                            .get(32..64)
+                            .and_then(|s| s.try_into().ok())
+                            .ok_or_else(|| {
+                                Error::Drive(DriveError::CorruptedElementType(BAD_NOTE_ITEM))
+                            })?,
+                        cv_net: value
+                            .get(64..96)
+                            .and_then(|s| s.try_into().ok())
+                            .ok_or_else(|| {
+                                Error::Drive(DriveError::CorruptedElementType(BAD_NOTE_ITEM))
+                            })?,
+                        encrypted_note: value
+                            .get(96..)
+                            .and_then(|s| s.try_into().ok())
+                            .ok_or_else(|| {
+                                Error::Drive(DriveError::CorruptedElementType(BAD_NOTE_ITEM))
+                            })?,
+                    });
                 }
                 Some(_) => {
                     return Err(Error::Drive(DriveError::CorruptedElementType(
@@ -178,6 +198,14 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use platform_version::version::PlatformVersion;
 
+    /// Deterministic cv_net for note `i`: distinct, non-zero, and different
+    /// from this note's cmx/nullifier so a round-trip mix-up is detectable.
+    fn cv_net_for(i: u64) -> [u8; 32] {
+        let mut cv_net = [0xEEu8; 32];
+        cv_net[..8].copy_from_slice(&i.to_be_bytes());
+        cv_net
+    }
+
     /// Insert `n` distinct notes into the shielded pool's CommitmentTree.
     fn insert_notes(drive: &Drive, n: u64, platform_version: &PlatformVersion) {
         for i in 0..n {
@@ -192,9 +220,14 @@ mod tests {
                 n
             };
 
-            let ops =
-                Drive::insert_note_op(nullifier, cmx, vec![(i % 256) as u8; 216], platform_version)
-                    .expect("build note op");
+            let ops = Drive::insert_note_op(
+                nullifier,
+                cmx,
+                cv_net_for(i),
+                vec![(i % 256) as u8; 216],
+                platform_version,
+            )
+            .expect("build note op");
             let grove_ops =
                 crate::fees::op::LowLevelDriveOperation::grovedb_operations_batch_consume(ops);
             drive
@@ -292,6 +325,24 @@ mod tests {
             total_count, N,
             "extracted total_count must equal the number of notes appended on-chain"
         );
+
+        // cv_net must round-trip end-to-end (insert → store → prove → verify).
+        // Notes come back in tree order, so note at output index `i` is the
+        // one inserted with `cv_net_for(i)`.
+        for (i, note) in notes.iter().enumerate() {
+            let expected_cv_net = cv_net_for(i as u64);
+            assert_eq!(
+                note.cv_net.as_slice(),
+                expected_cv_net.as_slice(),
+                "cv_net for note {i} must round-trip through prove→verify"
+            );
+            // cv_net is a distinct field, not an alias of cmx.
+            assert_ne!(
+                note.cv_net.as_slice(),
+                note.cmx.as_slice(),
+                "cv_net must be a separate field from cmx"
+            );
+        }
     }
 
     /// Same extraction works when the verifier is run in subset mode (the

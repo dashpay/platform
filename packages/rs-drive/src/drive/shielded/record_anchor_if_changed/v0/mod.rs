@@ -216,6 +216,7 @@ mod tests {
         let ops = Drive::insert_note_op(
             [0xAAu8; 32],
             [0x01u8; 32],
+            [0xCCu8; 32],
             vec![0x42; 216],
             platform_version,
         )
@@ -268,6 +269,7 @@ mod tests {
         let ops = Drive::insert_note_op(
             [0xAAu8; 32],
             [0x01u8; 32],
+            [0xCCu8; 32],
             vec![0x42; 216],
             platform_version,
         )

@@ -21,6 +21,8 @@ impl UnshieldTransitionActionV0 {
             anchor: value.anchor,
             fee_amount,
             current_total_balance,
+            // An ordinary Unshield is a SUCCESS action and must never apply ops on the error path.
+            chargeable_failure: false,
         })
     }
 }

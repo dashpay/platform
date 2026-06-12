@@ -302,15 +302,19 @@ public final class SDK: @unchecked Sendable {
     //     that toggle is off, the Rust side picks the canonical seed
     //     addresses for the network.
     //
-    // `quorum_url` is forwarded whenever the UserDefaults override is
-    // set, regardless of network — supports custom mainnet/testnet
-    // shards and any future deployment that needs a non-default
-    // endpoint.
+    // `quorum_url` is gated identically: applied for devnet/regtest and
+    // under `useDockerSetup`, but NOT for plain mainnet/testnet. The
+    // `platformQuorumURL` UserDefault is only ever populated by the
+    // devnet-only Quorum URL field in Options, so forwarding it to a
+    // mainnet/testnet build leaked a devnet (often http) endpoint into a
+    // network whose Rust provider requires https — refusing to build the
+    // SDK. With the gate off, mainnet/testnet use the canonical quorum
+    // endpoints automatically.
     let result: DashSDKResult
     let useOverrideAddresses = network == .regtest
         || network == .devnet
         || UserDefaults.standard.bool(forKey: "useDockerSetup")
-    let overrideQuorumURL: String? = Self.platformQuorumURL
+    let overrideQuorumURL: String? = useOverrideAddresses ? Self.platformQuorumURL : nil
 
     // Resolve the DAPI address list. Two paths:
     //

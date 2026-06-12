@@ -186,6 +186,43 @@ pub enum PlatformWalletError {
     #[error("Shielded broadcast failed: {0}")]
     ShieldedBroadcastFailed(String),
 
+    /// The shielded identity-create transition was **broadcast and accepted by the relay**, but the
+    /// SDK could not confirm its execution result (the result-proof fetch/verify failed — e.g. a
+    /// transient DAPI/proof error, not a platform rejection). The identity with `identity_id` may
+    /// already exist on chain, so the caller must NOT treat it as unregistered: the slot stays held
+    /// against re-submission and the spent notes' reservations are left in place (the next nullifier
+    /// sync reconciles them). `reason` carries the underlying SDK error for diagnostics.
+    #[error(
+        "Shielded broadcast succeeded but its execution result could not be confirmed; \
+         identity {identity_id} may already exist on chain — do not re-submit \
+         (it will appear after the next sync): {reason}"
+    )]
+    ShieldedBroadcastUnconfirmed {
+        identity_id: Identifier,
+        reason: String,
+    },
+
+    /// A shielded spend transition (`operation` is `"unshield"`, `"transfer"` or `"withdraw"`) was
+    /// **broadcast and accepted by the relay**, but the SDK could not confirm its execution result
+    /// (the result-proof fetch/verify failed — e.g. a transient DAPI/proof error or timeout, not a
+    /// platform rejection). The spend may already be executed on chain, so the spent notes'
+    /// reservations are intentionally left in place rather than released — releasing them would
+    /// invite re-selecting notes whose nullifiers may already be consumed. The next nullifier sync
+    /// (or an app restart, since reservations are in-memory only) reconciles them. `reason` carries
+    /// the underlying SDK error for diagnostics.
+    ///
+    /// The identity-create sibling is [`Self::ShieldedBroadcastUnconfirmed`], which additionally
+    /// carries the derived identity id so the caller can hold the registration slot.
+    #[error(
+        "Shielded {operation} broadcast succeeded but its execution result could not be \
+         confirmed; the spend may already be executed on chain — do not re-submit \
+         (the next sync reconciles the spent notes): {reason}"
+    )]
+    ShieldedSpendUnconfirmed {
+        operation: &'static str,
+        reason: String,
+    },
+
     #[error("Shielded sync failed: {0}")]
     ShieldedSyncFailed(String),
 
@@ -194,9 +231,6 @@ pub enum PlatformWalletError {
 
     #[error("Shielded store error: {0}")]
     ShieldedStoreError(String),
-
-    #[error("Shielded nullifier sync failed: {0}")]
-    ShieldedNullifierSyncFailed(String),
 
     #[error("Shielded Merkle witness unavailable: {0}")]
     ShieldedMerkleWitnessUnavailable(String),
