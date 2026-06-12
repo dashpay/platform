@@ -1331,13 +1331,25 @@ async fn broadcast_shielded_spend(
 /// - a consensus verdict ([`carries_consensus_rejection`]): CheckTx
 ///   evaluated the transition and refused it;
 /// - a gRPC response whose status code is a server-side rejection or a
-///   connection-establishment failure. `Unavailable` is the shape every
-///   connect-refused/offline attempt takes — classifying it as definitive
-///   keeps the common no-network failure's notes immediately re-spendable
+///   connection-establishment failure. `Unavailable` is the common shape
+///   of a connect-refused/offline attempt — classifying it as definitive
+///   keeps the no-network failure's notes immediately re-spendable
 ///   instead of stranding them until the next restart — and rejection
 ///   codes (`InvalidArgument`, `ResourceExhausted` = mempool full, …) are
 ///   verdicts that the tx was refused admission;
 /// - no usable DAPI addresses at all (nothing was ever sent).
+///
+/// `Unavailable` is NOT an absolute never-delivered guarantee: HTTP/2
+/// stream resets after the request bytes left can surface the same code,
+/// and the dapi-client's cross-address retry only retains the LAST
+/// transport error, so an earlier-attempt delivery can hide behind a
+/// later attempt's `Unavailable`. Releasing the notes in that residual
+/// window is still fund-safe — the authoritative no-reuse guarantee is
+/// the on-chain nullifier set, so a re-selected note at worst wastes a
+/// ~30 s proof on a nullifier-already-used rejection (see the
+/// `finalize_pending` downgrade rationale in `unshield`); never fund
+/// loss. The trade is deliberate: UX for the dominant offline case over
+/// strict conservatism in a rare race.
 ///
 /// Everything else leaves the outcome unknown and the caller must fall
 /// through to the result wait instead of failing: `AlreadyExists` proves
