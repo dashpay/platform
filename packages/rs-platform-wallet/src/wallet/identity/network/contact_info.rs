@@ -16,8 +16,6 @@
 //! select. No extra local schema, and restore-from-seed recovers
 //! everything from chain.
 
-use std::sync::Arc;
-
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -56,17 +54,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         use dpp::document::DocumentV0Getters;
         use dpp::platform_value::platform_value;
 
-        let dashpay_contract = Arc::new(
-            dpp::system_data_contracts::load_system_data_contract(
-                dpp::data_contracts::SystemDataContract::Dashpay,
-                dpp::version::PlatformVersion::latest(),
-            )
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to load DashPay contract: {e}"
-                ))
-            })?,
-        );
+        let dashpay_contract = super::dashpay_contract()?;
 
         let query = dash_sdk::platform::DocumentQuery {
             select: dash_sdk::drive::query::SelectProjection::documents(),
@@ -440,13 +428,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             creator_id: None,
         });
 
-        let dashpay_contract = dpp::system_data_contracts::load_system_data_contract(
-            dpp::data_contracts::SystemDataContract::Dashpay,
-            dpp::version::PlatformVersion::latest(),
-        )
-        .map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!("Failed to load DashPay contract: {e}"))
-        })?;
+        let dashpay_contract = super::dashpay_contract()?;
         let document_type = dashpay_contract
             .document_type_for_name("contactInfo")
             .map_err(|e| {

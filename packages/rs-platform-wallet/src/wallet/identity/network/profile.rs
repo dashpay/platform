@@ -43,18 +43,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             return Ok(0);
         }
 
-        // 2. Load the DashPay contract locally (no network round-trip needed).
-        let dashpay_contract = Arc::new(
-            dpp::system_data_contracts::load_system_data_contract(
-                dpp::data_contracts::SystemDataContract::Dashpay,
-                dpp::version::PlatformVersion::latest(),
-            )
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to load DashPay contract: {e}"
-                ))
-            })?,
-        );
+        // 2. The DashPay contract (G9: process-wide cache — no
+        //    per-call re-parse, no network round-trip).
+        let dashpay_contract = super::dashpay_contract()?;
 
         let mut profiles_synced = 0u32;
 
@@ -214,18 +205,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         use dpp::document::Document;
         use dpp::document::DocumentV0;
 
-        // 1. Load the DashPay data contract.
-        let dashpay_contract = Arc::new(
-            dpp::system_data_contracts::load_system_data_contract(
-                dpp::data_contracts::SystemDataContract::Dashpay,
-                dpp::version::PlatformVersion::latest(),
-            )
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to load DashPay contract: {e}"
-                ))
-            })?,
-        );
+        // 1. The DashPay data contract (G9: process-wide cache).
+        let dashpay_contract = super::dashpay_contract()?;
 
         // 2. Compute avatar hashes when raw bytes are provided.
         let (avatar_hash, avatar_fingerprint) = if let Some(ref bytes) = input.avatar_bytes {
@@ -366,18 +347,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         use dpp::document::DocumentV0;
         use dpp::document::INITIAL_REVISION;
 
-        // 1. Load the DashPay contract.
-        let dashpay_contract = Arc::new(
-            dpp::system_data_contracts::load_system_data_contract(
-                dpp::data_contracts::SystemDataContract::Dashpay,
-                dpp::version::PlatformVersion::latest(),
-            )
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to load DashPay contract: {e}"
-                ))
-            })?,
-        );
+        // 1. The DashPay contract (G9: process-wide cache).
+        let dashpay_contract = super::dashpay_contract()?;
 
         // 2. Fetch existing profile document for ID + revision.
         let (existing_doc_id, current_revision) = {

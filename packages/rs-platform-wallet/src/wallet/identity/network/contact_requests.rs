@@ -117,6 +117,34 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
         let recipient_key_index = select_recipient_key_index(&recipient_identity)?;
 
+        // 3b. G7: gate the selected key pair through the same validator
+        //     the receive/accept paths use, BEFORE any ECDH or
+        //     broadcast. The selectors above pick plausible indices;
+        //     the validator pins the full contract (key types, not
+        //     disabled, purpose policy) so a malformed identity can't
+        //     reach the encrypt-and-broadcast stage with a key that
+        //     would poison the channel.
+        let validation = crate::wallet::identity::crypto::validation::validate_contact_request(
+            &sender_identity,
+            sender_key_index,
+            &recipient_identity,
+            recipient_key_index,
+        );
+        if !validation.is_valid {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "Contact request failed pre-send validation: {}",
+                validation.errors.join("; ")
+            )));
+        }
+        for warning in &validation.warnings {
+            tracing::warn!(
+                sender = %sender_identity_id,
+                recipient = %recipient_identity_id,
+                warning,
+                "Contact request pre-send validation warning"
+            );
+        }
+
         // 4. Derive the DashPay receiving xpub + ECDH private key from
         //    the wallet seed. NOTE: this step still requires the seed
         //    in-process (see CAVEAT in the docstring).
@@ -244,13 +272,28 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .await?;
 
         // 7. Mirror the local-state bookkeeping in `send_contact_request`.
+        //
+        // G8: store the REAL 96-byte ciphertext off the broadcast
+        // document (not a zero placeholder) so the persisted /
+        // SwiftData row matches what landed on Platform — a restored
+        // device comparing local rows against chain sees identity,
+        // and the sent-side G13 re-ingest doesn't "upgrade" the row.
+        let encrypted_public_key = result
+            .document
+            .properties()
+            .get("encryptedPublicKey")
+            .and_then(|v: &Value| v.to_binary_bytes().ok())
+            .unwrap_or_else(|| {
+                debug_assert!(false, "broadcast contactRequest lacks encryptedPublicKey");
+                vec![0u8; 96]
+            });
         let contact_request = ContactRequest::new(
             *sender_identity_id,
             result.recipient_id,
             sender_key_index,
             recipient_key_index,
             result.account_reference,
-            vec![0u8; 96],
+            encrypted_public_key,
             result.document.created_at_core_block_height().unwrap_or(0),
             result.document.created_at().unwrap_or(0),
         );

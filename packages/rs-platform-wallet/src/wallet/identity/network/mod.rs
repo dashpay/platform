@@ -59,3 +59,32 @@ pub use identity_handle::{
 // avoids each sibling having to spell out `identity_handle::` on
 // every call site.
 pub(super) use identity_handle::derive_identity_auth_key_hash;
+
+/// Process-wide cached DashPay data contract (G9).
+///
+/// The bundled system contract is immutable for a given platform
+/// version, so one parse serves every operation — the previous
+/// per-call `load_system_data_contract` re-deserialized the contract
+/// on every profile / contactInfo op.
+pub(crate) fn dashpay_contract(
+) -> Result<std::sync::Arc<dpp::prelude::DataContract>, crate::error::PlatformWalletError> {
+    static CONTRACT: std::sync::OnceLock<std::sync::Arc<dpp::prelude::DataContract>> =
+        std::sync::OnceLock::new();
+    if let Some(contract) = CONTRACT.get() {
+        return Ok(std::sync::Arc::clone(contract));
+    }
+    let contract = dpp::system_data_contracts::load_system_data_contract(
+        dpp::data_contracts::SystemDataContract::Dashpay,
+        dpp::version::PlatformVersion::latest(),
+    )
+    .map_err(|e| {
+        crate::error::PlatformWalletError::InvalidIdentityData(format!(
+            "Failed to load DashPay contract: {e}"
+        ))
+    })?;
+    let arc = std::sync::Arc::new(contract);
+    // A concurrent first call may have won the race — return whichever
+    // Arc actually landed in the cell.
+    let _ = CONTRACT.set(std::sync::Arc::clone(&arc));
+    Ok(CONTRACT.get().map(std::sync::Arc::clone).unwrap_or(arc))
+}
