@@ -2134,7 +2134,6 @@ impl PlatformWalletPersistence for FFIPersister {
     }
 }
 
-/// Flatten an `AccountType` + encoded xpub into the C-flat
 /// Decode `count` contiguous 32-byte commitments / nullifiers from a
 /// host buffer into `Vec<[u8; 32]>`. A null pointer, a zero count, or a
 /// `count` whose byte length overflows / exceeds `isize::MAX` (the
