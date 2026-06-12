@@ -806,12 +806,49 @@ See Part 6 for the screen design. Tasks:
 
 16. **G4:** watch-only ECDH via `EcdhProvider::ClientSide` pushed across FFI
     (implements the M3 design).
+
+    **DEFERRED with design amendment (2026-06-13):** implementation scoping
+    found the M3 hook (ECDH shared secret only) is **insufficient** for true
+    watch-only DashPay: the friendship-xpub derivations are hardened and
+    seed-bound on BOTH flows — send derives the sender↔recipient receiving
+    xpub (`m/9'/coin'/15'/account'/<us><them>`, recipient-dependent so not
+    pre-derivable), and accept derives our receiving xpub for the new
+    account. A watch-only host therefore needs **three** hooks: ECDH shared
+    secret (designed in M3), friendship-xpub derivation, and
+    receiving-account-xpub derivation — or one combined
+    "derive-DashPay-context" hook returning `(compact_xpub, shared_secret)`.
+    The contactInfo self-encryption keys (M3 task 13) are seed-bound the
+    same way and need a fourth surface (or ride the combined hook).
+    Since the example app attaches the seed at launch (this gap is
+    explicitly not a demo blocker), shipping the ECDH-only ABI change would
+    add churn without enabling any watch-only flow. Revisit as its own
+    design+implementation slice when a hardware/watch-only host exists.
 17. **G6:** fix/delete fallback contract id.
+
+    **DONE (2026-06-13):** fallback corrected from the DPNS id to the
+    deployed DashPay id.
 18. **G7:** wire send-path validation; ship-or-delete auto-accept (verify-gate
     acceptance criterion applies if shipped — see G7).
+
+    **DONE (send half, 2026-06-13):** the selected key pair gates through
+    `validate_contact_request` before any ECDH/broadcast. Auto-accept:
+    decision = **keep dormant** — it activates with M5 invitations behind
+    the `verify_auto_accept_proof` hard gate (per Part 8.5), not deleted.
 19. **G8/G9:** real local ciphertext; contract cache.
+
+    **DONE (2026-06-13):** sent rows store the real 96-byte ciphertext off
+    the broadcast document; the bundled DashPay contract is cached
+    process-wide (OnceLock) replacing five per-call re-parses.
 20. Live cross-client interop e2e (compact xpub, ECDH, accountReference) vs
     reference DashPay clients (the M1 desk-check verified the formats on paper).
+
+    **BLOCKED-EXTERNAL (2026-06-13):** requires driving real DashWallet
+    iOS/Android builds against a shared network — not runnable in this
+    environment. The M1 desk-check (research/06) + on-chain census remain
+    the interop evidence; the contactInfo research (research/07) found no
+    reference client implements contactInfo at all, shrinking the live-e2e
+    surface to contactRequest + payment addresses. Run manually when a
+    mobile test build is available.
 
 ### Milestone 5 — Invitations (new scope, 2026-06-10; needs its own design pass)
 
