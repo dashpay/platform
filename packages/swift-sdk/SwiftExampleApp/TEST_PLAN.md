@@ -17,7 +17,7 @@ Every catalog row carries four orthogonal, machine-filterable fields. Select tes
 - **Tier** ∈ `Essential` · `Common` · `Thorough` · `Uncommon`
 - **Layer** ∈ `Core` · `Platform` · `Cross` · `Shielded`
 - **Status** ∈ `✅` · `🧪` · `🔌` · `⚠️` · `🚫`
-- **Domain** ∈ `Core` · `Identity` · `Address` · `DPNS` · `Voting` · `Contract` · `Document` · `Token` · `Shielded` · `DashPay` · `Group` · `System`
+- **Domain** ∈ `Core` · `Identity` · `Address` · `DPNS` · `Voting` · `Contract` · `Document` · `Token` · `Shielded` · `DashPay` · `Group` · `System` · `MultiWallet`
 
 A test is **runnable now** only if Status is `✅`, `🧪`, or `⚠️` (reachable in the app). `🔌`/`🚫` rows are listed for completeness — skip them unless asked to confirm absence.
 
@@ -277,6 +277,25 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SYS-05 | Storage / Keychain / Wallet-memory explorers | — | Thorough | ✅ | `StorageExplorerView`, `KeychainExplorerView`, `WalletMemoryExplorerView` (Settings; debug tooling). |
 | SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🔌 | FFI `dash_sdk_system_get_path_elements`; no UI. |
 
+### 4.13 Multi-wallet on-device Platform scenarios (same network) — `Domain=MultiWallet`
+
+These compose base actions using **two (or more) wallets on the same device and the same network**, so both sides of a Platform/shielded interaction are local and end-to-end verifiable without an external counterparty. They reuse the underlying action (cited by ID) — the value is exercising the cross-wallet path and verifying both endpoints on one device.
+
+Together with the wallet-lifecycle rows in §4.1 (`CORE-14..21`), these form the full multi-wallet test surface. None are Essential/Common — multi-wallet is a power-user / QA topology, not an everyday flow. "Act as wallet B" means navigating into wallet B (and its identity); there is **no** global wallet/identity selector (see `CORE-16`).
+
+| ID | Action | Layer | Tier | Status | Entry point & test notes |
+|---|---|---|---|---|---|
+| MW-01 | Credit transfer between two on-device identities (A → B) | Platform | Thorough | 🧪 | *Settings → Platform State Transitions → Identity Credit Transfer* (`ID-04`), recipient = wallet B's identity. Switch to B; verify its credit balance rose and A's dropped. Fully local round-trip. |
+| MW-02 | Token transfer between two on-device identities | Platform | Thorough | ✅ | `TOK-02`, recipient = wallet B's identity. Switch to B; verify the token balance arrived. |
+| MW-03 | DashPay request → accept → payment, both endpoints on device | Platform | Thorough | ✅ | A's identity sends a contact request (`DP-01`) to B's; switch to wallet B's identity and accept (`DP-02`); then pay (`DP-03`). Full bidirectional loop entirely local. |
+| MW-04 | Document transfer / purchase across wallets | Platform | Uncommon | 🧪 | A creates + lists a document (`DOC-02`/`DOC-06`); B transfers/purchases it (`DOC-05`/`DOC-07`). Ownership and credits move between A and B. |
+| MW-05 | Contested DPNS race between two on-device identities | Platform | Uncommon | ✅ | A and B (different wallets) both register the same premium/contested name (`DPNS-05`) → produces a contest observable end-to-end on-device via `VOTE-02`/`VOTE-03`. |
+| MW-06 | Shielded transfer between two on-device wallets | Shielded | Thorough | ✅ | Wallet A's pool → wallet B's shielded address (`SH-05`). After syncing B, B's shielded balance rises. NB only one wallet's shielded state is displayed at a time (`CORE-21`). |
+| MW-07 | Unshield from A to a Platform address owned by B | Shielded | Uncommon | ✅ | A unshields (`SH-06`) to a Platform address belonging to wallet B; verify B receives the credits (subject to the MW-08 sync caveat). |
+| MW-08 | Platform balance sync is per-active-wallet, **not** concurrent | Platform | Thorough | ✅ | `PlatformBalanceSyncService` is configured for ONE wallet (`configure(...walletId:)`, re-run on switch). Unlike Core SPV (`CORE-20`, all wallets at once), wallet B's Platform address/credit balances can be **stale until you switch to B and Sync Now**. Verify this is the intended behavior, not a bug. |
+| MW-09 | Per-wallet Platform isolation (identities / usernames / tokens / contacts) | Platform | Thorough | ✅ | Extends `CORE-18` to Platform reads: wallet A's identities, DPNS names, token balances, and DashPay contacts must never surface under wallet B. |
+| MW-10 | Same identity restored into two wallets (duplicate seed) | Platform | Uncommon | ✅ | Importing the same mnemonic as a second wallet derives the **same** identity; verify state stays consistent and balances are not double-counted or conflicting across the two wallets. |
+
 ---
 
 ## 5. Summary matrix
@@ -289,17 +308,17 @@ Counts are of **runnable** rows (`✅`/`🧪`/`⚠️`); `🔌`/`🚫`/stub rows
 |---|---|
 | Essential | 22 |
 | Common | 29 |
-| Thorough | 29 |
-| Uncommon | 17 |
+| Thorough | 35 |
+| Uncommon | 21 |
 
 **By layer (runnable):**
 
 | Layer | Count (approx.) |
 |---|---|
 | Core | 16 |
-| Platform | ~63 |
+| Platform | ~71 |
 | Cross | 7 |
-| Shielded | 11 |
+| Shielded | 13 |
 
 **Headline intersection — `Essential ∩ Platform` (the most common QA request):** `ID-02`, `ID-03`, `ID-04`, `DPNS-01`, `DPNS-02`, `DPNS-03`, `DPNS-04`. Essential Core lives in §4.1 (`CORE-01..08`); Essential cross-layer identity creation is `ID-01`; Essential shielded is `SH-01..06`.
 
