@@ -531,11 +531,10 @@ public final class SDK: @unchecked Sendable {
 
     if result.error != nil {
       let error = result.error!.pointee
-      let errorMessage = error.message != nil ? String(cString: error.message!) : "Unknown error"
       defer {
         dash_sdk_error_free(result.error)
       }
-      throw SDKError.internalError("Failed to refresh protocol version: \(errorMessage)")
+      throw SDKError.fromDashSDKError(error)
     }
 
     guard result.data != nil else {

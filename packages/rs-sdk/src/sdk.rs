@@ -410,7 +410,7 @@ impl Sdk {
         };
 
         let response = self
-            .execute(request, RequestSettings::default())
+            .execute(request, self.dapi_client_settings)
             .await
             .into_inner()?;
 
