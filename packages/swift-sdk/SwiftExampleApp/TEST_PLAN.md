@@ -17,9 +17,11 @@ Every catalog row carries four orthogonal, machine-filterable fields. Select tes
 - **Tier** ∈ `Essential` · `Common` · `Thorough` · `Uncommon`
 - **Layer** ∈ `Core` · `Platform` · `Cross` · `Shielded`
 - **Status** ∈ `✅` · `🧪` · `🔌` · `⚠️` · `🚫`
-- **Domain** ∈ `Core` · `Identity` · `Address` · `DPNS` · `Voting` · `Contract` · `Document` · `Token` · `Shielded` · `DashPay` · `Group` · `System`
+- **Category** ∈ `Core` · `Identity` · `Address` · `DPNS` · `Voting` · `Contract` · `Document` · `Token` · `Shielded` · `DashPay` · `Group` · `System` · `MultiWallet` (the feature area; shown as `Domain=…` on each §4 section header — "Category" and "Domain" are the same axis)
 
 A test is **runnable now** only if Status is `✅`, `🧪`, or `⚠️` (reachable in the app). `🔌`/`🚫` rows are listed for completeness — skip them unless asked to confirm absence.
+
+A row's **primary** category is the §4 section it lives in. Some tests are **cross-cutting** — e.g. `MW-02` (token transfer between two wallets) lives in the MultiWallet section but is also a **Token** test, and `CORE-21` is also **Shielded**. Resolve any `Category=…` selection through **§6 Category index**, which lists every member ID per category (primary + cross-cutting), so "run all Token tests" catches `MW-02` and `GRP-03` too. This is the axis behind requests like *"run all non-Uncommon Token tests."*
 
 **Worked examples of a request → selection:**
 
@@ -27,8 +29,10 @@ A test is **runnable now** only if Status is `✅`, `🧪`, or `⚠️` (reachab
 |---|---|---|
 | "test Essential, Platform-only" | `Tier=Essential AND Layer=Platform` | `ID-02, ID-03, ID-04, DPNS-01, DPNS-02, DPNS-03, DPNS-04` |
 | "test all Essential" | `Tier=Essential` | the core experience: `CORE-01..08`, `ID-01/02/03/04`, `DPNS-01/02/03/04`, `SH-01..06` |
-| "smoke test the wallet" | `Domain=Core AND Status=✅` | `CORE-01..CORE-09` |
-| "exercise every token admin action" | `Domain=Token AND Tier=Uncommon` | `TOK-08..TOK-16` |
+| "smoke test the wallet" | `Category=Core AND Status=✅` | `CORE-01..CORE-09` |
+| "test all non-Uncommon Token tests" | `Category=Token AND Tier≠Uncommon` | `TOK-01..07`, `MW-02` (via §6 index) |
+| "exercise every token admin action" | `Category=Token AND Tier=Uncommon` | `TOK-08..TOK-16` |
+| "run all Shielded tests" | `Category=Shielded` | `SH-01..13`, `CORE-21`, `MW-06/07/11` (via §6 index) |
 | "run all read queries" | Appendix A | the gRPC read-RPC coverage table |
 
 ### Generic pass criteria (apply per action type unless a row overrides)
@@ -68,7 +72,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 |---|---|
 | **Essential** | The core happy-path experience every user exercises: the headline value transactions (Core→Core send, identity→identity credit transfer, shield / transfer / unshield) plus everything needed to perform and verify them — create/restore wallet, sync, receive, view balances & history, back up phrase, create & view/discover identity, register/check/resolve usernames, view shielded activity. QA must always run these. |
 | **Common** | Frequent actions beyond the core experience — identity top-ups, contested usernames, identity key management, platform-address credit ops, contracts, token transfer/view, DashPay, secondary shielded flows (asset-lock shield, withdraw, prover warm-up). |
-| **Thorough** | Occasional, or tied to a specialized role (contract author, voter, contact-graph user) — voting, contract update, document edit/delete, mint/burn/claim, group reads. |
+| **Thorough** | Occasional, or tied to a specialized role (contract author, voter, contact-graph user, multi-wallet power user) — voting, contract update, document edit/delete, mint/burn/claim, group reads, multi-wallet management. |
 | **Uncommon** | Rare / exotic / administrative edge cases (most token governance, marketplace, emergency, group, raw-protocol). |
 
 **Layers** (for the "X-only" filter):
@@ -108,11 +112,28 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | CORE-06 | View balance / tx history / UTXOs | Core | Essential | ✅ | `WalletDetailView`, `TransactionListView`, `AccountDetailView` (SwiftData). |
 | CORE-07 | SPV sync (start / stop / progress) | Core | Essential | ✅ | Global sync indicator (`ContentView`) → `platform_wallet_manager_spv_*`. Headers/filters/masternodes advance to tip. |
 | CORE-08 | QR scan recipient | Core | Essential | ✅ | `QRScannerView`. Scanned address fills the send field. |
-| CORE-09 | Multiple HD accounts | Core | Common | ✅ | Account selection / `AccountDetailView`; balances per `account_index`. |
+| CORE-09 | Multiple HD accounts (within one wallet) | Core | Common | ✅ | Account selection / `AccountDetailView`; balances per `account_index`. Distinct from holding multiple *wallets* — see CORE-14+. |
 | CORE-10 | Multi-recipient Core send | Core | Common | 🔌 | FFI `core_wallet_send_to_addresses` takes parallel address/amount arrays; UI is single-recipient — verify before claiming. |
 | CORE-11 | Custom fee on transparent send | Core | Uncommon | 🚫 | Not exposed on the transparent send path (custom Core fee only on shielded withdraw `SH-08` and platform-address funding). |
 | CORE-12 | CoinJoin / mixing | Core | Uncommon | 🚫 | Not implemented anywhere (SPV crate or FFI). |
 | CORE-13 | Send explicitly via InstantSend | Core | Uncommon | 🚫 | IS is observe-only (used to obtain asset-lock proofs); no user-facing send toggle. |
+
+#### Multiple wallets on one device
+
+The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets concurrently (keyed by `wallet_id`), one SPV runtime per network. Most rows elsewhere in this plan are written for a single active wallet — these rows cover the multi-wallet dimension explicitly. (Distinct from CORE-09, which is multiple *accounts* inside one wallet.)
+
+| ID | Action | Layer | Tier | Status | Entry point & test notes |
+|---|---|---|---|---|---|
+| CORE-14 | Hold multiple wallets at once (wallet list) | Core | Thorough | ✅ | `WalletsContentView` lists every wallet for the current network; `PlatformWalletManager.wallets` holds N keyed by `wallet_id`. |
+| CORE-15 | Create / import a second wallet (alongside existing) | Core | Thorough | ✅ | Wallets tab → "Add Wallet" → `CreateWalletView`. New wallet coexists; must not replace or corrupt the first. |
+| CORE-16 | Switch active wallet | Core | Thorough | ✅ | Tap a wallet row → `WalletDetailView` scopes all `@Query`s to that `walletId`. Navigation-based — there is **no** global wallet picker, so "switching" = opening another wallet's detail. |
+| CORE-17 | Remove / delete a wallet | Core | Uncommon | ✅ | `WalletDetailView` → Delete Wallet → `platform_wallet_manager_remove_wallet`; cascades Keychain mnemonic + that wallet's identities + SwiftData rows. Verify the other wallets are untouched. |
+| CORE-18 | Per-wallet isolation (identities / addresses / balances / shielded) | Core | Thorough | ✅ | Confirm wallet A's identities, addresses, Core/Platform balances and shielded state never surface under wallet B (`@Query` predicates filtered by `walletId`). Key correctness check for multi-wallet. |
+| CORE-19 | Send between two on-device wallets | Core | Thorough | ✅ | Normal send from wallet A to wallet B's receive address (no intra-app picker — you must paste/scan B's address). B's balance increases after sync. Variants: identity→identity (`ID-04`) or shielded between two local wallets. |
+| CORE-20 | Concurrent SPV sync across all wallets | Core | Thorough | ✅ | One SPV runtime per network filters every wallet's addresses; `spvProgress` is manager-global, not per-wallet. With 2+ wallets, confirm each reaches the tip and detects its own funds. |
+| CORE-21 | Multiple wallets bound to the shielded pool concurrently | Shielded | Uncommon | ✅ | `platform_wallet_manager_bind_shielded` is per `wallet_id`; the manager syncs all bound wallets. UI (`ShieldedService.boundWalletId`) displays one wallet's shielded state at a time — switching should swap cleanly, not merge balances. |
+| CORE-22 | Re-add a previously deleted wallet (same network) | Core | Uncommon | ✅ | After `CORE-17`, re-import the same mnemonic on the same network. Re-derives the same (network-scoped) `wallet_id`, re-creates the wallet, and must re-discover identities/addresses/balances cleanly — no stale Keychain keys or orphaned SwiftData rows left over from the delete. Verify the wallet is fully functional again, not a half-restored duplicate. |
+| CORE-23 | Re-add a deleted wallet that also exists on another network | Core | Uncommon | ✅ | Same mnemonic present as a wallet on two networks (e.g. testnet + devnet) → **distinct** network-scoped `wallet_id`s, each with its own Keychain mnemonic copy. Delete it on network X (`CORE-17`) and verify the network-Y wallet is untouched (still listed, mnemonic intact, functional); then re-add on X and confirm both coexist. Exercises the `walletRowCountAcrossNetworks` cross-network mnemonic-purge guard in `PlatformWalletManager.deleteWallet`. |
 
 ### 4.2 Identity — `Domain=Identity`
 
@@ -141,6 +162,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ADDR-03 | Top up address from asset lock | Cross | Thorough | ✅ | `FundFromAssetLockPlatformAddressView` → `dash_sdk_address_top_up_from_asset_lock`. |
 | ADDR-04 | Withdraw address credits → Core L1 | Cross | Thorough | ✅ | `AddressQueriesView` → WithdrawAddressFunds → `dash_sdk_address_withdraw_funds`. |
 | ADDR-05 | Address balance-change history (recent / compacted / branch / trunk) | Platform | Uncommon | 🔌 | FFI `dash_sdk_address_fetch_recent_balance_changes` / `_compacted_balance_changes` / `_branch_state` / `_trunk_state`; no UI. |
+| ADDR-06 | Display / share your Platform receive address | Platform | Common | ✅ | "Receive Dash" sheet → **Platform** tab (`ReceiveAddressView`, `ReceiveAddressTab.platform`, "Your Platform Address"): QR + bech32m DIP-17 address + Copy. The receive counterpart to the credit-transfer / top-up funding paths. |
 
 ### 4.4 DPNS (usernames) — `Domain=DPNS`
 
@@ -230,6 +252,8 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SH-09 | Prover warm-up / readiness | Shielded | Common | ✅ | `warmUpShieldedProver` / `shieldedProverIsReady` (~30s Halo2 key build; precondition for spends). |
 | SH-10 | Seed shielded pool (anonymity set) | Shielded | Uncommon | ✅ | `SeedShieldedPoolView` → `platform_wallet_manager_shielded_seed_pool_notes`. **Devnet/testnet only** — hard-errors on mainnet. |
 | SH-11 | Create identity from shielded pool (Type 20) | Cross | Uncommon | 🔌 | FFI `platform_wallet_manager_shielded_identity_create_from_pool`; no dedicated UI. |
+| SH-12 | Clear shielded state (wipe notes + re-sync) | Shielded | Uncommon | ✅ | "Clear" button on the Sync tab (`CoreContentView` → `ShieldedService.clearLocalState` → `clearShielded`). Stops sync, wipes every wallet's shielded notes + sync state, zeroes the Swift mirror; bind credentials are kept so "Sync Now" rebinds and re-scans. (On-disk SQLite tree is intentionally retained.) Verify balance/activity reset, then restore after Sync Now. |
+| SH-13 | Display / share your shielded receive address | Shielded | Common | ✅ | "Receive Dash" sheet → **Shielded** tab (`ReceiveAddressView`, `ReceiveAddressTab.shielded`): QR + full `tdash1…`/`dash1…` bech32m address + Copy Address. Hand your shielded address to a payer, or grab wallet B's address for `MW-06`. |
 
 ### 4.10 DashPay — `Domain=DashPay`
 
@@ -262,6 +286,26 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SYS-05 | Storage / Keychain / Wallet-memory explorers | — | Thorough | ✅ | `StorageExplorerView`, `KeychainExplorerView`, `WalletMemoryExplorerView` (Settings; debug tooling). |
 | SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🔌 | FFI `dash_sdk_system_get_path_elements`; no UI. |
 
+### 4.13 Multi-wallet on-device Platform scenarios (same network) — `Domain=MultiWallet`
+
+These compose base actions using **two (or more) wallets on the same device and the same network**, so both sides of a Platform/shielded interaction are local and end-to-end verifiable without an external counterparty. They reuse the underlying action (cited by ID) — the value is exercising the cross-wallet path and verifying both endpoints on one device.
+
+Together with the wallet-lifecycle rows in §4.1 (`CORE-14..23`), these form the full multi-wallet test surface. None are Essential/Common — multi-wallet is a power-user / QA topology, not an everyday flow. "Act as wallet B" means navigating into wallet B (and its identity); there is **no** global wallet/identity selector (see `CORE-16`).
+
+| ID | Action | Layer | Tier | Status | Entry point & test notes |
+|---|---|---|---|---|---|
+| MW-01 | Credit transfer between two on-device identities (A → B) | Platform | Thorough | 🧪 | *Settings → Platform State Transitions → Identity Credit Transfer* (`ID-04`), recipient = wallet B's identity. Switch to B; verify its credit balance rose and A's dropped. Fully local round-trip. |
+| MW-02 | Token transfer between two on-device identities | Platform | Thorough | ✅ | `TOK-02`, recipient = wallet B's identity. Switch to B; verify the token balance arrived. |
+| MW-03 | DashPay request → accept → payment, both endpoints on device | Platform | Thorough | ✅ | A's identity sends a contact request (`DP-01`) to B's; switch to wallet B's identity and accept (`DP-02`); then pay (`DP-03`). Full bidirectional loop entirely local. |
+| MW-04 | Document transfer / purchase across wallets | Platform | Uncommon | 🧪 | A creates + lists a document (`DOC-02`/`DOC-06`); B transfers/purchases it (`DOC-05`/`DOC-07`). Ownership and credits move between A and B. |
+| MW-05 | Contested DPNS race between two on-device identities | Platform | Uncommon | ✅ | A and B (different wallets) both register the same premium/contested name (`DPNS-05`) → produces a contest observable end-to-end on-device via `VOTE-02`/`VOTE-03`. |
+| MW-06 | Shielded transfer between two on-device wallets | Shielded | Thorough | ✅ | Wallet A's pool → wallet B's shielded address (`SH-05`); copy B's address from its Receive → Shielded tab (`SH-13`). Both wallets must be bound + synced (`CORE-21`, `SH-01`); after syncing B, its shielded balance rises. NB only one wallet's shielded state is displayed at a time. |
+| MW-07 | Unshield from A to a Platform address owned by B | Shielded | Uncommon | ✅ | A unshields (`SH-06`) to a Platform address belonging to wallet B; verify B receives the credits (subject to the MW-08 sync caveat). |
+| MW-08 | Platform balance sync is per-active-wallet, **not** concurrent | Platform | Thorough | ✅ | `PlatformBalanceSyncService` is configured for ONE wallet (`configure(...walletId:)`, re-run on switch). Unlike Core SPV (`CORE-20`, all wallets at once), wallet B's Platform address/credit balances can be **stale until you switch to B and Sync Now**. Verify this is the intended behavior, not a bug. |
+| MW-09 | Per-wallet Platform isolation (identities / usernames / tokens / contacts) | Platform | Thorough | ✅ | Extends `CORE-18` to Platform reads: wallet A's identities, DPNS names, token balances, and DashPay contacts must never surface under wallet B. |
+| MW-10 | Same identity restored into two wallets (duplicate seed) | Platform | Uncommon | ✅ | Importing the same mnemonic as a second wallet derives the **same** identity; verify state stays consistent and balances are not double-counted or conflicting across the two wallets. |
+| MW-11 | Shielded withdraw from A to B's Core L1 address | Shielded | Uncommon | ✅ | Wallet A's pool → a Core L1 address owned by wallet B (`SH-08`). Completes the cross-wallet shielded exit set (→ shielded `MW-06`, → Platform `MW-07`, → Core `MW-11`). Verify B's Core balance rises after SPV sync. |
+
 ---
 
 ## 5. Summary matrix
@@ -273,20 +317,42 @@ Counts are of **runnable** rows (`✅`/`🧪`/`⚠️`); `🔌`/`🚫`/stub rows
 | Tier | Count (approx.) |
 |---|---|
 | Essential | 22 |
-| Common | 29 |
-| Thorough | 23 |
-| Uncommon | 15 |
+| Common | 31 |
+| Thorough | 35 |
+| Uncommon | 25 |
 
 **By layer (runnable):**
 
 | Layer | Count (approx.) |
 |---|---|
-| Core | 9 |
-| Platform | ~63 |
+| Core | 18 |
+| Platform | ~72 |
 | Cross | 7 |
-| Shielded | 10 |
+| Shielded | 16 |
 
 **Headline intersection — `Essential ∩ Platform` (the most common QA request):** `ID-02`, `ID-03`, `ID-04`, `DPNS-01`, `DPNS-02`, `DPNS-03`, `DPNS-04`. Essential Core lives in §4.1 (`CORE-01..08`); Essential cross-layer identity creation is `ID-01`; Essential shielded is `SH-01..06`.
+
+---
+
+## 6. Category index
+
+Membership of each feature category across **all** sections (primary section members + cross-cutting tests that live elsewhere). To run a `Category=X` selection, take the list below and intersect with `Tier` / `Layer` / `Status` as needed. `A-01..09` means every id in that span.
+
+- **Core / Wallet** — `CORE-01..23`
+- **MultiWallet** — `CORE-14..23`, `MW-01..11`
+- **Identity** — `ID-01..13`, `SH-11`, `MW-01`, `MW-08`, `MW-09`, `MW-10`
+- **Address** (DIP-17 platform addresses) — `ADDR-01..06`, `ID-06`, `ID-08`, `ID-11`
+- **DPNS** — `DPNS-01..07`, `MW-05`
+- **Voting** — `VOTE-01..07`, `DPNS-05`, `MW-05`
+- **Contract** — `DC-01..04`
+- **Document** — `DOC-01..09`, `MW-04`
+- **Token** — `TOK-01..17`, `MW-02`, `GRP-03`
+- **Shielded** — `SH-01..13`, `CORE-21`, `MW-06`, `MW-07`, `MW-11`
+- **DashPay** — `DP-01..06`, `MW-03`
+- **Group** — `GRP-01..04`, `TOK-15`, `TOK-16`
+- **System / Diagnostics** — `SYS-01..06`
+
+Worked example — *"run all non-Uncommon Token tests"*: take **Token** = `TOK-01..17`, `MW-02`, `GRP-03`; drop the `Uncommon` ones (`TOK-08..17`, `GRP-03`) → run **`TOK-01..07` + `MW-02`**.
 
 ---
 
