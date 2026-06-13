@@ -3,6 +3,7 @@ use super::*;
 mod token_selling_tests {
     use std::collections::BTreeMap;
 
+    use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
     use crate::{rpc::core::MockCoreRPCLike, test::helpers::setup::TempPlatform};
 
     use super::*;
@@ -547,7 +548,7 @@ mod token_selling_tests {
                 (100, dash_to_credits!(10)),
                 (500, dash_to_credits!(5)),
             ])),
-            TokenPricingSchedule::SetPrices(BTreeMap::new()),
+            TokenPricingSchedule::SetPrices(BTreeMap::from([(1, dash_to_credits!(2))])),
         ];
 
         // Setup the test
@@ -832,6 +833,35 @@ mod token_selling_tests {
         pricing: Option<TokenPricingSchedule>,
         identity_contract_nonce: &mut u64,
     ) -> (DataContract, Identifier) {
+        let (contract, token_id, processing_result) = create_token_with_pricing_result(
+            platform_version,
+            platform,
+            seller,
+            seller_signer,
+            seller_key,
+            pricing,
+            identity_contract_nonce,
+        )
+        .await;
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        (contract, token_id)
+    }
+
+    /// Same as [`create_token_with_pricing`], but returns the set-price processing
+    /// result instead of asserting it succeeded, for tests that expect rejection.
+    async fn create_token_with_pricing_result(
+        platform_version: &PlatformVersion,
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        seller: &Identity,
+        seller_signer: &SimpleSigner,
+        seller_key: &IdentityPublicKey,
+        pricing: Option<TokenPricingSchedule>,
+        identity_contract_nonce: &mut u64,
+    ) -> (DataContract, Identifier, StateTransitionsProcessingResult) {
         let (contract, token_id) = create_token_contract_with_owner_identity(
             platform,
             seller.id(),
@@ -884,22 +914,21 @@ mod token_selling_tests {
             platform_version,
         );
 
-        assert_matches!(
-            processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
-        );
-        (contract, token_id)
+        (contract, token_id, processing_result)
     }
 
     /// Regression test for the chain-halt where an empty `SetPrices` schedule
     /// caused a `.expect("Map is not empty")` panic in the direct-purchase
     /// transformer.
     ///
-    /// An empty `SetPrices` schedule passes structure validation (which
-    /// explicitly skips the price) and state validation (auth-only), and is
-    /// stored verbatim. The transformer runs on every validator during block
-    /// execution, so a panic there would crash all validators and halt the
-    /// chain. With the fix, a purchase against an empty schedule must instead be
+    /// An empty `SetPrices` schedule is now rejected at structure validation
+    /// with `TokenPricingScheduleEmptyError`, so it can no longer reach state
+    /// through a state transition — asserted first. The transformer must still
+    /// handle an empty schedule defensively (defense in depth, e.g. state
+    /// written before the structure check existed): the transformer runs on
+    /// every validator during block execution, so a panic there would crash
+    /// all validators and halt the chain. The schedule is therefore planted
+    /// directly through the drive API, and a purchase against it must be
     /// rejected gracefully as `TokenNotForDirectSale` — no panic.
     #[tokio::test]
     async fn test_direct_purchase_empty_set_prices_does_not_panic() {
@@ -915,22 +944,43 @@ mod token_selling_tests {
         let (buyer, buyer_signer, buyer_key) =
             setup_identity(&mut platform, rng.gen(), dash_to_credits!(10.0));
 
-        // Plant: set an EMPTY tiered pricing schedule. This is accepted and
-        // stored (structure validation skips the price; state validation is
-        // auth-only), as asserted inside `create_token_with_pricing`.
         let empty_set_prices = TokenPricingSchedule::SetPrices(BTreeMap::new());
 
+        // Setting an EMPTY tiered pricing schedule via a state transition must
+        // be rejected at structure validation.
         let mut identity_contract_nonce: u64 = 2;
-        let (contract, token_id) = create_token_with_pricing(
+        let (contract, token_id, processing_result) = create_token_with_pricing_result(
             platform_version,
             &mut platform,
             &seller,
             &seller_signer,
             &seller_key,
-            Some(empty_set_prices),
+            Some(empty_set_prices.clone()),
             &mut identity_contract_nonce,
         )
         .await;
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::BasicError(BasicError::TokenPricingScheduleEmptyError(_))
+            )]
+        );
+
+        // Plant: write the empty schedule straight into state through the
+        // drive API, bypassing state transition validation — simulating state
+        // written before the structure check existed.
+        platform
+            .drive
+            .token_set_direct_purchase_price(
+                token_id.to_buffer(),
+                Some(empty_set_prices),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to set empty pricing schedule directly");
 
         // Detonate: any direct purchase used to panic at
         // `set_prices.keys().next().expect("Map is not empty")`.
