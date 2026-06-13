@@ -552,9 +552,13 @@ impl Sdk {
 
     /// Return [Dash Platform version](PlatformVersion) information used by this SDK.
     ///
-    /// When auto-detection is enabled (default), returns [`DEFAULT_INITIAL_PROTOCOL_VERSION`]
-    /// until the first network response is received, then tracks the network's version.
-    /// When pinned via [`SdkBuilder::with_version()`], always returns the pinned version.
+    /// The version is floored at construction to at least the per-network minimum
+    /// protocol version (`min_protocol_version`), so it is never below the network's
+    /// known live version. With auto-detection (default) the SDK starts at
+    /// `max(DEFAULT_INITIAL_PROTOCOL_VERSION, network floor)` and then tracks the
+    /// network's version — auto-detection only ever ratchets *upward* (`fetch_max`).
+    /// A version pinned via [`SdkBuilder::with_version()`] is returned as pinned,
+    /// except that a pin below the network floor is raised to the floor at build time.
     pub fn version<'v>(&self) -> &'v PlatformVersion {
         let v = self.protocol_version.load(Ordering::Relaxed);
         PlatformVersion::get(v).unwrap_or_else(|_| PlatformVersion::latest())
@@ -952,8 +956,13 @@ impl SdkBuilder {
     /// Select specific version of Dash Platform to use. This pins the version and
     /// disables auto-detection.
     ///
-    /// When unset, the SDK starts at [`DEFAULT_INITIAL_PROTOCOL_VERSION`] and
-    /// ratchets upward via auto-detection.
+    /// Note that [`build()`](Self::build) still clamps the pinned version up to the
+    /// per-network minimum (`min_protocol_version`): a pin below the network floor
+    /// is raised to the floor, so the SDK never starts below the network's known
+    /// version. A pin at or above the floor is used as-is.
+    ///
+    /// When unset, the SDK starts at `max(DEFAULT_INITIAL_PROTOCOL_VERSION, network
+    /// floor)` and ratchets upward via auto-detection.
     pub fn with_version(mut self, version: &'static PlatformVersion) -> Self {
         self.version = version;
         self.version_explicit = true;

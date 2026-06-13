@@ -99,8 +99,8 @@ pub(super) fn extract_network_protocol_version(
         Some(get_status_response::Version::V0(v0)) => v0
             .version
             .as_ref()
-            .and_then(|v| v.protocol)
-            .and_then(|p| p.drive)
+            .and_then(|v| v.protocol.as_ref())
+            .and_then(|p| p.drive.as_ref())
             .map(|d| d.current),
         None => None,
     }
