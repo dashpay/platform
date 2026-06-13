@@ -117,9 +117,32 @@ impl CanRetry for dapi_grpc::tonic::Status {
                 // During a mixed-version network rollout, Unimplemented means this
                 // particular node runs an older build that doesn't expose the method
                 // yet; another node may serve it. Marking it retryable makes the
-                // executor ban the node and retry elsewhere. If no node implements
-                // the method, all addresses get exhausted and the error still
-                // surfaces as NoAvailableAddressesToRetry.
+                // executor ban the node (see `update_address_ban_status`) and retry
+                // elsewhere.
+                //
+                // When NO node implements the method, how the failure surfaces depends
+                // on which of `DapiClient::execute`'s two caps trips first:
+                //   * `live_addresses <= settings.retries` — the address list is
+                //     exhausted before the retry budget, so the error surfaces as the
+                //     non-retryable `NoAvailableAddressesToRetry`.
+                //   * `live_addresses > settings.retries` — the per-call retry budget
+                //     trips first, banning `settings.retries + 1` nodes and surfacing
+                //     the raw (still-retryable) `Unimplemented`. A caller that honors
+                //     `CanRetry` then re-enters and bans more nodes each round,
+                //     converging on the exhausted-addresses case above; rs-sdk also
+                //     bounds this via its own `total_retries` cap (see
+                //     `rs-sdk/src/sync.rs`). Either way the loop is bounded — it never
+                //     retries the same node forever.
+                //
+                // Caveat: bans are address-scoped, not (address, method)-scoped, and
+                // Unimplemented is also returned deliberately for genuinely unsupported
+                // / feature-gated endpoints (e.g. rs-drive-abci's
+                // broadcast_state_transition / wait_for_state_transition_result /
+                // get_consensus_params, and any rs-dapi `MethodNotFound`). Calling such
+                // an endpoint bans an otherwise-healthy node across ALL methods for the
+                // ban window. Acceptable for the targeted rollout case; per-method ban
+                // granularity is left as a follow-up so optional endpoints can't poison
+                // the shared address list. TODO(per-method-ban).
                 | Unimplemented
         )
     }

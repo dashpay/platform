@@ -168,3 +168,55 @@ async fn unimplemented_on_all_nodes_still_surfaces_error() {
         other => panic!("expected NoAvailableAddressesToRetry, got: {other:?}"),
     }
 }
+
+#[tokio::test]
+async fn unimplemented_surfaces_retryable_when_pool_exceeds_retry_budget() {
+    // The non-retryable `NoAvailableAddressesToRetry` collapse (above) only holds
+    // when the live address list is exhausted before the retry budget, i.e.
+    // `live_addresses <= settings.retries`. When the pool is LARGER than the retry
+    // budget, the per-call retry cap trips first: the executor surfaces the raw
+    // (still-retryable) `Unimplemented` after banning `retries + 1` nodes, leaving
+    // the rest of the pool live. A caller honoring `CanRetry` re-enters and bans
+    // more nodes each round (rs-sdk additionally caps via `total_retries`), so
+    // termination is still bounded — this test pins the contract for that branch.
+    let settings = RequestSettings {
+        retries: Some(1),
+        ..Default::default()
+    };
+
+    // Three live nodes, retry budget of 1 → at most retries + 1 = 2 attempts, so
+    // the retry cap trips before all three addresses are banned.
+    let request = MixedVersionRequest::with_unimplemented_responses(usize::MAX);
+    let address_list: AddressList =
+        "http://127.0.0.1:10005,http://127.0.0.1:10006,http://127.0.0.1:10007"
+            .parse()
+            .expect("valid address list");
+    let client = DapiClient::new(address_list, settings);
+
+    let error = client
+        .execute(request.clone(), settings)
+        .await
+        .expect_err("request must fail when no node implements the method");
+
+    // retries + 1 = 2 nodes were tried (and banned) before the retry cap tripped;
+    // the third address is never reached.
+    assert_eq!(
+        request.state.lock().unwrap().unimplemented_uris.len(),
+        2,
+        "retry budget (1) caps attempts at 2 before the 3-node pool is exhausted"
+    );
+
+    // Because the retry cap — not address exhaustion — terminated the loop, the
+    // raw Unimplemented surfaces and is still retryable (unlike the exhausted-pool
+    // case, which collapses to the non-retryable NoAvailableAddressesToRetry).
+    assert!(
+        error.can_retry(),
+        "with more live nodes than retries, the surfaced Unimplemented stays retryable"
+    );
+    match error.inner {
+        DapiClientError::Transport(TransportError::Grpc(status)) => {
+            assert_eq!(status.code(), Code::Unimplemented)
+        }
+        other => panic!("expected raw Transport(Grpc(Unimplemented)), got: {other:?}"),
+    }
+}
