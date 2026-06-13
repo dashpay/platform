@@ -352,15 +352,22 @@ mod tests {
 
     #[test]
     fn test_cast_vote_null_handle() {
+        // Bind every CString to a local so the backing buffer outlives the FFI
+        // call; passing `CString::new(..).unwrap().as_ptr()` inline drops the
+        // temporary before the call reads the pointer (use-after-free).
+        let contract_id = CString::new(DPNS_CONTRACT_ID).unwrap();
+        let document_type_name = CString::new("domain").unwrap();
+        let index_name = CString::new("parentNameAndLabel").unwrap();
+        let index_values = CString::new(r#"["dash","alice"]"#).unwrap();
         unsafe {
             let pro_tx = [1u8; 32];
             let priv_key = [2u8; 32];
             let result = dash_sdk_contested_resource_cast_vote(
                 std::ptr::null(),
-                CString::new(DPNS_CONTRACT_ID).unwrap().as_ptr(),
-                CString::new("domain").unwrap().as_ptr(),
-                CString::new("parentNameAndLabel").unwrap().as_ptr(),
-                CString::new(r#"["dash","alice"]"#).unwrap().as_ptr(),
+                contract_id.as_ptr(),
+                document_type_name.as_ptr(),
+                index_name.as_ptr(),
+                index_values.as_ptr(),
                 ContestedResourceVoteChoiceFFI::Abstain as u8,
                 std::ptr::null(),
                 pro_tx.as_ptr(),
@@ -374,15 +381,22 @@ mod tests {
     #[test]
     fn test_cast_vote_towards_identity_requires_contender() {
         let handle = create_mock_sdk_handle();
+        // Bind every CString to a local so the backing buffer outlives the FFI
+        // call; passing `CString::new(..).unwrap().as_ptr()` inline drops the
+        // temporary before the call reads the pointer (use-after-free).
+        let contract_id = CString::new(DPNS_CONTRACT_ID).unwrap();
+        let document_type_name = CString::new("domain").unwrap();
+        let index_name = CString::new("parentNameAndLabel").unwrap();
+        let index_values = CString::new(r#"["dash","alice"]"#).unwrap();
         unsafe {
             let pro_tx = [1u8; 32];
             let priv_key = [2u8; 32];
             let result = dash_sdk_contested_resource_cast_vote(
                 handle,
-                CString::new(DPNS_CONTRACT_ID).unwrap().as_ptr(),
-                CString::new("domain").unwrap().as_ptr(),
-                CString::new("parentNameAndLabel").unwrap().as_ptr(),
-                CString::new(r#"["dash","alice"]"#).unwrap().as_ptr(),
+                contract_id.as_ptr(),
+                document_type_name.as_ptr(),
+                index_name.as_ptr(),
+                index_values.as_ptr(),
                 ContestedResourceVoteChoiceFFI::TowardsIdentity as u8,
                 std::ptr::null(), // missing contender id
                 pro_tx.as_ptr(),
@@ -399,6 +413,13 @@ mod tests {
     #[test]
     fn test_cast_vote_invalid_choice() {
         let handle = create_mock_sdk_handle();
+        // Bind every CString to a local so the backing buffer outlives the FFI
+        // call; passing `CString::new(..).unwrap().as_ptr()` inline drops the
+        // temporary before the call reads the pointer (use-after-free).
+        let contract_id = CString::new(DPNS_CONTRACT_ID).unwrap();
+        let document_type_name = CString::new("domain").unwrap();
+        let index_name = CString::new("parentNameAndLabel").unwrap();
+        let index_values = CString::new(r#"["dash","alice"]"#).unwrap();
         unsafe {
             let pro_tx = [1u8; 32];
             let priv_key = [2u8; 32];
@@ -407,10 +428,10 @@ mod tests {
             // rejected with `InvalidParameter`.
             let result = dash_sdk_contested_resource_cast_vote(
                 handle,
-                CString::new(DPNS_CONTRACT_ID).unwrap().as_ptr(),
-                CString::new("domain").unwrap().as_ptr(),
-                CString::new("parentNameAndLabel").unwrap().as_ptr(),
-                CString::new(r#"["dash","alice"]"#).unwrap().as_ptr(),
+                contract_id.as_ptr(),
+                document_type_name.as_ptr(),
+                index_name.as_ptr(),
+                index_values.as_ptr(),
                 99, // invalid discriminant
                 std::ptr::null(),
                 pro_tx.as_ptr(),
