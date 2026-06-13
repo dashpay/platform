@@ -1869,14 +1869,43 @@ struct TransitionDetailView: View {
       newTokenSchemas = parsed
     }
 
-    // Parse new groups if provided
-    var newGroups: [[String: Any]]? = nil
+    // Parse new groups if provided. As with contract create,
+    // `RegisterContractSourceView` flattens the chain-shape
+    // `{ "<position>": { ... } }` map into an array with an
+    // injected `id`. The V1 contract format wants a position-keyed
+    // map, so re-key the array back before crossing the FFI.
+    var newGroups: [String: Any]? = nil
     if let groupsJson = formInputs["newGroups"], !groupsJson.isEmpty {
-      guard let data = groupsJson.data(using: .utf8),
-            let parsed = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+      guard let data = groupsJson.data(using: .utf8) else {
         throw SDKError.serializationError("Invalid groups JSON")
       }
-      newGroups = parsed
+      let parsed = try JSONSerialization.jsonObject(with: data)
+      switch parsed {
+      case let byPosition as [String: Any]:
+        newGroups = byPosition
+      case let entries as [[String: Any]]:
+        var byPosition: [String: Any] = [:]
+        for var entry in entries {
+          guard let rawId = entry.removeValue(forKey: "id") else {
+            throw SDKError.serializationError("Group entry is missing an `id` field")
+          }
+          let key: String
+          if let intId = rawId as? Int {
+            key = String(intId)
+          } else if let strId = rawId as? String {
+            key = strId
+          } else {
+            throw SDKError.serializationError("Group entry has unsupported `id` type — expected Int or String")
+          }
+          guard byPosition[key] == nil else {
+            throw SDKError.serializationError("Duplicate group position `\(key)` in groups payload")
+          }
+          byPosition[key] = entry
+        }
+        newGroups = byPosition
+      default:
+        throw SDKError.serializationError("Invalid groups JSON")
+      }
     }
 
     // Validate that at least one update is provided
@@ -1884,25 +1913,58 @@ struct TransitionDetailView: View {
       throw SDKError.invalidParameter("At least one update (document schemas, token schemas, or groups) must be provided")
     }
 
-    // Use the DPPIdentity for contract update
-    let dppIdentity = DPPIdentity(
-      id: ownerIdentity.identityId,
-      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.identityPublicKeys.map { ($0.id, $0) }),
-      balance: UInt64(bitPattern: ownerIdentity.balance),
-      revision: 0
-    )
+    // Resolve the wallet that owns this identity — contract update
+    // mirrors contract create and goes through `platform-wallet`'s
+    // `updateDataContract(...)`. The wallet fetches the live
+    // contract, bumps its version, applies the new schemas at the
+    // next version, builds a `DataContractUpdateTransition`, signs
+    // via the external `KeychainSigner`, and broadcasts on the
+    // 8 MB-stack worker (same rationale as create).
+    guard let walletId = ownerIdentity.wallet?.walletId,
+          let wallet = walletManager.wallet(for: walletId) else {
+      throw SDKError.invalidParameter(
+        "Identity has no wallet linkage; cannot sign contract update"
+      )
+    }
 
-    // Contract update via the new platform-wallet path isn't
-    // wired through yet — the previous `sdk.dataContractUpdate(...)`
-    // call always threw `notImplemented` and is now deleted along
-    // with the other legacy rs-sdk-ffi contract surface. Surface
-    // the same error here until a `wallet.updateDataContract(...)`
-    // sibling lands.
-    _ = (contractId, dppIdentity, newDocumentSchemas, newTokenSchemas, newGroups)
-    throw SDKError.notImplemented(
-      "Data contract update is not yet wired through the platform-wallet path. " +
-      "Create a fresh contract for now."
+    // The update transition replaces the full document-schema set
+    // at the next version, so an empty `{}` is the token-only
+    // baseline (matches the create path's required-documents arg).
+    let documentSchemasJSON = try toJSONString(
+      newDocumentSchemas as Any?,
+      fieldName: "newDocumentSchemas",
+      defaultIfNil: "{}"
+    ) ?? "{}"
+    let tokenSchemasJSON = try toJSONString(newTokenSchemas as Any?, fieldName: "newTokenSchemas")
+    let groupsJSON = try toJSONString(newGroups as Any?, fieldName: "newGroups")
+
+    // Decode the base58 contract id the form provided.
+    guard let contractIdData = Data.identifier(fromBase58: contractId),
+          contractIdData.count == 32 else {
+      throw SDKError.invalidParameter("Invalid data contract ID (expected 32-byte base58)")
+    }
+
+    // External-signer pattern (matches contract create): Rust calls
+    // back into Swift over the `KeychainSigner` trampoline whenever
+    // it needs a signature.
+    let signer = KeychainSigner(modelContainer: modelContext.container)
+
+    let updatedContractId = try await wallet.updateDataContract(
+      ownerIdentityId: ownerIdentity.identityId,
+      contractId: contractIdData,
+      documentSchemasJSON: documentSchemasJSON,
+      tokenSchemasJSON: tokenSchemasJSON,
+      groupsJSON: groupsJSON,
+      signer: signer
     )
+    // Keepalive: see KeychainSigner lifetime contract.
+    _ = signer
+
+    return [
+      "success": true,
+      "contractId": updatedContractId.toBase58String(),
+      "message": "Data contract updated and broadcast successfully",
+    ]
   }
 
   // MARK: - Helper Functions
