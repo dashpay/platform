@@ -481,6 +481,9 @@ struct TransitionDetailView: View {
     case "identityTopUp":
       return try await executeIdentityTopUp(sdk: sdk)
 
+    case "identityUpdate":
+      return try await executeIdentityUpdate(sdk: sdk)
+
     case "identityCreditTransfer":
       return try await executeIdentityCreditTransfer(sdk: sdk)
 
@@ -600,6 +603,156 @@ struct TransitionDetailView: View {
     }
 
     throw SDKError.notImplemented("Identity top-up requires proper Identity handle conversion")
+  }
+
+  /// Generic-builder IdentityUpdate handler.
+  ///
+  /// Mirrors `AddIdentityKeyView`: the keys-to-add are *derived*
+  /// against the owning wallet (the app never accepts raw key bytes
+  /// from the form, because a key whose private scalar the app
+  /// doesn't hold couldn't be signed with later), pre-persisted to
+  /// the iOS Keychain, then submitted via the same
+  /// `wallet.updateIdentity(...)` entry point — which also carries
+  /// the key IDs to disable. The shared derive → validate → persist →
+  /// build-`IdentityPubkey` plumbing lives in
+  /// `IdentityKeyAddition.prepareKeys(...)`.
+  ///
+  /// Form inputs (`identityUpdate` in StateTransitionDefinitions):
+  ///   - `addPublicKeys`: JSON array of `{ keyType, purpose,
+  ///     securityLevel? }` rows (DPP token strings such as
+  ///     `"ECDSA_HASH160"` / `"AUTHENTICATION"`). Any `data` field is
+  ///     ignored — the keypair is derived Rust-side. `keyId` slots are
+  ///     auto-assigned as `max(existing) + 1`.
+  ///   - `disablePublicKeys`: comma-separated existing key IDs.
+  ///
+  /// `@MainActor` because the derive + Keychain-persist step
+  /// (`IdentityKeyAddition.prepareKeys`) is main-actor-bound, matching
+  /// `AddIdentityKeyView.submit()`.
+  @MainActor
+  private func executeIdentityUpdate(sdk: SDK) async throws -> Any {
+    guard !selectedIdentityId.isEmpty,
+          let ownerIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
+      throw SDKError.invalidParameter("No identity selected")
+    }
+
+    // Resolve the wallet that owns this identity — same lookup as
+    // executeDataContractCreate. IdentityUpdate routes through
+    // platform-wallet's updateIdentity(...) so derivation + signing
+    // + broadcast all happen Rust-side.
+    guard let walletId = ownerIdentity.wallet?.walletId,
+          let wallet = walletManager.wallet(for: walletId) else {
+      throw SDKError.invalidParameter(
+        "Identity has no wallet linkage; cannot derive keys or sign the update"
+      )
+    }
+
+    // Parse the keys-to-add JSON array (optional).
+    var keySpecs: [IdentityKeyAddition.KeySpec] = []
+    if let addJson = formInputs["addPublicKeys"],
+       !addJson.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      guard let data = addJson.data(using: .utf8),
+            let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+        throw SDKError.serializationError(
+          "Keys to add must be a JSON array of objects"
+        )
+      }
+      keySpecs = try rows.map { row in
+        guard let keyTypeStr = row["keyType"] as? String,
+              let keyType = KeyType(dppToken: keyTypeStr) else {
+          throw SDKError.invalidParameter(
+            "Each key needs a valid `keyType` (e.g. ECDSA_SECP256K1, ECDSA_HASH160)"
+          )
+        }
+        guard let purposeStr = row["purpose"] as? String,
+              let purpose = KeyPurpose(dppToken: purposeStr) else {
+          throw SDKError.invalidParameter(
+            "Each key needs a valid `purpose` (e.g. AUTHENTICATION, TRANSFER)"
+          )
+        }
+        // securityLevel is optional in the form JSON; derive a sane
+        // protocol-locked default per purpose when absent, matching
+        // AddIdentityKeyView's effectiveSecurityLevel.
+        let securityLevel: SecurityLevel
+        if let secStr = row["securityLevel"] as? String {
+          guard let parsed = SecurityLevel(dppToken: secStr) else {
+            throw SDKError.invalidParameter(
+              "Invalid `securityLevel` (use MASTER, CRITICAL, HIGH, or MEDIUM)"
+            )
+          }
+          securityLevel = parsed
+        } else {
+          switch purpose {
+          case .transfer: securityLevel = .critical
+          case .encryption, .decryption: securityLevel = .medium
+          default: securityLevel = .high
+          }
+        }
+        return IdentityKeyAddition.KeySpec(
+          keyType: keyType,
+          purpose: purpose,
+          securityLevel: securityLevel
+        )
+      }
+    }
+
+    // Parse the comma-separated key IDs to disable (optional).
+    var disableIds: [UInt32] = []
+    if let disableStr = formInputs["disablePublicKeys"],
+       !disableStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      disableIds = try disableStr
+        .split(separator: ",")
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty }
+        .map { token in
+          guard let id = UInt32(token) else {
+            throw SDKError.invalidParameter(
+              "Invalid key ID to disable: '\(token)'"
+            )
+          }
+          return id
+        }
+    }
+
+    guard !keySpecs.isEmpty || !disableIds.isEmpty else {
+      throw SDKError.invalidParameter(
+        "Provide at least one key to add or one key ID to disable"
+      )
+    }
+
+    let network = appState.sdk?.network ?? appState.currentNetwork
+
+    // Derive + validate + Keychain-persist the new keys, then build
+    // their IdentityPubkey rows (no broadcast yet). Mirrors the exact
+    // sequence AddIdentityKeyView runs. Runs inline on the main actor
+    // (this handler is @MainActor).
+    let addPublicKeys = try IdentityKeyAddition.prepareKeys(
+      specs: keySpecs,
+      identity: ownerIdentity,
+      wallet: wallet,
+      walletId: walletId,
+      network: network
+    )
+
+    // Submit the IdentityUpdate. Rust signs with the identity's
+    // MASTER auth key via the trampoline and broadcasts; the
+    // persister callback writes the new PersistentPublicKey rows when
+    // the transition lands on-chain.
+    let signer = KeychainSigner(modelContainer: modelContext.container)
+    try await wallet.updateIdentity(
+      identityId: ownerIdentity.identityId,
+      addPublicKeys: addPublicKeys,
+      disablePublicKeyIds: disableIds,
+      signer: signer
+    )
+    _ = signer  // keepalive: see KeychainSigner lifetime contract.
+
+    return [
+      "success": true,
+      "identityId": ownerIdentity.identityIdBase58,
+      "addedKeyIds": addPublicKeys.map { $0.keyId },
+      "disabledKeyIds": disableIds,
+      "message": "Identity update broadcast successfully",
+    ]
   }
 
   private func executeIdentityCreditTransfer(sdk: SDK) async throws -> Any {
