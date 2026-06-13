@@ -242,32 +242,12 @@ impl IdentityWallet {
                 serde_json::Value::String(s.to_string()),
             );
         }
-        // `DataContractConfig` is itself a `#[serde(tag =
-        // "$formatVersion")]` enum; the Swift form-builder shape sends
-        // a bare flags dict (or omits config entirely). Tag it with the
-        // protocol-required version so the tagged-enum dispatch picks a
-        // variant the network will accept. `DataContractConfigV1` is
-        // `#[serde(rename_all = "camelCase", default)]`, so a flags-only
-        // (or empty) dict deserializes into a valid V1 — every field,
-        // including `sized_integer_types: true`, has a serde default.
-        //
         // We always insert a `config` block (even when `config_json` is
         // None) so the version tag is explicit rather than relying on
         // the serialization format's `#[serde(default)]`; this keeps the
-        // emitted config aligned with the running protocol version.
-        let mut config_obj = match parse_optional_json("config_json", config_json)? {
-            Some(serde_json::Value::Object(map)) => map,
-            Some(other) => {
-                return Err(PlatformWalletError::InvalidIdentityData(format!(
-                    "config_json must be a JSON object, got: {other}"
-                )));
-            }
-            None => serde_json::Map::new(),
-        };
-        config_obj.insert(
-            "$formatVersion".to_string(),
-            serde_json::Value::String(config_format_version.to_string()),
-        );
+        // emitted config aligned with the running protocol version. See
+        // `build_config_object` for the full assembly contract.
+        let config_obj = build_config_object(config_json, config_format_version)?;
         format_value.insert("config".to_string(), serde_json::Value::Object(config_obj));
 
         // Round-trip through a string instead of `from_value` —
@@ -344,4 +324,212 @@ fn parse_optional_json(
     serde_json::from_str(s).map(Some).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!("Invalid {field_name} JSON: {e}"))
     })
+}
+
+/// Assemble the `config` block for a data-contract serialization-format
+/// payload, tagged with the protocol-required `$formatVersion`.
+///
+/// `DataContractConfig` is itself a `#[serde(tag = "$formatVersion")]`
+/// enum; the Swift form-builder shape sends a bare flags dict (e.g.
+/// `{"canBeDeleted": true}`) or omits config entirely. We tag the dict
+/// with `config_format_version` so the tagged-enum dispatch picks a
+/// variant the network will accept — since protocol v12 the network
+/// rejects a V0 config, so the caller passes the running
+/// `PlatformVersion`'s `contract_versions.config.default_current_version`
+/// (1 on v12) rather than a hardcoded "0". `DataContractConfigV1` is
+/// `#[serde(rename_all = "camelCase", default)]`, so a flags-only (or
+/// empty) dict deserializes into a valid V1 — every field, including
+/// `sized_integer_types: true`, has a serde default.
+///
+/// The `$formatVersion` insert is an **unconditional overwrite**: any
+/// caller-supplied wire-level `$formatVersion` inside `config_json` is
+/// replaced. This is deliberate — the helper's contract is to always
+/// emit a network-acceptable version tag, no caller in this codebase
+/// sets the wire-level tag (the whole point of the helper is to abstract
+/// it), and honoring a caller-supplied "0" on v12+ would only earn a
+/// network rejection.
+///
+/// Inputs:
+///   - `None` / empty `config_json` -> empty map, then the version tag.
+///   - `Some(object)` -> that object's fields preserved, then the tag.
+///   - `Some(non-object)` (array / string / number) ->
+///     `PlatformWalletError::InvalidIdentityData`.
+fn build_config_object(
+    config_json: Option<&str>,
+    config_format_version: u16,
+) -> Result<serde_json::Map<String, serde_json::Value>, PlatformWalletError> {
+    let mut config_obj = match parse_optional_json("config_json", config_json)? {
+        Some(serde_json::Value::Object(map)) => map,
+        Some(other) => {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "config_json must be a JSON object, got: {other}"
+            )));
+        }
+        None => serde_json::Map::new(),
+    };
+    config_obj.insert(
+        "$formatVersion".to_string(),
+        serde_json::Value::String(config_format_version.to_string()),
+    );
+    Ok(config_obj)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::version::PlatformVersion;
+
+    /// The current default config version for the latest protocol — 1 on
+    /// v12. Centralized so every assertion below tracks the real protocol
+    /// value rather than a hardcoded literal.
+    fn latest_config_version() -> u16 {
+        PlatformVersion::latest()
+            .dpp
+            .contract_versions
+            .config
+            .default_current_version
+    }
+
+    #[test]
+    fn build_config_object_none_emits_protocol_version_tag() {
+        let version = latest_config_version();
+        let obj = build_config_object(None, version).expect("None config builds");
+        assert_eq!(
+            obj.get("$formatVersion"),
+            Some(&serde_json::Value::String(version.to_string())),
+            "absent config must still carry the protocol-required version tag"
+        );
+        // Nothing else should have been invented.
+        assert_eq!(obj.len(), 1);
+    }
+
+    #[test]
+    fn build_config_object_empty_string_behaves_like_none() {
+        let version = latest_config_version();
+        let obj = build_config_object(Some(""), version).expect("empty config builds");
+        assert_eq!(
+            obj.get("$formatVersion"),
+            Some(&serde_json::Value::String(version.to_string()))
+        );
+        assert_eq!(obj.len(), 1);
+    }
+
+    #[test]
+    fn build_config_object_flags_object_preserves_caller_fields() {
+        let version = latest_config_version();
+        let obj = build_config_object(Some(r#"{"canBeDeleted":true}"#), version)
+            .expect("flags-only config builds");
+        // Caller field preserved verbatim ...
+        assert_eq!(
+            obj.get("canBeDeleted"),
+            Some(&serde_json::Value::Bool(true)),
+            "caller-supplied config flags must be preserved"
+        );
+        // ... alongside the protocol-required version tag.
+        assert_eq!(
+            obj.get("$formatVersion"),
+            Some(&serde_json::Value::String(version.to_string()))
+        );
+    }
+
+    #[test]
+    fn build_config_object_overwrites_caller_supplied_format_version() {
+        // The unconditional overwrite is deliberate (see helper docs):
+        // a caller-set wire-level tag is replaced with the protocol's
+        // required version so the emitted config is always acceptable.
+        let version = latest_config_version();
+        let obj = build_config_object(Some(r#"{"$formatVersion":"0"}"#), version)
+            .expect("config with caller tag builds");
+        assert_eq!(
+            obj.get("$formatVersion"),
+            Some(&serde_json::Value::String(version.to_string())),
+            "caller-supplied $formatVersion must be overwritten with the protocol version"
+        );
+    }
+
+    #[test]
+    fn build_config_object_rejects_non_object_json() {
+        let version = latest_config_version();
+        for bad in [r#"[]"#, r#""x""#, r#"5"#] {
+            let err = build_config_object(Some(bad), version)
+                .expect_err("non-object config_json must be rejected");
+            assert!(
+                matches!(err, PlatformWalletError::InvalidIdentityData(_)),
+                "expected InvalidIdentityData for {bad:?}, got {err:?}"
+            );
+        }
+    }
+
+    /// Round-trip: the bytes the helper feeds into the contract format
+    /// must actually validate as a `DataContract` at the latest protocol
+    /// version — this is the assertion that would have caught the original
+    /// hardcoded-"0" v12 rejection at unit-test time.
+    ///
+    /// A document type is included because `full_validation` rejects a
+    /// contract carrying neither document schemas nor tokens
+    /// (`DocumentTypesAreMissingError`); the config block is still the
+    /// subject under test — its version tag is what makes (or breaks)
+    /// validation at v12.
+    #[test]
+    fn build_config_object_output_validates_at_latest_version() {
+        let platform_version = PlatformVersion::latest();
+        let version = latest_config_version();
+
+        let config_obj = build_config_object(Some(r#"{"canBeDeleted":true}"#), version)
+            .expect("flags-only config builds");
+
+        // Minimal serialization-format payload: one trivial document type
+        // plus the assembled config block under test.
+        let mut document_schemas = serde_json::Map::new();
+        document_schemas.insert(
+            "note".to_string(),
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string", "position": 0, "maxLength": 63}
+                },
+                "additionalProperties": false
+            }),
+        );
+
+        let mut format_value = serde_json::Map::new();
+        format_value.insert(
+            "$formatVersion".to_string(),
+            serde_json::Value::String("1".to_string()),
+        );
+        format_value.insert(
+            "id".to_string(),
+            serde_json::Value::String(
+                bs58::encode(Identifier::default().to_buffer()).into_string(),
+            ),
+        );
+        format_value.insert(
+            "ownerId".to_string(),
+            serde_json::Value::String(
+                bs58::encode(Identifier::default().to_buffer()).into_string(),
+            ),
+        );
+        format_value.insert(
+            "version".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(INITIAL_DATA_CONTRACT_VERSION)),
+        );
+        format_value.insert(
+            "documentSchemas".to_string(),
+            serde_json::Value::Object(document_schemas),
+        );
+        format_value.insert("config".to_string(), serde_json::Value::Object(config_obj));
+
+        let serialized = serde_json::to_string(&serde_json::Value::Object(format_value))
+            .expect("format value serializes");
+        let format: DataContractInSerializationFormat =
+            serde_json::from_str(&serialized).expect("format deserializes");
+
+        let mut errors = vec![];
+        let contract =
+            DataContract::try_from_platform_versioned(format, true, &mut errors, platform_version);
+        assert!(
+            contract.is_ok(),
+            "assembled config must validate at the latest version: {contract:?} (errors: {errors:?})"
+        );
+    }
 }
