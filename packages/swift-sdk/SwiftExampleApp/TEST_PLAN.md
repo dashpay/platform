@@ -128,6 +128,8 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | CORE-19 | Send between two on-device wallets | Core | Thorough | ✅ | Normal send from wallet A to wallet B's receive address (no intra-app picker — you must paste/scan B's address). B's balance increases after sync. Variants: identity→identity (`ID-04`) or shielded between two local wallets. |
 | CORE-20 | Concurrent SPV sync across all wallets | Core | Thorough | ✅ | One SPV runtime per network filters every wallet's addresses; `spvProgress` is manager-global, not per-wallet. With 2+ wallets, confirm each reaches the tip and detects its own funds. |
 | CORE-21 | Multiple wallets bound to the shielded pool concurrently | Shielded | Uncommon | ✅ | `platform_wallet_manager_bind_shielded` is per `wallet_id`; the manager syncs all bound wallets. UI (`ShieldedService.boundWalletId`) displays one wallet's shielded state at a time — switching should swap cleanly, not merge balances. |
+| CORE-22 | Re-add a previously deleted wallet (same network) | Core | Uncommon | ✅ | After `CORE-17`, re-import the same mnemonic on the same network. Re-derives the same (network-scoped) `wallet_id`, re-creates the wallet, and must re-discover identities/addresses/balances cleanly — no stale Keychain keys or orphaned SwiftData rows left over from the delete. Verify the wallet is fully functional again, not a half-restored duplicate. |
+| CORE-23 | Re-add a deleted wallet that also exists on another network | Core | Uncommon | ✅ | Same mnemonic present as a wallet on two networks (e.g. testnet + devnet) → **distinct** network-scoped `wallet_id`s, each with its own Keychain mnemonic copy. Delete it on network X (`CORE-17`) and verify the network-Y wallet is untouched (still listed, mnemonic intact, functional); then re-add on X and confirm both coexist. Exercises the `walletRowCountAcrossNetworks` cross-network mnemonic-purge guard in `PlatformWalletManager.deleteWallet`. |
 
 ### 4.2 Identity — `Domain=Identity`
 
@@ -281,7 +283,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 
 These compose base actions using **two (or more) wallets on the same device and the same network**, so both sides of a Platform/shielded interaction are local and end-to-end verifiable without an external counterparty. They reuse the underlying action (cited by ID) — the value is exercising the cross-wallet path and verifying both endpoints on one device.
 
-Together with the wallet-lifecycle rows in §4.1 (`CORE-14..21`), these form the full multi-wallet test surface. None are Essential/Common — multi-wallet is a power-user / QA topology, not an everyday flow. "Act as wallet B" means navigating into wallet B (and its identity); there is **no** global wallet/identity selector (see `CORE-16`).
+Together with the wallet-lifecycle rows in §4.1 (`CORE-14..23`), these form the full multi-wallet test surface. None are Essential/Common — multi-wallet is a power-user / QA topology, not an everyday flow. "Act as wallet B" means navigating into wallet B (and its identity); there is **no** global wallet/identity selector (see `CORE-16`).
 
 | ID | Action | Layer | Tier | Status | Entry point & test notes |
 |---|---|---|---|---|---|
@@ -309,13 +311,13 @@ Counts are of **runnable** rows (`✅`/`🧪`/`⚠️`); `🔌`/`🚫`/stub rows
 | Essential | 22 |
 | Common | 29 |
 | Thorough | 35 |
-| Uncommon | 21 |
+| Uncommon | 23 |
 
 **By layer (runnable):**
 
 | Layer | Count (approx.) |
 |---|---|
-| Core | 16 |
+| Core | 18 |
 | Platform | ~71 |
 | Cross | 7 |
 | Shielded | 13 |
