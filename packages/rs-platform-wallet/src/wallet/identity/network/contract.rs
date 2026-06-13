@@ -38,6 +38,7 @@ use dpp::platform_value::BinaryData;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::version::TryFromPlatformVersioned;
 use dpp::ProtocolError;
 
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
@@ -292,32 +293,52 @@ impl IdentityWallet {
     /// and broadcast the change to Platform.
     ///
     /// Mirrors `create_data_contract_with_signer` but targets an
-    /// already-registered contract. The new schemas / config arrive
-    /// as JSON strings; the function:
+    /// already-registered contract. Unlike create, the caller-supplied
+    /// JSON sections are *merged onto the fetched on-chain contract*
+    /// rather than used to build the payload from scratch. A
+    /// `DataContractUpdateTransition` broadcasts a complete contract
+    /// definition (not a diff), so anything the caller omits would
+    /// otherwise be reset to serde defaults — wiping live keywords /
+    /// description / config and, worse, dropping document-type / token /
+    /// group entries (which DPP rejects as illegal removals). Seeding
+    /// from `existing` keeps every untouched section intact. The
+    /// function:
     ///   1. Looks up `owner_identity_id` in the in-memory wallet
     ///      manager and picks the CRITICAL + AUTHENTICATION + ECDSA
     ///      key (same triple a contract-create signature requires).
-    ///   2. Fetches the *current* contract from Platform to read its
-    ///      live version — the new contract definition must carry
-    ///      `current_version + 1` (DPP rejects an update that doesn't
-    ///      strictly increment the version), and the caller doesn't
-    ///      have to track local version state.
-    ///   3. Assembles a serialization-format payload reusing the
-    ///      existing contract id + owner, the bumped version, and the
-    ///      supplied schemas / config, deserializes it via the public
-    ///      `DataContractInSerializationFormat` enum entry point, and
-    ///      validates through `try_from_platform_versioned`.
+    ///   2. Fetches the *current* contract from Platform and validates
+    ///      that it is actually owned by `owner_identity_id` — this
+    ///      runs *before* any nonce fetch/bump so a bad (owner,
+    ///      contract) pair fails as a local validation error instead of
+    ///      consuming nonce state. The bumped version is
+    ///      `existing.version() + 1` (DPP rejects an update that doesn't
+    ///      strictly increment the version), so the caller doesn't have
+    ///      to track local version state.
+    ///   3. Serializes `existing` into its canonical
+    ///      `DataContractInSerializationFormat` JSON (already a valid V1
+    ///      on-chain contract, so the config version is preserved with
+    ///      no manual tagging), then overlays the caller's sections:
+    ///      `documentSchemas` / `tokens` / `groups` are merged key-by-
+    ///      key (add or replace an entry; never drop an existing one),
+    ///      and `keywords` / `description` / `config` are overridden
+    ///      only when the caller supplies them. The id + owner stay as
+    ///      `existing`'s and the version is the bumped value. The merged
+    ///      Value is deserialized via the public
+    ///      `DataContractInSerializationFormat` enum entry point and
+    ///      validated through `try_from_platform_versioned`.
     ///   4. Fetches + bumps the identity-contract nonce, builds a
     ///      `DataContractUpdateTransition`, signs it via the external
     ///      signer, broadcasts, and waits for the confirmed contract.
     ///
     /// # JSON shapes
     ///
-    /// Identical to `create_data_contract_with_signer`. The config
-    /// `$formatVersion` is selected from the platform version's
-    /// `contract_versions.config.default_current_version` (V1 under
-    /// v12) rather than hardcoded to "0" — v12 rejects a V0 config
-    /// on both registration and update.
+    /// Identical to `create_data_contract_with_signer`, but every
+    /// section is *additive / overlay*: an empty `documents_schema_json`
+    /// (`"{}"`) or a `None` for an optional section preserves whatever
+    /// is already on-chain rather than clearing it. Because the payload
+    /// is seeded from the fetched V1 contract, the config keeps its
+    /// on-chain `$formatVersion` automatically; a caller-supplied
+    /// `config_json` is only used to override it.
     #[allow(clippy::too_many_arguments)]
     pub async fn update_data_contract_with_signer<S>(
         &self,
@@ -369,10 +390,9 @@ impl IdentityWallet {
                 .clone()
         };
 
-        // 2. Fetch the live contract to read its current version. The
-        //    update must strictly increment the version, so we bump
-        //    the on-chain value by one rather than trusting a
-        //    caller-supplied number.
+        // 2. Fetch the live contract. We seed the update payload from
+        //    it (so omitted sections are preserved) and read its
+        //    current version to bump.
         let existing = DataContract::fetch(&self.sdk, *contract_id)
             .await
             .map_err(|e| {
@@ -385,86 +405,69 @@ impl IdentityWallet {
                     "Data contract {contract_id} not found on Platform; cannot update"
                 ))
             })?;
+
+        // Reject an owner/contract mismatch *before* touching nonce
+        // state. If `contract_id` belongs to a different owner, the
+        // network would reject the transition anyway — but only after
+        // we'd fetched+bumped the identity-contract nonce for the
+        // supplied pair, turning a bad request into stateful nonce
+        // consumption. Fail it as a local validation error instead.
+        if existing.owner_id() != *owner_identity_id {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "Data contract {contract_id} is owned by {}, not {owner_identity_id}; \
+                 cannot update with this identity",
+                existing.owner_id()
+            )));
+        }
+
         let new_version = existing.version().checked_add(1).ok_or_else(|| {
             PlatformWalletError::InvalidIdentityData(
                 "Contract version overflow; cannot update".to_string(),
             )
         })?;
 
-        // 3. Assemble the updated serialization-format payload. Unlike
-        //    create, the id is the *existing* contract id (the update
-        //    transition keys off it) and the version is the bumped
-        //    value above.
+        // 3. Build the updated serialization-format payload by merging
+        //    the caller's sections onto the fetched contract. `existing`
+        //    is already a valid V1 on-chain contract, so serializing it
+        //    to the canonical `DataContractInSerializationFormat` JSON
+        //    gives us a base that carries every live field (config keeps
+        //    its on-chain version, document/token/group sets are
+        //    complete). We then overlay only what the caller supplied.
         let platform_version = self.sdk.version();
-        // Config `$formatVersion` follows the platform's current
-        // default (V1 under v12). Hardcoding "0" would build a V0
-        // config that v12 rejects on update.
-        let config_format_version = platform_version
-            .dpp
-            .contract_versions
-            .config
-            .default_current_version;
+        let base_format = DataContractInSerializationFormat::try_from_platform_versioned(
+            &existing,
+            platform_version,
+        )
+        .map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to convert existing contract to serialization format: {e}"
+            ))
+        })?;
+        let base_value = serde_json::to_value(&base_format).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to serialize existing contract format: {e}"
+            ))
+        })?;
 
-        let mut format_value = serde_json::Map::new();
-        format_value.insert(
-            "$formatVersion".to_string(),
-            serde_json::Value::String("1".to_string()),
-        );
-        format_value.insert(
-            "id".to_string(),
-            serde_json::Value::String(bs58::encode(contract_id.to_buffer()).into_string()),
-        );
-        format_value.insert(
-            "ownerId".to_string(),
-            serde_json::Value::String(bs58::encode(owner_identity_id.to_buffer()).into_string()),
-        );
-        format_value.insert(
-            "version".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(new_version)),
-        );
-
-        format_value.insert(
-            "documentSchemas".to_string(),
+        let merged_value = merge_contract_update_payload(
+            base_value,
+            new_version,
             parse_required_json("documents_schema_json", documents_schema_json)?,
-        );
-        if let Some(v) = parse_optional_json("tokens_schema_json", tokens_schema_json)? {
-            format_value.insert("tokens".to_string(), v);
-        }
-        if let Some(v) = parse_optional_json("groups_schema_json", groups_schema_json)? {
-            format_value.insert("groups".to_string(), v);
-        }
-        if let Some(v) = parse_optional_json("keywords_json", keywords_json)? {
-            format_value.insert("keywords".to_string(), v);
-        }
-        if let Some(s) = description.filter(|s| !s.is_empty()) {
-            format_value.insert(
-                "description".to_string(),
-                serde_json::Value::String(s.to_string()),
-            );
-        }
-        if let Some(mut v) = parse_optional_json("config_json", config_json)? {
-            // `DataContractConfig` is a `#[serde(tag =
-            // "$formatVersion")]` enum; the Swift form-builder sends a
-            // bare flags dict. Inject the platform-selected config
-            // version (V1 under v12) when missing so the tagged-enum
-            // dispatch picks the variant the network accepts.
-            if let Some(obj) = v.as_object_mut() {
-                obj.entry("$formatVersion").or_insert_with(|| {
-                    serde_json::Value::String(config_format_version.to_string())
-                });
-            }
-            format_value.insert("config".to_string(), v);
-        }
+            parse_optional_json("tokens_schema_json", tokens_schema_json)?,
+            parse_optional_json("groups_schema_json", groups_schema_json)?,
+            parse_optional_json("keywords_json", keywords_json)?,
+            description.filter(|s| !s.is_empty()),
+            parse_optional_json("config_json", config_json)?,
+        )?;
 
         // Round-trip through a string instead of `from_value` — see
         // `create_data_contract_with_signer` for why the tagged-enum
         // dispatch needs `to_string` + `from_str`.
-        let serialized = serde_json::to_string_pretty(&serde_json::Value::Object(format_value))
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to serialize updated contract format: {e}"
-                ))
-            })?;
+        let serialized = serde_json::to_string_pretty(&merged_value).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to serialize updated contract format: {e}"
+            ))
+        })?;
         let format: DataContractInSerializationFormat =
             serde_json::from_str(&serialized).map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
@@ -560,4 +563,254 @@ fn parse_optional_json(
     serde_json::from_str(s).map(Some).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!("Invalid {field_name} JSON: {e}"))
     })
+}
+
+/// Overlay the caller-supplied update sections onto `base` — the
+/// serialization-format JSON of the *fetched* on-chain contract.
+///
+/// `base` must be a JSON object (the serialized
+/// `DataContractInSerializationFormat`), already carrying the live
+/// `documentSchemas` / `tokens` / `groups` / `keywords` / `description`
+/// / `config`. The merge is deliberately *additive* so an update that
+/// only touches one section never resets the others to serde defaults:
+///
+/// - `version` is set to `new_version` (the bumped value).
+/// - `documents` / `tokens` / `groups`: each supplied map is merged
+///   key-by-key into the existing map — an entry is added or replaced,
+///   but existing keys the caller didn't mention are kept. (DPP rejects
+///   document-type / token / group *removals* on update, so dropping
+///   the untouched ones would fail the transition.)
+/// - `keywords` / `description` / `config`: overridden wholesale, but
+///   only when the caller actually supplied them. A supplied `config`
+///   that lacks the `$formatVersion` tag inherits the base contract's
+///   on-chain config version so the tagged-enum dispatch still resolves.
+///
+/// The id + owner stay as whatever `base` carries (the fetched
+/// contract's), so the caller cannot retarget the update.
+#[allow(clippy::too_many_arguments)]
+fn merge_contract_update_payload(
+    mut base: serde_json::Value,
+    new_version: u32,
+    documents: serde_json::Value,
+    tokens: Option<serde_json::Value>,
+    groups: Option<serde_json::Value>,
+    keywords: Option<serde_json::Value>,
+    description: Option<&str>,
+    config: Option<serde_json::Value>,
+) -> Result<serde_json::Value, PlatformWalletError> {
+    let obj = base.as_object_mut().ok_or_else(|| {
+        PlatformWalletError::InvalidIdentityData(
+            "Existing contract did not serialize to a JSON object".to_string(),
+        )
+    })?;
+
+    obj.insert(
+        "version".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(new_version)),
+    );
+
+    merge_map_section(obj, "documentSchemas", documents)?;
+    if let Some(v) = tokens {
+        merge_map_section(obj, "tokens", v)?;
+    }
+    if let Some(v) = groups {
+        merge_map_section(obj, "groups", v)?;
+    }
+
+    if let Some(v) = keywords {
+        obj.insert("keywords".to_string(), v);
+    }
+    if let Some(s) = description {
+        obj.insert(
+            "description".to_string(),
+            serde_json::Value::String(s.to_string()),
+        );
+    }
+    if let Some(mut v) = config {
+        // `DataContractConfig` is a `#[serde(tag = "$formatVersion")]`
+        // enum and the Swift form-builder sends a bare flags dict. When
+        // the caller omits the tag, inherit the base contract's
+        // on-chain config version so the tagged-enum dispatch resolves
+        // to the variant the network already accepts.
+        if let Some(supplied) = v.as_object_mut() {
+            if !supplied.contains_key("$formatVersion") {
+                if let Some(existing_tag) = obj
+                    .get("config")
+                    .and_then(|c| c.get("$formatVersion"))
+                    .cloned()
+                {
+                    supplied.insert("$formatVersion".to_string(), existing_tag);
+                }
+            }
+        }
+        obj.insert("config".to_string(), v);
+    }
+
+    Ok(base)
+}
+
+/// Merge a caller-supplied keyed map (`addition`, e.g. document
+/// schemas keyed by type name, or tokens keyed by stringified slot)
+/// into the same section already present in `base`. Adds or replaces
+/// each key; never drops an existing one. Inserts the section if the
+/// base didn't carry it. `addition` must be a JSON object.
+fn merge_map_section(
+    base: &mut serde_json::Map<String, serde_json::Value>,
+    section: &str,
+    addition: serde_json::Value,
+) -> Result<(), PlatformWalletError> {
+    let addition = match addition {
+        serde_json::Value::Object(map) => map,
+        // An empty / absent section is a no-op overlay (preserve base).
+        serde_json::Value::Null => return Ok(()),
+        _ => {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "{section} update payload must be a JSON object keyed by entry name"
+            )))
+        }
+    };
+
+    match base.get_mut(section) {
+        Some(serde_json::Value::Object(existing)) => {
+            for (k, v) in addition {
+                existing.insert(k, v);
+            }
+        }
+        _ => {
+            base.insert(section.to_string(), serde_json::Value::Object(addition));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// A minimal serialized-V1-contract base value, shaped like the
+    /// output of `serde_json::to_value(&DataContractInSerializationFormat)`.
+    fn base_contract() -> serde_json::Value {
+        json!({
+            "$formatVersion": "1",
+            "id": "11111111111111111111111111111111",
+            "ownerId": "22222222222222222222222222222222",
+            "version": 1,
+            "documentSchemas": {
+                "note": { "type": "object" }
+            },
+            "tokens": {
+                "0": { "conventions": {} }
+            },
+            "groups": {},
+            "keywords": ["alpha", "beta"],
+            "description": "original description",
+            "config": { "$formatVersion": "1", "canBeDeleted": false }
+        })
+    }
+
+    #[test]
+    fn merge_preserves_omitted_sections_and_adds_supplied_document() {
+        // Caller adds one new document type and supplies nothing else.
+        let merged = merge_contract_update_payload(
+            base_contract(),
+            2,
+            json!({ "comment": { "type": "object" } }),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("merge");
+
+        // Version bumped.
+        assert_eq!(merged["version"], json!(2));
+
+        // New document type added; existing one preserved (not dropped).
+        let docs = merged["documentSchemas"].as_object().unwrap();
+        assert!(docs.contains_key("note"), "existing doc type preserved");
+        assert!(docs.contains_key("comment"), "new doc type added");
+        assert_eq!(docs.len(), 2);
+
+        // Omitted sections kept verbatim from the fetched contract.
+        assert_eq!(merged["keywords"], json!(["alpha", "beta"]));
+        assert_eq!(merged["description"], json!("original description"));
+        assert_eq!(merged["tokens"], json!({ "0": { "conventions": {} } }));
+        assert_eq!(
+            merged["config"],
+            json!({ "$formatVersion": "1", "canBeDeleted": false })
+        );
+
+        // Id + owner unchanged.
+        assert_eq!(merged["id"], json!("11111111111111111111111111111111"));
+        assert_eq!(merged["ownerId"], json!("22222222222222222222222222222222"));
+    }
+
+    #[test]
+    fn merge_replaces_existing_document_entry_by_key() {
+        let merged = merge_contract_update_payload(
+            base_contract(),
+            2,
+            json!({ "note": { "type": "object", "revised": true } }),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("merge");
+
+        let docs = merged["documentSchemas"].as_object().unwrap();
+        assert_eq!(docs.len(), 1, "no extra key added");
+        assert_eq!(docs["note"], json!({ "type": "object", "revised": true }));
+    }
+
+    #[test]
+    fn merge_empty_documents_is_a_noop_overlay() {
+        // Token-only update path passes "{}" for documents.
+        let merged = merge_contract_update_payload(
+            base_contract(),
+            2,
+            json!({}),
+            Some(json!({ "1": { "conventions": {} } })),
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("merge");
+
+        // Existing document type still present.
+        assert!(merged["documentSchemas"]
+            .as_object()
+            .unwrap()
+            .contains_key("note"));
+        // New token slot merged alongside the existing one.
+        let tokens = merged["tokens"].as_object().unwrap();
+        assert!(tokens.contains_key("0"), "existing token slot preserved");
+        assert!(tokens.contains_key("1"), "new token slot added");
+    }
+
+    #[test]
+    fn merge_overrides_keywords_description_and_config_only_when_supplied() {
+        let merged = merge_contract_update_payload(
+            base_contract(),
+            2,
+            json!({}),
+            None,
+            None,
+            Some(json!(["gamma"])),
+            Some("new description"),
+            // Caller supplies a config without the format tag — should
+            // inherit the base contract's on-chain version.
+            Some(json!({ "canBeDeleted": true })),
+        )
+        .expect("merge");
+
+        assert_eq!(merged["keywords"], json!(["gamma"]));
+        assert_eq!(merged["description"], json!("new description"));
+        assert_eq!(merged["config"]["$formatVersion"], json!("1"));
+        assert_eq!(merged["config"]["canBeDeleted"], json!(true));
+    }
 }

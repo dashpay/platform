@@ -1916,10 +1916,16 @@ struct TransitionDetailView: View {
     // Resolve the wallet that owns this identity — contract update
     // mirrors contract create and goes through `platform-wallet`'s
     // `updateDataContract(...)`. The wallet fetches the live
-    // contract, bumps its version, applies the new schemas at the
-    // next version, builds a `DataContractUpdateTransition`, signs
-    // via the external `KeychainSigner`, and broadcasts on the
-    // 8 MB-stack worker (same rationale as create).
+    // contract, validates the owner, bumps its version, and *merges*
+    // the supplied sections onto the fetched definition at the next
+    // version (omitted sections — and any document/token/group entry
+    // we don't pass — are preserved), then builds a
+    // `DataContractUpdateTransition`, signs via the external
+    // `KeychainSigner`, and broadcasts on the 8 MB-stack worker (same
+    // rationale as create). Because the merge happens Rust-side, this
+    // form only needs to forward the sections the user actually
+    // changed; keywords / description / config are left to the
+    // on-chain values.
     guard let walletId = ownerIdentity.wallet?.walletId,
           let wallet = walletManager.wallet(for: walletId) else {
       throw SDKError.invalidParameter(
@@ -1927,9 +1933,10 @@ struct TransitionDetailView: View {
       )
     }
 
-    // The update transition replaces the full document-schema set
-    // at the next version, so an empty `{}` is the token-only
-    // baseline (matches the create path's required-documents arg).
+    // Document schemas are merged onto the fetched contract Rust-side
+    // (add or replace by type name; existing types are kept), so an
+    // empty `{}` is a no-op overlay — the right default for a token- or
+    // group-only update that touches no document types.
     let documentSchemasJSON = try toJSONString(
       newDocumentSchemas as Any?,
       fieldName: "newDocumentSchemas",

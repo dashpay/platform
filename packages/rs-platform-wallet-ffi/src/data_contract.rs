@@ -77,9 +77,14 @@ pub unsafe extern "C" fn platform_wallet_create_data_contract_with_signer(
 }
 
 /// Update + broadcast an existing data contract owned by
-/// `owner_identity_id`. The new schemas / config replace the live
-/// definition at the next contract version (the wallet reads the
-/// current version from Platform and bumps it).
+/// `owner_identity_id`. The wallet fetches the live contract, validates
+/// the owner, and *merges* the supplied sections onto it at the next
+/// contract version (it reads the current version from Platform and
+/// bumps it). The JSON args are additive overlays: `documents_schema`
+/// / `tokens_schema` / `groups_schema` entries are added or replaced
+/// key-by-key (omitted keys keep their on-chain definition), and
+/// `keywords` / `description` / `config` override only when supplied —
+/// so a single-section update never wipes the rest of the contract.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_update_data_contract_with_signer(
