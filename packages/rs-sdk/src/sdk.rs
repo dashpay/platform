@@ -108,17 +108,13 @@ pub const DEFAULT_INITIAL_PROTOCOL_VERSION: u32 = dpp::version::v10::PROTOCOL_VE
 /// - [`Network::Mainnet`] → 11
 /// - [`Network::Testnet`] → 12
 /// - [`Network::Devnet`] → 12
-/// - [`Network::Regtest`] → [`PlatformVersion::latest`] (local/regtest tracks the
-///   newest version this build knows; there is no older deployed network to stay
-///   compatible with).
+/// - [`Network::Regtest`] → 12
 fn min_protocol_version(network: Network) -> u32 {
     match network {
         Network::Mainnet => dpp::version::v11::PROTOCOL_VERSION_11,
         Network::Testnet => dpp::version::v12::PROTOCOL_VERSION_12,
         Network::Devnet => dpp::version::v12::PROTOCOL_VERSION_12,
-        // Local/regtest tracks the newest version this build knows; there is no
-        // older deployed network it must stay compatible with.
-        Network::Regtest => PlatformVersion::latest().protocol_version,
+        Network::Regtest => dpp::version::v12::PROTOCOL_VERSION_12,
     }
 }
 
@@ -2032,8 +2028,6 @@ mod test {
     /// Lock in the Network -> floor mapping (single source of truth in `rs-sdk`).
     #[test]
     fn test_min_protocol_version_mapping() {
-        use dpp::version::PlatformVersion;
-
         assert_eq!(
             super::min_protocol_version(Network::Mainnet),
             dpp::version::v11::PROTOCOL_VERSION_11,
@@ -2051,8 +2045,8 @@ mod test {
         );
         assert_eq!(
             super::min_protocol_version(Network::Regtest),
-            PlatformVersion::latest().protocol_version,
-            "regtest floor must track latest()"
+            dpp::version::v12::PROTOCOL_VERSION_12,
+            "regtest floor must be 12"
         );
     }
 
