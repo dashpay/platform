@@ -93,9 +93,11 @@ pub enum ContestedResourceVoteChoiceFFI {
 ///   (DPNS for username contests).
 /// * `document_type_name` — contested document type (e.g. `"domain"`).
 /// * `index_name` — contested index name (e.g. `"parentNameAndLabel"`).
-/// * `index_values_json` — JSON array of index values. Each element is either
-///   a hex-encoded byte string (decoded to `Value::Bytes`) or a plain string
-///   (`Value::Text`), matching the parsing used by the vote-state query FFI.
+/// * `index_values_json` — JSON array of index values. Each element is decoded
+///   via an explicit type tag: a `"0x"`-prefixed string is hex-decoded to
+///   `Value::Bytes`, and any other string is taken verbatim as `Value::Text`.
+///   DPNS index values are text labels, so typical callers pass plain text
+///   (no `0x`). This matches the parsing used by the vote-state query FFI.
 /// * `vote_choice` — discriminant byte matching
 ///   [`ContestedResourceVoteChoiceFFI`]: `TowardsIdentity` (`0`), `Abstain`
 ///   (`1`) or `Lock` (`2`). Any other value is rejected with
@@ -202,24 +204,21 @@ unsafe fn cast_vote_inner(
         .map_err(|_| invalid("contract id must be exactly 32 bytes"))?;
     let contract_identifier = Identifier::new(contract_id_arr);
 
-    // Same index-value parsing as the vote-state query FFI: hex → Bytes,
-    // otherwise Text. Keeping the two FFIs in lockstep means a poll that a
-    // caller can read with `get_vote_state` is the same poll it votes on here.
+    // Same index-value parsing as the vote-state query FFI, via the shared
+    // `parse_index_value` helper: a `"0x"`-prefixed value is hex-decoded to
+    // `Value::Bytes`, anything else is taken verbatim as `Value::Text`. Using
+    // the single shared helper keeps the read and write paths in lockstep, so a
+    // poll a caller can read with `get_vote_state` is the same poll it votes on
+    // here. An explicit `0x` tag is required (rather than guessing by content)
+    // because this is a signing surface: a legit DPNS text label that happens
+    // to be even-length all-hex must not be silently re-encoded as bytes.
     let index_values_array: Vec<String> = serde_json::from_str(index_values_str)
         .map_err(|e| invalid(&format!("Failed to parse index_values JSON: {}", e)))?;
     let index_values: Vec<Value> = index_values_array
         .into_iter()
-        .map(|value_str| {
-            if value_str.chars().all(|c| c.is_ascii_hexdigit()) && value_str.len() % 2 == 0 {
-                match hex::decode(&value_str) {
-                    Ok(bytes) => Value::Bytes(bytes),
-                    Err(_) => Value::Text(value_str),
-                }
-            } else {
-                Value::Text(value_str)
-            }
-        })
-        .collect();
+        .map(crate::contested_resource::parse_index_value)
+        .collect::<Result<Vec<Value>, String>>()
+        .map_err(|e| invalid(&e))?;
 
     let vote_poll =
         VotePoll::ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll {
@@ -341,7 +340,7 @@ unsafe fn cstr<'a>(ptr: *const c_char, field: &str) -> Result<&'a str, FFIError>
 mod tests {
     use super::*;
     use crate::test_utils::test_utils::create_mock_sdk_handle;
-    use crate::DashSDKErrorCode;
+    use crate::{dash_sdk_error_free, DashSDKErrorCode};
     use std::ffi::CString;
 
     /// Real base58 DPNS data-contract id (32 bytes). Using the genuine id
@@ -375,6 +374,9 @@ mod tests {
                 FFINetwork::Testnet,
             );
             assert!(!result.error.is_null());
+            // Free the DashSDKError (struct + message string) the result owns;
+            // models the caller contract and keeps leak sanitizers happy.
+            dash_sdk_error_free(result.error);
         }
     }
 
@@ -406,6 +408,10 @@ mod tests {
             assert!(!result.error.is_null());
             let err = &*result.error;
             assert_eq!(err.code, DashSDKErrorCode::InvalidParameter);
+            // Free the DashSDKError (struct + message string) the result owns,
+            // after the last use of `err`; models the caller contract and keeps
+            // leak sanitizers happy.
+            dash_sdk_error_free(result.error);
             crate::test_utils::test_utils::destroy_mock_sdk_handle(handle);
         }
     }
@@ -441,6 +447,10 @@ mod tests {
             assert!(!result.error.is_null());
             let err = &*result.error;
             assert_eq!(err.code, DashSDKErrorCode::InvalidParameter);
+            // Free the DashSDKError (struct + message string) the result owns,
+            // after the last use of `err`; models the caller contract and keeps
+            // leak sanitizers happy.
+            dash_sdk_error_free(result.error);
             crate::test_utils::test_utils::destroy_mock_sdk_handle(handle);
         }
     }

@@ -559,6 +559,9 @@ private struct CastVoteSheet: View {
     @State private var selection: Selection = .abstain
     @State private var proTxHashHex = ""
     @State private var votingKeyHex = ""
+    /// Surfaced when the selected contender's hex id fails to decode, so we
+    /// never pass un-decodable hex downstream to the FFI as if it were base58.
+    @State private var choiceError: String?
 
     var body: some View {
         NavigationView {
@@ -604,8 +607,16 @@ private struct CastVoteSheet: View {
 
                 Section {
                     Button {
+                        // Guarded decode: if the selected contender's hex id
+                        // can't be decoded, surface a clear error instead of
+                        // passing raw hex to the FFI as if it were base58.
+                        guard let choice = resolvedChoice else {
+                            choiceError = "Could not decode the selected contender's identity id."
+                            return
+                        }
+                        choiceError = nil
                         Task {
-                            await onSubmit(resolvedChoice, proTxHashHex, votingKeyHex)
+                            await onSubmit(choice, proTxHashHex, votingKeyHex)
                         }
                     } label: {
                         if isCasting {
@@ -618,6 +629,12 @@ private struct CastVoteSheet: View {
                         }
                     }
                     .disabled(isCasting || proTxHashHex.isEmpty || votingKeyHex.isEmpty)
+
+                    if let choiceError {
+                        Text(choiceError)
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
                 }
             }
             .navigationTitle("Cast Vote")
@@ -632,12 +649,19 @@ private struct CastVoteSheet: View {
     }
 
     /// Translate the picker selection into the SDK vote-choice enum.
-    private var resolvedChoice: ContestedResourceVoteChoice {
+    ///
+    /// Returns `nil` when a contender's hex identity id fails to decode, so the
+    /// caller can surface a clear error instead of passing un-decodable hex
+    /// downstream to the FFI as if it were base58.
+    private var resolvedChoice: ContestedResourceVoteChoice? {
         switch selection {
         case .contender(let hex):
-            // The FFI expects a base58 identity id; convert from the
-            // hex the contender rows carry.
-            let base58 = Data(hexString: hex)?.toBase58String() ?? hex
+            // The FFI expects a base58 identity id; convert from the hex the
+            // contender rows carry. Guard the decode rather than falling back
+            // to the raw hex string.
+            guard let base58 = Data(hexString: hex)?.toBase58String() else {
+                return nil
+            }
             return .towardsIdentity(base58)
         case .abstain:
             return .abstain
