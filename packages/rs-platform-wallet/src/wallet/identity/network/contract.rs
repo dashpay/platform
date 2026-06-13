@@ -116,10 +116,15 @@ impl IdentityWallet {
     ///   position, each value a `Group` JSON.
     /// - `keywords_json`: JSON array of strings.
     /// - `description`: plain (non-JSON) string.
-    /// - `config_json`: `DataContractConfig` JSON. The function
-    ///   injects `$formatVersion: "0"` if the caller-supplied
-    ///   config dict doesn't carry one (Swift form-builder shape
-    ///   doesn't know the tag).
+    /// - `config_json`: `DataContractConfig` JSON, or `None`. The
+    ///   function always tags the assembled config with the
+    ///   protocol-required `$formatVersion` (the running
+    ///   `PlatformVersion`'s `contract_versions.config
+    ///   .default_current_version`) — since protocol v12 the network
+    ///   rejects a V0 config, so a hardcoded "0" tag would fail. A
+    ///   flags-only or absent config deserializes into a valid V1
+    ///   because every `DataContractConfigV1` field has a serde
+    ///   default.
     #[allow(clippy::too_many_arguments)]
     pub async fn create_data_contract_with_signer<S>(
         &self,
@@ -169,6 +174,22 @@ impl IdentityWallet {
                 })?
                 .clone()
         };
+
+        // Protocol-required config version. Since protocol v12 the
+        // network rejects a V0 `DataContractConfig` (it lacks
+        // `sized_integer_types`): the data-contract-create basic-
+        // structure validator enforces
+        // `config().version() >= contract_versions.config.min_version`,
+        // and that minimum is 1 for v12+. We therefore tag every
+        // config we build with the protocol's
+        // `default_current_version` (which equals `min_version` here)
+        // rather than a hardcoded "0".
+        let platform_version = self.sdk.version();
+        let config_format_version = platform_version
+            .dpp
+            .contract_versions
+            .config
+            .default_current_version;
 
         // 2. Build the V1 serialization format with a placeholder id.
         //    The SDK's `DataContractCreateTransition::new_from_data_contract`
@@ -221,17 +242,33 @@ impl IdentityWallet {
                 serde_json::Value::String(s.to_string()),
             );
         }
-        if let Some(mut v) = parse_optional_json("config_json", config_json)? {
-            // `DataContractConfig` is itself a `#[serde(tag =
-            // "$formatVersion")]` enum; Swift form-builder shape
-            // sends a bare flags dict. Inject the V0 tag when
-            // missing so the tagged-enum dispatch picks a variant.
-            if let Some(obj) = v.as_object_mut() {
-                obj.entry("$formatVersion")
-                    .or_insert_with(|| serde_json::Value::String("0".to_string()));
+        // `DataContractConfig` is itself a `#[serde(tag =
+        // "$formatVersion")]` enum; the Swift form-builder shape sends
+        // a bare flags dict (or omits config entirely). Tag it with the
+        // protocol-required version so the tagged-enum dispatch picks a
+        // variant the network will accept. `DataContractConfigV1` is
+        // `#[serde(rename_all = "camelCase", default)]`, so a flags-only
+        // (or empty) dict deserializes into a valid V1 — every field,
+        // including `sized_integer_types: true`, has a serde default.
+        //
+        // We always insert a `config` block (even when `config_json` is
+        // None) so the version tag is explicit rather than relying on
+        // the serialization format's `#[serde(default)]`; this keeps the
+        // emitted config aligned with the running protocol version.
+        let mut config_obj = match parse_optional_json("config_json", config_json)? {
+            Some(serde_json::Value::Object(map)) => map,
+            Some(other) => {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
+                    "config_json must be a JSON object, got: {other}"
+                )));
             }
-            format_value.insert("config".to_string(), v);
-        }
+            None => serde_json::Map::new(),
+        };
+        config_obj.insert(
+            "$formatVersion".to_string(),
+            serde_json::Value::String(config_format_version.to_string()),
+        );
+        format_value.insert("config".to_string(), serde_json::Value::Object(config_obj));
 
         // Round-trip through a string instead of `from_value` —
         // serde's `#[serde(tag = "...")]` enum dispatch can drop /
@@ -252,7 +289,6 @@ impl IdentityWallet {
                 ))
             })?;
 
-        let platform_version = self.sdk.version();
         let mut errors = vec![];
         let data_contract =
             DataContract::try_from_platform_versioned(format, true, &mut errors, platform_version)
