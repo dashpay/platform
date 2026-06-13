@@ -68,7 +68,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 |---|---|
 | **Essential** | The core happy-path experience every user exercises: the headline value transactions (Core→Core send, identity→identity credit transfer, shield / transfer / unshield) plus everything needed to perform and verify them — create/restore wallet, sync, receive, view balances & history, back up phrase, create & view/discover identity, register/check/resolve usernames, view shielded activity. QA must always run these. |
 | **Common** | Frequent actions beyond the core experience — identity top-ups, contested usernames, identity key management, platform-address credit ops, contracts, token transfer/view, DashPay, secondary shielded flows (asset-lock shield, withdraw, prover warm-up). |
-| **Thorough** | Occasional, or tied to a specialized role (contract author, voter, contact-graph user) — voting, contract update, document edit/delete, mint/burn/claim, group reads. |
+| **Thorough** | Occasional, or tied to a specialized role (contract author, voter, contact-graph user, multi-wallet power user) — voting, contract update, document edit/delete, mint/burn/claim, group reads, multi-wallet management. |
 | **Uncommon** | Rare / exotic / administrative edge cases (most token governance, marketplace, emergency, group, raw-protocol). |
 
 **Layers** (for the "X-only" filter):
@@ -108,11 +108,26 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | CORE-06 | View balance / tx history / UTXOs | Core | Essential | ✅ | `WalletDetailView`, `TransactionListView`, `AccountDetailView` (SwiftData). |
 | CORE-07 | SPV sync (start / stop / progress) | Core | Essential | ✅ | Global sync indicator (`ContentView`) → `platform_wallet_manager_spv_*`. Headers/filters/masternodes advance to tip. |
 | CORE-08 | QR scan recipient | Core | Essential | ✅ | `QRScannerView`. Scanned address fills the send field. |
-| CORE-09 | Multiple HD accounts | Core | Common | ✅ | Account selection / `AccountDetailView`; balances per `account_index`. |
+| CORE-09 | Multiple HD accounts (within one wallet) | Core | Common | ✅ | Account selection / `AccountDetailView`; balances per `account_index`. Distinct from holding multiple *wallets* — see CORE-14+. |
 | CORE-10 | Multi-recipient Core send | Core | Common | 🔌 | FFI `core_wallet_send_to_addresses` takes parallel address/amount arrays; UI is single-recipient — verify before claiming. |
 | CORE-11 | Custom fee on transparent send | Core | Uncommon | 🚫 | Not exposed on the transparent send path (custom Core fee only on shielded withdraw `SH-08` and platform-address funding). |
 | CORE-12 | CoinJoin / mixing | Core | Uncommon | 🚫 | Not implemented anywhere (SPV crate or FFI). |
 | CORE-13 | Send explicitly via InstantSend | Core | Uncommon | 🚫 | IS is observe-only (used to obtain asset-lock proofs); no user-facing send toggle. |
+
+#### Multiple wallets on one device
+
+The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets concurrently (keyed by `wallet_id`), one SPV runtime per network. Most rows elsewhere in this plan are written for a single active wallet — these rows cover the multi-wallet dimension explicitly. (Distinct from CORE-09, which is multiple *accounts* inside one wallet.)
+
+| ID | Action | Layer | Tier | Status | Entry point & test notes |
+|---|---|---|---|---|---|
+| CORE-14 | Hold multiple wallets at once (wallet list) | Core | Thorough | ✅ | `WalletsContentView` lists every wallet for the current network; `PlatformWalletManager.wallets` holds N keyed by `wallet_id`. |
+| CORE-15 | Create / import a second wallet (alongside existing) | Core | Thorough | ✅ | Wallets tab → "Add Wallet" → `CreateWalletView`. New wallet coexists; must not replace or corrupt the first. |
+| CORE-16 | Switch active wallet | Core | Thorough | ✅ | Tap a wallet row → `WalletDetailView` scopes all `@Query`s to that `walletId`. Navigation-based — there is **no** global wallet picker, so "switching" = opening another wallet's detail. |
+| CORE-17 | Remove / delete a wallet | Core | Uncommon | ✅ | `WalletDetailView` → Delete Wallet → `platform_wallet_manager_remove_wallet`; cascades Keychain mnemonic + that wallet's identities + SwiftData rows. Verify the other wallets are untouched. |
+| CORE-18 | Per-wallet isolation (identities / addresses / balances / shielded) | Core | Thorough | ✅ | Confirm wallet A's identities, addresses, Core/Platform balances and shielded state never surface under wallet B (`@Query` predicates filtered by `walletId`). Key correctness check for multi-wallet. |
+| CORE-19 | Send between two on-device wallets | Core | Thorough | ✅ | Normal send from wallet A to wallet B's receive address (no intra-app picker — you must paste/scan B's address). B's balance increases after sync. Variants: identity→identity (`ID-04`) or shielded between two local wallets. |
+| CORE-20 | Concurrent SPV sync across all wallets | Core | Thorough | ✅ | One SPV runtime per network filters every wallet's addresses; `spvProgress` is manager-global, not per-wallet. With 2+ wallets, confirm each reaches the tip and detects its own funds. |
+| CORE-21 | Multiple wallets bound to the shielded pool concurrently | Shielded | Uncommon | ✅ | `platform_wallet_manager_bind_shielded` is per `wallet_id`; the manager syncs all bound wallets. UI (`ShieldedService.boundWalletId`) displays one wallet's shielded state at a time — switching should swap cleanly, not merge balances. |
 
 ### 4.2 Identity — `Domain=Identity`
 
@@ -274,17 +289,17 @@ Counts are of **runnable** rows (`✅`/`🧪`/`⚠️`); `🔌`/`🚫`/stub rows
 |---|---|
 | Essential | 22 |
 | Common | 29 |
-| Thorough | 23 |
-| Uncommon | 15 |
+| Thorough | 29 |
+| Uncommon | 17 |
 
 **By layer (runnable):**
 
 | Layer | Count (approx.) |
 |---|---|
-| Core | 9 |
+| Core | 16 |
 | Platform | ~63 |
 | Cross | 7 |
-| Shielded | 10 |
+| Shielded | 11 |
 
 **Headline intersection — `Essential ∩ Platform` (the most common QA request):** `ID-02`, `ID-03`, `ID-04`, `DPNS-01`, `DPNS-02`, `DPNS-03`, `DPNS-04`. Essential Core lives in §4.1 (`CORE-01..08`); Essential cross-layer identity creation is `ID-01`; Essential shielded is `SH-01..06`.
 
