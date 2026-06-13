@@ -178,7 +178,7 @@ struct SendTransactionView: View {
                             HStack {
                                 Text("Estimated Fee:")
                                 Spacer()
-                                Text("~\(formatBalance(fee, unit: unit(for: viewModel.selectedSource)))")
+                                Text("~\(formatBalance(fee, unit: feeUnit(for: flow)))")
                                     .foregroundColor(.secondary)
                             }
                         }
@@ -355,6 +355,7 @@ struct SendTransactionView: View {
     private func flowColor(for flow: SendFlow) -> Color {
         switch flow {
         case .coreToCore: return .green
+        case .coreToShielded: return .purple
         case .platformToPlatform: return .blue
         case .platformToShielded: return .purple
         case .shieldedToShielded: return .purple
@@ -386,6 +387,21 @@ struct SendTransactionView: View {
         switch source {
         case .core: return .duffs
         case .platform, .shielded: return .credits
+        }
+    }
+
+    /// Settlement unit of a flow's *fee*, which can differ from the
+    /// selected source's balance unit. `coreToShielded` spends Core
+    /// duffs but its Type 18 pool fee is denominated in Platform
+    /// credits, so the fee row must use credits even though the Core
+    /// source row uses duffs. Behaviour-preserving for every other
+    /// flow (their fee unit already matches their source unit).
+    private func feeUnit(for flow: SendFlow) -> SendBalanceUnit {
+        switch flow {
+        case .coreToCore: return .duffs
+        case .coreToShielded, .platformToPlatform, .platformToShielded,
+             .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
+            return .credits
         }
     }
 }
