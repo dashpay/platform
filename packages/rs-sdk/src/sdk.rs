@@ -30,6 +30,7 @@ pub use rs_dapi_client::AddressList;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
     transport::TransportRequest, DapiClient, DapiClientError, DapiRequestExecutor, ExecutionResult,
+    IntoInner,
 };
 use std::fmt::Debug;
 #[cfg(feature = "mocks")]
@@ -367,6 +368,68 @@ impl Sdk {
         }
     }
 
+    /// Query the connected network for its current protocol version and ratchet
+    /// this SDK's auto-detected protocol version up to it.
+    ///
+    /// ## Why this exists (bootstrap problem)
+    ///
+    /// An auto-detect SDK (one built without [`SdkBuilder::with_version()`]) is
+    /// seeded with [`PlatformVersion::latest()`] (or a caller-supplied initial
+    /// version) and only learns the network's *actual* protocol version after the
+    /// first metadata-bearing platform response is parsed (see
+    /// [`Self::verify_response_metadata`]). Fee-sensitive flows — shielded pool
+    /// shield/unshield/transfer/withdraw — compute their reserve from
+    /// `self.version()`, so an SDK that hasn't yet observed network metadata can
+    /// under-reserve against a network running a newer protocol version. Calling
+    /// this method on app start / network switch teaches the SDK the network
+    /// version eagerly, before any such flow runs.
+    ///
+    /// ## How it works
+    ///
+    /// Issues an **unproved** `getStatus` request (no proof parsing), which keeps
+    /// working even when proofed queries fail (e.g. UNIMPLEMENTED on stale
+    /// evonodes) and is immune to proof-interpretation version skew. The
+    /// network's current Drive protocol version is read from the response and fed
+    /// into [`Self::maybe_update_protocol_version`], which applies the usual
+    /// guards: pinned (non-auto-detect) SDKs are left untouched, version `0` and
+    /// unknown versions are ignored, and the stored version only ever ratchets
+    /// upward via `fetch_max`.
+    ///
+    /// ## Returns
+    ///
+    /// The SDK's protocol version number after the (possible) ratchet. A response
+    /// that omits the protocol-version field is treated as a non-fatal no-op: a
+    /// warning is logged and the current version number is returned unchanged.
+    pub async fn refresh_protocol_version(&self) -> Result<u32, Error> {
+        use dapi_grpc::platform::v0::{get_status_request, GetStatusRequest};
+
+        let request = GetStatusRequest {
+            version: Some(get_status_request::Version::V0(
+                get_status_request::GetStatusRequestV0 {},
+            )),
+        };
+
+        let response = self
+            .execute(request, RequestSettings::default())
+            .await
+            .into_inner()?;
+
+        match extract_network_protocol_version(&response) {
+            Some(network_version) => {
+                self.maybe_update_protocol_version(network_version);
+            }
+            None => {
+                tracing::warn!(
+                    target: "dash_sdk::protocol_version",
+                    "getStatus response did not contain a Drive protocol version; \
+                     keeping current protocol version"
+                );
+            }
+        }
+
+        Ok(self.protocol_version_number())
+    }
+
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
     ///
     /// This method is used to retrieve objects from proofs returned by Dash Platform.
@@ -665,6 +728,29 @@ fn verify_metadata_height(
     }
 
     Ok(())
+}
+
+/// Extract the network's current Drive protocol version from a `getStatus`
+/// response.
+///
+/// Walks `version → V0(v0) → v0.version → protocol → drive → current`, returning
+/// `None` if any link in that chain is absent (e.g. a node that did not populate
+/// the version block). Mirrors the field path used by
+/// `drive_proof_verifier::types::evonode_status::Version::try_from`.
+fn extract_network_protocol_version(
+    response: &dapi_grpc::platform::v0::GetStatusResponse,
+) -> Option<u32> {
+    use dapi_grpc::platform::v0::get_status_response;
+
+    match &response.version {
+        Some(get_status_response::Version::V0(v0)) => v0
+            .version
+            .as_ref()
+            .and_then(|v| v.protocol)
+            .and_then(|p| p.drive)
+            .map(|d| d.current),
+        None => None,
+    }
 }
 
 #[async_trait::async_trait]
@@ -1824,5 +1910,178 @@ mod test {
         let result = super::verify_metadata_time(&metadata, now_time, tolerance);
 
         assert_eq!(result.is_err(), expect_err);
+    }
+
+    // -----------------------------------------------------------------
+    // refresh_protocol_version
+    // -----------------------------------------------------------------
+
+    /// Build a `GetStatusResponse` whose Drive protocol `current` equals
+    /// `drive_current`, leaving the rest of the version tree populated the
+    /// minimal amount needed to walk to that field.
+    fn status_response_with_drive_current(
+        drive_current: u32,
+    ) -> dapi_grpc::platform::v0::GetStatusResponse {
+        use dapi_grpc::platform::v0::get_status_response::{
+            get_status_response_v0::{version::protocol, version::Protocol, Version as VersionV0},
+            GetStatusResponseV0, Version,
+        };
+        use dapi_grpc::platform::v0::GetStatusResponse;
+
+        let drive = protocol::Drive {
+            latest: drive_current,
+            current: drive_current,
+            next_epoch: drive_current,
+        };
+        let protocol = Protocol {
+            tenderdash: None,
+            drive: Some(drive),
+        };
+        let version = VersionV0 {
+            software: None,
+            protocol: Some(protocol),
+        };
+        let v0 = GetStatusResponseV0 {
+            version: Some(version),
+            node: None,
+            chain: None,
+            network: None,
+            state_sync: None,
+            time: None,
+        };
+        GetStatusResponse {
+            version: Some(Version::V0(v0)),
+        }
+    }
+
+    /// Build a `GetStatusResponse` with no version block at all (a node that
+    /// did not report its protocol version).
+    fn status_response_without_version() -> dapi_grpc::platform::v0::GetStatusResponse {
+        dapi_grpc::platform::v0::GetStatusResponse { version: None }
+    }
+
+    /// Register a `GetStatusRequest -> response` expectation on the mock SDK's
+    /// inner DAPI client so `refresh_protocol_version` can execute it.
+    async fn expect_get_status(
+        sdk: &super::Sdk,
+        response: dapi_grpc::platform::v0::GetStatusResponse,
+    ) {
+        use dapi_grpc::platform::v0::{get_status_request, GetStatusRequest};
+        use rs_dapi_client::ExecutionResponse;
+
+        let request = GetStatusRequest {
+            version: Some(get_status_request::Version::V0(
+                get_status_request::GetStatusRequestV0 {},
+            )),
+        };
+
+        match sdk.inner {
+            super::SdkInstance::Mock { ref dapi, .. } => {
+                let mut guard = dapi.lock().await;
+                guard
+                    .expect(
+                        &request,
+                        &Ok(ExecutionResponse {
+                            inner: response,
+                            retries: 0,
+                            address: "http://127.0.0.1".parse().expect("valid address"),
+                        }),
+                    )
+                    .expect("expectation registered");
+            }
+            _ => panic!("expected a mock SDK"),
+        }
+    }
+
+    #[test]
+    fn test_extract_network_protocol_version_present() {
+        let response = status_response_with_drive_current(12);
+        assert_eq!(super::extract_network_protocol_version(&response), Some(12));
+    }
+
+    #[test]
+    fn test_extract_network_protocol_version_missing_version_block() {
+        let response = status_response_without_version();
+        assert_eq!(super::extract_network_protocol_version(&response), None);
+    }
+
+    /// Seeded at 10, network reports 12 -> SDK ratchets to 12.
+    /// Mirrors the testnet shielded-fee under-reservation regression.
+    #[tokio::test]
+    async fn test_refresh_ratchets_up_to_network_version() {
+        let sdk = mock_sdk_with_auto_detect(10);
+        assert_eq!(sdk.protocol_version_number(), 10);
+
+        expect_get_status(&sdk, status_response_with_drive_current(12)).await;
+
+        let resulting = sdk
+            .refresh_protocol_version()
+            .await
+            .expect("refresh should succeed");
+
+        assert_eq!(resulting, 12, "returned version must reflect the ratchet");
+        assert_eq!(sdk.protocol_version_number(), 12);
+        assert_eq!(sdk.version().protocol_version, 12);
+    }
+
+    /// An unknown (future) version is ignored by the `maybe_update`
+    /// guard, leaving the SDK on its current version.
+    #[tokio::test]
+    async fn test_refresh_ignores_unknown_version() {
+        use dpp::version::PlatformVersion;
+
+        let sdk = mock_sdk_with_auto_detect(PlatformVersion::latest().protocol_version);
+        let original = sdk.protocol_version_number();
+
+        expect_get_status(&sdk, status_response_with_drive_current(9999)).await;
+
+        let resulting = sdk
+            .refresh_protocol_version()
+            .await
+            .expect("refresh should succeed");
+
+        assert_eq!(resulting, original, "unknown version must be ignored");
+        assert_eq!(sdk.protocol_version_number(), original);
+    }
+
+    /// A pinned (explicit `with_version`) SDK has auto-detect disabled and
+    /// must not move even when the network reports a newer version.
+    #[tokio::test]
+    async fn test_refresh_leaves_pinned_sdk_unchanged() {
+        use dpp::version::PlatformVersion;
+
+        let sdk = SdkBuilder::new_mock()
+            .with_version(PlatformVersion::get(1).expect("PV 1 exists"))
+            .build()
+            .expect("mock Sdk should be created");
+        assert_eq!(sdk.protocol_version_number(), 1);
+        assert!(!sdk.auto_detect_protocol_version);
+
+        expect_get_status(&sdk, status_response_with_drive_current(2)).await;
+
+        let resulting = sdk
+            .refresh_protocol_version()
+            .await
+            .expect("refresh should succeed");
+
+        assert_eq!(resulting, 1, "pinned version must not move");
+        assert_eq!(sdk.protocol_version_number(), 1);
+    }
+
+    /// A response without a version block is a non-fatal no-op: the call
+    /// succeeds and the version stays put.
+    #[tokio::test]
+    async fn test_refresh_missing_version_is_noop() {
+        let sdk = mock_sdk_with_auto_detect(10);
+
+        expect_get_status(&sdk, status_response_without_version()).await;
+
+        let resulting = sdk
+            .refresh_protocol_version()
+            .await
+            .expect("refresh should succeed even without a version block");
+
+        assert_eq!(resulting, 10);
+        assert_eq!(sdk.protocol_version_number(), 10);
     }
 }
