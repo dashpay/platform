@@ -158,6 +158,7 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | ADDR-03 | Top up address from asset lock | Cross | Thorough | ✅ | `FundFromAssetLockPlatformAddressView` → `dash_sdk_address_top_up_from_asset_lock`. |
 | ADDR-04 | Withdraw address credits → Core L1 | Cross | Thorough | ✅ | `AddressQueriesView` → WithdrawAddressFunds → `dash_sdk_address_withdraw_funds`. |
 | ADDR-05 | Address balance-change history (recent / compacted / branch / trunk) | Platform | Uncommon | 🔌 | FFI `dash_sdk_address_fetch_recent_balance_changes` / `_compacted_balance_changes` / `_branch_state` / `_trunk_state`; no UI. |
+| ADDR-06 | Display / share your Platform receive address | Platform | Common | ✅ | "Receive Dash" sheet → **Platform** tab (`ReceiveAddressView`, `ReceiveAddressTab.platform`, "Your Platform Address"): QR + bech32m DIP-17 address + Copy. The receive counterpart to the credit-transfer / top-up funding paths. |
 
 ### 4.4 DPNS (usernames) — `Domain=DPNS`
 
@@ -248,7 +249,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SH-10 | Seed shielded pool (anonymity set) | Shielded | Uncommon | ✅ | `SeedShieldedPoolView` → `platform_wallet_manager_shielded_seed_pool_notes`. **Devnet/testnet only** — hard-errors on mainnet. |
 | SH-11 | Create identity from shielded pool (Type 20) | Cross | Uncommon | 🔌 | FFI `platform_wallet_manager_shielded_identity_create_from_pool`; no dedicated UI. |
 | SH-12 | Clear shielded state (wipe notes + re-sync) | Shielded | Uncommon | ✅ | "Clear" button on the Sync tab (`CoreContentView` → `ShieldedService.clearLocalState` → `clearShielded`). Stops sync, wipes every wallet's shielded notes + sync state, zeroes the Swift mirror; bind credentials are kept so "Sync Now" rebinds and re-scans. (On-disk SQLite tree is intentionally retained.) Verify balance/activity reset, then restore after Sync Now. |
-| SH-13 | Display / share your shielded receive address | Shielded | Thorough | 🔌 | Address is derivable (`shieldedDefaultAddress` → 43 bytes + `DashAddress.encodeShielded` bech32m), but there is **no dedicated receive screen** — it's only shown truncated and non-copyable as the default recipient in `ShieldedFundFromAssetLockView`. No copy/QR affordance to hand your shielded address to a payer. Gap that complicates cross-device receiving (and `MW-06` setup). |
+| SH-13 | Display / share your shielded receive address | Shielded | Common | ✅ | "Receive Dash" sheet → **Shielded** tab (`ReceiveAddressView`, `ReceiveAddressTab.shielded`): QR + full `tdash1…`/`dash1…` bech32m address + Copy Address. Hand your shielded address to a payer, or grab wallet B's address for `MW-06`. |
 
 ### 4.10 DashPay — `Domain=DashPay`
 
@@ -294,7 +295,7 @@ Together with the wallet-lifecycle rows in §4.1 (`CORE-14..23`), these form the
 | MW-03 | DashPay request → accept → payment, both endpoints on device | Platform | Thorough | ✅ | A's identity sends a contact request (`DP-01`) to B's; switch to wallet B's identity and accept (`DP-02`); then pay (`DP-03`). Full bidirectional loop entirely local. |
 | MW-04 | Document transfer / purchase across wallets | Platform | Uncommon | 🧪 | A creates + lists a document (`DOC-02`/`DOC-06`); B transfers/purchases it (`DOC-05`/`DOC-07`). Ownership and credits move between A and B. |
 | MW-05 | Contested DPNS race between two on-device identities | Platform | Uncommon | ✅ | A and B (different wallets) both register the same premium/contested name (`DPNS-05`) → produces a contest observable end-to-end on-device via `VOTE-02`/`VOTE-03`. |
-| MW-06 | Shielded transfer between two on-device wallets | Shielded | Thorough | ✅ | Wallet A's pool → wallet B's shielded address (`SH-05`). Obtaining B's address has no copy/QR UI (`SH-13`) — derive B's default shielded address. Both wallets must be bound + synced (`CORE-21`, `SH-01`); after syncing B, its shielded balance rises. NB only one wallet's shielded state is displayed at a time. |
+| MW-06 | Shielded transfer between two on-device wallets | Shielded | Thorough | ✅ | Wallet A's pool → wallet B's shielded address (`SH-05`); copy B's address from its Receive → Shielded tab (`SH-13`). Both wallets must be bound + synced (`CORE-21`, `SH-01`); after syncing B, its shielded balance rises. NB only one wallet's shielded state is displayed at a time. |
 | MW-07 | Unshield from A to a Platform address owned by B | Shielded | Uncommon | ✅ | A unshields (`SH-06`) to a Platform address belonging to wallet B; verify B receives the credits (subject to the MW-08 sync caveat). |
 | MW-08 | Platform balance sync is per-active-wallet, **not** concurrent | Platform | Thorough | ✅ | `PlatformBalanceSyncService` is configured for ONE wallet (`configure(...walletId:)`, re-run on switch). Unlike Core SPV (`CORE-20`, all wallets at once), wallet B's Platform address/credit balances can be **stale until you switch to B and Sync Now**. Verify this is the intended behavior, not a bug. |
 | MW-09 | Per-wallet Platform isolation (identities / usernames / tokens / contacts) | Platform | Thorough | ✅ | Extends `CORE-18` to Platform reads: wallet A's identities, DPNS names, token balances, and DashPay contacts must never surface under wallet B. |
@@ -312,7 +313,7 @@ Counts are of **runnable** rows (`✅`/`🧪`/`⚠️`); `🔌`/`🚫`/stub rows
 | Tier | Count (approx.) |
 |---|---|
 | Essential | 22 |
-| Common | 29 |
+| Common | 31 |
 | Thorough | 35 |
 | Uncommon | 25 |
 
@@ -321,9 +322,9 @@ Counts are of **runnable** rows (`✅`/`🧪`/`⚠️`); `🔌`/`🚫`/stub rows
 | Layer | Count (approx.) |
 |---|---|
 | Core | 18 |
-| Platform | ~71 |
+| Platform | ~72 |
 | Cross | 7 |
-| Shielded | 15 |
+| Shielded | 16 |
 
 **Headline intersection — `Essential ∩ Platform` (the most common QA request):** `ID-02`, `ID-03`, `ID-04`, `DPNS-01`, `DPNS-02`, `DPNS-03`, `DPNS-04`. Essential Core lives in §4.1 (`CORE-01..08`); Essential cross-layer identity creation is `ID-01`; Essential shielded is `SH-01..06`.
 
