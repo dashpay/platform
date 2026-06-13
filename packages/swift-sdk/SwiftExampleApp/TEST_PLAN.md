@@ -17,9 +17,11 @@ Every catalog row carries four orthogonal, machine-filterable fields. Select tes
 - **Tier** ∈ `Essential` · `Common` · `Thorough` · `Uncommon`
 - **Layer** ∈ `Core` · `Platform` · `Cross` · `Shielded`
 - **Status** ∈ `✅` · `🧪` · `🔌` · `⚠️` · `🚫`
-- **Domain** ∈ `Core` · `Identity` · `Address` · `DPNS` · `Voting` · `Contract` · `Document` · `Token` · `Shielded` · `DashPay` · `Group` · `System` · `MultiWallet`
+- **Category** ∈ `Core` · `Identity` · `Address` · `DPNS` · `Voting` · `Contract` · `Document` · `Token` · `Shielded` · `DashPay` · `Group` · `System` · `MultiWallet` (the feature area; shown as `Domain=…` on each §4 section header — "Category" and "Domain" are the same axis)
 
 A test is **runnable now** only if Status is `✅`, `🧪`, or `⚠️` (reachable in the app). `🔌`/`🚫` rows are listed for completeness — skip them unless asked to confirm absence.
+
+A row's **primary** category is the §4 section it lives in. Some tests are **cross-cutting** — e.g. `MW-02` (token transfer between two wallets) lives in the MultiWallet section but is also a **Token** test, and `CORE-21` is also **Shielded**. Resolve any `Category=…` selection through **§6 Category index**, which lists every member ID per category (primary + cross-cutting), so "run all Token tests" catches `MW-02` and `GRP-03` too. This is the axis behind requests like *"run all non-Uncommon Token tests."*
 
 **Worked examples of a request → selection:**
 
@@ -27,8 +29,10 @@ A test is **runnable now** only if Status is `✅`, `🧪`, or `⚠️` (reachab
 |---|---|---|
 | "test Essential, Platform-only" | `Tier=Essential AND Layer=Platform` | `ID-02, ID-03, ID-04, DPNS-01, DPNS-02, DPNS-03, DPNS-04` |
 | "test all Essential" | `Tier=Essential` | the core experience: `CORE-01..08`, `ID-01/02/03/04`, `DPNS-01/02/03/04`, `SH-01..06` |
-| "smoke test the wallet" | `Domain=Core AND Status=✅` | `CORE-01..CORE-09` |
-| "exercise every token admin action" | `Domain=Token AND Tier=Uncommon` | `TOK-08..TOK-16` |
+| "smoke test the wallet" | `Category=Core AND Status=✅` | `CORE-01..CORE-09` |
+| "test all non-Uncommon Token tests" | `Category=Token AND Tier≠Uncommon` | `TOK-01..07`, `MW-02` (via §6 index) |
+| "exercise every token admin action" | `Category=Token AND Tier=Uncommon` | `TOK-08..TOK-16` |
+| "run all Shielded tests" | `Category=Shielded` | `SH-01..13`, `CORE-21`, `MW-06/07/11` (via §6 index) |
 | "run all read queries" | Appendix A | the gRPC read-RPC coverage table |
 
 ### Generic pass criteria (apply per action type unless a row overrides)
@@ -327,6 +331,28 @@ Counts are of **runnable** rows (`✅`/`🧪`/`⚠️`); `🔌`/`🚫`/stub rows
 | Shielded | 16 |
 
 **Headline intersection — `Essential ∩ Platform` (the most common QA request):** `ID-02`, `ID-03`, `ID-04`, `DPNS-01`, `DPNS-02`, `DPNS-03`, `DPNS-04`. Essential Core lives in §4.1 (`CORE-01..08`); Essential cross-layer identity creation is `ID-01`; Essential shielded is `SH-01..06`.
+
+---
+
+## 6. Category index
+
+Membership of each feature category across **all** sections (primary section members + cross-cutting tests that live elsewhere). To run a `Category=X` selection, take the list below and intersect with `Tier` / `Layer` / `Status` as needed. `A-01..09` means every id in that span.
+
+- **Core / Wallet** — `CORE-01..23`
+- **MultiWallet** — `CORE-14..23`, `MW-01..11`
+- **Identity** — `ID-01..13`, `SH-11`, `MW-01`, `MW-08`, `MW-09`, `MW-10`
+- **Address** (DIP-17 platform addresses) — `ADDR-01..06`, `ID-06`, `ID-08`, `ID-11`
+- **DPNS** — `DPNS-01..07`, `MW-05`
+- **Voting** — `VOTE-01..07`, `DPNS-05`, `MW-05`
+- **Contract** — `DC-01..04`
+- **Document** — `DOC-01..09`, `MW-04`
+- **Token** — `TOK-01..17`, `MW-02`, `GRP-03`
+- **Shielded** — `SH-01..13`, `CORE-21`, `MW-06`, `MW-07`, `MW-11`
+- **DashPay** — `DP-01..06`, `MW-03`
+- **Group** — `GRP-01..04`, `TOK-15`, `TOK-16`
+- **System / Diagnostics** — `SYS-01..06`
+
+Worked example — *"run all non-Uncommon Token tests"*: take **Token** = `TOK-01..17`, `MW-02`, `GRP-03`; drop the `Uncommon` ones (`TOK-08..17`, `GRP-03`) → run **`TOK-01..07` + `MW-02`**.
 
 ---
 
