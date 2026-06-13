@@ -5,6 +5,7 @@ import SwiftDashSDK
 /// Available send flow types based on source and destination.
 enum SendFlow: Equatable {
     case coreToCore              // Standard L1 payment
+    case coreToShielded          // Shield Core L1 funds to a shielded recipient
     case platformToPlatform      // Platform-address → platform-address transfer
     case platformToShielded      // Shield credits
     case shieldedToShielded      // Private transfer
@@ -14,6 +15,7 @@ enum SendFlow: Equatable {
     var displayName: String {
         switch self {
         case .coreToCore: return "Core Payment"
+        case .coreToShielded: return "Shield from Core"
         case .platformToPlatform: return "Platform Transfer"
         case .platformToShielded: return "Shield Credits"
         case .shieldedToShielded: return "Shielded Transfer"
@@ -25,6 +27,7 @@ enum SendFlow: Equatable {
     var iconName: String {
         switch self {
         case .coreToCore: return "arrow.right"
+        case .coreToShielded: return "lock.shield"
         case .platformToPlatform: return "arrow.right"
         case .platformToShielded: return "lock.shield"
         case .shieldedToShielded: return "arrow.left.arrow.right"
@@ -41,6 +44,7 @@ enum SendFlow: Equatable {
     var estimatedFee: UInt64 {
         switch self {
         case .coreToCore: return 500_000             // ~0.005 DASH
+        case .coreToShielded: return 200_000
         case .platformToPlatform: return 100_000_000 // ~0.001 DASH in credits
         case .platformToShielded: return 200_000
         case .shieldedToShielded: return 300_000
@@ -125,6 +129,13 @@ class SendViewModel: ObservableObject {
     /// (Core uses duffs; Platform / shielded use credits).
     var amountDuffs: UInt64? { amount }
 
+    /// Minimum L1 lock size (in duffs) for a `coreToShielded` send.
+    /// Mirrors `ShieldedFundFromAssetLockView.minDuffs` (1 mDASH): an
+    /// asset lock smaller than the Platform pool fee would build a lock
+    /// and a ~30s Halo 2 proof only to be rejected at submission, so we
+    /// gate it up front rather than burn the work.
+    static let minShieldFromCoreDuffs: UInt64 = 100_000
+
     /// Maximum UTF-8 byte length of a shielded memo (the 32-byte
     /// payload of the 36-byte `DashMemo`; the other 4 bytes are the
     /// kind tag). Mirrors `dpp::shielded::MEMO_PAYLOAD_SIZE`.
@@ -157,6 +168,11 @@ class SendViewModel: ObservableObject {
         switch flow {
         case .coreToCore:
             return (amountDuffs ?? 0) > 0
+        case .coreToShielded:
+            // Funded by an L1 asset lock denominated in duffs; gate on
+            // the lock floor so a doomed (sub-fee) amount can't kick off
+            // the lock-build + proof pipeline.
+            return (amountDuffs ?? 0) >= Self.minShieldFromCoreDuffs
         case .platformToPlatform, .platformToShielded,
              .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
             return (amountCredits ?? 0) > 0
@@ -177,6 +193,10 @@ class SendViewModel: ObservableObject {
         case .orchard:
             if shieldedBalance > 0 { sources.append(.shielded) }
             if platformBalance > 0 { sources.append(.platform) }
+            // Core L1 → shielded recipient via a Type 18
+            // ShieldFromAssetLock. Appended last so the private
+            // shielded → shielded path stays the auto-selected default.
+            if coreBalance > 0 { sources.append(.core) }
         case .platform:
             if platformBalance > 0 { sources.append(.platform) }
             if shieldedBalance > 0 { sources.append(.shielded) }
@@ -212,6 +232,8 @@ class SendViewModel: ObservableObject {
             detectedFlow = .shieldedToShielded
         case (.orchard, .platform):
             detectedFlow = .platformToShielded
+        case (.orchard, .core):
+            detectedFlow = .coreToShielded
         case (.platform, .platform):
             detectedFlow = .platformToPlatform
         case (.platform, .shielded):
@@ -237,7 +259,11 @@ class SendViewModel: ObservableObject {
     private func estimateFee(for flow: SendFlow) -> UInt64 {
         let kind: PlatformWalletManager.ShieldedFeeKind?
         switch flow {
-        case .shieldedToShielded, .platformToShielded:
+        case .shieldedToShielded, .platformToShielded, .coreToShielded:
+            // Type 18 ShieldFromAssetLock carves the same
+            // `compute_minimum_shielded_fee` base as the Shield/transfer
+            // path; its fee is denominated in credits (deducted from the
+            // locked value), so the view renders it with the credits unit.
             kind = .transfer
         case .shieldedToPlatform:
             kind = .unshield
@@ -497,6 +523,64 @@ class SendViewModel: ObservableObject {
                     addressSigner: signer
                 )
                 successMessage = "Shielding complete"
+
+            case .coreToShielded:
+                // Core L1 → Shielded recipient (Type 18
+                // ShieldFromAssetLock): lock L1 duffs, then the
+                // network mints the locked value (minus the pool fee)
+                // as an Orchard note for the recipient. The typed
+                // amount is the **L1 lock size in duffs** — the funds
+                // leaving the wallet — and the recipient receives
+                // `lock_value − pool_fee` in credits. We mirror
+                // ShieldedFundFromAssetLockView's "lock size, not net
+                // amount" convention rather than grossing up the fee:
+                // Type 18's Orchard value_balance is baked into the
+                // Halo 2 proof at build time and can't be re-derived
+                // afterward.
+                //
+                // Note: this awaits the whole asset-lock pipeline
+                // (build lock → wait IS-lock/ChainLock → ~30s proof →
+                // submit ST), so the "Sending…" overlay can sit for a
+                // minute+. The dedicated ShieldedFundFromAssetLockView
+                // exposes the staged progress UI; this is the simple
+                // inline path. It bypasses the shield coordinator, but
+                // the Rust `shield_guard` mutex still serializes
+                // shield-class ops per wallet, so concurrent attempts
+                // block rather than corrupt.
+                guard let amountDuffs else {
+                    error = "Invalid amount"
+                    return
+                }
+                let trimmed = recipientAddress
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let parsed = DashAddress.parse(trimmed, network: network)
+                guard case .orchard(let recipientRaw) = parsed.type else {
+                    error = "Recipient is not a shielded address"
+                    return
+                }
+                // Asset locks draw UTXOs from a SINGLE Core account, so
+                // fund from the standard BIP44 account (typeTag/standardTag
+                // 0) with the largest confirmed balance. The screen's
+                // "Core" total sums across accounts, so an amount under
+                // the displayed total can still fail here when the balance
+                // is split across several accounts.
+                let funding = walletManager.accountBalances(for: wallet.walletId)
+                    .filter { $0.typeTag == 0 && $0.standardTag == 0 }
+                    .max(by: { $0.confirmed < $1.confirmed })
+                guard let funding, funding.confirmed > 0 else {
+                    error = "No spendable Core account to fund the shield"
+                    return
+                }
+                try await walletManager.shieldedFundFromAssetLock(
+                    walletId: wallet.walletId,
+                    fundingAccountIndex: funding.index,
+                    amountDuffs: amountDuffs,
+                    recipients: [
+                        ShieldedFundFromAssetLockRecipient(recipientRaw43: recipientRaw)
+                    ]
+                )
+                successMessage = "Shield submitted — the note arrives on "
+                    + "the recipient's next shielded sync."
             }
 
         } catch PlatformWalletError.shieldedSpendUnconfirmed {
