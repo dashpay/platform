@@ -669,6 +669,38 @@ struct TransitionDetailView: View {
             "Each key needs a valid `purpose` (e.g. AUTHENTICATION, TRANSFER)"
           )
         }
+        // Fail fast — BEFORE any derivation or Keychain write — on key
+        // types / purposes this generic path can't safely add. Mirrors
+        // AddIdentityKeyView's gating so we never derive a secp256k1
+        // pubkey for a BIP13/EdDSA hash payload, never orphan key
+        // material in the Keychain for an ENCRYPTION/DECRYPTION key the
+        // JSON parser can't attach contractBounds to, and never submit a
+        // SYSTEM/VOTING/OWNER purpose DPP forbids on externally-added
+        // keys. prepareKeys derives + writes the Keychain per spec, so
+        // the guard has to sit here, ahead of it.
+        switch keyType {
+        case .ecdsaSecp256k1, .ecdsaHash160:
+          break
+        case .bls12_381, .bip13ScriptHash, .eddsa25519Hash160:
+          throw SDKError.invalidParameter(
+            "Key type \(keyTypeStr) is not supported by this flow; "
+              + "use ECDSA_SECP256K1 or ECDSA_HASH160"
+          )
+        }
+        switch purpose {
+        case .authentication, .transfer:
+          break
+        case .encryption, .decryption:
+          throw SDKError.invalidParameter(
+            "Purpose \(purposeStr) requires contract bounds, which this "
+              + "generic builder can't supply; use AUTHENTICATION or TRANSFER"
+          )
+        case .system, .voting, .owner:
+          throw SDKError.invalidParameter(
+            "Purpose \(purposeStr) cannot be added to an identity here; "
+              + "use AUTHENTICATION or TRANSFER"
+          )
+        }
         // securityLevel is optional in the form JSON; derive a sane
         // protocol-locked default per purpose when absent, matching
         // AddIdentityKeyView's effectiveSecurityLevel.
