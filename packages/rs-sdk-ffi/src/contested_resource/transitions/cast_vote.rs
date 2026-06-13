@@ -53,13 +53,32 @@ use simple_signer::SingleKeySigner;
 use std::ffi::{c_char, CStr};
 use zeroize::Zeroizing;
 
-/// Discriminant for the resource vote choice, mirroring
+/// Resource vote choice discriminant, mirroring
 /// `ResourceVoteChoice::try_from((i32, Option<Vec<u8>>))` in rs-dpp:
 /// `0` = TowardsIdentity (requires `contender_identity_id`), `1` = Abstain,
 /// `2` = Lock.
-pub const VOTE_CHOICE_TOWARDS_IDENTITY: u8 = 0;
-pub const VOTE_CHOICE_ABSTAIN: u8 = 1;
-pub const VOTE_CHOICE_LOCK: u8 = 2;
+///
+/// This `#[repr(u8)]` enum exists so cbindgen emits the discriminant values
+/// into the generated C header (a bare `pub const u8` is not exported),
+/// giving Swift a single source of truth instead of hand-mirroring `0/1/2`.
+/// It is force-emitted via the `[export] include` list in `cbindgen.toml`.
+///
+/// The `vote_choice` FFI parameter is deliberately a plain `u8`, **not** this
+/// enum: a C/Swift caller can pass any byte, and materializing an
+/// out-of-range value as a `#[repr(u8)]` enum is undefined behavior. Keeping
+/// the boundary type a `u8` lets [`cast_vote_inner`] validate the value and
+/// reject anything outside `0..=2` with `InvalidParameter` instead of risking
+/// UB. The enum's `as u8` discriminants are the comparison source of truth.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContestedResourceVoteChoiceFFI {
+    /// Vote for a specific contender; requires `contender_identity_id`.
+    TowardsIdentity = 0,
+    /// Abstain from the contest.
+    Abstain = 1,
+    /// Vote that nobody should win the contested resource.
+    Lock = 2,
+}
 
 /// Cast a masternode contested-resource vote and wait for the response.
 ///
@@ -77,7 +96,10 @@ pub const VOTE_CHOICE_LOCK: u8 = 2;
 /// * `index_values_json` — JSON array of index values. Each element is either
 ///   a hex-encoded byte string (decoded to `Value::Bytes`) or a plain string
 ///   (`Value::Text`), matching the parsing used by the vote-state query FFI.
-/// * `vote_choice` — `0` = TowardsIdentity, `1` = Abstain, `2` = Lock.
+/// * `vote_choice` — discriminant byte matching
+///   [`ContestedResourceVoteChoiceFFI`]: `TowardsIdentity` (`0`), `Abstain`
+///   (`1`) or `Lock` (`2`). Any other value is rejected with
+///   `InvalidParameter`.
 /// * `contender_identity_id` — base58-encoded contender identity; required
 ///   (and only used) when `vote_choice == 0`, otherwise ignored / may be null.
 /// * `voter_pro_tx_hash` — pointer to the masternode's 32-byte pro_tx_hash.
@@ -208,8 +230,13 @@ unsafe fn cast_vote_inner(
         });
 
     // ---- Resolve the vote choice --------------------------------------------
+    // Compare the raw `u8` against the enum's `as u8` discriminants rather than
+    // taking the enum by value: a C caller can hand us any byte, and an
+    // out-of-range value is not a valid `#[repr(u8)]` discriminant. Matching on
+    // the byte keeps a defensive `other` arm that rejects such values with
+    // `InvalidParameter` instead of risking undefined behavior.
     let resource_vote_choice = match vote_choice {
-        VOTE_CHOICE_TOWARDS_IDENTITY => {
+        x if x == ContestedResourceVoteChoiceFFI::TowardsIdentity as u8 => {
             if contender_identity_id.is_null() {
                 return Err(invalid(
                     "contender_identity_id is required when vote_choice is TowardsIdentity (0)",
@@ -224,8 +251,8 @@ unsafe fn cast_vote_inner(
                 .map_err(|_| invalid("contender id must be exactly 32 bytes"))?;
             ResourceVoteChoice::TowardsIdentity(Identifier::new(contender_arr))
         }
-        VOTE_CHOICE_ABSTAIN => ResourceVoteChoice::Abstain,
-        VOTE_CHOICE_LOCK => ResourceVoteChoice::Lock,
+        x if x == ContestedResourceVoteChoiceFFI::Abstain as u8 => ResourceVoteChoice::Abstain,
+        x if x == ContestedResourceVoteChoiceFFI::Lock as u8 => ResourceVoteChoice::Lock,
         other => {
             return Err(invalid(&format!(
                 "vote_choice must be 0 (TowardsIdentity), 1 (Abstain) or 2 (Lock); got {}",
@@ -317,6 +344,12 @@ mod tests {
     use crate::DashSDKErrorCode;
     use std::ffi::CString;
 
+    /// Real base58 DPNS data-contract id (32 bytes). Using the genuine id
+    /// means the bs58-decode + 32-byte length check passes, so tests reach
+    /// the branches they claim to cover (missing-contender, vote-choice match)
+    /// instead of short-circuiting on a bogus contract id.
+    const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
+
     #[test]
     fn test_cast_vote_null_handle() {
         unsafe {
@@ -324,11 +357,11 @@ mod tests {
             let priv_key = [2u8; 32];
             let result = dash_sdk_contested_resource_cast_vote(
                 std::ptr::null(),
-                CString::new("test").unwrap().as_ptr(),
+                CString::new(DPNS_CONTRACT_ID).unwrap().as_ptr(),
                 CString::new("domain").unwrap().as_ptr(),
                 CString::new("parentNameAndLabel").unwrap().as_ptr(),
                 CString::new(r#"["dash","alice"]"#).unwrap().as_ptr(),
-                VOTE_CHOICE_ABSTAIN,
+                ContestedResourceVoteChoiceFFI::Abstain as u8,
                 std::ptr::null(),
                 pro_tx.as_ptr(),
                 priv_key.as_ptr(),
@@ -346,11 +379,11 @@ mod tests {
             let priv_key = [2u8; 32];
             let result = dash_sdk_contested_resource_cast_vote(
                 handle,
-                CString::new("DPNS").unwrap().as_ptr(),
+                CString::new(DPNS_CONTRACT_ID).unwrap().as_ptr(),
                 CString::new("domain").unwrap().as_ptr(),
                 CString::new("parentNameAndLabel").unwrap().as_ptr(),
                 CString::new(r#"["dash","alice"]"#).unwrap().as_ptr(),
-                VOTE_CHOICE_TOWARDS_IDENTITY,
+                ContestedResourceVoteChoiceFFI::TowardsIdentity as u8,
                 std::ptr::null(), // missing contender id
                 pro_tx.as_ptr(),
                 priv_key.as_ptr(),
@@ -369,13 +402,16 @@ mod tests {
         unsafe {
             let pro_tx = [1u8; 32];
             let priv_key = [2u8; 32];
+            // A C caller can pass any byte for the u8 `vote_choice`; an
+            // out-of-range value must hit the defensive `other` arm and be
+            // rejected with `InvalidParameter`.
             let result = dash_sdk_contested_resource_cast_vote(
                 handle,
-                CString::new("DPNS").unwrap().as_ptr(),
+                CString::new(DPNS_CONTRACT_ID).unwrap().as_ptr(),
                 CString::new("domain").unwrap().as_ptr(),
                 CString::new("parentNameAndLabel").unwrap().as_ptr(),
                 CString::new(r#"["dash","alice"]"#).unwrap().as_ptr(),
-                99, // invalid
+                99, // invalid discriminant
                 std::ptr::null(),
                 pro_tx.as_ptr(),
                 priv_key.as_ptr(),

@@ -486,12 +486,23 @@ struct ContestDetailView: View {
             voteResultIsError = true
             return
         }
-        guard let proTxHash = Data(hexString: proTxHashHex), proTxHash.count == 32 else {
+        // `Data(hexString:)` decodes `count / 2` bytes stepping by two, so an
+        // odd-length (e.g. 65-char) string silently drops its trailing nibble
+        // and still yields 32 bytes — the `count == 32` guard alone would pass
+        // a malformed key. Validate the trimmed hex length is exactly 64 (and
+        // therefore even) before decoding so a wrong key can't slip through.
+        let normalizedProTxHashHex = proTxHashHex.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedProTxHashHex.count == 64,
+              let proTxHash = Data(hexString: normalizedProTxHashHex),
+              proTxHash.count == 32 else {
             voteResultMessage = "pro_tx_hash must be 32 bytes (64 hex characters)."
             voteResultIsError = true
             return
         }
-        guard let votingKey = Data(hexString: votingKeyHex), votingKey.count == 32 else {
+        let normalizedVotingKeyHex = votingKeyHex.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedVotingKeyHex.count == 64,
+              let votingKey = Data(hexString: normalizedVotingKeyHex),
+              votingKey.count == 32 else {
             voteResultMessage = "Voting private key must be 32 bytes (64 hex characters)."
             voteResultIsError = true
             return

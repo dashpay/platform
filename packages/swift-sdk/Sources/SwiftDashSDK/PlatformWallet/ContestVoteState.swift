@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 
 /// Snapshot of a DPNS contest's current vote state.
 ///
@@ -62,14 +63,19 @@ public enum ContestedResourceVoteChoice: Sendable, Equatable {
     /// Lock — vote that nobody should win the contested resource.
     case lock
 
-    /// The `vote_choice` discriminant byte passed across the FFI. Kept in
-    /// lockstep with the `VOTE_CHOICE_*` constants in rs-sdk-ffi's
-    /// `cast_vote.rs`.
-    var ffiTag: UInt8 {
+    /// The `vote_choice` value passed across the FFI, typed as the
+    /// cbindgen-generated `ContestedResourceVoteChoiceFFI` rather than a bare
+    /// `UInt8`. `rs-sdk-ffi` emits that `#[repr(u8)]` enum into the C header
+    /// (a u8 typedef) as the single source of truth for the discriminants, so
+    /// binding the bridge to the generated symbol keeps Swift from drifting
+    /// from the Rust values. The FFI function takes a `u8`, which this maps
+    /// to cleanly. The raw values mirror the Rust variants:
+    /// `TowardsIdentity = 0`, `Abstain = 1`, `Lock = 2`.
+    var ffiTag: ContestedResourceVoteChoiceFFI {
         switch self {
-        case .towardsIdentity: return 0
-        case .abstain: return 1
-        case .lock: return 2
+        case .towardsIdentity: return ContestedResourceVoteChoiceFFI(0)
+        case .abstain: return ContestedResourceVoteChoiceFFI(1)
+        case .lock: return ContestedResourceVoteChoiceFFI(2)
         }
     }
 }
