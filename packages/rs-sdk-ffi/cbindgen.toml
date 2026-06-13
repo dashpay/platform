@@ -15,7 +15,7 @@ documentation_style = "c99"
 [defines]
 
 [export]
-include = ["dash_sdk_*", "dash_core_*", "dash_unified_sdk_*"]
+include = ["dash_sdk_*", "dash_core_*", "dash_unified_sdk_*", "ContestedResourceVoteChoiceFFI"]
 # Exclude types that come from key-wallet-ffi to avoid duplication
 exclude = ["FFIAccountType", "FFIAccountTypePreference", "FFIAccountTypeUsed", "FFIAccountCreationOptionType"]
 prefix = ""
