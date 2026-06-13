@@ -50,6 +50,38 @@ pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 pub const DEFAULT_TOKEN_CONFIG_CACHE_SIZE: usize = 100;
 /// How many quorum public keys fit in the cache.
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
+/// Initial protocol version for the default auto-detect mode — i.e. when the
+/// caller does not pin a [`PlatformVersion`] via [`SdkBuilder::with_version`].
+///
+/// Set BELOW the latest version on purpose: ratchet-up autodetection
+/// (`maybe_update_protocol_version`) converges to the network's real version,
+/// so starting low keeps requests compatible with not-yet-upgraded nodes during
+/// an upgrade window. Bump this constant as the network's supported floor advances.
+///
+/// # v3.1+-only query surfaces
+///
+/// At the default floor the local encoder rejects the
+/// v3.1+-only surfaces — `Count` (`SelectProjection::count_star`), `group_by`,
+/// and `having` — with [`Error::Config`] *before* any network round-trip. To use
+/// them either pin a higher version via [`SdkBuilder::with_version`] (which also
+/// disables auto-detect), or issue one floor-compatible ratcheting query (no v3.1+
+/// surfaces) right after `build()` — e.g. the `ExtendedEpochInfo::fetch_current`
+/// current-state fetch below.
+/// Its response metadata lifts the SDK to the network's version, after which `Count` /
+/// `group_by` / `having` encode correctly.
+///
+/// ```no_run
+/// # use dash_sdk::{Sdk, SdkBuilder};
+/// # use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
+/// # use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+/// # async fn warm_up() -> Result<(), dash_sdk::Error> {
+/// let sdk: Sdk = SdkBuilder::new_mock().build()?;
+/// // Ratchets the SDK up to the network's version; Count/group_by/having then encode.
+/// let _ = ExtendedEpochInfo::fetch_current(&sdk).await?;
+/// # Ok(())
+/// # }
+/// ```
+pub const DEFAULT_INITIAL_PROTOCOL_VERSION: u32 = dpp::version::v10::PROTOCOL_VERSION_10;
 /// The default metadata time tolerance for checkpoint queries in milliseconds
 const ADDRESS_STATE_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;
 
@@ -335,7 +367,6 @@ impl Sdk {
         }
     }
 
-    // TODO: Changed to public for tests
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
     ///
     /// This method is used to retrieve objects from proofs returned by Dash Platform.
@@ -348,8 +379,8 @@ impl Sdk {
     /// ## Protocol version bootstrapping
     ///
     /// On a fresh auto-detect SDK (i.e. one built without [`SdkBuilder::with_version()`]), the
-    /// first call to this method uses [`PlatformVersion::latest()`] as a fallback because no
-    /// network response has been received yet to teach the SDK the real network version.
+    /// first call to this method uses [`DEFAULT_INITIAL_PROTOCOL_VERSION`] as a fallback because
+    /// no network response has been received yet to teach the SDK the real network version.
     ///
     /// The actual network version is learned only *after* proof parsing succeeds, when
     /// [`Self::verify_response_metadata()`] processes `metadata.protocol_version`.  If the
@@ -388,6 +419,10 @@ impl Sdk {
             }
         }?;
 
+        // Security invariant: proof+signature verification above (the `?`) must
+        // precede this call, which ratchets the protocol version from the now-trusted
+        // `metadata.protocol_version`. Never reorder — the ratchet must not consume
+        // unverified metadata.
         self.verify_response_metadata(method_name, &metadata)
             .inspect_err(|err| {
                 tracing::warn!(%err,method=method_name,"received response with stale metadata; try another server");
@@ -480,7 +515,7 @@ impl Sdk {
 
     /// Return [Dash Platform version](PlatformVersion) information used by this SDK.
     ///
-    /// When auto-detection is enabled (default), returns [`PlatformVersion::latest()`]
+    /// When auto-detection is enabled (default), returns [`DEFAULT_INITIAL_PROTOCOL_VERSION`]
     /// until the first network response is received, then tracks the network's version.
     /// When pinned via [`SdkBuilder::with_version()`], always returns the pinned version.
     pub fn version<'v>(&self) -> &'v PlatformVersion {
@@ -756,7 +791,8 @@ impl Default for SdkBuilder {
 
             cancel_token: CancellationToken::new(),
 
-            version: PlatformVersion::latest(),
+            version: PlatformVersion::get(DEFAULT_INITIAL_PROTOCOL_VERSION)
+                .expect("DEFAULT_INITIAL_PROTOCOL_VERSION must be a known PlatformVersion"),
             version_explicit: false,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
@@ -876,41 +912,31 @@ impl SdkBuilder {
 
     /// Configure platform version.
     ///
-    /// Select specific version of Dash Platform to use.
+    /// Select specific version of Dash Platform to use. This pins the version and
+    /// disables auto-detection.
     ///
-    /// Defaults to [PlatformVersion::latest()].
+    /// When unset, the SDK starts at [`DEFAULT_INITIAL_PROTOCOL_VERSION`] and
+    /// ratchets upward via auto-detection.
     pub fn with_version(mut self, version: &'static PlatformVersion) -> Self {
         self.version = version;
         self.version_explicit = true;
         self
     }
 
-    /// Set the *initial* protocol version seed for auto-detect mode.
+    /// Test-only seed for the auto-detect atomic — NOT the public way to enable
+    /// auto-detect (auto-detect is the default; [`Self::with_version`] is the opt-out).
     ///
-    /// Unlike [`Self::with_version`], this leaves auto-detect active —
-    /// the SDK starts at `version.protocol_version` and ratchets upward
-    /// (via `fetch_max` in `maybe_update_protocol_version`) once the
-    /// network's actual version is observed in response metadata.
+    /// Auto-detect already starts every unpinned SDK at
+    /// [`DEFAULT_INITIAL_PROTOCOL_VERSION`] and ratchets upward via `fetch_max` in
+    /// `maybe_update_protocol_version` once the network's version is observed. This
+    /// seed exists only to let unit tests start *below* that floor — exercising the
+    /// upward-only ratchet from an older network's version without disabling auto-detect.
     ///
-    /// Use this when an SDK built against `PlatformVersion::latest()`
-    /// must talk to a network running an older protocol version (e.g.
-    /// a v3.0 testnet from a v3.1+ binary). Without an explicit initial
-    /// version, the SDK's `version()` fallback returns `latest()` until
-    /// the first response is parsed, and the upward-only `fetch_max`
-    /// guard can never ratchet *down* to the older network — leaving
-    /// any version-dispatched encoders (e.g. the documents query) to
-    /// ship a too-new wire shape that the network rejects.
-    ///
-    /// Seeds `self.version` and resets `version_explicit` to `false`, so
-    /// auto-detect is (re-)enabled. Builder chains use last-write-wins:
-    /// calling `with_initial_version` after `with_version` restores
-    /// auto-detect rather than silently keeping it disabled.
-    ///
-    /// **Caveat**: this protection only holds for encoders whose
-    /// `drive_abci.query.<name>.default_current_version` is correctly pinned per
-    /// historical PV. New versioned encoders must follow the same per-PV pinning
-    /// pattern as `document_query`.
-    pub fn with_initial_version(mut self, version: &'static PlatformVersion) -> Self {
+    /// Seeds `self.version` and keeps `version_explicit` `false`, so auto-detect stays
+    /// on. Builder chains are last-write-wins: a later `with_initial_version` re-enables
+    /// auto-detect that an earlier `with_version` disabled.
+    #[cfg(test)]
+    pub(crate) fn with_initial_version(mut self, version: &'static PlatformVersion) -> Self {
         self.version = version;
         self.version_explicit = false;
         self
@@ -1658,6 +1684,126 @@ mod test {
             v_new.protocol_version,
             "mock version must follow outer ratchet (CMT-001 regression)"
         );
+    }
+
+    #[test]
+    fn test_default_builder_seeds_initial_protocol_version_floor() {
+        // A default builder must seed the SDK at the floor, not latest().
+        let sdk = SdkBuilder::new_mock()
+            .build()
+            .expect("mock Sdk should be created");
+
+        assert_eq!(
+            sdk.protocol_version_number(),
+            super::DEFAULT_INITIAL_PROTOCOL_VERSION,
+            "unpinned SDK must boot at the upgrade-safe floor, not latest()"
+        );
+        assert_eq!(
+            sdk.version().protocol_version,
+            super::DEFAULT_INITIAL_PROTOCOL_VERSION
+        );
+        assert!(
+            sdk.auto_detect_protocol_version,
+            "default SDK must keep auto-detect enabled"
+        );
+    }
+
+    #[test]
+    fn test_default_floor_ratchets_up_but_never_down() {
+        let sdk = SdkBuilder::new_mock()
+            .build()
+            .expect("mock Sdk should be created");
+        let floor = super::DEFAULT_INITIAL_PROTOCOL_VERSION;
+        assert_eq!(sdk.protocol_version_number(), floor);
+
+        // Ratchet to a fixed known target (PV12), not `floor + N`: stays valid as the
+        // floor advances, and `maybe_update_protocol_version` only accepts known versions.
+        let target = dpp::version::v12::PROTOCOL_VERSION_12;
+        assert!(
+            target > floor,
+            "ratchet test target must exceed the floor; bump it if the floor reaches v12"
+        );
+        sdk.maybe_update_protocol_version(target);
+        assert_eq!(
+            sdk.protocol_version_number(),
+            target,
+            "auto-detect must ratchet upward from the floor"
+        );
+
+        // Never down: an older network version is ignored.
+        sdk.maybe_update_protocol_version(floor - 1);
+        assert_eq!(
+            sdk.protocol_version_number(),
+            target,
+            "ratchet must never downgrade below the highest observed version"
+        );
+    }
+
+    /// Regression guard for the verify-before-ratchet security invariant.
+    ///
+    /// The full tampered-*signed*-proof path isn't unit-testable here: it needs a
+    /// quorum BLS signature, a context provider, and a `FromProof` verifier round-trip.
+    /// That path's safety rests on `parse_proof_with_metadata_and_proof` running proof
+    /// verification (the `?`) BEFORE `verify_response_metadata` → `maybe_update_protocol_version`
+    /// (see the guard comment at that call site). Here we lock in the ratchet's own gates:
+    /// it must NOT raise the stored version off untrustworthy inputs (unknown / zero / lower),
+    /// so even a metadata value that slipped past verification can't move the SDK to a bogus
+    /// protocol version.
+    #[test]
+    fn test_ratchet_rejects_unknown_and_non_upward_versions() {
+        let sdk = SdkBuilder::new_mock()
+            .build()
+            .expect("mock Sdk should be created");
+        let floor = super::DEFAULT_INITIAL_PROTOCOL_VERSION;
+        assert_eq!(sdk.protocol_version_number(), floor);
+
+        // Unknown (above LATEST_VERSION): rejected, version unchanged.
+        sdk.maybe_update_protocol_version(dpp::version::LATEST_VERSION + 1);
+        assert_eq!(
+            sdk.protocol_version_number(),
+            floor,
+            "unknown protocol version must not move the stored version"
+        );
+
+        // Zero (e.g. metadata default / stripped field): ignored.
+        sdk.maybe_update_protocol_version(0);
+        assert_eq!(
+            sdk.protocol_version_number(),
+            floor,
+            "zero protocol version must be ignored"
+        );
+
+        // Equal: no-op (no spurious downgrade or churn).
+        sdk.maybe_update_protocol_version(floor);
+        assert_eq!(sdk.protocol_version_number(), floor);
+
+        // Lower known version: ignored by the upward-only guard.
+        sdk.maybe_update_protocol_version(floor - 1);
+        assert_eq!(
+            sdk.protocol_version_number(),
+            floor,
+            "lower known version must not downgrade the stored version"
+        );
+    }
+
+    #[test]
+    fn test_explicit_pin_overrides_default_floor() {
+        use dpp::version::PlatformVersion;
+
+        // Pin off the floor so the override is observable wherever the floor sits.
+        let pinned_number = super::DEFAULT_INITIAL_PROTOCOL_VERSION - 1;
+        let pinned = PlatformVersion::get(pinned_number).expect("pinned PV exists");
+        let sdk = SdkBuilder::new_mock()
+            .with_version(pinned)
+            .build()
+            .expect("mock Sdk should be created");
+
+        assert_eq!(
+            sdk.protocol_version_number(),
+            pinned_number,
+            "explicit with_version must win over the default floor"
+        );
+        assert!(!sdk.auto_detect_protocol_version);
     }
 
     #[test_matrix([90,91,100,109,110], 100, 10, false; "valid time")]

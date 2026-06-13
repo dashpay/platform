@@ -578,6 +578,14 @@ public class PlatformWalletPersistenceHandler {
             return Data(bytes: dataPtr, count: Int(tx.tx_data_len))
         }()
 
+        // The FFI only carries a real `first_seen` once the tx is in a
+        // block (it surfaces the block timestamp); mempool / instant-send
+        // sightings arrive with 0 and delegate the observation stamp to
+        // this side. Stamp the wall clock for those so a fresh send
+        // doesn't sit at the epoch until it's mined.
+        let firstSeen: UInt64 =
+            tx.first_seen != 0 ? tx.first_seen : UInt64(Date().timeIntervalSince1970)
+
         let record: PersistentTransaction
         if let existing = try? backgroundContext.fetch(descriptor).first {
             record = existing
@@ -590,7 +598,7 @@ public class PlatformWalletPersistenceHandler {
                 direction: tx.direction,
                 transactionType: tx.transaction_type.map { String(cString: $0) } ?? "Standard",
                 netAmount: tx.net_amount,
-                firstSeen: tx.first_seen
+                firstSeen: firstSeen
             )
             backgroundContext.insert(record)
         }
@@ -610,7 +618,14 @@ public class PlatformWalletPersistenceHandler {
         if let labelPtr = tx.label {
             record.label = String(cString: labelPtr)
         }
-        record.firstSeen = tx.first_seen
+        // Once mined, `tx.first_seen` carries the block timestamp —
+        // adopt it. While still unconfirmed it stays 0; keep whatever
+        // stamp the row already has rather than zeroing it, and stamp
+        // rows that never got one (placeholder rows from `upsertUtxo`,
+        // rows persisted before insert-time stamping existed).
+        if tx.first_seen != 0 || record.firstSeen == 0 {
+            record.firstSeen = firstSeen
+        }
         record.transactionData = transactionData
         record.lastUpdated = Date()
 

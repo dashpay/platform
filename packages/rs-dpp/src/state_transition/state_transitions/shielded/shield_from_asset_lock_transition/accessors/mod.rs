@@ -2,67 +2,80 @@ mod v0;
 
 pub use v0::*;
 
+use crate::address_funds::PlatformAddress;
 use crate::shielded::SerializedAction;
-use crate::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
+use crate::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 
-impl ShieldedTransferTransitionAccessorsV0 for ShieldedTransferTransition {
+impl ShieldFromAssetLockTransitionAccessorsV0 for ShieldFromAssetLockTransition {
     fn actions(&self) -> &[SerializedAction] {
         match self {
-            ShieldedTransferTransition::V0(v0) => &v0.actions,
+            ShieldFromAssetLockTransition::V0(v0) => &v0.actions,
         }
     }
 
     fn set_actions(&mut self, actions: Vec<SerializedAction>) {
         match self {
-            ShieldedTransferTransition::V0(v0) => v0.actions = actions,
+            ShieldFromAssetLockTransition::V0(v0) => v0.actions = actions,
         }
     }
 
     fn value_balance(&self) -> u64 {
         match self {
-            ShieldedTransferTransition::V0(v0) => v0.value_balance,
+            ShieldFromAssetLockTransition::V0(v0) => v0.value_balance,
         }
     }
 
     fn set_value_balance(&mut self, value_balance: u64) {
         match self {
-            ShieldedTransferTransition::V0(v0) => v0.value_balance = value_balance,
+            ShieldFromAssetLockTransition::V0(v0) => v0.value_balance = value_balance,
         }
     }
 
     fn anchor(&self) -> [u8; 32] {
         match self {
-            ShieldedTransferTransition::V0(v0) => v0.anchor,
+            ShieldFromAssetLockTransition::V0(v0) => v0.anchor,
         }
     }
 
     fn set_anchor(&mut self, anchor: [u8; 32]) {
         match self {
-            ShieldedTransferTransition::V0(v0) => v0.anchor = anchor,
+            ShieldFromAssetLockTransition::V0(v0) => v0.anchor = anchor,
         }
     }
 
     fn proof(&self) -> &[u8] {
         match self {
-            ShieldedTransferTransition::V0(v0) => &v0.proof,
+            ShieldFromAssetLockTransition::V0(v0) => &v0.proof,
         }
     }
 
     fn set_proof(&mut self, proof: Vec<u8>) {
         match self {
-            ShieldedTransferTransition::V0(v0) => v0.proof = proof,
+            ShieldFromAssetLockTransition::V0(v0) => v0.proof = proof,
         }
     }
 
     fn binding_signature(&self) -> [u8; 64] {
         match self {
-            ShieldedTransferTransition::V0(v0) => v0.binding_signature,
+            ShieldFromAssetLockTransition::V0(v0) => v0.binding_signature,
         }
     }
 
     fn set_binding_signature(&mut self, binding_signature: [u8; 64]) {
         match self {
-            ShieldedTransferTransition::V0(v0) => v0.binding_signature = binding_signature,
+            ShieldFromAssetLockTransition::V0(v0) => v0.binding_signature = binding_signature,
+        }
+    }
+
+    fn surplus_output(&self) -> Option<&PlatformAddress> {
+        match self {
+            ShieldFromAssetLockTransition::V0(v0) => v0.surplus_output.as_ref(),
+        }
+    }
+
+    fn set_surplus_output(&mut self, surplus_output: Option<PlatformAddress>) {
+        match self {
+            ShieldFromAssetLockTransition::V0(v0) => v0.surplus_output = surplus_output,
         }
     }
 }
@@ -70,7 +83,11 @@ impl ShieldedTransferTransitionAccessorsV0 for ShieldedTransferTransition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+    use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+    use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+    use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
+    use dashcore::OutPoint;
+    use platform_value::BinaryData;
 
     fn mk_action(nullifier_byte: u8) -> SerializedAction {
         SerializedAction {
@@ -83,13 +100,19 @@ mod tests {
         }
     }
 
-    fn make_transition() -> ShieldedTransferTransition {
-        ShieldedTransferTransitionV0 {
+    fn make_transition() -> ShieldFromAssetLockTransition {
+        ShieldFromAssetLockTransitionV0 {
+            asset_lock_proof: AssetLockProof::Chain(ChainAssetLockProof {
+                core_chain_locked_height: 100,
+                out_point: OutPoint::from([11u8; 36]),
+            }),
             actions: vec![mk_action(0x11)],
             value_balance: 1_000,
             anchor: [7u8; 32],
             proof: vec![8u8; 10],
             binding_signature: [9u8; 64],
+            surplus_output: None,
+            signature: BinaryData::new(vec![10u8; 65]),
         }
         .into()
     }
@@ -103,6 +126,7 @@ mod tests {
         assert_eq!(t.anchor(), [7u8; 32]);
         assert_eq!(t.proof(), &[8u8; 10]);
         assert_eq!(t.binding_signature(), [9u8; 64]);
+        assert_eq!(t.surplus_output(), None);
 
         t.set_actions(vec![mk_action(0x22)]);
         assert_eq!(t.actions(), &[mk_action(0x22)]);
@@ -118,5 +142,9 @@ mod tests {
 
         t.set_binding_signature([0xBu8; 64]);
         assert_eq!(t.binding_signature(), [0xBu8; 64]);
+
+        let surplus = PlatformAddress::P2pkh([3u8; 20]);
+        t.set_surplus_output(Some(surplus));
+        assert_eq!(t.surplus_output(), Some(&surplus));
     }
 }

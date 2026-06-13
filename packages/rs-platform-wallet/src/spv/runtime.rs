@@ -1,8 +1,9 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
 
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::{QuorumHash, Transaction};
@@ -29,6 +30,7 @@ pub struct SpvRuntime {
     event_manager: Arc<PlatformEventManager>,
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     client: RwLock<Option<SpvClient>>,
+    task: Mutex<Option<JoinHandle<()>>>,
 }
 // TODO: We want it better
 impl SpvRuntime {
@@ -41,6 +43,7 @@ impl SpvRuntime {
             event_manager,
             wallet_manager,
             client: RwLock::new(None),
+            task: Mutex::new(None),
         }
     }
 
@@ -153,27 +156,62 @@ impl SpvRuntime {
         result
     }
 
-    /// Stop SPV sync gracefully.
+    /// Stop SPV sync gracefully. Unlocks the data dir safely
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
-        let mut client = self.client.write().await;
-        if let Some(c) = client.take() {
-            c.stop()
+        let taken = {
+            let mut client = self.client.write().await;
+            client.take()
+        };
+
+        let stop_result = match taken {
+            Some(c) => c
+                .stop()
                 .await
-                .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+                .map_err(|e| PlatformWalletError::SpvError(e.to_string())),
+            None => Ok(()),
+        };
+
+        let handle = self.task.lock().expect("spv task mutex poisoned").take();
+        if let Some(handle) = handle {
+            let abort = handle.abort_handle();
+            if tokio::time::timeout(std::time::Duration::from_secs(15), handle)
+                .await
+                .is_err()
+            {
+                tracing::warn!(
+                    "SPV stop: background run loop did not unwind within 15s; aborting it"
+                );
+
+                abort.abort();
+            }
         }
-        Ok(())
+
+        stop_result
     }
 
     /// Spawn `run()` on the current tokio runtime and return immediately.
     ///
     /// Call [`stop`] to stop it
     pub fn spawn_in_background(self: &Arc<Self>, config: ClientConfig) {
+        {
+            let existing = self.task.lock().expect("spv task mutex poisoned");
+            if existing.is_some() {
+                tracing::warn!(
+                    "spawn_in_background called while a task is already running; ignoring"
+                );
+                return;
+            }
+        }
+
         let this = Arc::clone(self);
-        tokio::spawn(async move {
+
+        let handle = tokio::spawn(async move {
             if let Err(e) = this.run(config).await {
                 tracing::warn!("SpvRuntime background run exited with error: {}", e);
             }
         });
+
+        *self.task.lock().expect("spv task mutex poisoned") = Some(handle);
     }
 
     /// Get the current sync progress.
