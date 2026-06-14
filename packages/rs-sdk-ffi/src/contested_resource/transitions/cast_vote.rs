@@ -58,10 +58,12 @@ use zeroize::Zeroizing;
 /// `0` = TowardsIdentity (requires `contender_identity_id`), `1` = Abstain,
 /// `2` = Lock.
 ///
-/// This `#[repr(u8)]` enum exists so cbindgen emits the discriminant values
-/// into the generated C header (a bare `pub const u8` is not exported),
-/// giving Swift a single source of truth instead of hand-mirroring `0/1/2`.
-/// It is force-emitted via the `[export] include` list in `cbindgen.toml`.
+/// This `#[repr(u8)]` enum is the Rust-internal single source of truth for the
+/// `vote_choice` discriminants used by [`cast_vote_inner`] (its `as u8`
+/// discriminants drive the value validation / comparison). It is intentionally
+/// **not** exported to the generated C header: the FFI parameter is a plain
+/// `u8`, and the Swift side mirrors the discriminants in
+/// `packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ContestVoteState.swift`.
 ///
 /// The `vote_choice` FFI parameter is deliberately a plain `u8`, **not** this
 /// enum: a C/Swift caller can pass any byte, and materializing an

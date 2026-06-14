@@ -63,19 +63,17 @@ public enum ContestedResourceVoteChoice: Sendable, Equatable {
     /// Lock — vote that nobody should win the contested resource.
     case lock
 
-    /// The `vote_choice` value passed across the FFI, typed as the
-    /// cbindgen-generated `ContestedResourceVoteChoiceFFI` rather than a bare
-    /// `UInt8`. `rs-sdk-ffi` emits that `#[repr(u8)]` enum into the C header
-    /// (a u8 typedef) as the single source of truth for the discriminants, so
-    /// binding the bridge to the generated symbol keeps Swift from drifting
-    /// from the Rust values. The FFI function takes a `u8`, which this maps
-    /// to cleanly. The raw values mirror the Rust variants:
+    /// The `vote_choice` discriminant byte passed across the FFI. The
+    /// `dash_sdk_contested_resource_cast_vote` parameter is a plain `u8`, so
+    /// this is a `UInt8`. The values must agree with the
+    /// `ContestedResourceVoteChoiceFFI` enum in
+    /// `packages/rs-sdk-ffi/src/contested_resource/transitions/cast_vote.rs`:
     /// `TowardsIdentity = 0`, `Abstain = 1`, `Lock = 2`.
-    var ffiTag: ContestedResourceVoteChoiceFFI {
+    var ffiTag: UInt8 {
         switch self {
-        case .towardsIdentity: return ContestedResourceVoteChoiceFFI(0)
-        case .abstain: return ContestedResourceVoteChoiceFFI(1)
-        case .lock: return ContestedResourceVoteChoiceFFI(2)
+        case .towardsIdentity: return 0
+        case .abstain: return 1
+        case .lock: return 2
         }
     }
 }
