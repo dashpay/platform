@@ -17,6 +17,10 @@ use std::ffi::CString;
 /// flows (shielded pool shield/unshield/transfer/withdraw) reserve against the
 /// network's actual protocol version instead of the SDK's seed version.
 ///
+/// For an SDK pinned to a fixed protocol version (version updating disabled)
+/// this is a no-op: no network request is made and the pinned version is
+/// returned unchanged.
+///
 /// # Parameters
 /// * `sdk_handle` - Handle to the SDK instance.
 ///

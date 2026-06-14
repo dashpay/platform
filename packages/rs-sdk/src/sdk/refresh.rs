@@ -50,9 +50,18 @@ impl Sdk {
     /// can never sit below the network's known minimum even when the refresh
     /// round-trip fails.
     ///
-    /// All the usual ratchet guards still apply: pinned (non-auto-detect) SDKs are
-    /// left untouched, version `0` and unknown/future versions are ignored, and the
-    /// stored version only ever ratchets upward via `fetch_max`.
+    /// ## Pinned SDKs (version updating disabled)
+    ///
+    /// An SDK pinned via [`SdkBuilder::with_version()`] has explicitly opted out
+    /// of version tracking, so there is nothing to refresh. This method
+    /// short-circuits for a pinned SDK: it issues **no** network request and
+    /// returns the pinned version unchanged. (Construction already raised any
+    /// sub-floor pin up to the per-network floor, so the floor clamp would be a
+    /// no-op anyway.)
+    ///
+    /// For an auto-detect SDK the usual ratchet guards still apply: version `0`
+    /// and unknown/future versions are ignored, and the stored version only ever
+    /// ratchets upward via `fetch_max`.
     ///
     /// ## Returns
     ///
@@ -62,6 +71,15 @@ impl Sdk {
     /// [`SdkBuilder::with_version()`]: super::SdkBuilder::with_version
     /// [`ContextProvider`]: crate::platform::ContextProvider
     pub async fn refresh_protocol_version(&self) -> Result<u32, Error> {
+        // A pinned SDK (built via `SdkBuilder::with_version`) has opted out of
+        // version tracking: `maybe_update_protocol_version` is a no-op for it, so
+        // the proven query below could never change anything. Skip the round-trip
+        // and return the pinned version. (Construction already raised any sub-floor
+        // pin up to the per-network floor, so there is nothing left to clamp.)
+        if !self.auto_detect_protocol_version {
+            return Ok(self.protocol_version_number());
+        }
+
         // A proven query whose response metadata flows through the verified
         // `maybe_update_protocol_version` ratchet (see this method's docs). We only
         // care about the side effect on the protocol version, not the epoch payload.

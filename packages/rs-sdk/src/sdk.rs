@@ -2122,9 +2122,10 @@ mod test {
         assert_eq!(sdk.version().protocol_version, dpp::version::LATEST_VERSION);
     }
 
-    /// A pinned (explicit `with_version`) SDK has auto-detect disabled: even a
-    /// *successful* proven refresh whose metadata reports a newer version must
-    /// leave it untouched.
+    /// A pinned (explicit `with_version`) SDK has opted out of version tracking:
+    /// `refresh_protocol_version` short-circuits to a no-op that returns the
+    /// pinned version without issuing any network request — so it succeeds even
+    /// with no mock expectation registered.
     #[tokio::test]
     async fn test_refresh_leaves_pinned_sdk_unchanged() {
         use dpp::version::PlatformVersion;
@@ -2133,23 +2134,23 @@ mod test {
         // sub-floor pin would be raised to the floor).
         let pinned = PlatformVersion::get(super::min_protocol_version(Network::Mainnet))
             .expect("mainnet floor PV exists");
-        let mut sdk = SdkBuilder::new_mock()
+        let sdk = SdkBuilder::new_mock()
             .with_version(pinned)
             .build()
             .expect("mock Sdk should be created");
         assert_eq!(sdk.protocol_version_number(), pinned.protocol_version);
         assert!(!sdk.auto_detect_protocol_version);
 
-        expect_epoch_refresh(&mut sdk).await;
-
+        // No expectation registered: a pinned refresh must not even attempt the
+        // query, so this returns Ok with the pinned version unchanged.
         let resulting = sdk
             .refresh_protocol_version()
             .await
-            .expect("refresh should succeed");
+            .expect("pinned refresh is a no-op and must not error");
 
         assert_eq!(
             resulting, pinned.protocol_version,
-            "pinned version must not move even after a successful proven refresh"
+            "pinned version must not move"
         );
         assert_eq!(sdk.protocol_version_number(), pinned.protocol_version);
     }
