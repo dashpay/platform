@@ -1521,6 +1521,41 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         return configFile;
       },
       '4.0.0-rc.3': (configFile) => {
+        // Re-sync Drive ABCI and rs-dapi docker images that dashmate
+        // 3.0.x → 4.0.0-rc.2 left at the protocol-11 default tag
+        // (`dashpay/drive:3`, `dashpay/rs-dapi:3`), causing nodes to
+        // crash-loop after protocol 12 activation (#3889).
+        //
+        // Pre-3.0.0 → 3.0.0 already re-synced these images, but nodes
+        // already on 3.0.x skipped the 3.0.0 step (semver.gt filter),
+        // and the 3.0.1 / 3.0.2 / 3.1.0 migrations only touched
+        // Core / Gateway / Tenderdash images.
+        //
+        // The original attempt (#3889) keyed this migration at the
+        // same version it shipped with (4.0.0-rc.2), so
+        // already-stamped 4.0.0-rc.2 configs short-circuit in
+        // migrateConfigFile (fromVersion === toVersion). Re-keying at
+        // the next release ensures the fix fires for both:
+        //   • 3.0.x → 4.0.0-rc.x upgrades (the loop runs every
+        //     migration with key > fromVersion, regardless of
+        //     toVersion), and
+        //   • 4.0.0-rc.2 → 4.0.0-rc.3 once a chore(release) bumps
+        //     packages/dashmate/package.json (the convention; cf.
+        //     #3794 + #3796 for the 3.0.2 Envoy CVE).
+        //
+        // Only rewrite the stale dashmate-shipped tags — same style
+        // as the 3.0.2 Envoy CVE migration. A custom / private /
+        // manually-corrected image (private fork, vendor-patched
+        // build, `:latest`, etc.) is left untouched.
+        const isStaleDriveImage = (image) => (
+          typeof image === 'string'
+          && /^dashpay\/drive:3(?:-(?:dev|rc))?$/.test(image)
+        );
+        const isStaleRsDapiImage = (image) => (
+          typeof image === 'string'
+          && /^dashpay\/rs-dapi:3(?:-(?:dev|rc))?$/.test(image)
+        );
+
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
@@ -1545,27 +1580,18 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.platform.gateway.rateLimiter.responseHeaders = base.get('platform.gateway.rateLimiter.responseHeaders');
             }
 
-            // Re-sync Drive ABCI and rs-dapi docker images to the current
-            // dashmate default. Pre-3.0.0 → 3.0.0 already did this in the
-            // 3.0.0 migration, but nodes that were already on 3.0.x skip
-            // that step (semver.gt filter), and the 3.0.1 / 3.0.2 / 3.1.0
-            // migrations only touched Core / Gateway / Tenderdash images.
-            // Without this, a 3.0.x → 4.0.0-rc.x update keeps the old
-            // protocol-11 images (dashpay/drive:3, dashpay/rs-dapi:3) and
-            // the node crash-loops after protocol 12 activation (#3889).
-            // Only replace stale dashpay/drive:3* / dashpay/rs-dapi:3* tags;
-            // any custom image (private fork, vendor build, pinned digest) is
-            // left untouched.
-            if (options.platform?.drive?.abci?.docker
-              && /^dashpay\/drive:3/.test(options.platform.drive.abci.docker.image)
+            const driveDocker = options.platform?.drive?.abci?.docker;
+            if (driveDocker
+              && isStaleDriveImage(driveDocker.image)
               && defaultConfig.has('platform.drive.abci.docker.image')) {
-              options.platform.drive.abci.docker.image = defaultConfig.get('platform.drive.abci.docker.image');
+              driveDocker.image = defaultConfig.get('platform.drive.abci.docker.image');
             }
 
-            if (options.platform?.dapi?.rsDapi?.docker
-              && /^dashpay\/rs-dapi:3/.test(options.platform.dapi.rsDapi.docker.image)
+            const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
+            if (rsDapiDocker
+              && isStaleRsDapiImage(rsDapiDocker.image)
               && defaultConfig.has('platform.dapi.rsDapi.docker.image')) {
-              options.platform.dapi.rsDapi.docker.image = defaultConfig.get('platform.dapi.rsDapi.docker.image');
+              rsDapiDocker.image = defaultConfig.get('platform.dapi.rsDapi.docker.image');
             }
           });
 
