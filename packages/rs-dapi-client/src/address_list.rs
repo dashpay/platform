@@ -1,5 +1,6 @@
 //! Subsystem to manage DAPI nodes.
 
+use crate::address_ban_info::AddressBanInfo;
 use crate::Uri;
 use chrono::Utc;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
@@ -113,30 +114,6 @@ impl AddressStatus {
         self.banned_until = None;
         self.ban_reason = None;
     }
-}
-
-/// An owned, cloned snapshot of a single address' ban state, returned
-/// from [`AddressList::ban_info`].
-///
-/// This is a plain-data mirror of [`AddressStatus`] (plus the address
-/// URI) so it can be handed across crate / FFI boundaries without
-/// holding the [`AddressList`] lock.
-#[derive(Debug, Clone)]
-pub struct AddressBanInfo {
-    /// The address URI as a string.
-    pub uri: String,
-    /// Whether the address is *currently effectively* banned, i.e. it
-    /// has been banned at least once and the ban period has not yet
-    /// expired. Consistent with the filtering used by
-    /// [`AddressList::get_live_address`].
-    pub banned: bool,
-    /// Total number of times the address has been banned (drives the
-    /// exponential backoff).
-    pub ban_count: usize,
-    /// The timestamp until which the address remains banned, if any.
-    pub banned_until: Option<chrono::DateTime<Utc>>,
-    /// Human-readable reason for the most recent ban, if recorded.
-    pub reason: Option<String>,
 }
 
 /// [AddressList] errors
@@ -283,7 +260,7 @@ impl AddressList {
     /// Get all not banned addresses.
     ///
     /// Returns a vector of addresses that are not currently banned or whose ban period has expired.
-    /// The returned addresses use the same filtering logic as [get_live_address], checking if the
+    /// The returned addresses use the same filtering logic as [`Self::get_live_address`], checking if the
     /// ban period has expired based on the current time.
     ///
     /// # Examples
