@@ -1522,7 +1522,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       },
       '4.0.0-rc.3': (configFile) => {
         Object.entries(configFile.configs)
-          .forEach(([, options]) => {
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+
             // Bump the default Tenderdash image to the 1.6.0 line. Pulled DRY from
             // the base config so it tracks whatever the base config pins.
             // Keyed at the next release (4.0.0-rc.3), not the already-released
@@ -1541,6 +1543,31 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.platform?.gateway?.rateLimiter
               && typeof options.platform.gateway.rateLimiter.responseHeaders === 'undefined') {
               options.platform.gateway.rateLimiter.responseHeaders = base.get('platform.gateway.rateLimiter.responseHeaders');
+            }
+
+            // Re-sync Drive ABCI and rs-dapi docker images to the current
+            // dashmate default. Pre-3.0.0 → 3.0.0 already did this in the
+            // 3.0.0 migration, but nodes that were already on 3.0.x skip
+            // that step (semver.gt filter), and the 3.0.1 / 3.0.2 / 3.1.0
+            // migrations only touched Core / Gateway / Tenderdash images.
+            // Without this, a 3.0.x → 4.0.0-rc.x update keeps the old
+            // protocol-11 images (dashpay/drive:3, dashpay/rs-dapi:3) and
+            // the node crash-loops after protocol 12 activation (#3889).
+            // Only replace stale dashpay/drive:3* / dashpay/rs-dapi:3* tags;
+            // any custom image (private fork, vendor build, pinned digest) is
+            // left untouched.
+            if (options.platform?.drive?.abci?.docker
+              && /^dashpay\/drive:3/.test(options.platform.drive.abci.docker.image)
+              && defaultConfig.has('platform.drive.abci.docker.image')) {
+              options.platform.drive.abci.docker.image = defaultConfig
+                .get('platform.drive.abci.docker.image');
+            }
+
+            if (options.platform?.dapi?.rsDapi?.docker
+              && /^dashpay\/rs-dapi:3/.test(options.platform.dapi.rsDapi.docker.image)
+              && defaultConfig.has('platform.dapi.rsDapi.docker.image')) {
+              options.platform.dapi.rsDapi.docker.image = defaultConfig
+                .get('platform.dapi.rsDapi.docker.image');
             }
           });
 
