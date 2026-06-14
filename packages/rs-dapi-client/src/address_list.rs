@@ -1,5 +1,6 @@
 //! Subsystem to manage DAPI nodes.
 
+use crate::address_ban_info::AddressBanInfo;
 use crate::Uri;
 use chrono::Utc;
 use rand::{rngs::SmallRng, seq::IteratorRandom, SeedableRng};
@@ -73,16 +74,33 @@ impl Address {
 pub struct AddressStatus {
     ban_count: usize,
     banned_until: Option<chrono::DateTime<Utc>>,
+    /// Human-readable reason for the most recent ban, if any. Cleared
+    /// on [`AddressStatus::unban`]. Sourced from the error that caused
+    /// the ban (see `update_address_ban_status`).
+    ban_reason: Option<String>,
 }
 
 impl AddressStatus {
     /// Ban the [Address] so it won't be available through [AddressList::get_live_address] for some time.
+    ///
+    /// Back-compat shim for [`AddressStatus::ban_with_reason`] with no reason.
     pub fn ban(&mut self, base_ban_period: &Duration) {
+        self.ban_with_reason(base_ban_period, None);
+    }
+
+    /// Ban the [Address] and record the `reason` for the ban.
+    ///
+    /// Applies the same exponential backoff as [`AddressStatus::ban`];
+    /// the only difference is that `ban_reason` is stored so callers
+    /// (diagnostics, the iOS explorer) can surface why a node was
+    /// banned.
+    pub fn ban_with_reason(&mut self, base_ban_period: &Duration, reason: Option<String>) {
         let coefficient = (self.ban_count as f64).exp();
         let ban_period = Duration::from_secs_f64(base_ban_period.as_secs_f64() * coefficient);
 
         self.banned_until = Some(chrono::Utc::now() + ban_period);
         self.ban_count += 1;
+        self.ban_reason = reason;
     }
 
     /// Check if [Address] is banned.
@@ -94,6 +112,7 @@ impl AddressStatus {
     pub fn unban(&mut self) {
         self.ban_count = 0;
         self.banned_until = None;
+        self.ban_reason = None;
     }
 }
 
@@ -143,14 +162,22 @@ impl AddressList {
 
     /// Bans address
     /// Returns false if the address is not in the list.
+    ///
+    /// Back-compat shim for [`AddressList::ban_with_reason`] with no reason.
     pub fn ban(&self, address: &Address) -> bool {
+        self.ban_with_reason(address, None)
+    }
+
+    /// Bans address, recording the `reason` for the ban.
+    /// Returns false if the address is not in the list.
+    pub fn ban_with_reason(&self, address: &Address, reason: Option<String>) -> bool {
         let mut guard = self.addresses.write().unwrap();
 
         let Some(status) = guard.get_mut(address) else {
             return false;
         };
 
-        status.ban(&self.base_ban_period);
+        status.ban_with_reason(&self.base_ban_period, reason);
 
         true
     }
@@ -233,7 +260,7 @@ impl AddressList {
     /// Get all not banned addresses.
     ///
     /// Returns a vector of addresses that are not currently banned or whose ban period has expired.
-    /// The returned addresses use the same filtering logic as [get_live_address], checking if the
+    /// The returned addresses use the same filtering logic as [`Self::get_live_address`], checking if the
     /// ban period has expired based on the current time.
     ///
     /// # Examples
@@ -263,6 +290,38 @@ impl AddressList {
                     .unwrap_or(true)
             })
             .map(|(addr, _)| addr.clone())
+            .collect()
+    }
+
+    /// Get an owned snapshot of every address' ban state.
+    ///
+    /// Clones the current state into an owned `Vec<AddressBanInfo>` so
+    /// it can be inspected without holding the internal lock. The
+    /// `banned` flag reflects the *currently effectively banned*
+    /// semantics used by [`AddressList::get_live_address`]: the address
+    /// has been banned at least once (`ban_count > 0`) and its ban
+    /// period has not yet expired (`banned_until` is in the future).
+    pub fn ban_info(&self) -> Vec<AddressBanInfo> {
+        let guard = self.addresses.read().unwrap();
+
+        let now = chrono::Utc::now();
+
+        guard
+            .iter()
+            .map(|(addr, status)| {
+                let banned = status.ban_count > 0
+                    && status
+                        .banned_until
+                        .map(|banned_until| banned_until >= now)
+                        .unwrap_or(false);
+                AddressBanInfo {
+                    uri: addr.to_string(),
+                    banned,
+                    ban_count: status.ban_count,
+                    banned_until: status.banned_until,
+                    reason: status.ban_reason.clone(),
+                }
+            })
             .collect()
     }
 
@@ -591,5 +650,109 @@ mod tests {
     fn test_address_list_default() {
         let list = AddressList::default();
         assert!(list.is_empty());
+    }
+
+    #[test]
+    fn test_address_status_ban_with_reason_stores_reason() {
+        let mut status = AddressStatus::default();
+        assert!(status.ban_reason.is_none());
+
+        status.ban_with_reason(
+            &Duration::from_secs(60),
+            Some("transport error".to_string()),
+        );
+        assert_eq!(status.ban_reason.as_deref(), Some("transport error"));
+        assert!(status.is_banned());
+    }
+
+    #[test]
+    fn test_address_status_ban_without_reason_is_none() {
+        let mut status = AddressStatus::default();
+        status.ban(&Duration::from_secs(60));
+        assert!(status.ban_reason.is_none());
+        assert!(status.is_banned());
+    }
+
+    #[test]
+    fn test_address_status_unban_clears_reason() {
+        let mut status = AddressStatus::default();
+        status.ban_with_reason(&Duration::from_secs(60), Some("boom".to_string()));
+        assert_eq!(status.ban_reason.as_deref(), Some("boom"));
+
+        status.unban();
+        assert!(status.ban_reason.is_none());
+        assert!(!status.is_banned());
+    }
+
+    #[test]
+    fn test_address_list_ban_with_reason_records_reason() {
+        let mut list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        list.add(addr.clone());
+
+        assert!(list.ban_with_reason(&addr, Some("node down".to_string())));
+
+        let info = list.ban_info();
+        assert_eq!(info.len(), 1);
+        let entry = &info[0];
+        assert_eq!(entry.reason.as_deref(), Some("node down"));
+        assert!(entry.banned);
+        assert_eq!(entry.ban_count, 1);
+        assert!(entry.banned_until.is_some());
+    }
+
+    #[test]
+    fn test_address_list_ban_without_reason_records_none() {
+        let mut list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        list.add(addr.clone());
+
+        assert!(list.ban(&addr));
+
+        let info = list.ban_info();
+        assert_eq!(info.len(), 1);
+        assert!(info[0].reason.is_none());
+        assert!(info[0].banned);
+    }
+
+    #[test]
+    fn test_address_list_unban_clears_reason_in_ban_info() {
+        let mut list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        list.add(addr.clone());
+
+        list.ban_with_reason(&addr, Some("oops".to_string()));
+        assert!(list.unban(&addr));
+
+        let info = list.ban_info();
+        assert_eq!(info.len(), 1);
+        let entry = &info[0];
+        assert!(entry.reason.is_none());
+        assert!(!entry.banned);
+        assert_eq!(entry.ban_count, 0);
+        assert!(entry.banned_until.is_none());
+    }
+
+    #[test]
+    fn test_ban_info_reflects_unbanned_address() {
+        let mut list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        list.add(addr.clone());
+
+        // Never banned: banned == false, no reason, ban_count == 0.
+        let info = list.ban_info();
+        assert_eq!(info.len(), 1);
+        let entry = &info[0];
+        assert!(!entry.banned);
+        assert_eq!(entry.ban_count, 0);
+        assert!(entry.banned_until.is_none());
+        assert!(entry.reason.is_none());
+        assert!(entry.uri.contains("127.0.0.1"));
+    }
+
+    #[test]
+    fn test_ban_info_empty_list() {
+        let list = AddressList::new();
+        assert!(list.ban_info().is_empty());
     }
 }

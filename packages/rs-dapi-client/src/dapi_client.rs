@@ -187,7 +187,7 @@ pub fn update_address_ban_status<R, E>(
             if error.can_retry() {
                 if let Some(address) = error.address.as_ref() {
                     if applied_settings.ban_failed_address {
-                        if address_list.ban(address) {
+                        if address_list.ban_with_reason(address, Some(error.to_string())) {
                             tracing::warn!(
                                 ?address,
                                 ?error,
@@ -352,6 +352,16 @@ mod tests {
 
         update_address_ban_status(&address_list, &result, &make_applied_settings(true));
         assert!(address_list.is_banned(&addr));
+
+        // The ban reason must be propagated from the error via this call path,
+        // not just the ban itself.
+        let info = address_list.ban_info();
+        assert_eq!(info.len(), 1);
+        let reason = info[0].reason.as_deref().expect("ban reason recorded");
+        assert!(
+            reason.contains("temporary"),
+            "ban reason should carry the underlying error, got: {reason}"
+        );
     }
 
     #[test]
