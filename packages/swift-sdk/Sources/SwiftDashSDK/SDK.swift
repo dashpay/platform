@@ -511,13 +511,16 @@ public final class SDK: @unchecked Sendable {
 
   /// Refresh this SDK's protocol version from the connected network.
   ///
-  /// Issues an unproved `getStatus` on the Rust side and ratchets the SDK's
-  /// auto-detected protocol version up to the network's current version. The
+  /// Issues a proven `getEpochsInfo` query on the Rust side and ratchets the
+  /// SDK's auto-detected protocol version up to the network's version through
+  /// the proof + quorum-signature-verified path (no unverified fallback). The
   /// new version is shared across every clone of the underlying `Sdk`
   /// (including the clone held by a `PlatformWalletManager`), so fee-sensitive
   /// flows pick it up automatically.
   ///
-  /// Call on app start and after every network switch. Bridges
+  /// Call on app start and after every network switch. For an SDK pinned to a
+  /// fixed protocol version (version updating disabled) this is a no-op: no
+  /// network request is made and the pinned version is returned. Bridges
   /// `dash_sdk_refresh_protocol_version`.
   ///
   /// - Returns: the SDK's protocol version number after the (possible) ratchet.
