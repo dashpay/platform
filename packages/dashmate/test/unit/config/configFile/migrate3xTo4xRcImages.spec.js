@@ -11,15 +11,22 @@ import migrateConfigFileFactory from '../../../../src/config/configFile/migrateC
 //
 // A node already on 3.0.1 skips the 3.0.0 migration (semver.gt filter)
 // that used to re-sync Drive ABCI and rs-dapi images. The intervening
-// 3.0.2 / 3.1.0 migrations only touched Gateway / Tenderdash, so a
-// `dashmate update 3.0.x → 4.0.0-rc.x` kept the old protocol-11
-// images and the node crash-looped after protocol 12 activation.
+// 3.0.1 / 3.0.2 / 3.1.0 migrations only touched Core / Gateway / Tenderdash
+// `.docker.image` fields (3.1.0 does add `buildArgs` on the drive/rsDapi
+// `docker.build` blocks, but never their image tags). The result: a
+// `dashmate update 3.0.x → 4.0.0-rc.x` kept the protocol-11 images and
+// the node crash-looped after protocol 12 activation.
 //
 // The new `4.0.0-rc.2` migration must re-sync those two image fields
 // from the current default config.
 describe('migration 4.0.0-rc.2: re-sync Drive ABCI & rs-dapi images (#3889)', () => {
+  const STALE_DRIVE = 'dashpay/drive:3';
+  const STALE_RS_DAPI = 'dashpay/rs-dapi:3';
+
   let migrate;
   let defaults;
+  let expectedDriveImage;
+  let expectedRsDapiImage;
 
   beforeEach(() => {
     // Construct the migration directly (no DI). The full DI container
@@ -38,13 +45,16 @@ describe('migration 4.0.0-rc.2: re-sync Drive ABCI & rs-dapi images (#3889)', ()
     ]);
     const getMigrations = getConfigFileMigrationsFactory(homeDirStub, defaults);
     migrate = migrateConfigFileFactory(getMigrations);
+
+    expectedDriveImage = defaults.get('base').get('platform.drive.abci.docker.image');
+    expectedRsDapiImage = defaults.get('base').get('platform.dapi.rsDapi.docker.image');
   });
 
   // Minimal post-3.0.x config shape carrying the stale protocol-11
   // image tags that dashmate 3.0.x shipped. Earlier migrations expect
-  // a much richer object, so we set fromVersion >= 3.1.0 to make the
+  // a much richer object, so we set fromVersion >= 3.0.1 to make the
   // semver.gt filter run only the new step.
-  function buildStaleConfig({ network, group, customImages = {} }) {
+  function buildStaleConfig({ network, group }) {
     return {
       group,
       network,
@@ -52,71 +62,55 @@ describe('migration 4.0.0-rc.2: re-sync Drive ABCI & rs-dapi images (#3889)', ()
         enable: true,
         drive: {
           abci: {
-            docker: {
-              image: customImages.drive ?? 'dashpay/drive:3',
-            },
+            docker: { image: STALE_DRIVE },
+          },
+          tenderdash: {
+            docker: { image: 'dashpay/tenderdash:1.5' },
           },
         },
         dapi: {
           rsDapi: {
-            docker: {
-              image: customImages.rsDapi ?? 'dashpay/rs-dapi:3',
-            },
+            docker: { image: STALE_RS_DAPI },
           },
         },
       },
     };
   }
 
-  it('re-syncs drive.abci and dapi.rsDapi images to current defaults', () => {
-    const rawConfigFile = {
-      configFormatVersion: '3.1.0',
-      defaultConfigName: null,
-      defaultGroupName: null,
-      configs: {
-        testnet: buildStaleConfig({ network: 'testnet', group: 'testnet' }),
-        mainnet: buildStaleConfig({ network: 'mainnet', group: 'mainnet' }),
-      },
-    };
+  // Both fromVersion variants are real-world entry points: a node could
+  // be on 3.0.1 (the version that originally skipped the 3.0.0 image
+  // re-sync — the direct #3889 repro) or on 3.1.0 (skipping it for the
+  // same reason). Either way the new migration must converge them.
+  ['3.0.1', '3.1.0'].forEach((fromVersion) => {
+    it(`re-syncs drive.abci and dapi.rsDapi images on ${fromVersion} → 4.0.0-rc.2`, () => {
+      const rawConfigFile = {
+        configFormatVersion: fromVersion,
+        defaultConfigName: null,
+        defaultGroupName: null,
+        configs: {
+          testnet: buildStaleConfig({ network: 'testnet', group: 'testnet' }),
+          mainnet: buildStaleConfig({ network: 'mainnet', group: 'mainnet' }),
+        },
+      };
 
-    const expectedDriveImage = defaults.get('base').get('platform.drive.abci.docker.image');
-    const expectedRsDapiImage = defaults.get('base').get('platform.dapi.rsDapi.docker.image');
+      const migrated = migrate(rawConfigFile, fromVersion, '4.0.0-rc.2');
 
-    const migrated = migrate(rawConfigFile, '3.1.0', '4.0.0-rc.2');
+      ['testnet', 'mainnet'].forEach((name) => {
+        const { docker: driveDocker } = migrated.configs[name].platform.drive.abci;
+        const { docker: rsDapiDocker } = migrated.configs[name].platform.dapi.rsDapi;
 
-    expect(migrated.configs.testnet.platform.drive.abci.docker.image)
-      .to.equal(expectedDriveImage);
-    expect(migrated.configs.testnet.platform.dapi.rsDapi.docker.image)
-      .to.equal(expectedRsDapiImage);
-    expect(migrated.configs.mainnet.platform.drive.abci.docker.image)
-      .to.equal(expectedDriveImage);
-    expect(migrated.configs.mainnet.platform.dapi.rsDapi.docker.image)
-      .to.equal(expectedRsDapiImage);
-    expect(migrated.configFormatVersion).to.equal('4.0.0-rc.2');
-  });
+        expect(driveDocker.image).to.equal(expectedDriveImage);
+        expect(rsDapiDocker.image).to.equal(expectedRsDapiImage);
 
-  it('runs for 3.0.1 fromVersion (the version skipped by the 3.0.0 migration)', () => {
-    // Direct repro of #3889: nodes that were already on 3.0.1 must
-    // still get the image re-sync, even though 3.0.0 itself is gated
-    // out by `semver.gt('3.0.0', '3.0.1') === false`.
-    const rawConfigFile = {
-      configFormatVersion: '3.0.1',
-      defaultConfigName: null,
-      defaultGroupName: null,
-      configs: {
-        testnet: buildStaleConfig({ network: 'testnet', group: 'testnet' }),
-      },
-    };
+        // Pin against the specific regression so the test stays
+        // meaningful even if a future default happens to match
+        // the stale value again.
+        expect(driveDocker.image).to.not.equal(STALE_DRIVE);
+        expect(rsDapiDocker.image).to.not.equal(STALE_RS_DAPI);
+      });
 
-    const expectedDriveImage = defaults.get('base').get('platform.drive.abci.docker.image');
-    const expectedRsDapiImage = defaults.get('base').get('platform.dapi.rsDapi.docker.image');
-
-    const migrated = migrate(rawConfigFile, '3.0.1', '4.0.0-rc.2');
-
-    expect(migrated.configs.testnet.platform.drive.abci.docker.image)
-      .to.equal(expectedDriveImage);
-    expect(migrated.configs.testnet.platform.dapi.rsDapi.docker.image)
-      .to.equal(expectedRsDapiImage);
+      expect(migrated.configFormatVersion).to.equal('4.0.0-rc.2');
+    });
   });
 
   it('no-ops on configs without platform.dapi.rsDapi', () => {
@@ -132,7 +126,10 @@ describe('migration 4.0.0-rc.2: re-sync Drive ABCI & rs-dapi images (#3889)', ()
             enable: true,
             drive: {
               abci: {
-                docker: { image: 'dashpay/drive:3' },
+                docker: { image: STALE_DRIVE },
+              },
+              tenderdash: {
+                docker: { image: 'dashpay/tenderdash:1.5' },
               },
             },
             dapi: {},
@@ -140,8 +137,6 @@ describe('migration 4.0.0-rc.2: re-sync Drive ABCI & rs-dapi images (#3889)', ()
         },
       },
     };
-
-    const expectedDriveImage = defaults.get('base').get('platform.drive.abci.docker.image');
 
     const migrated = migrate(rawConfigFile, '3.1.0', '4.0.0-rc.2');
 

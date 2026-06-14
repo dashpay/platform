@@ -1559,15 +1559,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.platform?.drive?.abci?.docker
               && /^dashpay\/drive:3/.test(options.platform.drive.abci.docker.image)
               && defaultConfig.has('platform.drive.abci.docker.image')) {
-              options.platform.drive.abci.docker.image = defaultConfig
-                .get('platform.drive.abci.docker.image');
+              options.platform.drive.abci.docker.image = defaultConfig.get('platform.drive.abci.docker.image');
             }
 
             if (options.platform?.dapi?.rsDapi?.docker
               && /^dashpay\/rs-dapi:3/.test(options.platform.dapi.rsDapi.docker.image)
               && defaultConfig.has('platform.dapi.rsDapi.docker.image')) {
-              options.platform.dapi.rsDapi.docker.image = defaultConfig
-                .get('platform.dapi.rsDapi.docker.image');
+              options.platform.dapi.rsDapi.docker.image = defaultConfig.get('platform.dapi.rsDapi.docker.image');
             }
           });
 
