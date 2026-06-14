@@ -2012,10 +2012,11 @@ mod test {
         assert!(sdk.auto_detect_protocol_version);
     }
 
-    /// A testnet refresh that reports a version below the floor leaves the SDK at
-    /// the floor (12), never below it.
+    /// A testnet SDK boots at the floor (12). When a refresh's proven query is
+    /// unavailable, refresh stays at the floor — never below it, and never
+    /// trusting an unverified value.
     #[tokio::test]
-    async fn test_testnet_refresh_below_floor_stays_at_floor() {
+    async fn test_testnet_refresh_keeps_floor_when_query_unavailable() {
         let floor = super::min_protocol_version(Network::Testnet);
         let sdk = SdkBuilder::new_mock()
             .with_network(Network::Testnet)
@@ -2023,22 +2024,15 @@ mod test {
             .expect("mock Sdk should be created");
         assert_eq!(sdk.protocol_version_number(), floor);
 
-        // Network reports a known version below the floor (e.g. 11).
-        let below = dpp::version::v11::PROTOCOL_VERSION_11;
-        assert!(
-            below < floor,
-            "test requires a reported version below the floor"
-        );
-        expect_get_status(&sdk, status_response_with_drive_current(below)).await;
-
+        // No mock expectation registered -> the proven fetch errors (non-fatal).
         let resulting = sdk
             .refresh_protocol_version()
             .await
-            .expect("refresh should succeed");
+            .expect("refresh is best-effort and must not error when the query fails");
 
         assert_eq!(
             resulting, floor,
-            "a testnet refresh reporting below the floor must leave the SDK at the floor"
+            "a failed testnet refresh must leave the SDK at the floor"
         );
         assert_eq!(sdk.protocol_version_number(), floor);
     }
@@ -2067,164 +2061,86 @@ mod test {
     // refresh_protocol_version
     // -----------------------------------------------------------------
 
-    /// Build a `GetStatusResponse` whose Drive protocol `current` equals
-    /// `drive_current`, leaving the rest of the version tree populated the
-    /// minimal amount needed to walk to that field.
-    fn status_response_with_drive_current(
-        drive_current: u32,
-    ) -> dapi_grpc::platform::v0::GetStatusResponse {
-        use dapi_grpc::platform::v0::get_status_response::{
-            get_status_response_v0::{version::protocol, version::Protocol, Version as VersionV0},
-            GetStatusResponseV0, Version,
-        };
-        use dapi_grpc::platform::v0::GetStatusResponse;
+    /// Register a proven `ExtendedEpochInfo::fetch_current` expectation on the
+    /// mock SDK. The mock injects `LATEST_VERSION` into the proven response's
+    /// metadata, so consuming this expectation drives `refresh_protocol_version`
+    /// through the same verified `maybe_update_protocol_version` ratchet a real
+    /// quorum-signed response would — the exact path production relies on.
+    async fn expect_epoch_refresh(sdk: &mut super::Sdk) {
+        use crate::platform::types::epoch::EpochQuery;
+        use crate::platform::LimitQuery;
+        use dpp::block::extended_epoch_info::{v0::ExtendedEpochInfoV0, ExtendedEpochInfo};
 
-        let drive = protocol::Drive {
-            latest: drive_current,
-            current: drive_current,
-            next_epoch: drive_current,
+        // Must match the query `ExtendedEpochInfo::fetch_current` issues.
+        let query = LimitQuery {
+            query: EpochQuery {
+                start: None,
+                ascending: false,
+            },
+            limit: Some(1),
+            start_info: None,
         };
-        let protocol = Protocol {
-            tenderdash: None,
-            drive: Some(drive),
-        };
-        let version = VersionV0 {
-            software: None,
-            protocol: Some(protocol),
-        };
-        let v0 = GetStatusResponseV0 {
-            version: Some(version),
-            node: None,
-            chain: None,
-            network: None,
-            state_sync: None,
-            time: None,
-        };
-        GetStatusResponse {
-            version: Some(Version::V0(v0)),
-        }
+
+        let epoch = ExtendedEpochInfo::from(ExtendedEpochInfoV0 {
+            index: 0,
+            first_block_time: 0,
+            first_block_height: 0,
+            first_core_block_height: 0,
+            fee_multiplier_permille: 0,
+            protocol_version: dpp::version::LATEST_VERSION,
+        });
+
+        sdk.mock()
+            .expect_fetch::<ExtendedEpochInfo, _>(query, Some(epoch))
+            .await
+            .expect("register epoch refresh expectation");
     }
 
-    /// Build a `GetStatusResponse` with no version block at all (a node that
-    /// did not report its protocol version).
-    fn status_response_without_version() -> dapi_grpc::platform::v0::GetStatusResponse {
-        dapi_grpc::platform::v0::GetStatusResponse { version: None }
-    }
-
-    /// Register a `GetStatusRequest -> response` expectation on the mock SDK's
-    /// inner DAPI client so `refresh_protocol_version` can execute it.
-    async fn expect_get_status(
-        sdk: &super::Sdk,
-        response: dapi_grpc::platform::v0::GetStatusResponse,
-    ) {
-        use dapi_grpc::platform::v0::{get_status_request, GetStatusRequest};
-        use rs_dapi_client::ExecutionResponse;
-
-        let request = GetStatusRequest {
-            version: Some(get_status_request::Version::V0(
-                get_status_request::GetStatusRequestV0 {},
-            )),
-        };
-
-        match sdk.inner {
-            super::SdkInstance::Mock { ref dapi, .. } => {
-                let mut guard = dapi.lock().await;
-                guard
-                    .expect(
-                        &request,
-                        &Ok(ExecutionResponse {
-                            inner: response,
-                            retries: 0,
-                            address: "http://127.0.0.1".parse().expect("valid address"),
-                        }),
-                    )
-                    .expect("expectation registered");
-            }
-            _ => panic!("expected a mock SDK"),
-        }
-    }
-
-    #[test]
-    fn test_extract_network_protocol_version_present() {
-        let response = status_response_with_drive_current(12);
-        assert_eq!(
-            super::refresh::extract_network_protocol_version(&response),
-            Some(12)
-        );
-    }
-
-    #[test]
-    fn test_extract_network_protocol_version_missing_version_block() {
-        let response = status_response_without_version();
-        assert_eq!(
-            super::refresh::extract_network_protocol_version(&response),
-            None
-        );
-    }
-
-    /// Seeded at 10, network reports 12 -> SDK ratchets to 12.
-    /// Mirrors the testnet shielded-fee under-reservation regression.
+    /// Seeded below `LATEST_VERSION`, a proven refresh ratchets the SDK up to the
+    /// network's version through the *verified* metadata path (the mock injects
+    /// `LATEST_VERSION` into the proven response's metadata, exactly as a real
+    /// quorum-signed response would). Mirrors the testnet shielded-fee
+    /// under-reservation regression.
     #[tokio::test]
-    async fn test_refresh_ratchets_up_to_network_version() {
-        let sdk = mock_sdk_with_auto_detect(10);
+    async fn test_refresh_ratchets_up_via_proven_query() {
+        let mut sdk = mock_sdk_with_auto_detect(10);
         assert_eq!(sdk.protocol_version_number(), 10);
 
-        expect_get_status(&sdk, status_response_with_drive_current(12)).await;
+        expect_epoch_refresh(&mut sdk).await;
 
         let resulting = sdk
             .refresh_protocol_version()
             .await
             .expect("refresh should succeed");
 
-        assert_eq!(resulting, 12, "returned version must reflect the ratchet");
-        assert_eq!(sdk.protocol_version_number(), 12);
-        assert_eq!(sdk.version().protocol_version, 12);
+        assert_eq!(
+            resulting,
+            dpp::version::LATEST_VERSION,
+            "returned version must reflect the ratchet to the network's latest"
+        );
+        assert_eq!(sdk.protocol_version_number(), dpp::version::LATEST_VERSION);
+        assert_eq!(sdk.version().protocol_version, dpp::version::LATEST_VERSION);
     }
 
-    /// An unknown (future) version is ignored by the `maybe_update`
-    /// guard, leaving the SDK on its current version.
-    #[tokio::test]
-    async fn test_refresh_ignores_unknown_version() {
-        use dpp::version::PlatformVersion;
-
-        let sdk = mock_sdk_with_auto_detect(PlatformVersion::latest().protocol_version);
-        let original = sdk.protocol_version_number();
-
-        expect_get_status(&sdk, status_response_with_drive_current(9999)).await;
-
-        let resulting = sdk
-            .refresh_protocol_version()
-            .await
-            .expect("refresh should succeed");
-
-        assert_eq!(resulting, original, "unknown version must be ignored");
-        assert_eq!(sdk.protocol_version_number(), original);
-    }
-
-    /// A pinned (explicit `with_version`) SDK has auto-detect disabled and
-    /// must not move even when the network reports a newer version.
+    /// A pinned (explicit `with_version`) SDK has auto-detect disabled: even a
+    /// *successful* proven refresh whose metadata reports a newer version must
+    /// leave it untouched.
     #[tokio::test]
     async fn test_refresh_leaves_pinned_sdk_unchanged() {
         use dpp::version::PlatformVersion;
 
         // Pin at the mainnet floor (11) so the pin survives construction (a
-        // sub-floor pin would be raised to the floor). Refresh must still be a
-        // no-op: auto-detect is off, and the refresh-time floor clamp is a no-op
-        // because the value already equals the floor.
+        // sub-floor pin would be raised to the floor).
         let pinned = PlatformVersion::get(super::min_protocol_version(Network::Mainnet))
             .expect("mainnet floor PV exists");
-        let sdk = SdkBuilder::new_mock()
+        let mut sdk = SdkBuilder::new_mock()
             .with_version(pinned)
             .build()
             .expect("mock Sdk should be created");
         assert_eq!(sdk.protocol_version_number(), pinned.protocol_version);
         assert!(!sdk.auto_detect_protocol_version);
 
-        expect_get_status(
-            &sdk,
-            status_response_with_drive_current(dpp::version::v12::PROTOCOL_VERSION_12),
-        )
-        .await;
+        expect_epoch_refresh(&mut sdk).await;
 
         let resulting = sdk
             .refresh_protocol_version()
@@ -2233,55 +2149,31 @@ mod test {
 
         assert_eq!(
             resulting, pinned.protocol_version,
-            "pinned version must not move"
+            "pinned version must not move even after a successful proven refresh"
         );
         assert_eq!(sdk.protocol_version_number(), pinned.protocol_version);
     }
 
-    /// A response without a version block is a non-fatal no-op: the call
-    /// succeeds and the version stays put.
-    ///
-    /// Seeded at the mainnet floor so the refresh-time floor clamp is itself a
-    /// no-op and we observe only the missing-version-block behavior.
+    /// When the proven query is unavailable (no mock expectation, so the fetch
+    /// errors), refresh is non-fatal and does *not* fall back to an unverified
+    /// version: it just clamps the stored version to the per-network floor. Seeded
+    /// below the floor via the raw atomic to prove the clamp raises it.
     #[tokio::test]
-    async fn test_refresh_missing_version_is_noop() {
-        let floor = super::min_protocol_version(Network::Mainnet);
-        let sdk = mock_sdk_with_auto_detect(floor);
-
-        expect_get_status(&sdk, status_response_without_version()).await;
-
-        let resulting = sdk
-            .refresh_protocol_version()
-            .await
-            .expect("refresh should succeed even without a version block");
-
-        assert_eq!(resulting, floor);
-        assert_eq!(sdk.protocol_version_number(), floor);
-    }
-
-    /// The refresh-time floor is a hard lower bound: even when the network
-    /// reports a version *below* the per-network minimum (and even on an SDK
-    /// artificially seeded below the floor), `refresh_protocol_version` leaves the
-    /// stored version at the floor — never below it.
-    #[tokio::test]
-    async fn test_refresh_raises_below_floor_to_network_floor() {
+    async fn test_refresh_query_unavailable_clamps_to_floor() {
         let floor = super::min_protocol_version(Network::Mainnet);
         // Seed below the floor via the raw atomic (construction would never allow
         // this; `mock_sdk_with_auto_detect` uses `.store()`, bypassing the clamp).
         let sdk = mock_sdk_with_auto_detect(floor - 1);
         assert_eq!(sdk.protocol_version_number(), floor - 1);
 
-        // Network reports a known version that is still below the floor.
-        expect_get_status(&sdk, status_response_with_drive_current(floor - 1)).await;
-
         let resulting = sdk
             .refresh_protocol_version()
             .await
-            .expect("refresh should succeed");
+            .expect("refresh is best-effort and must not error when the query fails");
 
         assert_eq!(
             resulting, floor,
-            "refresh must raise a below-floor version up to the network floor"
+            "a failed refresh must still raise a below-floor version up to the floor"
         );
         assert_eq!(sdk.protocol_version_number(), floor);
     }

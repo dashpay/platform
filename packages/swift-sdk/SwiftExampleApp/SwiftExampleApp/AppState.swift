@@ -156,9 +156,9 @@ class AppState: ObservableObject {
     /// Kick off a network protocol-version refresh for `sdk` without
     /// blocking UI readiness.
     ///
-    /// `SDK.refreshProtocolVersion()` blocks (it drives an unproved
-    /// `getStatus` to completion on the Rust runtime), so run it on a
-    /// background task. The ratchet propagates to the shared
+    /// `SDK.refreshProtocolVersion()` blocks (it drives a proven
+    /// `getEpochsInfo` query to completion on the Rust runtime), so run
+    /// it on a background task. The ratchet propagates to the shared
     /// `Arc<AtomicU32>` behind every clone of the SDK — including the
     /// one a `PlatformWalletManager` holds — so shielded fee math sees
     /// the network's real version. Failure is non-fatal: the SDK still

@@ -511,8 +511,9 @@ public final class SDK: @unchecked Sendable {
 
   /// Refresh this SDK's protocol version from the connected network.
   ///
-  /// Issues an unproved `getStatus` on the Rust side and ratchets the SDK's
-  /// auto-detected protocol version up to the network's current version. The
+  /// Issues a proven `getEpochsInfo` query on the Rust side and ratchets the
+  /// SDK's auto-detected protocol version up to the network's version through
+  /// the proof + quorum-signature-verified path (no unverified fallback). The
   /// new version is shared across every clone of the underlying `Sdk`
   /// (including the clone held by a `PlatformWalletManager`), so fee-sensitive
   /// flows pick it up automatically.

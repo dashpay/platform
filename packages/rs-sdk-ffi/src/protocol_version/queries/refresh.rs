@@ -5,9 +5,10 @@ use std::ffi::CString;
 
 /// Refresh the SDK's protocol version from the connected network.
 ///
-/// Issues an unproved `getStatus` against the network and ratchets this SDK's
-/// auto-detected protocol version up to the network's current Drive protocol
-/// version (see [`dash_sdk::Sdk::refresh_protocol_version`]). The resulting
+/// Issues an ordinary **proven** `getEpochsInfo` query and ratchets this SDK's
+/// auto-detected protocol version up to the network's version through the same
+/// proof + quorum-signature-verified path every other query uses — no unverified
+/// fallback (see [`dash_sdk::Sdk::refresh_protocol_version`]). The resulting
 /// protocol version number propagates to every clone of this SDK — including
 /// the `Sdk` clone held by a `PlatformWalletManager` — because the version is
 /// stored in a shared `Arc<AtomicU32>`.
