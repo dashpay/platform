@@ -510,9 +510,12 @@ extension PlatformWalletManager {
         let res = platform_wallet_manager_address_ban_info(handle, &outEntries, &outCount)
         guard PlatformWalletResult(res).isSuccess, let ptr = outEntries, outCount > 0 else { return [] }
         defer { platform_wallet_manager_address_ban_info_free(UnsafeMutablePointer(mutating: ptr), outCount) }
-        return (0..<Int(outCount)).map { i in
+        return (0..<Int(outCount)).compactMap { i -> AddressBanInfo? in
             let entry = ptr[i]
-            let address: String = entry.address.map { String(cString: $0) } ?? ""
+            // The address is the key identifier; skip any (defensive) NULL
+            // entry rather than surfacing a non-actionable blank row.
+            guard let addressPtr = entry.address else { return nil }
+            let address = String(cString: addressPtr)
             let reason: String? = entry.reason.map { String(cString: $0) }
             let bannedUntil: Date? = entry.banned_until_ms == 0
                 ? nil

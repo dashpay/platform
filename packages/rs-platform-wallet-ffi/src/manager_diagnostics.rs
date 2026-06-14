@@ -820,7 +820,7 @@ pub unsafe extern "C" fn platform_wallet_manager_address_ban_info(
         .map(|s| AddressBanInfoFFI {
             address: optional_into_raw(Some(s.uri)),
             banned: s.banned,
-            ban_count: s.ban_count as u32,
+            ban_count: u32::try_from(s.ban_count).unwrap_or(u32::MAX),
             banned_until_ms: s.banned_until_ms.unwrap_or(0),
             reason: optional_into_raw(s.reason),
         })
