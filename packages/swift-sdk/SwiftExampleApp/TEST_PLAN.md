@@ -14,12 +14,12 @@ Every catalog row carries four orthogonal, machine-filterable fields. Select tes
 
 **Selection grammar** — canonical tokens (case-insensitive):
 
-- **Tier** ∈ `Essential` · `Common` · `Thorough` · `Uncommon`
+- **Tier** ∈ `Essential` · `Common` · `Thorough` · `Uncommon` · `Manual`
 - **Layer** ∈ `Core` · `Platform` · `Cross` · `Shielded`
-- **Status** ∈ `✅` · `🧪` · `🔌` · `⚠️` · `🚫`
+- **Status** ∈ `✅` · `🧪` · `⚠️` · `🔌` · `🚫`
 - **Category** ∈ `Core` · `Identity` · `Address` · `DPNS` · `Voting` · `Contract` · `Document` · `Token` · `Shielded` · `DashPay` · `Group` · `System` · `MultiWallet` (the feature area; shown as `Domain=…` on each §4 section header — "Category" and "Domain" are the same axis)
 
-A test is **runnable now** only if Status is `✅`, `🧪`, or `⚠️` (reachable in the app). `🔌`/`🚫` rows are listed for completeness — skip them unless asked to confirm absence.
+A test is **automatable now** only if Status is `✅`, `🧪`, or `⚠️` (reachable and drivable in the simulator) **and** `Tier ≠ Manual`. `Tier=Manual` marks implemented features that need a human on a physical device (e.g. a camera) — the automated QA agent must **skip and flag them for manual testing**, never mark them failed. `🔌`/`🚫` rows are listed for completeness — skip them unless asked to confirm absence.
 
 A row's **primary** category is the §4 section it lives in. Some tests are **cross-cutting** — e.g. `MW-02` (token transfer between two wallets) lives in the MultiWallet section but is also a **Token** test, and `CORE-21` is also **Shielded**. Resolve any `Category=…` selection through **§6 Category index**, which lists every member ID per category (primary + cross-cutting), so "run all Token tests" catches `MW-02` and `GRP-03` too. This is the axis behind requests like *"run all non-Uncommon Token tests."*
 
@@ -28,7 +28,8 @@ A row's **primary** category is the §4 section it lives in. Some tests are **cr
 | Request | Filter | Resolves to |
 |---|---|---|
 | "test Essential, Platform-only" | `Tier=Essential AND Layer=Platform` | `ID-02, ID-03, ID-04, DPNS-01, DPNS-02, DPNS-03, DPNS-04` |
-| "test all Essential" | `Tier=Essential` | the core experience: `CORE-01..08`, `ID-01/02/03/04`, `DPNS-01/02/03/04`, `SH-01..06` |
+| "test all Essential" | `Tier=Essential` | the core experience: `CORE-01..07`, `ID-01/02/03/04`, `DPNS-01/02/03/04`, `SH-01..06` |
+| "list the manual tests" | `Tier=Manual` | `CORE-08` (skip in automation; run on a physical device) |
 | "smoke test the wallet" | `Category=Core AND Status=✅` | `CORE-01..CORE-09` |
 | "test all non-Uncommon Token tests" | `Category=Token AND Tier≠Uncommon` | `TOK-01..07`, `MW-02` (via §6 index) |
 | "exercise every token admin action" | `Category=Token AND Tier=Uncommon` | `TOK-08..TOK-16` |
@@ -74,6 +75,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | **Common** | Frequent actions beyond the core experience — identity top-ups, contested usernames, identity key management, platform-address credit ops, contracts, token transfer/view, DashPay, secondary shielded flows (asset-lock shield, withdraw, prover warm-up). |
 | **Thorough** | Occasional, or tied to a specialized role (contract author, voter, contact-graph user, multi-wallet power user) — voting, contract update, document edit/delete, mint/burn/claim, group reads, multi-wallet management. |
 | **Uncommon** | Rare / exotic / administrative edge cases (most token governance, marketplace, emergency, group, raw-protocol). |
+| **Manual** | Not a frequency — a special bucket for implemented features that **can't be driven in the simulator** and need a human on a physical device (e.g. camera, biometrics, NFC). The automated agent **skips and flags** these for a person; it never fails them. Select with `Tier=Manual`. |
 
 **Layers** (for the "X-only" filter):
 
@@ -111,7 +113,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | CORE-05 | Send Core L1 transaction | Core | Essential | ✅ | Send flow (`SendTransactionView`, mode Core→Core) → `core_wallet_send_to_addresses`. Tx broadcasts; balance drops; appears in history. *Anchor: the canonical Essential action.* |
 | CORE-06 | View balance / tx history / UTXOs | Core | Essential | ✅ | `WalletDetailView`, `TransactionListView`, `AccountDetailView` (SwiftData). |
 | CORE-07 | SPV sync (start / stop / progress) | Core | Essential | ✅ | Global sync indicator (`ContentView`) → `platform_wallet_manager_spv_*`. Headers/filters/masternodes advance to tip. |
-| CORE-08 | QR scan recipient | Core | Essential | ✅ | `QRScannerView`. Scanned address fills the send field. |
+| CORE-08 | QR scan recipient | Core | Manual | ✅ | `QRScannerView`, reachable in the Send flow — but scanning needs a real camera the simulator doesn't have, so it can't be automated (`Tier=Manual`). On a device: Send → QR-scan button → point at a Dash address QR → recipient field populates. |
 | CORE-09 | Multiple HD accounts (within one wallet) | Core | Common | ✅ | Account selection / `AccountDetailView`; balances per `account_index`. Distinct from holding multiple *wallets* — see CORE-14+. |
 | CORE-10 | Multi-recipient Core send | Core | Common | 🔌 | FFI `core_wallet_send_to_addresses` takes parallel address/amount arrays; UI is single-recipient — verify before claiming. |
 | CORE-11 | Custom fee on transparent send | Core | Uncommon | 🚫 | Not exposed on the transparent send path (custom Core fee only on shielded withdraw `SH-08` and platform-address funding). |
@@ -310,22 +312,23 @@ Together with the wallet-lifecycle rows in §4.1 (`CORE-14..23`), these form the
 
 ## 5. Summary matrix
 
-Counts are of **runnable** rows (`✅`/`🧪`/`⚠️`); `🔌`/`🚫`/stub rows are excluded. Each catalog row carries its own `Tier` + `Layer`, so any intersection (e.g. *Essential ∩ Platform*) is derivable directly from §4.
+Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`🚫`/stub rows are excluded. `Tier=Manual` rows are reachable but **not automatable** (need a physical device) — counted on their own row below, excluded from the by-layer automatable totals. Each catalog row carries its own `Tier` + `Layer`, so any intersection (e.g. *Essential ∩ Platform*) is derivable directly from §4.
 
-**By tier (runnable):**
+**By tier:**
 
-| Tier | Count (approx.) |
-|---|---|
-| Essential | 22 |
-| Common | 31 |
-| Thorough | 35 |
-| Uncommon | 25 |
+| Tier | Count (approx.) | Automatable? |
+|---|---|---|
+| Essential | 21 | yes |
+| Common | 31 | yes |
+| Thorough | 35 | yes |
+| Uncommon | 25 | yes |
+| Manual | 1 (`CORE-08`) | no — physical device |
 
-**By layer (runnable):**
+**By layer (automatable only):**
 
 | Layer | Count (approx.) |
 |---|---|
-| Core | 18 |
+| Core | 17 |
 | Platform | ~72 |
 | Cross | 7 |
 | Shielded | 16 |
