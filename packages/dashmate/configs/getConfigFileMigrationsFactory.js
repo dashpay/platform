@@ -1547,13 +1547,22 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         // as the 3.0.2 Envoy CVE migration. A custom / private /
         // manually-corrected image (private fork, vendor-patched
         // build, `:latest`, etc.) is left untouched.
+        // The 3.x line shipped four prerelease label series:
+        //   `3.0.0-dev.X` / `3.1.0-dev.X` → `:3-dev`
+        //   `3.0.0-rc.X`                  → `:3-rc`
+        //   `3.0.1-hotfix.{1..4}` /
+        //   `3.1.0-hotfix.1`              → `:3-hotfix`
+        //   stable 3.0.0 / 3.0.1 / 3.0.2 / 3.1.0 → `:3`
+        // All of them resolve to a protocol-11 image and crash-loop
+        // after protocol 12 activation. Keep the alternation tight so
+        // custom tags (`:3-mycorp`, `:3.0.0`, `:latest`, etc.) survive.
         const isStaleDriveImage = (image) => (
           typeof image === 'string'
-          && /^dashpay\/drive:3(?:-(?:dev|rc))?$/.test(image)
+          && /^dashpay\/drive:3(?:-(?:dev|rc|hotfix))?$/.test(image)
         );
         const isStaleRsDapiImage = (image) => (
           typeof image === 'string'
-          && /^dashpay\/rs-dapi:3(?:-(?:dev|rc))?$/.test(image)
+          && /^dashpay\/rs-dapi:3(?:-(?:dev|rc|hotfix))?$/.test(image)
         );
 
         Object.entries(configFile.configs)

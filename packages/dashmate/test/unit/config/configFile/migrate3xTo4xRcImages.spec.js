@@ -25,8 +25,12 @@ import migrateConfigFileFactory from '../../../../src/config/configFile/migrateC
 describe('migration 4.0.0-rc.3: re-sync Drive ABCI & rs-dapi images (#3889)', () => {
   const STALE_DRIVE = 'dashpay/drive:3';
   const STALE_DRIVE_DEV = 'dashpay/drive:3-dev';
+  const STALE_DRIVE_RC = 'dashpay/drive:3-rc';
+  const STALE_DRIVE_HOTFIX = 'dashpay/drive:3-hotfix';
   const STALE_RS_DAPI = 'dashpay/rs-dapi:3';
   const STALE_RS_DAPI_DEV = 'dashpay/rs-dapi:3-dev';
+  const STALE_RS_DAPI_RC = 'dashpay/rs-dapi:3-rc';
+  const STALE_RS_DAPI_HOTFIX = 'dashpay/rs-dapi:3-hotfix';
   const CUSTOM_DRIVE = 'private-registry.internal/drive:patched-v3';
   const CUSTOM_RS_DAPI = 'my-org/rs-dapi:fork-3';
 
@@ -135,27 +139,38 @@ describe('migration 4.0.0-rc.3: re-sync Drive ABCI & rs-dapi images (#3889)', ()
     });
   });
 
-  it('re-syncs the dev-series stale tags too (dashpay/drive:3-dev, dashpay/rs-dapi:3-dev)', () => {
-    const rawConfigFile = {
-      configFormatVersion: '3.1.0',
-      defaultConfigName: null,
-      defaultGroupName: null,
-      configs: {
-        testnet: buildConfig({
-          network: 'testnet',
-          group: 'testnet',
-          driveImage: STALE_DRIVE_DEV,
-          rsDapiImage: STALE_RS_DAPI_DEV,
-        }),
-      },
-    };
+  // All the prerelease label series the 3.x line shipped derive from
+  // semver.prerelease(version)[0] in getBaseConfigFactory.js, producing
+  // these stale tags. The hotfix variant in particular came from
+  // 3.0.1-hotfix.{1..4} (#3020/#3044/#3055/#3060) and 3.1.0-hotfix.1 —
+  // an early oversight in the predicate missed it.
+  [
+    { label: 'dev-series', drive: STALE_DRIVE_DEV, rsDapi: STALE_RS_DAPI_DEV },
+    { label: 'rc-series', drive: STALE_DRIVE_RC, rsDapi: STALE_RS_DAPI_RC },
+    { label: 'hotfix-series', drive: STALE_DRIVE_HOTFIX, rsDapi: STALE_RS_DAPI_HOTFIX },
+  ].forEach(({ label, drive, rsDapi }) => {
+    it(`re-syncs the ${label} stale tags (${drive}, ${rsDapi})`, () => {
+      const rawConfigFile = {
+        configFormatVersion: '3.1.0',
+        defaultConfigName: null,
+        defaultGroupName: null,
+        configs: {
+          testnet: buildConfig({
+            network: 'testnet',
+            group: 'testnet',
+            driveImage: drive,
+            rsDapiImage: rsDapi,
+          }),
+        },
+      };
 
-    const migrated = migrate(rawConfigFile, '3.1.0', '4.0.0-rc.3');
+      const migrated = migrate(rawConfigFile, '3.1.0', '4.0.0-rc.3');
 
-    expect(migrated.configs.testnet.platform.drive.abci.docker.image)
-      .to.equal(expectedDriveImage);
-    expect(migrated.configs.testnet.platform.dapi.rsDapi.docker.image)
-      .to.equal(expectedRsDapiImage);
+      expect(migrated.configs.testnet.platform.drive.abci.docker.image)
+        .to.equal(expectedDriveImage);
+      expect(migrated.configs.testnet.platform.dapi.rsDapi.docker.image)
+        .to.equal(expectedRsDapiImage);
+    });
   });
 
   // The exact case the rework targets: a node that already upgraded to
