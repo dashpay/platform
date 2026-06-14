@@ -26,6 +26,7 @@ pub use http::Uri;
 #[cfg(feature = "mocks")]
 use rs_dapi_client::mock::MockDapiClient;
 pub use rs_dapi_client::Address;
+pub use rs_dapi_client::AddressBanInfo;
 pub use rs_dapi_client::AddressList;
 pub use rs_dapi_client::RequestSettings;
 use rs_dapi_client::{
@@ -618,6 +619,16 @@ impl Sdk {
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { address_list, .. } => address_list,
         }
+    }
+
+    /// Return an owned snapshot of every DAPI address' ban state,
+    /// including the reason the address was banned (when recorded).
+    ///
+    /// Delegates to [`AddressList::ban_info`]. Useful for diagnostics
+    /// and surfacing ban state up through the platform-wallet FFI to
+    /// the iOS example app.
+    pub fn address_ban_info(&self) -> Vec<AddressBanInfo> {
+        self.address_list().ban_info()
     }
 }
 

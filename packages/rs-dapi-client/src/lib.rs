@@ -14,6 +14,7 @@ mod request_settings;
 pub mod transport;
 
 pub use address_list::Address;
+pub use address_list::AddressBanInfo;
 pub use address_list::AddressList;
 pub use address_list::AddressListError;
 pub use address_list::AddressStatus;

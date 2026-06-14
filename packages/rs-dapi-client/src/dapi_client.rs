@@ -187,7 +187,7 @@ pub fn update_address_ban_status<R, E>(
             if error.can_retry() {
                 if let Some(address) = error.address.as_ref() {
                     if applied_settings.ban_failed_address {
-                        if address_list.ban(address) {
+                        if address_list.ban_with_reason(address, Some(error.to_string())) {
                             tracing::warn!(
                                 ?address,
                                 ?error,
