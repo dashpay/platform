@@ -94,7 +94,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | 🔌 | FFI and/or Swift wrapper exists, but **no UI** to trigger it. | No (SDK only) |
 | 🚫 | Not implemented anywhere (no FFI, no UI). | No |
 
-> **Entry-point reality check.** A large set of Platform write transitions (identity credit transfer/withdrawal, document create/replace/delete/transfer/price/purchase, data-contract create/update, identity key-disable) are reachable in the app **only through `Settings → Platform State Transitions` → `TransitionDetailView`** (marked 🧪). They broadcast for real, but there is no per-identity "happy path" button for them. The QA agent must navigate to the builder for those rows.
+> **Entry-point reality check.** A set of Platform write transitions (identity credit withdrawal, document create/replace/delete/transfer/price/purchase, data-contract create/update, identity key-disable) are reachable in the app **only through `Settings → Platform State Transitions` → `TransitionDetailView`** (marked 🧪). They broadcast for real, but there is no per-identity "happy path" button for them. The QA agent must navigate to the builder for those rows. (Identity credit *transfer*, `ID-04`, now has a production button in `IdentityDetailView` — see that row.) The builder and the read-only **Platform Queries** catalog both live under the **Settings** tab's **Platform** section (scroll past *Network* and *Data*).
 
 ---
 
@@ -142,7 +142,7 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | ID-01 | Create identity (Core-funded asset lock) | Cross | Essential | ✅ | `CreateIdentityView` / `IdentityRegistrationController` → `platform_wallet_register_identity_with_signer`. New identity + credit balance appear. *Gateway to all Platform tests.* |
 | ID-02 | Load / discover identity from wallet | Platform | Essential | ✅ | `LoadIdentityView` / `SearchWalletsForIdentitiesView` → `platform_wallet_discover_identities`. |
 | ID-03 | View identity (info / balance / revision / keys) | Platform | Essential | ✅ | `IdentityDetailView`, `KeysListView`, `KeyDetailView`. |
-| ID-04 | Transfer credits identity → identity | Platform | Essential | 🧪 | *Settings → Platform State Transitions → Identity Credit Transfer* → `dash_sdk_identity_transfer_credits`. *Anchor: the "platform-to-platform" Essential action.* Recipient balance increases. |
+| ID-04 | Transfer credits identity → identity | Platform | Essential | ✅ | `IdentityDetailView` → **Transfer Credits** (sheet, `TransferCreditsView`) → `wallet.transferCredits` → `platform_wallet_transfer_credits_with_signer` (keychain-signed). Recipient entered via `RecipientPickerView` (local identity / paste base58 id / DPNS name). *Anchor: the "platform-to-platform" Essential action.* Recipient balance increases; sender's drops. (Also reachable via the *Settings → Platform State Transitions → Identity Credit Transfer* builder → `dash_sdk_identity_transfer_credits`.) |
 | ID-05 | Top up identity (asset lock) | Cross | Common | ✅ | `TopUpIdentityView` (sheet from `IdentityDetailView`). *Anchor: top-up = Common.* |
 | ID-06 | Top up identity (from Platform addresses) | Cross | Common | ✅ | `AddressQueriesView` → TopUpIdentityFromAddresses → `dash_sdk_identity_top_up_from_addresses`. |
 | ID-07 | Update identity — add public key | Platform | Common | ✅ | `AddIdentityKeyView` (from `KeysListView`) → `updateIdentity(addPublicKeys:)`. |
@@ -294,7 +294,7 @@ Together with the wallet-lifecycle rows in §4.1 (`CORE-14..23`), these form the
 
 | ID | Action | Layer | Tier | Status | Entry point & test notes |
 |---|---|---|---|---|---|
-| MW-01 | Credit transfer between two on-device identities (A → B) | Platform | Thorough | 🧪 | *Settings → Platform State Transitions → Identity Credit Transfer* (`ID-04`), recipient = wallet B's identity. Switch to B; verify its credit balance rose and A's dropped. Fully local round-trip. |
+| MW-01 | Credit transfer between two on-device identities (A → B) | Platform | Thorough | ✅ | `IdentityDetailView` → **Transfer Credits** (`ID-04`), recipient = wallet B's identity (via `RecipientPickerView` — local / paste id / DPNS). Switch to B; verify its credit balance rose and A's dropped. Fully local round-trip. |
 | MW-02 | Token transfer between two on-device identities | Platform | Thorough | ✅ | `TOK-02`, recipient = wallet B's identity. Switch to B; verify the token balance arrived. |
 | MW-03 | DashPay request → accept → payment, both endpoints on device | Platform | Thorough | ✅ | A's identity sends a contact request (`DP-01`) to B's; switch to wallet B's identity and accept (`DP-02`); then pay (`DP-03`). Full bidirectional loop entirely local. |
 | MW-04 | Document transfer / purchase across wallets | Platform | Uncommon | 🧪 | A creates + lists a document (`DOC-02`/`DOC-06`); B transfers/purchases it (`DOC-05`/`DOC-07`). Ownership and credits move between A and B. |
