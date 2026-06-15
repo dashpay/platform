@@ -1879,8 +1879,9 @@ mod test {
     // per-network protocol-version floor + non-mainnet boot/refresh
     // -----------------------------------------------------------------
 
-    /// A testnet SDK boots directly at its per-network floor — the network's
-    /// live version — without needing a refresh to climb there.
+    /// An unpinned testnet SDK boots at the `min_protocol_version` floor, just
+    /// like the mainnet default, and stays there until a proven response ratchets
+    /// it upward.
     #[test]
     fn test_testnet_default_builder_boots_at_per_network_floor() {
         let sdk = SdkBuilder::new_mock()
