@@ -1001,6 +1001,37 @@ From `research/05` §5 / `SwiftExampleApp/CLAUDE.md`:
 
 ---
 
+### Multi-reviewer code review (2026-06-14) — 8 findings fixed
+
+Five specialized reviewers (crypto-security, FFI-memory, sync-correctness,
+Swift/iOS, silent-failures) audited the M1–M4 diff. Crypto + FFI-memory
+boundaries came back clean. Correctness/silent-failure reviewers found bugs
+the live UAT had missed (UAT only hit the pending-sent rotation path, which
+the reject-tombstone masked). All fixed with red→green regression tests:
+
+- **P0** rotation re-send to an ESTABLISHED contact reset the version to 0
+  → unique-index rejection → contact unrotatable. Lookup now consults
+  `established_contacts.outgoing_request` (`prior_sent_account_reference`).
+- **P0** multi-doc sweep thrash: immutable docs from a rotated sender both
+  returned every sweep, flipping state + rebuilding the external account
+  forever. `newest_received_per_sender` collapses to newest-per-sender
+  before ingest; `apply_rotated` is idempotent.
+- **Critical** swallowed persist errors → memory/disk divergence (reject
+  resurrection). New `PlatformWalletError::Persistence`; reject + send_payment
+  propagate, self-healing sweep writes log.
+- **H1** Sent payments lost at relaunch (map restored empty) → new
+  `PaymentRestoreEntryFFI` + `restore_dashpay_payments` fold + Swift builder.
+- **H2** deferred-publish lied as "synced" → 3-state `ContactInfoPublishOutcome`
+  through the FFI; ContactDetailView shows the real state.
+- Med: zero-ciphertext fallback → hard Err; contactInfo derivation-index
+  high-water mark; Swift silent contact-drop now logged; crypto
+  account_index/accountReference invariant documented.
+
+230/230 Rust lib + FFI tests green, clippy clean, full iOS build green.
+NOTE: on-device re-verify of H1/H2 pending — the sim SwiftData store was
+reset environmentally (identities gone), so it needs the devnet identity
+setup rebuilt first.
+
 ### Devnet UAT round 2 (2026-06-13) — rotation / reject / DPNS verified live
 
 On paloma with three identities: **reject + tombstone** (rejected request
