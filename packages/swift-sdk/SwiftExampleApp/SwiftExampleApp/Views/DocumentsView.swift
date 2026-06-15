@@ -272,6 +272,11 @@ struct CreateDocumentView: View {
             }
             .accessibleFormPicker("createDocument.contractPicker")
             .disabled(isSubmitting)
+            .onChange(of: selectedContract) { _, _ in
+                // A new contract may not have the previously-selected type
+                // (or could share a name) — clear so the picker isn't stale.
+                selectedDocumentTypeName = ""
+            }
 
             if let contract = selectedContract {
                 Picker("Document Type", selection: $selectedDocumentTypeName) {
@@ -553,7 +558,15 @@ struct CreateDocumentView: View {
         document.dataContract = parentContract
         modelContext.insert(document)
         document.linkToLocalIdentityIfNeeded(in: modelContext)
-        try modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            // Save failed — detach the row we just inserted so a later
+            // save from elsewhere can't silently flush it, which would
+            // contradict the "not saved locally" warning we surface.
+            modelContext.delete(document)
+            throw error
+        }
     }
 
     // MARK: - Properties JSON

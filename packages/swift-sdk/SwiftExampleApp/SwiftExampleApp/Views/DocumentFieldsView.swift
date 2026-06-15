@@ -10,6 +10,10 @@ struct DocumentFieldsView: View {
     @State private var numberFields: [String: String] = [:]
     @State private var boolFields: [String: Bool] = [:]
     @State private var arrayFields: [String: String] = [:]
+    /// Boolean fields the user has actually toggled. Untouched optional
+    /// booleans are omitted from the payload (absence ≠ `false` for some
+    /// schemas) rather than broadcast as the seeded `false` default.
+    @State private var touchedBoolFields: Set<String> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -75,7 +79,7 @@ struct DocumentFieldsView: View {
                     .accessibilityIdentifier("createDocument.field.\(property.name)")
 
             case "boolean":
-                Toggle(isOn: binding(for: property.name, in: $boolFields)) {
+                Toggle(isOn: boolBinding(for: property.name)) {
                     Text("")
                 }
                 .labelsHidden()
@@ -143,6 +147,19 @@ struct DocumentFieldsView: View {
         }
 
         return placeholder
+    }
+
+    /// Boolean binding that records a user toggle, so untouched optional
+    /// booleans can be omitted from the payload (see `touchedBoolFields`).
+    private func boolBinding(for key: String) -> Binding<Bool> {
+        Binding(
+            get: { boolFields[key] ?? false },
+            set: {
+                boolFields[key] = $0
+                touchedBoolFields.insert(key)
+                updateFieldValues()
+            }
+        )
     }
 
     private func binding<T>(for key: String, in dictionary: Binding<[String: T]>) -> Binding<T> where T: DefaultInitializable {
@@ -232,9 +249,18 @@ struct DocumentFieldsView: View {
             }
         }
 
-        // Add boolean fields
+        // Add boolean fields. Unlike the other types (which skip empty
+        // input), a seeded boolean has no "empty" state — so only include
+        // it if it's required or the user actually toggled it. This keeps
+        // untouched optional booleans absent from the payload instead of
+        // broadcasting the seeded `false` (absence ≠ `false` for some
+        // schemas).
         for (key, value) in boolFields {
-            values[key] = value
+            let isRequired = documentType.propertiesList?
+                .first(where: { $0.name == key })?.isRequired ?? false
+            if isRequired || touchedBoolFields.contains(key) {
+                values[key] = value
+            }
         }
 
         // Add array fields
