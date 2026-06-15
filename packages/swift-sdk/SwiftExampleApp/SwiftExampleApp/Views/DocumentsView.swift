@@ -244,6 +244,9 @@ struct CreateDocumentView: View {
                         .disabled(isSubmitting)
                 }
             }
+            // Prevent swipe-to-dismiss while the (non-idempotent) broadcast
+            // is in flight, so the user can't lose the result/warning.
+            .interactiveDismissDisabled(isSubmitting)
             .alert(item: $submitError) { err in
                 Alert(
                     title: Text("Create failed"),

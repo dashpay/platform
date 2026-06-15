@@ -2591,11 +2591,12 @@ extension ManagedPlatformWallet {
     /// converts them to native bytes / identifiers). Pass `"{}"` for a
     /// document type with no required properties.
     ///
-    /// Lifetime contract: the `signer` instance MUST stay alive for
-    /// the duration of the `await` (Rust holds a `passUnretained`
-    /// ctx pointer to the underlying `KeychainSigner`). A
-    /// `_ = signer` keepalive at the call site is the canonical way
-    /// to pin it.
+    /// Lifetime contract: the `signer` instance MUST stay alive for the
+    /// duration of the synchronous FFI call inside this async wrapper
+    /// (Rust holds a `passUnretained` ctx pointer to the underlying
+    /// `KeychainSigner`). The wrapper pins it with
+    /// `withExtendedLifetime(signer)` around the full marshalling chain —
+    /// a bare `_ = signer` is unreliable (the optimizer may elide it).
     public func createDocument(
         ownerIdentityId: Identifier,
         contractId: Identifier,
@@ -2656,10 +2657,16 @@ extension ManagedPlatformWallet {
             try result.check()
             // Take ownership of the JSON and release the Rust allocation.
             defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
-            // Defensive: on a successful broadcast the Rust side always
-            // writes the canonical JSON, but fall back to an empty
-            // string rather than crashing if it is unexpectedly null.
-            let canonicalJSON = documentJsonPtr.map { String(cString: $0) } ?? ""
+            // On a successful broadcast the Rust side always writes the
+            // canonical JSON; a null pointer here is an FFI/ABI contract
+            // violation. Fail loudly rather than persist an empty body as
+            // if it were the canonical document.
+            guard let jsonPtr = documentJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "create_document_with_signer returned no canonical document JSON"
+                )
+            }
+            let canonicalJSON = String(cString: jsonPtr)
             return (Data(documentIdBytes), canonicalJSON)
         }.value
     }

@@ -308,6 +308,10 @@ extension DocumentFieldsView {
                         let cleaned = newValue.lowercased().filter { "0123456789abcdef".contains($0) }
                         if cleaned != newValue {
                             textFields[property.name] = cleaned
+                            // Direct @State mutation bypasses the binding's
+                            // setter, so re-sync the cleaned value into the
+                            // submitted `fieldValues`.
+                            updateFieldValues()
                         }
                     }
 
