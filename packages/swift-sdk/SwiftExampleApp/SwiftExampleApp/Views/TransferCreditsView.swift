@@ -224,7 +224,11 @@ struct TransferCreditsView: View {
             return nil
         }
         let credits = (dash * Double(Self.creditsPerDash)).rounded()
-        guard credits >= 1, credits <= Double(UInt64.max) else { return nil }
+        // Strict `<`: `Double(UInt64.max)` isn't exactly representable and
+        // rounds up to 2^64, so a `<=` bound would admit 2^64 and trap on
+        // the `UInt64(credits)` cast (this recomputes on every keystroke,
+        // before submit-time re-validation). `<` keeps it in range.
+        guard credits >= 1, credits < Double(UInt64.max) else { return nil }
         return UInt64(credits)
     }
 
