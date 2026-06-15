@@ -48,8 +48,8 @@ use crate::token_persistence::{TokenBalanceRemovalFFI, TokenBalanceUpsertFFI};
 use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
-    LoadWalletListFreeFn, StandardAccountTypeTagFFI, UnresolvedAssetLockTxRecordFFI,
-    UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
+    LoadWalletListFreeFn, PaymentRestoreEntryFFI, StandardAccountTypeTagFFI,
+    UnresolvedAssetLockTxRecordFFI, UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -3282,10 +3282,90 @@ fn build_wallet_identity_bucket(
         managed.dpns_names = dpns_names;
         managed.contested_dpns_names = contested_dpns_names;
         unsafe { restore_dashpay_contacts(spec, &identifier, &mut managed) };
+        unsafe { restore_dashpay_payments(spec, &mut managed) };
         bucket.insert(spec.identity_index, managed);
     }
 
     Ok(bucket)
+}
+
+/// Rebuild the per-identity DashPay payment history (`dashpay_payments`)
+/// from the persisted SwiftData rows at load (H1).
+///
+/// Without this the in-memory map starts empty and only *Received*
+/// entries are re-derived from UTXOs by the reconcile sweep, so *Sent*
+/// entries (with their user memos) vanish from the authoritative model
+/// on every relaunch. Direct map inserts, NO persister round — the rows
+/// ARE the persisted state.
+///
+/// # Safety
+///
+/// `spec.payments` must be either null or point at `spec.payments_count`
+/// valid `PaymentRestoreEntryFFI` rows whose `txid`/`memo` c-strings
+/// Swift owns for the duration of the load callback.
+unsafe fn restore_dashpay_payments(spec: &IdentityRestoreEntryFFI, managed: &mut ManagedIdentity) {
+    if spec.payments.is_null() || spec.payments_count == 0 {
+        return;
+    }
+    let rows = slice::from_raw_parts(spec.payments, spec.payments_count);
+    apply_payment_rows(rows, managed);
+}
+
+/// Fold a slice of [`PaymentRestoreEntryFFI`] rows into
+/// `managed.dashpay_payments`. Split out from [`restore_dashpay_payments`]
+/// so the discriminant mapping + c-string decode is unit-testable
+/// without a full `IdentityRestoreEntryFFI`.
+///
+/// # Safety
+/// Each row's `txid`/`memo` pointers must be null or point at valid
+/// NUL-terminated c-strings for the call's duration.
+unsafe fn apply_payment_rows(rows: &[PaymentRestoreEntryFFI], managed: &mut ManagedIdentity) {
+    use platform_wallet::wallet::identity::{PaymentDirection, PaymentEntry, PaymentStatus};
+
+    for row in rows {
+        if row.txid.is_null() {
+            continue;
+        }
+        let txid = match std::ffi::CStr::from_ptr(row.txid).to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => continue,
+        };
+        let direction = match row.direction_raw {
+            0 => PaymentDirection::Sent,
+            1 => PaymentDirection::Received,
+            other => {
+                tracing::warn!(
+                    direction = other,
+                    "skipping payment row with unknown direction"
+                );
+                continue;
+            }
+        };
+        let status = match row.status_raw {
+            0 => PaymentStatus::Pending,
+            1 => PaymentStatus::Confirmed,
+            2 => PaymentStatus::Failed,
+            other => {
+                tracing::warn!(status = other, "skipping payment row with unknown status");
+                continue;
+            }
+        };
+        let memo = if row.memo.is_null() {
+            None
+        } else {
+            CStr::from_ptr(row.memo).to_str().ok().map(str::to_string)
+        };
+        managed.dashpay_payments.insert(
+            txid,
+            PaymentEntry {
+                counterparty_id: Identifier::from(row.counterparty_id),
+                amount_duffs: row.amount_duffs,
+                memo,
+                direction,
+                status,
+            },
+        );
+    }
 }
 
 /// Rebuild the per-identity DashPay contact state from the SwiftData
@@ -3335,11 +3415,7 @@ unsafe fn restore_dashpay_contacts(
         if ptr.is_null() {
             None
         } else {
-            Some(
-                std::ffi::CStr::from_ptr(ptr)
-                    .to_string_lossy()
-                    .into_owned(),
-            )
+            Some(std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned())
         }
     };
     let opt_bytes = |ptr: *const u8, len: usize| -> Option<Vec<u8>> {
@@ -3364,8 +3440,7 @@ unsafe fn restore_dashpay_contacts(
             row.sender_key_index,
             row.recipient_key_index,
             row.account_reference,
-            opt_bytes(row.encrypted_public_key, row.encrypted_public_key_len)
-                .unwrap_or_default(),
+            opt_bytes(row.encrypted_public_key, row.encrypted_public_key_len).unwrap_or_default(),
             row.core_height_created_at,
             row.created_at,
         );
@@ -4014,5 +4089,86 @@ mod tests {
             }],
             special_transaction_payload: None,
         }
+    }
+
+    /// **H1 — DashPay payment history is restored at load.**
+    /// The fold must rebuild `dashpay_payments` (Sent AND Received, with
+    /// memos) from the persisted rows, mapping the direction/status
+    /// discriminants and decoding the c-strings. RED before the fix: there
+    /// was no payment restore at all, so the in-memory map started empty
+    /// and Sent entries vanished on relaunch.
+    #[test]
+    fn restore_payments_fold_rebuilds_sent_and_received() {
+        use platform_wallet::wallet::identity::{PaymentDirection, PaymentStatus};
+
+        let owner = IdentityV0 {
+            id: Identifier::from([0xAA; 32]),
+            public_keys: std::collections::BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        };
+        let mut managed = ManagedIdentity::new(Identity::V0(owner), 0);
+
+        // Keep the CStrings alive for the duration of the call.
+        let sent_txid = std::ffi::CString::new("aa".repeat(32)).unwrap();
+        let sent_memo = std::ffi::CString::new("lunch").unwrap();
+        let recv_txid = std::ffi::CString::new("bb".repeat(32)).unwrap();
+
+        let rows = [
+            PaymentRestoreEntryFFI {
+                txid: sent_txid.as_ptr(),
+                counterparty_id: [0xBB; 32],
+                amount_duffs: 1_000_000,
+                direction_raw: 0, // Sent
+                status_raw: 0,    // Pending
+                memo: sent_memo.as_ptr(),
+            },
+            PaymentRestoreEntryFFI {
+                txid: recv_txid.as_ptr(),
+                counterparty_id: [0xCC; 32],
+                amount_duffs: 500_000,
+                direction_raw: 1, // Received
+                status_raw: 1,    // Confirmed
+                memo: std::ptr::null(),
+            },
+        ];
+
+        unsafe { apply_payment_rows(&rows, &mut managed) };
+
+        assert_eq!(managed.dashpay_payments.len(), 2);
+        let sent = managed
+            .dashpay_payments
+            .get(&"aa".repeat(32))
+            .expect("sent entry restored");
+        assert_eq!(sent.direction, PaymentDirection::Sent);
+        assert_eq!(sent.status, PaymentStatus::Pending);
+        assert_eq!(sent.amount_duffs, 1_000_000);
+        assert_eq!(sent.memo.as_deref(), Some("lunch"));
+        assert_eq!(sent.counterparty_id, Identifier::from([0xBB; 32]));
+
+        let recv = managed
+            .dashpay_payments
+            .get(&"bb".repeat(32))
+            .expect("received entry restored");
+        assert_eq!(recv.direction, PaymentDirection::Received);
+        assert_eq!(recv.status, PaymentStatus::Confirmed);
+        assert!(recv.memo.is_none());
+
+        // An unknown discriminant is skipped, not panicked.
+        let bad_txid = std::ffi::CString::new("cc".repeat(32)).unwrap();
+        let bad = [PaymentRestoreEntryFFI {
+            txid: bad_txid.as_ptr(),
+            counterparty_id: [0xDD; 32],
+            amount_duffs: 1,
+            direction_raw: 9,
+            status_raw: 0,
+            memo: std::ptr::null(),
+        }];
+        unsafe { apply_payment_rows(&bad, &mut managed) };
+        assert_eq!(
+            managed.dashpay_payments.len(),
+            2,
+            "a row with an unknown direction must be skipped, not inserted"
+        );
     }
 }

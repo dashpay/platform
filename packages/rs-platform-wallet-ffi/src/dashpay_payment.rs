@@ -241,8 +241,7 @@ mod tests {
         // `dashpay_payments` map is a plain public field, so we mutate
         // it directly on a default-constructed identity via the same
         // path the persister load uses.
-        let identity =
-            dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0::default());
+        let identity = dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0::default());
         let mut managed = ManagedIdentity::new(identity, 0);
         managed.dashpay_payments.insert(
             "aa".repeat(32),
@@ -308,8 +307,7 @@ mod tests {
     /// sibling array getters' contract).
     #[test]
     fn get_dashpay_payments_empty_is_success() {
-        let identity =
-            dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0::default());
+        let identity = dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0::default());
         let managed = ManagedIdentity::new(identity, 0);
         let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
@@ -337,9 +335,7 @@ mod tests {
             items: std::ptr::NonNull::<DashpayPaymentFFI>::dangling().as_ptr(),
             count: 99,
         };
-        let r = unsafe {
-            managed_identity_get_dashpay_payments(0xDEAD_BEEF, &mut array)
-        };
+        let r = unsafe { managed_identity_get_dashpay_payments(0xDEAD_BEEF, &mut array) };
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
         // Reset to the empty sentinel before the handle lookup failed.
         assert!(array.items.is_null());

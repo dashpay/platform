@@ -2030,6 +2030,21 @@ extension ManagedPlatformWallet {
     /// the SwiftData contact rows) updates immediately; the network
     /// write is deferred by the Rust side under DIP-15's
     /// ≥2-established-contacts privacy rule.
+    /// Outcome of `setDashPayContactInfo`: local state is always updated,
+    /// but the cross-device document publish may be deferred or skipped.
+    /// Mirrors the Rust `ContactInfoPublishOutcome` / the FFI
+    /// `CONTACT_INFO_*` discriminants.
+    public enum ContactInfoPublishOutcome: Sendable {
+        /// Published on Platform — synced cross-device.
+        case published
+        /// Saved locally; publish deferred by DIP-15 until the identity
+        /// has at least two established contacts.
+        case deferredUntilTwoContacts
+        /// Saved locally; publish not possible for a watch-only identity.
+        case skippedWatchOnly
+    }
+
+    @discardableResult
     public func setDashPayContactInfo(
         identityId: Identifier,
         contactId: Identifier,
@@ -2037,7 +2052,7 @@ extension ManagedPlatformWallet {
         note: String?,
         hidden: Bool,
         signer: KeychainSigner
-    ) async throws {
+    ) async throws -> ContactInfoPublishOutcome {
         let handle = self.handle
         let signerHandle = signer.handle
         let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
@@ -2047,8 +2062,9 @@ extension ManagedPlatformWallet {
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
 
-        try await Task.detached(priority: .userInitiated) {
+        let outcomeRaw: UInt8 = try await Task.detached(priority: .userInitiated) {
             _ = signer
+            var outcomeRaw: UInt8 = 0
             let result: PlatformWalletFFIResult = idBytes.withUnsafeBufferPointer { idBp in
                 contactBytes.withUnsafeBufferPointer { contactBp in
                     invokeWithOptionalCStrings(alias, note, nil) { aliasPtr, notePtr, _ in
@@ -2059,13 +2075,24 @@ extension ManagedPlatformWallet {
                             aliasPtr,
                             notePtr,
                             hidden,
-                            signerHandle
+                            signerHandle,
+                            &outcomeRaw
                         )
                     }
                 }
             }
             try result.check()
+            return outcomeRaw
         }.value
+
+        switch outcomeRaw {
+        case UInt8(CONTACT_INFO_DEFERRED_UNTIL_TWO_CONTACTS):
+            return .deferredUntilTwoContacts
+        case UInt8(CONTACT_INFO_SKIPPED_WATCH_ONLY):
+            return .skippedWatchOnly
+        default:
+            return .published
+        }
     }
 
 }

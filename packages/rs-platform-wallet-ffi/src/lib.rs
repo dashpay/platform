@@ -12,8 +12,8 @@
 pub mod asset_lock;
 pub mod asset_lock_persistence;
 pub mod contact;
-pub mod contact_persistence;
 pub mod contact_info;
+pub mod contact_persistence;
 pub mod contact_request;
 pub mod core_address_types;
 pub mod core_wallet;

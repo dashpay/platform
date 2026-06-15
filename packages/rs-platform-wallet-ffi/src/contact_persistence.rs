@@ -273,7 +273,9 @@ impl ContactRequestFFI {
         contact_id: [u8; 32],
         request: &platform_wallet::ContactRequest,
     ) -> Self {
-        Self::from_parts(owner_id, contact_id, true, request, false, None, None, false)
+        Self::from_parts(
+            owner_id, contact_id, true, request, false, None, None, false,
+        )
     }
 
     /// Sibling of [`Self::from_outgoing`] for the incoming direction
@@ -283,7 +285,9 @@ impl ContactRequestFFI {
         contact_id: [u8; 32],
         request: &platform_wallet::ContactRequest,
     ) -> Self {
-        Self::from_parts(owner_id, contact_id, false, request, false, None, None, false)
+        Self::from_parts(
+            owner_id, contact_id, false, request, false, None, None, false,
+        )
     }
 
     /// Build the **outgoing** row of an established contact, stamping
@@ -658,8 +662,8 @@ mod tests {
     /// suppression key.
     #[test]
     fn rejection_ffi_round_trips_key_and_optional_document_id() {
-        use platform_wallet::changeset::RejectedContactRequest;
         use dpp::prelude::Identifier;
+        use platform_wallet::changeset::RejectedContactRequest;
 
         let with_doc = RejectedContactRequest {
             owner_id: Identifier::from([7u8; 32]),

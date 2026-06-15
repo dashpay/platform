@@ -200,13 +200,11 @@ mod tests {
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
 
         let mut running = true;
-        let r =
-            unsafe { platform_wallet_manager_dashpay_sync_is_running(bogus, &mut running) };
+        let r = unsafe { platform_wallet_manager_dashpay_sync_is_running(bogus, &mut running) };
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
 
         let mut syncing = true;
-        let r =
-            unsafe { platform_wallet_manager_dashpay_sync_is_syncing(bogus, &mut syncing) };
+        let r = unsafe { platform_wallet_manager_dashpay_sync_is_syncing(bogus, &mut syncing) };
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
 
         let mut last = 123u64;
@@ -215,17 +213,14 @@ mod tests {
         };
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
 
-        let r =
-            unsafe { platform_wallet_manager_dashpay_sync_set_interval(bogus, 30) };
+        let r = unsafe { platform_wallet_manager_dashpay_sync_set_interval(bogus, 30) };
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
 
         let mut ok = 7usize;
         let mut err = 7usize;
         let mut ts = 7u64;
         let r = unsafe {
-            platform_wallet_manager_dashpay_sync_sync_now(
-                bogus, &mut ok, &mut err, &mut ts,
-            )
+            platform_wallet_manager_dashpay_sync_sync_now(bogus, &mut ok, &mut err, &mut ts)
         };
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
     }
@@ -238,21 +233,16 @@ mod tests {
     fn null_required_out_pointers_are_rejected() {
         let bogus: Handle = 1;
 
-        let r = unsafe {
-            platform_wallet_manager_dashpay_sync_is_running(bogus, std::ptr::null_mut())
-        };
+        let r =
+            unsafe { platform_wallet_manager_dashpay_sync_is_running(bogus, std::ptr::null_mut()) };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+
+        let r =
+            unsafe { platform_wallet_manager_dashpay_sync_is_syncing(bogus, std::ptr::null_mut()) };
         assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
 
         let r = unsafe {
-            platform_wallet_manager_dashpay_sync_is_syncing(bogus, std::ptr::null_mut())
-        };
-        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
-
-        let r = unsafe {
-            platform_wallet_manager_dashpay_sync_last_sync_unix_seconds(
-                bogus,
-                std::ptr::null_mut(),
-            )
+            platform_wallet_manager_dashpay_sync_last_sync_unix_seconds(bogus, std::ptr::null_mut())
         };
         assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }

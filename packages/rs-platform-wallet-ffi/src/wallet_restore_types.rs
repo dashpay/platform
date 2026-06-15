@@ -302,6 +302,41 @@ pub struct IdentityRestoreEntryFFI {
     /// `null` / `0` when the identity has no persisted contact rows.
     pub contacts: *const crate::contact_persistence::ContactRequestFFI,
     pub contacts_count: usize,
+    /// DashPay payment-history rows owned by this identity, assembled
+    /// from the per-identity `PersistentDashpayPayment` SwiftData rows.
+    /// Restores the `dashpay_payments` map at load — without this the
+    /// in-memory map starts empty and only *Received* entries are
+    /// re-derived from UTXOs by the reconcile sweep, so *Sent* entries
+    /// (with their user-entered memos) silently vanish from the
+    /// authoritative model on every relaunch (H1). Swift-owned for the
+    /// callback window; the strings ride the load allocation, NOT the
+    /// Rust destructors. `null` / `0` when the identity has no payments.
+    pub payments: *const PaymentRestoreEntryFFI,
+    pub payments_count: usize,
+}
+
+/// One DashPay payment-history row to rehydrate into
+/// `ManagedIdentity.dashpay_payments` (keyed by `txid`) at load.
+///
+/// `direction_raw` / `status_raw` mirror the `PaymentDirection` /
+/// `PaymentStatus` discriminants (direction: 0=Sent, 1=Received;
+/// status: 0=Pending, 1=Confirmed, 2=Failed). Swift owns `txid`
+/// (always non-null) and the optional `memo` for the callback window.
+#[repr(C)]
+pub struct PaymentRestoreEntryFFI {
+    /// NUL-terminated transaction id (hex) — the `dashpay_payments`
+    /// map key.
+    pub txid: *const std::os::raw::c_char,
+    /// The other identity in this payment.
+    pub counterparty_id: [u8; 32],
+    /// Amount in duffs (always positive; `direction_raw` carries sign).
+    pub amount_duffs: u64,
+    /// `PaymentDirection` discriminant: 0=Sent, 1=Received.
+    pub direction_raw: u8,
+    /// `PaymentStatus` discriminant: 0=Pending, 1=Confirmed, 2=Failed.
+    pub status_raw: u8,
+    /// NUL-terminated memo, or null when the source `Option` was `None`.
+    pub memo: *const std::os::raw::c_char,
 }
 
 /// One unspent UTXO row to rehydrate into a funds-bearing account's

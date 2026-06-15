@@ -2,15 +2,17 @@
 //! M3 task 13).
 //!
 //! One write entry point: set the metadata locally AND publish the
-//! self-encrypted `contactInfo` document (deferred under the DIP-15
-//! ≥2-contacts privacy rule — the Rust side logs and skips the
-//! network write; local state still lands in SwiftData via the
-//! persister). Reads need no new FFI: the decrypted values flow into
-//! the established-contact changeset during the recurring sync and
-//! surface through the existing contact persistence.
+//! self-encrypted `contactInfo` document. The local state ALWAYS
+//! lands in SwiftData via the persister; the document publish may be
+//! deferred (DIP-15 ≥2-contacts privacy rule) or skipped (watch-only).
+//! The `out_outcome` param reports which happened so the UI can tell
+//! the user the truth instead of unconditionally claiming a sync.
+//! Reads need no new FFI: decrypted values flow into the
+//! established-contact changeset during the recurring sync.
 
 use std::os::raw::c_char;
 
+use platform_wallet::ContactInfoPublishOutcome;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::check_ptr;
@@ -21,16 +23,28 @@ use crate::runtime::block_on_worker;
 use crate::types::*;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
+/// Outcome discriminant written to `out_outcome` by
+/// [`platform_wallet_set_dashpay_contact_info_with_signer`]. Mirrors
+/// [`ContactInfoPublishOutcome`].
+pub const CONTACT_INFO_PUBLISHED: u8 = 0;
+pub const CONTACT_INFO_DEFERRED_UNTIL_TWO_CONTACTS: u8 = 1;
+pub const CONTACT_INFO_SKIPPED_WATCH_ONLY: u8 = 2;
+
 /// Set alias / note / hidden for an established contact and publish
 /// the corresponding `contactInfo` document.
 ///
 /// `alias` / `note` may be NULL (= clear the field). The signer is
 /// the same vtable signer the profile write entry point takes.
+/// `out_outcome` (if non-null) receives the publish outcome
+/// discriminant (`CONTACT_INFO_*` above): local state is always
+/// updated, but the cross-device document publish may have been
+/// deferred or skipped.
 ///
 /// # Safety
 /// `wallet_handle` must be a live wallet handle; `identity_id` and
 /// `contact_id` must point at 32 readable bytes; `signer_handle`
-/// must be a live `VTableSigner` for the duration of the call.
+/// must be a live `VTableSigner` for the duration of the call;
+/// `out_outcome` must be null or point at one writable byte.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_set_dashpay_contact_info_with_signer(
     wallet_handle: Handle,
@@ -40,6 +54,7 @@ pub unsafe extern "C" fn platform_wallet_set_dashpay_contact_info_with_signer(
     note: *const c_char,
     display_hidden: bool,
     signer_handle: *mut SignerHandle,
+    out_outcome: *mut u8,
 ) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
 
@@ -67,6 +82,15 @@ pub unsafe extern "C" fn platform_wallet_set_dashpay_contact_info_with_signer(
         })
     });
     let result = unwrap_option_or_return!(option);
-    unwrap_result_or_return!(result);
+    let outcome = unwrap_result_or_return!(result);
+    if !out_outcome.is_null() {
+        *out_outcome = match outcome {
+            ContactInfoPublishOutcome::Published => CONTACT_INFO_PUBLISHED,
+            ContactInfoPublishOutcome::DeferredUntilTwoContacts => {
+                CONTACT_INFO_DEFERRED_UNTIL_TWO_CONTACTS
+            }
+            ContactInfoPublishOutcome::SkippedWatchOnly => CONTACT_INFO_SKIPPED_WATCH_ONLY,
+        };
+    }
     PlatformWalletFFIResult::ok()
 }

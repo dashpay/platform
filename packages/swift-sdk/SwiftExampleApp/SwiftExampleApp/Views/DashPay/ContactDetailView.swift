@@ -103,6 +103,9 @@ struct ContactDetailView: View {
     /// publish can't be double-submitted; errors render inline.
     @State private var isSavingContactInfo = false
     @State private var contactInfoError: String?
+    /// Set after a save whose document publish was deferred/skipped, so the
+    /// UI doesn't claim a cross-device sync that didn't happen (H2).
+    @State private var publishNotice: String?
 
     var body: some View {
         List {
@@ -130,7 +133,7 @@ struct ContactDetailView: View {
             ContactLocalFieldEditor(
                 title: "Alias",
                 prompt: "e.g. Mom",
-                footer: "An alias overrides this contact's display name. Synced to your other devices.",
+                footer: "An alias overrides this contact's display name. Encrypted and synced to your other devices once this identity has two or more contacts.",
                 initialValue: localAlias ?? "",
                 identifierPrefix: "dashpay.detail.alias",
                 onSave: { value in
@@ -142,7 +145,7 @@ struct ContactDetailView: View {
             ContactLocalFieldEditor(
                 title: "Note",
                 prompt: "Anything to remember about this contact",
-                footer: "Notes are private (encrypted) and synced to your other devices.",
+                footer: "Notes are private (encrypted) and synced to your other devices once this identity has two or more contacts.",
                 initialValue: localNote ?? "",
                 identifierPrefix: "dashpay.detail.note",
                 onSave: { value in
@@ -321,14 +324,21 @@ struct ContactDetailView: View {
                     .font(.caption)
                     .foregroundColor(.red)
             }
+            // Honest publish-state banner (H2): tell the user when an edit
+            // was saved locally but NOT published cross-device, instead of
+            // the footer claiming an unconditional sync.
+            if let publishNotice {
+                Label(publishNotice, systemImage: "icloud.slash")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
         } header: {
             Text("Contact settings")
         } footer: {
-            // contactInfo-backed (M3): self-encrypted on Platform, so
-            // these sync across devices and survive restore-from-seed.
-            // Note: until this identity has two established contacts,
-            // edits stay local (DIP-15 privacy rule) and publish later.
-            Text("Alias, note and hide are encrypted and synced to your other devices via Platform.")
+            // contactInfo-backed (M3): self-encrypted on Platform. The
+            // footer states the steady-state behaviour; the per-save
+            // `publishNotice` above corrects it when a publish was deferred.
+            Text("Alias, note and hide are encrypted and synced to your other devices via Platform once this identity has two or more contacts.")
         }
     }
 
@@ -345,11 +355,12 @@ struct ContactDetailView: View {
         }
         isSavingContactInfo = true
         contactInfoError = nil
+        publishNotice = nil
         Task { @MainActor in
             defer { isSavingContactInfo = false }
             do {
                 let signer = KeychainSigner(modelContainer: modelContext.container)
-                try await wallet.setDashPayContactInfo(
+                let outcome = try await wallet.setDashPayContactInfo(
                     identityId: identity.identityId,
                     contactId: contactId,
                     alias: alias?.isEmpty == true ? nil : alias,
@@ -357,6 +368,14 @@ struct ContactDetailView: View {
                     hidden: hidden,
                     signer: signer
                 )
+                switch outcome {
+                case .published:
+                    publishNotice = nil
+                case .deferredUntilTwoContacts:
+                    publishNotice = "Saved on this device. It will sync to your other devices once this identity has two or more contacts."
+                case .skippedWatchOnly:
+                    publishNotice = "Saved on this device only — this watch-only identity can't publish to Platform."
+                }
             } catch {
                 contactInfoError = "Save failed: \(error.localizedDescription)"
             }

@@ -1706,8 +1706,13 @@ public class PlatformWalletPersistenceHandler {
                     // managed by any wallet locally — there's no
                     // identity row to hang it off, and the contract's
                     // `ownerId` invariant means the row would be
-                    // orphaned anyway. Skip silently; the next sync
-                    // round will replay it once the owner row exists.
+                    // orphaned anyway. The recurring sweep replays it
+                    // once the owner row exists; log so a contact that
+                    // is somehow dropped permanently (e.g. an
+                    // out-of-wallet owner with no PersistentIdentity)
+                    // is at least observable rather than vanishing
+                    // silently.
+                    print("⚠️ persistContacts: skipped contact upsert — no PersistentIdentity for owner \(entry.ownerIdentityId.prefix(8).toHexString())…; will retry next sync round")
                     continue
                 }
 
@@ -4324,6 +4329,35 @@ public class PlatformWalletPersistenceHandler {
                 allocation.contactArrays.append((contactBuf, contactRows.count))
             }
 
+            // DashPay payment history — restores the dashpay_payments map
+            // at load. Without this the in-memory map starts empty and only
+            // Received entries are re-derived from UTXOs, so Sent entries +
+            // memos silently vanish on every relaunch (H1).
+            let paymentRows = identity.dashpayPayments
+            if paymentRows.isEmpty {
+                entry.payments = nil
+                entry.payments_count = 0
+            } else {
+                let paymentBuf = UnsafeMutablePointer<PaymentRestoreEntryFFI>.allocate(
+                    capacity: paymentRows.count
+                )
+                for (c, payment) in paymentRows.enumerated() {
+                    var row = PaymentRestoreEntryFFI()
+                    row.txid = UnsafePointer(duplicateCString(payment.txid, allocation: allocation))
+                    copyBytes(payment.counterpartyIdentityId, into: &row.counterparty_id)
+                    row.amount_duffs = payment.amountDuffs
+                    row.direction_raw = payment.directionRaw
+                    row.status_raw = payment.statusRaw
+                    if let memo = payment.memo, !memo.isEmpty {
+                        row.memo = UnsafePointer(duplicateCString(memo, allocation: allocation))
+                    }
+                    paymentBuf[c] = row
+                }
+                entry.payments = UnsafePointer(paymentBuf)
+                entry.payments_count = UInt(paymentRows.count)
+                allocation.paymentArrays.append((paymentBuf, paymentRows.count))
+            }
+
             buf[j] = entry
         }
         allocation.identityArrays.append((buf, identities.count))
@@ -4593,6 +4627,9 @@ private final class LoadAllocation {
     /// are load-allocation-owned — Rust's `free_contact_requests_ffi`
     /// must never run on them (it owns only persist-side rows).
     var contactArrays: [(UnsafeMutablePointer<ContactRequestFFI>, Int)] = []
+    /// Per-identity `PaymentRestoreEntryFFI` arrays (DashPay payment
+    /// restore — H1). The txid/memo strings live in `cStringBuffers`.
+    var paymentArrays: [(UnsafeMutablePointer<PaymentRestoreEntryFFI>, Int)] = []
     /// Byte buffers backing `root_xpub_bytes` and `account_xpub_bytes`.
     var scalarBuffers: [(UnsafeMutablePointer<UInt8>, Int)] = []
     /// NUL-terminated c-string buffers carried by identity entries
@@ -4653,6 +4690,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in contactArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in paymentArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
