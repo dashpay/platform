@@ -279,6 +279,16 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 });
             }
 
+            // `CoreWallet::send_to_addresses` adds a SECOND check here: a
+            // fresh `spendable_utxos` re-snapshot after `build_signed`, to
+            // catch a UTXO mutator running outside the wallet write lock.
+            // `send_payment` omits it because it runs under the SAME write
+            // lock scope and funds from the SAME shared BIP-44 account 0 as
+            // `send_to_addresses`; no mutator runs outside that lock today,
+            // so the re-fetch would be unreachable. If a future change moves
+            // a UTXO mutator outside the write lock, this path MUST add the
+            // same fresh re-fetch check — see the canonical version in
+            // `send_to_addresses`.
             let reservation = self
                 .reservations
                 .reserve(selected.into_iter().collect(), Some(change_addr));
