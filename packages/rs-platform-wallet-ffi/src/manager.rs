@@ -106,7 +106,10 @@ unsafe fn create_wallet_from_seed_impl(
 
     let network: Network = network.into();
 
-    let mut seed = [0u8; 64];
+    // Zeroize the FFI-boundary copy of the master secret on drop, matching
+    // `attach_wallet_seed_from_mnemonic`. Passed by reference so the manager
+    // method doesn't take an un-zeroized owned copy.
+    let mut seed = zeroize::Zeroizing::new([0u8; 64]);
     std::ptr::copy_nonoverlapping(seed_bytes, seed.as_mut_ptr(), 64);
 
     let accounts = match account_options {
@@ -118,7 +121,7 @@ unsafe fn create_wallet_from_seed_impl(
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
         runtime().block_on(manager.create_wallet_from_seed_bytes(
             network,
-            seed,
+            &seed,
             accounts,
             birth_height_override,
         ))

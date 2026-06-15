@@ -100,11 +100,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub async fn create_wallet_from_seed_bytes(
         &self,
         network: Network,
-        seed_bytes: [u8; 64],
+        // By reference (like `attach_wallet_seed`) so this method never
+        // owns a non-zeroized stack copy of the master secret — the only
+        // copy is the one consumed into key-wallet's `Seed` below.
+        seed_bytes: &[u8; 64],
         accounts: WalletAccountCreationOptions,
         birth_height_override: Option<u32>,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
-        let wallet = Wallet::from_seed_bytes(seed_bytes, network, accounts).map_err(|e| {
+        let wallet = Wallet::from_seed_bytes(*seed_bytes, network, accounts).map_err(|e| {
             PlatformWalletError::WalletCreation(format!(
                 "Failed to create wallet from seed bytes: {}",
                 e
@@ -666,7 +669,7 @@ mod register_wallet_duplicate_tests {
         manager
             .create_wallet_from_seed_bytes(
                 network,
-                seed_bytes,
+                &seed_bytes,
                 WalletAccountCreationOptions::Default,
                 Some(0),
             )
@@ -679,7 +682,7 @@ mod register_wallet_duplicate_tests {
         let err = manager
             .create_wallet_from_seed_bytes(
                 network,
-                seed_bytes,
+                &seed_bytes,
                 WalletAccountCreationOptions::Default,
                 Some(0),
             )

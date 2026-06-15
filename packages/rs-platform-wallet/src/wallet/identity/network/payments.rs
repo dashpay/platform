@@ -455,10 +455,11 @@ mod tests {
         ));
         let mnemonic =
             Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+        let seed = mnemonic.to_seed("");
         let wallet = manager
             .create_wallet_from_seed_bytes(
                 Network::Testnet,
-                mnemonic.to_seed(""),
+                &seed,
                 WalletAccountCreationOptions::Default,
                 Some(0),
             )
@@ -789,10 +790,11 @@ mod tests {
         ));
         let mnemonic =
             Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+        let seed = mnemonic.to_seed("");
         let wallet = manager
             .create_wallet_from_seed_bytes(
                 Network::Testnet,
-                mnemonic.to_seed(""),
+                &seed,
                 WalletAccountCreationOptions::Default,
                 Some(0),
             )
