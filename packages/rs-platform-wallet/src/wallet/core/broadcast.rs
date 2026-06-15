@@ -364,9 +364,21 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // filtered out *and* skips the peeked change address. Guard held until
             // `check_core_transaction` marks them spent (success) or the error
             // unwinds (failure → outpoints released for retry).
+            //
+            // Atomic reject-overlap: `reserve` returns `None` if any selected
+            // outpoint or the change address was grabbed by a concurrent caller
+            // between our prefilter and here. Unreachable today (both filters run
+            // under this same write lock), but handled defensively as the retryable
+            // concurrent-spend conflict the prefilter would otherwise surface.
             let reservation = self
                 .reservations
-                .reserve(selected.into_iter().collect(), Some(change_addr.clone()));
+                .reserve(
+                    selected.iter().copied().collect(),
+                    Some(change_addr.clone()),
+                )
+                .ok_or_else(|| PlatformWalletError::ConcurrentSpendConflict {
+                    selected: selected.iter().copied().collect(),
+                })?;
 
             (tx, reservation)
         };
@@ -1041,7 +1053,10 @@ mod tests {
         // Reserve the wallet's only outpoint so the spendable snapshot is
         // empty for the next caller, exercising the early-exit guard.
         let outpoint = OutPoint::new(Txid::from_byte_array([7u8; 32]), 0);
-        let _guard = core.reservations.reserve(vec![outpoint], None);
+        let _guard = core
+            .reservations
+            .reserve(vec![outpoint], None)
+            .expect("reserve");
 
         let result = core
             .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs, &signer)
@@ -1225,7 +1240,7 @@ mod tests {
 
         let reservations = OutpointReservations::new();
         let outpoint = OutPoint::new(Txid::from_byte_array([42u8; 32]), 0);
-        let guard = reservations.reserve(vec![outpoint], None);
+        let guard = reservations.reserve(vec![outpoint], None).expect("reserve");
         assert!(reservations.contains(&outpoint));
 
         let broadcaster: Arc<dyn TransactionBroadcaster> = Arc::new(FailingBroadcaster);
@@ -1275,7 +1290,7 @@ mod tests {
 
         let reservations = OutpointReservations::new();
         let outpoint = OutPoint::new(Txid::from_byte_array([99u8; 32]), 0);
-        let guard = reservations.reserve(vec![outpoint], None);
+        let guard = reservations.reserve(vec![outpoint], None).expect("reserve");
 
         // OK-broadcasting mock so we reach the post-broadcast write lock.
         let broadcaster: Arc<dyn TransactionBroadcaster> = Arc::new(MockBroadcaster::new(

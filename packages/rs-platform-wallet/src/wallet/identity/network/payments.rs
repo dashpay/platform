@@ -282,9 +282,17 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 &fresh_spendable_outpoints,
             )?;
 
+            // Atomic reject-overlap: `reserve` returns `None` if a concurrent
+            // caller grabbed any selected outpoint or the change address between
+            // our prefilter and here. Unreachable today (both filters run under
+            // this same write lock), but handled defensively as the retryable
+            // concurrent-spend conflict the prefilter would otherwise surface.
             let reservation = self
                 .reservations
-                .reserve(selected.into_iter().collect(), Some(change_addr));
+                .reserve(selected.iter().copied().collect(), Some(change_addr))
+                .ok_or_else(|| PlatformWalletError::ConcurrentSpendConflict {
+                    selected: selected.iter().copied().collect(),
+                })?;
 
             (payment_address, tx, reservation)
         };
@@ -745,7 +753,9 @@ mod tests {
         );
 
         // Simulate a concurrent send holding the wallet's only UTXO.
-        let _guard = reservations.reserve(vec![funding_outpoint()], None);
+        let _guard = reservations
+            .reserve(vec![funding_outpoint()], None)
+            .expect("reserve");
 
         let result = identity
             .send_payment(&from_identity, &to_contact, 100_000, None)
