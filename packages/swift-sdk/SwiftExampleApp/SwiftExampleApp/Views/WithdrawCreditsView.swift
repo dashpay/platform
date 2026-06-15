@@ -93,6 +93,11 @@ struct WithdrawCreditsView: View {
                 )
             }
         }
+        // Block swipe-to-dismiss while the withdrawal is in flight — the
+        // Cancel button is already disabled, but interactive dismissal
+        // would otherwise let the user drop the sheet mid-broadcast,
+        // reopen it, and fire a second withdrawal on this write path.
+        .interactiveDismissDisabled(isSubmitting)
     }
 
     // MARK: - Sections
