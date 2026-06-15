@@ -18,7 +18,7 @@ Every catalog row carries four orthogonal, machine-filterable fields. Select tes
 
 - **Tier** ∈ `Essential` · `Common` · `Thorough` · `Uncommon` · `Manual`
 - **Layer** ∈ `Core` · `Platform` · `Cross` · `Shielded`
-- **Status** ∈ `✅` · `🧪` · `⚠️` · `🔌` · `🚫`
+- **Status** ∈ `✅` · `🧪` · `⚠️` · `🔌` · `🚫` · `➖`
 - **Category** ∈ `Core` · `Identity` · `Address` · `DPNS` · `Voting` · `Contract` · `Document` · `Token` · `Shielded` · `DashPay` · `Group` · `System` · `MultiWallet` (the feature area; shown as `Domain=…` on each §4 section header — "Category" and "Domain" are the same axis)
 
 A test is **automatable now** only if Status is `✅`, `🧪`, or `⚠️` (reachable and drivable in the simulator) **and** `Tier ≠ Manual`. `Tier=Manual` marks implemented features that need a human on a physical device (e.g. a camera) — the automated QA agent must **skip and flag them for manual testing**, never mark them failed. `🔌`/`🚫` rows are listed for completeness — skip them unless asked to confirm absence.
@@ -97,6 +97,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ⚠️ | UI exists but is **local-only / mock** — does not broadcast. | Partially (UI only) |
 | 🔌 | FFI and/or Swift wrapper exists, but **no UI** to trigger it. | No (SDK only) |
 | 🚫 | Not implemented anywhere (no FFI, no UI). | No |
+| ➖ | Retired — the thing this row tracked was removed or folded into another row. | n/a |
 
 > **Entry-point reality check.** A set of Platform write transitions (document create/replace/delete/transfer/price/purchase, data-contract create/update, identity key-disable) are reachable in the app **only through `Settings → Platform State Transitions` → `TransitionDetailView`** (marked 🧪). They broadcast for real, but there is no per-identity "happy path" button for them. The QA agent must navigate to the builder for those rows. (Identity credit *transfer*, `ID-04`, and *withdrawal*, `ID-10`, now have production buttons in `IdentityDetailView` — see those rows.) The builder and the read-only **Platform Queries** catalog both live under the **Settings** tab's **Platform** section (scroll past *Network* and *Data*).
 
@@ -206,14 +207,14 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | ID | Action | Layer | Tier | Status | Entry point & test notes |
 |---|---|---|---|---|---|
 | DOC-01 | Query documents / single document | Platform | Common | ✅ | `DocumentsView` / `PlatformQueriesView` → `dash_sdk_document_search` / `_fetch`. |
-| DOC-02 | Create document (broadcast) | Platform | Common | 🧪 | *Settings builder → Document Create* → `dash_sdk_document_create` (put_to_platform). NB `DOC-09` is the local mock. |
+| DOC-02 | Create document (broadcast) | Platform | Common | ✅ | Production UI: Contracts → contract → document type → **New Document** (`DocumentTypeDetailsView` / schema-driven `CreateDocumentView`) → `platform_wallet_create_document_with_signer` (routes through `rs-platform-wallet` `IdentityWallet::create_document_with_signer` → SDK `put_to_platform_and_wait_for_response`, signed by the wallet's keychain signer). Driven end-to-end: created a `preorder` doc (`saltedDomainHash`) on `GWRSAV…S31Ec` from funded idx1 — network-confirmed, doc id `7i1hJgvVt8fJms26kGwkEZ6jVZxrfd3BrqfmAfpqXMoG`, persisted & appears in the documents list. *(Settings builder → Document Create / `dash_sdk_document_create` remains as a test-signer alternative.)* |
 | DOC-03 | Replace document | Platform | Thorough | 🧪 | *Settings builder* → `dash_sdk_document_replace_on_platform`. |
 | DOC-04 | Delete document | Platform | Thorough | 🧪 | *Settings builder* → `dash_sdk_document_delete`. |
 | DOC-05 | Transfer document | Platform | Uncommon | 🧪 | *Settings builder* → `dash_sdk_document_transfer_to_identity`. |
 | DOC-06 | Update document price | Platform | Uncommon | 🧪 | *Settings builder* / `DocumentWithPriceView` → `dash_sdk_document_update_price_of_document`. |
 | DOC-07 | Purchase document | Platform | Uncommon | 🧪 | *Settings builder* → `dash_sdk_document_purchase`. |
 | DOC-08 | Document count / sum / average aggregation | Platform | Uncommon | 🔌 | FFI `dash_sdk_document_count` / `_sum` / `_average`; no UI. |
-| DOC-09 | Create document (local demo) | Platform | — | ⚠️ | `DocumentsView` create is local-only mock (no broadcast). Use `DOC-02` for a real write. |
+| DOC-09 | Create document (local demo) | Platform | — | ➖ | Retired. The old `DocumentsView` local-only mock was replaced by the real broadcast flow (`CreateDocumentView`); see `DOC-02`. |
 
 ### 4.8 Tokens — `Domain=Token`
 
