@@ -279,16 +279,21 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 });
             }
 
-            // `CoreWallet::send_to_addresses` adds a SECOND check here: a
-            // fresh `spendable_utxos` re-snapshot after `build_signed`, to
-            // catch a UTXO mutator running outside the wallet write lock.
-            // `send_payment` omits it because it runs under the SAME write
-            // lock scope and funds from the SAME shared BIP-44 account 0 as
-            // `send_to_addresses`; no mutator runs outside that lock today,
-            // so the re-fetch would be unreachable. If a future change moves
-            // a UTXO mutator outside the write lock, this path MUST add the
-            // same fresh re-fetch check — see the canonical version in
-            // `send_to_addresses`.
+            // Second defense-in-depth net, in parity with
+            // `CoreWallet::send_to_addresses`: re-snapshot the funding
+            // account's spendable UTXOs after `build_signed` and confirm
+            // every selected outpoint is still present. See
+            // [`crate::wallet::core::broadcast::assert_selected_still_spendable`].
+            let fresh_spendable_outpoints: BTreeSet<OutPoint> = managed_account
+                .spendable_utxos(current_height)
+                .into_iter()
+                .map(|utxo| utxo.outpoint)
+                .collect();
+            crate::wallet::core::broadcast::assert_selected_still_spendable(
+                &selected,
+                &fresh_spendable_outpoints,
+            )?;
+
             let reservation = self
                 .reservations
                 .reserve(selected.into_iter().collect(), Some(change_addr));
@@ -637,6 +642,18 @@ mod tests {
             reservations,
         }
     }
+
+    // The post-build fresh-spendable re-snapshot check
+    // (`assert_selected_still_spendable`, called from `send_payment`) is
+    // covered as a pure set check by unit tests in `core::broadcast`. A
+    // path-level test that trips it through `send_payment` is not added
+    // here: `build_signed` and the re-snapshot run under one held write
+    // lock, so no in-process task can drop a selected UTXO between them
+    // without a production-side mutation hook. That's the very condition
+    // the check is a forward-compat net for.
+    // TODO: add a send_payment-path trip test once a UTXO mutator can run
+    // outside the send-flow write lock (the change that makes the check
+    // reachable).
 
     /// Happy path: `send_payment` records a Sent `PaymentEntry` on the
     /// sending identity, and the outpoint reserved during the build is
