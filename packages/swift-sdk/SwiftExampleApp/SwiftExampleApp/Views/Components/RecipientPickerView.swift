@@ -133,7 +133,12 @@ struct RecipientPickerView: View {
                         .accessibilityIdentifier("recipient.identity.\(id.identityIdBase58)")
                 }
             }
-            .accessibleInlinePicker("recipient.identityPicker")
+            // navigationLink (not inline): every call site embeds this
+            // view in a Form `Section`, so the picker pushes a real list
+            // whose rows expose the per-row `recipient.identity.<base58>`
+            // identifiers above (inline would drop them — see
+            // AccessiblePicker.swift).
+            .accessibleFormPicker("recipient.identityPicker")
         }
     }
 
