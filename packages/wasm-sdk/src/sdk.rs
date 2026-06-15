@@ -312,8 +312,14 @@ impl WasmSdkBuilder {
         }
     }
 
-    pub fn build(self) -> Result<WasmSdk, WasmSdkError> {
+    pub async fn build(self) -> Result<WasmSdk, WasmSdkError> {
         let sdk = self.inner.build().map_err(WasmSdkError::from)?;
+        if let Err(e) = sdk.refresh_protocol_version().await {
+            tracing::warn!(
+                error = %e,
+                "protocol version refresh failed on init; proceeding with floor version"
+            );
+        }
         Ok(WasmSdk {
             sdk,
             trusted_context: self.trusted_context,

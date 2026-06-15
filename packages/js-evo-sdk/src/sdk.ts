@@ -200,7 +200,7 @@ export class EvoSDK {
       );
     }
 
-    this.wasmSdk = builder.build();
+    this.wasmSdk = await builder.build();
   }
 
   static fromWasm(wasmSdk: wasm.WasmSdk): EvoSDK {

@@ -26,6 +26,19 @@ pub struct DashSDKConfigExtended {
     pub core_sdk_handle: *mut CoreSDKHandle,
 }
 
+/// Best-effort protocol-version refresh on SDK init.
+///
+/// Logs a warning and proceeds if the network is unreachable; never fails SDK creation.
+fn best_effort_refresh(sdk: &Sdk, runtime: &BigStackRuntime) {
+    match runtime.block_on(sdk.refresh_protocol_version()) {
+        Ok(v) => debug!(protocol_version = v, "protocol version refreshed on init"),
+        Err(e) => warn!(
+            error = %e,
+            "protocol version refresh failed on init; proceeding with floor version"
+        ),
+    }
+}
+
 fn apply_version(builder: SdkBuilder, platform_version: u32) -> Result<SdkBuilder, DashSDKError> {
     if platform_version == 0 {
         return Ok(builder);
@@ -125,9 +138,9 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
     };
 
     // Parse DAPI addresses
-    let builder = if config.dapi_addresses.is_null() {
+    let (builder, is_real) = if config.dapi_addresses.is_null() {
         // Use mock SDK if no addresses provided
-        SdkBuilder::new_mock().with_network(network)
+        (SdkBuilder::new_mock().with_network(network), false)
     } else {
         let addresses_str = match unsafe { CStr::from_ptr(config.dapi_addresses) }.to_str() {
             Ok(s) => s,
@@ -141,7 +154,7 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
 
         if addresses_str.is_empty() {
             // Use mock SDK if addresses string is empty
-            SdkBuilder::new_mock().with_network(network)
+            (SdkBuilder::new_mock().with_network(network), false)
         } else {
             // Parse the address list
             let address_list = match AddressList::from_str(addresses_str) {
@@ -154,7 +167,7 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
                 }
             };
 
-            SdkBuilder::new(address_list).with_network(network)
+            (SdkBuilder::new(address_list).with_network(network), true)
         }
     };
 
@@ -168,6 +181,9 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
 
     match sdk_result {
         Ok(sdk) => {
+            if is_real {
+                best_effort_refresh(&sdk, &runtime);
+            }
             // Clone Arc<Runtime> into the wrapper
             let wrapper = Box::new(SDKWrapper {
                 sdk,
@@ -213,9 +229,9 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
     };
 
     // Parse DAPI addresses
-    let mut builder = if base_config.dapi_addresses.is_null() {
+    let (mut builder, is_real) = if base_config.dapi_addresses.is_null() {
         // Use mock SDK if no addresses provided
-        SdkBuilder::new_mock().with_network(network)
+        (SdkBuilder::new_mock().with_network(network), false)
     } else {
         let addresses_str = match unsafe { CStr::from_ptr(base_config.dapi_addresses) }.to_str() {
             Ok(s) => s,
@@ -229,7 +245,7 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
 
         if addresses_str.is_empty() {
             // Use mock SDK if addresses string is empty
-            SdkBuilder::new_mock().with_network(network)
+            (SdkBuilder::new_mock().with_network(network), false)
         } else {
             // Parse the address list
             let address_list = match AddressList::from_str(addresses_str) {
@@ -242,7 +258,7 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
                 }
             };
 
-            SdkBuilder::new(address_list).with_network(network)
+            (SdkBuilder::new(address_list).with_network(network), true)
         }
     };
 
@@ -281,6 +297,9 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
 
     match sdk_result {
         Ok(sdk) => {
+            if is_real {
+                best_effort_refresh(&sdk, &runtime);
+            }
             let wrapper = Box::new(SDKWrapper {
                 sdk,
                 runtime,
@@ -487,6 +506,8 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
 
     match sdk_result {
         Ok(sdk) => {
+            best_effort_refresh(&sdk, &runtime);
+
             // Prefetch quorums for trusted setup
             info!("dash_sdk_create_trusted: SDK built, prefetching quorums...");
 
