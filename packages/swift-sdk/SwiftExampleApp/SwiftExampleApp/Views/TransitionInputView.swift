@@ -122,12 +122,16 @@ struct TransitionInputView: View {
 
             case "select":
                 Picker(input.label, selection: $value) {
-                    Text("Select...").tag("")
+                    Text("Select...")
+                        .tag("")
+                        .accessibilityIdentifier("transition.\(input.name).select.none")
                     ForEach(input.options ?? [], id: \.value) { option in
-                        Text(option.label).tag(option.value)
+                        Text(option.label)
+                            .tag(option.value)
+                            .accessibilityIdentifier("transition.\(input.name).select.\(option.value)")
                     }
                 }
-                .pickerStyle(MenuPickerStyle())
+                .accessibleInlinePicker("transition.\(input.name).selectPicker")
 
             case "button":
                 Button(action: { onSpecialAction(input.action ?? "") }) {
@@ -205,15 +209,18 @@ struct TransitionInputView: View {
                 .cornerRadius(8)
         } else {
             Picker("Select Token", selection: $value) {
-                Text("Select a token...").tag("")
+                Text("Select a token...")
+                    .tag("")
+                    .accessibilityIdentifier("transition.\(input.name).token.none")
                 ForEach(tokens, id: \.token.id) { tokenData in
                     let displayName = tokenData.token.getSingularForm(languageCode: "en") ?? tokenData.token.displayName
                     let contractName = getContractDisplayName(tokenData.contract)
                     Text("\(displayName) (from \(contractName))")
                         .tag("\(tokenData.contract.idBase58):\(tokenData.token.position)")
+                        .accessibilityIdentifier("transition.\(input.name).token.\(tokenData.contract.idBase58).\(tokenData.token.position)")
                 }
             }
-            .pickerStyle(MenuPickerStyle())
+            .accessibleInlinePicker("transition.\(input.name).tokenPicker")
             .padding()
             .background(Color.gray.opacity(0.1))
             .cornerRadius(8)
@@ -327,13 +334,16 @@ struct TransitionInputView: View {
                 .cornerRadius(8)
         } else {
             Picker("Select Contract", selection: $value) {
-                Text("Select a contract...").tag("")
+                Text("Select a contract...")
+                    .tag("")
+                    .accessibilityIdentifier("transition.\(input.name).contract.none")
                 ForEach(availableContracts, id: \.idBase58) { contract in
                     Text(getContractDisplayName(contract))
                         .tag(contract.idBase58)
+                        .accessibilityIdentifier("transition.\(input.name).contract.\(contract.idBase58)")
                 }
             }
-            .pickerStyle(MenuPickerStyle())
+            .accessibleInlinePicker("transition.\(input.name).contractPicker")
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.gray.opacity(0.1))
@@ -417,12 +427,16 @@ struct TransitionInputView: View {
                         .cornerRadius(8)
                 } else {
                     Picker("Select Document Type", selection: $value) {
-                        Text("Select a type...").tag("")
+                        Text("Select a type...")
+                            .tag("")
+                            .accessibilityIdentifier("transition.\(input.name).documentType.none")
                         ForEach(availableDocTypes, id: \.name) { docType in
-                            Text(docType.name).tag(docType.name)
+                            Text(docType.name)
+                                .tag(docType.name)
+                                .accessibilityIdentifier("transition.\(input.name).documentType.\(docType.name)")
                         }
                     }
-                    .pickerStyle(MenuPickerStyle())
+                    .accessibleInlinePicker("transition.\(input.name).documentTypePicker")
                     .padding()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.gray.opacity(0.1))
@@ -497,13 +511,16 @@ struct TransitionInputView: View {
                 .cornerRadius(8)
         } else {
             Picker("Select Identity", selection: $value) {
-                Text("Select an identity...").tag("")
+                Text("Select an identity...")
+                    .tag("")
+                    .accessibilityIdentifier("transition.\(input.name).identity.none")
                 ForEach(identities, id: \.identityIdBase58) { identity in
                     Text(identity.displayName)
                         .tag(identity.identityIdBase58)
+                        .accessibilityIdentifier("transition.\(input.name).identity.\(identity.identityIdBase58)")
                 }
             }
-            .pickerStyle(MenuPickerStyle())
+            .accessibleInlinePicker("transition.\(input.name).identityPicker")
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.gray.opacity(0.1))
@@ -542,14 +559,19 @@ struct TransitionInputView: View {
                     }
                 } else {
                     Picker("Select Identity", selection: $value) {
-                        Text("Select an identity...").tag("")
+                        Text("Select an identity...")
+                            .tag("")
+                            .accessibilityIdentifier("transition.\(input.name).recipientIdentity.none")
                         ForEach(identities, id: \.identityIdBase58) { identity in
                             Text(identity.displayName)
                                 .tag(identity.identityIdBase58)
+                                .accessibilityIdentifier("transition.\(input.name).recipientIdentity.\(identity.identityIdBase58)")
                         }
-                        Text("💳 Manually Enter Recipient").tag("__manual__")
+                        Text("💳 Manually Enter Recipient")
+                            .tag("__manual__")
+                            .accessibilityIdentifier("transition.\(input.name).recipientIdentity.manual")
                     }
-                    .pickerStyle(MenuPickerStyle())
+                    .accessibleInlinePicker("transition.\(input.name).recipientIdentityPicker")
                     .padding()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.gray.opacity(0.1))
