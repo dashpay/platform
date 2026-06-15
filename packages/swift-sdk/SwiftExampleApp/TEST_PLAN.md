@@ -115,7 +115,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | CORE-07 | SPV sync (start / stop / progress) | Core | Essential | ✅ | Global sync indicator (`ContentView`) → `platform_wallet_manager_spv_*`. Headers/filters/masternodes advance to tip. |
 | CORE-08 | QR scan recipient | Core | Manual | ✅ | `QRScannerView`, reachable in the Send flow — but scanning needs a real camera the simulator doesn't have, so it can't be automated (`Tier=Manual`). On a device: Send → QR-scan button → point at a Dash address QR → recipient field populates. |
 | CORE-09 | Multiple HD accounts (within one wallet) | Core | Common | ✅ | Account selection / `AccountDetailView`; balances per `account_index`. Distinct from holding multiple *wallets* — see CORE-14+. |
-| CORE-10 | Multi-recipient Core send | Core | Common | 🔌 | FFI `core_wallet_send_to_addresses` takes parallel address/amount arrays; UI is single-recipient — verify before claiming. |
+| CORE-10 | Multi-recipient Core send | Core | Common | ✅ | Send flow (`SendTransactionView`, Core→Core) → "Add recipient" appends extra address/amount rows → `SendViewModel.coreRecipients` → `core_wallet_send_to_addresses` (parallel arrays; Rust coin-selects + builds the multi-output tx). One tx with N outputs; balance drops by sum+fee. Verified: 2-output testnet send (txid `30010050…17f840fc`, txlock, 3 vouts) credited both recipients. |
 | CORE-11 | Custom fee on transparent send | Core | Uncommon | 🚫 | Not exposed on the transparent send path (custom Core fee only on shielded withdraw `SH-08` and platform-address funding). |
 | CORE-12 | CoinJoin / mixing | Core | Uncommon | 🚫 | Not implemented anywhere (SPV crate or FFI). |
 | CORE-13 | Send explicitly via InstantSend | Core | Uncommon | 🚫 | IS is observe-only (used to obtain asset-lock proofs); no user-facing send toggle. |
@@ -470,7 +470,6 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 For completeness (the "everything gRPC + Core can do" requirement), these exist at the protocol/FFI level but have **no app entry point** today:
 
 **🔌 SDK-only (FFI/wrapper exists, no UI):**
-- `CORE-10` multi-recipient Core send (FFI supports arrays; UI single-recipient)
 - `ADDR-05` address balance-change history (recent / compacted / branch / trunk)
 - `DOC-08` document count / sum / average aggregation
 - `TOK-17` calculate token ID

@@ -81,6 +81,19 @@ enum FundSource: String, CaseIterable, Identifiable {
 
 import SwiftUI
 
+/// One *extra* Core output row beyond the primary recipient. The
+/// primary recipient stays on `recipientAddress` / `amountString` (it
+/// drives `detectAddressType()` → `detectedFlow`, i.e. the Core /
+/// Platform / Shielded routing); these are the additional outputs that
+/// only the multi-recipient `coreToCore` flow appends. `id` is a stable
+/// identity for `ForEach`/`@Published` diffing; `Equatable` keeps the
+/// array cheap to diff.
+struct CoreRecipient: Identifiable, Equatable {
+    let id = UUID()
+    var address: String = ""
+    var amountString: String = ""
+}
+
 /// ViewModel for the Send Transaction screen.
 @MainActor
 class SendViewModel: ObservableObject {
@@ -88,6 +101,11 @@ class SendViewModel: ObservableObject {
         didSet { detectAddressType() }
     }
     @Published var amountString = ""
+    /// Extra Core outputs beyond the primary recipient. Only populated
+    /// (and only consulted) on the `coreToCore` flow — every other flow
+    /// ignores it. Empty by default so the screen looks identical to the
+    /// single-recipient form until the user taps "Add recipient".
+    @Published var additionalCoreRecipients: [CoreRecipient] = []
     /// Optional UTF-8 memo for a shielded → shielded transfer. Only
     /// surfaced when the recipient is an Orchard address; Rust caps it
     /// at 32 UTF-8 bytes and does the 36-byte encoding.
@@ -129,6 +147,88 @@ class SendViewModel: ObservableObject {
     /// (Core uses duffs; Platform / shielded use credits).
     var amountDuffs: UInt64? { amount }
 
+    // MARK: - Multi-recipient (coreToCore only)
+
+    /// Append an empty extra Core output. The Rust coin-selector handles
+    /// however many outputs we hand it, so there's no UI-side cap.
+    func addCoreRecipient() {
+        additionalCoreRecipients.append(CoreRecipient())
+    }
+
+    /// Remove the extra output with the given identity. No-op if it was
+    /// already removed (e.g. a double-tap on the delete control).
+    func removeCoreRecipient(_ id: CoreRecipient.ID) {
+        additionalCoreRecipients.removeAll { $0.id == id }
+    }
+
+    /// Parse one extra row's amount to duffs through the same
+    /// `Decimal`-backed path as the primary `amount` (1 DASH = 1e8). Kept
+    /// as a single helper so every Core output — primary and extra — is
+    /// scaled identically; reinventing the decimal parse per row would
+    /// risk a row that rounds differently than the summary total.
+    func duffs(forRecipientAmount amountString: String) -> UInt64? {
+        parseTokenAmount(amountString, decimals: 8)
+    }
+
+    /// The full, ordered Core output list for the `coreToCore` flow:
+    /// the PRIMARY row (`recipientAddress` + `amountDuffs`) followed by
+    /// each `additionalCoreRecipients` row, in display order. Returns
+    /// `nil` if ANY row is invalid so callers (gating + send) treat the
+    /// batch atomically — a single bad extra row blocks the whole send
+    /// rather than silently dropping that output.
+    ///
+    /// "Valid" per row = the address parses as a `.core` address on
+    /// `self.network` (same `DashAddress.parse` the primary row's
+    /// detection uses, so a Platform/Orchard string in an extra row is
+    /// rejected here) AND its duffs amount is `> 0` (a sub-unit amount
+    /// scales to 0 and would reach Rust as a zero-value output).
+    var coreRecipients: [(address: String, amountDuffs: UInt64)]? {
+        var outputs: [(address: String, amountDuffs: UInt64)] = []
+
+        // Primary row. The trim mirrors the existing `.coreToCore` send
+        // case so the marshalled address matches what the badge validated.
+        let primaryAddress = recipientAddress
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isCoreAddress(primaryAddress),
+              let primaryDuffs = amountDuffs, primaryDuffs > 0
+        else { return nil }
+        outputs.append((address: primaryAddress, amountDuffs: primaryDuffs))
+
+        // Extra rows, in order.
+        for row in additionalCoreRecipients {
+            let address = row.address
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard isCoreAddress(address),
+                  let rowDuffs = duffs(forRecipientAmount: row.amountString),
+                  rowDuffs > 0
+            else { return nil }
+            outputs.append((address: address, amountDuffs: rowDuffs))
+        }
+
+        return outputs
+    }
+
+    /// Sum of every valid Core output (primary + additional), in duffs —
+    /// the "Total" shown in the multi-output summary. Returns 0 when the
+    /// batch isn't fully valid (`coreRecipients` is `nil`), matching the
+    /// disabled-Send state so the summary never shows a total for a batch
+    /// that can't be sent.
+    var coreSendTotalDuffs: UInt64 {
+        coreRecipients?.reduce(0) { $0 + $1.amountDuffs } ?? 0
+    }
+
+    /// Whether a trimmed string parses as a `.core` address on this
+    /// view model's network. Wraps the same `DashAddress.parse` the
+    /// primary-row detection uses so Core-address validity is judged
+    /// identically for every output.
+    private func isCoreAddress(_ trimmed: String) -> Bool {
+        guard !trimmed.isEmpty else { return false }
+        if case .core = DashAddress.parse(trimmed, network: network).type {
+            return true
+        }
+        return false
+    }
+
     /// Minimum L1 lock size (in duffs) for a `coreToShielded` send.
     /// Mirrors `ShieldedFundFromAssetLockView.minDuffs` (1 mDASH): an
     /// asset lock smaller than the Platform pool fee would build a lock
@@ -167,7 +267,14 @@ class SendViewModel: ObservableObject {
         // credits-ledger flow settles in credits (1e11).
         switch flow {
         case .coreToCore:
-            return (amountDuffs ?? 0) > 0
+            // Gate on the *whole* batch, not just the primary row: the
+            // multi-output send is atomic (one tx), so every extra row's
+            // address must be a Core address on-network and every extra
+            // amount > 0. `coreRecipients` already encodes "all rows
+            // valid (incl. the primary's amountDuffs > 0), else nil", so a
+            // non-nil list means the batch is sendable. With zero extra
+            // rows this reduces to the prior primary-only check.
+            return coreRecipients != nil
         case .coreToShielded:
             // Funded by an L1 asset lock denominated in duffs; gate on
             // the lock floor so a doomed (sub-fee) amount can't kick off
@@ -302,19 +409,26 @@ class SendViewModel: ObservableObject {
         do {
             switch flow {
             case .coreToCore:
-                guard let amountDuffs else {
-                    error = "Invalid amount"
-                    return
-                }
                 guard let core = coreWallet else {
                     error = "Core wallet not available"
                     return
                 }
-                let address = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-                let _ = try core.sendToAddresses(
-                    recipients: [(address: address, amountDuffs: amountDuffs)]
-                )
-                successMessage = "Payment sent"
+                // Build the ordered output list (primary + any extra
+                // rows). `coreRecipients` is nil unless every row is a
+                // valid on-network Core address with a > 0 duffs amount —
+                // the same condition `canSend` gates on, re-checked here
+                // so a stale enabled-Send tap can't slip an invalid batch
+                // through. Coin selection + multi-output tx building are
+                // entirely Rust-side; we only marshal the parallel
+                // address/amount arrays into `sendToAddresses`.
+                guard let recipients = coreRecipients else {
+                    error = "Invalid recipient or amount"
+                    return
+                }
+                let _ = try core.sendToAddresses(recipients: recipients)
+                successMessage = recipients.count > 1
+                    ? "Payment sent to \(recipients.count) recipients"
+                    : "Payment sent"
 
             case .platformToPlatform:
                 guard let addressWallet = platformAddressWallet else {
