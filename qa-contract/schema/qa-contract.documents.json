@@ -1,0 +1,214 @@
+{
+  "testCase": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "creationRestrictionMode": 1,
+    "indices": [
+      {
+        "name": "testId",
+        "properties": [
+          {
+            "testId": "asc"
+          }
+        ],
+        "unique": true
+      },
+      {
+        "name": "tier",
+        "properties": [
+          {
+            "tier": "asc"
+          }
+        ]
+      },
+      {
+        "name": "category",
+        "properties": [
+          {
+            "category": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "testId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32,
+        "position": 0,
+        "description": "Stable test identifier from the test plan (e.g. CORE-05, ID-04, DPNS-05). Unique per testCase."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255,
+        "position": 1,
+        "description": "Human-readable action being tested (the plan's Action column)."
+      },
+      "tier": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 16,
+        "position": 2,
+        "description": "Frequency tier. One of: Essential, Common, Thorough, Uncommon, Manual (Unspecified for stub rows)."
+      },
+      "category": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32,
+        "position": 3,
+        "description": "Feature area / Domain (e.g. Core, Identity, DPNS, Token, Shielded, MultiWallet)."
+      },
+      "layer": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 16,
+        "position": 4,
+        "description": "Stack layer. One of: Core, Platform, Cross, Shielded."
+      },
+      "implStatus": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32,
+        "position": 5,
+        "description": "Implementation status glyph mirrored from the plan (✅ implemented, 🧪 builder-only, ⚠️ partial/mock, 🔌 FFI-only, 🚫 not implemented)."
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 2048,
+        "position": 6,
+        "description": "Entry point & test notes for the action (the plan's last column)."
+      },
+      "entryPoint": {
+        "type": "string",
+        "maxLength": 512,
+        "position": 7,
+        "description": "Primary code entry point (view / FFI function) that drives the action."
+      },
+      "prerequisites": {
+        "type": "string",
+        "maxLength": 1024,
+        "position": 8,
+        "description": "Fixtures/preconditions required before this test can run."
+      },
+      "planCommit": {
+        "type": "string",
+        "maxLength": 64,
+        "position": 9,
+        "description": "git commit (short or full SHA) of TEST_PLAN.md this testCase was seeded from."
+      }
+    },
+    "required": [
+      "testId",
+      "title",
+      "tier",
+      "category",
+      "layer",
+      "implStatus"
+    ],
+    "additionalProperties": false,
+    "description": "A single test definition, mirroring one row of the iOS TEST_PLAN §4 catalog. Mutable so implementation status / entry points can be updated as the plan evolves; owner-only creation (v1 single QA identity)."
+  },
+  "testRun": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 1,
+    "indices": [
+      {
+        "name": "testIdCreatedAt",
+        "properties": [
+          {
+            "testId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "resultCreatedAt",
+        "properties": [
+          {
+            "result": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "buildRef",
+        "properties": [
+          {
+            "buildRef": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "testId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32,
+        "position": 0,
+        "description": "Test identifier this run is a result for (matches testCase.testId)."
+      },
+      "result": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 16,
+        "position": 1,
+        "description": "Outcome. One of: pass, fail, blocked, skipped."
+      },
+      "network": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32,
+        "position": 2,
+        "description": "Network the run executed against (e.g. testnet, devnet)."
+      },
+      "buildRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 63,
+        "position": 3,
+        "description": "Build under test (commit SHA, branch+sha, or app build number)."
+      },
+      "device": {
+        "type": "string",
+        "maxLength": 128,
+        "position": 4,
+        "description": "Device / simulator the run executed on (e.g. iPhone 16 Simulator, iOS 18.2)."
+      },
+      "evidence": {
+        "type": "string",
+        "maxLength": 512,
+        "position": 5,
+        "description": "Pointer to evidence (txid, on-chain id, screenshot path, or URL)."
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 2048,
+        "position": 6,
+        "description": "Free-form notes about the run."
+      },
+      "blockerReason": {
+        "type": "string",
+        "maxLength": 512,
+        "position": 7,
+        "description": "Why the run was blocked/skipped (precondition unmet, environment limit, etc.)."
+      }
+    },
+    "required": [
+      "testId",
+      "result",
+      "network",
+      "buildRef",
+      "$createdAt"
+    ],
+    "additionalProperties": false,
+    "description": "An append-only record of one test execution. Immutable and non-deletable: it is an audit log. $createdAt is the run time. Owner-only creation in v1 (single QA identity); relax creationRestrictionMode to 0 to let any identity submit runs."
+  }
+}

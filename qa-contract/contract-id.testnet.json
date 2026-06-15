@@ -1,0 +1,12 @@
+{
+  "network": "testnet",
+  "contractId": "2qEVUbg4znNgNRs3FJQ4kof4NKpB8q4fGtYa7qBouLzw",
+  "ownerId": "85KjYZLZXA7YZBPyFEjiMaH36xcQpBBZisKGBHF3uKuH",
+  "documentTypes": [
+    "testCase",
+    "testRun"
+  ],
+  "schemaSha": "990aa1b47a4fe61d",
+  "planCommit": "45fdf33901",
+  "registeredAt": "2026-06-15T21:30:26.173Z"
+}
