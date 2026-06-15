@@ -295,7 +295,7 @@ impl PlatformWallet {
             persister: wallet_persister.clone(),
             broadcaster: dashpay_broadcaster,
             // Shared with `CoreWallet::send_to_addresses` so DashPay
-            // payments do not race the same UTXO. See CMT-001 / #3585.
+            // payments do not race the same UTXO. See #3585.
             reservations: core.reservations.clone(),
         };
 

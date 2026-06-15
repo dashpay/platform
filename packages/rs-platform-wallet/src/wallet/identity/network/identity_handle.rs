@@ -319,7 +319,7 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// [`crate::CoreWallet`]). DashPay `send_payment` and core
     /// `send_to_addresses` both fund from the same BIP-44 account 0
     /// UTXOs, so they must consult the same reservation set to avoid
-    /// the same-UTXO concurrent-selection race (CMT-001). See
+    /// the same-UTXO concurrent-selection race. See
     /// [`crate::wallet::core::reservations`].
     pub(crate) reservations: crate::wallet::core::reservations::OutpointReservations,
 }

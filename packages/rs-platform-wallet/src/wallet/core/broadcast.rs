@@ -59,7 +59,7 @@ pub(crate) fn classify_build_error(
 ///
 /// Broadcasts `tx`, then under a single write lock acquisition reconciles
 /// wallet state and either releases or leaks the reservation guard
-/// according to the post-broadcast invariant (CMT-003):
+/// according to the post-broadcast invariant:
 ///
 /// * On broadcast failure the reservation is implicitly dropped — the
 ///   guard is moved into this function and unwinds via `Drop` when the
@@ -283,13 +283,16 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
             // Pick the next change address. Peek (advance=false) first; if the
             // peeked address is already pending from a concurrent in-flight
-            // send (CMT-006), advance the derivation index and peek again
-            // until we find one that is not pending. The final chosen
-            // address is committed (advance=true) inside this same write
-            // lock and inserted into the reservation set so a concurrent
-            // caller can never select the same change address. Advancing
-            // burns at most one index per concurrent in-flight send — a
-            // bounded, acceptable cost for privacy.
+            // send, advance the derivation index and peek again until we find
+            // one that is not pending. The final chosen address is committed
+            // (advance=true) inside this same write lock and inserted into the
+            // reservation set so a concurrent caller can never select the same
+            // change address. Advancing burns at most one index per concurrent
+            // in-flight send — a bounded, acceptable cost for privacy.
+            //
+            // TODO(#3770): switch change-address selection to the multi-pool
+            // address_reserve / OutpointReservations bridge (stacked
+            // follow-up) instead of this peek-and-advance loop.
             let pending_change = self.reservations.pending_change_snapshot();
             let change_addr = loop {
                 let peeked = managed_account
@@ -900,7 +903,7 @@ mod tests {
         }
     }
 
-    /// CMT-003: if `check_core_transaction` returns `is_relevant = false`
+    /// If `check_core_transaction` returns `is_relevant = false`
     /// after a successful broadcast (an internal invariant violation but a
     /// real-world possibility on a corrupted/stale wallet state), the
     /// reservation must stay held — releasing it could let a concurrent
@@ -966,7 +969,7 @@ mod tests {
         let funding_outpoint = OutPoint::new(Txid::from_byte_array([7u8; 32]), 0);
 
         // Release the broadcast — the post-broadcast reconcile sees
-        // `is_relevant=false` and (per CMT-003) leaks the reservation.
+        // `is_relevant=false` and leaks the reservation.
         gate.notify_one();
 
         let result = handle.await.expect("task panicked");
@@ -1015,10 +1018,9 @@ mod tests {
 
     // ---- classify_build_error: typed BuilderError → PlatformWalletError ----
     //
-    // The mapper replaces the previous brittle Display-substring match
-    // (CMT-001 / CMT-004). These tests pin the typed contract directly so
-    // a future rename or rewording of the upstream `Display` impl cannot
-    // silently downgrade `NoSpendableInputs` back to `TransactionBuild`.
+    // These tests pin the typed contract directly so a future rename or
+    // rewording of the upstream `Display` impl cannot silently downgrade
+    // `NoSpendableInputs` back to `TransactionBuild`.
 
     use super::classify_build_error;
     use key_wallet::account::account_type::StandardAccountType;
@@ -1116,7 +1118,7 @@ mod tests {
         );
     }
 
-    // ---- broadcast_and_reconcile: shared post-broadcast helper (CMT-003) ----
+    // ---- broadcast_and_reconcile: shared post-broadcast helper ----
     //
     // The helper centralises the broadcast → reconcile → release-or-leak
     // decision tree used by both `CoreWallet::send_to_addresses` and
