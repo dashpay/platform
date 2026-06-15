@@ -633,19 +633,20 @@ struct CreateIdentityView: View {
         } header: {
             Text("Funding Source")
         } footer: {
-            Text(
-                "Any account on the selected wallet with a balance can fund "
-                + "the identity — Core or Platform Payment. Empty accounts "
-                + "are hidden. "
-                + (showShielded
-                    ? "Shielded Balance funds the identity directly from this "
-                      + "wallet's shielded (Orchard) pool by spending a fixed "
-                      + "denomination. "
-                    : "")
-                + "To resume a prior in-flight registration, "
-                + "use the Resumable Registrations section on the Identities tab."
-            )
+            Text(Self.fundingSourceFooterText(showShielded: showShielded))
         }
+    }
+
+    private static func fundingSourceFooterText(showShielded: Bool) -> String {
+        var text = "Any account on the selected wallet with a balance can fund "
+            + "the identity — Core or Platform Payment. Empty accounts are hidden. "
+        if showShielded {
+            text += "Shielded Balance funds the identity directly from this "
+                + "wallet's shielded (Orchard) pool by spending a fixed denomination. "
+        }
+        text += "To resume a prior in-flight registration, "
+            + "use the Resumable Registrations section on the Identities tab."
+        return text
     }
 
     /// Amount (in DASH) to fund the new identity with. Shown for
