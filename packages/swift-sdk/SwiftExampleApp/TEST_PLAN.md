@@ -4,6 +4,8 @@ A catalog of **every action theoretically possible** on Dash via the Platform gR
 
 This file is meant to be read by an automated QA agent. A human or agent can say *"test the Essential, Platform-only actions"* and the agent filters the tables below by `Tier = Essential` and `Layer = Platform`, then drives each action in the booted simulator (see the `simulator-control` skill) and reports pass/fail.
 
+> **📊 Live QA status dashboard.** A read-only web dashboard visualises these tests' on-chain results — the `dash-qa` data contract seeded from this plan: **<https://dashpay.github.io/qa-dashboard-site/>**. It renders a tier × category status matrix, per-test latest result + run history, summary counts, and filters (network / build / tier / category / result). Source: [`dashpay/qa-dashboard-site`](https://github.com/dashpay/qa-dashboard-site).
+
 > **Provenance & maintenance.** Generated from a full source scan of the `v3.1-dev` line (proto, `rs-dpp`, `rs-sdk`, `rs-sdk-ffi`, `rs-platform-wallet[-ffi]`, `swift-sdk`, `SwiftExampleApp`). It is a snapshot — when features land or move, update the affected rows (status, entry point) and re-tier if behavior changes. Treat the codebase as the source of truth if a row looks stale.
 
 ---
