@@ -49,12 +49,11 @@ use crate::error::PlatformWalletError;
 pub struct ContactXpubData {
     /// The full extended public key for this contact relationship.
     pub xpub: ExtendedPubKey,
-    /// Parent key fingerprint (first 4 bytes of HASH160 of parent public key).
-    pub parent_fingerprint: [u8; 4],
-    /// Chain code from the derived key (32 bytes).
-    pub chain_code: [u8; 32],
-    /// Compressed public key (33 bytes, starts with 0x02 or 0x03).
-    pub public_key: [u8; 33],
+    /// The DIP-15 compact components (`parent_fingerprint ‖ chain_code ‖
+    /// public_key`) of `xpub` — the wire form fed into `encryptedPublicKey`.
+    /// Reuses [`platform_encryption::CompactXpub`] rather than duplicating
+    /// the three byte arrays.
+    pub compact: platform_encryption::CompactXpub,
 }
 
 impl ContactXpubData {
@@ -70,11 +69,7 @@ impl ContactXpubData {
     /// dash-shared-core, Android dashj `serializeContactPub`) emit exactly this
     /// 69-byte form. See `docs/dashpay/research/06-interop-desk-check.md` (G14).
     pub fn compact_xpub(&self) -> [u8; platform_encryption::COMPACT_XPUB_LEN] {
-        platform_encryption::compact_xpub_bytes(
-            self.parent_fingerprint,
-            self.chain_code,
-            self.public_key,
-        )
+        self.compact.to_bytes()
     }
 }
 
@@ -130,16 +125,13 @@ pub fn derive_contact_xpub(
         PlatformWalletError::InvalidIdentityData(format!("Failed to derive contact xpub: {}", e))
     })?;
 
-    let parent_fingerprint = xpub.parent_fingerprint.to_bytes();
-    let chain_code = xpub.chain_code.to_bytes();
-    let public_key = xpub.public_key.serialize();
+    let compact = platform_encryption::CompactXpub {
+        parent_fingerprint: xpub.parent_fingerprint.to_bytes(),
+        chain_code: xpub.chain_code.to_bytes(),
+        public_key: xpub.public_key.serialize(),
+    };
 
-    Ok(ContactXpubData {
-        xpub,
-        parent_fingerprint,
-        chain_code,
-        public_key,
-    })
+    Ok(ContactXpubData { xpub, compact })
 }
 
 // ---------------------------------------------------------------------------
@@ -391,11 +383,11 @@ mod tests {
         // Path: m/9'/1'/15'/0'/(sender)/(recipient) = depth 6
         assert_eq!(data.xpub.depth, 6);
         assert_eq!(data.xpub.network, Network::Testnet);
-        assert_eq!(data.parent_fingerprint.len(), 4);
-        assert_eq!(data.chain_code.len(), 32);
-        assert_eq!(data.public_key.len(), 33);
+        assert_eq!(data.compact.parent_fingerprint.len(), 4);
+        assert_eq!(data.compact.chain_code.len(), 32);
+        assert_eq!(data.compact.public_key.len(), 33);
         // Compressed public key prefix
-        assert!(data.public_key[0] == 0x02 || data.public_key[0] == 0x03);
+        assert!(data.compact.public_key[0] == 0x02 || data.compact.public_key[0] == 0x03);
     }
 
     #[test]
@@ -427,8 +419,8 @@ mod tests {
 
         // Both should be valid derivations (may produce same key if index
         // is not part of derivation path).
-        assert!(!data0.public_key.is_empty());
-        assert!(!data1.public_key.is_empty());
+        assert!(!data0.compact.public_key.is_empty());
+        assert!(!data1.compact.public_key.is_empty());
     }
 
     #[test]
@@ -442,7 +434,7 @@ mod tests {
             .expect("recipient->sender");
 
         assert_ne!(
-            forward.public_key, reverse.public_key,
+            forward.compact.public_key, reverse.compact.public_key,
             "Swapping sender/recipient should produce different keys"
         );
     }
@@ -655,15 +647,15 @@ mod tests {
         assert_eq!(compact.len(), 69, "compact plaintext must be 69 bytes");
 
         // Byte-exact layout: fingerprint ‖ chaincode ‖ compressed pubkey.
-        assert_eq!(&compact[0..4], &data.parent_fingerprint);
-        assert_eq!(&compact[4..36], &data.chain_code);
-        assert_eq!(&compact[36..69], &data.public_key);
+        assert_eq!(&compact[0..4], &data.compact.parent_fingerprint);
+        assert_eq!(&compact[4..36], &data.compact.chain_code);
+        assert_eq!(&compact[36..69], &data.compact.public_key);
 
         // And it round-trips through the codec.
         let parsed = platform_encryption::parse_compact_xpub(&compact).expect("parse compact");
-        assert_eq!(parsed.parent_fingerprint, data.parent_fingerprint);
-        assert_eq!(parsed.chain_code, data.chain_code);
-        assert_eq!(parsed.public_key, data.public_key);
+        assert_eq!(parsed.parent_fingerprint, data.compact.parent_fingerprint);
+        assert_eq!(parsed.chain_code, data.compact.chain_code);
+        assert_eq!(parsed.public_key, data.compact.public_key);
     }
 
     #[test]
