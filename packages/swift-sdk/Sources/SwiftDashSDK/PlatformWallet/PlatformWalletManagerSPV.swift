@@ -8,13 +8,6 @@ public enum PlatformSpvSyncState: UInt32, Sendable {
     case syncing = 2
     case synced = 3
     case error = 4
-
-    public var isRunning: Bool {
-        switch self {
-        case .waitingForConnections, .syncing: return true
-        case .waitForEvents, .synced, .error: return false
-        }
-    }
 }
 
 /// Progress for one of the SPV sub-managers (headers, filters, masternodes, etc.).

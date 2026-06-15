@@ -570,6 +570,7 @@ impl PlatformWallet {
         account: u32,
         recipient_raw_43: &[u8; 43],
         amount: u64,
+        memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
         let guard = self.shielded_keys.read().await;
@@ -598,6 +599,7 @@ impl PlatformWallet {
             account,
             &recipient,
             amount,
+            memo,
             &prover,
         )
         .await
@@ -632,7 +634,11 @@ impl PlatformWallet {
                         "invalid platform address: {e}"
                     ))
                 })?;
-        if addr_network != self.sdk.network {
+        // Compare HRPs, not raw networks: testnet/devnet/regtest all share
+        // the "tdash" HRP, so a parsed address can never carry Devnet.
+        if dpp::address_funds::PlatformAddress::hrp_for_network(addr_network)
+            != dpp::address_funds::PlatformAddress::hrp_for_network(self.sdk.network)
+        {
             return Err(PlatformWalletError::ShieldedBuildError(format!(
                 "platform address network mismatch: address {addr_network:?}, wallet {:?}",
                 self.sdk.network
@@ -711,13 +717,21 @@ impl PlatformWallet {
     /// `public_keys` is the new identity's key set (each entry pairs the `IdentityPublicKey` with
     /// its `IdentityPublicKeyInCreation` form); `identity_signer` produces each key's
     /// proof-of-possession signature. The Orchard spend authority comes from the wallet's own
-    /// `OrchardKeySet` (the ASK never crosses to the coordinator). Returns the new identity's id.
+    /// `OrchardKeySet` (the ASK never crosses to the coordinator).
+    ///
+    /// `identity_index` is the DIP-9 identity-registration slot the new identity occupies in the
+    /// local `IdentityManager`; on a successful broadcast the proof-verified identity is registered
+    /// there (mirroring `register_from_addresses`) so the host persister emits the
+    /// `IdentityChangeSet` / `IdentityKeysChangeSet` that creates the app's identity row. A failed
+    /// registration after a successful broadcast is logged and swallowed — the identity already
+    /// exists on chain, so the next sync heals the local row. Returns the new identity's id.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_identity_create_from_pool<P, IS>(
         &self,
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
         account: u32,
+        identity_index: u32,
         public_keys: Vec<(
             dpp::identity::IdentityPublicKey,
             dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation,
@@ -731,29 +745,70 @@ impl PlatformWallet {
         P: dpp::shielded::builder::OrchardProver,
         IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
     {
-        let guard = self.shielded_keys.read().await;
-        let keys = guard
-            .as_ref()
-            .ok_or(PlatformWalletError::ShieldedNotBound)?;
-        let keyset = keys.get(&account).ok_or_else(|| {
-            PlatformWalletError::ShieldedKeyDerivation(format!(
-                "shielded account {account} not bound"
-            ))
-        })?;
-        super::shielded::operations::identity_create_from_shielded_pool(
-            &self.sdk,
-            coordinator.store(),
-            Some(&self.persister),
-            self.wallet_id,
-            keyset,
-            account,
-            public_keys,
-            denomination,
-            send_to_address_on_creation_failure,
-            identity_signer,
-            &prover,
-        )
-        .await
+        let (identity_id, identity) = {
+            // Scope the read guard so it's released before we take the wallet-manager write lock
+            // below — the keyset is only needed for the spend, not for the registration step.
+            let guard = self.shielded_keys.read().await;
+            let keys = guard
+                .as_ref()
+                .ok_or(PlatformWalletError::ShieldedNotBound)?;
+            let keyset = keys.get(&account).ok_or_else(|| {
+                PlatformWalletError::ShieldedKeyDerivation(format!(
+                    "shielded account {account} not bound"
+                ))
+            })?;
+            super::shielded::operations::identity_create_from_shielded_pool(
+                &self.sdk,
+                coordinator.store(),
+                Some(&self.persister),
+                self.wallet_id,
+                keyset,
+                account,
+                public_keys,
+                denomination,
+                send_to_address_on_creation_failure,
+                identity_signer,
+                &prover,
+            )
+            .await?
+        };
+
+        // Register the proof-verified identity in the local manager at its HD slot, exactly like
+        // `register_from_addresses`' Step 3 — this drives the host persister's
+        // `IdentityChangeSet` / `IdentityKeysChangeSet` emit so the app's identity row is created.
+        // The broadcast already succeeded; a registration failure here (e.g. the slot is already
+        // occupied locally) is logged and swallowed rather than surfaced as an error, since the
+        // identity exists on chain and the next sync heals the local view.
+        {
+            let mut wm = self.wallet_manager.write().await;
+            match wm.get_wallet_info_mut(&self.wallet_id) {
+                Some(info) => {
+                    if let Err(e) = info.identity_manager.add_identity(
+                        identity,
+                        identity_index,
+                        self.wallet_id,
+                        &self.persister,
+                    ) {
+                        tracing::warn!(
+                            identity_index,
+                            error = %e,
+                            "IdentityCreateFromShieldedPool broadcast succeeded but registering the \
+                             identity in the local manager failed; the on-chain identity exists and \
+                             the next sync will heal the local row"
+                        );
+                    }
+                }
+                None => {
+                    tracing::warn!(
+                        identity_index,
+                        "IdentityCreateFromShieldedPool broadcast succeeded but the wallet info was \
+                         not found in the manager; skipping local registration (heals on next sync)"
+                    );
+                }
+            }
+        }
+
+        Ok(identity_id)
     }
 
     /// Shield credits from a Platform Payment account into the
@@ -782,6 +837,7 @@ impl PlatformWallet {
     #[cfg(feature = "shielded")]
     pub async fn shielded_shield_from_account<S, P>(
         &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
         shielded_account: u32,
         payment_account: u32,
         amount: u64,
@@ -893,6 +949,9 @@ impl PlatformWallet {
         })?;
         super::shielded::operations::shield(
             &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
             keyset,
             shielded_account,
             inputs,

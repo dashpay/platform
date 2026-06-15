@@ -258,6 +258,15 @@ mod tests {
             .serialize_to_bytes()
             .expect("expected documents batch serialized state transition");
 
+        // CheckTx root-invariance guard (devnet paloma h788): `check_tx` asserts under
+        // cfg(test) that it never mutates committed grovedb state, so running the canonical
+        // valid fixture through it pins the invariant for this transition type.
+        crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels(
+            &platform,
+            &credit_withdrawal_transition_serialized_transition,
+            "identity credit withdrawal",
+        );
+
         let transaction = platform.drive.grove.start_transaction();
 
         let processing_result = platform

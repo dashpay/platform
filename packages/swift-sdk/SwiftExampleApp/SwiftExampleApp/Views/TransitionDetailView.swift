@@ -481,6 +481,9 @@ struct TransitionDetailView: View {
     case "identityTopUp":
       return try await executeIdentityTopUp(sdk: sdk)
 
+    case "identityUpdate":
+      return try await executeIdentityUpdate(sdk: sdk)
+
     case "identityCreditTransfer":
       return try await executeIdentityCreditTransfer(sdk: sdk)
 
@@ -600,6 +603,188 @@ struct TransitionDetailView: View {
     }
 
     throw SDKError.notImplemented("Identity top-up requires proper Identity handle conversion")
+  }
+
+  /// Generic-builder IdentityUpdate handler.
+  ///
+  /// Mirrors `AddIdentityKeyView`: the keys-to-add are *derived*
+  /// against the owning wallet (the app never accepts raw key bytes
+  /// from the form, because a key whose private scalar the app
+  /// doesn't hold couldn't be signed with later), pre-persisted to
+  /// the iOS Keychain, then submitted via the same
+  /// `wallet.updateIdentity(...)` entry point — which also carries
+  /// the key IDs to disable. The shared derive → validate → persist →
+  /// build-`IdentityPubkey` plumbing lives in
+  /// `IdentityKeyAddition.prepareKeys(...)`.
+  ///
+  /// Form inputs (`identityUpdate` in StateTransitionDefinitions):
+  ///   - `addPublicKeys`: JSON array of `{ keyType, purpose,
+  ///     securityLevel? }` rows (DPP token strings such as
+  ///     `"ECDSA_HASH160"` / `"AUTHENTICATION"`). Any `data` field is
+  ///     ignored — the keypair is derived Rust-side. `keyId` slots are
+  ///     auto-assigned as `max(existing) + 1`.
+  ///   - `disablePublicKeys`: comma-separated existing key IDs.
+  ///
+  /// `@MainActor` because the derive + Keychain-persist step
+  /// (`IdentityKeyAddition.prepareKeys`) is main-actor-bound, matching
+  /// `AddIdentityKeyView.submit()`.
+  @MainActor
+  private func executeIdentityUpdate(sdk: SDK) async throws -> Any {
+    guard !selectedIdentityId.isEmpty,
+          let ownerIdentity = identities.first(where: { $0.identityIdBase58 == selectedIdentityId }) else {
+      throw SDKError.invalidParameter("No identity selected")
+    }
+
+    // Resolve the wallet that owns this identity — same lookup as
+    // executeDataContractCreate. IdentityUpdate routes through
+    // platform-wallet's updateIdentity(...) so derivation + signing
+    // + broadcast all happen Rust-side.
+    guard let walletId = ownerIdentity.wallet?.walletId,
+          let wallet = walletManager.wallet(for: walletId) else {
+      throw SDKError.invalidParameter(
+        "Identity has no wallet linkage; cannot derive keys or sign the update"
+      )
+    }
+
+    // Parse the keys-to-add JSON array (optional).
+    var keySpecs: [IdentityKeyAddition.KeySpec] = []
+    if let addJson = formInputs["addPublicKeys"],
+       !addJson.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      guard let data = addJson.data(using: .utf8),
+            let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+        throw SDKError.serializationError(
+          "Keys to add must be a JSON array of objects"
+        )
+      }
+      keySpecs = try rows.map { row in
+        guard let keyTypeStr = row["keyType"] as? String,
+              let keyType = KeyType(dppToken: keyTypeStr) else {
+          throw SDKError.invalidParameter(
+            "Each key needs a valid `keyType` (e.g. ECDSA_SECP256K1, ECDSA_HASH160)"
+          )
+        }
+        guard let purposeStr = row["purpose"] as? String,
+              let purpose = KeyPurpose(dppToken: purposeStr) else {
+          throw SDKError.invalidParameter(
+            "Each key needs a valid `purpose` (e.g. AUTHENTICATION, TRANSFER)"
+          )
+        }
+        // Fail fast — BEFORE any derivation or Keychain write — on key
+        // types / purposes this generic path can't safely add. Mirrors
+        // AddIdentityKeyView's gating so we never derive a secp256k1
+        // pubkey for a BIP13/EdDSA hash payload, never orphan key
+        // material in the Keychain for an ENCRYPTION/DECRYPTION key the
+        // JSON parser can't attach contractBounds to, and never submit a
+        // SYSTEM/VOTING/OWNER purpose DPP forbids on externally-added
+        // keys. prepareKeys derives + writes the Keychain per spec, so
+        // the guard has to sit here, ahead of it.
+        switch keyType {
+        case .ecdsaSecp256k1, .ecdsaHash160:
+          break
+        case .bls12_381, .bip13ScriptHash, .eddsa25519Hash160:
+          throw SDKError.invalidParameter(
+            "Key type \(keyTypeStr) is not supported by this flow; "
+              + "use ECDSA_SECP256K1 or ECDSA_HASH160"
+          )
+        }
+        switch purpose {
+        case .authentication, .transfer:
+          break
+        case .encryption, .decryption:
+          throw SDKError.invalidParameter(
+            "Purpose \(purposeStr) requires contract bounds, which this "
+              + "generic builder can't supply; use AUTHENTICATION or TRANSFER"
+          )
+        case .system, .voting, .owner:
+          throw SDKError.invalidParameter(
+            "Purpose \(purposeStr) cannot be added to an identity here; "
+              + "use AUTHENTICATION or TRANSFER"
+          )
+        }
+        // securityLevel is optional in the form JSON; derive a sane
+        // protocol-locked default per purpose when absent, matching
+        // AddIdentityKeyView's effectiveSecurityLevel.
+        let securityLevel: SecurityLevel
+        if let secStr = row["securityLevel"] as? String {
+          guard let parsed = SecurityLevel(dppToken: secStr) else {
+            throw SDKError.invalidParameter(
+              "Invalid `securityLevel` (use MASTER, CRITICAL, HIGH, or MEDIUM)"
+            )
+          }
+          securityLevel = parsed
+        } else {
+          switch purpose {
+          case .transfer: securityLevel = .critical
+          case .encryption, .decryption: securityLevel = .medium
+          default: securityLevel = .high
+          }
+        }
+        return IdentityKeyAddition.KeySpec(
+          keyType: keyType,
+          purpose: purpose,
+          securityLevel: securityLevel
+        )
+      }
+    }
+
+    // Parse the comma-separated key IDs to disable (optional).
+    var disableIds: [UInt32] = []
+    if let disableStr = formInputs["disablePublicKeys"],
+       !disableStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      disableIds = try disableStr
+        .split(separator: ",")
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty }
+        .map { token in
+          guard let id = UInt32(token) else {
+            throw SDKError.invalidParameter(
+              "Invalid key ID to disable: '\(token)'"
+            )
+          }
+          return id
+        }
+    }
+
+    guard !keySpecs.isEmpty || !disableIds.isEmpty else {
+      throw SDKError.invalidParameter(
+        "Provide at least one key to add or one key ID to disable"
+      )
+    }
+
+    let network = appState.sdk?.network ?? appState.currentNetwork
+
+    // Derive + validate + Keychain-persist the new keys, then build
+    // their IdentityPubkey rows (no broadcast yet). Mirrors the exact
+    // sequence AddIdentityKeyView runs. Runs inline on the main actor
+    // (this handler is @MainActor).
+    let addPublicKeys = try IdentityKeyAddition.prepareKeys(
+      specs: keySpecs,
+      identity: ownerIdentity,
+      wallet: wallet,
+      walletId: walletId,
+      network: network
+    )
+
+    // Submit the IdentityUpdate. Rust signs with the identity's
+    // MASTER auth key via the trampoline and broadcasts; the
+    // persister callback writes the new PersistentPublicKey rows when
+    // the transition lands on-chain.
+    let signer = KeychainSigner(modelContainer: modelContext.container)
+    try await wallet.updateIdentity(
+      identityId: ownerIdentity.identityId,
+      addPublicKeys: addPublicKeys,
+      disablePublicKeyIds: disableIds,
+      signer: signer
+    )
+    _ = signer  // keepalive: see KeychainSigner lifetime contract.
+
+    return [
+      "success": true,
+      "identityId": ownerIdentity.identityIdBase58,
+      "addedKeyIds": addPublicKeys.map { $0.keyId },
+      "disabledKeyIds": disableIds,
+      "message": "Identity update broadcast successfully",
+    ]
   }
 
   private func executeIdentityCreditTransfer(sdk: SDK) async throws -> Any {
@@ -1869,14 +2054,43 @@ struct TransitionDetailView: View {
       newTokenSchemas = parsed
     }
 
-    // Parse new groups if provided
-    var newGroups: [[String: Any]]? = nil
+    // Parse new groups if provided. As with contract create,
+    // `RegisterContractSourceView` flattens the chain-shape
+    // `{ "<position>": { ... } }` map into an array with an
+    // injected `id`. The V1 contract format wants a position-keyed
+    // map, so re-key the array back before crossing the FFI.
+    var newGroups: [String: Any]? = nil
     if let groupsJson = formInputs["newGroups"], !groupsJson.isEmpty {
-      guard let data = groupsJson.data(using: .utf8),
-            let parsed = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+      guard let data = groupsJson.data(using: .utf8) else {
         throw SDKError.serializationError("Invalid groups JSON")
       }
-      newGroups = parsed
+      let parsed = try JSONSerialization.jsonObject(with: data)
+      switch parsed {
+      case let byPosition as [String: Any]:
+        newGroups = byPosition
+      case let entries as [[String: Any]]:
+        var byPosition: [String: Any] = [:]
+        for var entry in entries {
+          guard let rawId = entry.removeValue(forKey: "id") else {
+            throw SDKError.serializationError("Group entry is missing an `id` field")
+          }
+          let key: String
+          if let intId = rawId as? Int {
+            key = String(intId)
+          } else if let strId = rawId as? String {
+            key = strId
+          } else {
+            throw SDKError.serializationError("Group entry has unsupported `id` type — expected Int or String")
+          }
+          guard byPosition[key] == nil else {
+            throw SDKError.serializationError("Duplicate group position `\(key)` in groups payload")
+          }
+          byPosition[key] = entry
+        }
+        newGroups = byPosition
+      default:
+        throw SDKError.serializationError("Invalid groups JSON")
+      }
     }
 
     // Validate that at least one update is provided
@@ -1884,25 +2098,65 @@ struct TransitionDetailView: View {
       throw SDKError.invalidParameter("At least one update (document schemas, token schemas, or groups) must be provided")
     }
 
-    // Use the DPPIdentity for contract update
-    let dppIdentity = DPPIdentity(
-      id: ownerIdentity.identityId,
-      publicKeys: Dictionary(uniqueKeysWithValues: ownerIdentity.identityPublicKeys.map { ($0.id, $0) }),
-      balance: UInt64(bitPattern: ownerIdentity.balance),
-      revision: 0
-    )
+    // Resolve the wallet that owns this identity — contract update
+    // mirrors contract create and goes through `platform-wallet`'s
+    // `updateDataContract(...)`. The wallet fetches the live
+    // contract, validates the owner, bumps its version, and *merges*
+    // the supplied sections onto the fetched definition at the next
+    // version (omitted sections — and any document/token/group entry
+    // we don't pass — are preserved), then builds a
+    // `DataContractUpdateTransition`, signs via the external
+    // `KeychainSigner`, and broadcasts on the 8 MB-stack worker (same
+    // rationale as create). Because the merge happens Rust-side, this
+    // form only needs to forward the sections the user actually
+    // changed; keywords / description / config are left to the
+    // on-chain values.
+    guard let walletId = ownerIdentity.wallet?.walletId,
+          let wallet = walletManager.wallet(for: walletId) else {
+      throw SDKError.invalidParameter(
+        "Identity has no wallet linkage; cannot sign contract update"
+      )
+    }
 
-    // Contract update via the new platform-wallet path isn't
-    // wired through yet — the previous `sdk.dataContractUpdate(...)`
-    // call always threw `notImplemented` and is now deleted along
-    // with the other legacy rs-sdk-ffi contract surface. Surface
-    // the same error here until a `wallet.updateDataContract(...)`
-    // sibling lands.
-    _ = (contractId, dppIdentity, newDocumentSchemas, newTokenSchemas, newGroups)
-    throw SDKError.notImplemented(
-      "Data contract update is not yet wired through the platform-wallet path. " +
-      "Create a fresh contract for now."
+    // Document schemas are merged onto the fetched contract Rust-side
+    // (add or replace by type name; existing types are kept), so an
+    // empty `{}` is a no-op overlay — the right default for a token- or
+    // group-only update that touches no document types.
+    let documentSchemasJSON = try toJSONString(
+      newDocumentSchemas as Any?,
+      fieldName: "newDocumentSchemas",
+      defaultIfNil: "{}"
+    ) ?? "{}"
+    let tokenSchemasJSON = try toJSONString(newTokenSchemas as Any?, fieldName: "newTokenSchemas")
+    let groupsJSON = try toJSONString(newGroups as Any?, fieldName: "newGroups")
+
+    // Decode the base58 contract id the form provided.
+    guard let contractIdData = Data.identifier(fromBase58: contractId),
+          contractIdData.count == 32 else {
+      throw SDKError.invalidParameter("Invalid data contract ID (expected 32-byte base58)")
+    }
+
+    // External-signer pattern (matches contract create): Rust calls
+    // back into Swift over the `KeychainSigner` trampoline whenever
+    // it needs a signature.
+    let signer = KeychainSigner(modelContainer: modelContext.container)
+
+    let updatedContractId = try await wallet.updateDataContract(
+      ownerIdentityId: ownerIdentity.identityId,
+      contractId: contractIdData,
+      documentSchemasJSON: documentSchemasJSON,
+      tokenSchemasJSON: tokenSchemasJSON,
+      groupsJSON: groupsJSON,
+      signer: signer
     )
+    // Keepalive: see KeychainSigner lifetime contract.
+    _ = signer
+
+    return [
+      "success": true,
+      "contractId": updatedContractId.toBase58String(),
+      "message": "Data contract updated and broadcast successfully",
+    ]
   }
 
   // MARK: - Helper Functions

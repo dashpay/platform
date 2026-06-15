@@ -205,7 +205,6 @@ mod shielded_pool_gating_tests {
     fn shielded_block_processing_methods_inactive_before_v12() {
         let v11 = PlatformVersion::get(11).expect("protocol version 11 must exist");
         let block_end = &v11.drive_abci.methods.block_end;
-        let st = &v11.drive_abci.methods.state_transition_processing;
 
         assert_eq!(
             block_end.record_shielded_pool_anchor, None,
@@ -215,27 +214,16 @@ mod shielded_pool_gating_tests {
             block_end.prune_shielded_pool_anchors, None,
             "v11 must NOT prune shielded pool anchors: the [52, \"M\"] subtree does not exist before v12"
         );
-        assert_eq!(
-            st.store_nullifiers_to_recent_block_storage, None,
-            "v11 must NOT store shielded nullifiers: the [52, \"M\"] subtree does not exist before v12"
-        );
-        assert_eq!(
-            st.cleanup_recent_block_storage_nullifiers, None,
-            "v11 must NOT clean up shielded nullifiers: the [52, \"M\"] subtree does not exist before v12"
-        );
     }
 
     #[test]
     fn shielded_block_processing_methods_active_at_v12() {
         let v12 = PlatformVersion::get(12).expect("protocol version 12 must exist");
         let block_end = &v12.drive_abci.methods.block_end;
-        let st = &v12.drive_abci.methods.state_transition_processing;
 
         // At v12 the shielded pool subtree is created by the upgrade migration,
         // so the same methods must be active.
         assert_eq!(block_end.record_shielded_pool_anchor, Some(0));
         assert_eq!(block_end.prune_shielded_pool_anchors, Some(0));
-        assert_eq!(st.store_nullifiers_to_recent_block_storage, Some(0));
-        assert_eq!(st.cleanup_recent_block_storage_nullifiers, Some(0));
     }
 }

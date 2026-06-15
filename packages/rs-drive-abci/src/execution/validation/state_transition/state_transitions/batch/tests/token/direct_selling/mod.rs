@@ -3,6 +3,7 @@ use super::*;
 mod token_selling_tests {
     use std::collections::BTreeMap;
 
+    use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
     use crate::{rpc::core::MockCoreRPCLike, test::helpers::setup::TempPlatform};
 
     use super::*;
@@ -547,7 +548,7 @@ mod token_selling_tests {
                 (100, dash_to_credits!(10)),
                 (500, dash_to_credits!(5)),
             ])),
-            TokenPricingSchedule::SetPrices(BTreeMap::new()),
+            TokenPricingSchedule::SetPrices(BTreeMap::from([(1, dash_to_credits!(2))])),
         ];
 
         // Setup the test
@@ -832,6 +833,35 @@ mod token_selling_tests {
         pricing: Option<TokenPricingSchedule>,
         identity_contract_nonce: &mut u64,
     ) -> (DataContract, Identifier) {
+        let (contract, token_id, processing_result) = create_token_with_pricing_result(
+            platform_version,
+            platform,
+            seller,
+            seller_signer,
+            seller_key,
+            pricing,
+            identity_contract_nonce,
+        )
+        .await;
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        (contract, token_id)
+    }
+
+    /// Same as [`create_token_with_pricing`], but returns the set-price processing
+    /// result instead of asserting it succeeded, for tests that expect rejection.
+    async fn create_token_with_pricing_result(
+        platform_version: &PlatformVersion,
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        seller: &Identity,
+        seller_signer: &SimpleSigner,
+        seller_key: &IdentityPublicKey,
+        pricing: Option<TokenPricingSchedule>,
+        identity_contract_nonce: &mut u64,
+    ) -> (DataContract, Identifier, StateTransitionsProcessingResult) {
         let (contract, token_id) = create_token_contract_with_owner_identity(
             platform,
             seller.id(),
@@ -884,10 +914,204 @@ mod token_selling_tests {
             platform_version,
         );
 
+        (contract, token_id, processing_result)
+    }
+
+    /// Regression test for the chain-halt where an empty `SetPrices` schedule
+    /// caused a `.expect("Map is not empty")` panic in the direct-purchase
+    /// transformer.
+    ///
+    /// An empty `SetPrices` schedule is now rejected at structure validation
+    /// with `TokenPricingScheduleEmptyError`, so it can no longer reach state
+    /// through a state transition — asserted first. The transformer must still
+    /// handle an empty schedule defensively (defense in depth, e.g. state
+    /// written before the structure check existed): the transformer runs on
+    /// every validator during block execution, so a panic there would crash
+    /// all validators and halt the chain. The schedule is therefore planted
+    /// directly through the drive API, and a purchase against it must be
+    /// rejected gracefully as `TokenNotForDirectSale` — no panic.
+    #[tokio::test]
+    async fn test_direct_purchase_empty_set_prices_does_not_panic() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(12345);
+        let (seller, seller_signer, seller_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
+        let (buyer, buyer_signer, buyer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(10.0));
+
+        let empty_set_prices = TokenPricingSchedule::SetPrices(BTreeMap::new());
+
+        // Setting an EMPTY tiered pricing schedule via a state transition must
+        // be rejected at structure validation.
+        let mut identity_contract_nonce: u64 = 2;
+        let (contract, token_id, processing_result) = create_token_with_pricing_result(
+            platform_version,
+            &mut platform,
+            &seller,
+            &seller_signer,
+            &seller_key,
+            Some(empty_set_prices.clone()),
+            &mut identity_contract_nonce,
+        )
+        .await;
+
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::BasicError(BasicError::TokenPricingScheduleEmptyError(_))
+            )]
         );
-        (contract, token_id)
+
+        // Plant: write the empty schedule straight into state through the
+        // drive API, bypassing state transition validation — simulating state
+        // written before the structure check existed.
+        platform
+            .drive
+            .token_set_direct_purchase_price(
+                token_id.to_buffer(),
+                Some(empty_set_prices),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to set empty pricing schedule directly");
+
+        // Detonate: any direct purchase used to panic at
+        // `set_prices.keys().next().expect("Map is not empty")`.
+        let platform_state = platform.state.load();
+        let purchase_transition = BatchTransition::new_token_direct_purchase_transition(
+            token_id,
+            buyer.id(),
+            contract.id(),
+            0,
+            3, // Buying 3 tokens
+            dash_to_credits!(3),
+            &buyer_key,
+            2,
+            0,
+            &buyer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let processing_result = process_test_state_transition(
+            &mut platform,
+            purchase_transition,
+            &platform_state,
+            platform_version,
+        );
+
+        // Must be rejected gracefully (the node did not panic to get here).
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenNotForDirectSale(_)),
+                ..
+            }]
+        );
+
+        // The buyer must not have received any tokens.
+        let token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                buyer.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+        assert_eq!(token_balance, None);
+    }
+
+    /// Companion to the empty-`SetPrices` regression test: a NON-empty tiered
+    /// schedule whose smallest tier is above the requested amount must be
+    /// rejected as below the minimum sale amount (the `Some` arm of the same
+    /// no-matching-tier branch), not panic.
+    #[tokio::test]
+    async fn test_direct_purchase_below_minimum_sale_amount() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(12345);
+        let (seller, seller_signer, seller_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
+        let (buyer, buyer_signer, buyer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(10.0));
+
+        // Tiered schedule whose smallest tier requires at least 100 tokens.
+        let tiered = TokenPricingSchedule::SetPrices(BTreeMap::from([
+            (100, dash_to_credits!(10)),
+            (500, dash_to_credits!(5)),
+        ]));
+
+        let mut identity_contract_nonce: u64 = 2;
+        let (contract, token_id) = create_token_with_pricing(
+            platform_version,
+            &mut platform,
+            &seller,
+            &seller_signer,
+            &seller_key,
+            Some(tiered),
+            &mut identity_contract_nonce,
+        )
+        .await;
+
+        // Buyer asks for 3 tokens — below the smallest (100-token) tier, so
+        // `range(..=3).next_back()` is `None` and the smallest defined tier (100)
+        // is reported as the minimum sale amount.
+        let platform_state = platform.state.load();
+        let purchase_transition = BatchTransition::new_token_direct_purchase_transition(
+            token_id,
+            buyer.id(),
+            contract.id(),
+            0,
+            3,
+            dash_to_credits!(3),
+            &buyer_key,
+            2,
+            0,
+            &buyer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let processing_result = process_test_state_transition(
+            &mut platform,
+            purchase_transition,
+            &platform_state,
+            platform_version,
+        );
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenAmountUnderMinimumSaleAmount(_)),
+                ..
+            }]
+        );
+
+        let token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                buyer.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+        assert_eq!(token_balance, None);
     }
 }

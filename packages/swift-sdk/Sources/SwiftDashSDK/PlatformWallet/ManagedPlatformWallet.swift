@@ -749,12 +749,34 @@ extension ManagedPlatformWallet {
     ///     Pass `nil` to defer to the Rust default
     ///     (`IDENTITY_GAP_LIMIT`, currently 5) so the preview
     ///     aligns with the scan window `discoverIdentities` walks.
+    ///   - storage: `WalletStorage` instance used by the resolver
+    ///     callback to read the BIP-39 mnemonic from iOS Keychain.
+    ///     Defaults to a fresh `WalletStorage()` — overridable for
+    ///     tests.
     ///
     /// - Throws: `PlatformWalletError` if the wallet handle is
     ///   invalid or Rust-side derivation fails.
+    ///
+    /// # Key source: chosen by wallet capability (Rust-side)
+    ///
+    /// A [`MnemonicResolver`] is always passed, but Rust decides whether
+    /// to use it based on the in-process wallet's shape — it's a
+    /// *capability*, not a command. For wallets that hold resident
+    /// private keys (e.g. created from a raw seed via
+    /// `createWallet(seed:)`, or whose mnemonic was never persisted to
+    /// `WalletStorage`), Rust derives the preview rows from the
+    /// in-process wallet and never consults the resolver. The resolver
+    /// is consulted only when the in-process wallet lacks resident keys
+    /// (the iOS Keychain-backed `ExternalSignable` shape whose seed
+    /// lives in Keychain, not in the `WalletManager`): Rust resolves the
+    /// mnemonic on demand (keyed by this wallet's own `walletId`) and
+    /// derives the rows from it — the same mechanism the scan and
+    /// registration use. The local `resolver` is pinned across the
+    /// synchronous FFI call with `withExtendedLifetime`.
     public func previewIdentityRegistrationKeys(
         startIndex: UInt32 = 0,
-        count: UInt32? = nil
+        count: UInt32? = nil,
+        storage: WalletStorage = WalletStorage()
     ) throws -> [IdentityRegistrationKeyPreview] {
         // `-1` tells Rust to pick the crate-level IDENTITY_GAP_LIMIT
         // default. Any supplied value passes through as-is, clamped
@@ -767,59 +789,73 @@ extension ManagedPlatformWallet {
             countOrNeg1 = -1
         }
 
-        var out = IdentityKeyPreviewsFFI()
-        let result = platform_wallet_preview_identity_registration_keys(
-            handle,
-            startIndex,
-            countOrNeg1,
-            &out
-        )
-        // Free the Rust-owned array whether we succeeded or bailed
-        // out — the free function is a no-op on the zero struct.
-        defer { platform_wallet_preview_identity_registration_keys_free(&out) }
+        // The resolver reads the mnemonic from iOS Keychain on demand,
+        // pinned by Rust to this wallet handle's own `walletId`. Its FFI
+        // ctx is a `passUnretained` pointer (see the type's "Lifetime
+        // contract"), and Swift object lifetimes end at last use — not
+        // at scope end — so the last use of `resolver` (evaluating
+        // `resolver.handle` as an argument) would otherwise let ARC
+        // deallocate it while Rust is still mid-call, dangling the ctx.
+        // `withExtendedLifetime` pins it for the whole synchronous FFI
+        // call + result marshalling. Same shape as `discoverIdentities`.
+        let resolver = MnemonicResolver(storage: storage)
 
-        try result.check()
+        return try withExtendedLifetime(resolver) {
+            var out = IdentityKeyPreviewsFFI()
+            let result = platform_wallet_preview_identity_registration_keys(
+                handle,
+                resolver.handle,
+                startIndex,
+                countOrNeg1,
+                &out
+            )
+            // Free the Rust-owned array whether we succeeded or bailed
+            // out — the free function is a no-op on the zero struct.
+            defer { platform_wallet_preview_identity_registration_keys_free(&out) }
 
-        guard let base = out.items, out.count > 0 else {
-            return []
-        }
+            try result.check()
 
-        var previews: [IdentityRegistrationKeyPreview] = []
-        previews.reserveCapacity(Int(out.count))
-        for i in 0..<Int(out.count) {
-            let row = base[i]
-
-            let path: String = row.derivation_path.map { String(cString: $0) } ?? ""
-            let wif: String = row.private_key_wif.map { String(cString: $0) } ?? ""
-
-            let pubData: Data
-            let pubHex: String
-            if let pubPtr = row.public_key, row.public_key_len > 0 {
-                pubData = Data(bytes: pubPtr, count: Int(row.public_key_len))
-                pubHex = pubData.map { String(format: "%02x", $0) }.joined()
-            } else {
-                pubData = Data()
-                pubHex = ""
+            guard let base = out.items, out.count > 0 else {
+                return []
             }
 
-            // Inline 32-byte tuple → owned `Data`. We copy because
-            // the underlying tuple is freed when the FFI struct is
-            // released by the deferred free call.
-            var pkTuple = row.private_key_bytes
-            let pkData = withUnsafeBytes(of: &pkTuple) { Data($0) }
+            var previews: [IdentityRegistrationKeyPreview] = []
+            previews.reserveCapacity(Int(out.count))
+            for i in 0..<Int(out.count) {
+                let row = base[i]
 
-            previews.append(
-                IdentityRegistrationKeyPreview(
-                    identityIndex: row.identity_index,
-                    derivationPath: path,
-                    publicKeyData: pubData,
-                    publicKeyHex: pubHex,
-                    privateKeyWIF: wif,
-                    privateKeyData: pkData
+                let path: String = row.derivation_path.map { String(cString: $0) } ?? ""
+                let wif: String = row.private_key_wif.map { String(cString: $0) } ?? ""
+
+                let pubData: Data
+                let pubHex: String
+                if let pubPtr = row.public_key, row.public_key_len > 0 {
+                    pubData = Data(bytes: pubPtr, count: Int(row.public_key_len))
+                    pubHex = pubData.map { String(format: "%02x", $0) }.joined()
+                } else {
+                    pubData = Data()
+                    pubHex = ""
+                }
+
+                // Inline 32-byte tuple → owned `Data`. We copy because
+                // the underlying tuple is freed when the FFI struct is
+                // released by the deferred free call.
+                var pkTuple = row.private_key_bytes
+                let pkData = withUnsafeBytes(of: &pkTuple) { Data($0) }
+
+                previews.append(
+                    IdentityRegistrationKeyPreview(
+                        identityIndex: row.identity_index,
+                        derivationPath: path,
+                        publicKeyData: pubData,
+                        publicKeyHex: pubHex,
+                        privateKeyWIF: wif,
+                        privateKeyData: pkData
+                    )
                 )
-            )
+            }
+            return previews
         }
-        return previews
     }
 
     /// Derive a single ECDSA identity-authentication keypair at an
@@ -1138,38 +1174,147 @@ extension ManagedPlatformWallet {
     ///   - gapLimit: Maximum consecutive empty identity indices to
     ///     tolerate before stopping. Defaults to the Rust default
     ///     (`IDENTITY_GAP_LIMIT`, currently 5) when omitted.
+    ///   - storage: `WalletStorage` instance used by the resolver
+    ///     callback to read the BIP-39 mnemonic from iOS Keychain.
+    ///     Defaults to a fresh `WalletStorage()` — overridable for
+    ///     tests.
     /// - Returns: The identifiers of any identities the scan
     ///   discovered that weren't already in the local manager.
     ///   Identities already tracked are not re-reported.
+    ///
+    /// # Key source: chosen by wallet capability (Rust-side)
+    ///
+    /// A [`MnemonicResolver`] is always passed to the FFI, but Rust
+    /// decides whether to use it based on the in-process wallet's shape
+    /// — it's a *capability*, not a command. iOS Keychain-backed
+    /// `ExternalSignable` wallets keep their seed in Keychain, not in
+    /// the `WalletManager`, so the resident derive would fail with
+    /// `External signable wallet has no private key`; for those, Rust
+    /// resolves the mnemonic on demand (keyed by this wallet's own
+    /// `walletId`) and derives the scan keys from it — the same
+    /// mechanism identity registration uses. The resolver is consulted
+    /// only when the in-process wallet lacks resident keys: wallets that
+    /// hold resident private keys (e.g. created from a raw seed via
+    /// `createWallet(seed:)`, or whose mnemonic was never persisted to
+    /// `WalletStorage`) keep scanning via the in-process derive and
+    /// never touch the resolver. No mnemonic / derivation pipeline runs
+    /// in Swift; this stays a thin bridge per `swift-sdk/CLAUDE.md`.
     public func discoverIdentities(
         startIndex: UInt32? = nil,
-        gapLimit: UInt32? = nil
+        gapLimit: UInt32? = nil,
+        storage: WalletStorage = WalletStorage()
     ) async throws -> [Identifier] {
         let handle = self.handle
         let startArg: Int64 = startIndex.map(Int64.init) ?? -1
         let gapArg: UInt32 = gapLimit ?? 0
+        // The resolver reads the mnemonic from iOS Keychain on demand;
+        // Rust pins it to this wallet handle's own `walletId`, so no
+        // wallet-id argument is passed. `MnemonicResolver` is
+        // `@unchecked Sendable`; capture it in the detached closure and
+        // wrap the FFI call in `withExtendedLifetime` so ARC keeps it
+        // alive for the synchronous call's duration (its FFI ctx is a
+        // `passUnretained` pointer — see the type's "Lifetime
+        // contract").
+        let resolver = MnemonicResolver(storage: storage)
         return try await Task.detached(priority: .userInitiated) {
             () -> [Identifier] in
-            var found = DiscoveredIdentityIdsFFI()
-            let result = platform_wallet_discover_identities(
-                handle,
-                startArg,
-                gapArg,
-                &found
-            )
-            defer { platform_wallet_discover_identities_free(&found) }
-            try result.check()
-            guard let base = found.ids, found.count > 0 else {
-                return []
+            try withExtendedLifetime(resolver) {
+                var found = DiscoveredIdentityIdsFFI()
+                let result = platform_wallet_discover_identities(
+                    handle,
+                    resolver.handle,
+                    startArg,
+                    gapArg,
+                    &found
+                )
+                defer { platform_wallet_discover_identities_free(&found) }
+                try result.check()
+                guard let base = found.ids, found.count > 0 else {
+                    return []
+                }
+                var ids: [Identifier] = []
+                ids.reserveCapacity(Int(found.count))
+                for i in 0..<Int(found.count) {
+                    var tuple = base[i]
+                    let data = Swift.withUnsafeBytes(of: &tuple) { Data($0) }
+                    ids.append(data)
+                }
+                return ids
             }
-            var ids: [Identifier] = []
-            ids.reserveCapacity(Int(found.count))
-            for i in 0..<Int(found.count) {
-                var tuple = base[i]
-                let data = Swift.withUnsafeBytes(of: &tuple) { Data($0) }
-                ids.append(data)
+        }.value
+    }
+
+    /// Load the identity registered for this wallet at a single,
+    /// known BIP-9 identity index and fold it into the local identity
+    /// manager.
+    ///
+    /// Derives the MASTER authentication public key at key index 0 for
+    /// the given `identityIndex` and asks Platform "is there an identity
+    /// registered with this pubkey hash?" (unique-hash lookup). Unlike
+    /// `discoverIdentities`, this probes exactly ONE index rather than
+    /// gap-limit scanning a range — the two share the same DIP-9 MASTER
+    /// slot, so they resolve the same identity at the same index. If an
+    /// identity is found it is persisted via the existing identity
+    /// persister callback, so SwiftData `@Query` views refresh
+    /// automatically once this call returns.
+    ///
+    /// - Parameters:
+    ///   - identityIndex: The BIP-9 identity index to probe.
+    ///   - storage: `WalletStorage` instance used by the resolver
+    ///     callback to read the BIP-39 mnemonic from iOS Keychain.
+    ///     Defaults to a fresh `WalletStorage()` — overridable for
+    ///     tests.
+    /// - Returns: The identifier of the identity registered at
+    ///   `identityIndex`, or `nil` if none is registered there.
+    ///
+    /// # Key source: chosen by wallet capability (Rust-side)
+    ///
+    /// A [`MnemonicResolver`] is always passed to the FFI, but Rust
+    /// decides whether to use it based on the in-process wallet's shape
+    /// — it's a *capability*, not a command. iOS Keychain-backed
+    /// `ExternalSignable` wallets keep their seed in Keychain, not in
+    /// the `WalletManager`, so the resident derive would fail with
+    /// `External signable wallet has no private key`; for those, Rust
+    /// resolves the mnemonic on demand (keyed by this wallet's own
+    /// `walletId`) and derives the probe key from it — the same
+    /// mechanism identity discovery and registration use. Wallets that
+    /// hold resident private keys keep probing via the in-process
+    /// derive and never touch the resolver. No mnemonic / derivation
+    /// pipeline runs in Swift; this stays a thin bridge per
+    /// `swift-sdk/CLAUDE.md`.
+    public func loadIdentity(
+        atIndex identityIndex: UInt32,
+        storage: WalletStorage = WalletStorage()
+    ) async throws -> Identifier? {
+        let handle = self.handle
+        // The resolver reads the mnemonic from iOS Keychain on demand;
+        // Rust pins it to this wallet handle's own `walletId`, so no
+        // wallet-id argument is passed. `MnemonicResolver` is
+        // `@unchecked Sendable`; capture it in the detached closure and
+        // wrap the FFI call in `withExtendedLifetime` so ARC keeps it
+        // alive for the synchronous call's duration (its FFI ctx is a
+        // `passUnretained` pointer — see the type's "Lifetime
+        // contract").
+        let resolver = MnemonicResolver(storage: storage)
+        return try await Task.detached(priority: .userInitiated) {
+            () -> Identifier? in
+            try withExtendedLifetime(resolver) {
+                var found = false
+                var idBytes = [UInt8](repeating: 0, count: 32)
+                let result = idBytes.withUnsafeMutableBufferPointer {
+                    idBuf -> PlatformWalletFFIResult in
+                    platform_wallet_load_identity_at_index(
+                        handle,
+                        resolver.handle,
+                        identityIndex,
+                        &found,
+                        idBuf.baseAddress!
+                    )
+                }
+                try result.check()
+                guard found else { return nil }
+                return Data(idBytes)
             }
-            return ids
         }.value
     }
 }
@@ -2316,6 +2461,90 @@ extension ManagedPlatformWallet {
                                                 signerHandle,
                                                 outBp.baseAddress!
                                             )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            return Data(contractIdBytes)
+        }.value
+    }
+
+    /// Update an existing data contract owned by `ownerIdentityId`
+    /// and broadcast the change to Platform.
+    ///
+    /// Companion to `createDataContract`. The wallet fetches the
+    /// live contract from Platform, bumps its version, and applies
+    /// the supplied schemas / config at the next version — the
+    /// caller does NOT track contract version state. Every JSON
+    /// input has the same shape as `createDataContract`.
+    ///
+    /// `contractId` is the id of the existing contract to update.
+    /// Returns the (unchanged) contract id of the updated contract.
+    ///
+    /// Lifetime contract: the `signer` instance MUST stay alive for
+    /// the duration of the `await` (Rust holds a `passUnretained`
+    /// ctx pointer to the underlying `KeychainSigner`). A
+    /// `_ = signer` keepalive at the call site is the canonical way
+    /// to pin it.
+    public func updateDataContract(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentSchemasJSON: String,
+        tokenSchemasJSON: String? = nil,
+        groupsJSON: String? = nil,
+        keywordsJSON: String? = nil,
+        description: String? = nil,
+        contractConfigJSON: String? = nil,
+        signer: KeychainSigner
+    ) async throws -> Identifier {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            // Pin every borrowed payload across the FFI call: the
+            // owner-id + contract-id bytes, the required documents
+            // string, and each optional JSON / description string.
+            // Rust dereferences the C-string pointers synchronously
+            // inside `block_on_worker`, so the `withCString` scopes
+            // here are sufficient — the pointers don't need to
+            // outlive the call.
+            _ = signer
+            var contractIdBytes = [UInt8](repeating: 0, count: 32)
+
+            let result = ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                    documentSchemasJSON.withCString { docsPtr in
+                        Self.withOptionalCString(tokenSchemasJSON) { tokensPtr in
+                            Self.withOptionalCString(groupsJSON) { groupsPtr in
+                                Self.withOptionalCString(keywordsJSON) { keywordsPtr in
+                                    Self.withOptionalCString(description) { descriptionPtr in
+                                        Self.withOptionalCString(contractConfigJSON) { configPtr in
+                                            contractIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                                platform_wallet_update_data_contract_with_signer(
+                                                    handle,
+                                                    ownerBp.baseAddress!,
+                                                    contractBp.baseAddress!,
+                                                    docsPtr,
+                                                    tokensPtr,
+                                                    groupsPtr,
+                                                    keywordsPtr,
+                                                    descriptionPtr,
+                                                    configPtr,
+                                                    signerHandle,
+                                                    outBp.baseAddress!
+                                                )
+                                            }
                                         }
                                     }
                                 }

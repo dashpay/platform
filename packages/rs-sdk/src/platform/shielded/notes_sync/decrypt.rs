@@ -17,10 +17,10 @@
 
 use drive_proof_verifier::types::ShieldedEncryptedNote;
 use grovedb_commitment_tree::{
-    try_compact_note_decryption, try_output_recovery_with_ovk, CompactAction, DashMemo,
-    EphemeralKeyBytes, ExtractedNoteCommitment, Note, NoteBytes, NoteBytesData, Nullifier,
-    OrchardDomain, OutgoingViewingKey, PaymentAddress, PreparedIncomingViewingKey, ValueCommitment,
-    COMPACT_NOTE_SIZE,
+    try_compact_note_decryption, try_note_decryption, try_output_recovery_with_ovk, CompactAction,
+    DashMemo, EphemeralKeyBytes, ExtractedNoteCommitment, Note, NoteBytes, NoteBytesData,
+    Nullifier, OrchardDomain, OutgoingViewingKey, PaymentAddress, PreparedIncomingViewingKey,
+    ValueCommitment, COMPACT_NOTE_SIZE,
 };
 
 /// Minimum length of the `encrypted_note` field for compact trial decryption.
@@ -197,4 +197,57 @@ pub fn try_recover_outgoing_note(
     let domain = OrchardDomain::<DashMemo>::for_nullifier(nf);
 
     try_output_recovery_with_ovk(&domain, ovk, &output, &cv, &out_bytes)
+}
+
+/// Attempt FULL incoming trial decryption on a [`ShieldedEncryptedNote`],
+/// recovering the memo alongside the note.
+///
+/// The sibling [`try_decrypt_note`] uses the 52-byte *compact* prefix
+/// of `enc_ciphertext` and so cannot recover the memo (the memo lives
+/// past the compact region). This variant decrypts the FULL 104-byte
+/// `enc_ciphertext` via `try_note_decryption`, yielding the
+/// `(note, recipient, memo)` the sender encrypted to the wallet's
+/// incoming viewing key. It reuses the same [`RecoverableOutput`] the
+/// OVK path uses (it exposes the full ciphertext) and reconstructs the
+/// domain from the stored nullifier — the output note's `rho` equals
+/// the spent note's nullifier in Orchard, so
+/// `OrchardDomain::for_nullifier` builds the same domain a full
+/// `Action` would.
+///
+/// Returns `Some((note, address, memo))` if the note decrypts under the
+/// given incoming viewing key, or `None` if it does not belong to the
+/// viewer (including dummy/padding notes or any malformed field). The
+/// returned `memo` is the raw [`DASH_MEMO_SIZE`]-byte Dash memo.
+pub fn try_decrypt_note_with_memo(
+    ivk: &PreparedIncomingViewingKey,
+    encrypted_note: &ShieldedEncryptedNote,
+) -> Option<(Note, PaymentAddress, [u8; DASH_MEMO_SIZE])> {
+    let data = &encrypted_note.encrypted_note;
+    if data.len() < FULL_ENCRYPTED_NOTE_LEN {
+        return None;
+    }
+
+    // cmx (32 bytes) from the dedicated field.
+    let cmx_bytes: [u8; 32] = encrypted_note.cmx.as_slice().try_into().ok()?;
+    let cmx = ExtractedNoteCommitment::from_bytes(&cmx_bytes).into_option()?;
+
+    // Nullifier (32 bytes) drives the domain's `rho` (== the spent
+    // note's nullifier), same as the OVK path above.
+    let nf_bytes: [u8; 32] = encrypted_note.nullifier.as_slice().try_into().ok()?;
+    let nf = Nullifier::from_bytes(&nf_bytes).into_option()?;
+
+    // epk [0..32] and the FULL enc_ciphertext [32..136] (104 bytes) —
+    // unlike the compact path, the memo lives inside this region.
+    let epk_bytes: [u8; 32] = data[0..32].try_into().ok()?;
+    let enc_bytes: [u8; ENC_CIPHERTEXT_SIZE] =
+        data[32..32 + ENC_CIPHERTEXT_SIZE].try_into().ok()?;
+
+    let output = RecoverableOutput {
+        cmx,
+        epk: EphemeralKeyBytes(epk_bytes),
+        enc: NoteBytesData(enc_bytes),
+    };
+    let domain = OrchardDomain::<DashMemo>::for_nullifier(nf);
+
+    try_note_decryption(&domain, ivk, &output)
 }

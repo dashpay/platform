@@ -1,5 +1,5 @@
 use grovedb_commitment_tree::{
-    Anchor, Builder, BundleType, DashMemo, FullViewingKey, NoteValue, PaymentAddress,
+    Anchor, Builder, BundleType, DashMemo, FullViewingKey, NoteValue, PaymentAddress, Scope,
     SpendAuthorizingKey,
 };
 
@@ -19,6 +19,10 @@ use super::{prove_and_sign_bundle, serialize_authorized_bundle, OrchardProver, S
 /// Spends existing notes and creates a new note for the recipient. The shielded
 /// fee is deducted from the spent notes. Any remaining change is returned to
 /// the `change_address`.
+///
+/// Both real outputs are encrypted with the sender's External-scope OVK
+/// (derived from `fvk`), so the sender can recover its own send history
+/// (recipient, value, memo) from chain data via OVK recovery.
 ///
 /// # Parameters
 /// - `spends` - Notes to spend with their Merkle paths
@@ -82,10 +86,17 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
             })?;
     }
 
+    // Both real outputs carry an `out_ciphertext` encrypted under the sender's
+    // External-scope OVK (the Zcash outgoing-transaction-history convention),
+    // so the sender can recover its own send history — recipient, value, memo —
+    // from chain data alone. Without it, the outgoing cipher key is random and
+    // the sent note is unrecoverable by anyone, including the sender.
+    let sender_ovk = fvk.to_ovk(Scope::External);
+
     // Primary output to recipient
     builder
         .add_output(
-            None,
+            Some(sender_ovk.clone()),
             recipient_payment,
             NoteValue::from_raw(transfer_amount),
             memo,
@@ -97,7 +108,7 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
         let change_payment = PaymentAddress::from(change_address);
         builder
             .add_output(
-                None,
+                Some(sender_ovk),
                 change_payment,
                 NoteValue::from_raw(change_amount),
                 [0u8; 36],

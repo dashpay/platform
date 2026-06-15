@@ -1605,7 +1605,7 @@ impl Drive {
                 use dpp::state_transition::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
                 use dpp::state_transition::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions;
                 use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers;
-                use std::collections::BTreeMap;
+                use std::collections::{BTreeMap, BTreeSet};
 
                 // Recompute the id from the actions (the canonical value) instead of trusting the
                 // wire field, and reject a tampered transition whose wire id doesn't match — so a
@@ -1638,25 +1638,28 @@ impl Drive {
                 )?;
                 identity_pq.query.limit = None;
 
-                let mut merged_pq = grovedb::PathQuery::merge(
+                let merged_pq = grovedb::PathQuery::merge(
                     vec![&nullifier_pq, &identity_pq],
                     &platform_version.drive.grove_version,
                 )?;
 
-                // STRICT verification: `verify_query_with_absence_proof` requires a limit, but
-                // `merge` leaves it None. Use an unreachable `u16::MAX` so the per-layer succinctness
-                // check (which rejects extra proof branches — the whole point of building this strict
-                // from day one, cf. #3812) runs fully on every layer; a smaller limit could break the
-                // result loop early and falsely reject honest proofs. The limit does NOT relax
-                // extra-data rejection.
-                merged_pq.query.limit = Some(u16::MAX);
-
-                let (root_hash, proved_key_values) =
-                    grovedb::GroveDb::verify_query_with_absence_proof(
-                        proof,
-                        &merged_pq,
-                        &platform_version.drive.grove_version,
-                    )?;
+                // STRICT verification via `verify_query` (succinctness on). Unlike the other
+                // shielded merged queries (which target only explicit keys and go through
+                // `verify_merged_query_strict`), this one embeds `full_identity_query`, whose
+                // all-keys sub-query is an unbounded RangeFull — and
+                // `verify_query_with_absence_proof` enumerates the query's terminal keys, which
+                // is impossible for unbounded ranges ("terminal keys are not supported with
+                // unbounded ranges"). Absence synthesis isn't needed here anyway: every queried
+                // element (the spent nullifiers and the created identity) must be PRESENT, so
+                // presence is checked directly against the result set below. The succinctness
+                // check still rejects proofs padded with branches beyond {nullifiers, identity}
+                // (the strict-from-day-one guarantee of #3812), and the limit stays None exactly
+                // as the prove side built it, so no layer's result loop can break early.
+                let (root_hash, proved_key_values) = grovedb::GroveDb::verify_query(
+                    proof,
+                    &merged_pq,
+                    &platform_version.drive.grove_version,
+                )?;
 
                 // Partition the proved key/values by PATH (NOT key length — nullifier keys and the
                 // identity id are both 32 bytes): nullifier-tree entries vs the identity subtrees
@@ -1667,14 +1670,23 @@ impl Drive {
                 let identity_path = identity_path(identity_id.as_slice());
                 let identity_keys_path = identity_key_tree_path(identity_id.as_slice());
 
-                let mut statuses: Vec<(Vec<u8>, bool)> = Vec::new();
+                let mut spent_nullifiers = BTreeSet::<Vec<u8>>::new();
                 let mut balance: Option<Credits> = None;
                 let mut revision: Option<Revision> = None;
                 let mut keys = BTreeMap::<KeyID, IdentityPublicKey>::new();
 
                 for (path, key, maybe_element) in proved_key_values {
                     if path == nullifier_path {
-                        statuses.push((key, maybe_element.is_some()));
+                        if !nullifier_keys.contains(&key) {
+                            return Err(Error::Proof(ProofError::CorruptedProof(
+                                "identity create from shielded pool proof contains a nullifier \
+                                 entry that was not requested"
+                                    .to_string(),
+                            )));
+                        }
+                        if maybe_element.is_some() {
+                            spent_nullifiers.insert(key);
+                        }
                     } else if path == balance_path && key == identity_id {
                         let element = maybe_element.ok_or_else(|| {
                             Error::Proof(ProofError::IncompleteProof(
@@ -1719,6 +1731,14 @@ impl Drive {
                         )));
                     }
                 }
+
+                // Without absence synthesis an unspent nullifier yields no result entry (or a
+                // bare absence entry), so each expected nullifier's spend status is its
+                // membership in the proved-present set.
+                let statuses: Vec<(Vec<u8>, bool)> = nullifier_keys
+                    .iter()
+                    .map(|nf| (nf.clone(), spent_nullifiers.contains(nf)))
+                    .collect();
 
                 // Every funding nullifier must be present (spent) in the post-execution state.
                 for (nf, is_spent) in &statuses {
@@ -3212,10 +3232,10 @@ mod tests {
 
     // --- IdentityCreateFromShieldedPool: empty proof returns error.
     //
-    // Exercises the STRICT merged-query verify arm: an empty proof cannot satisfy
-    // `verify_query_with_absence_proof` over the merged {nullifier-tree, identity} query, so the
-    // verifier must reject (rather than silently accepting). The positive prove→verify roundtrip and
-    // the padded-proof (extra-branch) rejection are covered by the full-block integration suite.
+    // Exercises the STRICT merged-query verify arm: an empty proof cannot satisfy the strict
+    // `verify_query` over the merged {nullifier-tree, identity} query, so the verifier must reject
+    // (rather than silently accepting). The positive prove→verify roundtrip lives in drive-abci's
+    // identity_create_from_shielded_pool tests (synthetic-action execution).
     #[test]
     fn verify_identity_create_from_shielded_pool_empty_proof_returns_error() {
         let platform_version = PlatformVersion::latest();

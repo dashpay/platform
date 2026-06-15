@@ -369,9 +369,6 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // — drives the watermark advance and the host-visible scan volume,
     // exactly as `result.total_notes_scanned` did in the one-shot path.
     let mut total_notes_scanned: u64 = 0;
-    // Max block height across batches and the resume point for
-    // `next_start_index` semantics, accumulated as batches arrive.
-    let mut max_block_height: u64 = 0;
     // Mirrors the one-shot rewind rule: track the last non-empty
     // batch's `(start_index, is_partial)` so we can warn on a
     // rewind-to-zero just like before.
@@ -396,7 +393,6 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
 
     while let Some(item) = stream.next().await {
         let batch = item.map_err(|e| PlatformWalletError::ShieldedSyncFailed(e.to_string()))?;
-        max_block_height = max_block_height.max(batch.block_height);
         // The denominator arrives with the batch (extracted from the
         // note-fetch proof). It is stable across a sync; take the max-seen
         // so a late chunk proven at a slightly higher block never lowers
@@ -462,6 +458,7 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
                     position: dn.position,
                     cmx: dn.cmx,
                     note: dn.note,
+                    block_height: batch.block_height,
                 });
         }
         for (id, views) in subwallets.iter().skip(1) {
@@ -479,6 +476,7 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
                             position,
                             cmx: cmx_bytes,
                             note,
+                            block_height: batch.block_height,
                         });
                 }
             }
@@ -601,12 +599,18 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
                 "Note DECRYPTED"
             );
             let note_data = serialize_note(&d.note);
+            // Stamp the note with ITS chunk's proven height — the same
+            // per-batch height OVK-recovered outgoing notes get below —
+            // never a pass-wide max. The activity deriver clusters
+            // incoming and outgoing events by this height, so a bundle's
+            // change note and its OVK-recovered send must carry the same
+            // value or the bundle splits across two clusters.
             let shielded_note = super::store::ShieldedNote {
                 note_data,
                 position: d.position,
                 cmx: d.cmx,
                 nullifier: nullifier.to_bytes(),
-                block_height: max_block_height,
+                block_height: d.block_height,
                 is_spent: false,
                 value,
             };
@@ -796,6 +800,11 @@ struct DiscoveredNote {
     position: u64,
     cmx: [u8; 32],
     note: OrchardNote,
+    /// Proven platform height of the chunk that surfaced this note —
+    /// per-batch, matching [`RecoveredOutgoing::block_height`], so that
+    /// one bundle's incoming change and OVK-recovered send carry the
+    /// same height and cluster together in the activity deriver.
+    block_height: u64,
 }
 
 /// One outgoing (sent) note recovered via OVK during a sync pass.
@@ -998,3 +1007,22 @@ mod tests {
 /// `sync_notes_across`).
 #[cfg(test)]
 mod ovk_recovery_tests;
+
+/// Round-trip guard for the Type 15 client pair: the shield builder's
+/// serialized actions must trial-decrypt under the same keyset's IVK
+/// (the chain stores them verbatim, so this covers the full path).
+#[cfg(test)]
+mod shield_decrypt_tests;
+
+/// Sender-side mirror of `shield_decrypt_tests`: the shield builder's
+/// serialized actions must OVK-recover (recipient, value, memo) under
+/// the same keyset's outgoing viewing key and persist as an outgoing
+/// note — the wallet's own send history reconstructed from chain data.
+#[cfg(test)]
+mod ovk_builder_roundtrip_tests;
+
+/// Round-trip guard for the shielded note memo: a `ShieldedMemo` attached
+/// to an output survives encryption and comes back out of both the IVK
+/// full-decryption and the OVK send-history recovery primitives.
+#[cfg(test)]
+mod memo_roundtrip_tests;

@@ -85,7 +85,7 @@ fn get_evonodes_proposed_epoch_blocks_by_range(
         return Err("SDK handle is null".to_string());
     }
 
-    let rt = tokio::runtime::Runtime::new()
+    let rt = crate::runtime::BigStackRuntime::new_isolated()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
     let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };

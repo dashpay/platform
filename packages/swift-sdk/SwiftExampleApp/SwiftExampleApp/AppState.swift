@@ -94,6 +94,11 @@ class AppState: ObservableObject {
                 sdk = newSDK
                 NSLog("✅ AppState: SDK created successfully")
 
+                // Eagerly learn the network's protocol version so
+                // fee-sensitive flows reserve correctly before the
+                // first metadata-bearing response ratchets the SDK.
+                refreshProtocolVersion(for: newSDK)
+
                 // Load known contracts into the SDK's trusted provider
                 await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
 
@@ -131,6 +136,11 @@ class AppState: ObservableObject {
             let newSDK = try SDK(network: network)
             sdk = newSDK
 
+            // Eagerly learn the new network's protocol version (see
+            // `initializeSDK`). Non-fatal: the SDK still ratchets from
+            // metadata if this fails.
+            refreshProtocolVersion(for: newSDK)
+
             // Load known contracts into the SDK's trusted provider
             await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
 
@@ -140,6 +150,27 @@ class AppState: ObservableObject {
             showError(message: "Failed to switch network: \(error.localizedDescription)")
             NSLog("❌ AppState.switchNetwork: \(error)")
             isLoading = false
+        }
+    }
+
+    /// Kick off a network protocol-version refresh for `sdk` without
+    /// blocking UI readiness.
+    ///
+    /// `SDK.refreshProtocolVersion()` blocks (it drives a proven
+    /// `getEpochsInfo` query to completion on the Rust runtime), so run
+    /// it on a background task. The ratchet propagates to the shared
+    /// `Arc<AtomicU32>` behind every clone of the SDK — including the
+    /// one a `PlatformWalletManager` holds — so shielded fee math sees
+    /// the network's real version. Failure is non-fatal: the SDK still
+    /// learns the version later from response metadata.
+    private func refreshProtocolVersion(for sdk: SDK) {
+        Task.detached {
+            do {
+                let version = try sdk.refreshProtocolVersion()
+                NSLog("✅ AppState: refreshed protocol version to \(version)")
+            } catch {
+                NSLog("⚠️ AppState: protocol version refresh failed (non-fatal): \(error.localizedDescription)")
+            }
         }
     }
 
