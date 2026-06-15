@@ -95,13 +95,41 @@ where
         platform_ref: &PlatformRef<C>,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<CheckTxResult, ConsensusError>, Error> {
-        match platform_version.drive_abci.methods.engine.check_tx {
+        // CheckTx runs OUTSIDE any block transaction, so it must NEVER mutate committed
+        // GroveDB state: an eager write here commits straight to disk, diverging the on-disk
+        // root from the signed app hash and deterministically halting the chain (devnet
+        // paloma, height 788 — see test::helpers::state_mutation_guard). In tests, EVERY
+        // check_tx call asserts the committed root hash is byte-identical around the call, so
+        // any state-transition fixture exercised through check_tx picks up the invariant
+        // automatically.
+        #[cfg(test)]
+        let committed_root_hash_before_check_tx =
+            crate::test::helpers::state_mutation_guard::committed_root_hash(
+                &self.drive,
+                platform_version,
+            );
+
+        let result = match platform_version.drive_abci.methods.engine.check_tx {
             0 => self.check_tx_v0(raw_tx, check_tx_level, platform_ref, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "check_tx".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
-        }
+        };
+
+        #[cfg(test)]
+        assert_eq!(
+            committed_root_hash_before_check_tx,
+            crate::test::helpers::state_mutation_guard::committed_root_hash(
+                &self.drive,
+                platform_version,
+            ),
+            "check_tx mutated committed grovedb state: it runs with transaction = None, so an \
+             eager write on this path commits straight to disk, diverging the root from the \
+             signed app hash and halting the chain (devnet paloma, height 788)"
+        );
+
+        result
     }
 }

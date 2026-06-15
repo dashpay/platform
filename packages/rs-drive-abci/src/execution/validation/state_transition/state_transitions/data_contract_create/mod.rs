@@ -214,6 +214,7 @@ mod tests {
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use dpp::state_transition::StateTransition;
     use dpp::tests::json_document::json_document_to_contract_with_ids;
     use dpp::tokens::calculate_token_id;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
@@ -278,6 +279,151 @@ mod tests {
             )
             .expect("expected to process state transition");
 
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+    }
+
+    /// End-to-end regression test for the nested-property `position` chain-halt.
+    ///
+    /// A `DataContractCreate` whose document schema has a nested object property with a
+    /// zero-fraction float `position` used to panic in `insert_values_nested` during block
+    /// execution (`ValidationMode::Validator`), which would shut the node down. Driving the exact
+    /// bytes a validator processes through `process_raw_state_transitions` must now complete and
+    /// return a deterministic result without panicking.
+    #[tokio::test]
+    async fn nested_float_position_does_not_halt_block_execution() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 9001, dash_to_credits!(2.0));
+
+        // Start from a valid contract, then overwrite its serialized document schemas with one
+        // whose nested `inner_a.position` is a float `0.0` (the float can only live in the
+        // serialized form), and re-sign so the malformed bytes are what a validator verifies and
+        // parses.
+        let mut data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected to get json based contract");
+        data_contract
+            .set_config(DataContractConfig::default_for_version(platform_version).unwrap());
+
+        let mut state_transition = DataContractCreateTransition::new_from_data_contract(
+            data_contract,
+            1,
+            &identity.into_partial_identity_info(),
+            key.id(),
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to create data contract create transition");
+
+        let string_prop = |position: Value| {
+            Value::Map(vec![
+                (Value::Text("type".into()), Value::Text("string".into())),
+                (Value::Text("position".into()), position),
+                (Value::Text("maxLength".into()), Value::U64(10)),
+            ])
+        };
+        // outer(object, pos 0) -> { inner_a(string, position 0.0), inner_b(string, position 1) }
+        let malicious_schema = Value::Map(vec![
+            (Value::Text("type".into()), Value::Text("object".into())),
+            (
+                Value::Text("properties".into()),
+                Value::Map(vec![(
+                    Value::Text("outer".into()),
+                    Value::Map(vec![
+                        (Value::Text("type".into()), Value::Text("object".into())),
+                        (Value::Text("position".into()), Value::U64(0)),
+                        (
+                            Value::Text("properties".into()),
+                            Value::Map(vec![
+                                (
+                                    Value::Text("inner_a".into()),
+                                    string_prop(Value::Float(0.0)),
+                                ),
+                                (Value::Text("inner_b".into()), string_prop(Value::U64(1))),
+                            ]),
+                        ),
+                        (
+                            Value::Text("additionalProperties".into()),
+                            Value::Bool(false),
+                        ),
+                    ]),
+                )]),
+            ),
+            (
+                Value::Text("additionalProperties".into()),
+                Value::Bool(false),
+            ),
+        ]);
+
+        match &mut state_transition {
+            StateTransition::DataContractCreate(DataContractCreateTransition::V0(v0)) => {
+                let schemas = v0.data_contract.document_schemas_mut();
+                schemas.clear();
+                schemas.insert("note".to_string(), malicious_schema);
+            }
+            _ => panic!("expected a V0 DataContractCreate"),
+        }
+
+        state_transition
+            .sign_external(
+                &key,
+                &signer,
+                None::<
+                    fn(
+                        Identifier,
+                        String,
+                    )
+                        -> Result<dpp::identity::SecurityLevel, dpp::ProtocolError>,
+                >,
+            )
+            .await
+            .expect("expected to re-sign");
+
+        let serialized = state_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        // This is the exact call a validator runs while executing a block. Before the fix it
+        // panicked here (node shutdown via the panic hook); it must now return without panicking.
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("block execution must not panic/error on a nested float position");
+
+        // The contract is accepted deterministically (the float `0.0` is a valid integer per the
+        // meta-schema and nested positions are not consensus-relevant). The point of the test is
+        // that block execution completed without the node-killing panic the old `.expect()` raised.
         assert_matches!(
             processing_result.execution_results().as_slice(),
             [StateTransitionExecutionResult::SuccessfulExecution { .. }]

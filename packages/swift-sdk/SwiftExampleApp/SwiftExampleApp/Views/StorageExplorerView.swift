@@ -133,6 +133,13 @@ struct StorageExplorerView: View {
             ) {
                 ShieldedSyncStateStorageListView(network: network)
             }
+            modelRow(
+                "Shielded Activity",
+                icon: "clock.arrow.circlepath",
+                type: PersistentShieldedActivity.self
+            ) {
+                ShieldedActivityStorageListView(network: network)
+            }
         }
         .navigationTitle("Storage Explorer")
         .toolbar {
@@ -276,6 +283,9 @@ struct StorageExplorerView: View {
             walletsOnNetwork.contains($0.walletId)
         }
         filteredCount(PersistentShieldedSyncState.self) {
+            walletsOnNetwork.contains($0.walletId)
+        }
+        filteredCount(PersistentShieldedActivity.self) {
             walletsOnNetwork.contains($0.walletId)
         }
         filteredCount(PersistentAssetLock.self) {

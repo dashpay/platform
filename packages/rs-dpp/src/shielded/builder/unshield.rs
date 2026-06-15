@@ -15,7 +15,9 @@ use super::{build_spend_bundle, serialize_authorized_bundle, OrchardProver, Spen
 ///
 /// Spends existing notes and sends part of the value to a transparent platform
 /// address. The shielded fee is deducted from the spent notes. Any remaining
-/// value is returned to the shielded `change_address`.
+/// value is returned to the shielded `change_address`; the change note is
+/// encrypted with the sender's External-scope OVK (derived from `fvk`) so the
+/// wallet can recover it — including the structured memo — via OVK recovery.
 ///
 /// # Parameters
 /// - `spends` - Notes to spend with their Merkle paths

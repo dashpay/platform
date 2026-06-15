@@ -948,6 +948,98 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
 
+    // MARK: - Contested Resource Vote (write path)
+
+    /// Cast a masternode contested-resource (DPNS) vote and wait for the
+    /// platform response.
+    ///
+    /// Thin bridge over `dash_sdk_contested_resource_cast_vote`: it marshals
+    /// the vote poll, the choice, the masternode `proTxHash`, and the 32-byte
+    /// voting private key in, then surfaces success / failure out. All of the
+    /// transition assembly + signing + broadcast happens on the Rust side
+    /// (rs-sdk's `PutVote`); nothing is decided here.
+    ///
+    /// - Important: Contested-resource votes are cast by **masternodes** using
+    ///   their masternode voting key (tied to a `proTxHash`). A regular wallet
+    ///   is not a masternode and has no voting key, so a vote from such a
+    ///   wallet reaches a deterministic authorization rejection on the platform
+    ///   side. Supplying a genuine masternode `proTxHash` + voting private key
+    ///   is required for an accepted vote.
+    ///
+    /// - Parameters:
+    ///   - dataContractId: Base58 contested resource's data-contract id (DPNS
+    ///     for username contests).
+    ///   - documentTypeName: Contested document type (e.g. `"domain"`).
+    ///   - indexName: Contested index name (e.g. `"parentNameAndLabel"`).
+    ///   - indexValues: Index values identifying the contested resource
+    ///     (e.g. `["dash", "alice"]`).
+    ///   - choice: TowardsIdentity / Abstain / Lock.
+    ///   - proTxHash: The masternode's 32-byte pro_tx_hash.
+    ///   - votingPrivateKey: The masternode's 32-byte voting private key. The
+    ///     matching `ECDSA_HASH160` voting public key and the signer are
+    ///     derived from this on the Rust side; the key bytes are not retained.
+    public func castContestedResourceVote(
+        dataContractId: String,
+        documentTypeName: String,
+        indexName: String,
+        indexValues: [String],
+        choice: ContestedResourceVoteChoice,
+        proTxHash: Data,
+        votingPrivateKey: Data
+    ) async throws {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        guard proTxHash.count == 32 else {
+            throw SDKError.invalidParameter("proTxHash must be exactly 32 bytes")
+        }
+        guard votingPrivateKey.count == 32 else {
+            throw SDKError.invalidParameter("votingPrivateKey must be exactly 32 bytes")
+        }
+
+        let indexValuesData = try JSONSerialization.data(withJSONObject: indexValues)
+        let indexValuesJson = String(data: indexValuesData, encoding: .utf8) ?? "[]"
+
+        let voteChoiceTag = choice.ffiTag
+        let contenderId: String? = {
+            if case let .towardsIdentity(id) = choice { return id }
+            return nil
+        }()
+        let networkValue = network.ffiValue
+
+        let result = proTxHash.withUnsafeBytes { proTxPtr in
+            votingPrivateKey.withUnsafeBytes { keyPtr in
+                dash_sdk_contested_resource_cast_vote(
+                    handle,
+                    dataContractId,
+                    documentTypeName,
+                    indexName,
+                    indexValuesJson,
+                    voteChoiceTag,
+                    contenderId,
+                    proTxPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    keyPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                    networkValue
+                )
+            }
+        }
+
+        try processVoidResult(result)
+    }
+
+    /// Process a `DashSDKResult` that carries no payload on success (the
+    /// broadcast / put-style FFIs return `NoData`). Throws on the error arm,
+    /// otherwise returns. Frees the FFI-owned error string on the failure path.
+    private func processVoidResult(_ result: DashSDKResult) throws {
+        if let error = result.error {
+            let errorMessage = error.pointee.message != nil
+                ? String(cString: error.pointee.message!)
+                : "Unknown error"
+            dash_sdk_error_free(error)
+            throw SDKError.internalError(errorMessage)
+        }
+    }
+
     /// Get vote polls by end date
     public func getVotePollsByEndDate(
         startTimeMs: UInt64?,

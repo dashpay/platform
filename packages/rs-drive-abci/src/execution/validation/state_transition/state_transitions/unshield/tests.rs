@@ -31,6 +31,15 @@ mod tests {
         PlatformAddress::P2pkh(hash)
     }
 
+    /// Minimum unshield fee for `num_actions`, sourced from the canonical
+    /// `dpp::shielded::compute_shielded_unshield_fee` (against `PlatformVersion::latest()`, which is
+    /// what every test in this module uses) so the test fixtures track the per-action / address-write
+    /// fee constants and can never go stale relative to the consensus fee gate.
+    fn unshield_fee(num_actions: usize) -> u64 {
+        dpp::shielded::compute_shielded_unshield_fee(num_actions, PlatformVersion::latest())
+            .expect("unshield fee computation")
+    }
+
     /// Builds an `UnshieldTransition` state transition.
     /// No signing needed since unshield transitions have no witnesses.
     fn create_unshield_transition(
@@ -57,10 +66,11 @@ mod tests {
         create_unshield_transition(
             create_output_address(),
             vec![create_dummy_serialized_action()],
-            // unshielding_amount: recipient amount + unshield fee for 1 action. The fee gate runs
-            // before proof verification, so this must clear `compute_shielded_unshield_fee(1)`
-            // (136,631,600) for these tests to reach the proof-verification stage they assert on.
-            136_632_600,
+            // unshielding_amount: the unshield fee for 1 action. The fee gate runs before proof
+            // verification, so this must clear `compute_shielded_unshield_fee(1)` for these tests to
+            // reach the proof-verification stage they assert on. Sourced from the canonical fee fn so
+            // it tracks the per-action / address-write storage constants and cannot go stale.
+            unshield_fee(1),
             [42u8; 32],     // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
             [0u8; 64],      // dummy binding signature
@@ -114,7 +124,10 @@ mod tests {
             let transition = UnshieldTransitionV0 {
                 output_address: create_output_address(),
                 actions,
-                unshielding_amount: 130_549_800,
+                // Any valid positive amount: this test asserts a structure-validation error
+                // (ShieldedTooManyActionsError) that fires before the fee gate. Sourced from the
+                // canonical fee fn so it carries no stale literal.
+                unshielding_amount: unshield_fee(1),
                 anchor: [42u8; 32],
                 proof: vec![0u8; 100],
                 binding_signature: [0u8; 64],
@@ -509,6 +522,21 @@ mod tests {
                 binding_sig,
             );
 
+            // CheckTx root-invariance guard (devnet paloma h788): `check_tx` asserts under
+            // cfg(test) that it never mutates committed grovedb state, so running the
+            // canonical valid fixture through it pins the invariant for this transition type.
+            {
+                use dpp::serialization::PlatformSerializable;
+                let guard_serialized_transition = transition
+                    .serialize_to_bytes()
+                    .expect("expected to serialize transition for the check_tx guard");
+                crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels(
+                    &platform,
+                    &guard_serialized_transition,
+                    "unshield",
+                );
+            }
+
             let processing_result = process_transition(&platform, transition, platform_version);
 
             assert_matches!(
@@ -536,8 +564,9 @@ mod tests {
                 create_output_address(),
                 vec![bad_action],
                 // unshielding_amount is not load-bearing here: the bad 100-byte encrypted note
-                // fails basic structure validation, which runs before the fee gate.
-                136_632_600,
+                // fails basic structure validation, which runs before the fee gate. Sourced from the
+                // canonical fee fn so it carries no stale literal.
+                unshield_fee(1),
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -743,14 +772,18 @@ mod tests {
             let mut action2 = create_dummy_serialized_action();
             action2.cmx = [99u8; 32];
 
+            // unshielding_amount: the unshield fee for 2 actions. The fee gate runs before proof
+            // verification, so this must clear `compute_shielded_unshield_fee(2)` for this test to
+            // reach the proof-verification stage it asserts on. Sourced from the canonical fee fn so
+            // it tracks the per-action / address-write storage constants and cannot go stale.
+            let unshielding_amount =
+                dpp::shielded::compute_shielded_unshield_fee(2, platform_version)
+                    .expect("unshield fee computation");
+
             let transition = create_unshield_transition(
                 create_output_address(),
                 vec![action1, action2], // Both have nullifier [1u8; 32]
-                // unshielding_amount: recipient amount + unshield fee for 2 actions. The fee gate
-                // runs before proof verification, so this must clear
-                // `compute_shielded_unshield_fee(2)` (167,180,400) for this test to reach the
-                // proof-verification stage it asserts on.
-                167_181_400,
+                unshielding_amount,
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],

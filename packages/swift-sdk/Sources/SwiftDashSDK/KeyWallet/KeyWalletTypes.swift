@@ -55,7 +55,7 @@ public enum AddressPoolType: UInt32 {
 // MARK: - Mnemonic Language
 
 /// Language for mnemonic generation
-public enum MnemonicLanguage: UInt32 {
+public enum MnemonicLanguage: UInt32, CaseIterable {
     case english = 0
     case chineseSimplified = 1
     case chineseTraditional = 2
@@ -73,6 +73,15 @@ public enum MnemonicLanguage: UInt32 {
 
     init(ffiLanguage: FFILanguage) {
         self = MnemonicLanguage(rawValue: ffiLanguage.rawValue) ?? .english
+    }
+
+    /// Convert to the platform mnemonic FFI discriminant enum
+    /// (`platform_wallet_mnemonic_word_list`). Distinct C enum from `ffiValue`
+    /// (key-wallet-ffi's `FFILanguage`, used by `generate`) — same 0–9 raw
+    /// values, but a separate type so the two headers don't collide inside the
+    /// single `DashSDKFFI` umbrella module.
+    var ffiMnemonicValue: FFIMnemonicLanguage {
+        FFIMnemonicLanguage(rawValue: self.rawValue)
     }
 }
 

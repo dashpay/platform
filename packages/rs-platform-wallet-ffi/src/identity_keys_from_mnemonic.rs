@@ -75,6 +75,105 @@ pub(crate) fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'st
     Err("phrase does not match any supported BIP-39 wordlist")
 }
 
+/// Resolve a wallet's BIP-39 mnemonic via a Swift-owned
+/// [`MnemonicResolverHandle`] and build the master `ExtendedPrivKey`
+/// for `network`.
+///
+/// Shared by the resolver-driven discovery
+/// ([`crate::identity_discovery::platform_wallet_discover_identities`])
+/// and preview
+/// ([`crate::identity_key_preview::platform_wallet_preview_identity_registration_keys`])
+/// paths so the resolve → parse → seed → master sequence (and its
+/// error mapping) lives in exactly one place. The resolver callback is
+/// fired exactly once, keyed by `wallet_id` (the wallet handle's own id
+/// — self-pinned by the caller). The mnemonic and seed are held in
+/// `Zeroizing` buffers and scrubbed before this returns.
+///
+/// The returned master's inner secp256k1 scalar is **not** wiped here —
+/// `ExtendedPrivKey` has no `Drop` / `Zeroize`, so the caller must
+/// `master.private_key.non_secure_erase()` once it's done deriving.
+/// Mirrors the hygiene in
+/// [`crate::sign_with_mnemonic_resolver::dash_sdk_sign_with_mnemonic_resolver_and_path`].
+///
+/// # Safety
+/// `mnemonic_resolver_handle` must be non-null, come from
+/// [`rs_sdk_ffi::dash_sdk_mnemonic_resolver_create`], and remain valid
+/// for the duration of the call.
+pub(crate) unsafe fn resolve_master_from_resolver(
+    mnemonic_resolver_handle: *mut rs_sdk_ffi::MnemonicResolverHandle,
+    wallet_id: &[u8; 32],
+    network: Network,
+) -> Result<ExtendedPrivKey, PlatformWalletFFIResult> {
+    use rs_sdk_ffi::{mnemonic_resolver_result, MNEMONIC_RESOLVER_BUFFER_CAPACITY};
+    use std::ffi::c_void;
+
+    let mut mnemonic_buf: Zeroizing<[u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]> =
+        Zeroizing::new([0u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]);
+    let mut mnemonic_len: usize = 0;
+
+    let resolver = &*mnemonic_resolver_handle;
+    let resolver_vtable = &*resolver.vtable;
+    let rc = (resolver_vtable.resolve)(
+        resolver.ctx as *const c_void,
+        wallet_id.as_ptr(),
+        mnemonic_buf.as_mut_ptr() as *mut std::os::raw::c_char,
+        MNEMONIC_RESOLVER_BUFFER_CAPACITY,
+        &mut mnemonic_len,
+    );
+    match rc {
+        x if x == mnemonic_resolver_result::SUCCESS => {}
+        x if x == mnemonic_resolver_result::NOT_FOUND => {
+            return Err(PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                "mnemonic resolver: no mnemonic stored for the supplied wallet_id",
+            ));
+        }
+        x if x == mnemonic_resolver_result::BUFFER_TOO_SMALL => {
+            return Err(PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                "mnemonic resolver: mnemonic exceeded the FFI buffer capacity",
+            ));
+        }
+        _ => {
+            return Err(PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                "mnemonic resolver: failed (other / Keychain access error)",
+            ));
+        }
+    }
+    if mnemonic_len == 0 || mnemonic_len > MNEMONIC_RESOLVER_BUFFER_CAPACITY {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "mnemonic resolver: returned invalid length",
+        ));
+    }
+
+    // Validate UTF-8 over the resolver-claimed prefix only — never
+    // build a `String` (Swift's can't be zeroized; ours can).
+    let mnemonic_str = std::str::from_utf8(&mnemonic_buf[..mnemonic_len]).map_err(|e| {
+        PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+            format!("mnemonic resolver: returned invalid UTF-8: {e}"),
+        )
+    })?;
+    let mnemonic = parse_mnemonic_any_language(mnemonic_str).map_err(|e| {
+        PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("mnemonic resolver: returned an invalid mnemonic: {e}"),
+        )
+    })?;
+
+    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
+    drop(mnemonic);
+
+    ExtendedPrivKey::new_master(network, seed.as_ref()).map_err(|e| {
+        PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("failed to build master xpriv from resolved mnemonic: {e}"),
+        )
+    })
+}
+
 /// Build the DIP-9 identity-authentication derivation path
 /// `m/9'/coin'/5'/0'/0'/identity_index'/key_index'`.
 pub(crate) fn identity_auth_derivation_path(

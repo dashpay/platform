@@ -60,13 +60,7 @@ mod tests {
         let nullifier_a = [0xAAu8; 32];
         let nullifier_b = [0xBBu8; 32];
         let ops = drive
-            .insert_nullifiers_v0(
-                &[nullifier_a, nullifier_b],
-                1,
-                1000,
-                Some(&transaction),
-                platform_version,
-            )
+            .insert_nullifiers_v0(&[nullifier_a, nullifier_b])
             .expect("insert_nullifiers");
         let grove_ops =
             crate::fees::op::LowLevelDriveOperation::grovedb_operations_batch_consume(ops);
