@@ -88,24 +88,33 @@ impl<K: Eq + Hash + Clone + std::fmt::Debug> Reservations<K> {
         guard.keys.clone()
     }
 
-    /// Reserve `keys`, returning an RAII guard that releases them on drop.
-    /// The guard must be held until the operation outcome has been
-    /// reconciled into durable wallet state.
-    pub(crate) fn reserve(&self, keys: Vec<K>) -> ReservationGuard<K> {
+    /// Reserve `keys` atomically, returning an RAII guard that releases
+    /// them on drop. The guard must be held until the operation outcome
+    /// has been reconciled into durable wallet state.
+    ///
+    /// All-or-nothing: if **any** requested key is already reserved by a
+    /// live guard, nothing is inserted and `None` is returned. This is the
+    /// exclusivity invariant of the race-guard — two guards can never cover
+    /// the same key, so the first to release cannot momentarily report a
+    /// still-owned key as free.
+    pub(crate) fn reserve(&self, keys: Vec<K>) -> Option<ReservationGuard<K>> {
         {
             let mut guard = self
                 .inner
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if keys.iter().any(|k| guard.keys.contains(k)) {
+                return None;
+            }
             for k in &keys {
                 guard.keys.insert(k.clone());
             }
         }
-        ReservationGuard {
+        Some(ReservationGuard {
             reservations: Arc::clone(&self.inner),
             keys,
             released: false,
-        }
+        })
     }
 }
 
@@ -233,21 +242,36 @@ impl OutpointReservations {
         self.pending_change.snapshot()
     }
 
-    /// Reserve `outpoints` and (optionally) a chosen change address,
-    /// returning an RAII guard that releases both on drop. The guard
-    /// must be held until the broadcast outcome is reconciled into
-    /// wallet state.
+    /// Reserve `outpoints` and (optionally) a chosen change address
+    /// atomically across both sub-sets, returning an RAII guard that
+    /// releases both on drop. The guard must be held until the broadcast
+    /// outcome is reconciled into wallet state.
+    ///
+    /// All-or-nothing across both sub-sets: returns `None` if any outpoint
+    /// is already reserved, or if the change address is already pending. On
+    /// the change-address rejection path the already-acquired outpoint
+    /// reservation is rolled back (released) before returning, so no
+    /// partial state ever leaks.
     pub(crate) fn reserve(
         &self,
         outpoints: Vec<OutPoint>,
         change_address: Option<Address>,
-    ) -> OutpointReservationGuard {
-        let outpoint_guard = self.outpoints.reserve(outpoints);
-        let change_guard = change_address.map(|addr| self.pending_change.reserve(vec![addr]));
-        OutpointReservationGuard {
+    ) -> Option<OutpointReservationGuard> {
+        let outpoint_guard = self.outpoints.reserve(outpoints)?;
+        let change_guard = match change_address {
+            Some(addr) => match self.pending_change.reserve(vec![addr]) {
+                Some(g) => Some(g),
+                // Roll back the outpoint reservation: dropping `outpoint_guard`
+                // here releases it before we return, so neither sub-set keeps
+                // partial state.
+                None => return None,
+            },
+            None => None,
+        };
+        Some(OutpointReservationGuard {
             outpoint_guard,
             change_guard,
-        }
+        })
     }
 }
 
@@ -308,7 +332,7 @@ mod tests {
         let res = OutpointReservations::new();
         let a = op(1);
         {
-            let _g = res.reserve(vec![a], None);
+            let _g = res.reserve(vec![a], None).expect("disjoint reserve");
             assert!(res.contains(&a));
         }
         assert!(!res.contains(&a));
@@ -319,8 +343,8 @@ mod tests {
         let res = OutpointReservations::new();
         let a = op(1);
         let b = op(2);
-        let _g1 = res.reserve(vec![a], None);
-        let _g2 = res.reserve(vec![b], None);
+        let _g1 = res.reserve(vec![a], None).expect("first reserve");
+        let _g2 = res.reserve(vec![b], None).expect("disjoint reserve");
         assert!(res.contains(&a));
         assert!(res.contains(&b));
     }
@@ -331,7 +355,7 @@ mod tests {
         let a = op(7);
         let res_clone = res.clone();
         let _ = std::thread::spawn(move || {
-            let _g = res_clone.reserve(vec![a], None);
+            let _g = res_clone.reserve(vec![a], None).expect("reserve");
             panic!("intentional");
         })
         .join();
@@ -345,7 +369,9 @@ mod tests {
         let res = OutpointReservations::new();
         let ch = addr(0x42);
         {
-            let _g = res.reserve(vec![op(1)], Some(ch.clone()));
+            let _g = res
+                .reserve(vec![op(1)], Some(ch.clone()))
+                .expect("reserve with change");
             assert!(res.change_address_pending(&ch));
         }
         assert!(!res.change_address_pending(&ch));
@@ -356,8 +382,12 @@ mod tests {
         let res = OutpointReservations::new();
         let ch1 = addr(0x11);
         let ch2 = addr(0x22);
-        let _g1 = res.reserve(vec![op(1)], Some(ch1.clone()));
-        let _g2 = res.reserve(vec![op(2)], Some(ch2.clone()));
+        let _g1 = res
+            .reserve(vec![op(1)], Some(ch1.clone()))
+            .expect("first reserve");
+        let _g2 = res
+            .reserve(vec![op(2)], Some(ch2.clone()))
+            .expect("second reserve");
         let snap = res.pending_change_snapshot();
         assert!(snap.contains(&ch1));
         assert!(snap.contains(&ch2));
@@ -368,7 +398,9 @@ mod tests {
         let res = OutpointReservations::new();
         let a = op(11);
         let ch = addr(0x55);
-        let g = res.reserve(vec![a], Some(ch.clone()));
+        let g = res
+            .reserve(vec![a], Some(ch.clone()))
+            .expect("reserve with change");
         assert!(res.contains(&a));
         assert!(res.change_address_pending(&ch));
         g.release_after_commit();
@@ -380,11 +412,77 @@ mod tests {
     fn leak_until_sync_keeps_reservation_held() {
         let res = OutpointReservations::new();
         let a = op(13);
-        let g = res.reserve(vec![a], None);
+        let g = res.reserve(vec![a], None).expect("reserve");
         g.leak_until_sync();
         assert!(
             res.contains(&a),
             "leak_until_sync must keep the outpoint reserved until process restart"
+        );
+    }
+
+    #[test]
+    fn reserve_rejects_overlapping_key_and_inserts_nothing() {
+        // A live guard owns `a`. A second reserve of {a, b} must reject
+        // atomically: `b` must NOT be inserted, leaving the set unchanged.
+        let res: Reservations<OutPoint> = Reservations::default();
+        let a = op(1);
+        let b = op(2);
+        let _held = res.reserve(vec![a]).expect("first reserve");
+
+        assert!(
+            res.reserve(vec![a, b]).is_none(),
+            "reserve must reject when any key overlaps a live guard"
+        );
+        assert!(res.contains(&a), "the originally held key stays reserved");
+        assert!(
+            !res.contains(&b),
+            "the non-overlapping key must NOT leak in on a rejected reserve"
+        );
+    }
+
+    #[test]
+    fn reserve_disjoint_succeeds_and_releases_all_on_drop() {
+        let res: Reservations<OutPoint> = Reservations::default();
+        let a = op(1);
+        let b = op(2);
+        {
+            let _g = res.reserve(vec![a, b]).expect("disjoint reserve");
+            assert!(res.contains(&a));
+            assert!(res.contains(&b));
+        }
+        assert!(!res.contains(&a), "drop releases every reserved key");
+        assert!(!res.contains(&b), "drop releases every reserved key");
+    }
+
+    #[test]
+    fn composed_reserve_rolls_back_outpoints_when_change_is_taken() {
+        // Change address `ch` is already pending under a live guard. A
+        // composed reserve that wants fresh outpoints PLUS `ch` must reject
+        // the whole call AND roll back the outpoint reservation it took
+        // first — no partial state may leak.
+        let res = OutpointReservations::new();
+        let ch = addr(0x42);
+        let _holds_change = res
+            .reserve(vec![op(99)], Some(ch.clone()))
+            .expect("seed the pending change address");
+
+        let a = op(1);
+        let b = op(2);
+        assert!(
+            res.reserve(vec![a, b], Some(ch.clone())).is_none(),
+            "composed reserve must reject when the change address is taken"
+        );
+        assert!(
+            !res.contains(&a),
+            "rollback: outpoint `a` must be released after change-address rejection"
+        );
+        assert!(
+            !res.contains(&b),
+            "rollback: outpoint `b` must be released after change-address rejection"
+        );
+        assert!(
+            res.change_address_pending(&ch),
+            "the originally pending change address stays held by its own guard"
         );
     }
 }
