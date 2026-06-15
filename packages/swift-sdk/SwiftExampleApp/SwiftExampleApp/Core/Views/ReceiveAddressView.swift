@@ -458,22 +458,21 @@ struct ReceiveAddressView: View {
         case .sent(let txid, let amount):
             testnetFaucetStatus = "Sent \(formattedAmount(amount)) tDASH! tx: \(txid.prefix(12))…"
         case .rateLimited(let message):
-            testnetFaucetStatus = message
-            openWebFaucetFallback(address: address)
+            openWebFaucetFallback(address: address, reason: message)
         case .failed(let reason):
-            testnetFaucetStatus = reason
-            openWebFaucetFallback(address: address)
+            openWebFaucetFallback(address: address, reason: reason)
         }
         clearTestnetFaucetStatusSoon()
     }
 
-    /// Web fallback: the faucet page does not prefill `?address=`, so we
-    /// copy the Core receive address to the clipboard and open the faucet
-    /// in the browser.
-    private func openWebFaucetFallback(address: String) {
+    /// Web fallback for any rate-limit/failure: the faucet page does not
+    /// prefill `?address=`, so we copy the Core receive address to the
+    /// clipboard and open the faucet in the browser. The `reason` is folded
+    /// into the toast so the failure isn't silently swallowed.
+    private func openWebFaucetFallback(address: String, reason: String) {
         UIPasteboard.general.string = address
         openURL(TestnetFaucet.webURL)
-        testnetFaucetStatus = "Opened web faucet — address copied"
+        testnetFaucetStatus = "\(reason) — opened web faucet (address copied)"
     }
 
     private func formattedAmount(_ amount: Double) -> String {

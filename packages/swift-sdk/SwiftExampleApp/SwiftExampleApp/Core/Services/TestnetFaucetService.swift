@@ -49,7 +49,11 @@ enum CapSolver {
     /// is parsed once into a byte prefix (plus an optional trailing high
     /// nibble when `target` has odd length) and compared directly against
     /// the raw `SHA256` digest bytes.
-    static func solve(salt: String, target: String) -> Int {
+    ///
+    /// Honors cooperative cancellation so a pathological / slow challenge
+    /// (cancelled by the solve timeout) can't pin a core indefinitely;
+    /// throws `CancellationError` when cancelled mid-search.
+    static func solve(salt: String, target: String) throws -> Int {
         let targetChars = Array(target.utf8)
         let fullBytes = targetChars.count / 2
         let hasNibble = targetChars.count % 2 == 1
@@ -68,6 +72,7 @@ enum CapSolver {
         let saltBytes = Array(salt.utf8)
         var nonce = 0
         while true {
+            if nonce & 0xFFFF == 0 { try Task.checkCancellation() }
             var hasher = SHA256()
             hasher.update(data: saltBytes)
             hasher.update(data: Array(String(nonce).utf8))
@@ -161,8 +166,17 @@ struct TestnetFaucet {
             return .failed(reason: "Faucet status unavailable: \(error.localizedDescription)")
         }
 
-        guard let capBase = URL(string: status.capEndpoint) else {
-            return .failed(reason: "Invalid captcha endpoint")
+        // Defense-in-depth: only solve against an HTTPS endpoint on the
+        // faucet's own registrable domain. A faucet response that returned an
+        // http:// or attacker-controlled URL would otherwise downgrade the
+        // exchange (leaking the redeemed capToken) or repoint the POSTs —
+        // which also carry the receive-address-correlated request — off-host.
+        guard let capBase = URL(string: status.capEndpoint),
+              capBase.scheme == "https",
+              let capHost = capBase.host,
+              let faucetHost = host.host,
+              Self.sameRegistrableDomain(capHost, faucetHost) else {
+            return .failed(reason: "Untrusted captcha endpoint")
         }
 
         // 2. Solve the soft captcha proof-of-work.
@@ -183,22 +197,31 @@ struct TestnetFaucet {
 
     // MARK: status
 
+    /// Subset of `/api/status` we use: the (rotatable) captcha base endpoint
+    /// and the per-request faucet amount in DASH.
     private struct FaucetStatus: Decodable {
         let capEndpoint: String
         let coreFaucetAmount: Double
     }
 
+    /// Fetches faucet config from `/api/status`. Surfaces a non-200 as a
+    /// clear error rather than letting it fall through to an opaque
+    /// JSON-decode failure.
     private func fetchStatus() async throws -> FaucetStatus {
         let url = host.appendingPathComponent("api/status")
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 30
-        let (data, _) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            throw FaucetError.message("status \(http.statusCode)")
+        }
         return try JSONDecoder().decode(FaucetStatus.self, from: data)
     }
 
     // MARK: captcha
 
+    /// cap.js challenge descriptor returned by `POST {capEndpoint}challenge`.
     private struct ChallengeResponse: Decodable {
         struct Challenge: Decodable {
             let c: Int   // number of sub-challenges
@@ -209,6 +232,7 @@ struct TestnetFaucet {
         let token: String
     }
 
+    /// Result of `POST {capEndpoint}redeem`; `token` is the capToken on success.
     private struct RedeemResponse: Decodable {
         let success: Bool
         let token: String?
@@ -229,27 +253,35 @@ struct TestnetFaucet {
         let d = challenge.challenge.d
         let token = challenge.token
 
-        guard c > 0 else {
-            throw FaucetError.message("Empty captcha challenge")
+        // Reject pathological or unsupported challenge sizes up front. `c`
+        // bounds the number of spawned tasks, `s` the PRNG salt length, and
+        // `d` the PoW difficulty (expected work ≈ 16^d per sub-challenge). A
+        // misbehaving / compromised / future faucet response outside these
+        // bounds would otherwise pin the device's cores with no in-app abort;
+        // throwing here routes the caller to the web-faucet fallback instead.
+        guard (1...256).contains(c), (1...256).contains(s), (1...6).contains(d) else {
+            throw FaucetError.message("Unsupported captcha challenge (c=\(c), s=\(s), d=\(d))")
         }
 
-        // Solve all c sub-challenges off the main actor, parallelized.
-        let solutions: [Int] = try await withThrowingTaskGroup(
-            of: (Int, Int).self
-        ) { group in
-            for i in 1...c {
-                group.addTask(priority: .background) {
-                    let salt = CapSolver.prng("\(token)\(i)", s)
-                    let target = CapSolver.prng("\(token)\(i)d", d)
-                    let nonce = CapSolver.solve(salt: salt, target: target)
-                    return (i, nonce)
+        // Solve all c sub-challenges off the main actor, parallelized, under
+        // an overall timeout so even an in-bounds-but-slow challenge can't
+        // hang the UI indefinitely (the timeout cancels the solve tasks).
+        let solutions: [Int] = try await withSolveTimeout(seconds: 30) {
+            try await withThrowingTaskGroup(of: (Int, Int).self) { group in
+                for i in 1...c {
+                    group.addTask(priority: .background) {
+                        let salt = CapSolver.prng("\(token)\(i)", s)
+                        let target = CapSolver.prng("\(token)\(i)d", d)
+                        let nonce = try CapSolver.solve(salt: salt, target: target)
+                        return (i, nonce)
+                    }
                 }
+                var collected = Array(repeating: 0, count: c)
+                for try await (i, nonce) in group {
+                    collected[i - 1] = nonce   // preserve sub-challenge order
+                }
+                return collected
             }
-            var collected = Array(repeating: 0, count: c)
-            for try await (i, nonce) in group {
-                collected[i - 1] = nonce   // preserve sub-challenge order
-            }
-            return collected
         }
 
         // redeem
@@ -264,6 +296,8 @@ struct TestnetFaucet {
         return capToken
     }
 
+    /// Body for `POST {capEndpoint}redeem`: the challenge token and the
+    /// per-sub-challenge solution nonces, in order.
     private struct RedeemRequest: Encodable {
         let token: String
         let solutions: [Int]
@@ -271,6 +305,9 @@ struct TestnetFaucet {
 
     // MARK: faucet POST
 
+    /// Posts the funding request to `/api/core-faucet` and maps the response
+    /// to a `TestnetFaucetOutcome` (200 → `.sent`, 429 → `.rateLimited`,
+    /// everything else → `.failed`).
     private func postFaucet(
         address: String,
         capToken: String,
@@ -333,6 +370,8 @@ struct TestnetFaucet {
 
     // MARK: JSON helpers
 
+    /// Internal error carrying a human-readable message (surfaced in the
+    /// fallback toast via `localizedDescription`).
     private enum FaucetError: Error, LocalizedError {
         case message(String)
         var errorDescription: String? {
@@ -340,6 +379,7 @@ struct TestnetFaucet {
         }
     }
 
+    /// POSTs `body` as JSON and decodes the response, throwing on a non-200.
     private func postJSON<Body: Encodable, Out: Decodable>(
         url: URL,
         body: Body
@@ -354,5 +394,38 @@ struct TestnetFaucet {
             throw FaucetError.message("HTTP \(http.statusCode)")
         }
         return try JSONDecoder().decode(Out.self, from: data)
+    }
+
+    // MARK: misc helpers
+
+    /// Runs `op`, but throws `FaucetError.message` if it doesn't finish within
+    /// `seconds`. Cancelling the losing task propagates to the cooperative
+    /// PoW solve so it stops promptly.
+    private func withSolveTimeout<T: Sendable>(
+        seconds: Double,
+        _ op: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await op() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw FaucetError.message("Captcha solve timed out")
+            }
+            guard let result = try await group.next() else {
+                throw FaucetError.message("Captcha solve produced no result")
+            }
+            group.cancelAll()
+            return result
+        }
+    }
+
+    /// True when two hosts share their registrable domain (last two DNS
+    /// labels), e.g. `cap.thepasta.org` and `faucet.thepasta.org`.
+    private static func sameRegistrableDomain(_ a: String, _ b: String) -> Bool {
+        func base(_ h: String) -> String {
+            h.split(separator: ".").suffix(2).joined(separator: ".")
+        }
+        let ba = base(a)
+        return ba.contains(".") && ba == base(b)
     }
 }
