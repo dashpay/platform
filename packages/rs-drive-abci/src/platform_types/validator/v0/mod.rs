@@ -4,7 +4,7 @@ use dpp::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
 pub use dpp::core_types::validator::v0::*;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{ProTxHash, PubkeyHash};
-use dpp::dashcore_rpc::json::{DMNState, MasternodeListItem};
+use dpp::dashcore_rpc::json::MasternodeListItem;
 pub(crate) trait NewValidatorIfMasternodeInState {
     fn new_validator_if_masternode_in_state(
         pro_tx_hash: ProTxHash,
@@ -22,30 +22,18 @@ impl NewValidatorIfMasternodeInState for ValidatorV0 {
     ) -> Option<Self> {
         let MasternodeListItem { state, .. } = state.hpmn_masternode_list().get(&pro_tx_hash)?;
 
-        let DMNState {
-            service,
-            platform_node_id,
-            pose_ban_height,
-            platform_p2p_port,
-            platform_http_port,
-            ..
-        } = state;
-        let Some(platform_http_port) = platform_http_port else {
-            return None;
-        };
-        let Some(platform_p2p_port) = platform_p2p_port else {
-            return None;
-        };
-        let platform_node_id = (*platform_node_id)?;
+        let (_, platform_p2p_port) = state.platform_p2p_address()?;
+        let (_, platform_http_port) = state.platform_http_address()?;
+        let platform_node_id = state.platform_node_id?;
         Some(ValidatorV0 {
             pro_tx_hash,
             public_key,
-            node_ip: service.ip().to_string(),
+            node_ip: state.service.ip().to_string(),
             node_id: PubkeyHash::from_byte_array(platform_node_id),
-            core_port: service.port(),
-            platform_http_port: *platform_http_port as u16,
-            platform_p2p_port: *platform_p2p_port as u16,
-            is_banned: pose_ban_height.is_some(),
+            core_port: state.service.port(),
+            platform_http_port: platform_http_port as u16,
+            platform_p2p_port: platform_p2p_port as u16,
+            is_banned: state.pose_ban_height.is_some(),
         })
     }
 }

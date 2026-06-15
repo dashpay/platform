@@ -85,6 +85,7 @@ impl ValidationMode {
 pub(in crate::execution) mod test_helpers;
 
 #[cfg(test)]
+#[allow(deprecated)]
 pub(in crate::execution) mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
@@ -692,8 +693,8 @@ pub(in crate::execution) mod tests {
                     pub_key_operator: vec![],
                     operator_payout_address: None,
                     platform_node_id: None,
-                    platform_p2p_port: None,
-                    platform_http_port: None,
+                    legacy_platform_p2p_port: None,
+                    legacy_platform_http_port: None,
                     addresses: None,
                 },
             },
@@ -782,8 +783,8 @@ pub(in crate::execution) mod tests {
                     pub_key_operator: vec![],
                     operator_payout_address: None,
                     platform_node_id: None,
-                    platform_p2p_port: None,
-                    platform_http_port: None,
+                    legacy_platform_p2p_port: None,
+                    legacy_platform_http_port: None,
                     addresses: None,
                 },
             },

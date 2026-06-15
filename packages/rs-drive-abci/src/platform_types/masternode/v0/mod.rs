@@ -139,6 +139,10 @@ pub struct MasternodeStateV0 {
 
 impl From<DMNState> for MasternodeStateV0 {
     fn from(value: DMNState) -> Self {
+        // Use the resolved accessors so Core 23+ nested addresses take priority
+        // over the deprecated legacy top-level port fields.
+        let platform_p2p_port = value.platform_p2p_address().map(|(_, port)| port);
+        let platform_http_port = value.platform_http_address().map(|(_, port)| port);
         let DMNState {
             service,
             registered_height,
@@ -151,8 +155,6 @@ impl From<DMNState> for MasternodeStateV0 {
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
-            platform_p2p_port,
-            platform_http_port,
             ..
         } = value;
 
@@ -175,6 +177,7 @@ impl From<DMNState> for MasternodeStateV0 {
 }
 
 impl From<MasternodeStateV0> for DMNState {
+    #[allow(deprecated)]
     fn from(value: MasternodeStateV0) -> Self {
         let MasternodeStateV0 {
             service,
@@ -204,8 +207,8 @@ impl From<MasternodeStateV0> for DMNState {
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
-            platform_p2p_port,
-            platform_http_port,
+            legacy_platform_p2p_port: platform_p2p_port,
+            legacy_platform_http_port: platform_http_port,
             addresses: None,
         }
     }

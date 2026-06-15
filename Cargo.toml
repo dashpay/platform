@@ -50,14 +50,15 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", branch = "dev" }
+# TEMPORARY: pinned to dashpay/rust-dashcore#808 (Core 23 platform addresses). Revert to branch = "dev" once #808 merges to dev.
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "7f1b46b9c7b264cb9887725da7e3567c204141a3" }
 
 # Optimize heavy crypto crates even in dev/test builds so that
 # Halo 2 proof generation and verification run at near-release speed.
