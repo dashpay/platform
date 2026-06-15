@@ -352,17 +352,17 @@ impl ManagedIdentity {
                     contact.clone(),
                 );
                 true
-            } else if self.incoming_contact_requests.contains_key(&sender_id) {
+            } else if let Some(slot) = self.incoming_contact_requests.get_mut(&sender_id) {
+                // Pending (not-yet-accepted) incoming request — replace it
+                // in place so a later Accept uses the freshest key material.
+                *slot = request.clone();
                 cs.incoming_requests.insert(
                     ReceivedContactRequestKey {
                         owner_id,
                         sender_id,
                     },
-                    ContactRequestEntry {
-                        request: request.clone(),
-                    },
+                    ContactRequestEntry { request },
                 );
-                self.incoming_contact_requests.insert(sender_id, request);
                 false
             } else {
                 return false;

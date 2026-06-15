@@ -467,9 +467,11 @@ fn test_rotation_request_rekeys_established_contact_and_clears_broken_flag() {
     let pending = create_contact_request(id_c, id_a, 0, 3000);
     managed_a.add_incoming_contact_request(pending, &noop_persister());
     let rotated_pending = create_contact_request(id_c, id_a, 4, 3001);
-    let rekeyed =
-        managed_a.apply_rotated_incoming_request(rotated_pending, &noop_persister());
-    assert!(!rekeyed, "pending (non-established) rotation is not a re-key");
+    let rekeyed = managed_a.apply_rotated_incoming_request(rotated_pending, &noop_persister());
+    assert!(
+        !rekeyed,
+        "pending (non-established) rotation is not a re-key"
+    );
     assert_eq!(
         managed_a
             .incoming_contact_requests
