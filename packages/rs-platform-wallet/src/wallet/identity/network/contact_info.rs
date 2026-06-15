@@ -274,11 +274,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 continue;
             };
             for decrypted in infos {
+                // `decrypted` is owned by the loop, so move its already-decoded
+                // `ContactInfoPrivateData` straight in — no field-by-field clone.
                 if managed.set_contact_metadata(
                     &decrypted.contact_id,
-                    decrypted.data.alias_name.clone(),
-                    decrypted.data.note.clone(),
-                    decrypted.data.display_hidden,
+                    decrypted.data,
                     &self.persister,
                 ) {
                     applied += 1;
@@ -312,6 +312,16 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         use dashcore::secp256k1::rand::{thread_rng, RngCore};
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
+        // Build the decrypted-payload struct once: it is both the local
+        // metadata applied to the contact AND (on publish) the plaintext the
+        // `contactInfo` codec encodes — no threading three loose args, and
+        // no duplicate struct literal at the encode site below.
+        let metadata = ContactInfoPrivateData {
+            alias_name: alias,
+            note,
+            display_hidden,
+        };
+
         // 1. Local state first — works offline and feeds SwiftData.
         let (established_count, identity_index, signing_key, root_key_id, wallet_snapshot) = {
             let mut wm = self.wallet_manager.write().await;
@@ -322,13 +332,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .identity_manager
                 .managed_identity_mut(identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            if !managed.set_contact_metadata(
-                contact_id,
-                alias.clone(),
-                note.clone(),
-                display_hidden,
-                &self.persister,
-            ) {
+            if !managed.set_contact_metadata(contact_id, metadata.clone(), &self.persister) {
                 return Err(PlatformWalletError::InvalidIdentityData(format!(
                     "Contact {contact_id} is not established for identity {identity_id}"
                 )));
@@ -435,11 +439,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let private_data = platform_encryption::encrypt_private_data(
             &keys.private_data_key,
             &iv,
-            &encode_private_data(&ContactInfoPrivateData {
-                alias_name: alias,
-                note,
-                display_hidden,
-            }),
+            &encode_private_data(&metadata),
         );
 
         // 5. Build + put the document through the write seam.

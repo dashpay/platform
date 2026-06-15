@@ -10,6 +10,7 @@ use crate::changeset::{
     ContactChangeSet, ContactRequestEntry, ReceivedContactRequestKey, RejectedContactRequest,
     SentContactRequestKey,
 };
+use crate::wallet::identity::crypto::contact_info::ContactInfoPrivateData;
 use crate::wallet::persister::WalletPersister;
 use crate::{ContactRequest, EstablishedContact};
 use dpp::prelude::Identifier;
@@ -241,30 +242,35 @@ impl ManagedIdentity {
     /// Set the owner-private metadata (alias / note / hidden) on an
     /// established contact and persist the changeset.
     ///
-    /// This is the local half of `contactInfo` (M3 task 13): callers
-    /// route user edits AND decrypted on-platform `contactInfo`
-    /// payloads through here so SwiftData mirrors either source.
+    /// Takes the decrypted [`ContactInfoPrivateData`] payload directly —
+    /// the same struct the `contactInfo` codec produces — so callers don't
+    /// explode it into positional args. This is the local half of
+    /// `contactInfo` (M3 task 13): callers route user edits AND decrypted
+    /// on-platform `contactInfo` payloads through here so SwiftData mirrors
+    /// either source. The wire field names (`alias_name` / `display_hidden`)
+    /// map onto the domain names (`alias` / `is_hidden`) on the contact.
     /// Returns `false` (no-op) when the contact isn't established.
     pub fn set_contact_metadata(
         &mut self,
         contact_id: &Identifier,
-        alias: Option<String>,
-        note: Option<String>,
-        is_hidden: bool,
+        metadata: ContactInfoPrivateData,
         persister: &WalletPersister,
     ) -> bool {
         let owner_id = self.id();
         let Some(contact) = self.established_contacts.get_mut(contact_id) else {
             return false;
         };
-        if contact.alias == alias && contact.note == note && contact.is_hidden == is_hidden {
+        if contact.alias == metadata.alias_name
+            && contact.note == metadata.note
+            && contact.is_hidden == metadata.display_hidden
+        {
             // Unchanged — skip the persister round (the recurring sync
             // calls this for every decrypted doc on every pass).
             return true;
         }
-        contact.alias = alias;
-        contact.note = note;
-        contact.is_hidden = is_hidden;
+        contact.alias = metadata.alias_name;
+        contact.note = metadata.note;
+        contact.is_hidden = metadata.display_hidden;
 
         let mut cs = ContactChangeSet::default();
         cs.established.insert(
