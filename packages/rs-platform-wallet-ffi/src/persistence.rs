@@ -3651,6 +3651,7 @@ fn build_wallet_identity_bucket(
         managed.contested_dpns_names = contested_dpns_names;
         unsafe { restore_dashpay_contacts(spec, &identifier, &mut managed) };
         unsafe { restore_dashpay_payments(spec, &mut managed) };
+        unsafe { restore_dashpay_rejected(spec, &mut managed) };
         bucket.insert(spec.identity_index, managed);
     }
 
@@ -3677,6 +3678,64 @@ unsafe fn restore_dashpay_payments(spec: &IdentityRestoreEntryFFI, managed: &mut
     }
     let rows = slice::from_raw_parts(spec.payments, spec.payments_count);
     apply_payment_rows(rows, managed);
+}
+
+/// Rebuild the per-identity rejected-request suppression set
+/// (`rejected_contact_requests`, G5 stage 1) from the persisted tombstone
+/// rows at load.
+///
+/// Without this the suppression set starts empty on every relaunch, so a
+/// previously-rejected sender's still-on-platform immutable
+/// `contactRequest` document re-ingests on the next sync sweep and the
+/// rejected contact resurrects. Direct map inserts, NO persister round —
+/// the rows ARE the persisted state.
+///
+/// # Safety
+///
+/// `spec.rejected` must be either null or point at `spec.rejected_count`
+/// valid [`ContactRequestRejectionFFI`] rows (a flat POD with no owned
+/// pointers).
+///
+/// [`ContactRequestRejectionFFI`]: crate::contact_persistence::ContactRequestRejectionFFI
+unsafe fn restore_dashpay_rejected(spec: &IdentityRestoreEntryFFI, managed: &mut ManagedIdentity) {
+    if spec.rejected.is_null() || spec.rejected_count == 0 {
+        return;
+    }
+    let rows = slice::from_raw_parts(spec.rejected, spec.rejected_count);
+    apply_rejected_rows(rows, managed);
+}
+
+/// Fold a slice of [`ContactRequestRejectionFFI`] rows into
+/// `managed.rejected_contact_requests`, keyed by
+/// `(sender_id, account_reference)` — the same suppression key the live
+/// `record_rejected_contact_request` path uses. Split out from
+/// [`restore_dashpay_rejected`] so the decode is unit-testable without a
+/// full `IdentityRestoreEntryFFI`.
+///
+/// [`ContactRequestRejectionFFI`]: crate::contact_persistence::ContactRequestRejectionFFI
+fn apply_rejected_rows(
+    rows: &[crate::contact_persistence::ContactRequestRejectionFFI],
+    managed: &mut ManagedIdentity,
+) {
+    use platform_wallet::changeset::RejectedContactRequest;
+    for row in rows {
+        let owner_id = Identifier::from(row.owner_id);
+        let sender_id = Identifier::from(row.sender_id);
+        let document_id = if row.has_document_id {
+            Some(Identifier::from(row.document_id))
+        } else {
+            None
+        };
+        managed.rejected_contact_requests.insert(
+            (sender_id, row.account_reference),
+            RejectedContactRequest {
+                owner_id,
+                sender_id,
+                account_reference: row.account_reference,
+                document_id,
+            },
+        );
+    }
 }
 
 /// Fold a slice of [`PaymentRestoreEntryFFI`] rows into
@@ -4537,6 +4596,76 @@ mod tests {
             managed.dashpay_payments.len(),
             2,
             "a row with an unknown direction must be skipped, not inserted"
+        );
+    }
+
+    /// Regression: rejected-request tombstones must be restored at load so
+    /// a previously-rejected contact does NOT resurrect on relaunch.
+    ///
+    /// A fresh `ManagedIdentity` suppresses nothing — that empty
+    /// suppression set is exactly the post-relaunch state in which the
+    /// still-on-platform immutable `contactRequest` re-ingests on the next
+    /// sweep. Before `restore_dashpay_rejected`/`apply_rejected_rows`
+    /// existed, the load path rebuilt contacts + payments but left this
+    /// set empty; this test pins that the tombstones are now rehydrated
+    /// (keyed by `(sender, accountReference)`) while a ROTATED reference
+    /// stays un-suppressed.
+    #[test]
+    fn restore_rejected_rows_rebuilds_suppression_set() {
+        use crate::contact_persistence::ContactRequestRejectionFFI;
+
+        let owner = IdentityV0 {
+            id: Identifier::from([0xAA; 32]),
+            public_keys: std::collections::BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        };
+        let mut managed = ManagedIdentity::new(Identity::V0(owner), 0);
+
+        // Post-relaunch precondition: nothing is suppressed yet.
+        assert!(!managed.is_request_rejected(&Identifier::from([0xBB; 32]), 7));
+
+        let rows = [
+            ContactRequestRejectionFFI {
+                owner_id: [0xAA; 32],
+                sender_id: [0xBB; 32],
+                account_reference: 7,
+                has_document_id: true,
+                document_id: [0xCC; 32],
+            },
+            ContactRequestRejectionFFI {
+                owner_id: [0xAA; 32],
+                sender_id: [0xDD; 32],
+                account_reference: 0,
+                has_document_id: false,
+                document_id: [0u8; 32],
+            },
+        ];
+
+        apply_rejected_rows(&rows, &mut managed);
+
+        assert_eq!(managed.rejected_contact_requests.len(), 2);
+        assert!(managed.is_request_rejected(&Identifier::from([0xBB; 32]), 7));
+        assert!(managed.is_request_rejected(&Identifier::from([0xDD; 32]), 0));
+
+        // `document_id` round-trips: Some when flagged, None otherwise.
+        let with_doc = managed
+            .rejected_contact_requests
+            .get(&(Identifier::from([0xBB; 32]), 7))
+            .expect("tombstone restored");
+        assert_eq!(with_doc.document_id, Some(Identifier::from([0xCC; 32])));
+        let without_doc = managed
+            .rejected_contact_requests
+            .get(&(Identifier::from([0xDD; 32]), 0))
+            .expect("tombstone restored");
+        assert!(without_doc.document_id.is_none());
+
+        // The load-bearing discriminator: a ROTATED request (same sender,
+        // bumped accountReference) must NOT be suppressed — only the exact
+        // rejected `(sender, accountReference)` pair is.
+        assert!(
+            !managed.is_request_rejected(&Identifier::from([0xBB; 32]), 8),
+            "a rotated (bumped accountReference) request must not be suppressed by an old tombstone"
         );
     }
 }

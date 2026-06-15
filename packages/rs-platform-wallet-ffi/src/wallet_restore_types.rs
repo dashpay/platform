@@ -313,6 +313,20 @@ pub struct IdentityRestoreEntryFFI {
     /// Rust destructors. `null` / `0` when the identity has no payments.
     pub payments: *const PaymentRestoreEntryFFI,
     pub payments_count: usize,
+    /// DashPay rejected-request tombstones (G5 stage 1) owned by this
+    /// identity, assembled from the persisted rejection rows. Restores
+    /// `ManagedIdentity.rejected_contact_requests` at load — **without
+    /// this the suppression set starts empty on every relaunch, so the
+    /// still-on-platform immutable `contactRequest` document of a
+    /// previously-rejected sender re-ingests on the next sync sweep and
+    /// the rejected contact resurrects** (the relaunch-durability gap that
+    /// mirrors the contacts/payments restore arrays above). Reuses the
+    /// persist-side [`crate::contact_persistence::ContactRequestRejectionFFI`]
+    /// shape; it is a flat POD (no owned pointers), so nothing rides the
+    /// load allocation here. `null` / `0` when the identity has rejected
+    /// no requests.
+    pub rejected: *const crate::contact_persistence::ContactRequestRejectionFFI,
+    pub rejected_count: usize,
 }
 
 /// One DashPay payment-history row to rehydrate into

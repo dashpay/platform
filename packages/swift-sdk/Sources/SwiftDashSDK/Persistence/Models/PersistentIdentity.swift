@@ -128,6 +128,15 @@ public final class PersistentIdentity {
     @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayPayment.owner)
     public var dashpayPayments: [PersistentDashpayPayment] = []
 
+    /// DashPay rejected-request tombstones (G5 stage 1) owned by this
+    /// identity. Cascade-deleted from the parent. Persisted from the
+    /// `rejected` changeset array by `persistContacts` and read back at
+    /// load to rebuild the Rust `rejected_contact_requests` suppression
+    /// set — without them a rejected contact resurrects on relaunch.
+    /// Filters use `PersistentDashpayRejectedRequest.predicate(ownerIdentityId:)`.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayRejectedRequest.owner)
+    public var dashpayRejectedRequests: [PersistentDashpayRejectedRequest] = []
+
     // Contracts in the local store that name this identity as their
     // owner. `.nullify` so deleting the identity leaves the contract
     // rows alive (with `ownerIdentity` nulled) — matches the user's
@@ -174,6 +183,7 @@ public final class PersistentIdentity {
         self.dashpayProfile = nil
         self.contactRequests = []
         self.dashpayPayments = []
+        self.dashpayRejectedRequests = []
         self.ownedDataContracts = []
         self.createdAt = Date()
         self.lastUpdated = Date()

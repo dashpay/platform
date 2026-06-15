@@ -1808,11 +1808,17 @@ public class PlatformWalletPersistenceHandler {
                 )
             }
             for tomb in rejected {
+                // Two parts: (1) drop the incoming row so the request
+                // stops showing in the pending UI, and (2) persist a
+                // durable tombstone so the Rust suppression set can be
+                // restored at load — without (2) the rejected contact
+                // resurrects on the next post-relaunch sync sweep.
                 deleteRejectedIncomingRow(
                     ownerId: tomb.ownerIdentityId,
                     senderId: tomb.senderIdentityId,
                     accountReference: tomb.accountReference
                 )
+                upsertRejectedTombstone(tomb)
             }
             // No save() — bracketed by changesetBegin/End from the
             // Rust store() round.
@@ -1869,6 +1875,56 @@ public class PlatformWalletPersistenceHandler {
         )
         if let existing = try? backgroundContext.fetch(descriptor).first {
             backgroundContext.delete(existing)
+        }
+    }
+
+    /// Persist one rejection tombstone (G5 stage 1) as a durable
+    /// `PersistentDashpayRejectedRequest` row so the Rust
+    /// `rejected_contact_requests` suppression set can be rebuilt at load.
+    /// Without this the in-memory set starts empty after relaunch and the
+    /// still-on-platform immutable `contactRequest` re-ingests on the next
+    /// sweep, resurrecting the rejected contact.
+    ///
+    /// Upsert keyed `(networkRaw, ownerIdentityId, senderIdentityId,
+    /// accountReference)` — the Rust suppression key. Idempotent: a replay
+    /// of the same tombstone refreshes `documentId` in place. Requires the
+    /// owner `PersistentIdentity` to exist (the tombstone hangs off it);
+    /// skipped + logged if it hasn't landed yet — the next sync round
+    /// replays it.
+    ///
+    /// Assumes it's already running on `serialQueue`.
+    private func upsertRejectedTombstone(_ tomb: ContactRequestRejectionSnapshot) {
+        let ownerId = tomb.ownerIdentityId
+        let ownerDescriptor = FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == ownerId }
+        )
+        guard let owner = try? backgroundContext.fetch(ownerDescriptor).first else {
+            print("⚠️ persistContacts: skipped rejection tombstone — no PersistentIdentity for owner \(tomb.ownerIdentityId.prefix(8).toHexString())…; will retry next sync round")
+            return
+        }
+
+        let networkRaw = owner.networkRaw
+        let senderId = tomb.senderIdentityId
+        let reference = tomb.accountReference
+        let descriptor = FetchDescriptor<PersistentDashpayRejectedRequest>(
+            predicate: #Predicate {
+                $0.networkRaw == networkRaw
+                    && $0.ownerIdentityId == ownerId
+                    && $0.senderIdentityId == senderId
+                    && $0.accountReference == reference
+            }
+        )
+        if let existing = try? backgroundContext.fetch(descriptor).first {
+            existing.documentId = tomb.documentId
+        } else {
+            backgroundContext.insert(
+                PersistentDashpayRejectedRequest(
+                    owner: owner,
+                    senderIdentityId: tomb.senderIdentityId,
+                    accountReference: tomb.accountReference,
+                    documentId: tomb.documentId
+                )
+            )
         }
     }
 
@@ -1995,7 +2051,18 @@ public class PlatformWalletPersistenceHandler {
             // persister round is open must ride that round's
             // endChangeset commit/rollback instead of flushing the
             // half-applied round early.
-            if !self.inChangeset { try? backgroundContext.save() }
+            //
+            // Surface (don't swallow) a save failure: a dropped payment
+            // upsert silently loses Sent history + memos, the exact H1
+            // symptom this path exists to prevent, so a failure must at
+            // least be observable rather than vanishing behind `try?`.
+            if !self.inChangeset {
+                do {
+                    try backgroundContext.save()
+                } catch {
+                    print("⚠️ persistDashpayPayments: SwiftData save failed — payment history may be incomplete: \(error)")
+                }
+            }
         }
     }
 
@@ -4595,6 +4662,38 @@ public class PlatformWalletPersistenceHandler {
                 allocation.paymentArrays.append((paymentBuf, paymentRows.count))
             }
 
+            // DashPay rejected-request tombstones (G5 stage 1) — restores
+            // the rejected_contact_requests suppression set at load.
+            // Without this the set starts empty on relaunch and a
+            // previously-rejected sender's still-on-platform immutable
+            // contactRequest re-ingests on the next sweep, resurrecting
+            // the rejected contact. Flat POD rows — no owned pointers.
+            let rejectedRows = identity.dashpayRejectedRequests
+            if rejectedRows.isEmpty {
+                entry.rejected = nil
+                entry.rejected_count = 0
+            } else {
+                let rejectedBuf = UnsafeMutablePointer<ContactRequestRejectionFFI>.allocate(
+                    capacity: rejectedRows.count
+                )
+                for (c, tomb) in rejectedRows.enumerated() {
+                    var row = ContactRequestRejectionFFI()
+                    copyBytes(tomb.ownerIdentityId, into: &row.owner_id)
+                    copyBytes(tomb.senderIdentityId, into: &row.sender_id)
+                    row.account_reference = tomb.accountReference
+                    if let documentId = tomb.documentId {
+                        row.has_document_id = true
+                        copyBytes(documentId, into: &row.document_id)
+                    } else {
+                        row.has_document_id = false
+                    }
+                    rejectedBuf[c] = row
+                }
+                entry.rejected = UnsafePointer(rejectedBuf)
+                entry.rejected_count = UInt(rejectedRows.count)
+                allocation.rejectedArrays.append((rejectedBuf, rejectedRows.count))
+            }
+
             buf[j] = entry
         }
         allocation.identityArrays.append((buf, identities.count))
@@ -4867,6 +4966,10 @@ private final class LoadAllocation {
     /// Per-identity `PaymentRestoreEntryFFI` arrays (DashPay payment
     /// restore — H1). The txid/memo strings live in `cStringBuffers`.
     var paymentArrays: [(UnsafeMutablePointer<PaymentRestoreEntryFFI>, Int)] = []
+    /// Per-identity `ContactRequestRejectionFFI` arrays (DashPay
+    /// rejected-tombstone restore — G5 stage 1). Flat POD rows, no owned
+    /// pointers, so nothing extra rides `scalarBuffers`/`cStringBuffers`.
+    var rejectedArrays: [(UnsafeMutablePointer<ContactRequestRejectionFFI>, Int)] = []
     /// Byte buffers backing `root_xpub_bytes` and `account_xpub_bytes`.
     var scalarBuffers: [(UnsafeMutablePointer<UInt8>, Int)] = []
     /// NUL-terminated c-string buffers carried by identity entries
@@ -4931,6 +5034,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in paymentArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in rejectedArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
