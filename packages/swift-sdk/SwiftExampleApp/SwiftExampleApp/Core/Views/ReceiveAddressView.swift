@@ -11,6 +11,7 @@ enum ReceiveAddressTab: String, CaseIterable {
 
 struct ReceiveAddressView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var shieldedService: ShieldedService
@@ -44,6 +45,8 @@ struct ReceiveAddressView: View {
     @State private var copiedToClipboard = false
     @State private var faucetStatus: String?
     @State private var isFaucetLoading = false
+    @State private var testnetFaucetStatus: String?
+    @State private var isTestnetFaucetLoading = false
 
     /// Lowest-indexed external address on the primary BIP44 account
     /// that has never received an inbound transaction.
@@ -264,6 +267,30 @@ struct ReceiveAddressView: View {
                         .padding(.horizontal)
                         .disabled(isFaucetLoading)
                     }
+
+                    // Dev tool: public testnet faucet (faucet.thepasta.org).
+                    // Only on the Core tab and only when the SDK is on
+                    // testnet — hidden on mainnet/devnet/regtest.
+                    if selectedTab == .core && platformState.currentNetwork == .testnet {
+                        Button {
+                            Task { await requestFromTestnetFaucet() }
+                        } label: {
+                            HStack {
+                                if isTestnetFaucetLoading {
+                                    ProgressView().scaleEffect(0.8)
+                                } else {
+                                    Image(systemName: "wrench.and.screwdriver.fill")
+                                }
+                                Text(testnetFaucetStatus ?? "Get 1 tDASH — Testnet Faucet")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.orange)
+                        .padding(.horizontal)
+                        .disabled(isTestnetFaucetLoading)
+                        .accessibilityIdentifier("receive.testnetFaucetButton")
+                    }
                 } else {
                     Spacer()
                     Text(currentAddress)
@@ -406,6 +433,59 @@ struct ReceiveAddressView: View {
         Task {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
             faucetStatus = nil
+        }
+    }
+
+    /// Dev/QA tool: request 1 tDASH from the public testnet faucet
+    /// (`faucet.thepasta.org`). Solves the cap.js proof-of-work captcha
+    /// on-device. On any failure (rate limit, network, solve, non-200) we
+    /// fall back to copying the address and opening the web faucet rather
+    /// than failing silently.
+    private func requestFromTestnetFaucet() async {
+        isTestnetFaucetLoading = true
+        testnetFaucetStatus = "Solving captcha…"
+        defer { isTestnetFaucetLoading = false }
+
+        let address = currentAddress
+        guard hasValidAddress, !address.isEmpty else {
+            testnetFaucetStatus = "No address available"
+            clearTestnetFaucetStatusSoon()
+            return
+        }
+
+        let outcome = await TestnetFaucet().requestCoreDash(address: address)
+        switch outcome {
+        case .sent(let txid, let amount):
+            testnetFaucetStatus = "Sent \(formattedAmount(amount)) tDASH! tx: \(txid.prefix(12))…"
+        case .rateLimited(let message):
+            testnetFaucetStatus = message
+            openWebFaucetFallback(address: address)
+        case .failed(let reason):
+            testnetFaucetStatus = reason
+            openWebFaucetFallback(address: address)
+        }
+        clearTestnetFaucetStatusSoon()
+    }
+
+    /// Web fallback: the faucet page does not prefill `?address=`, so we
+    /// copy the Core receive address to the clipboard and open the faucet
+    /// in the browser.
+    private func openWebFaucetFallback(address: String) {
+        UIPasteboard.general.string = address
+        openURL(TestnetFaucet.webURL)
+        testnetFaucetStatus = "Opened web faucet — address copied"
+    }
+
+    private func formattedAmount(_ amount: Double) -> String {
+        amount == amount.rounded()
+            ? String(format: "%.0f", amount)
+            : String(format: "%g", amount)
+    }
+
+    private func clearTestnetFaucetStatusSoon() {
+        Task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            testnetFaucetStatus = nil
         }
     }
 }
