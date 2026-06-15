@@ -67,7 +67,10 @@ pub struct ShieldedNote {
     pub cmx: [u8; 32],
     /// Nullifier for detecting when spent (32 bytes).
     pub nullifier: [u8; 32],
-    /// Block height where the note appeared.
+    /// Proven platform height of the chunk fetch that surfaced the note.
+    /// Stamped per-batch — the SAME height OVK-recovered outgoing notes
+    /// from that chunk get — so the activity deriver can cluster one
+    /// bundle's incoming change and outgoing send together by height.
     pub block_height: u64,
     /// Whether the nullifier was seen on-chain (spent).
     pub is_spent: bool,
@@ -75,6 +78,42 @@ pub struct ShieldedNote {
     pub value: u64,
     /// Serialized `orchard::Note` bytes (115 bytes).
     pub note_data: Vec<u8>,
+}
+
+/// A note this subwallet **sent**, recovered during the note scan via
+/// the wallet's Outgoing Viewing Key (the Zcash outgoing-transaction-
+/// history mechanism).
+///
+/// Unlike [`ShieldedNote`] (which is a note the wallet *received* and
+/// can later spend), this is a minimal record of an *outgoing*
+/// payment — who the wallet paid, how much, and with what memo —
+/// kept purely for send-history display. It carries no spend
+/// bookkeeping (no nullifier / position / witness) because the wallet
+/// cannot spend a note it sent to someone else.
+///
+/// Keyed by `cmx` (the recovered output note's commitment), which is
+/// globally unique on-chain, so recording the same recovered note
+/// twice (a re-scan of the same chunk) is idempotent.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ShieldedOutgoingNote {
+    /// Extracted note commitment (32 bytes) of the note that was sent.
+    /// Primary key — unique per on-chain output.
+    pub cmx: [u8; 32],
+    /// Recipient's raw Orchard address (43 bytes,
+    /// `Address::to_raw_address_bytes`). The wallet paid this address.
+    /// Stored as a `Vec` rather than `[u8; 43]` because `serde`'s derive
+    /// only covers fixed arrays up to length 32; always 43 bytes for a
+    /// recovered note.
+    pub recipient: Vec<u8>,
+    /// Value sent, in credits.
+    pub value: u64,
+    /// Raw Dash memo bytes (`DashMemo`, 36 bytes). Stored as a `Vec`
+    /// rather than `[u8; 36]` so the persisted shape stays flexible if
+    /// the memo size ever changes; always 36 bytes for a recovered note.
+    pub memo: Vec<u8>,
+    /// Block height at which the sent note appeared on-chain.
+    pub block_height: u64,
 }
 
 /// Storage abstraction for shielded wallet state.
@@ -111,9 +150,10 @@ pub trait ShieldedStore: Send + Sync {
     ///
     /// Pending state is **in-memory only** — it does not survive
     /// a process restart. The crash-during-broadcast case is
-    /// reconciled by the next nullifier-sync pass after the
-    /// transition lands (or, on rejection, leaves the notes
-    /// observable as unspent again on the next launch).
+    /// reconciled by the next note-scan pass after the transition
+    /// lands (scan-based spend detection marks the spent note via
+    /// its nullifier), or, on rejection, leaves the notes
+    /// observable as unspent again on the next launch.
     ///
     /// `unspent_notes` skips notes whose nullifier is in the
     /// pending set, so a successful `mark_pending` immediately
@@ -128,6 +168,66 @@ pub trait ShieldedStore: Send + Sync {
     /// `mark_spent`).
     fn clear_pending(&mut self, id: SubwalletId, nullifier: &[u8; 32])
         -> Result<bool, Self::Error>;
+
+    // ── Outgoing history (per-subwallet) ───────────────────────────────
+
+    /// Record an outgoing (sent) note recovered via OVK for `id`.
+    ///
+    /// Idempotent by `note.cmx`: re-recording a note already on file
+    /// (a re-scan of the same chunk) is a no-op and returns `false`;
+    /// a genuinely new outgoing note is stored and returns `true`.
+    /// Outgoing notes are append-only send history — there is no
+    /// "mark spent" / mutation path for them.
+    fn record_outgoing_note(
+        &mut self,
+        id: SubwalletId,
+        note: &ShieldedOutgoingNote,
+    ) -> Result<bool, Self::Error>;
+
+    /// Return every outgoing (sent) note recovered for `id`, in the
+    /// order they were recorded.
+    fn get_outgoing_notes(&self, id: SubwalletId)
+        -> Result<Vec<ShieldedOutgoingNote>, Self::Error>;
+
+    // ── Derived activity log (per-subwallet) ───────────────────────────
+
+    /// Upsert a derived [`ShieldedActivityEntry`] for `id`, keyed by
+    /// `entry.id` (the sha256 of the visible output cmxs — see
+    /// [`crate::wallet::shielded::activity`]).
+    ///
+    /// Re-saving an entry with the same `entry.id` overwrites the
+    /// existing one in place. This is what lets a coarse scan-derived
+    /// `ShieldedSpend` be upgraded to a specific kind when a later live
+    /// entry (or correlation pass) re-emits the same id, and what lets a
+    /// `Pending` entry flip to `Confirmed`/`Failed`.
+    fn save_activity(
+        &mut self,
+        id: SubwalletId,
+        entry: &super::activity::ShieldedActivityEntry,
+    ) -> Result<(), Self::Error>;
+
+    /// Return a page of derived activity for `id`, sorted for display
+    /// (pendings first, then by `block_height` desc, tiebreak by
+    /// `created_at_ms` then `id`), sliced by `[offset, offset+limit)`.
+    /// `limit == 0` returns an empty page.
+    fn get_activity(
+        &self,
+        id: SubwalletId,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<super::activity::ShieldedActivityEntry>, Self::Error>;
+
+    /// Look up a single activity entry by its `entry.id`. `None` if no
+    /// entry with that id exists for `id`.
+    fn get_activity_by_entry_id(
+        &self,
+        id: SubwalletId,
+        entry_id: &[u8; 32],
+    ) -> Result<Option<super::activity::ShieldedActivityEntry>, Self::Error>;
+
+    /// Return the set of all entry ids already recorded for `id`. Used by
+    /// the scan deriver to skip clusters a live entry already owns.
+    fn get_activity_ids(&self, id: SubwalletId) -> Result<BTreeSet<[u8; 32]>, Self::Error>;
 
     // ── Commitment tree (network-shared) ───────────────────────────────
 
@@ -190,17 +290,6 @@ pub trait ShieldedStore: Send + Sync {
         index: u64,
     ) -> Result<(), Self::Error>;
 
-    /// The last `(height, timestamp)` nullifier sync checkpoint for `id`, if any.
-    fn nullifier_checkpoint(&self, id: SubwalletId) -> Result<Option<(u64, u64)>, Self::Error>;
-
-    /// Persist the nullifier sync checkpoint for `id`.
-    fn set_nullifier_checkpoint(
-        &mut self,
-        id: SubwalletId,
-        height: u64,
-        timestamp: u64,
-    ) -> Result<(), Self::Error>;
-
     // ── Per-subwallet lifecycle ────────────────────────────────────────
 
     /// Drop ALL in-memory per-subwallet state (decrypted notes,
@@ -252,13 +341,21 @@ pub(super) struct SubwalletState {
     /// Sync watermark: count of note positions scanned = the next
     /// global index to scan (exclusive). `0` = nothing scanned yet.
     pub last_synced_index: u64,
-    /// `(height, timestamp)` from the most recent nullifier sync.
-    pub nullifier_checkpoint: Option<(u64, u64)>,
     /// Nullifiers of notes currently being spent in an in-flight
     /// transition. Excluded from `unspent_notes()` so concurrent
     /// callers can't double-select. In-memory only — never
     /// persisted; the next sync after a crash reconciles state.
     pub pending_nullifiers: BTreeSet<[u8; 32]>,
+    /// Notes this subwallet SENT, recovered via OVK during the scan.
+    /// Append-only send history in recording order.
+    pub outgoing_notes: Vec<ShieldedOutgoingNote>,
+    /// `cmx` set of recorded outgoing notes, for O(log n) idempotency
+    /// on `record_outgoing_note` (Orchard cmx is globally unique).
+    pub outgoing_cmx_index: BTreeSet<[u8; 32]>,
+    /// Derived activity entries keyed by `entry.id` (sha256 of the
+    /// visible output cmxs). Upsert-by-id: a later live entry or a
+    /// correlation pass that re-emits the same id overwrites the row.
+    pub activity: BTreeMap<[u8; 32], super::activity::ShieldedActivityEntry>,
 }
 
 impl SubwalletState {
@@ -316,6 +413,52 @@ impl SubwalletState {
     /// removed.
     pub(super) fn clear_pending(&mut self, nullifier: &[u8; 32]) -> bool {
         self.pending_nullifiers.remove(nullifier)
+    }
+
+    /// Record an outgoing (sent) note. Idempotent by `cmx`: returns
+    /// `true` if newly recorded, `false` if a note with that `cmx`
+    /// was already present.
+    pub(super) fn record_outgoing_note(&mut self, note: &ShieldedOutgoingNote) -> bool {
+        if !self.outgoing_cmx_index.insert(note.cmx) {
+            return false;
+        }
+        self.outgoing_notes.push(note.clone());
+        true
+    }
+
+    pub(super) fn outgoing_notes(&self) -> Vec<ShieldedOutgoingNote> {
+        self.outgoing_notes.clone()
+    }
+
+    /// Upsert a derived activity entry by `entry.id`.
+    pub(super) fn save_activity(&mut self, entry: &super::activity::ShieldedActivityEntry) {
+        self.activity.insert(entry.id, entry.clone());
+    }
+
+    /// Display-sorted page of activity entries.
+    pub(super) fn activity_page(
+        &self,
+        offset: usize,
+        limit: usize,
+    ) -> Vec<super::activity::ShieldedActivityEntry> {
+        if limit == 0 {
+            return Vec::new();
+        }
+        let mut all: Vec<super::activity::ShieldedActivityEntry> =
+            self.activity.values().cloned().collect();
+        super::activity::sort_activity_for_display(&mut all);
+        all.into_iter().skip(offset).take(limit).collect()
+    }
+
+    pub(super) fn activity_by_id(
+        &self,
+        entry_id: &[u8; 32],
+    ) -> Option<super::activity::ShieldedActivityEntry> {
+        self.activity.get(entry_id).cloned()
+    }
+
+    pub(super) fn activity_ids(&self) -> BTreeSet<[u8; 32]> {
+        self.activity.keys().copied().collect()
     }
 }
 
@@ -411,6 +554,70 @@ impl ShieldedStore for InMemoryShieldedStore {
             .unwrap_or(false))
     }
 
+    fn record_outgoing_note(
+        &mut self,
+        id: SubwalletId,
+        note: &ShieldedOutgoingNote,
+    ) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .entry(id)
+            .or_default()
+            .record_outgoing_note(note))
+    }
+
+    fn get_outgoing_notes(
+        &self,
+        id: SubwalletId,
+    ) -> Result<Vec<ShieldedOutgoingNote>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::outgoing_notes)
+            .unwrap_or_default())
+    }
+
+    fn save_activity(
+        &mut self,
+        id: SubwalletId,
+        entry: &super::activity::ShieldedActivityEntry,
+    ) -> Result<(), Self::Error> {
+        self.subwallets.entry(id).or_default().save_activity(entry);
+        Ok(())
+    }
+
+    fn get_activity(
+        &self,
+        id: SubwalletId,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<super::activity::ShieldedActivityEntry>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(|sw| sw.activity_page(offset, limit))
+            .unwrap_or_default())
+    }
+
+    fn get_activity_by_entry_id(
+        &self,
+        id: SubwalletId,
+        entry_id: &[u8; 32],
+    ) -> Result<Option<super::activity::ShieldedActivityEntry>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .and_then(|sw| sw.activity_by_id(entry_id)))
+    }
+
+    fn get_activity_ids(&self, id: SubwalletId) -> Result<BTreeSet<[u8; 32]>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::activity_ids)
+            .unwrap_or_default())
+    }
+
     fn append_commitment(&mut self, cmx: &[u8; 32], marked: bool) -> Result<(), Self::Error> {
         self.commitments.push(*cmx);
         self.marked_positions.push(marked);
@@ -453,23 +660,6 @@ impl ShieldedStore for InMemoryShieldedStore {
         index: u64,
     ) -> Result<(), Self::Error> {
         self.subwallets.entry(id).or_default().last_synced_index = index;
-        Ok(())
-    }
-
-    fn nullifier_checkpoint(&self, id: SubwalletId) -> Result<Option<(u64, u64)>, Self::Error> {
-        Ok(self
-            .subwallets
-            .get(&id)
-            .and_then(|sw| sw.nullifier_checkpoint))
-    }
-
-    fn set_nullifier_checkpoint(
-        &mut self,
-        id: SubwalletId,
-        height: u64,
-        timestamp: u64,
-    ) -> Result<(), Self::Error> {
-        self.subwallets.entry(id).or_default().nullifier_checkpoint = Some((height, timestamp));
         Ok(())
     }
 
@@ -565,13 +755,6 @@ mod tests {
         assert_eq!(store.last_synced_note_index(a).unwrap(), 100);
         // Different subwallet still at 0.
         assert_eq!(store.last_synced_note_index(b).unwrap(), 0);
-
-        store.set_nullifier_checkpoint(a, 200, 1234567890).unwrap();
-        assert_eq!(
-            store.nullifier_checkpoint(a).unwrap(),
-            Some((200, 1234567890))
-        );
-        assert!(store.nullifier_checkpoint(b).unwrap().is_none());
     }
 
     #[test]
@@ -581,6 +764,86 @@ mod tests {
         store.append_commitment(&[2u8; 32], false).unwrap();
         store.checkpoint_tree(1).unwrap();
         assert_eq!(store.tree_anchor().unwrap(), [0u8; 32]);
+    }
+
+    #[test]
+    fn test_save_activity_upserts_and_paginates() {
+        use super::super::activity::{
+            ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
+        };
+
+        fn entry(
+            id: u8,
+            height: Option<u64>,
+            status: ShieldedActivityStatus,
+        ) -> ShieldedActivityEntry {
+            ShieldedActivityEntry {
+                id: [id; 32],
+                kind: ShieldedActivityKind::Sent,
+                direction: ShieldedDirection::Out,
+                amount: 1,
+                fee: None,
+                counterparty: None,
+                memo: None,
+                block_height: height,
+                status,
+                created_at_ms: 0,
+                note_cmxs: vec![[id; 32]],
+                spent_nullifiers: vec![],
+            }
+        }
+
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+
+        // Two confirmed at different heights + one pending.
+        store
+            .save_activity(id, &entry(1, Some(10), ShieldedActivityStatus::Confirmed))
+            .unwrap();
+        store
+            .save_activity(id, &entry(2, Some(20), ShieldedActivityStatus::Confirmed))
+            .unwrap();
+        store
+            .save_activity(id, &entry(3, None, ShieldedActivityStatus::Pending))
+            .unwrap();
+
+        // Display order: pending first, then height desc.
+        let page = store.get_activity(id, 0, 10).unwrap();
+        assert_eq!(page.len(), 3);
+        assert_eq!(page[0].id, [3u8; 32], "pending floats to top");
+        assert_eq!(page[1].id, [2u8; 32], "height 20 before 10");
+        assert_eq!(page[2].id, [1u8; 32]);
+
+        // Upsert by id: re-saving entry 1 as Pending replaces it in place
+        // (still 3 entries, but now 1 is pending and floats up).
+        store
+            .save_activity(id, &entry(1, None, ShieldedActivityStatus::Pending))
+            .unwrap();
+        let page = store.get_activity(id, 0, 10).unwrap();
+        assert_eq!(page.len(), 3, "upsert by id, not append");
+        assert_eq!(
+            store.get_activity_ids(id).unwrap().len(),
+            3,
+            "still exactly three distinct ids"
+        );
+
+        // Pagination: offset/limit slice the display-sorted list.
+        let first_two = store.get_activity(id, 0, 2).unwrap();
+        assert_eq!(first_two.len(), 2);
+        let last_one = store.get_activity(id, 2, 10).unwrap();
+        assert_eq!(last_one.len(), 1);
+        // limit 0 => empty page.
+        assert!(store.get_activity(id, 0, 0).unwrap().is_empty());
+
+        // Lookup by entry id.
+        assert!(store
+            .get_activity_by_entry_id(id, &[2u8; 32])
+            .unwrap()
+            .is_some());
+        assert!(store
+            .get_activity_by_entry_id(id, &[9u8; 32])
+            .unwrap()
+            .is_none());
     }
 
     #[test]

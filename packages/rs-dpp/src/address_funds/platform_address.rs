@@ -746,6 +746,24 @@ mod tests {
     use dashcore::PublicKey;
     use platform_value::BinaryData;
 
+    /// All non-mainnet networks share the `tdash` HRP (DIP-0018), so an address parsed from a
+    /// bech32m string can only ever report Mainnet or Testnet — never Devnet/Regtest. Network
+    /// checks against a parsed address MUST therefore compare HRPs, not raw `Network` values
+    /// (`PlatformWallet::shielded_unshield_to` relies on this; comparing raw networks made every
+    /// unshield fail on devnet wallets).
+    #[test]
+    fn hrp_is_shared_across_all_non_mainnet_networks() {
+        let testnet = PlatformAddress::hrp_for_network(Network::Testnet);
+        assert_eq!(testnet, PLATFORM_HRP_TESTNET);
+        assert_eq!(PlatformAddress::hrp_for_network(Network::Devnet), testnet);
+        assert_eq!(PlatformAddress::hrp_for_network(Network::Regtest), testnet);
+        assert_ne!(
+            PlatformAddress::hrp_for_network(Network::Mainnet),
+            testnet,
+            "mainnet must use a distinct HRP"
+        );
+    }
+
     /// Helper to create a keypair from a 32-byte seed
     fn create_keypair(seed: [u8; 32]) -> (RawSecretKey, PublicKey) {
         let secp = Secp256k1::new();

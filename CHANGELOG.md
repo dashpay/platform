@@ -1,3 +1,124 @@
+## [4.0.0-rc.2](https://github.com/dashpay/platform/compare/v4.0.0-rc.1...v4.0.0-rc.2) (2026-06-12)
+
+
+### Features
+
+* **swift-sdk:** seed shielded pool notes from the example app ([#3858](https://github.com/dashpay/platform/issues/3858))
+
+
+### Bug Fixes
+
+* **dpp:** harden nested document-property position parsing ([#3857](https://github.com/dashpay/platform/issues/3857))
+* **drive:** return error instead of panicking on empty SetPrices direct purchase ([#3856](https://github.com/dashpay/platform/issues/3856))
+* **drive:** verify identity-create-from-shielded-pool results without unbounded terminal-key queries ([#3859](https://github.com/dashpay/platform/issues/3859))
+* **platform-wallet:** keep note reservations on ambiguous shielded spend confirmation failures ([#3863](https://github.com/dashpay/platform/issues/3863))
+* **platform:** derive identity-rescan keys through the wallet signer ([#3860](https://github.com/dashpay/platform/issues/3860))
+* **platform:** load identity by index through the wallet signer ([#3861](https://github.com/dashpay/platform/issues/3861))
+* **platform:** zero cached platform-address balances absent from state ([#3855](https://github.com/dashpay/platform/issues/3855))
+* **swift-sdk:** attribute shielded registration errors to the right step and keep unconfirmed broadcasts safe ([#3862](https://github.com/dashpay/platform/issues/3862))
+* **swift-sdk:** fixed mempool tx categorization after restart ([#3777](https://github.com/dashpay/platform/issues/3777))
+* **swift-sdk:** freeze failed registration step at the failure instant ([#3854](https://github.com/dashpay/platform/issues/3854))
+* **wasm-sdk:** label getTokenContractInfo parameter as tokenId, not contractId ([#3851](https://github.com/dashpay/platform/issues/3851))
+
+
+### Miscellaneous Chores
+
+* **swift-sdk:** reduced swift-sdk static library size using Cargo profiles ([#3837](https://github.com/dashpay/platform/issues/3837))
+
+
+### Continuous Integration
+
+* retry docker metadata step on transient github api failures ([#3847](https://github.com/dashpay/platform/issues/3847))
+
+## [4.0.0-rc.1](https://github.com/dashpay/platform/compare/v4.0.0-beta.4...v4.0.0-rc.1) (2026-06-10)
+
+
+### Features
+
+* **platform:** send memos with shielded transfers ([#3836](https://github.com/dashpay/platform/issues/3836))
+* **swift-sdk:** fund identity creation from shielded balance ([#3838](https://github.com/dashpay/platform/issues/3838))
+* **swift-sdk:** scan recipient address QR codes on the Send screen ([#3835](https://github.com/dashpay/platform/issues/3835))
+* **swift-sdk:** select Core or Platform source when shielding in example app ([#3830](https://github.com/dashpay/platform/issues/3830))
+
+
+### Bug Fixes
+
+* build shielded FFI load path under --all-features ([#3826](https://github.com/dashpay/platform/issues/3826))
+* **drive-abci:** make shielded snapshot ingest idempotent across InitChain retries ([#3824](https://github.com/dashpay/platform/issues/3824))
+* **platform-wallet:** align shielded_sync example with filler-only seeded notes ([#3832](https://github.com/dashpay/platform/issues/3832))
+* **platform:** derive shielded identity-create id from the padded bundle's published nullifiers ([#3843](https://github.com/dashpay/platform/issues/3843))
+* **platform:** encrypt shielded outputs to the sender's outgoing viewing key ([#3839](https://github.com/dashpay/platform/issues/3839))
+* **platform:** tag restored wallet addresses with the wallet's network ([#3834](https://github.com/dashpay/platform/issues/3834))
+* **sdk:** wallet-flow network fixes for SwiftExampleApp ([#3772](https://github.com/dashpay/platform/issues/3772))
+* **swift-sdk:** example app ask if the spv is running directly instead of using the sync state ([#3821](https://github.com/dashpay/platform/issues/3821))
+* **swift-sdk:** show shielded funding steps and real fee estimate ([#3845](https://github.com/dashpay/platform/issues/3845))
+
+
+### Code Refactoring
+
+* remove orphaned shielded nullifier-changes subsystem ([#3823](https://github.com/dashpay/platform/issues/3823))
+
+
+### Miscellaneous Chores
+
+* expand code ownership for SDK, wallet stack, proof verifier and wasm-dpp2 ([#3840](https://github.com/dashpay/platform/issues/3840))
+
+
+### Tests
+
+* **dpp:** require shielded-client in shield-from-asset-lock signing tests ([#3827](https://github.com/dashpay/platform/issues/3827))
+* **drive-abci:** assert check_tx never mutates committed grovedb state ([#3844](https://github.com/dashpay/platform/issues/3844))
+* **platform-wallet:** fix stale balance assertion in paloma shielded sync example ([#3831](https://github.com/dashpay/platform/issues/3831))
+* source shielded minimum-fee from compute_minimum_shielded_fee ([#3829](https://github.com/dashpay/platform/issues/3829))
+* **wallet-storage:** add missing wallet_group_id in test initializers ([#3833](https://github.com/dashpay/platform/issues/3833))
+
+## [4.0.0-beta.4](///compare/v4.0.0-beta.3...v4.0.0-beta.4) (2026-06-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform-wallet:** add platform-wallet-storage crate (sqlite persister) (#3625)
+
+### Features
+
+* add IdentityCreateFromShieldedPool state transition (shielded-pool-funded identity creation) ([#3816](undefined/undefined/undefined/issues/3816))
+* **drive:** shielded fees for Shield/ShieldFromAssetLock + shield credit conservation ([#3793](undefined/undefined/undefined/issues/3793))
+* **platform-wallet:** add platform-wallet-storage crate (sqlite persister) ([#3625](undefined/undefined/undefined/issues/3625))
+* shielded scan-based spend detection and OVK outgoing-note history ([#3819](undefined/undefined/undefined/issues/3819))
+* **swift-sdk:** iOS simluator writes logs to disk ([#3785](undefined/undefined/undefined/issues/3785))
+
+
+### Bug Fixes
+
+* **dpp:** return error instead of panicking on storage-fee refund div-by-zero ([#3799](undefined/undefined/undefined/issues/3799))
+* **drive:** charge fees for unshield and shielded withdrawal ([#3800](undefined/undefined/undefined/issues/3800))
+* **drive:** correct fee/credit accounting on the address-funding asset-lock penalty path ([#3818](undefined/undefined/undefined/issues/3818))
+* **drive:** strict merged-query verification for unshield & shielded withdrawal proofs ([#3814](undefined/undefined/undefined/issues/3814))
+* **drive:** unify shielded pool genesis/upgrade construction to prevent state divergence ([#3801](undefined/undefined/undefined/issues/3801))
+* **platform-wallet:** zeroize private keys when freeing preview rows ([#3797](undefined/undefined/undefined/issues/3797))
+* **rs-sdk-ffi:** shrink signature allocation to len before leaking (capacity UB) ([#3798](undefined/undefined/undefined/issues/3798))
+
+
+### Miscellaneous Chores
+
+* tidy follow-ups from the shielded withdrawal fee review ([#3802](undefined/undefined/undefined/issues/3802))
+
+## [4.0.0-beta.3](https://github.com/dashpay/platform/compare/v4.0.0-beta.2...v4.0.0-beta.3) (2026-06-04)
+
+
+### Bug Fixes
+
+* **dashmate:** bump Envoy gateway to 1.35.11 for HTTP/2 DoS (CVE-2026-47774) ([#3794](https://github.com/dashpay/platform/issues/3794))
+* grovedb incompatibilty issues ([#3789](https://github.com/dashpay/platform/issues/3789))
+
+
+## [4.0.0-beta.2](https://github.com/dashpay/platform/compare/v4.0.0-beta.1...v4.0.0-beta.2) (2026-06-02)
+
+
+### Bug Fixes
+
+* **platform-version:** gate shielded-pool block methods to protocol v12 ([#3782](https://github.com/dashpay/platform/issues/3782))
+
 ## [4.0.0-beta.1](///compare/v3.1.0-dev.8...v4.0.0-beta.1) (2026-06-02)
 
 

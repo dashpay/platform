@@ -52,7 +52,8 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// wallet. Not auto-started — call `start` after wallets are
     /// registered. See [`IdentitySyncManager`].
     pub(super) identity_sync_manager: Arc<IdentitySyncManager<P>>,
-    /// Periodic shielded (Orchard) note + nullifier sync coordinator.
+    /// Periodic shielded (Orchard) note sync coordinator (spends are
+    /// detected during the note scan, no separate nullifier pass).
     /// Iterates every wallet that has been bound via
     /// [`PlatformWallet::bind_shielded`](crate::wallet::PlatformWallet::bind_shielded);
     /// unbound wallets are skipped silently. Not auto-started — call
@@ -76,7 +77,9 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// onto the freshly-created `NetworkShieldedCoordinator` that
     /// forwards into `on_shielded_sync_progress`. Sub-managers
     /// (`SpvRuntime`, `PlatformAddressSyncManager`, etc.) hold their
-    /// own clones already.
+    /// own clones already, so `configure_shielded` is the only reader of
+    /// this retained handle — hence it is `shielded`-gated.
+    #[cfg(feature = "shielded")]
     pub(super) event_manager: Arc<PlatformEventManager>,
     pub(super) persister: Arc<P>,
     /// Cancellation token + join handle for the wallet-event adapter
@@ -158,6 +161,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
             shielded_coordinator,
+            #[cfg(feature = "shielded")]
             event_manager,
             persister,
             event_adapter_cancel,

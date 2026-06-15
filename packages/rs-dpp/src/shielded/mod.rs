@@ -1,68 +1,108 @@
 #[cfg(feature = "shielded-client")]
 pub mod builder;
 
+mod compute_minimum_shielded_fee;
+pub mod memo;
+mod sighash;
+
+pub use memo::{ShieldedMemo, MEMO_PAYLOAD_SIZE, MEMO_SIZE};
+
 use bincode::{Decode, Encode};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
-use crate::fee::Credits;
-use platform_version::version::PlatformVersion;
+// Re-exported so the public path stays `dpp::shielded::compute_minimum_shielded_fee` (the
+// module and the function share a name but live in different namespaces).
+pub use compute_minimum_shielded_fee::{
+    compute_minimum_shielded_fee, compute_shielded_identity_create_fee,
+    compute_shielded_unshield_fee, compute_shielded_verification_fee,
+    compute_shielded_withdrawal_fee,
+};
 
-/// Permanent storage bytes per shielded action:
-/// 280 bytes in BulkAppendTree (32 cmx + 32 rho + 216 encrypted note)
-/// + 32 bytes in nullifier tree = 312 bytes total.
-pub const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 312;
+// Re-exported so the public paths stay `dpp::shielded::<name>` after moving the sighash preimage
+// builders into their own file. Both the version-dispatching wrappers and their `_v0` impls are
+// re-exported (callers use the wrappers; byte-layout tests use the `_v0` impls).
+pub use sighash::{
+    compute_platform_sighash, identity_create_from_shielded_extra_sighash_data,
+    identity_create_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
+    shielded_withdrawal_extra_sighash_data_v0, unshield_extra_sighash_data,
+    unshield_extra_sighash_data_v0,
+};
 
-/// Domain separator for Platform sighash computation.
-const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";
+/// Permanent storage bytes per shielded action: 344 bytes total.
+///
+/// - 312 bytes in the BulkAppendTree: 32 (`cmx`, the note commitment) + 32
+///   (`rho`) + 32 (`cv_net`, the value commitment, stored unencrypted for OVK
+///   recovery) + 216 (the encrypted note ciphertext).
+/// - 32 bytes in the nullifier tree.
+///
+/// The 216-byte encrypted note is Orchard's `TransmittedNoteCiphertext`, laid
+/// out as `epk(32) || enc_ciphertext(104) || out_ciphertext(80)`:
+///
+/// - `epk` (32): the note's ephemeral public key, published in the clear. The
+///   recipient combines it with their incoming viewing key (Diffie–Hellman) to
+///   derive the AEAD key.
+/// - `enc_ciphertext` (104): the note encrypted to the recipient (opened with
+///   the incoming viewing key) — ChaCha20-Poly1305 over the note plaintext. It
+///   holds the compact note (52 = version 1 + diversifier `d` 11 + value 8 +
+///   `rseed` 32), the memo (36), and the AEAD tag (16); the 52-byte compact
+///   prefix is what wallets trial-decrypt during sync to detect their own notes.
+/// - `out_ciphertext` (80): the note encrypted to the sender for wallet
+///   recovery (opened with the outgoing viewing key): out plaintext
+///   (64 = `pk_d` 32 + `esk` 32) + AEAD tag (16).
+///
+/// This is the standard Orchard layout except the memo is 36 bytes (`DashMemo`)
+/// instead of Zcash's 512 — the dashpay `orchard` fork makes the memo size a
+/// type parameter (`MemoSize`) — which is why each note is 216 bytes
+/// (`ENCRYPTED_NOTE_SIZE`) rather than Zcash Orchard's ~692.
+pub const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 344;
 
-/// Computes the platform sighash from an Orchard bundle commitment and optional
-/// transparent field data.
+/// Calibrated effective storage-byte cost of the Core withdrawal document a
+/// `ShieldedWithdrawal` creates.
 ///
-/// The sighash is computed as:
-///   `SHA-256(SIGHASH_DOMAIN || bundle_commitment || extra_data)`
+/// A `ShieldedWithdrawal` does not only write notes/nullifiers like the other pool-paid
+/// transitions — it ALSO inserts a Core withdrawal document into the withdrawals contract
+/// (`AddWithdrawalDocument`), which writes the document plus its withdrawals-contract index
+/// entries. That insert has a real, GroveDB-metered cost of ≈110,085,900 credits, which is
+/// ~98% storage and is FLAT regardless of the bundle's action count (the document and its
+/// indexes are the same size whether the withdrawal spends one note or sixteen).
 ///
-/// This binds transparent state transition fields (like `output_address` in unshield
-/// or `output_script` in shielded withdrawal) to the Orchard signatures, preventing
-/// replay attacks where an attacker substitutes transparent fields while reusing a
-/// valid Orchard bundle.
-///
-/// The same computation must be used on both the signing (client) and verification
-/// (platform) sides. For transitions without transparent fields (shield and
-/// shielded_transfer), `extra_data` is empty.
-pub fn compute_platform_sighash(bundle_commitment: &[u8; 32], extra_data: &[u8]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(SIGHASH_DOMAIN);
-    hasher.update(bundle_commitment);
-    hasher.update(extra_data);
-    hasher.finalize().into()
-}
+/// `compute_minimum_shielded_fee` prices only the per-action note/nullifier storage and the
+/// per-bundle ZK compute, so it does NOT cover this document insert. We therefore add the
+/// document cost to the ShieldedWithdrawal fee as a flat BYTE-BASED component, sized at
+/// `SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES` effective bytes priced at the SAME per-byte
+/// storage rate the per-action note storage uses (`disk + processing` credits/byte). The
+/// measured ≈110M cost corresponds to ≈4017 effective bytes at that rate; 4100 covers it with
+/// a small (~2%) margin, and — because it is priced off the same rate — it tracks the storage
+/// rate as it evolves, exactly like the per-action note storage does. See
+/// [`compute_minimum_shielded_fee::compute_shielded_withdrawal_fee`].
+pub const SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES: u64 = 4100;
 
-/// Computes the minimum fee (in credits) for a shielded state transition.
+/// Calibrated effective storage-byte cost of the single `AddBalanceToAddress` write an `Unshield`
+/// performs, crediting the net (`unshielding_amount − fee`) to the output platform address.
 ///
-/// The fee formula mirrors the on-chain validation in `validate_minimum_shielded_fee`:
-///   `min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)`
+/// Like the other pool-paid transitions, an `Unshield` writes its change notes and nullifiers — but
+/// it ALSO credits a transparent platform address with `AddBalanceToAddress`. In the new-address
+/// worst case that write touches the address subtree (the address path plus its balance/nonce
+/// entries), a real, GroveDB-metered cost of ≈6,239,100 credits (≈222 of those bytes are storage)
+/// that is FLAT regardless of the bundle's action count (the address write is the same size whether
+/// the unshield spends one note or sixteen).
 ///
-/// where `storage_fee = SHIELDED_STORAGE_BYTES_PER_ACTION × (disk + processing) credits/byte`.
+/// `compute_minimum_shielded_fee` prices only the per-action note/nullifier storage and the
+/// per-bundle ZK compute, so it does NOT cover this address write. We therefore add the address
+/// cost to the Unshield fee as a flat BYTE-BASED component, sized at
+/// `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES` effective bytes priced at the SAME per-byte storage
+/// rate the per-action note storage uses (`disk + processing` credits/byte).
 ///
-/// # Parameters
-/// - `num_actions` — number of Orchard actions in the bundle
-/// - `platform_version` — protocol version (determines fee constants)
-pub fn compute_minimum_shielded_fee(
-    num_actions: usize,
-    platform_version: &PlatformVersion,
-) -> Credits {
-    let constants = &platform_version
-        .drive_abci
-        .validation_and_processing
-        .event_constants;
-    let storage = &platform_version.fee_version.storage;
-    let storage_fee = SHIELDED_STORAGE_BYTES_PER_ACTION
-        * (storage.storage_disk_usage_credit_per_byte + storage.storage_processing_credit_per_byte);
-    let per_action = constants.shielded_per_action_processing_fee + storage_fee;
-    constants.shielded_proof_verification_fee + num_actions as u64 * per_action
-}
+/// The constant is the **storage** portion of the address write: the metered `AddBalanceToAddress`
+/// op costs ≈6,239,100 credits total, of which the *storage* part is ≈6,075,000 ≈ **222 effective
+/// bytes** at the storage rate. We size the component to that storage figure — because it is a
+/// `bytes × per_byte_rate` term it is booked as storage, so it should match the address write's
+/// storage cost, not its total. The small remaining op-processing (~164K) is already covered by the
+/// per-action processing fee. Pricing it off the same rate means it tracks the storage rate as it
+/// evolves, exactly like the per-action note storage does. See
+/// [`compute_minimum_shielded_fee::compute_shielded_unshield_fee`].
+pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 222;
 
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///

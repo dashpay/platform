@@ -47,7 +47,9 @@
 //! |--------|-----------------|----------------|----------------|
 //! | 0      | ECDSA_SECP256K1 | AUTHENTICATION | MASTER         |
 //! | 1      | ECDSA_SECP256K1 | AUTHENTICATION | CRITICAL       |
-//! | > 1    | ECDSA_SECP256K1 | AUTHENTICATION | HIGH           |
+//! | 2      | ECDSA_SECP256K1 | AUTHENTICATION | HIGH           |
+//! | 3      | ECDSA_SECP256K1 | TRANSFER       | CRITICAL       |
+//! | > 3    | ECDSA_SECP256K1 | AUTHENTICATION | HIGH           |
 //!
 //! Mirrors rs-dpp's canonical
 //! `main_keys_with_random_authentication_keys_*` layout (MASTER →
@@ -56,6 +58,19 @@
 //! `combined_security_level_requirement` collapses any batch
 //! containing a token transition to `[CRITICAL]` only, so without
 //! a CRITICAL key the identity cannot mint / burn / freeze tokens.
+//!
+//! Key id 3 is a `TRANSFER`/`CRITICAL` key. Dash Platform requires a
+//! `purpose=TRANSFER`, `security_level=CRITICAL`, ECDSA_SECP256K1 key
+//! to sign `IdentityCreditTransfer` (ID-04) and
+//! `IdentityCreditWithdrawal` (ID-10) state transitions; without it
+//! those broadcasts are rejected on-chain with
+//! `Protocol error: missing key: no transfer public key`. So the
+//! canonical default set provisions one. Slots 0/1/2 keep their
+//! pre-existing `(purpose, security_level)` bytes byte-for-byte, so a
+//! caller that still requests `key_count == 3` is completely
+//! unchanged. `TRANSFER` keys take no contract bounds (only
+//! ENCRYPTION/DECRYPTION require them), and this function never sets
+//! bounds anyway.
 //!
 //! If DPP renumbers any of those enum discriminants, this file is
 //! the single place that needs updating — the Swift caller just
@@ -100,6 +115,10 @@ use rs_sdk_ffi::{
 const KEY_TYPE_ECDSA_SECP256K1: u8 = 0;
 /// DPP `Purpose::AUTHENTICATION` discriminant byte.
 const PURPOSE_AUTHENTICATION: u8 = 0;
+/// DPP `Purpose::TRANSFER` discriminant byte. Required (with
+/// `SECURITY_LEVEL_CRITICAL`) to sign `IdentityCreditTransfer` /
+/// `IdentityCreditWithdrawal` state transitions.
+const PURPOSE_TRANSFER: u8 = 3;
 /// DPP `SecurityLevel::MASTER` discriminant byte.
 const SECURITY_LEVEL_MASTER: u8 = 0;
 /// DPP `SecurityLevel::CRITICAL` discriminant byte.
@@ -314,19 +333,30 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
             }
         };
 
-        // Per-key DPP metadata. Canonical 3-key identity layout per
-        // rs-dpp's `main_keys_with_random_authentication_keys_*`:
-        // MASTER at key_id 0 (signs IdentityUpdate / IdentityCreate),
-        // CRITICAL at key_id 1 (signs token state transitions —
-        // `combined_security_level_requirement` collapses any batch
-        // containing a token transition to `[CRITICAL]`), HIGH for
-        // any further keys (general document operations). Without
-        // a CRITICAL key the identity literally cannot sign token
-        // mints / burns / freezes.
-        let security_level = match key_index {
-            0 => SECURITY_LEVEL_MASTER,
-            1 => SECURITY_LEVEL_CRITICAL,
-            _ => SECURITY_LEVEL_HIGH,
+        // Per-key DPP metadata. Canonical default identity layout,
+        // extending rs-dpp's `main_keys_with_random_authentication_keys_*`
+        // (MASTER → CRITICAL → HIGH) with a dedicated TRANSFER key:
+        //   0 → AUTHENTICATION / MASTER   (signs IdentityUpdate / IdentityCreate)
+        //   1 → AUTHENTICATION / CRITICAL (signs token state transitions —
+        //       `combined_security_level_requirement` collapses any batch
+        //       containing a token transition to `[CRITICAL]`; without a
+        //       CRITICAL key the identity cannot mint / burn / freeze tokens)
+        //   2 → AUTHENTICATION / HIGH     (general document operations)
+        //   3 → TRANSFER / CRITICAL       (signs IdentityCreditTransfer /
+        //       IdentityCreditWithdrawal; without it those broadcasts fail
+        //       on-chain with "no transfer public key")
+        //   > 3 → AUTHENTICATION / HIGH   (any further keys)
+        //
+        // Slots 0/1/2 keep their pre-existing (purpose, security_level)
+        // bytes byte-for-byte, so a caller still passing key_count == 3
+        // is unchanged. TRANSFER keys take no contract bounds, and this
+        // function never sets bounds for any key.
+        let (purpose, security_level) = match key_index {
+            0 => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_MASTER),
+            1 => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_CRITICAL),
+            2 => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_HIGH),
+            3 => (PURPOSE_TRANSFER, SECURITY_LEVEL_CRITICAL),
+            _ => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_HIGH),
         };
         let args = PersistKeyArgs {
             wallet_id_bytes,
@@ -339,7 +369,7 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
             public_key_hash_bytes: pub_hash.as_ptr(),
             private_key_bytes: priv_scalar.as_ptr(),
             key_type: KEY_TYPE_ECDSA_SECP256K1,
-            purpose: PURPOSE_AUTHENTICATION,
+            purpose,
             security_level,
         };
         let persist_rc =
@@ -604,6 +634,68 @@ mod tests {
             dash_sdk_mnemonic_resolver_destroy(resolver);
             dash_sdk_identity_key_persister_destroy(persister);
             // Reclaim the per-test capture box.
+            let _ = Box::from_raw(capture);
+        }
+    }
+
+    #[test]
+    fn key_count_four_includes_transfer_critical_key() {
+        let (resolver, persister, capture) = make_capturing_handles();
+        let wallet_id = [42u8; 32];
+        let mut out = IdentityRegistrationKeyDerivationsFFI {
+            items: std::ptr::null_mut(),
+            count: 0,
+        };
+        let rc = unsafe {
+            dash_sdk_derive_and_persist_identity_keys(
+                FFINetwork::Testnet,
+                wallet_id.as_ptr(),
+                7, // identity_index
+                4, // key_count — now provisions the TRANSFER key at id 3
+                resolver,
+                persister,
+                &mut out,
+            )
+        };
+        assert_eq!(rc.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(out.count, 4);
+
+        let captured = unsafe { (*capture).rows.lock().unwrap().clone() };
+        assert_eq!(captured.len(), 4);
+
+        // Slots 0/1/2 are unchanged from the legacy 3-key layout:
+        // AUTHENTICATION with MASTER / CRITICAL / HIGH respectively.
+        for (i, expected_level) in [
+            SECURITY_LEVEL_MASTER,
+            SECURITY_LEVEL_CRITICAL,
+            SECURITY_LEVEL_HIGH,
+        ]
+        .iter()
+        .enumerate()
+        {
+            assert_eq!(captured[i].key_type, KEY_TYPE_ECDSA_SECP256K1);
+            assert_eq!(captured[i].purpose, PURPOSE_AUTHENTICATION);
+            assert_eq!(captured[i].security_level, *expected_level);
+        }
+
+        // Slot 3 is the new TRANSFER / CRITICAL key required to sign
+        // IdentityCreditTransfer (ID-04) / IdentityCreditWithdrawal
+        // (ID-10) — without it those broadcasts fail on-chain with
+        // "no transfer public key".
+        let transfer = &captured[3];
+        assert_eq!(transfer.key_id, 3);
+        assert_eq!(transfer.key_index, 3);
+        assert_eq!(transfer.key_type, KEY_TYPE_ECDSA_SECP256K1);
+        assert_eq!(transfer.purpose, PURPOSE_TRANSFER);
+        assert_eq!(transfer.security_level, SECURITY_LEVEL_CRITICAL);
+        assert_eq!(transfer.public_key.len(), 33);
+        assert_eq!(transfer.private_key.len(), 32);
+        assert_eq!(transfer.path, "m/9'/1'/5'/0'/0'/7'/3'");
+
+        unsafe {
+            crate::dash_sdk_derive_identity_keys_from_mnemonic_free(&mut out);
+            dash_sdk_mnemonic_resolver_destroy(resolver);
+            dash_sdk_identity_key_persister_destroy(persister);
             let _ = Box::from_raw(capture);
         }
     }

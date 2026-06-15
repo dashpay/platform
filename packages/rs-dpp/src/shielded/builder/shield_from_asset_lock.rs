@@ -1,4 +1,4 @@
-use crate::address_funds::OrchardAddress;
+use crate::address_funds::{OrchardAddress, PlatformAddress};
 use crate::prelude::AssetLockProof;
 use crate::state_transition::shield_from_asset_lock_transition::methods::ShieldFromAssetLockTransitionMethodsV0;
 use crate::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
@@ -20,6 +20,18 @@ use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver
 /// - `asset_lock_private_key` - Private key for the asset lock (signs the transition)
 /// - `prover` - Orchard prover (holds the Halo 2 proving key)
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
+/// - `sender_ovk` - The sender's outgoing viewing key (External scope). With `Some`, the
+///   recipient output's `out_ciphertext` is encrypted under it so the sender can later
+///   recover the sent note (recipient, value, memo) from chain data via OVK recovery —
+///   the Zcash outgoing-transaction-history convention. With `None`, a random outgoing
+///   cipher key is used and the sent note is unrecoverable by anyone.
+/// - `surplus_output` - Optional platform address that receives the asset-lock surplus
+///   (`asset_lock_value − shield_amount − fee`); when `None`, the surplus is added to the fee
+///   pools, capped at `shielded_implicit_fee_cap`
+/// - `dummy_outputs` - Number of extra zero-value anonymity-set filler outputs to append after
+///   the real recipient output (unrecoverable random addresses, `None` OVK, empty memo). `0`
+///   reproduces the historical single-output bundle exactly. The on-wire action count becomes
+///   `max(1 + dummy_outputs, 2)`, which consensus prices the fee from — see the pool-seeding flow.
 /// - `platform_version` - Protocol version
 #[allow(clippy::too_many_arguments)]
 pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
@@ -29,9 +41,19 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
     asset_lock_private_key: &[u8],
     prover: &P,
     memo: [u8; 36],
+    sender_ovk: Option<grovedb_commitment_tree::OutgoingViewingKey>,
+    surplus_output: Option<PlatformAddress>,
+    dummy_outputs: usize,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
-    let bundle = build_output_only_bundle(recipient, shield_amount, memo, prover)?;
+    let bundle = build_output_only_bundle(
+        recipient,
+        shield_amount,
+        memo,
+        sender_ovk,
+        dummy_outputs,
+        prover,
+    )?;
     let sb = serialize_authorized_bundle(&bundle);
 
     // For output-only bundles, Orchard value_balance is negative (value flowing in).
@@ -54,6 +76,7 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
         sb.anchor,
         sb.proof,
         sb.binding_signature,
+        surplus_output,
         platform_version,
     )
 }
@@ -72,6 +95,18 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
 /// - `asset_lock_signer` - External signer that produces the outer ECDSA signature
 /// - `prover` - Orchard prover (holds the Halo 2 proving key)
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
+/// - `sender_ovk` - The sender's outgoing viewing key (External scope). With `Some`, the
+///   recipient output's `out_ciphertext` is encrypted under it so the sender can later
+///   recover the sent note (recipient, value, memo) from chain data via OVK recovery —
+///   the Zcash outgoing-transaction-history convention. With `None`, a random outgoing
+///   cipher key is used and the sent note is unrecoverable by anyone.
+/// - `surplus_output` - Optional platform address that receives the asset-lock surplus
+///   (`asset_lock_value − shield_amount − fee`); when `None`, the surplus is added to the fee
+///   pools, capped at `shielded_implicit_fee_cap`
+/// - `dummy_outputs` - Number of extra zero-value anonymity-set filler outputs to append after
+///   the real recipient output (unrecoverable random addresses, `None` OVK, empty memo). `0`
+///   reproduces the historical single-output bundle exactly. The on-wire action count becomes
+///   `max(1 + dummy_outputs, 2)`, which consensus prices the fee from — see the pool-seeding flow.
 /// - `platform_version` - Protocol version
 #[cfg(feature = "core_key_wallet")]
 #[allow(clippy::too_many_arguments)]
@@ -83,13 +118,23 @@ pub async fn build_shield_from_asset_lock_transition_with_signer<P, AS>(
     asset_lock_signer: &AS,
     prover: &P,
     memo: [u8; 36],
+    sender_ovk: Option<grovedb_commitment_tree::OutgoingViewingKey>,
+    surplus_output: Option<PlatformAddress>,
+    dummy_outputs: usize,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError>
 where
     P: OrchardProver,
     AS: ::key_wallet::signer::Signer,
 {
-    let bundle = build_output_only_bundle(recipient, shield_amount, memo, prover)?;
+    let bundle = build_output_only_bundle(
+        recipient,
+        shield_amount,
+        memo,
+        sender_ovk,
+        dummy_outputs,
+        prover,
+    )?;
     let sb = serialize_authorized_bundle(&bundle);
 
     // For output-only bundles, Orchard value_balance is negative (value flowing in).
@@ -113,6 +158,7 @@ where
         sb.anchor,
         sb.proof,
         sb.binding_signature,
+        surplus_output,
         platform_version,
     )
     .await
@@ -131,7 +177,7 @@ mod tests {
         let recipient = test_orchard_address();
         let amount = 50_000u64;
 
-        let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], &TestProver)
+        let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], None, 0, &TestProver)
             .expect("bundle should build successfully");
         let sb = serialize_authorized_bundle(&bundle);
 
@@ -149,6 +195,25 @@ mod tests {
             .and_then(|v| u64::try_from(v).ok())
             .expect("value_balance should be safely negatable");
         assert_eq!(abs_balance, amount);
+    }
+
+    /// Consensus prices the shielded fee from the on-wire `actions.len()`, and the wallet reserves
+    /// the fee for exactly 2 actions (Orchard's `MIN_ACTIONS`). A single-output, spends-disabled
+    /// bundle must therefore serialize to exactly 2 on-wire actions. If a future Orchard or builder
+    /// change alters that padding, the hardcoded wallet reservation would diverge from what consensus
+    /// charges (a valid client tx would be rejected); this test fails loudly if that invariant breaks.
+    #[test]
+    fn test_output_only_bundle_serializes_to_min_actions() {
+        let recipient = test_orchard_address();
+        let bundle =
+            build_output_only_bundle(&recipient, 50_000u64, [0u8; 36], None, 0, &TestProver)
+                .expect("bundle should build");
+        let sb = serialize_authorized_bundle(&bundle);
+        assert_eq!(
+            sb.actions.len(),
+            2,
+            "single-output shield bundle must pad to exactly 2 on-wire actions"
+        );
     }
 
     // -------------------------------------------------------------
@@ -183,8 +248,9 @@ mod tests {
         // negative value_balance equal in magnitude to the requested amount.
         for amount in [1u64, 100, 1_000_000, u32::MAX as u64] {
             let recipient = test_orchard_address();
-            let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], &TestProver)
-                .expect("bundle should build");
+            let bundle =
+                build_output_only_bundle(&recipient, amount, [0u8; 36], None, 0, &TestProver)
+                    .expect("bundle should build");
             let sb = serialize_authorized_bundle(&bundle);
             assert_eq!(
                 sb.value_balance,

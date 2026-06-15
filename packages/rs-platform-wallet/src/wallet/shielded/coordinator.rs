@@ -96,9 +96,9 @@ use crate::wallet::platform_wallet::WalletId;
 /// subwallet, with the consolidated changeset split per-`WalletId`
 /// and queued through each registered persister.
 pub struct NetworkShieldedCoordinator {
-    /// Dash Platform SDK handle. The coordinator runs sync /
-    /// nullifier-scan / broadcast against this SDK on behalf of
-    /// every bound wallet.
+    /// Dash Platform SDK handle. The coordinator runs the note
+    /// scan (which also detects spends) and broadcast against this
+    /// SDK on behalf of every bound wallet.
     sdk: Arc<dash_sdk::Sdk>,
 
     /// Network this coordinator operates on. Pinned at
@@ -405,16 +405,29 @@ impl NetworkShieldedCoordinator {
                     })?;
                 }
             }
+            // Rehydrate recovered outgoing (sent) notes so send history
+            // survives a cold start without re-OVK-recovering. Idempotent
+            // by `cmx`, so a later re-scan that re-recovers the same note
+            // is a no-op.
+            for out in &sub.outgoing_notes {
+                store.record_outgoing_note(*id, out).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+            }
+            // Rehydrate persisted activity entries so the scan deriver's
+            // dedupe set (`existing_ids`) includes them this session — a
+            // rich live entry restored here is never clobbered by a
+            // coarser re-derivation. Idempotent (upsert by `entry.id`).
+            for entry in &sub.activity {
+                store.save_activity(*id, entry).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+            }
             store
                 .set_last_synced_note_index(*id, sub.last_synced_index)
                 .map_err(|e| {
                     crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
                 })?;
-            if let Some((h, t)) = sub.nullifier_checkpoint {
-                store.set_nullifier_checkpoint(*id, h, t).map_err(|e| {
-                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
-                })?;
-            }
         }
         Ok(())
     }
@@ -602,23 +615,39 @@ impl NetworkShieldedCoordinator {
             Ok(r) => r,
             Err(e) => return self.fail_all_wallets(&subwallets, &e),
         };
-        let (newly_spent_per_sub, nf_changeset) =
-            match super::sync::check_nullifiers_across(&self.sdk, &self.store, &subwallets).await {
-                Ok(r) => r,
-                Err(e) => return self.fail_all_wallets(&subwallets, &e),
-            };
+        // Scan-based spend detection now happens INSIDE
+        // `sync_notes_across`: every scanned action's nullifier is
+        // replayed against each subwallet's store as part of the note
+        // scan (no separate nullifier-sync round-trip). The per-subwallet
+        // newly-spent counts and the spend records ride the same
+        // `notes` result and `notes.changeset` the receipts do.
+        let newly_spent_per_sub = notes.per_subwallet_newly_spent.clone();
         let balances_per_sub = match super::sync::balances_across(&self.store, &subwallets).await {
             Ok(r) => r,
             Err(e) => return self.fail_all_wallets(&subwallets, &e),
         };
 
-        // Merge the note-side changeset (saves + synced_index)
-        // with the nullifier-side changeset (spends +
-        // checkpoints) into one consolidated stream, then split
-        // per WalletId so each per-wallet `WalletPersister.store`
+        // Restore-path activity derivation: reconstruct per-operation
+        // activity entries best-effort from the notes / outgoing notes
+        // this pass (and earlier passes) persisted. Runs every pass so it
+        // doubles as the one-time backfill over an already-populated
+        // store — `derive_activity_from_scan_data` skips clusters whose
+        // id a live entry already owns, and `save_activity` upserts by
+        // id, so re-running is idempotent. Failures are logged and
+        // swallowed: a derivation miss must never fail a sync pass.
+        let mut notes = notes;
+        if let Err(e) = self
+            .derive_activity_into_changeset(&subwallets, &mut notes.changeset)
+            .await
+        {
+            tracing::warn!(error = %e, "Shielded activity derivation failed; skipping this pass");
+        }
+
+        // The note-side changeset already carries saves, synced
+        // indices, AND the scan-detected spends, so split it per
+        // WalletId directly — each per-wallet `WalletPersister.store`
         // only sees its own wallet's deltas.
-        let mut consolidated = notes.changeset.clone();
-        crate::changeset::merge::Merge::merge(&mut consolidated, nf_changeset);
+        let consolidated = notes.changeset.clone();
         if !crate::changeset::merge::Merge::is_empty(&consolidated) {
             let per_wallet = consolidated.split_by_wallet_id();
             let persisters = self.persisters.read().await;
@@ -669,9 +698,8 @@ impl NetworkShieldedCoordinator {
 
     /// Build a `ShieldedSyncPassSummary` where every registered
     /// wallet's outcome is the supplied error string. Used when
-    /// a network-wide SDK call (sync_notes_across /
-    /// check_nullifiers_across) errors before any per-wallet
-    /// result can be produced.
+    /// the network-wide SDK note scan (sync_notes_across) errors
+    /// before any per-wallet result can be produced.
     fn fail_all_wallets(
         &self,
         subwallets: &[(SubwalletId, AccountViewingKeys)],
@@ -700,6 +728,168 @@ impl NetworkShieldedCoordinator {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0)
+    }
+
+    /// Derive best-effort activity entries from each subwallet's
+    /// persisted scan data and add the new ones to `changeset`.
+    ///
+    /// For each subwallet: read all notes + OVK-recovered outgoing notes
+    /// from the store, classify the recipient of each outgoing note as
+    /// own-vs-external by testing it against the subwallet's IVK (the
+    /// `diversifier_index` check — Orchard addresses are diversified, so
+    /// a fixed address list can't be used), build the
+    /// [`super::activity::ScanDeriveInput`], and run
+    /// [`super::activity::derive_activity_from_scan_data`] against the
+    /// entry ids already on file (live entries win). Newly derived
+    /// entries are saved to the store and recorded on `changeset` so they
+    /// reach the host persister on this pass's flush.
+    ///
+    /// All client-side (Option B): no node / DAPI query, only data the
+    /// store already holds.
+    async fn derive_activity_into_changeset(
+        &self,
+        subwallets: &[(SubwalletId, AccountViewingKeys)],
+        changeset: &mut crate::changeset::ShieldedChangeSet,
+    ) -> Result<(), crate::error::PlatformWalletError> {
+        use super::activity::{derive_activity_from_scan_data, ScanDeriveInput};
+
+        for (id, views) in subwallets {
+            // Read pass: snapshot the inputs under a shared lock, then
+            // release it before the CPU-bound classification — holding
+            // the WRITE lock across the whole derivation would serialize
+            // every other store consumer for the full window. Anything a
+            // live recorder lands between the two passes is caught by the
+            // overlap re-check under the write lock below.
+            let (input, existing_cmxs) = {
+                let store = self.store.read().await;
+                let notes = store.get_all_notes(*id).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+                let outgoing = store.get_outgoing_notes(*id).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+                if notes.is_empty() && outgoing.is_empty() {
+                    continue;
+                }
+
+                // Own-recipient set: an outgoing note whose recipient the
+                // subwallet's IVK recognizes is self-change, not a payment
+                // out.
+                let own_addresses: Vec<Vec<u8>> = outgoing
+                    .iter()
+                    .filter(|o| is_own_orchard_recipient(views, &o.recipient))
+                    .map(|o| o.recipient.clone())
+                    .collect();
+
+                // Map every stored entry's visible output cmx to the owning
+                // entry id, so the deriver can dedupe by cmx OVERLAP (not
+                // exact id): a same-block cluster that merges two live ops
+                // hashes to an id matching neither, but its cmxs still
+                // overlap both.
+                let existing_cmxs: BTreeMap<[u8; 32], [u8; 32]> = store
+                    .get_activity(*id, 0, usize::MAX)
+                    .map_err(|e| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                    })?
+                    .into_iter()
+                    .flat_map(|entry| entry.note_cmxs.into_iter().map(move |c| (c, entry.id)))
+                    .collect();
+
+                (
+                    ScanDeriveInput {
+                        notes,
+                        outgoing,
+                        own_addresses,
+                    },
+                    existing_cmxs,
+                )
+            };
+
+            // Lock-free classification.
+            let derived = derive_activity_from_scan_data(&input, &existing_cmxs);
+            if derived.new_entries.is_empty() && derived.confirmations.is_empty() {
+                continue;
+            }
+
+            // Write pass: only the upserts hold the write lock.
+            let mut store = self.store.write().await;
+            // Re-check cmx overlap against the CURRENT activity rows
+            // before inserting: a live recorder may have written a richer
+            // row (kind / fee / memo / created identity id) for the same
+            // cmx set between the read snapshot and here. Saving the
+            // scan-derived entry anyway would either clobber that row
+            // (id collision) or duplicate it (id mismatch), and scan-only
+            // data can never reconstruct the lost live fields. Overlapped
+            // clusters degrade to confirmation sightings instead — same
+            // treatment the classifier gives overlaps it can see.
+            let current_cmxs: BTreeMap<[u8; 32], [u8; 32]> = store
+                .get_activity(*id, 0, usize::MAX)
+                .map_err(|e| crate::error::PlatformWalletError::ShieldedStoreError(e.to_string()))?
+                .into_iter()
+                .flat_map(|entry| entry.note_cmxs.into_iter().map(move |c| (c, entry.id)))
+                .collect();
+            let mut confirmations = derived.confirmations;
+            for entry in derived.new_entries {
+                let overlapped: std::collections::BTreeSet<[u8; 32]> = entry
+                    .note_cmxs
+                    .iter()
+                    .filter_map(|c| current_cmxs.get(c))
+                    .copied()
+                    .collect();
+                if !overlapped.is_empty() {
+                    if let Some(height) = entry.block_height {
+                        confirmations.extend(overlapped.into_iter().map(|eid| (eid, height)));
+                    }
+                    continue;
+                }
+                store.save_activity(*id, &entry).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+                changeset.record_activity_entry(*id, entry);
+            }
+            // On-chain sightings of clusters that already have a row:
+            // upgrade still-`Pending` (or height-less) rows to Confirmed
+            // at the observed height. This is the flip the ambiguous
+            // post-broadcast paths (`ShieldedSpendUnconfirmed` /
+            // `ShieldedBroadcastUnconfirmed`) leave to the scan. The
+            // upgrade rewrites the STORED entry via `with_status`, so the
+            // live entry's richer fields (kind / fee / memo /
+            // counterparty) survive untouched.
+            for (entry_id, height) in confirmations {
+                let stored = store
+                    .get_activity_by_entry_id(*id, &entry_id)
+                    .map_err(|e| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                    })?;
+                let Some(stored) = stored else { continue };
+                // Chain truth wins: a row marked Failed by a client-side
+                // post-broadcast error whose outputs are later observed
+                // on-chain was not actually a failure — upgrade it. (We
+                // observed exactly this on devnet: the rc.1 result-proof
+                // fetch failure marked an actually-landed identity-create
+                // as failed; the cluster's cmxs appearing on-chain is
+                // ground truth that the operation executed.) The gate is
+                // therefore `Pending || block_height.is_none()`, which
+                // also catches those Failed-no-height rows; only a
+                // Confirmed-with-height row is final.
+                let needs_upgrade = stored.status
+                    == super::activity::ShieldedActivityStatus::Pending
+                    || stored.block_height.is_none();
+                if !needs_upgrade {
+                    continue;
+                }
+                let upgraded = super::activity_recorder::with_status(
+                    &stored,
+                    super::activity::ShieldedActivityStatus::Confirmed,
+                    Some(height),
+                );
+                store.save_activity(*id, &upgraded).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+                changeset.record_activity_entry(*id, upgraded);
+            }
+        }
+        Ok(())
     }
 
     /// Build a pass summary in which every registered wallet is
@@ -799,6 +989,30 @@ fn build_per_wallet_summary(
         );
     }
     summary
+}
+
+/// Whether a 43-byte raw Orchard `recipient` belongs to the subwallet's
+/// own viewing keys — i.e. it's a self-change output, not a payment to
+/// someone else. Orchard addresses are diversified, so this can't be a
+/// fixed-address comparison; it tests the recipient against the IVK via
+/// `diversifier_index` (mirrors the `sender_ovk` account-selection check
+/// in `fund_from_asset_lock.rs`). A malformed recipient (wrong length /
+/// off-curve) returns `false` (treated as external) so a corrupt row
+/// can't silently mask a real send.
+fn is_own_orchard_recipient(views: &AccountViewingKeys, recipient: &[u8]) -> bool {
+    let raw: [u8; 43] = match recipient.try_into() {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    let Some(addr) = Option::<grovedb_commitment_tree::PaymentAddress>::from(
+        grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(&raw),
+    ) else {
+        return false;
+    };
+    views
+        .incoming_viewing_key
+        .diversifier_index(&addr)
+        .is_some()
 }
 
 #[cfg(test)]

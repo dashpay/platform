@@ -13,7 +13,9 @@
 //! [`ShieldedWallet`]: crate::wallet::shielded::ShieldedWallet
 //! [`SubwalletId`]: crate::wallet::shielded::SubwalletId
 
-use crate::wallet::shielded::{ShieldedNote, SubwalletId};
+use crate::wallet::shielded::{
+    ShieldedActivityEntry, ShieldedNote, ShieldedOutgoingNote, SubwalletId,
+};
 use std::collections::BTreeMap;
 
 /// Per-subwallet snapshot — every note (spent + unspent) the
@@ -22,14 +24,23 @@ use std::collections::BTreeMap;
 pub struct ShieldedSubwalletStartState {
     /// All known notes for this subwallet, including spent ones.
     /// `is_spent` is preserved from the persisted row so the
-    /// in-memory store reflects what nullifier sync has already
-    /// established.
+    /// in-memory store reflects what scan-based spend detection has
+    /// already established.
     pub notes: Vec<ShieldedNote>,
+    /// Outgoing (sent) notes recovered via OVK on prior scans, so the
+    /// in-memory store's send history survives a cold start without
+    /// re-recovering every note. Idempotent on re-record by `cmx`.
+    pub outgoing_notes: Vec<ShieldedOutgoingNote>,
+    /// Derived activity-log entries persisted on prior sessions (live
+    /// recordings + scan derivations). Rehydrated so the scan deriver's
+    /// `existing_ids` set includes them — otherwise a cold-started scan
+    /// would re-derive a coarse `Sent` / `ShieldedSpend` for a cluster a
+    /// rich live entry already owns and overwrite it (the persister
+    /// upserts by `entry.id`). Idempotent on re-save by `id`.
+    pub activity: Vec<ShieldedActivityEntry>,
     /// Sync watermark: count of note positions scanned = the next
     /// global index to scan (exclusive). `0` = nothing scanned yet.
     pub last_synced_index: u64,
-    /// Last `(height, timestamp)` nullifier sync checkpoint.
-    pub nullifier_checkpoint: Option<(u64, u64)>,
 }
 
 /// Whole-client shielded restore state, keyed by `SubwalletId`.

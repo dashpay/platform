@@ -45,6 +45,18 @@ pub struct DriveAbciValidationConstants {
     /// Per-action fee (in credits) for processing: RedPallas spend auth signature
     /// verification, nullifier duplicate check, and tree insertion.
     pub shielded_per_action_processing_fee: u64,
+    /// Maximum surplus (in credits) that a `ShieldFromAssetLock` may implicitly
+    /// donate to the fee pools when no `surplus_output` address is set. Above this
+    /// cap the transition is rejected so a client cannot accidentally forfeit a
+    /// large asset-lock remainder. 20,000,000,000 credits = 0.2 Dash.
+    pub shielded_implicit_fee_cap: u64,
+    /// Allowed exit denominations (in credits) for `IdentityCreateFromShieldedPool`.
+    /// 0.1, 0.3, 0.5, 1.0 DASH = {10, 30, 50, 100} × 10^9 credits. The exit amount is
+    /// restricted to this small fixed set so every identity-creation exit of a given size
+    /// is indistinguishable on-chain, maximizing the anonymity set (mirroring the exact-fee
+    /// uniformity already enforced for `ShieldedTransfer`). Empty pre-v12 so the transition
+    /// is gated off until the shielded family activates.
+    pub shielded_identity_create_denominations: &'static [u64],
 }
 
 #[derive(Clone, Debug, Default)]
@@ -86,6 +98,8 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub unshield_state_transition: DriveAbciStateTransitionValidationVersion,
     pub shield_from_asset_lock_state_transition: DriveAbciStateTransitionValidationVersion,
     pub shielded_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub identity_create_from_shielded_pool_state_transition:
+        DriveAbciStateTransitionValidationVersion,
 }
 
 #[derive(Clone, Debug, Default)]

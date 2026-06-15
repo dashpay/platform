@@ -385,6 +385,10 @@ struct OptionsView: View {
                         Label("Wallet Memory Explorer", systemImage: "memorychip")
                     }
 
+                    NavigationLink(destination: BannedAddressesView()) {
+                        Label("Banned Addresses", systemImage: "nosign")
+                    }
+
                     Button(action: { showingDataManagement = true }) {
                         Label("Manage Local Data", systemImage: "internaldrive")
                     }

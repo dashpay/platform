@@ -66,4 +66,20 @@ pub enum StateTransitionProofResult {
         Vec<(Vec<u8>, bool)>,
         BTreeMap<Identifier, Option<Document>>,
     ),
+    /// Returned by `ShieldFromAssetLock` when a `surplus_output` is set. Carries the consumed
+    /// asset-lock info AND the proven balance of the surplus-output address, so a light/SDK
+    /// client can cryptographically confirm the asset-lock surplus credit landed at the signed
+    /// `surplus_output` address. The plain [`VerifiedAssetLockConsumed`] is still returned when
+    /// no `surplus_output` is set.
+    ///
+    /// [`VerifiedAssetLockConsumed`]: StateTransitionProofResult::VerifiedAssetLockConsumed
+    VerifiedAssetLockConsumedWithAddressInfos(
+        StoredAssetLockInfo,
+        BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+    ),
+    /// Returned by `IdentityCreateFromShieldedPool`. Carries the newly-created [`Identity`] AND the
+    /// presence of each spent nullifier (`(nullifier_bytes, present)`), proven together in a single
+    /// STRICT merged multi-root GroveDB proof. A light/SDK client can cryptographically confirm both
+    /// that the identity was created and that the funding nullifiers were consumed.
+    VerifiedIdentityWithShieldedNullifiers(Identity, Vec<(Vec<u8>, bool)>),
 }

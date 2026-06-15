@@ -325,7 +325,7 @@ struct RegisterNameView: View {
           }
         }
       }
-      .alert("Error", isPresented: $showingError) {
+      .alert(registrationSuccess ? "Success" : "Error", isPresented: $showingError) {
         Button("OK") { }
       } message: {
         Text(errorMessage)

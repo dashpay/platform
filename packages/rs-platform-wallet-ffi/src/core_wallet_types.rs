@@ -615,6 +615,29 @@ pub struct WalletIdentityRowFFI {
     pub identity_id: [u8; 32],
 }
 
+/// One row of the DAPI address ban-list snapshot.
+///
+/// `address` is a heap-owned NUL-terminated UTF-8 string (the node
+/// URI); `reason` is a heap-owned NUL-terminated UTF-8 string or
+/// `null` when no ban reason was recorded. Both are freed by the
+/// paired `platform_wallet_manager_address_ban_info_free`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct AddressBanInfoFFI {
+    /// Heap-owned node URI string. Always non-null on a successful row.
+    pub address: *mut c_char,
+    /// Whether the address is currently effectively banned.
+    pub banned: bool,
+    /// Total number of times the address has been banned.
+    pub ban_count: u32,
+    /// Unix-epoch millisecond timestamp until which the address is
+    /// banned; `0` when there is no active ban window.
+    pub banned_until_ms: i64,
+    /// Heap-owned human-readable ban reason, or `null` when none was
+    /// recorded.
+    pub reason: *mut c_char,
+}
+
 /// Subset of [`crate::wallet_restore_types::AccountSpecFFI`] carrying
 /// only the tag/discriminator fields — no xpub. Used by the
 /// changeset emit path to populate

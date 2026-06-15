@@ -69,12 +69,12 @@ use std::convert::TryFrom;
 use std::ffi::{CStr, CString};
 use std::ptr;
 use std::slice;
-use zeroize::Zeroize;
 
 use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;
+use crate::identity_keys_from_mnemonic::zeroize_and_free_row;
 use crate::identity_registration::{IdentityFundingInputFFI, IdentityFundingOutputFFI};
 use crate::runtime::block_on_worker;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
@@ -564,19 +564,16 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index(
 
         let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(key_count as usize);
 
-        let cleanup = |rows: Vec<IdentityKeyPreviewFFI>| {
-            for row in rows {
-                if !row.derivation_path.is_null() {
-                    let _ = unsafe { CString::from_raw(row.derivation_path) };
-                }
-                if !row.public_key.is_null() {
-                    let _ = unsafe {
-                        Vec::from_raw_parts(row.public_key, row.public_key_len, row.public_key_len)
-                    };
-                }
-                if !row.private_key_wif.is_null() {
-                    let _ = unsafe { CString::from_raw(row.private_key_wif) };
-                }
+        let cleanup = |mut rows: Vec<IdentityKeyPreviewFFI>| {
+            for row in &mut rows {
+                // Route through the shared helper so this error-path
+                // cleanup scrubs the WIF backing bytes + raw scalar
+                // exactly like the public
+                // `platform_wallet_derive_identity_keys_for_index_free`
+                // entry point does — keys for rows 0..N already built
+                // when a later derivation fails must not be left in
+                // freed heap. See the public `_free` below.
+                unsafe { zeroize_and_free_row(row) };
             }
         };
 
@@ -680,18 +677,9 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index_free(
     }
     let slice = std::slice::from_raw_parts_mut(owned.items, owned.count);
     for row in slice.iter_mut() {
-        if !row.derivation_path.is_null() {
-            let _ = CString::from_raw(row.derivation_path);
-        }
-        if !row.public_key.is_null() {
-            let _ = Vec::from_raw_parts(row.public_key, row.public_key_len, row.public_key_len);
-        }
-        if !row.private_key_wif.is_null() {
-            let mut wif = CString::from_raw(row.private_key_wif).into_bytes_with_nul();
-            wif.zeroize();
-            row.private_key_wif = ptr::null_mut();
-        }
-        row.private_key_bytes.zeroize();
+        // Same shared helper the mid-loop cleanup closure uses, so the
+        // success-path release and the error-path release can't drift.
+        zeroize_and_free_row(row);
     }
     let _ = Box::from_raw(slice as *mut [IdentityKeyPreviewFFI]);
 }
@@ -714,3 +702,113 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index_free(
 // SwiftData row, and calls that one-shot FFI to produce a signature.
 // The derived key never leaves Rust, never crosses the FFI as bytes,
 // and never lands in the Keychain.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a heap-detached `IdentityKeyPreviewFFI` exactly the way
+    /// the `platform_wallet_derive_identity_keys_for_index` build loop
+    /// does (CString::into_raw for path + WIF, a leaked
+    /// `Box<[u8]>` pubkey, a real secret scalar inline) so the
+    /// cleanup / free paths are exercised on genuinely-owned
+    /// allocations rather than borrowed stack data.
+    fn make_owned_row(secret: [u8; 32]) -> IdentityKeyPreviewFFI {
+        let path = CString::new("m/9'/1'/5'/0'/0'/0'/0'").unwrap();
+        let wif = CString::new("cQ_fake_wif_for_test_only_not_a_real_key").unwrap();
+        let mut pub_box: Box<[u8]> = vec![0x02u8; 33].into_boxed_slice();
+        let pub_ptr = pub_box.as_mut_ptr();
+        let pub_len = pub_box.len();
+        std::mem::forget(pub_box);
+
+        IdentityKeyPreviewFFI {
+            identity_index: 3,
+            derivation_path: path.into_raw(),
+            public_key: pub_ptr,
+            public_key_len: pub_len,
+            private_key_wif: wif.into_raw(),
+            private_key_bytes: secret,
+        }
+    }
+
+    /// The mid-loop error-path `cleanup` closure now routes every
+    /// partially-built row through `zeroize_and_free_row`. This
+    /// asserts that path scrubs the inline 32-byte scalar in place and
+    /// nulls every owned pointer, leaving each row safe to release a
+    /// second time (double-free idempotency) — the regression the
+    /// adversarial review caught (rows 0..N's WIF + scalar were
+    /// previously freed without scrubbing when a later derivation
+    /// failed).
+    #[test]
+    fn cleanup_path_zeroizes_secret_and_is_idempotent() {
+        let secret = [0xABu8; 32];
+        // Two rows, mirroring `key_count > 1` where a later index
+        // fails after earlier rows were already built and pushed.
+        let mut rows = vec![make_owned_row(secret), make_owned_row(secret)];
+
+        for row in &rows {
+            assert_eq!(row.private_key_bytes, secret);
+            assert!(!row.derivation_path.is_null());
+            assert!(!row.private_key_wif.is_null());
+            assert!(!row.public_key.is_null());
+        }
+
+        // Exactly what the `cleanup` closure body does.
+        for row in &mut rows {
+            // SAFETY: rows own freshly-detached allocations and have
+            // not crossed the FFI boundary, so this is the sole
+            // release.
+            unsafe { zeroize_and_free_row(row) };
+        }
+
+        for row in &rows {
+            assert_eq!(
+                row.private_key_bytes, [0u8; 32],
+                "private_key_bytes must be zeroized by the cleanup path"
+            );
+            assert!(row.derivation_path.is_null());
+            assert!(row.private_key_wif.is_null());
+            assert!(row.public_key.is_null());
+            assert_eq!(row.public_key_len, 0);
+        }
+
+        // Second release must not double-free or panic.
+        for row in &mut rows {
+            unsafe { zeroize_and_free_row(row) };
+            assert_eq!(row.private_key_bytes, [0u8; 32]);
+        }
+    }
+
+    /// The public `platform_wallet_derive_identity_keys_for_index_free`
+    /// round-trip wipes secrets and resets the outer struct so a
+    /// second free is a no-op. We build the rows directly (the public
+    /// derive path needs a live wallet handle) and drive them through
+    /// the real `_free` entry point — the same helper the cleanup
+    /// path uses, so success-path and error-path releases can't drift.
+    #[test]
+    fn derive_keys_for_index_free_zeroizes_and_resets() {
+        let secret = [0x5Au8; 32];
+        let rows = vec![make_owned_row(secret), make_owned_row(secret)];
+        let mut boxed = rows.into_boxed_slice();
+        let items_ptr = boxed.as_mut_ptr();
+        let items_count = boxed.len();
+        std::mem::forget(boxed);
+
+        let mut out = IdentityRegistrationKeyDerivationsFFI {
+            items: items_ptr,
+            count: items_count,
+        };
+
+        // SAFETY: `out.items` was detached above exactly as the
+        // production derive path does; this is the sole free.
+        unsafe { platform_wallet_derive_identity_keys_for_index_free(&mut out) };
+
+        assert!(out.items.is_null());
+        assert_eq!(out.count, 0);
+
+        // Idempotent: a second free on the reset struct no-ops.
+        unsafe { platform_wallet_derive_identity_keys_for_index_free(&mut out) };
+        assert!(out.items.is_null());
+        assert_eq!(out.count, 0);
+    }
+}

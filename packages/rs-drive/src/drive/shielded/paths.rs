@@ -7,7 +7,7 @@ pub const MAIN_SHIELDED_CREDIT_POOL_KEY: &[u8; 1] = b"M";
 /// The subtree key for the shielded credit pool as a u8
 pub const MAIN_SHIELDED_CREDIT_POOL_KEY_U8: u8 = b'M';
 
-// The eight subtree keys of the shielded credit pool are placed at evenly-spaced
+// The five subtree keys of the shielded credit pool are placed at evenly-spaced
 // byte positions across [0, 255] so that GroveDB's AVL-balanced parent tree
 // puts the highest-traffic subtree (`SHIELDED_NOTES_KEY`) at the root, with the
 // next-most-queried subtrees one hop below it, and the cold ones at the leaves:
@@ -15,15 +15,13 @@ pub const MAIN_SHIELDED_CREDIT_POOL_KEY_U8: u8 = b'M';
 //                              [128] NOTES                  ← root, every wallet sync
 //                              /          \
 //                  [64] NULLIFIERS         [192] ANCHORS_IN_POOL
-//                   /        \              /          \
-//          [32] TOTAL    [96] BY_HEIGHT  [160] RECENT  [224] COMPACTED
-//                                                              \
-//                                                            [240] EXPIRATION
+//                   /        \
+//          [32] TOTAL    [96] BY_HEIGHT
 //
 // Within a depth tier (children of a given internal node), placement is by
 // access frequency: the spend-path subtrees (`NULLIFIERS`, `ANCHORS_IN_POOL`)
-// are at depth 1; periodic-write subtrees (`COMPACTED_NULLIFIERS`,
-// `EXPIRATION_TIME`) sit at the leaves. Key 7 is the historical
+// are at depth 1; the cold balance/anchor-index subtrees (`TOTAL`, `BY_HEIGHT`)
+// sit at the leaves. Key 7 is the historical
 // `SHIELDED_MOST_RECENT_ANCHOR_KEY` slot — see retired-key note below.
 
 /// Key for the total balance sum item inside a shielded pool.
@@ -55,7 +53,7 @@ pub const SHIELDED_ANCHORS_BY_HEIGHT_KEY: u8 = 96;
 
 /// Key for the notes tree (CommitmentTree) inside a shielded pool.
 ///
-/// Placed at byte 128 — the median of the eight pool subtrees, putting it at
+/// Placed at byte 128 — the median of the pool subtrees, putting it at
 /// the root of the parent Merk tree because every wallet sync and every
 /// shield/transfer/spend touches this subtree.
 pub const SHIELDED_NOTES_KEY: u8 = 128;
