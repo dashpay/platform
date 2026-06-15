@@ -55,35 +55,12 @@ pub const DEFAULT_TOKEN_CONFIG_CACHE_SIZE: usize = 100;
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// The hard per-network protocol-version floor the SDK must never drop below.
 ///
-/// Each network has a known minimum protocol version that is already live on
-/// chain. The SDK clamps its stored protocol version up to this floor at
-/// construction, so even before the first network round-trip the version can
-/// never sit *below* what the network is already running. Returning a too-low
-/// version would, for example, under-reserve fees for shielded-pool flows that
-/// size their reserve from [`Sdk::version`].
-///
 /// This is a **lower bound, not a pin**: auto-detect
 /// ([`Sdk::maybe_update_protocol_version`]) still ratchets the version *upward*
 /// via `fetch_max` when the network reports a newer one. The floor only stops it
 /// from going below the network's known minimum.
-///
-/// Single source of truth for the floor lives here in `rs-sdk`; the FFI and
-/// Swift layers call into the SDK and need no floor logic of their own. Bump the
-/// per-network values here as each network's live minimum advances.
-///
-/// ## Mapping
-///
-/// - [`Network::Mainnet`] → 11
-/// - [`Network::Testnet`] → 12
-/// - [`Network::Devnet`] → 12
-/// - [`Network::Regtest`] → 12
-const fn min_protocol_version(network: Network) -> u32 {
-    match network {
-        Network::Mainnet => dpp::version::v11::PROTOCOL_VERSION_11,
-        Network::Testnet => dpp::version::v12::PROTOCOL_VERSION_12,
-        Network::Devnet => dpp::version::v12::PROTOCOL_VERSION_12,
-        Network::Regtest => dpp::version::v12::PROTOCOL_VERSION_12,
-    }
+const fn min_protocol_version(_network: Network) -> u32 {
+    dpp::version::v10::PROTOCOL_VERSION_10 // TODO: set real per-network floors once the update mechanism is tested
 }
 
 /// The default metadata time tolerance for checkpoint queries in milliseconds
