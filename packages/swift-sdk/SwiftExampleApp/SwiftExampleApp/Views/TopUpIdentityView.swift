@@ -115,11 +115,14 @@ struct TopUpIdentityView: View {
                     Picker("Funding Source", selection: $fundingSelection) {
                         Text("Select…")
                             .tag(Optional<FundingSelection>.none)
+                            .accessibilityIdentifier("topup.fundingSource.none")
                         ForEach(options) { option in
                             Text("\(option.label) — \(option.balanceText)")
                                 .tag(Optional(FundingSelection.account(id: option.persistentId)))
+                                .accessibilityIdentifier("topup.fundingSource.account.\(option.accountIndex)")
                         }
                     }
+                    .accessibleFormPicker("topup.fundingSourcePicker")
                     .onChange(of: fundingSelection) { _, newValue in
                         amountDash = defaultAmountString(for: newValue)
                     }
@@ -382,6 +385,7 @@ struct TopUpIdentityView: View {
                 let balance = account.platformAddresses.reduce(0) { $0 + $1.balance }
                 return FundingAccountOption(
                     persistentId: account.persistentModelID,
+                    accountIndex: account.accountIndex,
                     label: "\(account.accountTypeName) #\(account.accountIndex)",
                     balanceText: Self.formatDash(
                         raw: balance,
@@ -411,6 +415,10 @@ private enum FundingSelection: Hashable {
 
 private struct FundingAccountOption: Identifiable {
     let persistentId: PersistentIdentifier
+    /// HD account index, carried only so the accessibility identifier
+    /// for this row can be stable across launches (the
+    /// `PersistentIdentifier` opaque id is not).
+    let accountIndex: UInt32
     let label: String
     let balanceText: String
     var id: PersistentIdentifier { persistentId }
