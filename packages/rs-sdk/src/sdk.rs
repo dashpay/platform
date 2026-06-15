@@ -159,9 +159,10 @@ pub struct Sdk {
     /// Protocol version number detected from the network. Shared between clones.
     protocol_version: Arc<atomic::AtomicU32>,
 
-    /// Whether to auto-detect protocol version from network response metadata.
-    /// Set to `false` when the user explicitly calls [`SdkBuilder::with_version()`].
-    auto_detect_protocol_version: bool,
+    /// Whether the protocol version is pinned, i.e. auto-detection from network
+    /// response metadata is disabled. Set to `true` when the user explicitly calls
+    /// [`SdkBuilder::with_version()`].
+    version_pinned: bool,
 
     /// Last seen height; used to determine if the remote node is stale.
     ///
@@ -197,7 +198,7 @@ impl Clone for Sdk {
             context_provider: ArcSwapOption::new(self.context_provider.load_full()),
             cancel_token: self.cancel_token.clone(),
             protocol_version: Arc::clone(&self.protocol_version),
-            auto_detect_protocol_version: self.auto_detect_protocol_version,
+            version_pinned: self.version_pinned,
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
             metadata_height_tolerance: self.metadata_height_tolerance,
             metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
@@ -311,7 +312,7 @@ impl Sdk {
     /// The version is stored per-SDK instance (not in the process-wide global),
     /// so multiple SDK instances can track different networks independently.
     fn maybe_update_protocol_version(&self, received_version: u32) {
-        if !self.auto_detect_protocol_version {
+        if self.version_pinned {
             return;
         }
 
@@ -358,8 +359,8 @@ impl Sdk {
     /// succeeds. Refresh therefore inherits the exact cryptographic trust of
     /// ordinary traffic; it adds no second, weaker source of truth.
     ///
-    /// On a pinned SDK ([`SdkBuilder::with_version`], `auto_detect_protocol_version`
-    /// off) this issues no request and returns the pinned version. If the proven
+    /// On a pinned SDK ([`SdkBuilder::with_version`], `version_pinned`
+    /// on) this issues no request and returns the pinned version. If the proven
     /// query fails the failure is **non-fatal**: the stored version is left
     /// untouched — we never fall back to an unverified one.
     ///
@@ -367,7 +368,7 @@ impl Sdk {
     ///
     /// [`SdkBuilder::with_version`]: SdkBuilder::with_version
     pub async fn refresh_protocol_version(&self) -> Result<u32, Error> {
-        if self.auto_detect_protocol_version {
+        if !self.version_pinned {
             if let Err(error) = ExtendedEpochInfo::fetch_current(self).await {
                 tracing::warn!(
                     target: "dash_sdk::protocol_version",
@@ -743,9 +744,10 @@ pub struct SdkBuilder {
     /// Platform version to use in this Sdk
     version: &'static PlatformVersion,
 
-    /// Whether the user explicitly called `with_version()`.
-    /// When true, auto-detection of protocol version from network metadata is disabled.
-    version_explicit: bool,
+    /// Whether the protocol version is pinned, i.e. the user explicitly called
+    /// `with_version()`. When true, auto-detection of protocol version from network
+    /// metadata is disabled.
+    version_pinned: bool,
 
     /// Cache size for data contracts. Used by mock [GrpcContextProvider].
     #[cfg(feature = "mocks")]
@@ -822,7 +824,7 @@ impl Default for SdkBuilder {
             // baseline — non-mainnet networks get lifted higher at build time.
             version: PlatformVersion::get(min_protocol_version(Network::Mainnet))
                 .expect("mainnet min_protocol_version must be a known PlatformVersion"),
-            version_explicit: false,
+            version_pinned: false,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
 
@@ -953,7 +955,7 @@ impl SdkBuilder {
     /// ratchets upward via auto-detection.
     pub fn with_version(mut self, version: &'static PlatformVersion) -> Self {
         self.version = version;
-        self.version_explicit = true;
+        self.version_pinned = true;
         self
     }
 
@@ -966,13 +968,13 @@ impl SdkBuilder {
     /// seed exists only to let unit tests start *below* that floor — exercising the
     /// upward-only ratchet from an older network's version without disabling auto-detect.
     ///
-    /// Seeds `self.version` and keeps `version_explicit` `false`, so auto-detect stays
+    /// Seeds `self.version` and keeps `version_pinned` `false`, so auto-detect stays
     /// on. Builder chains are last-write-wins: a later `with_initial_version` re-enables
     /// auto-detect that an earlier `with_version` disabled.
     #[cfg(test)]
     pub(crate) fn with_initial_version(mut self, version: &'static PlatformVersion) -> Self {
         self.version = version;
-        self.version_explicit = false;
+        self.version_pinned = false;
         self
     }
 
@@ -1114,9 +1116,9 @@ impl SdkBuilder {
                     cancel_token: self.cancel_token,
                     nonce_cache: Default::default(),
                     // Seed atomic with the network-floored initial version; whether
-                    // auto-detect is on is controlled separately by `version_explicit`.
+                    // the version is pinned is controlled separately by `version_pinned`.
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_protocol_version)),
-                    auto_detect_protocol_version: !self.version_explicit,
+                    version_pinned: self.version_pinned,
                     // Note: in the future, we need to securely initialize initial height during Sdk bootstrap or first request.
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,
@@ -1184,7 +1186,7 @@ impl SdkBuilder {
                     proofs:self.proofs,
                     nonce_cache: Default::default(),
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_protocol_version)),
-                    auto_detect_protocol_version: !self.version_explicit,
+                    version_pinned: self.version_pinned,
                     context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
@@ -1601,7 +1603,7 @@ mod test {
             .expect("mock Sdk should be created");
 
         assert_eq!(sdk.protocol_version_number(), pinned.protocol_version);
-        assert!(!sdk.auto_detect_protocol_version);
+        assert!(sdk.version_pinned);
 
         // Network reports version 12 (> pinned) — should be ignored because version is pinned
         let metadata = ResponseMetadata {
@@ -1626,7 +1628,7 @@ mod test {
 
         // Caller seeds the auto-detect atomic at the mainnet floor — the oldest a
         // *built* mainnet SDK can sit at, since construction clamps up to the
-        // floor. `version_explicit` stays false, so fetch_max can still ratchet
+        // floor. `version_pinned` stays false, so fetch_max can still ratchet
         // upward when the network later moves to a newer PV.
         let floor = min_protocol_version(Network::Mainnet);
         let initial = PlatformVersion::get(floor).expect("mainnet-floor PV exists");
@@ -1642,7 +1644,7 @@ mod test {
         );
         assert_eq!(sdk.version().protocol_version, floor);
         assert!(
-            sdk.auto_detect_protocol_version,
+            !sdk.version_pinned,
             "with_initial_version must keep auto-detect enabled"
         );
 
@@ -1699,7 +1701,7 @@ mod test {
             "with_initial_version must overwrite the prior with_version seed"
         );
         assert!(
-            sdk.auto_detect_protocol_version,
+            !sdk.version_pinned,
             "with_initial_version must restore auto-detect after with_version disabled it"
         );
 
@@ -1779,7 +1781,7 @@ mod test {
         );
         assert_eq!(sdk.version().protocol_version, expected);
         assert!(
-            sdk.auto_detect_protocol_version,
+            !sdk.version_pinned,
             "default SDK must keep auto-detect enabled"
         );
     }
@@ -1885,7 +1887,7 @@ mod test {
             pinned.protocol_version,
             "explicit with_version must win over the default floor"
         );
-        assert!(!sdk.auto_detect_protocol_version);
+        assert!(sdk.version_pinned);
     }
 
     /// A pin *below* the per-network [`min_protocol_version`] is raised to that
@@ -1910,7 +1912,7 @@ mod test {
         );
         // Still pinned: auto-detect stays disabled even though construction raised
         // the value to the floor.
-        assert!(!sdk.auto_detect_protocol_version);
+        assert!(sdk.version_pinned);
     }
 
     // -----------------------------------------------------------------
@@ -1956,7 +1958,7 @@ mod test {
             sdk.protocol_version_number(),
             dpp::version::v12::PROTOCOL_VERSION_12
         );
-        assert!(sdk.auto_detect_protocol_version);
+        assert!(!sdk.version_pinned);
     }
 
     /// A testnet SDK boots directly at its per-network floor (12), which is the
@@ -2124,7 +2126,7 @@ mod test {
             .build()
             .expect("mock Sdk should be created");
         assert_eq!(sdk.protocol_version_number(), pinned.protocol_version);
-        assert!(!sdk.auto_detect_protocol_version);
+        assert!(sdk.version_pinned);
 
         // No expectation registered: a pinned refresh must not even attempt the
         // query, so this returns Ok with the pinned version unchanged.
