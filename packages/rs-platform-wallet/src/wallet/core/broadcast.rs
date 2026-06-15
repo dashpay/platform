@@ -801,7 +801,10 @@ mod tests {
         };
 
         // Mark it pending, as the broadcast loop does before a send confirms.
-        let _guard = cw.reservations.reserve(vec![], Some(pending.clone()));
+        let _guard = cw
+            .reservations
+            .reserve(vec![], Some(pending.clone()))
+            .expect("reserve");
         assert!(cw.reservations.change_address_pending(&pending));
 
         // A standalone hand-out must steer clear of the pending address.
