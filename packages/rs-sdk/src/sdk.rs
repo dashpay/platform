@@ -53,21 +53,33 @@ pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 pub const DEFAULT_TOKEN_CONFIG_CACHE_SIZE: usize = 100;
 /// How many quorum public keys fit in the cache.
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
-/// Initial protocol version for the default auto-detect mode — i.e. when the
-/// caller does not pin a [`PlatformVersion`] via [`SdkBuilder::with_version`].
+/// The single cross-network protocol-version floor an unpinned SDK starts at.
 ///
-/// Set BELOW the latest version on purpose: ratchet-up autodetection
-/// (`maybe_update_protocol_version`) converges to the network's real version,
-/// so starting low keeps requests compatible with not-yet-upgraded nodes during
-/// an upgrade window. Bump this constant as the network's supported floor advances.
+/// Every network — mainnet, testnet, devnet, regtest — seeds the auto-detect
+/// atomic at this one version at construction, and the stored version is never
+/// allowed to drop below it. There is **deliberately no per-network minimum**:
+/// the SDK does not try to know each network's live version up front.
+///
+/// ## Deliberate design: one floor, ratchet up from there
+///
+/// Mainnet is live on this version. Non-mainnet networks (testnet/devnet/regtest)
+/// are live one version higher (12), so an unpinned SDK on those networks
+/// **intentionally starts one version low** and relies on the proven-query
+/// refresh ([`Sdk::refresh_protocol_version`], or the first ordinary proven
+/// response) to ratchet up to the network's real version. This is an intentional
+/// simplification: it trades a brief, self-correcting under-shoot on non-mainnet
+/// for a single, network-agnostic constant instead of a per-network floor table.
+/// Callers that cannot tolerate the bootstrap window should either pin via
+/// [`SdkBuilder::with_version`] or call `refresh_protocol_version` before any
+/// version-gated flow. Bump this constant as mainnet's live version advances.
 ///
 /// # v3.1+-only query surfaces
 ///
-/// At the default floor the local encoder rejects the
-/// v3.1+-only surfaces — `Count` (`SelectProjection::count_star`), `group_by`,
-/// and `having` — with [`Error::Config`] *before* any network round-trip. To use
-/// them either pin a higher version via [`SdkBuilder::with_version`] (which also
-/// disables auto-detect), or issue one floor-compatible ratcheting query (no v3.1+
+/// At this floor the local encoder rejects the v3.1+-only surfaces — `Count`
+/// (`SelectProjection::count_star`), `group_by`, and `having` — with
+/// [`Error::Config`] *before* any network round-trip. To use them either pin a
+/// higher version via [`SdkBuilder::with_version`] (which also disables
+/// auto-detect), or issue one floor-compatible ratcheting query (no v3.1+
 /// surfaces) right after `build()` — e.g. the `ExtendedEpochInfo::fetch_current`
 /// current-state fetch below.
 /// Its response metadata lifts the SDK to the network's version, after which `Count` /
@@ -84,41 +96,7 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// # Ok(())
 /// # }
 /// ```
-pub const DEFAULT_INITIAL_PROTOCOL_VERSION: u32 = dpp::version::v10::PROTOCOL_VERSION_10;
-
-/// The hard per-network protocol-version floor the SDK must never drop below.
-///
-/// Each network has a known minimum protocol version that is already live on
-/// chain. The SDK clamps its stored protocol version up to this floor at
-/// construction and again after every [`Sdk::refresh_protocol_version`], so even
-/// before the first network round-trip (and even if that round-trip fails) the
-/// version can never sit *below* what the network is already running. Returning
-/// a too-low version would, for example, under-reserve fees for shielded-pool
-/// flows that size their reserve from [`Sdk::version`].
-///
-/// This is a **lower bound, not a pin**: auto-detect
-/// ([`Sdk::maybe_update_protocol_version`]) still ratchets the version *upward*
-/// via `fetch_max` when the network reports a newer one. The floor only stops it
-/// from going below the network's known minimum.
-///
-/// Single source of truth for the floor lives here in `rs-sdk`; the FFI and
-/// Swift layers call into the SDK and need no floor logic of their own. Bump the
-/// per-network values here as each network's live minimum advances.
-///
-/// ## Mapping
-///
-/// - [`Network::Mainnet`] → 11
-/// - [`Network::Testnet`] → 12
-/// - [`Network::Devnet`] → 12
-/// - [`Network::Regtest`] → 12
-fn min_protocol_version(network: Network) -> u32 {
-    match network {
-        Network::Mainnet => dpp::version::v11::PROTOCOL_VERSION_11,
-        Network::Testnet => dpp::version::v12::PROTOCOL_VERSION_12,
-        Network::Devnet => dpp::version::v12::PROTOCOL_VERSION_12,
-        Network::Regtest => dpp::version::v12::PROTOCOL_VERSION_12,
-    }
-}
+pub const DEFAULT_INITIAL_PROTOCOL_VERSION: u32 = dpp::version::v11::PROTOCOL_VERSION_11;
 
 /// The default metadata time tolerance for checkpoint queries in milliseconds
 const ADDRESS_STATE_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;
@@ -553,13 +531,12 @@ impl Sdk {
 
     /// Return [Dash Platform version](PlatformVersion) information used by this SDK.
     ///
-    /// The version is floored at construction to at least the per-network minimum
-    /// protocol version (`min_protocol_version`), so it is never below the network's
-    /// known live version. With auto-detection (default) the SDK starts at
-    /// `max(DEFAULT_INITIAL_PROTOCOL_VERSION, network floor)` and then tracks the
-    /// network's version — auto-detection only ever ratchets *upward* (`fetch_max`).
-    /// A version pinned via [`SdkBuilder::with_version()`] is returned as pinned,
-    /// except that a pin below the network floor is raised to the floor at build time.
+    /// The version is floored at construction to at least
+    /// [`DEFAULT_INITIAL_PROTOCOL_VERSION`], so it is never below that cross-network
+    /// floor. With auto-detection (default) the SDK starts at that floor and then
+    /// tracks the network's version — auto-detection only ever ratchets *upward*
+    /// (`fetch_max`). A version pinned via [`SdkBuilder::with_version()`] is returned
+    /// as pinned, except that a pin below the floor is raised to it at build time.
     pub fn version<'v>(&self) -> &'v PlatformVersion {
         let v = self.protocol_version.load(Ordering::Relaxed);
         PlatformVersion::get(v).unwrap_or_else(|_| PlatformVersion::latest())
@@ -967,13 +944,12 @@ impl SdkBuilder {
     /// Select specific version of Dash Platform to use. This pins the version and
     /// disables auto-detection.
     ///
-    /// Note that [`build()`](Self::build) still clamps the pinned version up to the
-    /// per-network minimum (`min_protocol_version`): a pin below the network floor
-    /// is raised to the floor, so the SDK never starts below the network's known
-    /// version. A pin at or above the floor is used as-is.
+    /// Note that [`build()`](Self::build) still clamps the pinned version up to
+    /// [`DEFAULT_INITIAL_PROTOCOL_VERSION`]: a pin below that floor is raised to it,
+    /// so the SDK never starts below it. A pin at or above the floor is used as-is.
     ///
-    /// When unset, the SDK starts at `max(DEFAULT_INITIAL_PROTOCOL_VERSION, network
-    /// floor)` and ratchets upward via auto-detection.
+    /// When unset, the SDK starts at [`DEFAULT_INITIAL_PROTOCOL_VERSION`] and
+    /// ratchets upward via auto-detection.
     pub fn with_version(mut self, version: &'static PlatformVersion) -> Self {
         self.version = version;
         self.version_explicit = true;
@@ -1106,14 +1082,14 @@ impl SdkBuilder {
 
         // Construction-time floor (clamp site 1 of 2; the other is
         // `Sdk::refresh_protocol_version`). Clamp the seeded version up to the
-        // per-network minimum so the SDK can never sit below the network's known
-        // live version, even before the first metadata-bearing response. This is a
-        // lower bound, not a pin: it applies to pinned and auto-detect SDKs alike,
-        // and auto-detect still ratchets upward from here via `fetch_max`.
+        // cross-network `DEFAULT_INITIAL_PROTOCOL_VERSION` so the SDK never starts
+        // below it on any network. This is a lower bound, not a pin: it applies to
+        // pinned and auto-detect SDKs alike, and auto-detect still ratchets upward
+        // from here via `fetch_max`.
         let initial_protocol_version = self
             .version
             .protocol_version
-            .max(min_protocol_version(self.network));
+            .max(DEFAULT_INITIAL_PROTOCOL_VERSION);
 
         let sdk= match self.addresses {
             // non-mock mode
@@ -1613,12 +1589,12 @@ mod test {
     fn test_explicit_version_disables_auto_detect() {
         use dpp::version::PlatformVersion;
 
-        // Pin at the mainnet floor (11) so the pin survives construction (the
-        // floor only clamps *up*; a sub-floor pin would be raised to 11). The
+        // Pin at the cross-network floor so the pin survives construction (the
+        // floor only clamps *up*; a sub-floor pin would be raised to it). The
         // network reporting a newer version must still be ignored, because the
         // pin disables auto-detect.
-        let pinned = PlatformVersion::get(super::min_protocol_version(Network::Mainnet))
-            .expect("mainnet floor PV exists");
+        let pinned = PlatformVersion::get(super::DEFAULT_INITIAL_PROTOCOL_VERSION)
+            .expect("initial-floor PV exists");
         let sdk = SdkBuilder::new_mock()
             .with_version(pinned)
             .build()
@@ -1648,12 +1624,12 @@ mod test {
     fn test_with_initial_version_seeds_to_older_network_version() {
         use dpp::version::PlatformVersion;
 
-        // Caller seeds the auto-detect atomic at the mainnet floor (11) — the
-        // oldest a *built* mainnet SDK can sit at, since construction clamps up to
-        // the floor. `version_explicit` stays false, so fetch_max can still ratchet
+        // Caller seeds the auto-detect atomic at the cross-network floor — the
+        // oldest a *built* SDK can sit at, since construction clamps up to the
+        // floor. `version_explicit` stays false, so fetch_max can still ratchet
         // upward when the network later moves to a newer PV.
-        let floor = super::min_protocol_version(Network::Mainnet);
-        let initial = PlatformVersion::get(floor).expect("mainnet floor PV exists");
+        let floor = super::DEFAULT_INITIAL_PROTOCOL_VERSION;
+        let initial = PlatformVersion::get(floor).expect("initial-floor PV exists");
         let sdk = SdkBuilder::new_mock()
             .with_initial_version(initial)
             .build()
@@ -1682,10 +1658,7 @@ mod test {
 
         // And a newer network version still ratchets upward.
         let newer = dpp::version::v12::PROTOCOL_VERSION_12;
-        assert!(
-            newer > floor,
-            "ratchet target must exceed the mainnet floor"
-        );
+        assert!(newer > floor, "ratchet target must exceed the floor");
         let metadata = ResponseMetadata {
             protocol_version: newer,
             height: 2,
@@ -1704,11 +1677,11 @@ mod test {
         // must re-enable auto-detect that an earlier `with_version`
         // disabled.
         //
-        // `v_old` sits at the mainnet floor (11) so the seed survives the
+        // `v_old` sits at the cross-network floor so the seed survives the
         // construction clamp and the last-write-wins effect stays observable.
         let v_latest = PlatformVersion::latest();
-        let v_old = PlatformVersion::get(super::min_protocol_version(Network::Mainnet))
-            .expect("mainnet floor PV exists");
+        let v_old = PlatformVersion::get(super::DEFAULT_INITIAL_PROTOCOL_VERSION)
+            .expect("initial-floor PV exists");
         assert!(
             v_old.protocol_version < v_latest.protocol_version,
             "v_old must be below latest so the later ratchet is observable"
@@ -1745,13 +1718,13 @@ mod test {
     fn test_mock_version_follows_outer_sdk_atomic() {
         use dpp::version::PlatformVersion;
 
-        // Build a mock SDK with auto-detect, seeded at the mainnet floor (so the
-        // seed survives the construction clamp). After a metadata-driven ratchet
-        // to a newer PV, both the outer SDK's `version()` and the inner
+        // Build a mock SDK with auto-detect, seeded at the cross-network floor (so
+        // the seed survives the construction clamp). After a metadata-driven
+        // ratchet to a newer PV, both the outer SDK's `version()` and the inner
         // `MockDashPlatformSdk::version()` must report the same value — single
         // source of truth.
-        let v_old = PlatformVersion::get(super::min_protocol_version(Network::Mainnet))
-            .expect("mainnet floor PV exists");
+        let v_old = PlatformVersion::get(super::DEFAULT_INITIAL_PROTOCOL_VERSION)
+            .expect("initial-floor PV exists");
         let v_new = PlatformVersion::latest();
         assert!(
             v_old.protocol_version < v_new.protocol_version,
@@ -1786,26 +1759,23 @@ mod test {
         assert_eq!(
             mock.version().protocol_version,
             v_new.protocol_version,
-            "mock version must follow outer ratchet (CMT-001 regression)"
+            "mock version must follow outer ratchet"
         );
     }
 
     #[test]
     fn test_default_builder_seeds_initial_protocol_version_floor() {
-        // A default builder (mock => Network::Mainnet) must seed the SDK at the
-        // upgrade-safe initial floor *raised to the per-network minimum*, not at
-        // latest(). On mainnet the network floor (11) currently dominates the
-        // auto-detect initial floor (10).
+        // A default (unpinned) builder must seed the SDK at the single
+        // cross-network `DEFAULT_INITIAL_PROTOCOL_VERSION`, not at latest().
         let sdk = SdkBuilder::new_mock()
             .build()
             .expect("mock Sdk should be created");
 
-        let expected = super::DEFAULT_INITIAL_PROTOCOL_VERSION
-            .max(super::min_protocol_version(Network::Mainnet));
+        let expected = super::DEFAULT_INITIAL_PROTOCOL_VERSION;
         assert_eq!(
             sdk.protocol_version_number(),
             expected,
-            "unpinned SDK must boot at max(initial floor, network floor), not latest()"
+            "unpinned SDK must boot at the cross-network initial floor, not latest()"
         );
         assert_eq!(sdk.version().protocol_version, expected);
         assert!(
@@ -1819,10 +1789,8 @@ mod test {
         let sdk = SdkBuilder::new_mock()
             .build()
             .expect("mock Sdk should be created");
-        // Effective boot floor = max(auto-detect initial, per-network minimum).
-        // Mock builds on mainnet, so the network floor (11) currently dominates.
-        let floor = super::DEFAULT_INITIAL_PROTOCOL_VERSION
-            .max(super::min_protocol_version(Network::Mainnet));
+        // Single cross-network boot floor.
+        let floor = super::DEFAULT_INITIAL_PROTOCOL_VERSION;
         assert_eq!(sdk.protocol_version_number(), floor);
 
         // Ratchet to a fixed known target (PV12), not `floor + N`: stays valid as the
@@ -1863,9 +1831,8 @@ mod test {
         let sdk = SdkBuilder::new_mock()
             .build()
             .expect("mock Sdk should be created");
-        // Effective boot floor = max(auto-detect initial, per-network minimum).
-        let floor = super::DEFAULT_INITIAL_PROTOCOL_VERSION
-            .max(super::min_protocol_version(Network::Mainnet));
+        // Single cross-network boot floor.
+        let floor = super::DEFAULT_INITIAL_PROTOCOL_VERSION;
         assert_eq!(sdk.protocol_version_number(), floor);
 
         // Unknown (above LATEST_VERSION): rejected, version unchanged.
@@ -1901,15 +1868,13 @@ mod test {
     fn test_explicit_pin_overrides_default_floor() {
         use dpp::version::PlatformVersion;
 
-        // Pin ABOVE both the auto-detect initial floor (10) and the mainnet
-        // network floor (11) so the override is unambiguously observable: the
-        // stored version must be the pinned value, not either floor.
+        // Pin ABOVE the cross-network initial floor so the override is
+        // unambiguously observable: the stored version must be the pinned value,
+        // not the floor.
         let pinned = PlatformVersion::latest();
         assert!(
-            pinned.protocol_version
-                > super::DEFAULT_INITIAL_PROTOCOL_VERSION
-                    .max(super::min_protocol_version(Network::Mainnet)),
-            "pinned value must exceed both floors for this test to be meaningful"
+            pinned.protocol_version > super::DEFAULT_INITIAL_PROTOCOL_VERSION,
+            "pinned value must exceed the floor for this test to be meaningful"
         );
         let sdk = SdkBuilder::new_mock()
             .with_version(pinned)
@@ -1924,14 +1889,14 @@ mod test {
         assert!(!sdk.auto_detect_protocol_version);
     }
 
-    /// A pin *below* the per-network floor is raised to the floor at construction:
-    /// the network floor is a hard lower bound that even an explicit pin cannot
-    /// drop under.
+    /// A pin *below* [`DEFAULT_INITIAL_PROTOCOL_VERSION`] is raised to that floor
+    /// at construction: the cross-network floor is a hard lower bound that even an
+    /// explicit pin cannot drop under.
     #[test]
-    fn test_explicit_pin_below_network_floor_is_raised() {
+    fn test_explicit_pin_below_floor_is_raised() {
         use dpp::version::PlatformVersion;
 
-        let floor = super::min_protocol_version(Network::Mainnet);
+        let floor = super::DEFAULT_INITIAL_PROTOCOL_VERSION;
         let below = floor - 1;
         let pinned = PlatformVersion::get(below).expect("sub-floor PV exists");
         let sdk = SdkBuilder::new_mock()
@@ -1942,7 +1907,7 @@ mod test {
         assert_eq!(
             sdk.protocol_version_number(),
             floor,
-            "a pin below the network floor must be clamped up to the floor"
+            "a pin below the floor must be clamped up to the floor"
         );
         // Still pinned: auto-detect stays disabled even though construction raised
         // the value to the floor.
@@ -1950,85 +1915,63 @@ mod test {
     }
 
     // -----------------------------------------------------------------
-    // per-network protocol-version floor
+    // cross-network protocol-version floor + non-mainnet refresh-up
     // -----------------------------------------------------------------
 
-    /// Lock in the Network -> floor mapping (single source of truth in `rs-sdk`).
+    /// Every network seeds an unpinned SDK at the same cross-network floor — there
+    /// is no per-network minimum. A testnet SDK (live on 12) therefore boots one
+    /// version low at the floor and relies on the refresh to climb (covered by
+    /// [`test_testnet_refresh_ratchets_up_via_proven_query`]).
     #[test]
-    fn test_min_protocol_version_mapping() {
-        assert_eq!(
-            super::min_protocol_version(Network::Mainnet),
-            dpp::version::v11::PROTOCOL_VERSION_11,
-            "mainnet floor must be 11"
-        );
-        assert_eq!(
-            super::min_protocol_version(Network::Testnet),
-            dpp::version::v12::PROTOCOL_VERSION_12,
-            "testnet floor must be 12"
-        );
-        assert_eq!(
-            super::min_protocol_version(Network::Devnet),
-            dpp::version::v12::PROTOCOL_VERSION_12,
-            "devnet floor must be 12"
-        );
-        assert_eq!(
-            super::min_protocol_version(Network::Regtest),
-            dpp::version::v12::PROTOCOL_VERSION_12,
-            "regtest floor must be 12"
-        );
-    }
-
-    /// A testnet SDK seeded below the testnet floor (12) is clamped up to 12 at
-    /// construction, even though auto-detect would otherwise start it lower.
-    #[test]
-    fn test_testnet_construction_clamps_up_to_floor() {
-        use dpp::version::PlatformVersion;
-
-        let floor = super::min_protocol_version(Network::Testnet);
-        // Seed below the floor via the test-only `with_initial_version` (auto-detect
-        // stays on). DEFAULT_INITIAL_PROTOCOL_VERSION (10) is below the testnet floor.
-        let seed = PlatformVersion::get(super::DEFAULT_INITIAL_PROTOCOL_VERSION)
-            .expect("default initial PV exists");
-        assert!(
-            seed.protocol_version < floor,
-            "this test requires the seed to start below the testnet floor"
-        );
+    fn test_testnet_default_builder_boots_at_cross_network_floor() {
         let sdk = SdkBuilder::new_mock()
             .with_network(Network::Testnet)
-            .with_initial_version(seed)
             .build()
             .expect("mock Sdk should be created");
 
         assert_eq!(
             sdk.protocol_version_number(),
-            floor,
-            "testnet SDK seeded below 12 must boot at >= 12"
+            super::DEFAULT_INITIAL_PROTOCOL_VERSION,
+            "testnet seeds at the cross-network floor, not a per-network minimum"
         );
-        assert!(sdk.protocol_version_number() >= floor);
-        // Floor is a lower bound, not a pin: auto-detect stays enabled.
         assert!(sdk.auto_detect_protocol_version);
     }
 
-    /// On testnet the construction floor (12) dominates the auto-detect initial
-    /// floor (10): a default (unpinned) testnet SDK boots at 12.
-    #[test]
-    fn test_testnet_default_builder_boots_at_floor() {
-        let floor = super::min_protocol_version(Network::Testnet);
-        let sdk = SdkBuilder::new_mock()
+    /// The non-mainnet bootstrap the human's model relies on: a testnet SDK boots
+    /// one version below the network's live version (12) and the proven-query
+    /// refresh ratchets it up to 12. Drives the real `refresh_protocol_version`.
+    #[tokio::test]
+    async fn test_testnet_refresh_ratchets_up_via_proven_query() {
+        let mut sdk = SdkBuilder::new_mock()
             .with_network(Network::Testnet)
             .build()
             .expect("mock Sdk should be created");
+        assert_eq!(
+            sdk.protocol_version_number(),
+            super::DEFAULT_INITIAL_PROTOCOL_VERSION,
+            "testnet must start at the cross-network floor, below its live version"
+        );
 
-        assert_eq!(sdk.protocol_version_number(), floor);
-        assert!(sdk.auto_detect_protocol_version);
+        expect_epoch_refresh(&mut sdk).await;
+        let resulting = sdk
+            .refresh_protocol_version()
+            .await
+            .expect("refresh should succeed");
+
+        assert_eq!(
+            resulting,
+            dpp::version::LATEST_VERSION,
+            "the proven refresh must ratchet a non-mainnet SDK up to the network's version"
+        );
+        assert_eq!(sdk.protocol_version_number(), dpp::version::LATEST_VERSION);
     }
 
-    /// A testnet SDK boots at the floor (12). When a refresh's proven query is
-    /// unavailable, refresh stays at the floor — never below it, and never
-    /// trusting an unverified value.
+    /// When a refresh's proven query is unavailable, refresh stays at the
+    /// cross-network floor — never below it, and never trusting an unverified
+    /// value. Drives the real `refresh_protocol_version` on testnet.
     #[tokio::test]
     async fn test_testnet_refresh_keeps_floor_when_query_unavailable() {
-        let floor = super::min_protocol_version(Network::Testnet);
+        let floor = super::DEFAULT_INITIAL_PROTOCOL_VERSION;
         let sdk = SdkBuilder::new_mock()
             .with_network(Network::Testnet)
             .build()
@@ -2141,10 +2084,10 @@ mod test {
     async fn test_refresh_leaves_pinned_sdk_unchanged() {
         use dpp::version::PlatformVersion;
 
-        // Pin at the mainnet floor (11) so the pin survives construction (a
+        // Pin at the cross-network floor so the pin survives construction (a
         // sub-floor pin would be raised to the floor).
-        let pinned = PlatformVersion::get(super::min_protocol_version(Network::Mainnet))
-            .expect("mainnet floor PV exists");
+        let pinned = PlatformVersion::get(super::DEFAULT_INITIAL_PROTOCOL_VERSION)
+            .expect("initial-floor PV exists");
         let sdk = SdkBuilder::new_mock()
             .with_version(pinned)
             .build()
@@ -2168,11 +2111,11 @@ mod test {
 
     /// When the proven query is unavailable (no mock expectation, so the fetch
     /// errors), refresh is non-fatal and does *not* fall back to an unverified
-    /// version: it just clamps the stored version to the per-network floor. Seeded
-    /// below the floor via the raw atomic to prove the clamp raises it.
+    /// version: it just clamps the stored version to the cross-network floor.
+    /// Seeded below the floor via the raw atomic to prove the clamp raises it.
     #[tokio::test]
     async fn test_refresh_query_unavailable_clamps_to_floor() {
-        let floor = super::min_protocol_version(Network::Mainnet);
+        let floor = super::DEFAULT_INITIAL_PROTOCOL_VERSION;
         // Seed below the floor via the raw atomic (construction would never allow
         // this; `mock_sdk_with_auto_detect` uses `.store()`, bypassing the clamp).
         let sdk = mock_sdk_with_auto_detect(floor - 1);

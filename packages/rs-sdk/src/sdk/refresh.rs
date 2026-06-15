@@ -2,9 +2,9 @@
 //!
 //! Houses [`Sdk::refresh_protocol_version`], a thin eager wrapper around the
 //! SDK's ordinary proven-query machinery. The shared
-//! [`super::min_protocol_version`] / [`Sdk::maybe_update_protocol_version`]
-//! helpers stay in the parent `sdk` module — this child module reaches them
-//! through `super::` / `self`.
+//! [`Sdk::maybe_update_protocol_version`] ratchet stays in the parent `sdk`
+//! module — this child module reaches it through `self`, and clamps to the
+//! [`super::DEFAULT_INITIAL_PROTOCOL_VERSION`] floor.
 
 use super::Sdk;
 use crate::platform::fetch_current_no_parameters::FetchCurrent;
@@ -19,9 +19,9 @@ impl Sdk {
     /// ## Why this exists (bootstrap problem)
     ///
     /// An auto-detect SDK (one built without [`SdkBuilder::with_version()`]) is
-    /// seeded at the per-network floor (or a caller-supplied initial version) and
-    /// only learns the network's *actual* protocol version after the first
-    /// metadata-bearing platform response is parsed (see
+    /// seeded at [`DEFAULT_INITIAL_PROTOCOL_VERSION`] (or a caller-supplied initial
+    /// version) and only learns the network's *actual* protocol version after the
+    /// first metadata-bearing platform response is parsed (see
     /// [`Self::verify_response_metadata`]). Fee-sensitive flows — shielded pool
     /// shield/unshield/transfer/withdraw — compute their reserve from
     /// `self.version()`, so an SDK that hasn't yet observed network metadata can
@@ -46,9 +46,9 @@ impl Sdk {
     /// If the proven query fails (e.g. no [`ContextProvider`] is set, a transport
     /// error, or `UNIMPLEMENTED` on a stale evonode) the failure is **non-fatal**:
     /// we deliberately do *not* fall back to an unverified version. The stored
-    /// version is left untouched and then clamped to the per-network floor, so it
-    /// can never sit below the network's known minimum even when the refresh
-    /// round-trip fails.
+    /// version is left untouched and then clamped to
+    /// [`DEFAULT_INITIAL_PROTOCOL_VERSION`], so it can never sit below that floor
+    /// even when the refresh round-trip fails.
     ///
     /// ## Pinned SDKs (version updating disabled)
     ///
@@ -56,8 +56,8 @@ impl Sdk {
     /// of version tracking, so there is nothing to refresh. This method
     /// short-circuits for a pinned SDK: it issues **no** network request and
     /// returns the pinned version unchanged. (Construction already raised any
-    /// sub-floor pin up to the per-network floor, so the floor clamp would be a
-    /// no-op anyway.)
+    /// sub-floor pin up to [`DEFAULT_INITIAL_PROTOCOL_VERSION`], so the floor clamp
+    /// would be a no-op anyway.)
     ///
     /// For an auto-detect SDK the usual ratchet guards still apply: version `0`
     /// and unknown/future versions are ignored, and the stored version only ever
@@ -66,16 +66,17 @@ impl Sdk {
     /// ## Returns
     ///
     /// The SDK's protocol version number after the (possible) ratchet and the
-    /// per-network floor clamp.
+    /// [`DEFAULT_INITIAL_PROTOCOL_VERSION`] floor clamp.
     ///
     /// [`SdkBuilder::with_version()`]: super::SdkBuilder::with_version
     /// [`ContextProvider`]: crate::platform::ContextProvider
+    /// [`DEFAULT_INITIAL_PROTOCOL_VERSION`]: super::DEFAULT_INITIAL_PROTOCOL_VERSION
     pub async fn refresh_protocol_version(&self) -> Result<u32, Error> {
         // A pinned SDK (built via `SdkBuilder::with_version`) has opted out of
         // version tracking: `maybe_update_protocol_version` is a no-op for it, so
         // the proven query below could never change anything. Skip the round-trip
         // and return the pinned version. (Construction already raised any sub-floor
-        // pin up to the per-network floor, so there is nothing left to clamp.)
+        // pin up to the cross-network floor, so there is nothing left to clamp.)
         if !self.auto_detect_protocol_version {
             return Ok(self.protocol_version_number());
         }
@@ -94,11 +95,11 @@ impl Sdk {
 
         // Refresh-time floor (clamp site 2 of 2; the other is `SdkBuilder::build`).
         // Independently of whether the proven query ran or ratcheted the version,
-        // the stored version must never end up below the per-network minimum.
-        // `fetch_max` keeps this monotonic and concurrency-safe alongside the
-        // auto-detect ratchet.
+        // the stored version must never end up below the cross-network
+        // `DEFAULT_INITIAL_PROTOCOL_VERSION`. `fetch_max` keeps this monotonic and
+        // concurrency-safe alongside the auto-detect ratchet.
         self.protocol_version
-            .fetch_max(super::min_protocol_version(self.network), Ordering::Relaxed);
+            .fetch_max(super::DEFAULT_INITIAL_PROTOCOL_VERSION, Ordering::Relaxed);
 
         Ok(self.protocol_version_number())
     }
