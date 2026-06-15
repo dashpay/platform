@@ -329,7 +329,7 @@ impl WasmSdkBuilder {
         Self {
             inner,
             trusted_context: Some(context.clone()),
-            has_user_addresses: self.has_user_addresses,
+            ..self
         }
     }
 
@@ -349,7 +349,7 @@ impl WasmSdkBuilder {
         Self {
             inner: self.inner.with_context_provider(context_provider),
             trusted_context: None,
-            has_user_addresses: self.has_user_addresses,
+            ..self
         }
     }
 
@@ -375,8 +375,7 @@ impl WasmSdkBuilder {
 
         Ok(Self {
             inner: self.inner.with_version(version),
-            trusted_context: self.trusted_context,
-            has_user_addresses: self.has_user_addresses,
+            ..self
         })
     }
 
@@ -415,8 +414,7 @@ impl WasmSdkBuilder {
 
         Self {
             inner: self.inner.with_settings(settings),
-            trusted_context: self.trusted_context,
-            has_user_addresses: self.has_user_addresses,
+            ..self
         }
     }
 
@@ -427,8 +425,7 @@ impl WasmSdkBuilder {
     ) -> Self {
         Self {
             inner: self.inner.with_proofs(enable_proofs),
-            trusted_context: self.trusted_context,
-            has_user_addresses: self.has_user_addresses,
+            ..self
         }
     }
 }
@@ -491,6 +488,14 @@ mod tests {
         .expect("withAddresses should accept valid testnet addresses")
     }
 
+    fn sdk_addresses(sdk: &WasmSdk) -> Vec<String> {
+        sdk.address_list()
+            .ban_info()
+            .into_iter()
+            .map(|info| info.uri.to_string())
+            .collect()
+    }
+
     #[test]
     fn with_addresses_sets_user_addresses_flag() {
         let b = user_builder();
@@ -512,7 +517,9 @@ mod tests {
             .with_settings(Some(1000), Some(2000), Some(1), Some(false))
             .with_version(1)
             .expect("withVersion(1) is valid")
-            .with_context_provider(WasmContext {});
+            .with_context_provider(WasmContext {})
+            .with_logs("off")
+            .expect("withLogs(\"off\") is valid");
         assert!(b.has_user_addresses());
 
         let preset = WasmSdkBuilder::new_testnet()
@@ -537,12 +544,7 @@ mod tests {
             .build()
             .expect("build should succeed with explicit addresses + trusted context");
 
-        let addrs: Vec<String> = sdk
-            .address_list()
-            .ban_info()
-            .into_iter()
-            .map(|info| info.uri.to_string())
-            .collect();
+        let addrs = sdk_addresses(&sdk);
 
         assert_eq!(
             addrs.len(),
@@ -551,17 +553,17 @@ mod tests {
             addrs
         );
         assert!(
-            addrs.iter().any(|a: &String| a.contains("203.0.113.10")),
+            addrs.iter().any(|a| a.contains("203.0.113.10")),
             "missing first user address in {:?}",
             addrs
         );
         assert!(
-            addrs.iter().any(|a: &String| a.contains("203.0.113.11")),
+            addrs.iter().any(|a| a.contains("203.0.113.11")),
             "missing second user address in {:?}",
             addrs
         );
         assert!(
-            !addrs.iter().any(|a: &String| a.contains("198.51.100")),
+            !addrs.iter().any(|a| a.contains("198.51.100")),
             "discovered address must not leak in: {:?}",
             addrs
         );
@@ -582,12 +584,7 @@ mod tests {
             .build()
             .expect("build should succeed for preset + trusted context");
 
-        let addrs: Vec<String> = sdk
-            .address_list()
-            .ban_info()
-            .into_iter()
-            .map(|info| info.uri.to_string())
-            .collect();
+        let addrs = sdk_addresses(&sdk);
 
         assert_eq!(
             addrs.len(),
@@ -596,7 +593,7 @@ mod tests {
             addrs
         );
         assert!(
-            addrs.iter().all(|a: &String| a.contains("198.51.100")),
+            addrs.iter().all(|a| a.contains("198.51.100")),
             "preset addresses must be replaced by discovered ones: {:?}",
             addrs
         );
