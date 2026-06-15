@@ -12,6 +12,7 @@ use dpp::identity::SecurityLevel;
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 
+use super::contacts::RegisterExternalError;
 use super::sdk_writer::SendContactRequestParams;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
@@ -910,26 +911,41 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             return;
         }
 
-        // (3) Register the external (sending) account — decrypt + ECDH. A
-        //     decrypt/decode failure is PERMANENT.
-        if let Err(e) = self
+        // (3) Register the external (sending) account — decrypt + ECDH.
+        //     Pass the identity we already fetched above so registration
+        //     does no network I/O: that way a PERMANENT crypto/data fault
+        //     (bad encrypted xpub, missing key) breaks the channel, but a
+        //     TRANSIENT persistence hiccup is left for the next sweep to
+        //     retry instead of permanently killing payments (G1c).
+        match self
             .register_external_contact_account(
                 identity_id,
-                &contact_id,
+                &contact_identity,
                 &candidate.encrypted_public_key,
                 candidate.our_decryption_key_index,
                 candidate.contact_encryption_key_index,
             )
             .await
         {
-            tracing::warn!(
-                identity = %identity_id,
-                contact = %contact_id,
-                error = %e,
-                "Failed to register DashPay external account; marking payment channel broken (permanent)"
-            );
-            self.mark_contact_channel_broken(identity_id, &contact_id)
-                .await;
+            Ok(()) => {}
+            Err(e) if e.is_permanent() => {
+                tracing::warn!(
+                    identity = %identity_id,
+                    contact = %contact_id,
+                    error = %e.into_inner(),
+                    "Contact request failed crypto registration; marking payment channel broken (permanent)"
+                );
+                self.mark_contact_channel_broken(identity_id, &contact_id)
+                    .await;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    identity = %identity_id,
+                    contact = %contact_id,
+                    error = %e.into_inner(),
+                    "Transient failure registering DashPay external account; will retry next sweep (channel left intact)"
+                );
+            }
         }
     }
 
@@ -1168,14 +1184,19 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             )));
         }
 
+        // Reuse the identity we just fetched for validation (no second
+        // network round). The accept path surfaces any failure to the
+        // caller as a plain error — the transient/permanent split only
+        // matters to the unattended sync sweep's broken-channel policy.
         self.register_external_contact_account(
             our_identity_id,
-            contact_id,
+            &contact_identity,
             contact_encrypted_xpub,
             our_decryption_key_index,
             contact_encryption_key_index,
         )
         .await
+        .map_err(RegisterExternalError::into_inner)
     }
 }
 

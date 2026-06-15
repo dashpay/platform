@@ -51,6 +51,44 @@ fn dashpay_account_registration_changeset(
     cs
 }
 
+/// Why a [`register_external_contact_account`] attempt failed, classified
+/// for the G1c transient/permanent payment-channel policy.
+///
+/// The distinction is load-bearing: a **permanent** failure marks the
+/// contact's payment channel broken (no unbounded retry on a poisoned
+/// channel), while a **transient** failure leaves the channel intact so
+/// the next sync sweep retries. Misclassifying a transient failure as
+/// permanent silently and permanently kills payments to a contact over a
+/// momentary blip.
+///
+/// [`register_external_contact_account`]: IdentityWallet::register_external_contact_account
+#[derive(Debug)]
+pub enum RegisterExternalError {
+    /// The request itself is unusable and re-deriving won't help — a
+    /// malformed encrypted xpub, a missing/non-secp recipient key, a
+    /// derivation that can't produce the ECDH key. Mark the channel broken.
+    Permanent(PlatformWalletError),
+    /// A local persistence / in-memory-insert hiccup — the account simply
+    /// wasn't built this pass. Leave the channel intact; the next sweep
+    /// retries.
+    Transient(PlatformWalletError),
+}
+
+impl RegisterExternalError {
+    /// Whether this failure should permanently break the payment channel.
+    pub fn is_permanent(&self) -> bool {
+        matches!(self, RegisterExternalError::Permanent(_))
+    }
+
+    /// Unwrap to the underlying error (both arms carry one) for callers
+    /// that don't act on the transient/permanent distinction.
+    pub fn into_inner(self) -> PlatformWalletError {
+        match self {
+            RegisterExternalError::Permanent(e) | RegisterExternalError::Transient(e) => e,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Established contacts accessor
 // ---------------------------------------------------------------------------
@@ -408,28 +446,42 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// # Arguments
     ///
     /// * `our_identity_id`            - Our identity that shares the contact relationship.
-    /// * `contact_identity_id`        - The contact's identity.
+    /// * `contact_identity`           - The contact's **already-fetched** identity. The
+    ///                                  caller fetches it once (for the key-index validation
+    ///                                  that must precede ECDH) and passes it in, so this
+    ///                                  method performs **no network I/O** — every failure it
+    ///                                  returns is therefore a permanent crypto/data fault,
+    ///                                  not a transient DAPI blip (G1c).
     /// * `contact_encrypted_xpub`     - 96-byte encrypted xpub from the contact's
     ///                                  `contactRequest` document (16-byte IV + 80-byte
     ///                                  AES-256-CBC ciphertext).
     /// * `our_decryption_key_index`   - Key ID of our ENCRYPTION key used for ECDH.
     /// * `contact_encryption_key_index` - Key ID of the contact's ENCRYPTION key used for ECDH.
+    ///
+    /// Returns [`RegisterExternalError`] so the caller can apply the G1c
+    /// transient/permanent payment-channel policy: a `Permanent` failure
+    /// (malformed encrypted xpub, missing/non-secp key) breaks the channel;
+    /// a `Transient` one (persistence/insert hiccup) leaves it for retry.
     pub async fn register_external_contact_account(
         &self,
         our_identity_id: &Identifier,
-        contact_identity_id: &Identifier,
+        contact_identity: &Identity,
         contact_encrypted_xpub: &[u8],
         our_decryption_key_index: u32,
         contact_encryption_key_index: u32,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<(), RegisterExternalError> {
+        use RegisterExternalError::{Permanent, Transient};
         let account_index: u32 = 0;
+        let contact_identity_id = contact_identity.id();
 
         // --- 1. Early-exit if the external account already exists. ---
         {
             let wm = self.wallet_manager.read().await;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                Transient(PlatformWalletError::WalletNotFound(hex::encode(
+                    self.wallet_id,
+                )))
+            })?;
             use key_wallet::account::account_collection::DashpayAccountKey;
             let key = DashpayAccountKey {
                 index: account_index,
@@ -449,77 +501,77 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         // --- 2. Derive our ECDH private key under a read lock. ---
         let our_private_key = {
             let wm = self.wallet_manager.read().await;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                Transient(PlatformWalletError::WalletNotFound(hex::encode(
+                    self.wallet_id,
+                )))
+            })?;
             let managed = info
                 .identity_manager
                 .managed_identity(our_identity_id)
-                .ok_or(PlatformWalletError::IdentityNotFound(*our_identity_id))?;
+                .ok_or_else(|| {
+                    Transient(PlatformWalletError::IdentityNotFound(*our_identity_id))
+                })?;
             // ECDH key derivation needs the wallet HD slot — only valid
             // for wallet-owned identities. Reject the out-of-wallet case
             // explicitly rather than letting derivation produce a
             // misleading error downstream.
-            let identity_index = managed
-                .identity_index
-                .ok_or(PlatformWalletError::IdentityIndexNotSet(*our_identity_id))?;
+            let identity_index = managed.identity_index.ok_or_else(|| {
+                Transient(PlatformWalletError::IdentityIndexNotSet(*our_identity_id))
+            })?;
 
-            // Find our decryption key by its key ID.
+            // Find our decryption key by its key ID. A missing key at the
+            // validated index is a malformed-request fault, not transient.
             let our_encryption_key = managed
                 .identity
                 .public_keys()
                 .get(&our_decryption_key_index)
                 .cloned()
                 .ok_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(format!(
+                    Permanent(PlatformWalletError::InvalidIdentityData(format!(
                         "Our encryption key {} not found on identity {}",
                         our_decryption_key_index, our_identity_id
-                    ))
+                    )))
                 })?;
 
-            let wallet = wm
-                .get_wallet(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
+                Transient(PlatformWalletError::WalletNotFound(hex::encode(
+                    self.wallet_id,
+                )))
+            })?;
 
             Self::derive_encryption_private_key(
                 wallet,
                 self.sdk.network,
                 identity_index,
                 &our_encryption_key,
-            )?
+            )
+            .map_err(Permanent)?
         };
 
-        // --- 3. Fetch the contact's identity from Platform and extract their encryption pubkey. ---
+        // --- 3. Extract the contact's encryption pubkey from the
+        //        already-fetched identity (NO network I/O here — the caller
+        //        fetched it for validation; re-fetching would turn a
+        //        transient DAPI blip into a permanent broken channel). ---
         let contact_public_key: dashcore::secp256k1::PublicKey = {
-            use dash_sdk::platform::Fetch;
-            let contact_identity = Identity::fetch(&self.sdk, *contact_identity_id)
-                .await
-                .map_err(|e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to fetch contact identity {}: {}",
-                        contact_identity_id, e
-                    ))
-                })?
-                .ok_or_else(|| PlatformWalletError::IdentityNotFound(*contact_identity_id))?;
-
             let contact_key = contact_identity
                 .public_keys()
                 .get(&contact_encryption_key_index)
                 .cloned()
                 .ok_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(format!(
+                    Permanent(PlatformWalletError::InvalidIdentityData(format!(
                         "Contact encryption key {} not found on identity {}",
                         contact_encryption_key_index, contact_identity_id
-                    ))
+                    )))
                 })?;
 
             // Deserialize the compressed public key bytes from the identity key data.
             dashcore::secp256k1::PublicKey::from_slice(contact_key.data().as_slice()).map_err(
                 |e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
+                    Permanent(PlatformWalletError::InvalidIdentityData(format!(
                         "Contact encryption key is not a valid secp256k1 public key: {}",
                         e
-                    ))
+                    )))
                 },
             )?
         };
@@ -532,10 +584,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let decrypted_xpub_bytes =
             platform_encryption::decrypt_extended_public_key(&shared_key, contact_encrypted_xpub)
                 .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
+                Permanent(PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to decrypt contact xpub: {}",
                     e
-                ))
+                )))
             })?;
 
         // --- 6. Reconstruct the ExtendedPubKey from the decrypted plaintext. ---
@@ -556,13 +608,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             Ok(compact) => crate::wallet::identity::crypto::dip14::reconstruct_contact_xpub(
                 compact,
                 self.sdk.network,
-            )?,
+            )
+            .map_err(Permanent)?,
             Err(_) => {
                 key_wallet::bip32::ExtendedPubKey::decode(&decrypted_xpub_bytes).map_err(|e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
+                    Permanent(PlatformWalletError::InvalidIdentityData(format!(
                         "Decrypted contact xpub is neither a 69-byte DIP-15 compact form \
                          nor a 78/107-byte BIP32/DIP-14 serialization: {e}"
-                    ))
+                    )))
                 })?
             }
         };
@@ -605,25 +658,29 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 &managed,
             ))
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
+                Transient(PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to persist external contact account registration: {e}"
-                ))
+                )))
             })?;
 
         let mut wm = self.wallet_manager.write().await;
         let (wallet, info) = wm
             .get_wallet_mut_and_info_mut(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            .ok_or_else(|| {
+                Transient(PlatformWalletError::WalletNotFound(hex::encode(
+                    self.wallet_id,
+                )))
+            })?;
 
         // (a) Insert Account into the immutable wallet account collection so the
         //     xpub is accessible by `send_payment`.
         wallet
             .add_account(account_type, Some(contact_xpub))
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
+                Transient(PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to add external contact account to wallet: {}",
                     e
-                ))
+                )))
             })?;
 
         // (b) Insert ManagedCoreFundsAccount for address-pool tracking.
@@ -631,10 +688,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .accounts
             .insert_funds_bearing_account(managed)
             .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
+                Transient(PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to register external contact account: {}",
                     e
-                ))
+                )))
             })?;
 
         tracing::info!(

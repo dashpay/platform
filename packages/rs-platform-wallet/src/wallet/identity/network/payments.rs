@@ -844,4 +844,74 @@ mod tests {
              else the tombstone is lost and the contact resurrects"
         );
     }
+
+    /// **#2 — a transient failure must NOT permanently break the payment
+    /// channel.** `register_external_contact_account` returns a typed
+    /// `RegisterExternalError` so the unattended sync sweep marks a contact
+    /// `payment_channel_broken` (G1c) only on a *permanent* crypto/data
+    /// fault — not on a transient infra/persistence hiccup. Previously a
+    /// transient DAPI fetch *inside* the method was indistinguishable from
+    /// a malformed request and killed payments to the contact forever.
+    ///
+    /// An unmanaged owner identity is an infra-state miss → must classify
+    /// `Transient` (channel left intact, retried next sweep). This fails
+    /// against any code that flattens the failure to a single permanent
+    /// error class.
+    #[tokio::test]
+    async fn register_external_classifies_infra_miss_as_transient() {
+        let (manager, _persister, wallet_id) = make_wallet().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+
+        // Owner identity was never added to the manager → an infra-state
+        // miss, NOT a malformed request. The contact identity is passed in
+        // (no network fetch); its contents are irrelevant here.
+        let unmanaged_owner = Identifier::from([0x11; 32]);
+        let contact = bare_identity([0x22; 32]);
+        let err = iw
+            .register_external_contact_account(&unmanaged_owner, &contact, &[7u8; 96], 0, 0)
+            .await
+            .expect_err("unmanaged owner must fail");
+        assert!(
+            !err.is_permanent(),
+            "an unmanaged-owner infra miss must be Transient (channel left intact), got {err:?}"
+        );
+    }
+
+    /// **#2 (cont.) — a malformed request IS permanent.** When the owner is
+    /// managed but carries no encryption key at the validated index, the
+    /// request can't produce an ECDH key and re-deriving won't help, so the
+    /// channel is correctly broken (preserving the G1c "no unbounded retry
+    /// on a poisoned channel" intent). Pins the *other* side of the split
+    /// so the transient test above isn't satisfied by classifying
+    /// everything transient.
+    #[tokio::test]
+    async fn register_external_classifies_missing_key_as_permanent() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(
+                    bare_identity([0x11; 32]),
+                    0,
+                    wallet_id,
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add owner");
+        }
+
+        let owner_id = Identifier::from([0x11; 32]);
+        let contact = bare_identity([0x22; 32]);
+        let err = iw
+            .register_external_contact_account(&owner_id, &contact, &[7u8; 96], 0, 0)
+            .await
+            .expect_err("missing our encryption key must fail");
+        assert!(
+            err.is_permanent(),
+            "a missing validated key is a permanent malformed-request fault, got {err:?}"
+        );
+    }
 }
