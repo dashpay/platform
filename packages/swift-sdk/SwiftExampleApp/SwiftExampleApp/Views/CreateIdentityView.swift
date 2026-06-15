@@ -480,14 +480,18 @@ struct CreateIdentityView: View {
             Picker("Source Wallet", selection: $walletSelection) {
                 Text("Select…")
                     .tag(Optional<WalletSelection>.none)
+                    .accessibilityIdentifier("createIdentity.sourceWallet.none")
                 ForEach(wallets) { wallet in
                     Text(walletLabel(for: wallet))
                         .tag(Optional(WalletSelection.wallet(id: wallet.walletId)))
+                        .accessibilityIdentifier("createIdentity.sourceWallet.wallet.\(wallet.walletId.toHexString())")
                 }
                 Divider()
                 Text("Create without Wallet")
                     .tag(Optional(WalletSelection.walletless))
+                    .accessibilityIdentifier("createIdentity.sourceWallet.walletless")
             }
+            .accessibleFormPicker("createIdentity.sourceWalletPicker")
             .onChange(of: walletSelection) { _, newValue in
                 // Reset downstream selection whenever the wallet
                 // changes so a stale account / proof / denomination
@@ -607,9 +611,11 @@ struct CreateIdentityView: View {
             Picker("Funding Source", selection: $fundingSelection) {
                 Text("Select…")
                     .tag(Optional<FundingSelection>.none)
+                    .accessibilityIdentifier("createIdentity.fundingSource.none")
                 ForEach(options) { option in
                     Text("\(option.label) — \(option.balanceText)")
                         .tag(Optional(FundingSelection.account(id: option.persistentId)))
+                        .accessibilityIdentifier("createIdentity.fundingSource.account.\(option.accountType).\(option.accountIndex)")
                 }
                 if showShielded {
                     let shieldedText = Self.formatDash(
@@ -618,8 +624,10 @@ struct CreateIdentityView: View {
                     )
                     Text("Shielded Balance — \(shieldedText)")
                         .tag(Optional(FundingSelection.shieldedBalance))
+                        .accessibilityIdentifier("createIdentity.fundingSource.shielded")
                 }
             }
+            .accessibleFormPicker("createIdentity.fundingSourcePicker")
             .onChange(of: fundingSelection) { _, newValue in
                 // Pre-fill the amount with the full available balance
                 // of the selected Platform Payment account so the
@@ -732,14 +740,17 @@ struct CreateIdentityView: View {
                 Picker("Denomination", selection: $selectedDenomination) {
                     Text("Select…")
                         .tag(Optional<UInt64>.none)
+                        .accessibilityIdentifier("createIdentity.denomination.none")
                     ForEach(affordable, id: \.self) { denom in
                         Text(Self.formatDash(
                             raw: denom,
                             divisor: Double(Self.creditsPerDash)
                         ))
                         .tag(Optional(denom))
+                        .accessibilityIdentifier("createIdentity.denomination.\(denom)")
                     }
                 }
+                .accessibleFormPicker("createIdentity.denominationPicker")
                 .disabled(isCreating)
             }
         } header: {
@@ -1968,6 +1979,8 @@ struct CreateIdentityView: View {
                 )
                 return FundingAccountOption(
                     persistentId: account.persistentModelID,
+                    accountType: account.accountType,
+                    accountIndex: account.accountIndex,
                     label: Self.fundingLabel(for: account),
                     balanceText: balanceText
                 )
@@ -2182,6 +2195,17 @@ private enum FundingSelection: Hashable {
 
 private struct FundingAccountOption: Identifiable {
     let persistentId: PersistentIdentifier
+    /// HD account type tag (e.g. 0 = BIP44 standard, 14 = Platform
+    /// Payment). Paired with `accountIndex` in the row's accessibility
+    /// identifier because the index alone is NOT unique across account
+    /// types — this picker lists both Core and Platform Payment
+    /// accounts, so a bare `#0` would collide (BIP44 #0 vs Platform
+    /// Payment #0).
+    let accountType: UInt32
+    /// HD account index, carried only so the accessibility identifier
+    /// for this row can be stable across launches (the
+    /// `PersistentIdentifier` opaque id is not).
+    let accountIndex: UInt32
     let label: String
     /// Human-readable balance suffix (`"0.01 DASH"`). Zero-balance
     /// accounts are filtered out upstream so this is always a

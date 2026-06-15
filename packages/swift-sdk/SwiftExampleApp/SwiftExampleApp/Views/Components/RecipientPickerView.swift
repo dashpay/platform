@@ -124,12 +124,16 @@ struct RecipientPickerView: View {
                 .foregroundColor(.secondary)
         } else {
             Picker("Identity", selection: localBinding) {
-                Text("Choose…").tag(Data?.none)
+                Text("Choose…")
+                    .tag(Data?.none)
+                    .accessibilityIdentifier("recipient.identity.none")
                 ForEach(candidates, id: \.identityId) { id in
-                    Text(id.displayName).tag(Optional(id.identityId))
+                    Text(id.displayName)
+                        .tag(Optional(id.identityId))
+                        .accessibilityIdentifier("recipient.identity.\(id.identityIdBase58)")
                 }
             }
-            .pickerStyle(.menu)
+            .accessibleInlinePicker("recipient.identityPicker")
         }
     }
 
