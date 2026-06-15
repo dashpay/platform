@@ -482,6 +482,53 @@ extension PlatformWalletManager {
             )
         }
     }
+
+    // MARK: - Phase 8 — DAPI address ban list
+
+    /// One row of the DAPI address ban-list snapshot.
+    public struct AddressBanInfo {
+        /// The DAPI node URI.
+        public let address: String
+        /// Whether the address is currently effectively banned.
+        public let banned: Bool
+        /// Total number of times the address has been banned.
+        public let banCount: Int
+        /// The instant until which the address remains banned, or `nil`
+        /// when there is no active ban window.
+        public let bannedUntil: Date?
+        /// Human-readable reason for the most recent ban, or `nil` when
+        /// none was recorded.
+        public let reason: String?
+    }
+
+    /// Snapshot of every DAPI address' ban state, including the reason
+    /// each address was banned (when recorded).
+    public func addressBanInfo() -> [AddressBanInfo] {
+        guard isConfigured, handle != NULL_HANDLE else { return [] }
+        var outEntries: UnsafePointer<AddressBanInfoFFI>? = nil
+        var outCount: UInt = 0
+        let res = platform_wallet_manager_address_ban_info(handle, &outEntries, &outCount)
+        guard PlatformWalletResult(res).isSuccess, let ptr = outEntries, outCount > 0 else { return [] }
+        defer { platform_wallet_manager_address_ban_info_free(UnsafeMutablePointer(mutating: ptr), outCount) }
+        return (0..<Int(outCount)).compactMap { i -> AddressBanInfo? in
+            let entry = ptr[i]
+            // The address is the key identifier; skip any (defensive) NULL
+            // entry rather than surfacing a non-actionable blank row.
+            guard let addressPtr = entry.address else { return nil }
+            let address = String(cString: addressPtr)
+            let reason: String? = entry.reason.map { String(cString: $0) }
+            let bannedUntil: Date? = entry.banned_until_ms == 0
+                ? nil
+                : Date(timeIntervalSince1970: Double(entry.banned_until_ms) / 1000.0)
+            return AddressBanInfo(
+                address: address,
+                banned: entry.banned,
+                banCount: Int(entry.ban_count),
+                bannedUntil: bannedUntil,
+                reason: reason
+            )
+        }
+    }
 }
 
 // MARK: - Helpers

@@ -1016,6 +1016,16 @@ impl IndexProperty {
     pub fn from_platform_value(
         index_property_map: &[(Value, Value)],
     ) -> Result<Self, DataContractError> {
+        // The document meta-schema enforces `minProperties: 1` /
+        // `maxProperties: 1` on each index property object, but that
+        // validation is skipped in check_tx (full_validation=false), so a
+        // crafted contract can reach this point with an empty or oversized
+        // map. Guard explicitly to avoid panicking on an out-of-bounds index.
+        if index_property_map.len() != 1 {
+            return Err(DataContractError::InvalidContractStructure(
+                "index property entry must contain exactly one key/value".to_string(),
+            ));
+        }
         let property = &index_property_map[0];
 
         let key = property
@@ -1487,6 +1497,33 @@ mod tests {
         let map = vec![(Value::Text("field".to_string()), Value::U64(1))];
         let result = IndexProperty::from_platform_value(&map);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_index_property_from_platform_value_empty_map_returns_err() {
+        // An empty index property object `{}` must not panic with an
+        // out-of-bounds index. This is reachable in check_tx, where the
+        // document meta-schema (minProperties: 1) is not enforced.
+        let result = IndexProperty::from_platform_value(&[]);
+        assert!(matches!(
+            result,
+            Err(DataContractError::InvalidContractStructure(_))
+        ));
+    }
+
+    #[test]
+    fn test_index_property_from_platform_value_multiple_entries_returns_err() {
+        // More than one key/value violates the meta-schema `maxProperties: 1`,
+        // which is also skipped in check_tx.
+        let map = vec![
+            (Value::Text("a".to_string()), Value::Text("asc".to_string())),
+            (Value::Text("b".to_string()), Value::Text("asc".to_string())),
+        ];
+        let result = IndexProperty::from_platform_value(&map);
+        assert!(matches!(
+            result,
+            Err(DataContractError::InvalidContractStructure(_))
+        ));
     }
 
     // -----------------------------------------------------------------------

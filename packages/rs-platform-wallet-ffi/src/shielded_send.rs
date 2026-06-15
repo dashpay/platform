@@ -426,10 +426,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
     map_spend_result(result, "shielded withdraw")
 }
 
-/// Map a shielded spend outcome (unshield / transfer / withdraw) to a typed
-/// FFI result, mirroring the identity-create sibling's code split so hosts
-/// can tell "definitively failed, safe to retry" from "may have executed,
-/// do NOT retry".
+/// Map a shielded operation outcome (shield / unshield / transfer /
+/// withdraw) to a typed FFI result, mirroring the identity-create sibling's
+/// code split so hosts can tell "definitively failed, safe to retry" from
+/// "may have executed, do NOT retry".
 fn map_spend_result(
     result: Result<(), PlatformWalletError>,
     operation: &str,
@@ -437,9 +437,11 @@ fn map_spend_result(
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
         // Ambiguous: the broadcast was accepted but its execution result
-        // couldn't be confirmed. The notes stay reserved wallet-side and the
-        // next nullifier sync (or an app restart) reconciles them; the typed
-        // Display already carries the operation name and guidance.
+        // couldn't be confirmed — the host must NOT re-submit. For the
+        // spend-based operations the notes stay reserved wallet-side; a
+        // shield reserves nothing. Either way the next sync (or an app
+        // restart) reconciles the outcome; the typed Display already
+        // carries the operation name and guidance.
         Err(e @ PlatformWalletError::ShieldedSpendUnconfirmed { .. }) => {
             PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
@@ -674,8 +676,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
     let mut wallet_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
 
-    let wallet = match resolve_wallet(handle, &wallet_id) {
-        Ok(w) => w,
+    // Shield writes its live activity entry to the coordinator's shared
+    // in-memory store, so resolve the coordinator alongside the wallet
+    // (same resolver the transfer / unshield / withdraw spends use).
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
         Err(result) => return result,
     };
 
@@ -704,6 +709,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
         let prover = CachedOrchardProver::new();
         wallet
             .shielded_shield_from_account(
+                &coordinator,
                 shielded_account,
                 payment_account,
                 amount,
@@ -712,13 +718,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
             )
             .await
     });
-    if let Err(e) = result {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded shield failed: {e}"),
-        );
-    }
-    PlatformWalletFFIResult::ok()
+    map_spend_result(result, "shielded shield")
 }
 
 /// Fund the shielded pool from a Core L1 asset lock, orchestrated
@@ -802,8 +802,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
         Err(result) => return result,
     };
 
-    let wallet = match resolve_wallet(handle, &wallet_id) {
-        Ok(w) => w,
+    // The Type 18 live activity recorder writes to the coordinator's
+    // shared in-memory store, so resolve the coordinator alongside the
+    // wallet.
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
         Err(result) => return result,
     };
     let network = wallet.network();
@@ -830,6 +833,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
         let prover = CachedOrchardProver::new();
         wallet
             .shielded_fund_from_asset_lock(
+                &coordinator,
                 AssetLockFunding::FromWalletBalance {
                     amount_duffs,
                     account_index,
@@ -950,8 +954,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
         vout: out_point_ffi.vout,
     };
 
-    let wallet = match resolve_wallet(handle, &wallet_id) {
-        Ok(w) => w,
+    // The Type 18 live activity recorder writes to the coordinator's
+    // shared in-memory store, so resolve the coordinator alongside the
+    // wallet.
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
         Err(result) => return result,
     };
     let network = wallet.network();
@@ -971,6 +978,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
         let prover = CachedOrchardProver::new();
         wallet
             .shielded_fund_from_asset_lock(
+                &coordinator,
                 AssetLockFunding::FromExistingAssetLock {
                     out_point: resume_outpoint,
                 },
@@ -1056,8 +1064,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_seed_pool_notes(
     let mut wallet_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
 
-    let wallet = match resolve_wallet(handle, &wallet_id) {
-        Ok(w) => w,
+    // Each seeding batch's Type 18 live activity recorder writes to the
+    // coordinator's shared in-memory store, so resolve the coordinator
+    // alongside the wallet.
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
         Err(result) => return result,
     };
     let network = wallet.network();
@@ -1107,6 +1118,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_seed_pool_notes(
 
         wallet
             .shielded_seed_pool_notes(
+                &coordinator,
                 &wallet_id,
                 account,
                 target_total_notes,
@@ -1125,32 +1137,6 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_seed_pool_notes(
             format!("shielded seed-pool-notes failed: {e}"),
         ),
     }
-}
-
-/// Resolve the wallet `Arc` for the given manager handle, or
-/// produce a `PlatformWalletFFIResult` describing why we couldn't.
-fn resolve_wallet(
-    handle: Handle,
-    wallet_id: &[u8; 32],
-) -> Result<std::sync::Arc<platform_wallet::PlatformWallet>, PlatformWalletFFIResult> {
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.get_wallet(wallet_id))
-    });
-    let inner_option = match option {
-        Some(v) => v,
-        None => {
-            return Err(PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidHandle,
-                format!("invalid manager handle: {handle}"),
-            ));
-        }
-    };
-    inner_option.ok_or_else(|| {
-        PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("wallet not found: {}", hex::encode(wallet_id)),
-        )
-    })
 }
 
 /// Resolve both the wallet `Arc` and the network-scoped shielded
