@@ -1303,6 +1303,18 @@ struct DashPayProfileEditorView: View {
         let cleanedMsg = publicMessage.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanedUrl = avatarUrl.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // Enforce the HTTPS-only rule the form promises, in code: the DIP-15
+        // avatar pipeline fetches the image to compute its integrity hashes,
+        // and a plaintext-http (or non-http scheme) URL is both a privacy
+        // leak and not reliably fetchable. Reject it here rather than relying
+        // on the helper text alone. Scheme-parse (not a prefix check) so
+        // "HTTPS://" and odd casings are handled.
+        if !cleanedUrl.isEmpty,
+           URL(string: cleanedUrl)?.scheme?.lowercased() != "https" {
+            errorMessage = "Avatar URL must be an https:// link."
+            return
+        }
+
         // Did the user set/change the avatar URL? If so we need to
         // fetch bytes so Rust can compute the DIP-15 integrity hashes.
         // On update + same URL, we skip — Rust preserves the existing

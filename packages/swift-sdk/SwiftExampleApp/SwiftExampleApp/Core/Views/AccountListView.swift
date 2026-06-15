@@ -79,7 +79,12 @@ struct AccountListView: View {
 
     var body: some View {
         ZStack {
-            if accounts.isEmpty && shieldedAccountsForThisWallet.isEmpty {
+            // Gate on `orderedAccounts` (the FILTERED list actually rendered),
+            // not the raw `accounts` query: a wallet whose only rows are
+            // DashPay friendship accounts (tags 12/13, hidden here) has a
+            // non-empty `accounts` but an empty `orderedAccounts`, which would
+            // otherwise show an empty Section instead of the empty state.
+            if orderedAccounts.isEmpty && shieldedAccountsForThisWallet.isEmpty {
                 ContentUnavailableView(
                     "No Accounts",
                     systemImage: "folder",
@@ -88,7 +93,7 @@ struct AccountListView: View {
             } else {
                 let balances = walletManager.accountBalances(for: wallet.walletId)
                 List {
-                    if !accounts.isEmpty {
+                    if !orderedAccounts.isEmpty {
                         Section {
                             ForEach(orderedAccounts) { account in
                                 NavigationLink(

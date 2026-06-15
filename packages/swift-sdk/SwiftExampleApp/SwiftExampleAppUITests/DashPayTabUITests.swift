@@ -92,7 +92,7 @@ final class DashPayTabUITests: XCTestCase {
             let refresh = app.buttons
                 .matching(identifier: Identifier.refreshButton).firstMatch
             XCTAssertTrue(
-                refresh.exists,
+                refresh.waitForExistence(timeout: 5),
                 "dashpay.refresh toolbar button must exist alongside the segment."
             )
         }
