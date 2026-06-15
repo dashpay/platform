@@ -18,7 +18,9 @@
 use std::collections::BTreeMap;
 
 use crate::changeset::merge::Merge;
-use crate::wallet::shielded::{ShieldedNote, ShieldedOutgoingNote, SubwalletId};
+use crate::wallet::shielded::{
+    ShieldedActivityEntry, ShieldedNote, ShieldedOutgoingNote, SubwalletId,
+};
 
 /// Aggregated delta of shielded state for one persister flush.
 #[derive(Debug, Clone, Default)]
@@ -41,6 +43,14 @@ pub struct ShieldedChangeSet {
     /// Latest per-subwallet `last_synced_note_index`. Last write
     /// wins on merge (sync only ever advances this monotonically).
     pub synced_indices: BTreeMap<SubwalletId, u64>,
+    /// Derived activity-log entries to persist, per subwallet. Keyed by
+    /// `(wallet_id, account_index)`; the persister upserts by
+    /// `entry.id` (sha256 of the visible output cmxs), so a `Pending`
+    /// entry's later `Confirmed`/`Failed` re-emit, or a scan-derived
+    /// `ShieldedSpend`'s later refinement, overwrites the existing row.
+    /// Defaults empty so every pre-activity flow rides the existing
+    /// changeset path unchanged.
+    pub activity_entries: BTreeMap<SubwalletId, Vec<ShieldedActivityEntry>>,
 }
 
 impl ShieldedChangeSet {
@@ -50,6 +60,7 @@ impl ShieldedChangeSet {
             && self.nullifiers_spent.is_empty()
             && self.outgoing_notes.is_empty()
             && self.synced_indices.is_empty()
+            && self.activity_entries.is_empty()
     }
 
     /// Accumulator helper: record a saved note for `id`.
@@ -65,6 +76,13 @@ impl ShieldedChangeSet {
     /// Accumulator helper: record an outgoing (sent) note for `id`.
     pub fn record_outgoing_note(&mut self, id: SubwalletId, note: ShieldedOutgoingNote) {
         self.outgoing_notes.entry(id).or_default().push(note);
+    }
+
+    /// Accumulator helper: record a derived activity entry for `id`.
+    /// The persister upserts by `entry.id`, so re-recording the same id
+    /// with a refined kind / flipped status replaces the prior row.
+    pub fn record_activity_entry(&mut self, id: SubwalletId, entry: ShieldedActivityEntry) {
+        self.activity_entries.entry(id).or_default().push(entry);
     }
 
     /// Accumulator helper: advance the per-subwallet sync watermark.
@@ -92,6 +110,7 @@ impl ShieldedChangeSet {
             nullifiers_spent,
             outgoing_notes,
             synced_indices,
+            activity_entries,
         } = self;
         let mut out: BTreeMap<crate::wallet::platform_wallet::WalletId, ShieldedChangeSet> =
             BTreeMap::new();
@@ -118,6 +137,12 @@ impl ShieldedChangeSet {
                 .or_default()
                 .synced_indices
                 .insert(id, idx);
+        }
+        for (id, entries) in activity_entries {
+            out.entry(id.wallet_id)
+                .or_default()
+                .activity_entries
+                .insert(id, entries);
         }
         // Defensive: drop empty entries so the persister doesn't
         // see noise. `split_by_wallet_id` is called on the result
@@ -147,9 +172,117 @@ impl Merge for ShieldedChangeSet {
                 *entry = idx;
             }
         }
+        // Activity entries append; the persister upserts by `entry.id`,
+        // so a later flip/refinement of the same id (appended after the
+        // original) wins at persist time without needing to dedupe here.
+        for (id, entries) in other.activity_entries {
+            self.activity_entries.entry(id).or_default().extend(entries);
+        }
     }
 
     fn is_empty(&self) -> bool {
         ShieldedChangeSet::is_empty(self)
+    }
+}
+
+#[cfg(test)]
+mod activity_changeset_tests {
+    use super::*;
+    use crate::wallet::shielded::{
+        ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
+    };
+
+    fn sub(account: u32) -> SubwalletId {
+        SubwalletId::new([0xDD; 32], account)
+    }
+
+    fn entry(id: u8, status: ShieldedActivityStatus) -> ShieldedActivityEntry {
+        ShieldedActivityEntry {
+            id: [id; 32],
+            kind: ShieldedActivityKind::Sent,
+            direction: ShieldedDirection::Out,
+            amount: 100,
+            fee: Some(1),
+            counterparty: None,
+            memo: None,
+            block_height: None,
+            status,
+            created_at_ms: 0,
+            note_cmxs: vec![[id; 32]],
+            spent_nullifiers: vec![],
+        }
+    }
+
+    /// A default `ShieldedChangeSet` (no activity) stays empty — the new
+    /// field must not perturb the old flush short-circuit.
+    #[test]
+    fn default_changeset_with_no_activity_is_empty() {
+        let cs = ShieldedChangeSet::default();
+        assert!(cs.is_empty());
+        assert!(crate::changeset::merge::Merge::is_empty(&cs));
+    }
+
+    /// Recording an activity entry makes the changeset non-empty so it
+    /// rides the existing flush.
+    #[test]
+    fn recording_activity_makes_changeset_nonempty() {
+        let mut cs = ShieldedChangeSet::default();
+        cs.record_activity_entry(sub(0), entry(1, ShieldedActivityStatus::Pending));
+        assert!(!cs.is_empty());
+        assert_eq!(cs.activity_entries.get(&sub(0)).map(|v| v.len()), Some(1));
+    }
+
+    /// Merge appends activity entries; the persister upserts by id, so a
+    /// later Confirmed re-emit of the same id appears after the Pending
+    /// one and wins at persist time.
+    #[test]
+    fn merge_appends_activity_entries_in_order() {
+        let mut a = ShieldedChangeSet::default();
+        a.record_activity_entry(sub(0), entry(7, ShieldedActivityStatus::Pending));
+        let mut b = ShieldedChangeSet::default();
+        b.record_activity_entry(sub(0), entry(7, ShieldedActivityStatus::Confirmed));
+
+        crate::changeset::merge::Merge::merge(&mut a, b);
+        let entries = a.activity_entries.get(&sub(0)).expect("entries present");
+        assert_eq!(
+            entries.len(),
+            2,
+            "merge appends both (upsert-by-id at flush)"
+        );
+        assert_eq!(entries[0].status, ShieldedActivityStatus::Pending);
+        assert_eq!(
+            entries[1].status,
+            ShieldedActivityStatus::Confirmed,
+            "the Confirmed re-emit lands after the Pending one"
+        );
+    }
+
+    /// `split_by_wallet_id` routes activity entries to the owning wallet.
+    #[test]
+    fn split_by_wallet_id_routes_activity() {
+        let wallet_a = [0x01; 32];
+        let wallet_b = [0x02; 32];
+        let mut cs = ShieldedChangeSet::default();
+        cs.record_activity_entry(
+            SubwalletId::new(wallet_a, 0),
+            entry(1, ShieldedActivityStatus::Confirmed),
+        );
+        cs.record_activity_entry(
+            SubwalletId::new(wallet_b, 0),
+            entry(2, ShieldedActivityStatus::Confirmed),
+        );
+
+        let split = cs.split_by_wallet_id();
+        assert_eq!(split.len(), 2);
+        assert!(split[&wallet_a]
+            .activity_entries
+            .contains_key(&SubwalletId::new(wallet_a, 0)));
+        assert!(split[&wallet_b]
+            .activity_entries
+            .contains_key(&SubwalletId::new(wallet_b, 0)));
+        // No cross-leakage.
+        assert!(!split[&wallet_a]
+            .activity_entries
+            .contains_key(&SubwalletId::new(wallet_b, 0)));
     }
 }

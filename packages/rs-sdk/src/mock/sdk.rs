@@ -520,9 +520,15 @@ impl MockDashPlatformSdk {
         let key = Key::new(&request);
 
         let data = match self.from_proof_expectations.get(&key) {
+            // Report the latest protocol version so the proof path's ratchet
+            // (`maybe_update_protocol_version`) fires as it would against a real
+            // network; `default()` reports 0, which the ratchet ignores.
             Some(d) => (
                 Option::<O>::mock_deserialize(self, d),
-                ResponseMetadata::default(),
+                ResponseMetadata {
+                    protocol_version: dpp::version::LATEST_VERSION,
+                    ..Default::default()
+                },
                 Proof::default(),
             ),
             None => {

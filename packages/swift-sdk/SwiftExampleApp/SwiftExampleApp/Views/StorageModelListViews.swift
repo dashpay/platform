@@ -1896,6 +1896,79 @@ struct ShieldedOutgoingNoteStorageListView: View {
     }
 }
 
+// MARK: - PersistentShieldedActivity
+
+/// Read-only browser for the derived shielded activity log the
+/// persister mirrors out of `ShieldedChangeSet::activity_entries`.
+/// Scoped by the active network via the denormalized `walletId`
+/// column — same trick `ShieldedNoteStorageListView` uses.
+struct ShieldedActivityStorageListView: View {
+    let network: Network
+
+    /// Sort by block height (newest first), then account index so rows
+    /// from the same block stay deterministic. `entryId` is `Data`
+    /// (not Comparable), so it can't be a sort key.
+    @Query(
+        sort: [
+            SortDescriptor(\PersistentShieldedActivity.blockHeight, order: .reverse),
+            SortDescriptor(\PersistentShieldedActivity.accountIndex),
+        ]
+    )
+    private var records: [PersistentShieldedActivity]
+
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+    }
+
+    private var scopedRecords: [PersistentShieldedActivity] {
+        let ids = walletIdsOnNetwork
+        return records.filter { ids.contains($0.walletId) }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List {
+            ForEach(visible) { record in
+                NavigationLink(
+                    destination: ShieldedActivityStorageDetailView(record: record)
+                ) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text("kind \(record.kindTag)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Text("status \(record.status)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            if record.hasBlockHeight {
+                                Text("h \(record.blockHeight)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                        }
+                        Text("\(record.amount) credits")
+                            .font(.caption)
+                        Text(record.entryId.prefix(8).map { String(format: "%02x", $0) }.joined())
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Shielded Activity (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView("No Activity", systemImage: "clock.arrow.circlepath")
+            }
+        }
+    }
+}
+
 // MARK: - PersistentShieldedSyncState
 
 struct ShieldedSyncStateStorageListView: View {

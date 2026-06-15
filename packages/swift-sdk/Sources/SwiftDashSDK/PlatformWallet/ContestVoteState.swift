@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 
 /// Snapshot of a DPNS contest's current vote state.
 ///
@@ -48,6 +49,33 @@ public enum ContestWinner: Sendable, Equatable {
     case wonByIdentity(Identifier)
     /// Contest resolved as locked — nobody wins.
     case locked
+}
+
+/// A masternode's vote choice on a contested resource. Matches the Rust
+/// `ResourceVoteChoice` enum and the `vote_choice` discriminant accepted by
+/// `dash_sdk_contested_resource_cast_vote`:
+/// `0` = TowardsIdentity, `1` = Abstain, `2` = Lock.
+public enum ContestedResourceVoteChoice: Sendable, Equatable {
+    /// Vote for a specific contender, identified by its base58 identity id.
+    case towardsIdentity(String)
+    /// Abstain — counts toward the abstain tally.
+    case abstain
+    /// Lock — vote that nobody should win the contested resource.
+    case lock
+
+    /// The `vote_choice` discriminant byte passed across the FFI. The
+    /// `dash_sdk_contested_resource_cast_vote` parameter is a plain `u8`, so
+    /// this is a `UInt8`. The values must agree with the
+    /// `ContestedResourceVoteChoiceFFI` enum in
+    /// `packages/rs-sdk-ffi/src/contested_resource/transitions/cast_vote.rs`:
+    /// `TowardsIdentity = 0`, `Abstain = 1`, `Lock = 2`.
+    var ffiTag: UInt8 {
+        switch self {
+        case .towardsIdentity: return 0
+        case .abstain: return 1
+        case .lock: return 2
+        }
+    }
 }
 
 // MARK: - FFI decoding
