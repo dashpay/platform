@@ -186,28 +186,8 @@ CREATE TABLE contacts (
     note TEXT,
     is_hidden INTEGER,
     accepted_accounts BLOB,
-    payment_channel_broken INTEGER,
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
     PRIMARY KEY (wallet_id, owner_id, contact_id),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
-);
-
--- Rejected-request tombstone (G5 stage 1). Keyed by
--- `(wallet_id, owner_id, sender_id, account_reference)` — NOT bare
--- sender id — so a once-rejected sender can still re-request via a
--- bumped accountReference (the DIP-15 rotation mechanism), while a
--- replay of the exact same immutable request stays suppressed. The
--- optional `document_id` records the rejected document's id for audit /
--- exact-match suppression. The sync ingest path consults this table
--- before re-ingesting a received contactRequest.
-CREATE TABLE rejected_contact_requests (
-    wallet_id BLOB NOT NULL,
-    owner_id BLOB NOT NULL,
-    sender_id BLOB NOT NULL,
-    account_reference INTEGER NOT NULL,
-    document_id BLOB,
-    rejected_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    PRIMARY KEY (wallet_id, owner_id, sender_id, account_reference),
     FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
 );
 
