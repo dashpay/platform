@@ -570,6 +570,22 @@ impl Sdk {
         self.protocol_version.load(Ordering::Relaxed)
     }
 
+    /// Returns `true` if this SDK is backed by a mock instead of a live network.
+    ///
+    /// Real (network-backed) SDKs return `false`. Used by callers (e.g. the FFI
+    /// init wiring) to skip the best-effort protocol-version refresh, which would
+    /// otherwise issue a guaranteed-failing proven query against a mock.
+    pub fn is_mock(&self) -> bool {
+        #[cfg(feature = "mocks")]
+        {
+            matches!(self.inner, SdkInstance::Mock { .. })
+        }
+        #[cfg(not(feature = "mocks"))]
+        {
+            false
+        }
+    }
+
     // TODO: Move to settings
     /// Indicate if the sdk should request and verify proofs.
     pub fn prove(&self) -> bool {

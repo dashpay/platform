@@ -30,6 +30,10 @@ pub struct DashSDKConfigExtended {
 ///
 /// Logs a warning and proceeds if the network is unreachable; never fails SDK creation.
 fn best_effort_refresh(sdk: &Sdk, runtime: &BigStackRuntime) {
+    // Mock SDKs have no live network; refreshing only logs noise.
+    if sdk.is_mock() {
+        return;
+    }
     match runtime.block_on(sdk.refresh_protocol_version()) {
         Ok(v) => debug!(protocol_version = v, "protocol version refreshed on init"),
         Err(e) => warn!(
@@ -138,9 +142,9 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
     };
 
     // Parse DAPI addresses
-    let (builder, is_real) = if config.dapi_addresses.is_null() {
+    let builder = if config.dapi_addresses.is_null() {
         // Use mock SDK if no addresses provided
-        (SdkBuilder::new_mock().with_network(network), false)
+        SdkBuilder::new_mock().with_network(network)
     } else {
         let addresses_str = match unsafe { CStr::from_ptr(config.dapi_addresses) }.to_str() {
             Ok(s) => s,
@@ -154,7 +158,7 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
 
         if addresses_str.is_empty() {
             // Use mock SDK if addresses string is empty
-            (SdkBuilder::new_mock().with_network(network), false)
+            SdkBuilder::new_mock().with_network(network)
         } else {
             // Parse the address list
             let address_list = match AddressList::from_str(addresses_str) {
@@ -167,7 +171,7 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
                 }
             };
 
-            (SdkBuilder::new(address_list).with_network(network), true)
+            SdkBuilder::new(address_list).with_network(network)
         }
     };
 
@@ -181,9 +185,7 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
 
     match sdk_result {
         Ok(sdk) => {
-            if is_real {
-                best_effort_refresh(&sdk, &runtime);
-            }
+            best_effort_refresh(&sdk, &runtime);
             // Clone Arc<Runtime> into the wrapper
             let wrapper = Box::new(SDKWrapper {
                 sdk,
@@ -229,9 +231,9 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
     };
 
     // Parse DAPI addresses
-    let (mut builder, is_real) = if base_config.dapi_addresses.is_null() {
+    let mut builder = if base_config.dapi_addresses.is_null() {
         // Use mock SDK if no addresses provided
-        (SdkBuilder::new_mock().with_network(network), false)
+        SdkBuilder::new_mock().with_network(network)
     } else {
         let addresses_str = match unsafe { CStr::from_ptr(base_config.dapi_addresses) }.to_str() {
             Ok(s) => s,
@@ -245,7 +247,7 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
 
         if addresses_str.is_empty() {
             // Use mock SDK if addresses string is empty
-            (SdkBuilder::new_mock().with_network(network), false)
+            SdkBuilder::new_mock().with_network(network)
         } else {
             // Parse the address list
             let address_list = match AddressList::from_str(addresses_str) {
@@ -258,7 +260,7 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
                 }
             };
 
-            (SdkBuilder::new(address_list).with_network(network), true)
+            SdkBuilder::new(address_list).with_network(network)
         }
     };
 
@@ -297,9 +299,7 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
 
     match sdk_result {
         Ok(sdk) => {
-            if is_real {
-                best_effort_refresh(&sdk, &runtime);
-            }
+            best_effort_refresh(&sdk, &runtime);
             let wrapper = Box::new(SDKWrapper {
                 sdk,
                 runtime,
