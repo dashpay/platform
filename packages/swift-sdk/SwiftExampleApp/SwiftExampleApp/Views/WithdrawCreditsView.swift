@@ -133,6 +133,11 @@ struct WithdrawCreditsView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled(true)
                     .disabled(isSubmitting)
+                if !trimmedAddress.isEmpty && !isValidDestinationAddress {
+                    Text("Not a valid \(identity.network.displayName) Dash address.")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
             } else {
                 Text("The wallet that owns this identity isn't loaded.")
                     .font(.subheadline)
@@ -255,7 +260,11 @@ struct WithdrawCreditsView: View {
             return nil
         }
         let credits = (dash * Double(Self.creditsPerDash)).rounded()
-        guard credits >= 1, credits <= Double(UInt64.max) else { return nil }
+        // Strict `<`: `Double(UInt64.max)` isn't exactly representable and
+        // rounds up to 2^64, so a `<=` bound would admit 2^64 and trap on
+        // the `UInt64(credits)` cast (this recomputes on every keystroke,
+        // before submit-time re-validation). `<` keeps it in range.
+        guard credits >= 1, credits < Double(UInt64.max) else { return nil }
         return UInt64(credits)
     }
 
@@ -265,8 +274,22 @@ struct WithdrawCreditsView: View {
         identity.balance < 0 ? 0 : UInt64(identity.balance)
     }
 
+    /// Local pre-validation of the destination so the submit button
+    /// doesn't light up for obviously malformed / wrong-network strings.
+    /// Uses the existing `DashAddress.parse` bridge (Base58Check + network
+    /// check in Rust); a `.core` result is a valid L1 address on this
+    /// identity's network. Authoritative validation still happens in Rust
+    /// on submit — this only tightens the UI.
+    private var isValidDestinationAddress: Bool {
+        guard !trimmedAddress.isEmpty else { return false }
+        if case .core = DashAddress.parse(trimmedAddress, network: identity.network).type {
+            return true
+        }
+        return false
+    }
+
     private var canSubmit: Bool {
-        !trimmedAddress.isEmpty
+        isValidDestinationAddress
             && managedWallet != nil
             && (parsedCredits.map { $0 > 0 && $0 <= senderBalanceCredits } ?? false)
     }
@@ -281,7 +304,7 @@ struct WithdrawCreditsView: View {
         let address = trimmedAddress
         guard
             let wallet = managedWallet,
-            !address.isEmpty,
+            isValidDestinationAddress,
             let credits = parsedCredits,
             credits > 0,
             credits <= senderBalanceCredits
