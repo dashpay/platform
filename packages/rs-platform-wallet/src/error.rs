@@ -28,6 +28,16 @@ pub enum PlatformWalletError {
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
 
+    #[error("Failed to persist state: {0}")]
+    /// A persister `store(...)` round failed. Returned (not swallowed) by
+    /// user-initiated writes whose loss leaves a silent, non-self-healing
+    /// broken state — e.g. a reject tombstone that, if not persisted, lets
+    /// the rejected contact resurrect on the next launch. The in-memory
+    /// mutation has already happened for this session; the error tells the
+    /// caller (FFI → UI) to surface the failure and retry rather than
+    /// reporting a success that didn't reach disk.
+    Persistence(String),
+
     #[error("Contact request not found: {0}")]
     ContactRequestNotFound(Identifier),
 

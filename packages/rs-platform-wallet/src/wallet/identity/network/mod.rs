@@ -46,6 +46,7 @@ pub(crate) mod sdk_writer;
 // `crate::manager::identity_sync::IdentitySyncManager`.
 mod tokens;
 
+pub use contact_info::ContactInfoPublishOutcome;
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use identity_handle::{

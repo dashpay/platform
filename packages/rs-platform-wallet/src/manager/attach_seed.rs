@@ -88,9 +88,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // recomputed id can't match. Also short-circuit the idempotent
         // case before doing any key derivation.
         let network = {
-            let wallet = wm.get_wallet(&wallet_id).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(hex::encode(wallet_id))
-            })?;
+            let wallet = wm
+                .get_wallet(&wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
             if wallet.has_seed() {
                 // Already a signing wallet (created in-session from its
                 // mnemonic, or a repeated attach). Nothing to do.
@@ -227,11 +227,8 @@ mod tests {
     ) -> WalletId {
         let seeded = Wallet::from_seed_bytes(*seed, network, WalletAccountCreationOptions::Default)
             .expect("seeded wallet");
-        let external = Wallet::new_external_signable(
-            network,
-            seeded.wallet_id,
-            seeded.accounts.clone(),
-        );
+        let external =
+            Wallet::new_external_signable(network, seeded.wallet_id, seeded.accounts.clone());
         let info = crate::wallet::platform_wallet::PlatformWalletInfo {
             core_wallet: key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::from_wallet(
                 &external, 0,
@@ -241,7 +238,8 @@ mod tests {
             tracked_asset_locks: std::collections::BTreeMap::new(),
         };
         let mut wm = manager.wallet_manager.write().await;
-        wm.insert_wallet(external, info).expect("insert external-signable")
+        wm.insert_wallet(external, info)
+            .expect("insert external-signable")
     }
 
     /// Happy path: an external-signable wallet flips to signing-capable
@@ -291,9 +289,8 @@ mod tests {
         let wallet_id = register_external_signable(&manager, network, &real_seed).await;
 
         // A different mnemonic → different network-scoped wallet id.
-        let wrong_seed = seed_for(
-            "legal winner thank year wave sausage worth useful legal winner thank yellow",
-        );
+        let wrong_seed =
+            seed_for("legal winner thank year wave sausage worth useful legal winner thank yellow");
 
         let err = manager
             .attach_wallet_seed(wallet_id, &wrong_seed)
@@ -341,8 +338,7 @@ mod tests {
         let seeded = Wallet::from_seed_bytes(seed, network, WalletAccountCreationOptions::Default)
             .expect("seeded wallet");
         let legacy_id: WalletId = [0xAB; 32];
-        let external =
-            Wallet::new_external_signable(network, legacy_id, seeded.accounts.clone());
+        let external = Wallet::new_external_signable(network, legacy_id, seeded.accounts.clone());
         {
             let info = crate::wallet::platform_wallet::PlatformWalletInfo {
                 core_wallet:
@@ -354,7 +350,8 @@ mod tests {
                 tracked_asset_locks: std::collections::BTreeMap::new(),
             };
             let mut wm = manager.wallet_manager.write().await;
-            wm.insert_wallet(external, info).expect("insert legacy external-signable");
+            wm.insert_wallet(external, info)
+                .expect("insert legacy external-signable");
         }
 
         manager
@@ -375,9 +372,8 @@ mod tests {
         let seed = seed_for(TEST_MNEMONIC);
 
         // Register a fully-seeded wallet directly.
-        let seeded =
-            Wallet::from_seed_bytes(seed, network, WalletAccountCreationOptions::Default)
-                .expect("seeded wallet");
+        let seeded = Wallet::from_seed_bytes(seed, network, WalletAccountCreationOptions::Default)
+            .expect("seeded wallet");
         let wallet_id = seeded.wallet_id;
         {
             let info = crate::wallet::platform_wallet::PlatformWalletInfo {

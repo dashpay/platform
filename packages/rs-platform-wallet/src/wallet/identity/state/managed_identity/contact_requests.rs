@@ -15,6 +15,30 @@ use crate::{ContactRequest, EstablishedContact};
 use dpp::prelude::Identifier;
 
 impl ManagedIdentity {
+    /// The masked `accountReference` of the most recent request WE sent
+    /// to `recipient`, or `None` if we've never sent one.
+    ///
+    /// Load-bearing for G3 rotation: the next request's rotation version
+    /// is derived by un-masking this prior reference and bumping it. The
+    /// prior request lives in `sent_contact_requests` while pending but is
+    /// moved into `established_contacts[..].outgoing_request` once the
+    /// contact establishes — and rotation (re-keying) happens precisely on
+    /// an established relationship. Consulting only the pending map would
+    /// return `None` for every established contact, resetting the version
+    /// to 0 and reproducing the original reference, which the contract's
+    /// `($ownerId, toUserId, accountReference)` unique index rejects. So
+    /// this checks both maps.
+    pub fn prior_sent_account_reference(&self, recipient: &Identifier) -> Option<u32> {
+        self.sent_contact_requests
+            .get(recipient)
+            .map(|r| r.account_reference)
+            .or_else(|| {
+                self.established_contacts
+                    .get(recipient)
+                    .map(|c| c.outgoing_request.account_reference)
+            })
+    }
+
     /// Add a sent contact request.
     ///
     /// If there's already an incoming request from the recipient, the
@@ -285,41 +309,64 @@ impl ManagedIdentity {
     ) -> bool {
         let owner_id = self.id();
         let sender_id = request.sender_id;
+
+        // Idempotency guard: if the incoming request already stored for
+        // this sender is byte-identical, this is a re-ingest of a doc we
+        // already applied — do NOT persist a changeset or report a re-key.
+        // The sync sweep collapses to the newest doc per sender, so this
+        // shouldn't normally fire, but the state method must be safe to
+        // call repeatedly with the same request without thrashing the
+        // persister or re-tearing-down the external account.
+        let already_applied = self
+            .established_contacts
+            .get(&sender_id)
+            .map(|c| c.incoming_request == request)
+            .or_else(|| {
+                self.incoming_contact_requests
+                    .get(&sender_id)
+                    .map(|r| *r == request)
+            })
+            .unwrap_or(false);
+        if already_applied {
+            return false;
+        }
+
         let mut cs = ContactChangeSet::default();
 
-        let rekeyed_established = if let Some(contact) = self.established_contacts.get_mut(&sender_id) {
-            tracing::info!(
-                owner = %owner_id,
-                sender = %sender_id,
-                old_reference = contact.incoming_request.account_reference,
-                new_reference = request.account_reference,
-                "Contact rotated their addresses — re-keying the established contact"
-            );
-            contact.incoming_request = request;
-            contact.payment_channel_broken = false;
-            cs.established.insert(
-                SentContactRequestKey {
-                    owner_id,
-                    recipient_id: sender_id,
-                },
-                contact.clone(),
-            );
-            true
-        } else if self.incoming_contact_requests.contains_key(&sender_id) {
-            cs.incoming_requests.insert(
-                ReceivedContactRequestKey {
-                    owner_id,
-                    sender_id,
-                },
-                ContactRequestEntry {
-                    request: request.clone(),
-                },
-            );
-            self.incoming_contact_requests.insert(sender_id, request);
-            false
-        } else {
-            return false;
-        };
+        let rekeyed_established =
+            if let Some(contact) = self.established_contacts.get_mut(&sender_id) {
+                tracing::info!(
+                    owner = %owner_id,
+                    sender = %sender_id,
+                    old_reference = contact.incoming_request.account_reference,
+                    new_reference = request.account_reference,
+                    "Contact rotated their addresses — re-keying the established contact"
+                );
+                contact.incoming_request = request;
+                contact.payment_channel_broken = false;
+                cs.established.insert(
+                    SentContactRequestKey {
+                        owner_id,
+                        recipient_id: sender_id,
+                    },
+                    contact.clone(),
+                );
+                true
+            } else if self.incoming_contact_requests.contains_key(&sender_id) {
+                cs.incoming_requests.insert(
+                    ReceivedContactRequestKey {
+                        owner_id,
+                        sender_id,
+                    },
+                    ContactRequestEntry {
+                        request: request.clone(),
+                    },
+                );
+                self.incoming_contact_requests.insert(sender_id, request);
+                false
+            } else {
+                return false;
+            };
 
         if let Err(e) = persister.store(cs.into()) {
             tracing::error!("Failed to persist changeset: {}", e);

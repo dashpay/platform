@@ -156,12 +156,16 @@ impl ManagedIdentity {
         tx_id: String,
         entry: crate::wallet::identity::PaymentEntry,
         persister: &WalletPersister,
-    ) {
+    ) -> Result<(), crate::changeset::PersistenceError> {
         self.dashpay_payments.insert(tx_id, entry);
         let cs = self.snapshot_changeset();
-        if let Err(e) = persister.store(cs.into()) {
-            tracing::error!("Failed to persist changeset: {}", e);
-        }
+        // Returns the persist result instead of swallowing it. The
+        // user-initiated send path (`send_payment`) propagates it so a
+        // failed write surfaces in the UI rather than silently dropping a
+        // Sent entry + memo that has no on-chain recovery. The self-healing
+        // sweep callers (live recorder / reconcile of Received) log and
+        // continue — the next sweep re-derives those from UTXOs.
+        persister.store(cs.into())
     }
 
     /// Get the identity ID

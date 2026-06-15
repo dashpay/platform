@@ -104,8 +104,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .public_keys()
             .iter()
             .find(|(_, k)| {
-                k.purpose() == Purpose::ENCRYPTION
-                    && k.key_type() == KeyType::ECDSA_SECP256K1
+                k.purpose() == Purpose::ENCRYPTION && k.key_type() == KeyType::ECDSA_SECP256K1
             })
             .map(|(_, k)| k.clone())
             .ok_or_else(|| {
@@ -148,6 +147,17 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         // 4. Derive the DashPay receiving xpub + ECDH private key from
         //    the wallet seed. NOTE: this step still requires the seed
         //    in-process (see CAVEAT in the docstring).
+        //
+        // CONSISTENCY INVARIANT (do not break without re-checking
+        // `calculate_account_reference`): the friendship xpub path
+        // (`DashpayReceivingFunds`) is pinned to account 0, but
+        // `calculate_account_reference` masks THIS `account_index` into the
+        // accountReference's low 28 bits. A same-seed cross-wallet recovery
+        // un-masks the reference to learn which of our accounts the xpub
+        // belongs to — so if a future change threads a non-zero index here
+        // while the path stays at account 0, the recipient would look for
+        // the wrong account (silent, no oracle). Make the path account-aware
+        // AND add a round-trip test before relaxing this.
         let account_index: u32 = 0;
         let (xpub_bytes, ecdh_private_key) = {
             let wm = self.wallet_manager.read().await;
@@ -196,10 +206,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 let wm = self.wallet_manager.read().await;
                 wm.get_wallet_info(&self.wallet_id)
                     .and_then(|info| info.identity_manager.managed_identity(sender_identity_id))
-                    .and_then(|managed| managed.sent_contact_requests.get(recipient_identity_id))
-                    .map(|prior| {
+                    // Checks both the pending sent map AND the established
+                    // contact's outgoing request — see the method doc for
+                    // why consulting only the pending map breaks rotation
+                    // on established contacts.
+                    .and_then(|managed| managed.prior_sent_account_reference(recipient_identity_id))
+                    .map(|prior_reference| {
                         crate::wallet::identity::crypto::dip14::unmask_account_reference(
-                            prior.account_reference,
+                            prior_reference,
                             &secret,
                             &xpub_bytes,
                         )
@@ -278,15 +292,25 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         // SwiftData row matches what landed on Platform — a restored
         // device comparing local rows against chain sees identity,
         // and the sent-side G13 re-ingest doesn't "upgrade" the row.
+        // Hard error rather than a zero-fill fallback: persisting a 96-byte
+        // all-zero "valid-looking" ciphertext would poison the local row
+        // (a restored device compares it to chain and mismatches; anything
+        // treating it as the contact's xpub source decrypts garbage). The
+        // broadcast already landed on-chain, so the sweep (G13) re-ingests
+        // the real document on the next pass — returning an error here is
+        // strictly safer than silently storing poison in release builds.
         let encrypted_public_key = result
             .document
             .properties()
             .get("encryptedPublicKey")
             .and_then(|v: &Value| v.to_binary_bytes().ok())
-            .unwrap_or_else(|| {
-                debug_assert!(false, "broadcast contactRequest lacks encryptedPublicKey");
-                vec![0u8; 96]
-            });
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(
+                    "broadcast contactRequest lacks a readable encryptedPublicKey; \
+                     the on-chain doc will reconcile on the next sync"
+                        .to_string(),
+                )
+            })?;
         let contact_request = ContactRequest::new(
             *sender_identity_id,
             result.recipient_id,
@@ -315,6 +339,41 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
         Ok(contact_request)
     }
+}
+
+/// Collapse a stream of parsed received contact requests to the single
+/// newest request per sender, keyed by `sender_id`.
+///
+/// "Newest" is the lexicographic max of `(created_at, account_reference)`
+/// — created_at is the primary signal (a rotation request is broadcast
+/// later), with account_reference as a deterministic tiebreak for the
+/// degenerate same-timestamp case.
+///
+/// This is the idempotency keystone of the recurring sync (G3): on-chain
+/// `contactRequest` docs are immutable and never deleted, so a sender who
+/// rotated leaves both their old and bumped-reference docs returning on
+/// every sweep. Feeding both into the ingest loop makes the stale one look
+/// like a "rotation" away from the tracked state, thrashing it back and
+/// forth each pass. Collapsing to the newest first makes the sweep a
+/// fixpoint.
+fn newest_received_per_sender(
+    requests: impl IntoIterator<Item = ContactRequest>,
+) -> std::collections::BTreeMap<Identifier, ContactRequest> {
+    let mut newest: std::collections::BTreeMap<Identifier, ContactRequest> =
+        std::collections::BTreeMap::new();
+    for req in requests {
+        let sender = req.sender_id;
+        let replace = newest
+            .get(&sender)
+            .map(|cur| {
+                (req.created_at, req.account_reference) > (cur.created_at, cur.account_reference)
+            })
+            .unwrap_or(true);
+        if replace {
+            newest.insert(sender, req);
+        }
+    }
+    newest
 }
 
 /// Select the recipient identity's key id to reference in
@@ -460,19 +519,23 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 let mut rotated_contacts: Vec<Identifier> = Vec::new();
 
                 // (1) Ingest received requests.
-                for (doc_id, maybe_doc) in received_docs.iter() {
-                    let doc = match maybe_doc {
-                        Some(d) => d,
-                        None => continue,
-                    };
-                    let sender_id = doc.owner_id();
+                //
+                // Immutable contactRequest docs are never deleted on-chain,
+                // so a sender who rotated (G3) leaves MULTIPLE docs — the old
+                // reference plus the bumped one — that ALL return on every
+                // sweep. Collapse to the single newest doc per sender BEFORE
+                // ingest (see `newest_received_per_sender`). Without this, a
+                // stale older doc is mis-read as a "rotation" away from the
+                // tracked state on every sweep, flipping the stored reference
+                // back and forth, tearing down + rebuilding the external
+                // account, and writing a changeset each pass forever.
+                let parsed_received = received_docs.iter().filter_map(|(_doc_id, maybe_doc)| {
+                    let doc = maybe_doc.as_ref()?;
+                    Self::parse_contact_request_doc(doc, doc.owner_id(), identity_id)
+                });
+                let newest_by_sender = newest_received_per_sender(parsed_received);
 
-                    let Some(contact_request) =
-                        Self::parse_contact_request_doc(doc, sender_id, identity_id)
-                    else {
-                        continue;
-                    };
-
+                for (sender_id, contact_request) in newest_by_sender {
                     // G1a: do NOT skip just because the sender is in
                     // `sent_contact_requests` — that is the reciprocal we
                     // need to let through to auto-establish. True dedup is
@@ -502,7 +565,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                             sender = %sender_id,
                             recipient = %identity_id,
                             account_reference = contact_request.account_reference,
-                            "Skipping rejected contact request (tombstoned); doc {doc_id}"
+                            "Skipping rejected contact request (tombstoned)"
                         );
                         continue;
                     }
@@ -512,9 +575,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         // established contact was re-keyed, queue the stale
                         // external account for teardown so the build sweep
                         // below re-registers it from the new xpub.
-                        if managed
-                            .apply_rotated_incoming_request(contact_request.clone(), &self.persister)
-                        {
+                        if managed.apply_rotated_incoming_request(
+                            contact_request.clone(),
+                            &self.persister,
+                        ) {
                             rotated_contacts.push(sender_id);
                         }
                         all_requests.push(contact_request);
@@ -1281,11 +1345,18 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
         // Record the tombstone (drops the incoming entry, keyed by
         // (sender, accountReference)) and persist it.
+        //
+        // PROPAGATE the store error rather than swallow it. The tombstone
+        // is local-only (there's no on-chain rejection), so if it doesn't
+        // reach disk the still-immutable on-chain request re-ingests on the
+        // next launch and the rejected contact RESURRECTS — with no signal.
+        // Returning the error surfaces the failure to the UI so the user
+        // retries, instead of a silent success that didn't take.
         let cs =
             managed.record_rejected_contact_request(contact_identity_id, account_reference, None);
-        if let Err(e) = self.persister.store(cs.into()) {
-            tracing::error!("Failed to persist reject tombstone changeset: {}", e);
-        }
+        self.persister.store(cs.into()).map_err(|e| {
+            PlatformWalletError::Persistence(format!("reject tombstone not persisted: {e}"))
+        })?;
 
         tracing::info!(
             identity = %identity_id,
@@ -1540,6 +1611,151 @@ mod sweep_tests {
             !managed.is_request_rejected(&sender_id, 1),
             "a rotated (bumped accountReference) request must NOT be suppressed"
         );
+    }
+
+    /// Build a received request with an explicit `created_at` so the
+    /// dedup tiebreak can be exercised.
+    fn test_request_at(
+        sender: u8,
+        recipient: u8,
+        account_reference: u32,
+        created_at: u64,
+    ) -> ContactRequest {
+        ContactRequest::new(
+            Identifier::from([sender; 32]),
+            Identifier::from([recipient; 32]),
+            1,
+            2,
+            account_reference,
+            vec![7u8; 96],
+            100_000,
+            created_at,
+        )
+    }
+
+    /// **P0 #2 — sweep idempotency (the multi-doc thrash fix).**
+    /// `contactRequest` docs are immutable and never deleted, so a sender
+    /// who rotated leaves BOTH their old (ref=0) and bumped (ref=7) docs
+    /// returning on every sweep. `newest_received_per_sender` must collapse
+    /// them to the single newest by (created_at, accountReference) so the
+    /// stale doc can't be re-ingested as a phantom rotation each pass.
+    ///
+    /// RED before the fix: the ingest loop processed every doc and compared
+    /// each against the single tracked reference, so the non-matching doc
+    /// flipped the stored state every sweep. GREEN: only the newest survives.
+    #[test]
+    fn newest_received_per_sender_collapses_rotated_sender_to_latest_doc() {
+        let sender = 2u8;
+        let our = 1u8;
+        // Same sender, two on-chain docs: old ref=0 @t=100, rotated ref=7 @t=200.
+        let old_doc = test_request_at(sender, our, 0, 100);
+        let rotated_doc = test_request_at(sender, our, 7, 200);
+        // A second, unrelated sender to prove per-sender keying.
+        let other = test_request_at(3, our, 0, 150);
+
+        // Feed in doc-id order (old before new — the order a BTreeMap-keyed
+        // fetch yields, NOT createdAt order) to prove ordering independence.
+        let collapsed =
+            newest_received_per_sender([old_doc.clone(), other.clone(), rotated_doc.clone()]);
+
+        assert_eq!(collapsed.len(), 2, "one entry per distinct sender");
+        let sender_id = Identifier::from([sender; 32]);
+        assert_eq!(
+            collapsed.get(&sender_id).map(|r| r.account_reference),
+            Some(7),
+            "the newest (rotated) doc must win, regardless of input order"
+        );
+        assert_eq!(
+            collapsed
+                .get(&Identifier::from([3u8; 32]))
+                .map(|r| r.account_reference),
+            Some(0),
+            "the unrelated sender is unaffected"
+        );
+
+        // And the collapse is itself a fixpoint: re-collapsing yields the same.
+        let again = newest_received_per_sender(collapsed.values().cloned());
+        assert_eq!(again.get(&sender_id).map(|r| r.account_reference), Some(7));
+    }
+
+    /// **P0 #1 — rotation version bump must read established contacts.**
+    /// The next request's rotation version is derived by un-masking the
+    /// PRIOR sent reference. Once a contact establishes, that prior request
+    /// moves out of `sent_contact_requests` into
+    /// `established_contacts[..].outgoing_request`, so a lookup that only
+    /// consults the pending map returns `None` → version resets to 0 →
+    /// reproduces the original accountReference → unique-index rejection.
+    ///
+    /// RED before the fix: `prior_sent_account_reference` consulted only
+    /// `sent_contact_requests`, returning `None` for an established contact.
+    /// GREEN: it falls back to the established outgoing request.
+    #[test]
+    fn prior_sent_account_reference_falls_back_to_established_outgoing() {
+        let our = 1u8;
+        let contact = 2u8;
+        let our_id = Identifier::from([our; 32]);
+        let contact_id = Identifier::from([contact; 32]);
+        let (_wallet, mut info) = info_with_established_contact(our, contact);
+
+        let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
+        // Precondition: the outgoing request is NOT in the pending map.
+        assert!(
+            managed.sent_contact_requests.get(&contact_id).is_none(),
+            "an established contact's outgoing request lives in established_contacts, not the pending map"
+        );
+        // The fix: the lookup still finds the prior reference via the
+        // established contact's outgoing_request (reference 0 here).
+        assert_eq!(
+            managed.prior_sent_account_reference(&contact_id),
+            Some(0),
+            "must read the established contact's outgoing accountReference, not None"
+        );
+
+        // And a pending (not-yet-established) recipient still resolves via
+        // the pending map; an unknown recipient is None.
+        let pending = Identifier::from([9u8; 32]);
+        managed.add_sent_contact_request(test_request(our, 9, 4), &noop_persister());
+        assert_eq!(managed.prior_sent_account_reference(&pending), Some(4));
+        assert_eq!(
+            managed.prior_sent_account_reference(&Identifier::from([42u8; 32])),
+            None
+        );
+    }
+
+    /// **P0 #2 defense-in-depth — `apply_rotated_incoming_request` is
+    /// idempotent.** Even if the dedup ever let a duplicate through, a
+    /// re-apply of the byte-identical request must be a no-op: no second
+    /// changeset, no re-reported re-key (which would re-tear-down the
+    /// external account).
+    #[test]
+    fn apply_rotated_incoming_request_is_idempotent() {
+        let our = 1u8;
+        let contact = 2u8;
+        let our_id = Identifier::from([our; 32]);
+        let (_wallet, mut info) = info_with_established_contact(our, contact);
+        let p = noop_persister();
+
+        let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
+        let rotated = test_request(contact, our, 7);
+
+        // First apply: real re-key (returns true — caller tears down the account).
+        assert!(
+            managed.apply_rotated_incoming_request(rotated.clone(), &p),
+            "first rotation must re-key the established contact"
+        );
+        // Second apply of the SAME request: no-op (returns false).
+        assert!(
+            !managed.apply_rotated_incoming_request(rotated.clone(), &p),
+            "re-applying an identical request must be a no-op (no re-key, no churn)"
+        );
+        let stored = info
+            .identity_manager
+            .managed_identity(&our_id)
+            .unwrap()
+            .established_contacts
+            .get(&Identifier::from([contact; 32]))
+            .unwrap();
+        assert_eq!(stored.incoming_request.account_reference, 7);
     }
 }
 

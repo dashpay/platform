@@ -25,9 +25,9 @@ pub mod types;
 // latter so `lib.rs`-level re-exports keep resolving.
 
 pub use crypto::{
-    calculate_account_reference, unmask_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
-    derive_contact_payment_addresses, derive_contact_xpub, ContactXpubData,
-    DEFAULT_CONTACT_GAP_LIMIT,
+    calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
+    derive_contact_payment_addresses, derive_contact_xpub, unmask_account_reference,
+    ContactXpubData, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use network::IdentityWallet;
 pub use state::{BlockTime, IdentityLocation, IdentityManager, ManagedIdentity, RegistrationIndex};

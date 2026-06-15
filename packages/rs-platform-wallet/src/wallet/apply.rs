@@ -1430,7 +1430,8 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a managed")
-            .record_dashpay_payment(tx_id.clone(), payment.clone(), &p);
+            .record_dashpay_payment(tx_id.clone(), payment.clone(), &p)
+            .expect("record");
 
         // Build the replay changeset from A's mutated state.
         let managed = info_a.identity_manager.managed_identity(&owner).expect("a");
@@ -1476,7 +1477,8 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a managed")
-            .record_dashpay_payment(tx_id.clone(), pending, &p);
+            .record_dashpay_payment(tx_id.clone(), pending, &p)
+            .expect("record");
         let managed = info_a.identity_manager.managed_identity(&owner).expect("a");
         let mut id_cs = IdentityChangeSet::default();
         id_cs
@@ -1493,7 +1495,8 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a managed")
-            .record_dashpay_payment(tx_id.clone(), confirmed.clone(), &p);
+            .record_dashpay_payment(tx_id.clone(), confirmed.clone(), &p)
+            .expect("record");
         let managed = info_a.identity_manager.managed_identity(&owner).expect("a");
         let mut id_cs = IdentityChangeSet::default();
         id_cs

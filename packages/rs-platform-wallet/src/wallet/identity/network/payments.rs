@@ -75,7 +75,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 amount_duffs,
                 "Recording reconciled incoming DashPay payment"
             );
-            managed.record_dashpay_payment(
+            // Self-healing path: a failed persist is re-derived from UTXOs
+            // on the next reconcile sweep, so log and continue.
+            if let Err(e) = managed.record_dashpay_payment(
                 txid,
                 crate::wallet::identity::types::dashpay::payment::PaymentEntry::new_received(
                     contact,
@@ -83,7 +85,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     None,
                 ),
                 &self.persister,
-            );
+            ) {
+                tracing::warn!(error = %e, "Failed to persist reconciled payment; will retry next sweep");
+            }
             recorded += 1;
         }
         Ok(recorded)
@@ -156,7 +160,9 @@ pub(crate) async fn record_incoming_dashpay_payments(
             amount_duffs,
             "Recording incoming DashPay payment"
         );
-        managed.record_dashpay_payment(
+        // Self-healing: a failed persist of a live-detected Received entry
+        // is re-derived from UTXOs by the next reconcile sweep.
+        if let Err(e) = managed.record_dashpay_payment(
             txid.clone(),
             crate::wallet::identity::types::dashpay::payment::PaymentEntry::new_received(
                 contact,
@@ -164,7 +170,9 @@ pub(crate) async fn record_incoming_dashpay_payments(
                 None,
             ),
             persister,
-        );
+        ) {
+            tracing::warn!(error = %e, "Failed to persist live incoming payment; will retry next sweep");
+        }
     }
 }
 
@@ -340,11 +348,18 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
                 if let Some(managed) = info.identity_manager.managed_identity_mut(from_identity_id)
                 {
-                    managed.record_dashpay_payment(
-                        txid.to_string(),
-                        entry.clone(),
-                        &self.persister,
-                    );
+                    // Propagate a persist failure: the tx is already
+                    // broadcast on-chain, but the local Sent entry + memo
+                    // has no on-chain recovery, so a silent drop would lose
+                    // the user's payment record. Surfacing it lets the UI
+                    // report the partial outcome (sent, but not recorded).
+                    managed
+                        .record_dashpay_payment(txid.to_string(), entry.clone(), &self.persister)
+                        .map_err(|e| {
+                            PlatformWalletError::Persistence(format!(
+                                "payment broadcast but not recorded locally: {e}"
+                            ))
+                        })?;
                 }
             }
         }
@@ -386,6 +401,7 @@ mod tests {
     use crate::changeset::{
         ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
     };
+    use crate::error::PlatformWalletError;
     use crate::events::{EventHandler, PlatformEventHandler};
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::WalletId;
@@ -697,11 +713,13 @@ mod tests {
                 .identity_manager
                 .managed_identity_mut(&owner)
                 .expect("managed identity");
-            managed.record_dashpay_payment(
-                txid.clone(),
-                preexisting.clone(),
-                &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
-            );
+            managed
+                .record_dashpay_payment(
+                    txid.clone(),
+                    preexisting.clone(),
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("record");
         }
 
         let recorded = iw
@@ -720,6 +738,108 @@ mod tests {
             managed.dashpay_payments.get(&txid),
             Some(&preexisting),
             "reconcile must not overwrite the pre-existing entry"
+        );
+    }
+
+    /// Persister that succeeds until `armed`, then fails every store —
+    /// lets a test build state normally, then prove a later user-initiated
+    /// write propagates a persist failure instead of swallowing it.
+    #[derive(Default)]
+    struct ToggleFailPersister {
+        armed: std::sync::atomic::AtomicBool,
+    }
+
+    impl PlatformWalletPersistence for ToggleFailPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            if self.armed.load(std::sync::atomic::Ordering::SeqCst) {
+                Err(PersistenceError::backend("store armed to fail"))
+            } else {
+                Ok(())
+            }
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// **C1 (Critical) — reject must PROPAGATE a persist failure.**
+    /// The reject tombstone is local-only (no on-chain rejection), so a
+    /// swallowed store error would resurrect the rejected contact on the
+    /// next launch with no signal. The user-initiated `reject` path must
+    /// return the error instead.
+    ///
+    /// RED before the fix: `reject_contact_request` logged the store error
+    /// and returned `Ok(())`. GREEN: it returns `Err(Persistence)`.
+    #[tokio::test]
+    async fn reject_propagates_persist_failure() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = Arc::new(ToggleFailPersister::default());
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::clone(&persister),
+            handler,
+        ));
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                mnemonic.to_seed(""),
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet creation");
+        let wallet_id = wallet.wallet_id();
+
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        // Setup (persister still succeeding): managed owner + an incoming
+        // request to reject.
+        {
+            let iw = wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            let incoming =
+                crate::wallet::identity::types::dashpay::contact_request::ContactRequest::new(
+                    contact,
+                    owner,
+                    1,
+                    2,
+                    0,
+                    vec![7u8; 96],
+                    100,
+                    0,
+                );
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .add_incoming_contact_request(incoming, &p);
+        }
+
+        // Arm the persister to fail, then reject: must return Err, NOT Ok.
+        persister
+            .armed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let iw = wallet.identity();
+        let result = iw.reject_contact_request(&owner, &contact).await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::Persistence(_))),
+            "reject must propagate a persist failure (got {result:?}), \
+             else the tombstone is lost and the contact resurrects"
         );
     }
 }
