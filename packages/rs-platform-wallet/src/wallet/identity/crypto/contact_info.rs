@@ -162,7 +162,9 @@ pub fn decode_private_data(bytes: &[u8]) -> Result<ContactInfoPrivateData, Platf
     use ciborium::Value;
 
     let value: Value = ciborium::from_reader(bytes).map_err(|e| {
-        PlatformWalletError::InvalidIdentityData(format!("contactInfo privateData is not CBOR: {e}"))
+        PlatformWalletError::InvalidIdentityData(format!(
+            "contactInfo privateData is not CBOR: {e}"
+        ))
     })?;
     let Value::Array(elements) = value else {
         return Err(PlatformWalletError::InvalidIdentityData(
@@ -254,7 +256,8 @@ mod tests {
         let keys = derive_contact_info_keys(&wallet, Network::Testnet, 0, 2, 0).expect("derive");
 
         let contact_id = [0x5Au8; 32];
-        let enc = platform_encryption::encrypt_enc_to_user_id(&keys.enc_to_user_id_key, &contact_id);
+        let enc =
+            platform_encryption::encrypt_enc_to_user_id(&keys.enc_to_user_id_key, &contact_id);
         assert_eq!(
             platform_encryption::decrypt_enc_to_user_id(&keys.enc_to_user_id_key, &enc),
             contact_id
