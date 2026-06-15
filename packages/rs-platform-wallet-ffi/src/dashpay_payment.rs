@@ -87,7 +87,11 @@ impl From<PaymentStatus> for DashpayPaymentStatusFFI {
 /// arrival, matching the Rust map. `txid` is the
 /// `dashpay_payments` map key, surfaced as a C-string.
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+// Deliberately NOT Clone/Copy: this struct owns its `txid` / `memo`
+// heap pointers (freed by `dashpay_payment_array_free`). A bitwise Copy
+// or a derived Clone would duplicate those raw pointers, so freeing both
+// the original and the copy double-frees. Build rows in place instead.
+#[derive(Debug)]
 pub struct DashpayPaymentFFI {
     /// The other identity in this payment (`counterparty_id`). Whether
     /// they are the sender or the receiver is encoded in `direction`.
