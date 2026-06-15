@@ -229,7 +229,7 @@ dedicated `encode_256`/`decode_256` paths for both xpriv and xpub
 
 `test_dashpay_vector_1..4` derive against real DashPay-shaped paths, e.g.:
 
-```
+```text
 m/9'/5'/15'/0'/0x555d…cfc3a'/0xa137…89b5'/0
 ```
 

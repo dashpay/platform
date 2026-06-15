@@ -44,7 +44,7 @@ There is **no dedicated `IdentityService`** — identity ops live on
 
 `ContentView.swift` is the root. A 5-tab `TabView` (enum `RootTab`):
 
-```
+```text
 sync · wallets · identities · contracts · settings
 ```
 

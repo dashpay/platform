@@ -21,7 +21,7 @@ Reference sources (all read on this date):
 | # | Item | Verdict |
 |---|------|---------|
 | 1 | encryptedPublicKey plaintext layout | **FAIL** — ours is a 107-byte DIP-14 serialization; spec + both reference clients use the 69-byte compact (`fingerprint(4) ‖ chainCode(32) ‖ pubKey(33)`). Our current send path cannot even produce a valid document (128-byte ciphertext vs the contract's hard 96). Our receive path rejects reference-client payloads. |
-| 2 | ECDH shared-key derivation | **PASS** — all three stacks compute libsecp256k1-style `SHA256((y[31]&0x1|0x2) ‖ x)`. |
+| 2 | ECDH shared-key derivation | **PASS** — all three stacks compute libsecp256k1-style `SHA256((y[31]&0x1\|0x2) ‖ x)`. |
 | 3 | accountReference | **PASS for cross-client interop** (recipients disregard it per DIP-15; our hardcoded 0 is harmless to mobile counterparties) — but **our compute helper is wrong on two axes** (HMAC input + ASK28 byte order) and must be fixed before we ever send real values. |
 | + | senderKeyIndex / recipientKeyIndex conventions | **Interop hazard (bonus finding)** — mobile clients reference the identity's first ECDSA key (key 0, purpose AUTHENTICATION); our stack requires purpose ENCRYPTION/DECRYPTION on both send and receive, so cross-client requests fail key validation in both directions. |
 
@@ -363,7 +363,7 @@ verification half). Data source: pshenmic platform-explorer REST API. The fronte
 bundle: **`https://testnet.platform-explorer.pshenmic.dev`** (routes in
 `pshenmic/platform-explorer` `packages/api/src/routes.js`). Endpoints used:
 
-```
+```text
 GET /dataContract/Bwr4WHCPz5rFVAD87RqTs3izo4zpzwsEdKPWUT1NS1C7/documents?document_type_name=contactRequest&limit=100&order=desc&page=N
 GET /identity/<base58 id>     # includes full publicKeys[] with purpose/securityLevel/contractBounds
 ```

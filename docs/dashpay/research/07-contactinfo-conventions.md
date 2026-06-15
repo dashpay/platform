@@ -22,7 +22,7 @@ key** (DIP-11 purpose 1); `rootEncryptionKeyIndex` is that key's id on
 the identity. Two child keys are derived from its extended form in the
 owner's HD tree (hardened CKDpriv):
 
-```
+```text
 encToUserId key:  rootEncryptionKey / 65536' / derivationEncryptionKeyIndex'   (2^16)
 privateData key:  rootEncryptionKey / 65537' / derivationEncryptionKeyIndex'   (2^16 + 1)
 ```

@@ -128,7 +128,7 @@ this with `"documentsMutable": false` semantics / no update transition.
 `autoAcceptProof` (optional, 38–102 bytes) lets a recipient pre-authorize automatic acceptance.
 DIP-0015 defines a **separate** derivation path for the auto-accept proof keys:
 
-```
+```text
 m / 9' / 5' / 16' / timestamp'
 ```
 
