@@ -770,6 +770,26 @@ impl AddressProvider for PlatformPaymentAddressProvider {
         // `on_address_found`, so this only frees stale hand-outs. The reserved
         // table is process-global and in-memory, so sweeping once per pass is
         // correct and cheap.
+        //
+        // TODO(#3770 follow-up — confirmation-driven OUTPOINT reservation reclaim):
+        // The broadcast path (core/broadcast.rs) leaks OutPoint + change-address
+        // reservations via `ReservationGuard::leak_until_sync()` when a broadcast
+        // SUCCEEDS but `check_core_transaction` returns `is_relevant == false` (or the
+        // wallet entry is missing). Those leaked OUTPOINT reservations are never
+        // reclaimed in-process today. Unlike the address-handout reservations swept
+        // here by TTL (`sweep_expired`), leaked outpoints must NOT be time-expired —
+        // releasing an outpoint whose tx is actually on the network would risk the very
+        // double-spend the leak prevents. Implement a CONFIRMATION-DRIVEN reclaim:
+        //   1. Add `Reservations::reclaim_committed(&[OutPoint])` to the generic
+        //      Reservations<K> (release exactly the passed keys).
+        //   2. From THIS same per-completed-sync hook (sync_finished), after the sync
+        //      establishes which previously-broadcast txs are now confirmed/recorded in
+        //      wallet state, collect the outpoints those txs spent and call
+        //      `OutpointReservations::reclaim_committed(confirmed_outpoints)`.
+        //   3. Criterion = "tx confirmed/recorded in wallet state", NOT elapsed time.
+        // This unifies the two reclaim disciplines (TTL for addresses, confirmation for
+        // outpoints) under one sync-pass driver. See `leak_until_sync` in
+        // core/broadcast.rs and OutpointReservations in core/reservations.rs.
         let reclaimed =
             super::address_reserve::sweep_expired(super::address_reserve::RESERVATION_TTL);
         if reclaimed > 0 {

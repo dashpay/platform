@@ -169,6 +169,9 @@ where
             leaked_reservations = reservation.reserved_count(),
             "leaking outpoint reservation: post-broadcast reconciliation failed"
         );
+        // Confirmation-driven reclaim of these leaked outpoints is the
+        // #3770 follow-up tracked at the `sweep_expired` call in
+        // platform_addresses/provider.rs `sync_finished`.
         reservation.leak_until_sync();
     }
 
