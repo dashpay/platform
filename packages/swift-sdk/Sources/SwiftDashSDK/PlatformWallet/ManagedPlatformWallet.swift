@@ -2611,23 +2611,30 @@ extension ManagedPlatformWallet {
             // `block_on_worker`, so the `withCString` scopes here are
             // sufficient — the pointers don't need to outlive the
             // call.
-            _ = signer
             var documentIdBytes = [UInt8](repeating: 0, count: 32)
 
-            let result = ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
-                    documentType.withCString { typePtr in
-                        propertiesJSON.withCString { propsPtr in
-                            documentIdBytes.withUnsafeMutableBufferPointer { outBp in
-                                platform_wallet_create_document_with_signer(
-                                    handle,
-                                    ownerBp.baseAddress!,
-                                    contractBp.baseAddress!,
-                                    typePtr,
-                                    propsPtr,
-                                    signerHandle,
-                                    outBp.baseAddress!
-                                )
+            // Pin `signer` for the whole FFI call. A bare `_ = signer` is
+            // unreliable folklore — the optimizer may elide it in -O and
+            // release the signer before Rust dereferences `signerHandle`
+            // (especially in a detached task), causing a use-after-free.
+            // `withExtendedLifetime` guarantees it, matching the other
+            // `*_with_signer` wrappers in this file.
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            propertiesJSON.withCString { propsPtr in
+                                documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                    platform_wallet_create_document_with_signer(
+                                        handle,
+                                        ownerBp.baseAddress!,
+                                        contractBp.baseAddress!,
+                                        typePtr,
+                                        propsPtr,
+                                        signerHandle,
+                                        outBp.baseAddress!
+                                    )
+                                }
                             }
                         }
                     }

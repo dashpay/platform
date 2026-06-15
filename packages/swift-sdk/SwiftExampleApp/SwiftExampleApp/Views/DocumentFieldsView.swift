@@ -79,6 +79,7 @@ struct DocumentFieldsView: View {
                     Text("")
                 }
                 .labelsHidden()
+                .accessibilityLabel(property.name)
                 .accessibilityIdentifier("createDocument.field.\(property.name)")
 
             case "array":

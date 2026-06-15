@@ -205,6 +205,9 @@ struct CreateDocumentView: View {
     @State private var submitError: SubmitError?
     @State private var didComplete = false
     @State private var createdDocumentId: String?
+    /// Set when the broadcast succeeded but writing the local SwiftData
+    /// row failed — the document is on-chain, just not cached locally yet.
+    @State private var persistWarning: String?
 
     init(presetDocumentType: PersistentDocumentType? = nil) {
         self.presetDocumentType = presetDocumentType
@@ -263,7 +266,7 @@ struct CreateDocumentView: View {
         Section("Document") {
             Picker("Contract", selection: $selectedContract) {
                 Text("Select a contract").tag(nil as PersistentDataContract?)
-                ForEach(contracts) { contract in
+                ForEach(activeContracts) { contract in
                     Text(contract.name).tag(contract as PersistentDataContract?)
                 }
             }
@@ -329,6 +332,13 @@ struct CreateDocumentView: View {
     private func schemaSection(for docType: PersistentDocumentType) -> some View {
         Section {
             DocumentFieldsView(documentType: docType, fieldValues: $fieldValues)
+                // Re-identify per document type so the field editors reset,
+                // and clear the parent values — otherwise switching type in
+                // the no-preset flow could submit the previous schema's values.
+                .id(docType.id)
+                .onChange(of: docType.id) { _, _ in
+                    fieldValues = [:]
+                }
         } header: {
             Text("Fields")
         } footer: {
@@ -376,6 +386,11 @@ struct CreateDocumentView: View {
                             .truncationMode(.middle)
                     }
                 }
+                if let warning = persistWarning {
+                    Label(warning, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
                 Button {
                     dismiss()
                 } label: {
@@ -405,6 +420,13 @@ struct CreateDocumentView: View {
     /// app actually holds (so a `KeychainSigner` exists for signing).
     private var ownerIdentities: [PersistentIdentity] {
         identities.filter { $0.network == appState.currentNetwork && $0.wallet != nil }
+    }
+
+    /// Contracts limited to the active network — pairing a current-network
+    /// owner with a contract from another network would fetch/broadcast
+    /// against the wrong SDK network.
+    private var activeContracts: [PersistentDataContract] {
+        contracts.filter { $0.network == appState.currentNetwork }
     }
 
     private var selectedOwnerIdentity: PersistentIdentity? {
@@ -445,7 +467,7 @@ struct CreateDocumentView: View {
 
         let propertiesJSON: String
         do {
-            propertiesJSON = try Self.propertiesJSON(from: fieldValues)
+            propertiesJSON = try Self.propertiesJSON(from: fieldValues, documentType: docType)
         } catch {
             submitError = .init(message: "Could not encode document fields: \(error.localizedDescription)")
             return
@@ -473,15 +495,24 @@ struct CreateDocumentView: View {
                 )
                 _ = signer
                 await MainActor.run {
-                    persistConfirmedDocument(
-                        documentId: documentId,
-                        documentType: typeName,
-                        contractId: contractId,
-                        ownerId: ownerId,
-                        propertiesJSON: propertiesJSON,
-                        network: network,
-                        parentContract: parentContract
-                    )
+                    // The broadcast is confirmed on-chain at this point.
+                    // Persisting the local cache row is best-effort: if it
+                    // fails we still report success (the document exists and
+                    // is queryable) but flag the local-save failure rather
+                    // than swallowing it.
+                    do {
+                        try persistConfirmedDocument(
+                            documentId: documentId,
+                            documentType: typeName,
+                            contractId: contractId,
+                            ownerId: ownerId,
+                            propertiesJSON: propertiesJSON,
+                            network: network,
+                            parentContract: parentContract
+                        )
+                    } catch {
+                        self.persistWarning = "Broadcast confirmed, but saving the local copy failed: \(error.localizedDescription). The document is on-chain and queryable."
+                    }
                     self.createdDocumentId = documentId.toBase58String()
                     self.isSubmitting = false
                     self.didComplete = true
@@ -506,7 +537,7 @@ struct CreateDocumentView: View {
         propertiesJSON: String,
         network: Network,
         parentContract: PersistentDataContract?
-    ) {
+    ) throws {
         let dataBlob = propertiesJSON.data(using: .utf8) ?? Data()
         let document = PersistentDocument(
             documentId: documentId.toBase58String(),
@@ -522,7 +553,7 @@ struct CreateDocumentView: View {
         document.dataContract = parentContract
         modelContext.insert(document)
         document.linkToLocalIdentityIfNeeded(in: modelContext)
-        try? modelContext.save()
+        try modelContext.save()
     }
 
     // MARK: - Properties JSON
@@ -531,13 +562,28 @@ struct CreateDocumentView: View {
     /// Rust side can parse. `Data` values (byte arrays + identifiers)
     /// are encoded as hex strings — the schema-driven sanitize step in
     /// `create_document_with_signer` decodes hex/base64 byte arrays and
-    /// hex/base58 identifiers back to native values. Other values are
-    /// JSON-native and pass through unchanged.
-    static func propertiesJSON(from fieldValues: [String: Any]) throws -> String {
+    /// hex/base58 identifiers back to native values. `object`-typed
+    /// fields arrive as the editor's raw JSON `String`; they are parsed
+    /// back into a nested object so they serialize as objects, not as a
+    /// JSON string. Other values are JSON-native and pass through.
+    static func propertiesJSON(
+        from fieldValues: [String: Any],
+        documentType: PersistentDocumentType
+    ) throws -> String {
+        let objectFields = Set(
+            documentType.propertiesList?
+                .filter { $0.type == "object" }
+                .map(\.name) ?? []
+        )
         var jsonObject: [String: Any] = [:]
         for (key, value) in fieldValues {
             if let data = value as? Data {
                 jsonObject[key] = data.toHexString()
+            } else if objectFields.contains(key), let text = value as? String {
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty, let objData = trimmed.data(using: .utf8) else { continue }
+                // Throws on invalid JSON → surfaced as an encode error.
+                jsonObject[key] = try JSONSerialization.jsonObject(with: objData)
             } else {
                 jsonObject[key] = value
             }
