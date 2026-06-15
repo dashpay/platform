@@ -2559,6 +2559,86 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Create + broadcast a new revision-1 document on `contractId`'s
+    /// `documentType`, owned by `ownerIdentityId`. Returns the 32-byte
+    /// document id once Platform confirms the transition.
+    ///
+    /// Routes through `IdentityWallet::create_document_with_signer`
+    /// (via `platform_wallet_create_document_with_signer`), the
+    /// production document-create path. The Rust side fetches the
+    /// on-chain contract, builds the document from `propertiesJSON`,
+    /// selects an AUTHENTICATION + ECDSA key whose security level
+    /// satisfies the document type's requirement, broadcasts on the
+    /// platform-wallet 8 MB worker stack, and waits for confirmation.
+    /// This deliberately does NOT use the rs-sdk-ffi test-signer
+    /// builder path (`dash_sdk_document_create` /
+    /// `dash_sdk_document_put_to_platform_and_wait`): per
+    /// `swift-sdk/CLAUDE.md`, the state-transition flow lives in the
+    /// `platform-wallet` library and the signing key never crosses
+    /// into Swift logic.
+    ///
+    /// `propertiesJSON` is a JSON object keyed by property name.
+    /// Byte-array fields must be encoded as hex strings and identifier
+    /// fields as base58 strings (the Rust schema-driven sanitize step
+    /// converts them to native bytes / identifiers). Pass `"{}"` for a
+    /// document type with no required properties.
+    ///
+    /// Lifetime contract: the `signer` instance MUST stay alive for
+    /// the duration of the `await` (Rust holds a `passUnretained`
+    /// ctx pointer to the underlying `KeychainSigner`). A
+    /// `_ = signer` keepalive at the call site is the canonical way
+    /// to pin it.
+    public func createDocument(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        propertiesJSON: String,
+        signer: KeychainSigner
+    ) async throws -> Identifier {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            // Pin every borrowed payload across the FFI call: the
+            // owner-id + contract-id bytes, the document-type name,
+            // and the properties JSON. Rust dereferences the
+            // C-string pointers synchronously inside
+            // `block_on_worker`, so the `withCString` scopes here are
+            // sufficient — the pointers don't need to outlive the
+            // call.
+            _ = signer
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+
+            let result = ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                    documentType.withCString { typePtr in
+                        propertiesJSON.withCString { propsPtr in
+                            documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                platform_wallet_create_document_with_signer(
+                                    handle,
+                                    ownerBp.baseAddress!,
+                                    contractBp.baseAddress!,
+                                    typePtr,
+                                    propsPtr,
+                                    signerHandle,
+                                    outBp.baseAddress!
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            return Data(documentIdBytes)
+        }.value
+    }
+
     /// Run `body` with a NUL-terminated C string for `value`, or
     /// `nil` when `value` is nil. Mirrors the `withCString`
     /// pattern but terminates the chain when the optional is

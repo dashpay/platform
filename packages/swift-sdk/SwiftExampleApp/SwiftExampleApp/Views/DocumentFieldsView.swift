@@ -56,6 +56,7 @@ struct DocumentFieldsView: View {
                     TextField("Base58 identifier", text: binding(for: property.name, in: $textFields))
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                         .font(.system(.body, design: .monospaced))
+                        .accessibilityIdentifier("createDocument.field.\(property.name)")
                     Text("Enter a valid base58 identifier (e.g., 4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF)")
                         .font(.caption2)
                         .foregroundColor(.secondary)
@@ -65,17 +66,20 @@ struct DocumentFieldsView: View {
             case "string":
                 TextField(placeholderText(for: property), text: binding(for: property.name, in: $textFields))
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .accessibilityIdentifier("createDocument.field.\(property.name)")
 
             case "number", "integer":
                 TextField(placeholderText(for: property), text: binding(for: property.name, in: $numberFields))
                     .keyboardType(.numberPad)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .accessibilityIdentifier("createDocument.field.\(property.name)")
 
             case "boolean":
                 Toggle(isOn: binding(for: property.name, in: $boolFields)) {
                     Text("")
                 }
                 .labelsHidden()
+                .accessibilityIdentifier("createDocument.field.\(property.name)")
 
             case "array":
                 if property.byteArray {
@@ -86,6 +90,7 @@ struct DocumentFieldsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         TextField("Enter comma-separated values", text: binding(for: property.name, in: $arrayFields))
                             .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .accessibilityIdentifier("createDocument.field.\(property.name)")
                         Text("Separate multiple values with commas")
                             .font(.caption2)
                             .foregroundColor(.secondary)
@@ -100,10 +105,12 @@ struct DocumentFieldsView: View {
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
+                    .accessibilityIdentifier("createDocument.field.\(property.name)")
 
                 default:
                     TextField("Enter \(property.name)", text: binding(for: property.name, in: $textFields))
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .accessibilityIdentifier("createDocument.field.\(property.name)")
                 }
             }
 
@@ -268,6 +275,7 @@ extension DocumentFieldsView {
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
+                    .accessibilityIdentifier("createDocument.field.\(property.name)")
                     .onChange(of: currentValue) { _, newValue in
                         // Remove any non-hex characters and convert to lowercase
                         let cleaned = newValue.lowercased().filter { "0123456789abcdef".contains($0) }
