@@ -1922,6 +1922,104 @@ struct ShieldedOutgoingNoteStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentShieldedActivity
+
+struct ShieldedActivityStorageDetailView: View {
+    let record: PersistentShieldedActivity
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Account Index", value: "\(record.accountIndex)")
+                FieldRow(label: "Entry ID", value: hexString(record.entryId))
+            }
+            Section("Classification") {
+                FieldRow(label: "Kind Tag", value: kindDisplay(record.kindTag))
+                FieldRow(label: "Direction", value: directionDisplay(record.direction))
+                FieldRow(label: "Status", value: statusDisplay(record.status))
+            }
+            Section("Amounts") {
+                FieldRow(label: "Amount", value: "\(record.amount) credits")
+                FieldRow(
+                    label: "Fee",
+                    value: record.hasFee ? "\(record.fee) credits" : "(unknown)"
+                )
+                FieldRow(
+                    label: "Block Height",
+                    value: record.hasBlockHeight ? "\(record.blockHeight)" : "(pending)"
+                )
+            }
+            Section("Linkage") {
+                if !record.identityId.isEmpty {
+                    FieldRow(label: "Identity ID", value: hexString(record.identityId))
+                }
+                if !record.counterparty.isEmpty {
+                    FieldRow(label: "Counterparty", value: hexString(record.counterparty))
+                }
+                FieldRow(label: "Note cmxs", value: "\(record.noteCmxs.count / 32)")
+                FieldRow(label: "Spent Nullifiers", value: "\(record.spentNullifiers.count / 32)")
+            }
+            Section("Memo") {
+                if record.memo.isEmpty {
+                    Text("(empty)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text(hexString(record.memo))
+                        .font(.system(.caption2, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created (ms)", value: "\(record.createdAtMs)")
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Shielded Activity")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func kindDisplay(_ tag: Int) -> String {
+        let name: String
+        switch tag {
+        case 0: name = "Shield"
+        case 1: name = "ShieldFromAssetLock"
+        case 2: name = "Received"
+        case 3: name = "Sent"
+        case 4: name = "Unshield"
+        case 5: name = "Withdrawal"
+        case 6: name = "IdentityCreate"
+        case 7: name = "ShieldedSpend"
+        default: return "Unknown(\(tag))"
+        }
+        return "\(name) (\(tag))"
+    }
+
+    private func directionDisplay(_ raw: Int) -> String {
+        let name: String
+        switch raw {
+        case 0: name = "In"
+        case 1: name = "Out"
+        case 2: name = "Self"
+        default: return "Unknown(\(raw))"
+        }
+        return "\(name) (\(raw))"
+    }
+
+    private func statusDisplay(_ raw: Int) -> String {
+        let name: String
+        switch raw {
+        case 0: name = "Pending"
+        case 1: name = "Confirmed"
+        case 2: name = "Failed"
+        default: return "Unknown(\(raw))"
+        }
+        return "\(name) (\(raw))"
+    }
+}
+
 // MARK: - PersistentShieldedSyncState
 
 struct ShieldedSyncStateStorageDetailView: View {

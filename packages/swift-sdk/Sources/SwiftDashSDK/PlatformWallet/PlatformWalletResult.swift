@@ -31,12 +31,13 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// the derived id into `outIdentityId` on this code, so the caller can
     /// hold the slot rather than treat the registration as failed.
     case errorShieldedBroadcastUnconfirmed = 17
-    /// A shielded spend (unshield / transfer / withdrawal) was accepted by
-    /// the relay but its execution result could not be confirmed. The spend
-    /// may have executed on chain and the wallet keeps the notes reserved
-    /// until the next sync (or app restart) reconciles them. Do NOT
-    /// auto-retry — a retry would select different notes and could
-    /// double-send if the original spend landed.
+    /// A shielded operation (shield / unshield / transfer / withdrawal) was
+    /// accepted by the relay but its execution result could not be
+    /// confirmed. It may have executed on chain; for the spend-based
+    /// operations the wallet keeps the notes reserved (a shield reserves
+    /// nothing) until the next sync (or app restart) reconciles the
+    /// outcome. Do NOT auto-retry — a retry would rebuild the bundle and
+    /// could double-execute if the original landed.
     case errorShieldedSpendUnconfirmed = 18
     case notFound = 98
     case errorUnknown = 99
@@ -170,10 +171,11 @@ public enum PlatformWalletError: LocalizedError {
     /// `outIdentityId`) before falling back to this error — see
     /// `ShieldedIdentityCreateUnconfirmedError`.
     case shieldedBroadcastUnconfirmed(String)
-    /// A shielded spend (unshield / transfer / withdrawal) was accepted by
-    /// the relay but its execution result could not be confirmed. The spend
-    /// may have executed; the notes stay reserved wallet-side until the next
-    /// sync reconciles them. Do NOT auto-retry.
+    /// A shielded operation (shield / unshield / transfer / withdrawal)
+    /// was accepted by the relay but its execution result could not be
+    /// confirmed. It may have executed; spend-based operations keep their
+    /// notes reserved wallet-side (a shield reserves nothing) until the
+    /// next sync reconciles the outcome. Do NOT auto-retry.
     case shieldedSpendUnconfirmed(String)
     case notFound(String)
     case unknown(String)

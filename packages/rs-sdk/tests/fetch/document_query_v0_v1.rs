@@ -17,17 +17,17 @@
 //! - Dispatch by SDK version: a `DocumentQuery` whose
 //!   `protocol_version_override` field points at a V0 PlatformVersion
 //!   round-trips through `TryFrom` as V0; default falls back to V1.
-//! - `SdkBuilder::with_initial_version` semantics: builder seeds the
-//!   per-instance protocol_version atomic to the requested value
-//!   without flipping `version_explicit`, so auto-detect remains
-//!   active and `maybe_update_protocol_version` can still ratchet
-//!   upward via `fetch_max`.
+//!
+//! Builder seeding semantics (auto-detect default vs. the internal
+//! `with_initial_version` seed) are covered by the in-crate unit tests in
+//! `dash_sdk::sdk`.
 
 use std::sync::Arc;
 
 use super::common::{mock_data_contract, mock_document_type};
 use dapi_grpc::platform::v0::get_documents_request::Version as ReqVersion;
 use dapi_grpc::platform::v0::GetDocumentsRequest;
+use dash_sdk::sdk::DEFAULT_INITIAL_PROTOCOL_VERSION;
 use dash_sdk::{platform::documents::document_query::DocumentQuery, Error as SdkError, SdkBuilder};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::Value;
@@ -219,35 +219,14 @@ fn encoder_dispatches_v0_via_query_settings_without_sdk() {
 }
 
 #[test]
-fn sdk_builder_with_initial_version_seeds_atomic_without_pinning() {
-    // Auto-detect default: the atomic seeds to `self.version` (which
-    // defaults to `latest()`). `version()` therefore returns `latest()`
-    // until the first response ratchets the atomic upward.
+fn sdk_builder_default_seeds_atomic_to_floor() {
+    // Auto-detect default: the atomic seeds to the floor
+    // `DEFAULT_INITIAL_PROTOCOL_VERSION`, which `version()` returns until the
+    // first response ratchets it upward.
     let sdk_default = SdkBuilder::new_mock().build().expect("mock sdk");
     assert_eq!(
         sdk_default.version().protocol_version,
-        PlatformVersion::latest().protocol_version
-    );
-
-    // `with_initial_version` seeds the atomic to the requested PV's
-    // protocol_version. Auto-detect REMAINS on (this is the contract
-    // distinguishing it from `with_version`): a future
-    // `maybe_update_protocol_version(higher)` call would ratchet
-    // upward via `fetch_max`.
-    let pv_first = PlatformVersion::get(1).expect("v1 is always known");
-    let sdk_initial = SdkBuilder::new_mock()
-        .with_initial_version(pv_first)
-        .build()
-        .expect("mock sdk with initial version");
-    assert_eq!(
-        sdk_initial.protocol_version_number(),
-        pv_first.protocol_version
-    );
-    // `version()` reflects the seeded value — no auto-detect bump
-    // has occurred yet (no network responses parsed).
-    assert_eq!(
-        sdk_initial.version().protocol_version,
-        pv_first.protocol_version
+        DEFAULT_INITIAL_PROTOCOL_VERSION
     );
 }
 
@@ -277,10 +256,10 @@ fn protocol_version_for_v3_1_dev_keeps_document_query_v1() {
     assert_eq!(pv.drive_abci.query.document_query.max_version, 1);
 }
 
-/// Wallet-team end-to-end shape: an SDK built with
-/// `with_initial_version(PROTOCOL_VERSION_11)` (Dash Platform v3.0) must
-/// dispatch to the V0 encoder — proving the full plumbing works
-/// without monkey-patching `PlatformVersion::latest()` clones.
+/// Wallet-team end-to-end shape: a query whose `QuerySettings.protocol_version`
+/// is `PROTOCOL_VERSION_11` (Dash Platform v3.0) must dispatch to the V0 encoder —
+/// proving the full plumbing works without monkey-patching
+/// `PlatformVersion::latest()` clones.
 #[test]
 fn document_query_dispatches_v0_when_sdk_initial_version_is_v3_0_pv() {
     use dash_sdk::platform::{Query, QuerySettings};

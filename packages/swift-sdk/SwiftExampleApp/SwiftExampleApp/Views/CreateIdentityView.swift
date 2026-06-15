@@ -58,11 +58,16 @@ struct CreateIdentityView: View {
     /// offered when its `boundWalletId` matches the selected wallet.
     @EnvironmentObject var shieldedService: ShieldedService
 
-    /// Default number of Platform identity authentication keys to
-    /// register in this first-pass flow. First key is MASTER, the
-    /// rest are HIGH. Advanced override is intentionally not exposed
-    /// here yet.
-    private static let defaultKeyCount: UInt32 = 3
+    /// Default number of Platform identity keys to register in this
+    /// first-pass flow. The Rust-owned per-slot policy
+    /// (`dash_sdk_derive_and_persist_identity_keys`) maps these to:
+    /// key 0 AUTHENTICATION/MASTER, key 1 AUTHENTICATION/CRITICAL,
+    /// key 2 AUTHENTICATION/HIGH, key 3 TRANSFER/CRITICAL. The
+    /// TRANSFER/CRITICAL key is required to sign IdentityCreditTransfer
+    /// (ID-04) and IdentityCreditWithdrawal (ID-10) — without it those
+    /// broadcasts are rejected on-chain with "no transfer public key".
+    /// Advanced override is intentionally not exposed here yet.
+    private static let defaultKeyCount: UInt32 = 4
 
     /// Number of extra keys added when `addDashPayKeys` is on
     /// (encryption + decryption).
@@ -124,8 +129,8 @@ struct CreateIdentityView: View {
     /// in `rs-platform-version`:
     ///   identity_create_base_cost (2_000_000 credits)
     ///   + asset_lock_base (200_000 duffs * 1000 credits/duff = 200_000_000)
-    ///   + identity_key_in_creation_cost (6_500_000) * defaultKeyCount (3)
-    ///   = 221_500_000 credits / 1000 = 221_500 duffs (0.002215 DASH).
+    ///   + identity_key_in_creation_cost (6_500_000) * defaultKeyCount (4)
+    ///   = 228_000_000 credits / 1000 = 228_000 duffs (0.002280 DASH).
     /// The v0 floor was 200_000 duffs but with key_in_creation_cost
     /// dynamic at v1, the per-key surcharge has to be added. Submitting
     /// below this gets rejected by Platform with
@@ -133,7 +138,7 @@ struct CreateIdentityView: View {
     /// `minFundingDuffs(forKeyCount:)` for the active per-flow value
     /// when extra keys (e.g. the DashPay encryption/decryption pair)
     /// bump the per-key surcharge.
-    private static let minIdentityFundingDuffsForDefaultKeys: UInt64 = 221_500
+    private static let minIdentityFundingDuffsForDefaultKeys: UInt64 = 228_000
 
     /// Recompute the minimum-funding floor for `keyCount` total
     /// identity keys. Formula above; result is in duffs (credits ÷ 1000).

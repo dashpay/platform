@@ -11,6 +11,7 @@ use std::ffi::CStr;
 use std::str::FromStr;
 
 use crate::context_provider::{ContextProviderHandle, ContextProviderWrapper, CoreSDKHandle};
+use crate::runtime::BigStackRuntime;
 use crate::types::{DashSDKConfig, FFINetwork, Network, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
@@ -41,7 +42,7 @@ fn apply_version(builder: SdkBuilder, platform_version: u32) -> Result<SdkBuilde
 /// Internal SDK wrapper
 pub(crate) struct SDKWrapper {
     pub sdk: Sdk,
-    pub runtime: Arc<Runtime>,
+    pub runtime: Arc<BigStackRuntime>,
     pub trusted_provider: Option<Arc<rs_sdk_trusted_context_provider::TrustedHttpContextProvider>>,
 }
 
@@ -49,7 +50,7 @@ impl SDKWrapper {
     fn new(sdk: Sdk, runtime: Runtime) -> Self {
         SDKWrapper {
             sdk,
-            runtime: Arc::new(runtime),
+            runtime: Arc::new(BigStackRuntime::new(runtime)),
             trusted_provider: None,
         }
     }
@@ -62,7 +63,7 @@ impl SDKWrapper {
     ) -> Self {
         SDKWrapper {
             sdk,
-            runtime: Arc::new(runtime),
+            runtime: Arc::new(BigStackRuntime::new(runtime)),
             trusted_provider: Some(provider),
         }
     }
@@ -83,25 +84,14 @@ impl SDKWrapper {
 }
 
 // Shared Tokio runtime to avoid exhausting file descriptors when creating many SDK instances
-static RUNTIME: OnceLock<Arc<Runtime>> = OnceLock::new();
+static RUNTIME: OnceLock<Arc<BigStackRuntime>> = OnceLock::new();
 
-fn init_or_get_runtime() -> Result<Arc<Runtime>, String> {
+fn init_or_get_runtime() -> Result<Arc<BigStackRuntime>, String> {
     if let Some(rt) = RUNTIME.get() {
         return Ok(rt.clone());
     }
-    let mut builder = tokio::runtime::Builder::new_multi_thread();
-    builder.thread_name("dash-sdk-worker");
-    builder.worker_threads(1); // Reduce threads for mobile
-    // GroveDB document-query proof verification recurses deeply
-    // (`verify_layer_proof_v1` → merk decode); tokio's default 2 MiB
-    // worker stack overflows on real devnet/testnet proofs (SIGBUS on
-    // the stack guard, observed on-device 2026-06-12). Match
-    // platform-wallet-ffi's `WORKER_STACK_BYTES` convention.
-    builder.thread_stack_size(8 * 1024 * 1024);
-    builder.enable_all();
-    let rt = builder
-        .build()
-        .map_err(|e| format!("Failed to create runtime: {}", e))?;
+    let rt =
+        BigStackRuntime::build_shared().map_err(|e| format!("Failed to create runtime: {}", e))?;
     let arc = Arc::new(rt);
     let _ = RUNTIME.set(arc.clone());
     Ok(arc)

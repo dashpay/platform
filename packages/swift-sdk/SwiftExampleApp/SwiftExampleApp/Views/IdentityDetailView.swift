@@ -82,6 +82,11 @@ struct IdentityDetailView: View {
     /// itself owns wallet / account / amount selection.
     @State private var showingTopUp = false
 
+    /// Drives presentation of `TransferCreditsView`. Tapped from the
+    /// "Transfer Credits" button next to "Top Up Balance" — the flow
+    /// owns recipient + amount selection and signs via the Keychain.
+    @State private var showingTransferCredits = false
+
     var body: some View {
         if let identity = identity {
             List {
@@ -154,6 +159,23 @@ struct IdentityDetailView: View {
                     } label: {
                         HStack {
                             Label("Top Up Balance", systemImage: "plus.circle")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    // Credit-to-credit transfer to another identity.
+                    // Same gating as Top Up: on-chain identity backed
+                    // by a loaded wallet so the signer can derive the
+                    // state-transition key.
+                    Button {
+                        showingTransferCredits = true
+                    } label: {
+                        HStack {
+                            Label("Transfer Credits", systemImage: "arrow.left.arrow.right.circle")
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .foregroundColor(.secondary)
@@ -412,6 +434,10 @@ struct IdentityDetailView: View {
         }
         .sheet(isPresented: $showingTopUp) {
             TopUpIdentityView(identity: identity)
+                .environmentObject(walletManager)
+        }
+        .sheet(isPresented: $showingTransferCredits) {
+            TransferCreditsView(identity: identity)
                 .environmentObject(walletManager)
         }
         .onAppear {

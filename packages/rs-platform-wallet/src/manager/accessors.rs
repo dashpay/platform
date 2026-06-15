@@ -202,10 +202,53 @@ pub struct WalletIdentityRowSnapshot {
     pub identity_id: [u8; 32],
 }
 
+/// One row of the DAPI address ban-list snapshot, returned from
+/// [`PlatformWalletManager::address_ban_info_blocking`].
+///
+/// A platform-wallet-owned mirror of the SDK's `AddressBanInfo` with
+/// `banned_until` already projected to a millisecond Unix timestamp so
+/// the FFI layer can marshal it without depending on `chrono`.
+#[derive(Debug, Clone)]
+pub struct AddressBanInfoSnapshot {
+    /// The DAPI node URI.
+    pub uri: String,
+    /// Whether the address is currently effectively banned (banned at
+    /// least once and the ban period has not yet expired).
+    pub banned: bool,
+    /// Total number of times the address has been banned.
+    pub ban_count: usize,
+    /// Unix-epoch millisecond timestamp until which the address is
+    /// banned, or `None` if there is no active ban window.
+    pub banned_until_ms: Option<i64>,
+    /// Human-readable reason for the most recent ban, if recorded.
+    pub reason: Option<String>,
+}
+
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// The SDK instance.
     pub fn sdk(&self) -> &dash_sdk::Sdk {
         &self.sdk
+    }
+
+    /// Snapshot of every DAPI address' ban state, including the reason
+    /// each address was banned (when recorded).
+    ///
+    /// Delegates to the SDK's `address_ban_info`, projecting the
+    /// `chrono` timestamp into a Unix-epoch millisecond `i64` so the
+    /// FFI layer can marshal it without a `chrono` dependency. This is
+    /// a pure read — no async, no lock contention on the wallet manager.
+    pub fn address_ban_info_blocking(&self) -> Vec<AddressBanInfoSnapshot> {
+        self.sdk
+            .address_ban_info()
+            .into_iter()
+            .map(|info| AddressBanInfoSnapshot {
+                uri: info.uri,
+                banned: info.banned,
+                ban_count: info.ban_count,
+                banned_until_ms: info.banned_until.map(|t| t.timestamp_millis()),
+                reason: info.reason,
+            })
+            .collect()
     }
 
     /// Access the SPV runtime for sync control.

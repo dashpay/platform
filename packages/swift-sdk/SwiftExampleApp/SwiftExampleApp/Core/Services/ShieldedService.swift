@@ -620,6 +620,7 @@ class ShieldedService: ObservableObject {
             try modelContext.delete(model: PersistentShieldedNote.self)
             try modelContext.delete(model: PersistentShieldedOutgoingNote.self)
             try modelContext.delete(model: PersistentShieldedSyncState.self)
+            try modelContext.delete(model: PersistentShieldedActivity.self)
             try modelContext.save()
         } catch {
             lastError = "Failed to wipe persisted shielded state: \(error.localizedDescription)"
