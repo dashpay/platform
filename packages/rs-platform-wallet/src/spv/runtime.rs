@@ -3,6 +3,7 @@
 use std::sync::{Arc, Mutex as StdMutex};
 
 use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use dashcore::sml::llmq_type::LLMQType;
@@ -37,6 +38,9 @@ pub struct SpvRuntime {
     /// [`spawn_in_background`]. [`stop`] fires this token and joins
     /// on the client shutdown.
     background_cancel: StdMutex<Option<CancellationToken>>,
+    /// JoinHandle for the background task spawned by [`spawn_in_background`].
+    /// [`stop`] joins it with a 15s timeout and aborts if it stalls.
+    task: StdMutex<Option<JoinHandle<()>>>,
     /// Per-field overrides for the devnet genesis header pre-seeded
     /// into SPV storage on [`start`]. Empty = use the `dashcore`
     /// built-in (the standard / porter devnet genesis). Only consulted
@@ -60,6 +64,7 @@ impl SpvRuntime {
             wallet_manager,
             client: RwLock::new(None),
             background_cancel: StdMutex::new(None),
+            task: StdMutex::new(None),
             devnet_genesis: StdMutex::new(DevnetGenesisOverride::default()),
             terminal_height: StdMutex::new(None),
         }
@@ -330,10 +335,10 @@ impl SpvRuntime {
         }
     }
 
-    /// Stop SPV sync gracefully.
+    /// Stop SPV sync gracefully. Unlocks the data dir safely.
     ///
     /// If a `run()` task was spawned via [`spawn_in_background`], its
-    /// cancel token is fired here too so the background task exits.
+    /// cancel token is fired and the handle is joined with a 15s timeout.
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
         if let Some(token) = self
             .background_cancel
@@ -343,34 +348,58 @@ impl SpvRuntime {
         {
             token.cancel();
         }
-        let mut client = self.client.write().await;
-        if let Some(c) = client.take() {
-            c.stop()
+
+        let taken = {
+            let mut client = self.client.write().await;
+            client.take()
+        };
+
+        let stop_result = match taken {
+            Some(c) => c
+                .stop()
                 .await
-                .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+                .map_err(|e| PlatformWalletError::SpvError(e.to_string())),
+            None => Ok(()),
+        };
+
+        let handle = self.task.lock().expect("spv task mutex poisoned").take();
+        if let Some(handle) = handle {
+            let abort = handle.abort_handle();
+            if tokio::time::timeout(std::time::Duration::from_secs(15), handle)
+                .await
+                .is_err()
+            {
+                tracing::warn!(
+                    "SPV stop: background run loop did not unwind within 15s; aborting it"
+                );
+                abort.abort();
+            }
         }
-        Ok(())
+
+        stop_result
     }
 
     /// Spawn `run()` on the current tokio runtime and return immediately.
     ///
-    /// The returned cancel token is stashed internally; calling [`stop`]
-    /// (or [`cancel_background`]) fires it so the spawned task can
-    /// observe shutdown and tear down its dash-spv data-dir lock.
-    /// Replacing an already-running background task cancels the
-    /// previous one first.
+    /// The cancel token is stashed internally; calling [`stop`] (or
+    /// [`cancel_background`]) fires it so the spawned task observes
+    /// shutdown. Replacing an already-running background task cancels
+    /// the previous one first.
     pub fn spawn_in_background(self: &Arc<Self>, config: ClientConfig) {
         // Cancel any previous run.
-        let mut guard = self.background_cancel.lock().expect("bg_cancel poisoned");
-        if let Some(prev) = guard.take() {
+        let mut cancel_guard = self
+            .background_cancel
+            .lock()
+            .expect("bg_cancel poisoned");
+        if let Some(prev) = cancel_guard.take() {
             prev.cancel();
         }
         let cancel = CancellationToken::new();
-        *guard = Some(cancel.clone());
-        drop(guard);
+        *cancel_guard = Some(cancel.clone());
+        drop(cancel_guard);
 
         let this = Arc::clone(self);
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             tokio::select! {
                 res = this.run(config) => {
                     if let Err(e) = res {
@@ -385,6 +414,8 @@ impl SpvRuntime {
                 }
             }
         });
+
+        *self.task.lock().expect("spv task mutex poisoned") = Some(handle);
     }
 
     /// Get the current sync progress.

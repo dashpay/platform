@@ -89,7 +89,14 @@ async fn sh_001_shield_from_account() {
     // Orchard account 0. `broadcast_and_wait` proves inclusion.
     s.test_wallet
         .platform_wallet()
-        .shielded_shield_from_account(0, 0, SHIELD_AMOUNT, s.test_wallet.address_signer(), prover)
+        .shielded_shield_from_account(
+            &handle.coordinator,
+            0,
+            0,
+            SHIELD_AMOUNT,
+            s.test_wallet.address_signer(),
+            prover,
+        )
         .await
         .expect("shield_from_account");
 

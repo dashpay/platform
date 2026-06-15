@@ -81,7 +81,14 @@ async fn sh_011_note_selection_convergence() {
     for _ in 0..NUM_NOTES {
         s.test_wallet
             .platform_wallet()
-            .shielded_shield_from_account(0, 0, SHIELD_EACH, s.test_wallet.address_signer(), prover)
+            .shielded_shield_from_account(
+                &handle.coordinator,
+                0,
+                0,
+                SHIELD_EACH,
+                s.test_wallet.address_signer(),
+                prover,
+            )
             .await
             .expect("shield_from_account");
     }

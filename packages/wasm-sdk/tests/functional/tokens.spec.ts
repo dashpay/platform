@@ -10,7 +10,6 @@ describe('Tokens', function describeTokens() {
   const TEST_IDENTITY = req.identityId;
   const TOKEN_CONTRACT = req.tokenContracts[0].contractId;
   const TOKEN_CONTRACT_2 = TOKEN_CONTRACT;
-  const TOKEN_CONTRACT_3 = TOKEN_CONTRACT;
 
   let client: sdk.WasmSdk;
   let builder: sdk.WasmSdkBuilder;
@@ -48,14 +47,18 @@ describe('Tokens', function describeTokens() {
   });
 
   describe('getTokenContractInfo()', () => {
-    it('should return token contract info', async () => {
-      await client.getTokenContractInfo(TOKEN_CONTRACT_3);
+    it('should return token contract info for a valid token id', async () => {
+      const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT, 0);
+      const info = await client.getTokenContractInfo(tokenId);
+      expect(info).to.exist();
+      expect(info.contractId.toBase58()).to.equal(TOKEN_CONTRACT);
+      expect(info.tokenContractPosition).to.equal(0);
     });
   });
 
   describe('getTokenPerpetualDistributionLastClaim()', () => {
     it('should return token perpetual distribution last claim', async () => {
-      const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT_3, 0);
+      const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT, 0);
       await client.getTokenPerpetualDistributionLastClaim(TEST_IDENTITY, tokenId);
     });
   });

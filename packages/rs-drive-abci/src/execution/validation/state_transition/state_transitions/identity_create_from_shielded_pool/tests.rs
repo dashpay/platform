@@ -11,11 +11,15 @@
 //!   path (the fallback Unshield, pool->address minus penalty): the converter ops applied through a
 //!   real Drive keep `calculate_total_credits_balance().ok()` balanced (the end-of-block invariant
 //!   that halts the chain) — the regression guard for the `AddToSystemCredits` over-mint.
+//! - The execute -> prove -> verify result-proof roundtrip for the success path (synthetic action,
+//!   no Halo 2 proving): the regression guard for the devnet bug where the verifier's absence-proof
+//!   verification choked on the merged {nullifiers, full-identity} query ("terminal keys are not
+//!   supported with unbounded ranges"), so every honest type-20 result proof failed client-side.
 //!
-//! The full build->prove->execute->prove/verify happy path (real Orchard proof + the strict merged
-//! nullifier+identity proof roundtrip) is deferred to the shared shielded-strategy harness, a
-//! pre-existing repo-wide TODO that is disabled for every shielded transition (the shielded
-//! `OperationType` build handlers are commented out in `strategy.rs`).
+//! The full build->prove->execute->prove/verify happy path (real Orchard proof) is deferred to the
+//! shared shielded-strategy harness, a pre-existing repo-wide TODO that is disabled for every
+//! shielded transition (the shielded `OperationType` build handlers are commented out in
+//! `strategy.rs`).
 
 use super::state::v0::IdentityCreateFromShieldedPoolStateTransitionStateValidationV0;
 use super::transform_into_action::v0::IdentityCreateFromShieldedPoolStateTransitionTransformIntoActionValidationV0;
@@ -497,6 +501,124 @@ fn failure_path_charge_executes_through_execute_event() {
     );
 }
 
+/// BLOCKING regression for the 2026-06-10 devnet paloma chain halt (height 788): CheckTx fee
+/// estimation must NEVER mutate committed GroveDB state.
+///
+/// `check_tx_v0` estimates fees via `validate_fees_of_event(event, last_block_info,
+/// transaction: None, ...)` -> `apply_drive_operations(ops, apply: false, ..., transaction: None)`.
+/// Pre-#3823, the `ShieldedPoolOperationType::InsertNullifiers` low-level converter arm eagerly
+/// called `drive.store_nullifiers_for_block(...)` — a direct write — with whatever
+/// `TransactionArg` it was handed, on the assumption it always ran under the block transaction.
+/// During CheckTx that argument is `None`, so the eager write committed DIRECTLY to disk on every
+/// node that validated the gossiped type-20 transition; the on-disk root diverged from the signed
+/// app hash and every proposer panicked ("drive and platform state app hash mismatch" in
+/// `prepare_proposal.rs`) — and restarts panic forever in `info.rs` because the write is durable.
+/// #3823 made the converter pure; this test pins the invariant for the exact event/op shape that
+/// halted paloma. No Halo 2 proving is needed — the event is built from a synthetic action.
+#[test]
+fn check_tx_fee_estimation_does_not_mutate_committed_state() {
+    use crate::execution::types::execution_event::ExecutionEvent;
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
+    use crate::test::helpers::state_mutation_guard::assert_committed_root_hash_unchanged;
+    use dpp::block::epoch::Epoch;
+    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+    use drive::util::batch::drive_op_batch::ShieldedPoolOperationType;
+    use drive::util::batch::DriveOperation;
+
+    let platform_version = PlatformVersion::latest();
+    let platform = setup_platform();
+
+    set_pool_total_balance(&platform, DENOMINATION * 10);
+    insert_anchor_into_state(&platform, &ANCHOR);
+    let min_notes = platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants
+        .minimum_pool_notes_for_outgoing;
+    insert_dummy_encrypted_notes(&platform, min_notes.max(1));
+
+    // Unlike the validate_state tests above, fee estimation CONVERTS the `AddNewIdentity` op,
+    // which parses the key bytes — so the key must be a real secp256k1 point, not dummy zeros.
+    let (valid_master_key, _) =
+        IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(11), platform_version)
+            .expect("expected a valid master key");
+    let key_in_creation = IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+        id: 0,
+        key_type: valid_master_key.key_type(),
+        purpose: valid_master_key.purpose(),
+        security_level: valid_master_key.security_level(),
+        contract_bounds: None,
+        read_only: false,
+        data: valid_master_key.data().clone(),
+        signature: BinaryData::default(),
+    });
+
+    let st = transition(vec![key_in_creation], vec![action(40), action(41)]);
+    let mut execution_context =
+        StateTransitionExecutionContext::default_for_platform_version(platform_version)
+            .expect("execution context");
+    let success_action =
+        build_success_action(&platform, &st, &mut execution_context, platform_version);
+
+    let event = ExecutionEvent::create_from_state_transition_action(
+        StateTransitionAction::IdentityCreateFromShieldedPoolAction(success_action),
+        None,
+        &Epoch::new(0).unwrap(),
+        execution_context,
+        platform_version,
+    )
+    .expect("create execution event");
+
+    // The event must carry ALL the shielded converter ops that ran on paloma — InsertNullifiers
+    // (the arm that held the eager write), InsertNote and UpdateTotalBalance — so estimation
+    // exercises every arm of the shielded low-level converter.
+    let ExecutionEvent::PaidFromShieldedPoolToNewIdentity { operations, .. } = &event else {
+        panic!("expected a PaidFromShieldedPoolToNewIdentity execution event");
+    };
+    let has_op = |pred: fn(&ShieldedPoolOperationType) -> bool| {
+        operations.iter().any(|op| match op {
+            DriveOperation::ShieldedPoolOperation(shielded_op) => pred(shielded_op),
+            _ => false,
+        })
+    };
+    assert!(
+        has_op(|op| matches!(op, ShieldedPoolOperationType::InsertNullifiers { .. })),
+        "event must carry InsertNullifiers (the arm that eagerly wrote pre-#3823)"
+    );
+    assert!(
+        has_op(|op| matches!(op, ShieldedPoolOperationType::InsertNote { .. })),
+        "event must carry InsertNote"
+    );
+    assert!(
+        has_op(|op| matches!(op, ShieldedPoolOperationType::UpdateTotalBalance { .. })),
+        "event must carry UpdateTotalBalance"
+    );
+
+    // Run the EXACT CheckTx estimation call (transaction = None, apply = false) and assert the
+    // committed root hash is byte-identical: a single eager write in any converter arm trips this.
+    let platform_state = platform.state.load();
+    let fee_versions = CachedEpochIndexFeeVersions::new();
+    let fee_result = assert_committed_root_hash_unchanged(
+        &platform.drive,
+        platform_version,
+        "validate_fees_of_event (type-20 pool->new-identity, CheckTx estimation mode)",
+        || {
+            platform.platform.validate_fees_of_event(
+                &event,
+                platform_state.last_block_info(),
+                None,
+                platform_version,
+                &fee_versions,
+            )
+        },
+    )
+    .expect("fee estimation must not error");
+    assert!(
+        fee_result.data.is_some(),
+        "estimation must produce a fee result"
+    );
+}
+
 /// Sum-tree credit-conservation regression for the pool->new-identity exit.
 ///
 /// Applies the converter's high-level drive operations through a REAL Drive and asserts the
@@ -731,4 +853,155 @@ fn failure_path_unshield_converter_ops_preserve_sum_tree_credit_conservation() {
         balance.ok().expect("ok"),
         "credit supply must be conserved after the fallback pool->address unshield; got {balance}"
     );
+}
+
+/// Regression for the 2026-06-11 devnet (paloma) type-20 proof-fetch failure: an EXECUTED
+/// `IdentityCreateFromShieldedPool` must round-trip `prove_state_transition` ->
+/// `verify_state_transition_was_executed_with_proof`. The verifier used
+/// `verify_query_with_absence_proof` over the merged {nullifiers, full-identity} query, but
+/// `full_identity_query`'s all-keys sub-query is an unbounded RangeFull and absence verification
+/// enumerates the query's terminal keys — so EVERY honest type-20 result proof was rejected
+/// client-side with "terminal keys are not supported with unbounded ranges", while the transition
+/// itself executed on-chain (leaving an orphaned-but-live identity the client never persisted).
+///
+/// Executes the success action through the real `execute_event` path (synthetic action — no Halo 2
+/// proving needed), commits, then generates the result proof and verifies it.
+#[test]
+fn executed_transition_result_proof_roundtrips() {
+    use crate::execution::types::execution_event::ExecutionEvent;
+    use crate::platform_types::event_execution_result::EventExecutionResult;
+    use dpp::block::epoch::Epoch;
+    use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+    use dpp::state_transition::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+    use dpp::state_transition::proof_result::StateTransitionProofResult;
+    use dpp::state_transition::StateTransition;
+    use drive::drive::Drive;
+
+    let platform_version = PlatformVersion::latest();
+    let platform = setup_platform();
+    let block_info = BlockInfo::default();
+
+    set_pool_total_balance(&platform, DENOMINATION * 10);
+    insert_anchor_into_state(&platform, &ANCHOR);
+    let min_notes = platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants
+        .minimum_pool_notes_for_outgoing;
+    insert_dummy_encrypted_notes(&platform, min_notes.max(1));
+
+    // Applying `AddNewIdentity` parses the key bytes, so the key must be a real secp256k1 point.
+    let (valid_master_key, _) =
+        IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(21), platform_version)
+            .expect("expected a valid master key");
+    let key_in_creation = IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+        id: 0,
+        key_type: valid_master_key.key_type(),
+        purpose: valid_master_key.purpose(),
+        security_level: valid_master_key.security_level(),
+        contract_bounds: None,
+        read_only: false,
+        data: valid_master_key.data().clone(),
+        signature: BinaryData::default(),
+    });
+
+    let st = transition(vec![key_in_creation], vec![action(60), action(61)]);
+    let expected_identity_id = st.identity_id();
+    let expected_nullifiers: Vec<Vec<u8>> = st.nullifiers();
+    let mut execution_context =
+        StateTransitionExecutionContext::default_for_platform_version(platform_version)
+            .expect("execution context");
+    let success_action =
+        build_success_action(&platform, &st, &mut execution_context, platform_version);
+
+    let event = ExecutionEvent::create_from_state_transition_action(
+        StateTransitionAction::IdentityCreateFromShieldedPoolAction(success_action),
+        None,
+        &Epoch::new(0).unwrap(),
+        execution_context,
+        platform_version,
+    )
+    .expect("create execution event");
+
+    let transaction = platform.drive.grove.start_transaction();
+    let fee_versions = CachedEpochIndexFeeVersions::new();
+    let exec_result = platform
+        .platform
+        .execute_event(
+            event,
+            vec![],
+            &block_info,
+            &transaction,
+            None,
+            platform_version,
+            &fee_versions,
+        )
+        .expect("execute_event should not error");
+    assert_matches!(
+        exec_result,
+        EventExecutionResult::SuccessfulPaidExecution(..),
+        "the success action must execute"
+    );
+
+    // Commit so prove_state_transition reads the post-execution committed state.
+    platform
+        .drive
+        .grove
+        .commit_transaction(transaction)
+        .unwrap()
+        .expect("expected to commit transaction");
+
+    let transition = StateTransition::IdentityCreateFromShieldedPool(st);
+
+    let proof_result = platform
+        .drive
+        .prove_state_transition(&transition, None, platform_version)
+        .expect("expected to generate the result proof");
+    let proof_bytes = proof_result
+        .into_data()
+        .expect("expected proof data, not an error");
+
+    let (root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
+        &transition,
+        &block_info,
+        &proof_bytes,
+        &|_| Ok(None),
+        platform_version,
+    )
+    .expect(
+        "the honest result proof must verify — absence-proof verification rejects the unbounded \
+         all-keys identity sub-query",
+    );
+    assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");
+
+    let StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers(identity, statuses) =
+        result
+    else {
+        panic!("expected VerifiedIdentityWithShieldedNullifiers, got {result:?}");
+    };
+
+    assert_eq!(
+        identity.id(),
+        expected_identity_id,
+        "the proven identity must be the one derived from the published nullifiers"
+    );
+    assert_eq!(
+        identity.public_keys().len(),
+        1,
+        "the proven identity must hold exactly the transition's declared key"
+    );
+
+    assert_eq!(
+        statuses.len(),
+        expected_nullifiers.len(),
+        "should have one status per nullifier"
+    );
+    for (nf, is_spent) in &statuses {
+        assert!(is_spent, "nullifier {} should be spent", hex::encode(nf));
+        assert!(
+            expected_nullifiers.contains(nf),
+            "proved nullifier {} should be one of the transition's nullifiers",
+            hex::encode(nf)
+        );
+    }
 }

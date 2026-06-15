@@ -98,7 +98,14 @@ async fn sh_007_pre_bind_note_witnessable() {
         .expect("pre-shield sync");
     a.test_wallet
         .platform_wallet()
-        .shielded_shield_from_account(0, 0, SHIELD_AMOUNT, a.test_wallet.address_signer(), prover)
+        .shielded_shield_from_account(
+            &coordinator,
+            0,
+            0,
+            SHIELD_AMOUNT,
+            a.test_wallet.address_signer(),
+            prover,
+        )
         .await
         .expect("A shield_from_account");
     wait_for_shielded_balance(&a.test_wallet, &a_handle, 0, SHIELD_AMOUNT, STEP_TIMEOUT)

@@ -89,6 +89,7 @@ async fn sh_024_value_boundary_overflow() {
         s.test_wallet
             .platform_wallet()
             .shielded_shield_from_account(
+                &handle.coordinator,
                 0,
                 0,
                 SHIELD_AMOUNT,

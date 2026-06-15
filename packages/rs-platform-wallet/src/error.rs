@@ -203,6 +203,45 @@ pub enum PlatformWalletError {
     #[error("Shielded broadcast failed: {0}")]
     ShieldedBroadcastFailed(String),
 
+    /// The shielded identity-create transition was **broadcast and accepted by the relay**, but the
+    /// SDK could not confirm its execution result (the result-proof fetch/verify failed — e.g. a
+    /// transient DAPI/proof error, not a platform rejection). The identity with `identity_id` may
+    /// already exist on chain, so the caller must NOT treat it as unregistered: the slot stays held
+    /// against re-submission and the spent notes' reservations are left in place (the next nullifier
+    /// sync reconciles them). `reason` carries the underlying SDK error for diagnostics.
+    #[error(
+        "Shielded broadcast succeeded but its execution result could not be confirmed; \
+         identity {identity_id} may already exist on chain — do not re-submit \
+         (it will appear after the next sync): {reason}"
+    )]
+    ShieldedBroadcastUnconfirmed {
+        identity_id: Identifier,
+        reason: String,
+    },
+
+    /// A shielded transition (`operation` is `"shield"`, `"unshield"`, `"transfer"` or
+    /// `"withdraw"`) was **broadcast and accepted by the relay**, but the SDK could not confirm
+    /// its execution result (the result-proof fetch/verify failed — e.g. a transient DAPI/proof
+    /// error or timeout, not a platform rejection). The operation may already be executed on
+    /// chain, so re-submitting risks a double-execution. For the spend-based operations the spent
+    /// notes' reservations are intentionally left in place rather than released — releasing them
+    /// would invite re-selecting notes whose nullifiers may already be consumed; a shield spends
+    /// no notes, so it has nothing reserved. The next sync (or an app restart, since reservations
+    /// are in-memory only) reconciles the outcome either way. `reason` carries the underlying SDK
+    /// error for diagnostics.
+    ///
+    /// The identity-create sibling is [`Self::ShieldedBroadcastUnconfirmed`], which additionally
+    /// carries the derived identity id so the caller can hold the registration slot.
+    #[error(
+        "Shielded {operation} broadcast succeeded but its execution result could not be \
+         confirmed; it may already be executed on chain — do not re-submit \
+         (the next sync reconciles the outcome): {reason}"
+    )]
+    ShieldedSpendUnconfirmed {
+        operation: &'static str,
+        reason: String,
+    },
+
     #[error("Shielded sync failed: {0}")]
     ShieldedSyncFailed(String),
 

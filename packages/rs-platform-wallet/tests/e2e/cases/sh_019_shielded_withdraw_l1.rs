@@ -73,7 +73,14 @@ async fn sh_019_shielded_withdraw_l1() {
         .expect("bind_shielded");
     s.test_wallet
         .platform_wallet()
-        .shielded_shield_from_account(0, 0, SHIELD_AMOUNT, s.test_wallet.address_signer(), prover)
+        .shielded_shield_from_account(
+            &handle.coordinator,
+            0,
+            0,
+            SHIELD_AMOUNT,
+            s.test_wallet.address_signer(),
+            prover,
+        )
         .await
         .expect("shield_from_account");
     wait_for_shielded_balance(&s.test_wallet, &handle, 0, SHIELD_AMOUNT, STEP_TIMEOUT)

@@ -30,6 +30,8 @@ struct WalletDetailView: View {
     @State private var showWalletInfo = false
     @State private var showFundPlatformAddress = false
     @State private var showShieldFromAssetLock = false
+    /// Devnet/testnet-only shielded pool seeding sheet (Seed Pool Notes).
+    @State private var showSeedShieldedPool = false
     /// Set by `PendingPlatformFundFromAssetLocksList`'s Resume tap.
     @State private var resumingAssetLock: PersistentAssetLock?
 
@@ -111,6 +113,23 @@ struct WalletDetailView: View {
             }
             .padding(.horizontal)
 
+            // Devnet/testnet-only: seed the shielded pool's anonymity set
+            // so outgoing shielded transitions clear the 250-note minimum.
+            // Hidden on mainnet (the pool is seeded at genesis there, and
+            // the Rust side hard-errors on mainnet anyway).
+            if platformState.currentNetwork != .mainnet {
+                Button {
+                    showSeedShieldedPool = true
+                } label: {
+                    Label("Seed Pool Notes", systemImage: "square.stack.3d.up.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .accessibilityIdentifier("walletDetail.seedPoolNotesButton")
+            }
+
             PendingPlatformFundFromAssetLocksList(
                 coordinator: walletManager.addressFundFromAssetLockCoordinator,
                 walletId: wallet.walletId,
@@ -159,6 +178,29 @@ struct WalletDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal)
+
+                // Shielded Activity row — the derived private-operation
+                // history (shields, sends, unshields, withdrawals,
+                // identity-creates). Reads `PersistentShieldedActivity`
+                // from SwiftData; same value-based push as Transactions.
+                NavigationLink(value: ShieldedActivityRoute(walletId: wallet.walletId)) {
+                    HStack {
+                        Label("Shielded Activity", systemImage: "lock.rectangle.stack")
+                            .font(.subheadline)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 12)
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .accessibilityIdentifier("walletDetail.shieldedActivityLink")
             }
 
             Divider()
@@ -207,6 +249,9 @@ struct WalletDetailView: View {
         }
         .sheet(isPresented: $showShieldFromAssetLock) {
             ShieldedFundFromAssetLockView(wallet: wallet)
+        }
+        .sheet(isPresented: $showSeedShieldedPool) {
+            SeedShieldedPoolView(wallet: wallet)
         }
         .onAppear {
             appUIState.showWalletsSyncDetails = false

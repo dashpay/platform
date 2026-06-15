@@ -79,7 +79,14 @@ async fn sh_010_double_spend_reservation() {
     for _ in 0..2 {
         s.test_wallet
             .platform_wallet()
-            .shielded_shield_from_account(0, 0, SHIELD_EACH, s.test_wallet.address_signer(), prover)
+            .shielded_shield_from_account(
+                &handle.coordinator,
+                0,
+                0,
+                SHIELD_EACH,
+                s.test_wallet.address_signer(),
+                prover,
+            )
             .await
             .expect("shield_from_account");
     }

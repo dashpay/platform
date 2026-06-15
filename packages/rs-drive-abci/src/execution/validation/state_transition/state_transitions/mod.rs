@@ -2146,6 +2146,17 @@ pub(in crate::execution) mod tests {
             .serialize_to_bytes()
             .expect("expected documents batch serialized state transition");
 
+        // CheckTx root-invariance guard (devnet paloma h788): `check_tx` asserts under
+        // cfg(test) that it never mutates committed grovedb state, so every valid vote
+        // fixture going through this shared helper pins the invariant for masternode votes.
+        if expect_error.is_none() {
+            crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels(
+                platform,
+                &masternode_vote_serialized_transition,
+                "masternode vote",
+            );
+        }
+
         let transaction = platform.drive.grove.start_transaction();
 
         let processing_result = platform
@@ -3105,6 +3116,423 @@ pub(in crate::execution) mod tests {
                     ),
                     ..
                 }]
+            );
+        }
+    }
+
+    /// End-to-end regression test for the byteArray on-disk encoding-flip
+    /// chain-halt vulnerability (Dash Platform v4.0.0-rc.1).
+    ///
+    /// This drives the full per-block DAO vote-poll resolver path so that
+    /// `Platform::check_for_ended_vote_polls` returns `Err` today (pre-fix). On
+    /// chain that `Err` propagates through `run_dao_platform_events` ->
+    /// `run_block_proposal` (a per-block event handler with a bare `?`), so it is
+    /// NOT caught into a per-state-transition result -- it halts the chain on
+    /// every validator at the block where the contested vote poll ends.
+    mod byte_array_encoding_flip_chain_halt {
+        use super::*;
+        use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
+        use dpp::data_contract::document_type::schema::validate_schema_compatibility;
+
+        const CUSTOM_CONTESTED_CONTRACT: &str =
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index.json";
+        // Identical to the contract above except `domain.preorderSalt` byteArray
+        // has its `maxItems` widened from 32 to 64 -- the malicious update.
+        const CUSTOM_CONTESTED_CONTRACT_WIDENED: &str =
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-byte-array-widened.json";
+
+        /// Builds one preorder + one domain (contender) document for `identity`,
+        /// with `preorderSalt` forced to `[0xFF; 32]` so that, after the
+        /// byteArray encoding flips to varint-length-prefixed, the first stored
+        /// byte (0xFF, a varint continuation byte) decodes to an enormous length
+        /// and overruns the buffer.
+        #[allow(clippy::too_many_arguments)]
+        async fn build_preorder_and_domain(
+            contract: &DataContract,
+            identity: &Identity,
+            signer: &SimpleSigner,
+            key: &IdentityPublicKey,
+            name: &str,
+            // A per-contender distinguishing byte placed in the *tail* of the
+            // salt so the two contenders' `saltedDomainHash` differ (avoiding a
+            // unique-index collision on the preorder), while byte[0] stays 0xFF.
+            salt_discriminator: u8,
+            rng: &mut StdRng,
+            platform_version: &PlatformVersion,
+        ) -> (Vec<u8>, Vec<u8>) {
+            let preorder = contract
+                .document_type_for_name("preorder")
+                .expect("expected preorder document type");
+            let domain = contract
+                .document_type_for_name("domain")
+                .expect("expected domain document type");
+
+            let entropy = Bytes32::random_with_rng(rng);
+
+            let mut preorder_document = preorder
+                .random_document_with_identifier_and_entropy(
+                    rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random preorder document");
+
+            let mut domain_document = domain
+                .random_document_with_identifier_and_entropy(
+                    rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random domain document");
+
+            domain_document.set("parentDomainName", "dash".into());
+            domain_document.set("normalizedParentDomainName", "dash".into());
+            domain_document.set("label", name.into());
+            domain_document.set(
+                "normalizedLabel",
+                convert_to_homograph_safe_chars(name).into(),
+            );
+            domain_document.set("records.identity", domain_document.owner_id().into());
+            domain_document.set("subdomainRules.allowSubdomains", false.into());
+
+            // The crux of the attack: a 32-byte salt whose FIRST byte is 0xFF
+            // (a varint continuation byte). The last byte distinguishes the two
+            // contenders so their preorder salted hashes do not collide.
+            let mut salt: [u8; 32] = [0xFF; 32];
+            salt[31] = salt_discriminator;
+
+            let mut salted_domain_buffer: Vec<u8> = vec![];
+            salted_domain_buffer.extend(salt);
+            salted_domain_buffer
+                .extend((convert_to_homograph_safe_chars(name) + ".dash").as_bytes());
+            let salted_domain_hash = hash_double(salted_domain_buffer);
+
+            preorder_document.set("saltedDomainHash", salted_domain_hash.into());
+            domain_document.set("preorderSalt", salt.into());
+
+            let preorder_transition =
+                BatchTransition::new_document_creation_transition_from_document(
+                    preorder_document,
+                    preorder,
+                    entropy.0,
+                    key,
+                    2,
+                    0,
+                    None,
+                    signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create preorder batch transition");
+
+            let domain_transition =
+                BatchTransition::new_document_creation_transition_from_document(
+                    domain_document,
+                    domain,
+                    entropy.0,
+                    key,
+                    3,
+                    0,
+                    None,
+                    signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create domain batch transition");
+
+            (
+                preorder_transition
+                    .serialize_to_bytes()
+                    .expect("serialize preorder transition"),
+                domain_transition
+                    .serialize_to_bytes()
+                    .expect("serialize domain transition"),
+            )
+        }
+
+        /// Runs the full contest setup and returns the result of the per-block
+        /// vote-poll resolver. When `widen` is true the byteArray `maxItems` is
+        /// flipped (the attack); when false the original contract is left in
+        /// place (the control).
+        async fn run_contest_then_resolve(widen: bool) -> Result<(), crate::error::Error> {
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut rng = StdRng::seed_from_u64(0xB17E_A77A);
+
+            // Two contenders, each prefunded so they can pay the contested-index
+            // voting balance.
+            let identity_1_info = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let identity_2_info = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let contract_owner = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            // (1) Create the CUSTOM contested contract owned by `contract_owner`.
+            // It has a contested unique index on `normalizedLabel` and a fixed
+            // byteArray `preorderSalt` {minItems:32, maxItems:32}.
+            let contract = setup_contract(
+                &platform.drive,
+                CUSTOM_CONTESTED_CONTRACT,
+                None,
+                Some(contract_owner.0.id().to_buffer()),
+                None::<fn(&mut DataContract)>,
+                None,
+                Some(platform_version),
+            );
+
+            let name = "quantum";
+
+            let platform_state = platform.state.load();
+
+            // (2) Create TWO contested documents (contenders) with the same
+            // contested-index values and a 0xFF-prefixed 32-byte byteArray.
+            let (preorder_tx_1, domain_tx_1) = build_preorder_and_domain(
+                &contract,
+                &identity_1_info.0,
+                &identity_1_info.1,
+                &identity_1_info.2,
+                name,
+                0x01,
+                &mut rng,
+                platform_version,
+            )
+            .await;
+
+            let (preorder_tx_2, domain_tx_2) = build_preorder_and_domain(
+                &contract,
+                &identity_2_info.0,
+                &identity_2_info.1,
+                &identity_2_info.2,
+                name,
+                0x02,
+                &mut rng,
+                platform_version,
+            )
+            .await;
+
+            // Submit the preorders.
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[preorder_tx_1, preorder_tx_2],
+                    &platform_state,
+                    &BlockInfo::default_with_time(
+                        platform_state
+                            .last_committed_block_time_ms()
+                            .unwrap_or_default()
+                            + 3000,
+                    ),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process preorder state transitions");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+            assert_eq!(
+                processing_result.valid_count(),
+                2,
+                "both preorders should be accepted"
+            );
+
+            // Submit the domains -> this opens the contested vote poll.
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[domain_tx_1, domain_tx_2],
+                    &platform_state,
+                    &BlockInfo::default_with_time(
+                        platform_state
+                            .last_committed_block_time_ms()
+                            .unwrap_or_default()
+                            + 3000,
+                    ),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process domain state transitions");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+            assert_eq!(
+                processing_result.valid_count(),
+                2,
+                "both contenders should be accepted, opening the contest"
+            );
+
+            // (3) Simulate the malicious DataContractUpdate that widens the
+            // byteArray `maxItems` from 32 to 64 (only in the attack scenario).
+            if widen {
+                // The JSON-schema compatibility layer still treats widening
+                // `maxItems` as a compatible change -- which is exactly why the
+                // dedicated byte-array-encoding check added to `validate_update`
+                // (the fix) is required to reject it. We pin that compatibility
+                // verdict here to document the gap the fix closes.
+                let original_domain_schema = serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "preorderSalt": {
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32,
+                            "maxItems": 32,
+                            "position": 4
+                        }
+                    },
+                    "additionalProperties": false
+                });
+                let widened_domain_schema = serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "preorderSalt": {
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32,
+                            "maxItems": 64,
+                            "position": 4
+                        }
+                    },
+                    "additionalProperties": false
+                });
+                let compatibility = validate_schema_compatibility(
+                    &original_domain_schema,
+                    &widened_domain_schema,
+                    platform_version,
+                )
+                .expect("schema compatibility validation must not error");
+                assert!(
+                    compatibility.is_valid(),
+                    "the maxItems 32 -> 64 widening must be accepted by update \
+                     validation for this attack to be reachable on chain; \
+                     reported incompatibilities: {:?}",
+                    compatibility.errors
+                );
+
+                // Apply the widened contract directly to grovedb to simulate the
+                // corrupt on-disk state that WOULD result if such an update were
+                // committed. On a real chain `validate_update` now rejects this
+                // update at the source (see the rs-dpp validate_byte_array_encoding
+                // tests), so the resolver is never reached with corrupt bytes;
+                // this reproduces the consequence the fix prevents.
+                // The derived `properties` for `preorderSalt` flip to the
+                // variable-length (varint-prefixed) decode path.
+                let widened_contract = setup_contract(
+                    &platform.drive,
+                    CUSTOM_CONTESTED_CONTRACT_WIDENED,
+                    None,
+                    Some(contract_owner.0.id().to_buffer()),
+                    None::<fn(&mut DataContract)>,
+                    None,
+                    Some(platform_version),
+                );
+                assert_eq!(
+                    widened_contract.id(),
+                    contract.id(),
+                    "the widened contract must replace the original at the same id"
+                );
+            }
+
+            // (4) Advance past the vote-poll end date and invoke the resolver.
+            let time_after_distribution_limit = platform_version
+                .dpp
+                .voting_versions
+                .default_vote_poll_time_duration_test_network_ms
+                + 10_000;
+
+            fast_forward_to_block(&platform, time_after_distribution_limit, 900, 42, 0, false);
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            // This is the exact per-block call. In the attack scenario it returns
+            // Err because the resolver loads the OLD contender bytes and decodes
+            // them against the WIDENED `preorderSalt` type, misreading the 0xFF
+            // first byte as a varint length -> CorruptedSerialization.
+            platform.check_for_ended_vote_polls(
+                &platform_state,
+                &platform_state,
+                &BlockInfo {
+                    time_ms: time_after_distribution_limit,
+                    height: 900,
+                    core_height: 42,
+                    epoch: Default::default(),
+                },
+                Some(&transaction),
+                platform_version,
+            )
+        }
+
+        /// THE CHAIN-HALT CONSEQUENCE. If a byteArray `maxItems` widening were
+        /// ever committed, the stored contender documents become undecodable and
+        /// the per-block vote-poll resolver returns `Err`, which propagates out of
+        /// the bare-`?` per-block event handler and halts every validator.
+        ///
+        /// The fix prevents that state at the source: `validate_update` now
+        /// rejects the widening (see the rs-dpp validate_byte_array_encoding
+        /// tests). This test deliberately writes the corrupt state directly to
+        /// grovedb (bypassing validation) to reproduce the consequence the
+        /// validation fix prevents.
+        #[tokio::test]
+        async fn widening_byte_array_max_items_halts_vote_poll_resolver() {
+            let result = run_contest_then_resolve(true).await;
+
+            assert!(
+                result.is_err(),
+                "check_for_ended_vote_polls must return Err when stored contender \
+                 documents are decoded against a widened byteArray encoding -- the \
+                 chain-halt consequence the `validate_update` fix prevents by \
+                 rejecting the update at the source. Got Ok instead."
+            );
+
+            // Confirm it is the expected decode-failure variant from the encoding
+            // flip, not some unrelated error. Matching the variant (rather than the
+            // Debug string) keeps the test robust to message/format changes.
+            assert_matches!(
+                result.unwrap_err(),
+                crate::error::Error::Protocol(dpp::ProtocolError::DataContractError(
+                    dpp::data_contract::errors::DataContractError::CorruptedSerialization(_)
+                        | dpp::data_contract::errors::DataContractError::DecodingContractError(_)
+                ))
+            );
+        }
+
+        /// CONTROL (causation proof). The exact same contest, but WITHOUT the
+        /// byteArray widening, resolves successfully (`Ok`). Together with the
+        /// test above this proves the widening is what causes the halt -- the
+        /// only difference between the two runs is the `maxItems` flip.
+        #[tokio::test]
+        async fn contest_without_widening_resolves_successfully() {
+            let result = run_contest_then_resolve(false).await;
+
+            assert!(
+                result.is_ok(),
+                "control: without the byteArray widening the vote-poll resolver \
+                 must succeed; got {:?}",
+                result
             );
         }
     }

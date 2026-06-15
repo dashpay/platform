@@ -83,9 +83,16 @@ async fn sh_031_rebind_different_seed() {
         .sync_balances()
         .await
         .expect("pre-shield sync");
-    pw.shielded_shield_from_account(0, 0, SHIELD_AMOUNT, s.test_wallet.address_signer(), prover)
-        .await
-        .expect("shield under seed_A");
+    pw.shielded_shield_from_account(
+        &handle.coordinator,
+        0,
+        0,
+        SHIELD_AMOUNT,
+        s.test_wallet.address_signer(),
+        prover,
+    )
+    .await
+    .expect("shield under seed_A");
     wait_for_shielded_balance(&s.test_wallet, &handle, 0, SHIELD_AMOUNT, STEP_TIMEOUT)
         .await
         .expect("seed_A note never synced");

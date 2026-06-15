@@ -143,11 +143,13 @@ impl From<FFIError> for DashSDKError {
                 } else if error_str.contains("not found") || error_str.contains("Not found") {
                     (DashSDKErrorCode::NotFound, error_str)
                 } else {
-                    // Default to network error with the original message
-                    (
-                        DashSDKErrorCode::NetworkError,
-                        format!("Failed to fetch balances: {}", error_str),
-                    )
+                    // Unclassified SDK error: pass the original message through
+                    // unchanged and map to InternalError rather than guessing a
+                    // network cause. (Previously this hardcoded a "Failed to fetch
+                    // balances:" prefix and the NetworkError code, mislabeling
+                    // unrelated failures such as proof-verification errors from
+                    // getDataContractHistory.)
+                    (DashSDKErrorCode::InternalError, error_str)
                 };
 
                 (code, detailed_msg)
@@ -252,5 +254,31 @@ mod tests {
     fn generic_not_found_still_maps_to_not_found() {
         let err = dash_sdk::Error::Generic("identity not found".to_string());
         assert_eq!(classify(err), DashSDKErrorCode::NotFound);
+    }
+
+    #[test]
+    fn unclassified_error_maps_to_internal_error_without_balance_prefix() {
+        // A proof-verification failure (e.g. from getDataContractHistory) matches
+        // none of the substring heuristics and must fall through the catch-all.
+        // It should be classified as InternalError and keep its original Display
+        // verbatim — no copy-pasted "Failed to fetch balances:" prefix.
+        let err = dash_sdk::Error::Generic(
+            "Proof verification error: corrupted element for the historical contract".to_string(),
+        );
+        // The catch-all passes the SDK error's Display through unchanged.
+        let expected = err.to_string();
+
+        let dash_sdk_error: DashSDKError = FFIError::SDKError(err).into();
+        let rendered = unsafe {
+            let m = std::ffi::CStr::from_ptr(dash_sdk_error.message)
+                .to_string_lossy()
+                .into_owned();
+            let _ = CString::from_raw(dash_sdk_error.message);
+            m
+        };
+
+        assert_eq!(dash_sdk_error.code, DashSDKErrorCode::InternalError);
+        assert_eq!(rendered, expected);
+        assert!(!rendered.contains("Failed to fetch balances"));
     }
 }

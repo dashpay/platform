@@ -89,6 +89,7 @@ async fn sh_034_tampered_binding_signature() {
         s.test_wallet
             .platform_wallet()
             .shielded_shield_from_account(
+                &handle.coordinator,
                 0,
                 0,
                 SHIELD_AMOUNT,

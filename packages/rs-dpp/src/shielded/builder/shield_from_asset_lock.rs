@@ -28,6 +28,10 @@ use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver
 /// - `surplus_output` - Optional platform address that receives the asset-lock surplus
 ///   (`asset_lock_value − shield_amount − fee`); when `None`, the surplus is added to the fee
 ///   pools, capped at `shielded_implicit_fee_cap`
+/// - `dummy_outputs` - Number of extra zero-value anonymity-set filler outputs to append after
+///   the real recipient output (unrecoverable random addresses, `None` OVK, empty memo). `0`
+///   reproduces the historical single-output bundle exactly. The on-wire action count becomes
+///   `max(1 + dummy_outputs, 2)`, which consensus prices the fee from — see the pool-seeding flow.
 /// - `platform_version` - Protocol version
 #[allow(clippy::too_many_arguments)]
 pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
@@ -39,9 +43,17 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
     memo: [u8; 36],
     sender_ovk: Option<grovedb_commitment_tree::OutgoingViewingKey>,
     surplus_output: Option<PlatformAddress>,
+    dummy_outputs: usize,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
-    let bundle = build_output_only_bundle(recipient, shield_amount, memo, sender_ovk, prover)?;
+    let bundle = build_output_only_bundle(
+        recipient,
+        shield_amount,
+        memo,
+        sender_ovk,
+        dummy_outputs,
+        prover,
+    )?;
     let sb = serialize_authorized_bundle(&bundle);
 
     // For output-only bundles, Orchard value_balance is negative (value flowing in).
@@ -91,6 +103,10 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
 /// - `surplus_output` - Optional platform address that receives the asset-lock surplus
 ///   (`asset_lock_value − shield_amount − fee`); when `None`, the surplus is added to the fee
 ///   pools, capped at `shielded_implicit_fee_cap`
+/// - `dummy_outputs` - Number of extra zero-value anonymity-set filler outputs to append after
+///   the real recipient output (unrecoverable random addresses, `None` OVK, empty memo). `0`
+///   reproduces the historical single-output bundle exactly. The on-wire action count becomes
+///   `max(1 + dummy_outputs, 2)`, which consensus prices the fee from — see the pool-seeding flow.
 /// - `platform_version` - Protocol version
 #[cfg(feature = "core_key_wallet")]
 #[allow(clippy::too_many_arguments)]
@@ -104,13 +120,21 @@ pub async fn build_shield_from_asset_lock_transition_with_signer<P, AS>(
     memo: [u8; 36],
     sender_ovk: Option<grovedb_commitment_tree::OutgoingViewingKey>,
     surplus_output: Option<PlatformAddress>,
+    dummy_outputs: usize,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError>
 where
     P: OrchardProver,
     AS: ::key_wallet::signer::Signer,
 {
-    let bundle = build_output_only_bundle(recipient, shield_amount, memo, sender_ovk, prover)?;
+    let bundle = build_output_only_bundle(
+        recipient,
+        shield_amount,
+        memo,
+        sender_ovk,
+        dummy_outputs,
+        prover,
+    )?;
     let sb = serialize_authorized_bundle(&bundle);
 
     // For output-only bundles, Orchard value_balance is negative (value flowing in).
@@ -153,7 +177,7 @@ mod tests {
         let recipient = test_orchard_address();
         let amount = 50_000u64;
 
-        let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], None, &TestProver)
+        let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], None, 0, &TestProver)
             .expect("bundle should build successfully");
         let sb = serialize_authorized_bundle(&bundle);
 
@@ -181,8 +205,9 @@ mod tests {
     #[test]
     fn test_output_only_bundle_serializes_to_min_actions() {
         let recipient = test_orchard_address();
-        let bundle = build_output_only_bundle(&recipient, 50_000u64, [0u8; 36], None, &TestProver)
-            .expect("bundle should build");
+        let bundle =
+            build_output_only_bundle(&recipient, 50_000u64, [0u8; 36], None, 0, &TestProver)
+                .expect("bundle should build");
         let sb = serialize_authorized_bundle(&bundle);
         assert_eq!(
             sb.actions.len(),
@@ -223,8 +248,9 @@ mod tests {
         // negative value_balance equal in magnitude to the requested amount.
         for amount in [1u64, 100, 1_000_000, u32::MAX as u64] {
             let recipient = test_orchard_address();
-            let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], None, &TestProver)
-                .expect("bundle should build");
+            let bundle =
+                build_output_only_bundle(&recipient, amount, [0u8; 36], None, 0, &TestProver)
+                    .expect("bundle should build");
             let sb = serialize_authorized_bundle(&bundle);
             assert_eq!(
                 sb.value_balance,

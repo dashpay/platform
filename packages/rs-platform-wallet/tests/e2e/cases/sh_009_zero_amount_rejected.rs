@@ -41,7 +41,14 @@ async fn sh_009_zero_amount_rejected() {
     // Shield with amount == 0.
     let t0 = Instant::now();
     let shield = pw
-        .shielded_shield_from_account(0, 0, 0, s.test_wallet.address_signer(), prover)
+        .shielded_shield_from_account(
+            &handle.coordinator,
+            0,
+            0,
+            0,
+            s.test_wallet.address_signer(),
+            prover,
+        )
         .await;
     assert!(
         shield.is_err(),

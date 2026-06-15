@@ -88,7 +88,14 @@ async fn sh_022_value_not_conserved() {
         .expect("pre-shield sync");
     s.test_wallet
         .platform_wallet()
-        .shielded_shield_from_account(0, 0, SHIELD_AMOUNT, s.test_wallet.address_signer(), prover)
+        .shielded_shield_from_account(
+            &handle.coordinator,
+            0,
+            0,
+            SHIELD_AMOUNT,
+            s.test_wallet.address_signer(),
+            prover,
+        )
         .await
         .expect("shield_from_account");
     wait_for_shielded_balance(&s.test_wallet, &handle, 0, SHIELD_AMOUNT, STEP_TIMEOUT)

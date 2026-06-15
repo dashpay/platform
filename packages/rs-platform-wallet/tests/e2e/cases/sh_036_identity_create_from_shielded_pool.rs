@@ -120,6 +120,7 @@ async fn sh_036_identity_create_from_shielded_pool() {
     s.test_wallet
         .platform_wallet()
         .shielded_shield_from_account(
+            &handle.coordinator,
             0,
             0,
             funding_credits,

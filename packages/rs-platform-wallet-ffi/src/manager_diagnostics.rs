@@ -18,17 +18,18 @@ use std::os::raw::c_char;
 
 use platform_wallet::manager::accessors::{
     AccountAddressInfoSnapshot, AccountAddressPoolSnapshot, AccountMetadataSnapshot,
-    AccountTransactionSnapshot, AccountUtxoSnapshot, CoreWalletStateSnapshot,
-    IdentitySyncConfigSnapshot, IdentityWalletStateSnapshot, PlatformAddressProviderStateSnapshot,
-    PlatformAddressSyncConfigSnapshot, TrackedAssetLockSnapshot, WalletIdentityRowSnapshot,
+    AccountTransactionSnapshot, AccountUtxoSnapshot, AddressBanInfoSnapshot,
+    CoreWalletStateSnapshot, IdentitySyncConfigSnapshot, IdentityWalletStateSnapshot,
+    PlatformAddressProviderStateSnapshot, PlatformAddressSyncConfigSnapshot,
+    TrackedAssetLockSnapshot, WalletIdentityRowSnapshot,
 };
 
 use crate::check_ptr;
 use crate::core_wallet_types::{
     AccountAddressPoolEntryFFI, AccountMetadataFFI, AccountTransactionEntryFFI,
-    AccountUtxoEntryFFI, AddressInfoFFI, CoreWalletStateFFI, IdentitySyncConfigFFI,
-    IdentityWalletStateFFI, PlatformAddressProviderStateFFI, PlatformAddressSyncConfigFFI,
-    TrackedAssetLockEntryFFI, WalletIdentityRowFFI,
+    AccountUtxoEntryFFI, AddressBanInfoFFI, AddressInfoFFI, CoreWalletStateFFI,
+    IdentitySyncConfigFFI, IdentityWalletStateFFI, PlatformAddressProviderStateFFI,
+    PlatformAddressSyncConfigFFI, TrackedAssetLockEntryFFI, WalletIdentityRowFFI,
 };
 use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::handle::{Handle, PLATFORM_WALLET_MANAGER_STORAGE};
@@ -780,6 +781,77 @@ pub unsafe extern "C" fn platform_wallet_identity_manager_wallet_identities_free
     if !rows.is_null() && count > 0 {
         let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(rows, count));
     }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 — DAPI address ban list
+// ---------------------------------------------------------------------------
+
+/// Snapshot of every DAPI address' ban state, including the reason
+/// each address was banned (when recorded).
+///
+/// On success `*out_entries` points at a heap-owned `[AddressBanInfoFFI]`
+/// of length `*out_count`; the caller must release it via
+/// [`platform_wallet_manager_address_ban_info_free`]. An empty list
+/// returns `ok()` with `*out_entries = null`, `*out_count = 0`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_address_ban_info(
+    manager_handle: Handle,
+    out_entries: *mut *const AddressBanInfoFFI,
+    out_count: *mut usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_entries);
+    check_ptr!(out_count);
+    *out_entries = std::ptr::null();
+    *out_count = 0;
+    let Some(rows): Option<Vec<AddressBanInfoSnapshot>> = PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(manager_handle, |m| m.address_ban_info_blocking())
+    else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            "Manager handle invalid".to_string(),
+        );
+    };
+    if rows.is_empty() {
+        return PlatformWalletFFIResult::ok();
+    }
+    let entries: Vec<AddressBanInfoFFI> = rows
+        .into_iter()
+        .map(|s| AddressBanInfoFFI {
+            address: optional_into_raw(Some(s.uri)),
+            banned: s.banned,
+            ban_count: u32::try_from(s.ban_count).unwrap_or(u32::MAX),
+            banned_until_ms: s.banned_until_ms.unwrap_or(0),
+            reason: optional_into_raw(s.reason),
+        })
+        .collect();
+    let count = entries.len();
+    let boxed = entries.into_boxed_slice();
+    *out_entries = Box::into_raw(boxed) as *const _;
+    *out_count = count;
+    PlatformWalletFFIResult::ok()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_address_ban_info_free(
+    entries: *mut AddressBanInfoFFI,
+    count: usize,
+) {
+    if entries.is_null() || count == 0 {
+        return;
+    }
+    // Walk every row first to release its heap-owned `address` and
+    // optional `reason` C strings before reclaiming the parent slice.
+    let slice = std::slice::from_raw_parts(entries, count);
+    for entry in slice {
+        if !entry.address.is_null() {
+            let _ = CString::from_raw(entry.address);
+        }
+        if !entry.reason.is_null() {
+            let _ = CString::from_raw(entry.reason);
+        }
+    }
+    let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count));
 }
 
 // ---------------------------------------------------------------------------

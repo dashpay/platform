@@ -98,9 +98,16 @@ async fn sh_032_exact_change_boundary() {
         .expect("pre-shield sync");
 
     // Shield EXACTLY amount+fee into one note.
-    pw.shielded_shield_from_account(0, 0, exact_note, s.test_wallet.address_signer(), prover)
-        .await
-        .expect("exact-note shield");
+    pw.shielded_shield_from_account(
+        &handle.coordinator,
+        0,
+        0,
+        exact_note,
+        s.test_wallet.address_signer(),
+        prover,
+    )
+    .await
+    .expect("exact-note shield");
     wait_for_shielded_balance(&s.test_wallet, &handle, 0, exact_note, STEP_TIMEOUT)
         .await
         .expect("exact note never synced");
@@ -184,9 +191,16 @@ async fn sh_032_exact_change_boundary() {
         .sync_balances()
         .await
         .expect("pre-shield sync 2");
-    pw2.shielded_shield_from_account(0, 0, under_note, s2.test_wallet.address_signer(), prover)
-        .await
-        .expect("under-note shield");
+    pw2.shielded_shield_from_account(
+        &handle2.coordinator,
+        0,
+        0,
+        under_note,
+        s2.test_wallet.address_signer(),
+        prover,
+    )
+    .await
+    .expect("under-note shield");
     wait_for_shielded_balance(&s2.test_wallet, &handle2, 0, under_note, STEP_TIMEOUT)
         .await
         .expect("under note never synced");
