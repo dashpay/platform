@@ -16,8 +16,8 @@ pub struct ContactRequestValidation {
     pub errors: Vec<String>,
     /// Non-fatal warnings the caller may want to surface.
     pub warnings: Vec<String>,
-    /// `true` when the *only* reason the request is invalid is a key-PURPOSE
-    /// mismatch (e.g. a legacy 2024 doc referencing an AUTHENTICATION key).
+    /// `true` when a key-PURPOSE mismatch was seen (e.g. a legacy 2024 doc
+    /// referencing an AUTHENTICATION key).
     ///
     /// This classification is load-bearing for the sync sweep / accept paths
     /// (G15): a purpose mismatch must NOT mark the payment channel
@@ -26,7 +26,19 @@ pub struct ContactRequestValidation {
     /// immutable request) is what might change. A purpose-only failure is a
     /// non-permanent skip (log + retry next sweep); a key-TYPE / missing-key /
     /// disabled-key failure stays permanent.
+    ///
+    /// **Read [`is_purpose_only`](Self::is_purpose_only), not this field, to
+    /// decide skip-vs-break.** This flag alone is `true` even when a hard
+    /// (non-purpose) error is *also* present; downgrading to a skip in that
+    /// case would mask a genuinely permanent failure (a disabled / wrong-type
+    /// key) into a retry-forever loop.
     pub purpose_mismatch: bool,
+    /// `true` when at least one *non-purpose* hard error was recorded (missing
+    /// key, wrong key type, disabled key). Distinguishes "purpose mismatch is
+    /// the sole cause" (downgradable to a skip) from "purpose mismatch plus a
+    /// genuinely permanent fault" (must stay permanent). See
+    /// [`is_purpose_only`](Self::is_purpose_only).
+    pub hard_error: bool,
 }
 
 impl Default for ContactRequestValidation {
@@ -36,6 +48,7 @@ impl Default for ContactRequestValidation {
             errors: Vec::new(),
             warnings: Vec::new(),
             purpose_mismatch: false,
+            hard_error: false,
         }
     }
 }
@@ -46,15 +59,19 @@ impl ContactRequestValidation {
         Self::default()
     }
 
-    /// Add a hard error (sets `is_valid = false`).
+    /// Add a hard (non-purpose) error: sets `is_valid = false` AND flags
+    /// `hard_error` so a co-occurring purpose mismatch can't downgrade this
+    /// genuinely-permanent fault to a skip.
     pub fn add_error(&mut self, error: String) {
         self.errors.push(error);
         self.is_valid = false;
+        self.hard_error = true;
     }
 
     /// Add a key-PURPOSE error: sets `is_valid = false` AND flags
-    /// `purpose_mismatch` so callers can downgrade this to a non-permanent
-    /// skip rather than a permanent broken-channel mark (G15).
+    /// `purpose_mismatch` so callers can downgrade a *purpose-only* failure
+    /// to a non-permanent skip rather than a permanent broken-channel mark
+    /// (G15). Does NOT set `hard_error`.
     pub fn add_purpose_error(&mut self, error: String) {
         self.errors.push(error);
         self.is_valid = false;
@@ -66,6 +83,14 @@ impl ContactRequestValidation {
         self.warnings.push(warning);
     }
 
+    /// Whether the *sole* cause of invalidity is a key-purpose mismatch —
+    /// the only case that may be downgraded to a non-permanent skip (G15).
+    /// A purpose mismatch that co-occurs with a hard error (disabled /
+    /// missing / wrong-type key) is NOT purpose-only and must stay permanent.
+    pub fn is_purpose_only(&self) -> bool {
+        self.purpose_mismatch && !self.hard_error
+    }
+
     /// Merge another validation result into this one.
     pub fn merge(&mut self, other: ContactRequestValidation) {
         self.errors.extend(other.errors);
@@ -75,6 +100,9 @@ impl ContactRequestValidation {
         }
         if other.purpose_mismatch {
             self.purpose_mismatch = true;
+        }
+        if other.hard_error {
+            self.hard_error = true;
         }
     }
 }
@@ -520,5 +548,55 @@ mod tests {
             !result.purpose_mismatch,
             "a key-TYPE failure is permanent, not a purpose mismatch"
         );
+    }
+
+    /// **#5 — a purpose mismatch that co-occurs with a hard error must NOT be
+    /// downgraded to a skip.** `add_purpose_error` flags `purpose_mismatch`
+    /// even when a genuinely-permanent hard error (disabled / missing /
+    /// wrong-type key) is also present; reading the bare flag to decide
+    /// skip-vs-break would mask that permanent fault into a retry-forever
+    /// loop. `is_purpose_only()` is the correct gate.
+    #[test]
+    fn purpose_mismatch_with_hard_error_is_not_purpose_only() {
+        let mut v = ContactRequestValidation::new();
+        v.add_purpose_error("recipient key purpose is AUTHENTICATION".into());
+        v.add_error("sender key is disabled".into());
+
+        assert!(!v.is_valid);
+        assert!(v.purpose_mismatch, "the purpose flag is still raised");
+        assert!(
+            !v.is_purpose_only(),
+            "a purpose mismatch alongside a hard error is NOT purpose-only — must stay permanent"
+        );
+    }
+
+    /// A lone purpose mismatch IS purpose-only → skippable (the G15 path).
+    #[test]
+    fn lone_purpose_mismatch_is_purpose_only() {
+        let mut v = ContactRequestValidation::new();
+        v.add_purpose_error("recipient key purpose is AUTHENTICATION".into());
+        assert!(v.is_purpose_only());
+    }
+
+    /// A lone hard error is never purpose-only.
+    #[test]
+    fn lone_hard_error_is_not_purpose_only() {
+        let mut v = ContactRequestValidation::new();
+        v.add_error("sender key is disabled".into());
+        assert!(!v.is_purpose_only());
+    }
+
+    /// `merge` must carry the `hard_error` flag so a hard fault in a merged
+    /// sub-result can't be lost (which would re-open the masking bug).
+    #[test]
+    fn merge_propagates_hard_error() {
+        let mut a = ContactRequestValidation::new();
+        a.add_purpose_error("purpose".into());
+        let mut b = ContactRequestValidation::new();
+        b.add_error("hard".into());
+        a.merge(b);
+        assert!(a.purpose_mismatch);
+        assert!(a.hard_error);
+        assert!(!a.is_purpose_only());
     }
 }

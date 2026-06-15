@@ -891,7 +891,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             // and on-chain history contains nonconforming-but-honest docs.
             // Skip + log; the next sweep retries. Reserve the permanent
             // broken mark for key-TYPE / missing-key / disabled-key failures.
-            if validation.purpose_mismatch {
+            // `is_purpose_only()` (not the bare `purpose_mismatch` flag) so a
+            // purpose mismatch that co-occurs with a hard error still marks
+            // broken instead of masking the permanent fault into a retry loop.
+            if validation.is_purpose_only() {
                 tracing::warn!(
                     identity = %identity_id,
                     contact = %contact_id,
