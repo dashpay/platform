@@ -5194,6 +5194,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-metrics",
  "tracing",
  "tracing-subscriber",
  "zeroize",
@@ -6370,6 +6371,7 @@ dependencies = [
  "simple-signer",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-metrics",
  "tracing",
  "tracing-subscriber",
  "zeroize",
@@ -7699,6 +7701,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "tokio-metrics"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9e81d53caf955549b1dec7af4ac2149e94cc25ed97b4a545151140281e2f528"
+dependencies = [
+ "futures-util",
+ "pin-project-lite",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]
