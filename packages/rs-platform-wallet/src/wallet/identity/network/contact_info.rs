@@ -349,7 +349,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .public_keys()
                 .iter()
                 .find(|(_, k)| {
-                    k.purpose() == Purpose::ENCRYPTION && k.key_type() == KeyType::ECDSA_SECP256K1
+                    k.purpose() == Purpose::ENCRYPTION
+                        && k.key_type() == KeyType::ECDSA_SECP256K1
+                        && k.disabled_at().is_none()
                 })
                 .map(|(_, k)| k.id());
             drop(wm);

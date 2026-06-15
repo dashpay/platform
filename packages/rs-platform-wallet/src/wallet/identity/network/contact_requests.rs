@@ -393,20 +393,29 @@ fn newest_received_per_sender(
 /// signing keys for ECDH is poor key separation. `ECDSA_SECP256K1` is required
 /// either way (every observed key is that type, and ECDH needs the full key).
 fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, PlatformWalletError> {
+    // Skip disabled (revoked) keys: encrypting the DIP-15 compact xpub to a
+    // key whose private half may be compromised would hand the contact's
+    // payment xpub to whoever holds the revoked key. `disabled_at().is_none()`
+    // mirrors the validator's disabled-key gate.
     // Prefer a DECRYPTION key.
     if let Some((id, _)) = recipient_identity.public_keys().iter().find(|(_, k)| {
-        k.purpose() == Purpose::DECRYPTION && k.key_type() == KeyType::ECDSA_SECP256K1
+        k.purpose() == Purpose::DECRYPTION
+            && k.key_type() == KeyType::ECDSA_SECP256K1
+            && k.disabled_at().is_none()
     }) {
         return Ok(*id);
     }
     // Fall back to an ENCRYPTION key (mobile cohort).
     if let Some((id, _)) = recipient_identity.public_keys().iter().find(|(_, k)| {
-        k.purpose() == Purpose::ENCRYPTION && k.key_type() == KeyType::ECDSA_SECP256K1
+        k.purpose() == Purpose::ENCRYPTION
+            && k.key_type() == KeyType::ECDSA_SECP256K1
+            && k.disabled_at().is_none()
     }) {
         return Ok(*id);
     }
     Err(PlatformWalletError::InvalidIdentityData(
-        "Recipient identity has no ECDSA_SECP256K1 DECRYPTION or ENCRYPTION key".to_string(),
+        "Recipient identity has no enabled ECDSA_SECP256K1 DECRYPTION or ENCRYPTION key"
+            .to_string(),
     ))
 }
 
@@ -1885,5 +1894,52 @@ mod recipient_key_selection_tests {
         let idx = select_recipient_key_index(&recipient)
             .expect("ECDSA encryption key must be selectable");
         assert_eq!(idx, 1);
+    }
+
+    fn disabled_key(id: u32, key_type: KeyType, purpose: Purpose) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            key_type,
+            purpose,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: None,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(vec![0x02; 33]),
+            disabled_at: Some(1_700_000_000_000),
+        })
+    }
+
+    /// **#6 — a disabled (revoked) recipient key must not be selected.** The
+    /// chosen key receives the contact's DIP-15 compact xpub encrypted via
+    /// ECDH; picking a revoked key would hand that payment xpub to whoever
+    /// holds the compromised private half. A disabled DECRYPTION key must be
+    /// skipped in favour of an enabled ENCRYPTION key.
+    #[test]
+    fn skips_disabled_decryption_key_and_falls_back_to_enabled_encryption() {
+        let recipient = identity_with_keys(vec![
+            disabled_key(0, KeyType::ECDSA_SECP256K1, Purpose::DECRYPTION),
+            key(1, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION),
+        ]);
+
+        let idx = select_recipient_key_index(&recipient)
+            .expect("must skip the disabled DECRYPTION key and use the enabled ENCRYPTION key");
+        assert_eq!(idx, 1, "the disabled key (id 0) must not be selected");
+    }
+
+    /// When the ONLY candidate is disabled, selection errors rather than
+    /// silently encrypting to a revoked key.
+    #[test]
+    fn errors_when_only_candidate_key_is_disabled() {
+        let recipient = identity_with_keys(vec![disabled_key(
+            0,
+            KeyType::ECDSA_SECP256K1,
+            Purpose::ENCRYPTION,
+        )]);
+
+        let err = select_recipient_key_index(&recipient).unwrap_err();
+        assert!(
+            matches!(err, PlatformWalletError::InvalidIdentityData(_)),
+            "a sole disabled key must error, got {err:?}"
+        );
     }
 }
