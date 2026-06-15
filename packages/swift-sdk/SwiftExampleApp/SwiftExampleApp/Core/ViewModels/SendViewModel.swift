@@ -170,29 +170,54 @@ class SendViewModel: ObservableObject {
         parseTokenAmount(amountString, decimals: 8)
     }
 
-    /// The full, ordered Core output list for the `coreToCore` flow:
-    /// the PRIMARY row (`recipientAddress` + `amountDuffs`) followed by
-    /// each `additionalCoreRecipients` row, in display order. Returns
-    /// `nil` if ANY row is invalid so callers (gating + send) treat the
-    /// batch atomically — a single bad extra row blocks the whole send
-    /// rather than silently dropping that output.
+    /// The validated Core batch for the `coreToCore` flow, built once: the
+    /// ordered output list (primary + extras) AND its running duffs total.
+    /// `coreRecipients` and `coreSendTotalDuffs` both derive from this so
+    /// the gated/sent list and the displayed "Total" can never disagree —
+    /// they come from a single iteration over the same rows.
+    ///
+    /// Returns `nil` (whole batch invalid) when ANY row is invalid OR the
+    /// running total would overflow `UInt64`, so callers (gating + send)
+    /// treat the batch atomically — a single bad extra row, or an
+    /// aggregate that exceeds the duffs range, blocks the whole send
+    /// rather than silently dropping an output or wrapping the total.
     ///
     /// "Valid" per row = the address parses as a `.core` address on
     /// `self.network` (same `DashAddress.parse` the primary row's
     /// detection uses, so a Platform/Orchard string in an extra row is
     /// rejected here) AND its duffs amount is `> 0` (a sub-unit amount
     /// scales to 0 and would reach Rust as a zero-value output).
-    var coreRecipients: [(address: String, amountDuffs: UInt64)]? {
+    ///
+    /// Overflow rationale: each row's amount is independently a valid
+    /// `UInt64`, but two valid amounts can still sum past `UInt64.max`.
+    /// Dash's total supply is far below that, so this is only reachable
+    /// from raw user input, but a bare `+` would trap in debug / wrap in
+    /// release the moment the summary renders. Accumulating with
+    /// `addingReportingOverflow` and treating overflow as "batch invalid"
+    /// keeps the failure mode identical to a bad address or zero amount.
+    private var coreRecipientPlan:
+        (outputs: [(address: String, amountDuffs: UInt64)], total: UInt64)? {
         var outputs: [(address: String, amountDuffs: UInt64)] = []
+        var total: UInt64 = 0
+
+        // Accumulate `duffs` into `total`, rejecting the whole batch on
+        // overflow (see the property's overflow rationale).
+        func add(_ address: String, _ duffs: UInt64) -> Bool {
+            let (sum, overflow) = total.addingReportingOverflow(duffs)
+            if overflow { return false }
+            total = sum
+            outputs.append((address: address, amountDuffs: duffs))
+            return true
+        }
 
         // Primary row. The trim mirrors the existing `.coreToCore` send
         // case so the marshalled address matches what the badge validated.
         let primaryAddress = recipientAddress
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard isCoreAddress(primaryAddress),
-              let primaryDuffs = amountDuffs, primaryDuffs > 0
+              let primaryDuffs = amountDuffs, primaryDuffs > 0,
+              add(primaryAddress, primaryDuffs)
         else { return nil }
-        outputs.append((address: primaryAddress, amountDuffs: primaryDuffs))
 
         // Extra rows, in order.
         for row in additionalCoreRecipients {
@@ -200,21 +225,30 @@ class SendViewModel: ObservableObject {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard isCoreAddress(address),
                   let rowDuffs = duffs(forRecipientAmount: row.amountString),
-                  rowDuffs > 0
+                  rowDuffs > 0,
+                  add(address, rowDuffs)
             else { return nil }
-            outputs.append((address: address, amountDuffs: rowDuffs))
         }
 
-        return outputs
+        return (outputs, total)
+    }
+
+    /// The full, ordered Core output list for the `coreToCore` flow:
+    /// the PRIMARY row (`recipientAddress` + `amountDuffs`) followed by
+    /// each `additionalCoreRecipients` row, in display order. `nil` when
+    /// the batch isn't fully valid — see `coreRecipientPlan`.
+    var coreRecipients: [(address: String, amountDuffs: UInt64)]? {
+        coreRecipientPlan?.outputs
     }
 
     /// Sum of every valid Core output (primary + additional), in duffs —
     /// the "Total" shown in the multi-output summary. Returns 0 when the
-    /// batch isn't fully valid (`coreRecipients` is `nil`), matching the
-    /// disabled-Send state so the summary never shows a total for a batch
-    /// that can't be sent.
+    /// batch isn't fully valid (`coreRecipientPlan` is `nil`, including the
+    /// overflow case), matching the disabled-Send state so the summary
+    /// never shows a total for a batch that can't be sent. Computed with
+    /// checked addition (no bare `+`) in `coreRecipientPlan`.
     var coreSendTotalDuffs: UInt64 {
-        coreRecipients?.reduce(0) { $0 + $1.amountDuffs } ?? 0
+        coreRecipientPlan?.total ?? 0
     }
 
     /// Whether a trimmed string parses as a `.core` address on this
