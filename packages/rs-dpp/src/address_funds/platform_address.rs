@@ -185,6 +185,21 @@ pub const PLATFORM_HRP_MAINNET: &str = "dash";
 /// Human-readable part for Platform addresses on testnet/devnet/regtest (DIP-0018)
 pub const PLATFORM_HRP_TESTNET: &str = "tdash";
 
+/// Validates an already-lowercased HRP and returns whether it is mainnet.
+///
+/// `true` = mainnet (`dash`), `false` = non-mainnet (`tdash`).
+/// Returns an error for any other value.
+pub(crate) fn classify_platform_hrp(hrp: &str) -> Result<bool, ProtocolError> {
+    match hrp {
+        PLATFORM_HRP_MAINNET => Ok(true),
+        PLATFORM_HRP_TESTNET => Ok(false),
+        other => Err(ProtocolError::DecodingError(format!(
+            "not a platform address: HRP '{other}' is neither \
+             '{PLATFORM_HRP_MAINNET}' nor '{PLATFORM_HRP_TESTNET}'"
+        ))),
+    }
+}
+
 impl PlatformAddress {
     /// Type byte for P2PKH addresses in bech32m encoding (user-facing)
     pub const P2PKH_TYPE: u8 = 0xb0;
@@ -243,34 +258,19 @@ impl PlatformAddress {
 
     /// Decodes a bech32m-encoded Platform address string per DIP-0018.
     ///
-    /// NOTE: This expects bech32m type bytes (0xb0/0x80) in the encoded string,
-    /// NOT the storage type bytes (0x00/0x01) used in GroveDB keys.
-    ///
-    /// A `PlatformAddress` is network-agnostic: the network is supplied only at
-    /// [`Self::to_bech32m_string`] encode time. The HRP is validated to be a
-    /// recognized platform HRP (`dash`/`tdash`), but no network is inferred —
-    /// `tdash` is shared by Testnet/Devnet/Regtest, so the HRP cannot identify
-    /// the network. Callers needing a network guard must enforce it themselves.
+    /// Accepts both `dash` (mainnet) and `tdash` (non-mainnet) HRPs.
+    /// The address is network-agnostic; callers that need a network guard should
+    /// use [`is_mainnet_bech32m`](Self::is_mainnet_bech32m) before decoding.
     ///
     /// # Returns
     /// - `Ok(PlatformAddress)` - The decoded address
-    /// - `Err(ProtocolError)` - If the address is invalid or its HRP is not a
+    /// - `Err(ProtocolError)` - If the string is malformed or its HRP is not a
     ///   recognized platform HRP
     pub fn from_bech32m_string(s: &str) -> Result<Self, ProtocolError> {
-        // Decode the bech32m string
         let (hrp, data) =
             bech32::decode(s).map_err(|e| ProtocolError::DecodingError(format!("{}", e)))?;
 
-        // Validate the HRP is a recognized platform HRP (case-insensitive per
-        // DIP-0018). No network is derived — the HRP is ambiguous across the
-        // tdash-shared networks.
-        let hrp_lower = hrp.as_str().to_ascii_lowercase();
-        if hrp_lower != PLATFORM_HRP_MAINNET && hrp_lower != PLATFORM_HRP_TESTNET {
-            return Err(ProtocolError::DecodingError(format!(
-                "invalid HRP '{}': expected '{}' or '{}'",
-                hrp, PLATFORM_HRP_MAINNET, PLATFORM_HRP_TESTNET
-            )));
-        }
+        classify_platform_hrp(&hrp.as_str().to_ascii_lowercase())?;
 
         // Validate payload length: 1 type byte + 20 hash bytes = 21 bytes
         if data.len() != 1 + ADDRESS_HASH_SIZE {
@@ -299,43 +299,20 @@ impl PlatformAddress {
         Ok(address)
     }
 
-    /// Classifies a bech32m platform-address string as mainnet or non-mainnet
-    /// by its HRP alone, without decoding the payload.
+    /// Classifies a bech32m platform-address string as mainnet or non-mainnet.
     ///
-    /// This is the only truthful network signal an address string carries: per
-    /// DIP-0018 the prefix `dash` means mainnet and `tdash` means non-mainnet,
-    /// but `tdash` is shared by Testnet, Devnet, and Regtest and the payload
-    /// holds no network byte — so the specific non-mainnet network is NOT
-    /// recoverable from an address string. The HRP is the segment before the
-    /// final `'1'` separator (bech32's data charset excludes `'1'`); the
-    /// comparison is case-insensitive since bech32m permits all-uppercase.
+    /// Fully decodes `s` (validating checksum and data part) then classifies
+    /// the HRP: `dash` means mainnet, `tdash` means non-mainnet (Testnet /
+    /// Devnet / Regtest — these are indistinguishable by HRP alone per DIP-0018).
     ///
     /// # Returns
     /// - `Ok(true)` - mainnet (`dash` HRP)
     /// - `Ok(false)` - non-mainnet (`tdash` HRP: Testnet/Devnet/Regtest)
-    /// - `Err(ProtocolError)` - malformed (no bech32 separator) or a
-    ///   non-platform HRP
+    /// - `Err(ProtocolError)` - malformed address or non-platform HRP
     pub fn is_mainnet_bech32m(s: &str) -> Result<bool, ProtocolError> {
-        let hrp = s
-            .rsplit_once('1')
-            .map(|(hrp, _)| hrp)
-            .filter(|h| !h.is_empty())
-            .ok_or_else(|| {
-                ProtocolError::DecodingError(
-                    "invalid platform address: missing bech32 separator".to_string(),
-                )
-            })?;
-
-        if hrp.eq_ignore_ascii_case(PLATFORM_HRP_MAINNET) {
-            Ok(true)
-        } else if hrp.eq_ignore_ascii_case(PLATFORM_HRP_TESTNET) {
-            Ok(false)
-        } else {
-            Err(ProtocolError::DecodingError(format!(
-                "not a platform address: HRP '{hrp}' is neither \
-                 '{PLATFORM_HRP_MAINNET}' nor '{PLATFORM_HRP_TESTNET}'"
-            )))
-        }
+        let (hrp, _) =
+            bech32::decode(s).map_err(|e| ProtocolError::DecodingError(format!("{e}")))?;
+        classify_platform_hrp(&hrp.to_lowercase())
     }
 
     /// Converts the PlatformAddress to a dashcore Address with the specified network.
@@ -1297,7 +1274,6 @@ mod tests {
 
     #[test]
     fn test_bech32m_invalid_hrp_fails() {
-        // Create a valid bech32m address with wrong HRP using the bech32 crate directly
         let wrong_hrp = Hrp::parse("bitcoin").unwrap();
         let payload: [u8; 21] = [0x00; 21];
         let wrong_hrp_address = bech32::encode::<Bech32m>(wrong_hrp, &payload).unwrap();
@@ -1306,8 +1282,8 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            err.to_string().contains("invalid HRP"),
-            "Error should mention invalid HRP: {}",
+            err.to_string().contains("not a platform address"),
+            "Error should mention non-platform HRP: {}",
             err
         );
     }
@@ -1508,7 +1484,9 @@ mod tests {
 
     #[test]
     fn test_is_mainnet_bech32m_non_platform_hrp_errors() {
-        let err = PlatformAddress::is_mainnet_bech32m("bc1qexampledata").unwrap_err();
+        // Valid Bitcoin bech32 address: decode succeeds, HRP "bc" triggers error.
+        let err = PlatformAddress::is_mainnet_bech32m("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
+            .unwrap_err();
         assert!(
             err.to_string().contains("not a platform address"),
             "unexpected error: {err}"
@@ -1516,10 +1494,22 @@ mod tests {
     }
 
     #[test]
+    fn test_is_mainnet_bech32m_malformed_data_part_errors() {
+        // `dash1!` has a valid HRP but `!` is not a bech32 character.
+        // Previously this returned Ok(true) (the HRP-only check); now it must
+        // return an error because bech32::decode validates the full string.
+        assert!(
+            PlatformAddress::is_mainnet_bech32m("dash1!").is_err(),
+            "dash1! must error, not return Ok(true)"
+        );
+    }
+
+    #[test]
     fn test_is_mainnet_bech32m_missing_separator_errors() {
         let err = PlatformAddress::is_mainnet_bech32m("nodelimiterhere").unwrap_err();
+        // bech32::decode returns "parsing failed" for strings without separator
         assert!(
-            err.to_string().contains("missing bech32 separator"),
+            err.to_string().contains("parsing failed") || err.to_string().contains("separator"),
             "unexpected error: {err}"
         );
     }
@@ -1528,7 +1518,7 @@ mod tests {
     fn test_is_mainnet_bech32m_empty_errors() {
         let err = PlatformAddress::is_mainnet_bech32m("").unwrap_err();
         assert!(
-            err.to_string().contains("missing bech32 separator"),
+            err.to_string().contains("parsing failed") || err.to_string().contains("separator"),
             "unexpected error: {err}"
         );
     }

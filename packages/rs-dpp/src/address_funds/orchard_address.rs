@@ -1,7 +1,7 @@
 use bech32::{Bech32m, Hrp};
 use dashcore::Network;
 
-use crate::address_funds::platform_address::{PLATFORM_HRP_MAINNET, PLATFORM_HRP_TESTNET};
+use crate::address_funds::platform_address::classify_platform_hrp;
 use crate::address_funds::PlatformAddress;
 use crate::ProtocolError;
 
@@ -87,30 +87,19 @@ impl OrchardAddress {
 
     /// Decodes a bech32m-encoded Orchard address string.
     ///
-    /// An `OrchardAddress` is network-agnostic: the network is supplied only at
-    /// [`Self::to_bech32m_string`] encode time. The HRP is validated to be a
-    /// recognized platform HRP (`dash`/`tdash`), but no network is inferred —
-    /// `tdash` is shared by Testnet/Devnet/Regtest, so the HRP cannot identify
-    /// the network. Callers needing a network guard must enforce it themselves.
+    /// Accepts both `dash` (mainnet) and `tdash` (non-mainnet) HRPs.
+    /// The address is network-agnostic; callers that need a network guard should
+    /// use [`PlatformAddress::is_mainnet_bech32m`] before decoding.
     ///
     /// # Returns
     /// - `Ok(OrchardAddress)` - The decoded address
-    /// - `Err(ProtocolError)` - If the address is invalid or its HRP is not a
+    /// - `Err(ProtocolError)` - If the string is malformed or its HRP is not a
     ///   recognized platform HRP
     pub fn from_bech32m_string(s: &str) -> Result<Self, ProtocolError> {
         let (hrp, data) =
             bech32::decode(s).map_err(|e| ProtocolError::DecodingError(format!("{}", e)))?;
 
-        // Validate the HRP is a recognized platform HRP (case-insensitive). No
-        // network is derived — the HRP is ambiguous across the tdash-shared
-        // networks.
-        let hrp_lower = hrp.as_str().to_ascii_lowercase();
-        if hrp_lower != PLATFORM_HRP_MAINNET && hrp_lower != PLATFORM_HRP_TESTNET {
-            return Err(ProtocolError::DecodingError(format!(
-                "invalid HRP '{}': expected '{}' or '{}'",
-                hrp, PLATFORM_HRP_MAINNET, PLATFORM_HRP_TESTNET
-            )));
-        }
+        classify_platform_hrp(&hrp.as_str().to_ascii_lowercase())?;
 
         // Validate payload: 1 type byte + 11 diversifier + 32 pk_d = 44 bytes
         if data.len() != 1 + ORCHARD_ADDRESS_SIZE {

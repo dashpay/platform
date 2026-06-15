@@ -1330,8 +1330,13 @@ mod check_recipient_hrp_tests {
 
     #[test]
     fn non_platform_hrp_reports_not_a_platform_address() {
-        // A core/segwit `bc1…` recipient is not a platform address at all.
-        let err = check_recipient_hrp("bc1qexampledata", dashcore::Network::Testnet).unwrap_err();
+        // A valid Bitcoin bech32 SegWit address has HRP "bc", which decodes fine
+        // but is not a platform HRP — so classification rejects it cleanly.
+        let err = check_recipient_hrp(
+            "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+            dashcore::Network::Testnet,
+        )
+        .unwrap_err();
         assert!(
             matches!(&err, PlatformWalletError::ShieldedBuildError(m) if m.contains("not a platform address")),
             "unexpected error: {err:?}"
@@ -1341,19 +1346,22 @@ mod check_recipient_hrp_tests {
     #[test]
     fn missing_separator_errors_without_panic() {
         let err = check_recipient_hrp("nodelimiterhere", dashcore::Network::Testnet).unwrap_err();
-        assert!(matches!(
-            &err,
-            PlatformWalletError::ShieldedBuildError(m) if m.contains("missing bech32 separator")
-        ));
+        // bech32::decode emits "parsing failed" for strings without the separator
+        assert!(
+            matches!(&err, PlatformWalletError::ShieldedBuildError(m)
+                if m.contains("invalid platform address")),
+            "unexpected error: {err:?}"
+        );
     }
 
     #[test]
     fn empty_recipient_errors_without_panic() {
         let err = check_recipient_hrp("", dashcore::Network::Testnet).unwrap_err();
-        assert!(matches!(
-            &err,
-            PlatformWalletError::ShieldedBuildError(m) if m.contains("missing bech32 separator")
-        ));
+        assert!(
+            matches!(&err, PlatformWalletError::ShieldedBuildError(m)
+                if m.contains("invalid platform address")),
+            "unexpected error: {err:?}"
+        );
     }
 }
 
