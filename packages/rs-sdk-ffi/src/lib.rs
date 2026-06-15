@@ -22,6 +22,7 @@ mod identity;
 mod mnemonic_resolver;
 mod mnemonic_resolver_core_signer;
 mod protocol_version;
+mod runtime;
 mod sdk;
 mod signer;
 mod signer_simple;

@@ -2,10 +2,34 @@
 
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
+use key_wallet::bip32::ExtendedPrivKey;
 
 use crate::error::PlatformWalletError;
 
 use super::*;
+
+/// Where the per-index MASTER auth pubkey hash for the discovery scan
+/// comes from. The two discovery entry points differ *only* in this:
+/// everything else (gap-limit bookkeeping, Platform lookup, identity
+/// folding, DPNS enrichment) is shared in [`IdentityWallet::discover_inner`].
+///
+/// - [`KeyHashSource::ResidentWallet`] derives from the in-process
+///   `Wallet` key material (the historical path). Only valid for wallets
+///   that actually hold a private key in memory
+///   (`WalletType::Mnemonic` / `Seed` / `ExtendedPrivKey`).
+/// - [`KeyHashSource::Master`] derives from a master `ExtendedPrivKey`
+///   the caller resolved from the wallet's mnemonic on demand. This is
+///   the path the iOS Keychain-backed `WalletType::ExternalSignable`
+///   shape uses: its seed lives outside the in-process wallet manager,
+///   so the resident-wallet derive would fail with
+///   `External signable wallet has no private key`.
+enum KeyHashSource<'a> {
+    /// Derive each probe hash from the in-memory wallet under a per-index
+    /// read lock on the shared `WalletManager`.
+    ResidentWallet,
+    /// Derive each probe hash from this master xpriv (pure, no lock).
+    Master(&'a ExtendedPrivKey),
+}
 
 // ---------------------------------------------------------------------------
 // Identity discovery (gap-limit scan)
@@ -80,7 +104,54 @@ impl IdentityWallet {
         &self,
         opts: IdentityDiscoveryOptions,
     ) -> Result<Vec<Identity>, PlatformWalletError> {
-        use super::identity_handle::{identity_auth_derivation_path, MASTER_KEY_INDEX};
+        self.discover_inner(opts, KeyHashSource::ResidentWallet)
+            .await
+    }
+
+    /// Master-xpriv variant of [`Self::discover`]: run the identical
+    /// gap-limit scan / identity-folding / DPNS-enrichment logic, but
+    /// derive each probe's MASTER auth pubkey hash from the supplied
+    /// master `ExtendedPrivKey` instead of from the in-memory wallet.
+    ///
+    /// This is the path the iOS Keychain-backed
+    /// `WalletType::ExternalSignable` wallets must take: their seed lives
+    /// outside the in-process wallet manager, so [`Self::discover`]'s
+    /// resident-wallet derive fails with
+    /// `External signable wallet has no private key`. The caller resolves
+    /// the wallet's mnemonic into `master` on demand (see the FFI
+    /// resolver path) and hands it in here; the derivation goes through
+    /// the same [`derive_identity_auth_key_hash_from_master`] the
+    /// registration path uses, so a rescan derives exactly the key
+    /// material a key-resident wallet would.
+    ///
+    /// `master` must be the BIP-32 master node for this wallet on its
+    /// network (`ExtendedPrivKey::new_master(network, mnemonic.to_seed(""))`).
+    pub async fn discover_from_master(
+        &self,
+        opts: IdentityDiscoveryOptions,
+        master: &ExtendedPrivKey,
+    ) -> Result<Vec<Identity>, PlatformWalletError> {
+        self.discover_inner(opts, KeyHashSource::Master(master))
+            .await
+    }
+
+    /// Shared gap-limit scan body for [`Self::discover`] and
+    /// [`Self::discover_from_master`]. The only thing the two callers
+    /// vary is `source`, which decides how each probe's MASTER auth
+    /// pubkey hash is derived (in-memory wallet under a per-index read
+    /// lock, vs. a resolved master xpriv). Everything downstream — the
+    /// Platform unique-hash lookup, identity folding, derivation
+    /// breadcrumb, and DPNS enrichment — is identical, so it lives here
+    /// once.
+    async fn discover_inner(
+        &self,
+        opts: IdentityDiscoveryOptions,
+        source: KeyHashSource<'_>,
+    ) -> Result<Vec<Identity>, PlatformWalletError> {
+        use super::identity_handle::{
+            derive_identity_auth_key_hash_from_master, identity_auth_derivation_path,
+            MASTER_KEY_INDEX,
+        };
         use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
         use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
         use dash_sdk::platform::types::identity::PublicKeyHash;
@@ -122,14 +193,32 @@ impl IdentityWallet {
         let mut discovered: Vec<Identity> = Vec::new();
 
         while consecutive_misses < gap_limit {
-            let key_hash_array = {
-                let wm = self.wallet_manager.read().await;
-                let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
-                    crate::error::PlatformWalletError::WalletNotFound(
-                        "Wallet not found in wallet manager".to_string(),
-                    )
-                })?;
-                derive_identity_auth_key_hash(wallet, network, identity_index, MASTER_KEY_INDEX)?
+            // Derive the MASTER auth pubkey hash for this identity index
+            // from whichever source the caller picked. The per-index read
+            // lock is only needed for the wallet-internal derive (it reads
+            // the resident key material); the master derive is a pure,
+            // lock-free secp256k1 pass.
+            let key_hash_array = match source {
+                KeyHashSource::ResidentWallet => {
+                    let wm = self.wallet_manager.read().await;
+                    let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
+                        crate::error::PlatformWalletError::WalletNotFound(
+                            "Wallet not found in wallet manager".to_string(),
+                        )
+                    })?;
+                    derive_identity_auth_key_hash(
+                        wallet,
+                        network,
+                        identity_index,
+                        MASTER_KEY_INDEX,
+                    )?
+                }
+                KeyHashSource::Master(master) => derive_identity_auth_key_hash_from_master(
+                    master,
+                    network,
+                    identity_index,
+                    MASTER_KEY_INDEX,
+                )?,
             };
 
             // Query Platform for an identity registered with this key

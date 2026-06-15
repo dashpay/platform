@@ -119,18 +119,31 @@ export class TokensFacade {
     return w.getTokenDirectPurchasePricesWithProofInfo(tokenIds);
   }
 
-  async contractInfo(contractId: wasm.IdentifierLike): Promise<wasm.TokenContractInfo | undefined> {
+  /**
+   * Fetches a token's contract info (the data contract that defines it and the
+   * token's position within that contract).
+   *
+   * @param tokenId - The token ID, not a data contract ID. Derive one from a
+   *   contract ID and position with {@link TokensFacade.calculateId}.
+   */
+  async contractInfo(tokenId: wasm.IdentifierLike): Promise<wasm.TokenContractInfo | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getTokenContractInfo(contractId);
+    return w.getTokenContractInfo(tokenId);
   }
 
+  /**
+   * Fetches a token's contract info with cryptographic proof.
+   *
+   * @param tokenId - The token ID, not a data contract ID. Derive one from a
+   *   contract ID and position with {@link TokensFacade.calculateId}.
+   */
   async contractInfoWithProof(
-    contractId: wasm.IdentifierLike,
+    tokenId: wasm.IdentifierLike,
   ): Promise<wasm.ProofMetadataResponseTyped<
     wasm.TokenContractInfo | undefined
   >> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getTokenContractInfoWithProofInfo(contractId);
+    return w.getTokenContractInfoWithProofInfo(tokenId);
   }
 
   async perpetualDistributionLastClaim(
