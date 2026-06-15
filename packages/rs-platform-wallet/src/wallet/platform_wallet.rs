@@ -966,6 +966,15 @@ impl PlatformWallet {
     /// shielded pool (Type 18), with the resulting note assigned to
     /// `shielded_account`'s default Orchard address.
     ///
+    /// Low-level raw-proof entry point. Production funds shielded
+    /// asset-locks through [`shielded_fund_from_asset_lock`](Self::shielded_fund_from_asset_lock),
+    /// which builds the lock, runs IS→CL fallback, self-derives the
+    /// amount, and tracks/consumes the outpoint. This wrapper takes a
+    /// pre-built proof + explicit amount and does none of that — it
+    /// exists for callers that must drive a chosen proof directly, such
+    /// as the SH-035 single-use replay probe (resubmitting one proof
+    /// twice, which the orchestrated path cannot express).
+    ///
     /// `asset_lock_proof` is the single-use proof of the locked L1
     /// outpoint and `private_key` the one-time key authorizing it (the
     /// caller derives both via the asset-lock builder). `amount` is the

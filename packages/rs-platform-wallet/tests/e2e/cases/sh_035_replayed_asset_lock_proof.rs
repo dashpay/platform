@@ -8,9 +8,18 @@
 //! resubmit the SAME proof in a second Type-18 transition. An asset-lock
 //! outpoint is single-use; the second consumption MUST fail.
 //!
-//! Uses the public `shielded_shield_from_asset_lock` wrapper (Gap-4) +
-//! the one-time-key helper (Gap-5). Core-L1 gated — a RED on the
-//! proof-build documents the gate, not a defect.
+//! Why this bypasses the production `shielded_fund_from_asset_lock`
+//! orchestration: that API builds a FRESH asset lock (new outpoint) on
+//! every `FromWalletBalance` call and consumes the tracked lock on
+//! success, so it is structurally incapable of resubmitting one proof
+//! twice. This probe targets DRIVE's independent single-use outpoint
+//! check, which requires submitting a duplicate proof directly — so it
+//! deliberately uses the low-level `shielded_shield_from_asset_lock`
+//! raw-proof seam. The POSITIVE production-path coverage lives in SH-018
+//! (`shielded_fund_from_asset_lock` end-to-end).
+//!
+//! Core-L1 gated — a RED on the proof-build documents the gate, not a
+//! defect.
 
 #![cfg(feature = "shielded")]
 

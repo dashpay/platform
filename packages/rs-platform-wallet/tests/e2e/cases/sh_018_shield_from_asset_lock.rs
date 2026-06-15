@@ -4,28 +4,38 @@
 //! asset-lock funding plumbing is complete — that is acceptable; a RED
 //! here documents the Core-L1 gate, not a defect in the shield path.
 //!
-//! Uses the public `PlatformWallet::shielded_shield_from_asset_lock`
-//! wrapper (Gap-4) + the `test-utils` one-time-key derivation helper
-//! (Gap-5) + `AssetLockManager::create_funded_asset_lock_proof`:
+//! Exercises the SAME path production funds shielded asset-locks through:
+//! `PlatformWallet::shielded_fund_from_asset_lock` with
+//! `AssetLockFunding::FromWalletBalance` (the FFI
+//! `platform_wallet_manager_shielded_fund_from_asset_lock` and the
+//! seed-pool batch funder both drive this exact API). The orchestrator
+//! builds the asset lock from the wallet's Core balance, resolves the
+//! proof with IS→CL fallback, derives `shield_amount = lock_value −
+//! pool_fee` itself, submits the Type-18 transition, and consumes the
+//! tracked lock:
 //!   1. Fund the test wallet's Core (L1) account.
-//!   2. Build an asset-lock proof over that UTXO (shielded funding type).
-//!   3. Derive the one-time private key from (seed, path).
-//!   4. `shielded_shield_from_asset_lock(account, proof, key, amount)`.
-//!   5. Sync + assert the shielded balance reflects the amount.
+//!   2. `shielded_fund_from_asset_lock(FromWalletBalance { amount_duffs })`.
+//!   3. Sync + assert the shielded balance reflects the credited value.
+//!
+//! Because production self-derives the shielded amount from the on-chain
+//! lock value, the assertion is a fee-tolerant range (`lock − fee` lands
+//! between half the lock and the full lock), mirroring CR-003 / ID-002b.
 //!
 //! Do NOT weaken the assertions: if the Core-L1 funding seam isn't wired,
-//! the proof-build (step 2) errors and the test goes RED documenting it.
+//! the orchestrated fund (step 2) errors and the test goes RED.
 
 #![cfg(feature = "shielded")]
 
 use std::time::Duration;
 
-use platform_wallet::wallet::shielded::operations::test_utils::derive_asset_lock_private_key;
-use platform_wallet::AssetLockFundingType;
+use dpp::address_funds::OrchardAddress;
+use dpp::balances::credits::CREDITS_PER_DUFF;
+use platform_wallet::AssetLockFunding;
 
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
-    bind_shielded, shielded_prover, teardown_sweep_shielded, wait_for_shielded_balance,
+    bind_shielded, shielded_default_address_43, shielded_prover, teardown_sweep_shielded,
+    wait_for_shielded_balance,
 };
 use crate::framework::signer::SeedBackedCoreSigner;
 
@@ -33,13 +43,13 @@ use crate::framework::signer::SeedBackedCoreSigner;
 /// `PLATFORM_WALLET_E2E_BANK_CORE_GATE`). Must cover the asset lock plus
 /// its L1 tx fee.
 const TEST_WALLET_CORE_FUNDING: u64 = 1_750_000;
-/// Duffs locked into the asset lock. Must exceed `SHIELD_DUFFS` by more
-/// than Type 18's ~2.13e8-credit asset-lock shield fee — shielding the
-/// full lock value is rejected because the fee has nowhere to come from.
+/// Duffs locked into the asset lock. The orchestrator shields
+/// `lock_value − pool_fee`; the remainder covers Type 18's ~2.13e8-credit
+/// asset-lock processing fee.
 const ASSET_LOCK_DUFFS: u64 = 1_500_000;
-/// Duffs actually shielded into the pool — strictly below the lock so the
-/// 3e8-credit remainder (3e5 duffs) covers the asset-lock processing fee.
-const SHIELD_DUFFS: u64 = 1_200_000;
+/// BIP-44 standard account the orchestrator draws the lock's duffs from
+/// (account 0 is the SPV-visible funded account).
+const FUNDING_ACCOUNT_INDEX: u32 = 0;
 const SHIELDED_ACCOUNT: u32 = 0;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -60,59 +70,57 @@ async fn sh_018_shield_from_asset_lock() {
         .expect("setup_with_core_funded_test_wallet (Core-L1 gate)");
 
     let network = s.test_wallet.platform_wallet().sdk().network;
-    let seed_bytes = s.test_wallet.seed_bytes();
     let prover = shielded_prover();
     let handle = bind_shielded(&s.test_wallet, &[SHIELDED_ACCOUNT], &s.ctx.workdir)
         .await
         .expect("bind_shielded");
 
-    // Build an asset-lock proof over the funded Core UTXO, for shielded
-    // funding. Returns (proof, derivation_path, outpoint).
-    let core_signer = SeedBackedCoreSigner::new(seed_bytes, network);
-    let (proof, path, _outpoint) = s
-        .test_wallet
-        .platform_wallet()
-        .asset_locks()
-        .create_funded_asset_lock_proof(
-            ASSET_LOCK_DUFFS,
-            0,
-            AssetLockFundingType::AssetLockShieldedAddressTopUp,
-            SHIELDED_ACCOUNT,
-            &core_signer,
-        )
+    // The note must land on this wallet's own bound Orchard account so the
+    // shielded sync can recover it — same self-fund shape the FFI uses.
+    let recipient_raw = shielded_default_address_43(&s.test_wallet, SHIELDED_ACCOUNT)
         .await
-        .expect(
-            "create_funded_asset_lock_proof (Core-L1 asset-lock seam — RED here documents the \
-             gate, not a shield-path defect)",
-        );
+        .expect("shielded default address for bound account");
+    let recipient = OrchardAddress::from_raw_bytes(&recipient_raw)
+        .expect("valid Orchard recipient address from bound account");
 
-    // Derive the one-time asset-lock private key from (seed, path).
-    let one_time_key = derive_asset_lock_private_key(&seed_bytes, network, &path)
-        .expect("derive one-time asset-lock private key");
-
-    // Shield from the asset lock via the public wrapper (Type 18). Shield
-    // strictly less than the lock value so the remainder covers Type 18's
-    // asset-lock processing fee.
-    let credits = dpp::balances::credits::CREDITS_PER_DUFF * SHIELD_DUFFS;
+    // Drive the production orchestrated path: build the asset lock from the
+    // wallet's Core balance, resolve via IS→CL fallback, self-derive the
+    // shield amount, submit Type 18, and consume the tracked lock. `None`
+    // credits => the recipient receives `lock_value − pool_fee`.
+    let core_signer = SeedBackedCoreSigner::new(s.test_wallet.seed_bytes(), network);
     s.test_wallet
         .platform_wallet()
-        .shielded_shield_from_asset_lock(SHIELDED_ACCOUNT, proof, &one_time_key, credits, prover)
+        .shielded_fund_from_asset_lock(
+            &handle.coordinator,
+            AssetLockFunding::FromWalletBalance {
+                amount_duffs: ASSET_LOCK_DUFFS,
+                account_index: FUNDING_ACCOUNT_INDEX,
+            },
+            vec![(recipient, None)],
+            &core_signer,
+            prover,
+            None,
+            // Single real note, no anonymity-set fillers.
+            0,
+            None,
+        )
         .await
-        .expect("shielded_shield_from_asset_lock");
+        .expect("shielded_fund_from_asset_lock (Core-L1 asset-lock seam — RED here documents the gate, not a shield-path defect)");
 
-    let shielded = wait_for_shielded_balance(
-        &s.test_wallet,
-        &handle,
-        SHIELDED_ACCOUNT,
-        credits,
-        STEP_TIMEOUT,
-    )
-    .await
-    .expect("shielded balance never reached the shielded amount");
-    assert_eq!(
-        shielded, credits,
-        "shielded_balances[{SHIELDED_ACCOUNT}] must equal the shielded credits exactly; \
-         observed {shielded}"
+    // Production self-derives `shield_amount = lock_value − pool_fee`, so
+    // accept a fee-tolerant range: at least half the lock (post-fee floor,
+    // mirrors CR-003 / ID-002b) and at most the full lock value (the fee is
+    // subtracted, never added).
+    let lock_credits = ASSET_LOCK_DUFFS.saturating_mul(CREDITS_PER_DUFF);
+    let expected_min = lock_credits / 2;
+    let shielded =
+        wait_for_shielded_balance(&s.test_wallet, &handle, SHIELDED_ACCOUNT, expected_min, STEP_TIMEOUT)
+            .await
+            .expect("shielded balance never reached the post-fee floor");
+    assert!(
+        shielded >= expected_min && shielded <= lock_credits,
+        "shielded_balances[{SHIELDED_ACCOUNT}] = {shielded} must land in the post-fee range \
+         [{expected_min}, {lock_credits}] (production shields lock_value − pool_fee)"
     );
 
     let bank_addr = s
