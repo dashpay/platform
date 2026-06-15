@@ -491,7 +491,7 @@ struct CreateDocumentView: View {
 
         Task {
             do {
-                let documentId = try await wallet.createDocument(
+                let (documentId, canonicalJSON) = try await wallet.createDocument(
                     ownerIdentityId: ownerId,
                     contractId: contractId,
                     documentType: typeName,
@@ -511,7 +511,7 @@ struct CreateDocumentView: View {
                             documentType: typeName,
                             contractId: contractId,
                             ownerId: ownerId,
-                            propertiesJSON: propertiesJSON,
+                            canonicalJSON: canonicalJSON,
                             network: network,
                             parentContract: parentContract
                         )
@@ -539,11 +539,15 @@ struct CreateDocumentView: View {
         documentType: String,
         contractId: Data,
         ownerId: Identifier,
-        propertiesJSON: String,
+        canonicalJSON: String,
         network: Network,
         parentContract: PersistentDataContract?
     ) throws {
-        let dataBlob = propertiesJSON.data(using: .utf8) ?? Data()
+        // Persist the confirmed document's canonical query-side JSON
+        // (system fields + DPP-normalized properties as returned by the
+        // Rust side), not the user's raw form input, so the local cache
+        // matches what a DOC-01 query would return.
+        let dataBlob = canonicalJSON.data(using: .utf8) ?? Data()
         let document = PersistentDocument(
             documentId: documentId.toBase58String(),
             documentType: documentType,

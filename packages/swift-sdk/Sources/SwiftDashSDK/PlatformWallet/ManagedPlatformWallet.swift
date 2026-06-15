@@ -2561,7 +2561,15 @@ extension ManagedPlatformWallet {
 
     /// Create + broadcast a new revision-1 document on `contractId`'s
     /// `documentType`, owned by `ownerIdentityId`. Returns the 32-byte
-    /// document id once Platform confirms the transition.
+    /// document id and the confirmed document's canonical query-side
+    /// JSON once Platform confirms the transition.
+    ///
+    /// The returned JSON is DPP's canonical representation of the
+    /// confirmed document (system fields `$id`/`$ownerId`/timestamps/
+    /// `$revision` with identifiers as base58 strings, only populated
+    /// fields present) — what a DOC-01 query would return. Callers
+    /// persist this verbatim so the local cache matches the on-chain
+    /// document rather than the user's raw form input.
     ///
     /// Routes through `IdentityWallet::create_document_with_signer`
     /// (via `platform_wallet_create_document_with_signer`), the
@@ -2594,7 +2602,7 @@ extension ManagedPlatformWallet {
         documentType: String,
         propertiesJSON: String,
         signer: KeychainSigner
-    ) async throws -> Identifier {
+    ) async throws -> (Identifier, String) {
         let handle = self.handle
         let signerHandle = signer.handle
         let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
@@ -2612,6 +2620,9 @@ extension ManagedPlatformWallet {
             // sufficient — the pointers don't need to outlive the
             // call.
             var documentIdBytes = [UInt8](repeating: 0, count: 32)
+            // Receives an owned canonical-document JSON C string on
+            // success; freed with `platform_wallet_string_free` below.
+            var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
 
             // Pin `signer` for the whole FFI call. A bare `_ = signer` is
             // unreliable folklore — the optimizer may elide it in -O and
@@ -2632,7 +2643,8 @@ extension ManagedPlatformWallet {
                                         typePtr,
                                         propsPtr,
                                         signerHandle,
-                                        outBp.baseAddress!
+                                        outBp.baseAddress!,
+                                        &documentJsonPtr
                                     )
                                 }
                             }
@@ -2642,7 +2654,13 @@ extension ManagedPlatformWallet {
             }
 
             try result.check()
-            return Data(documentIdBytes)
+            // Take ownership of the JSON and release the Rust allocation.
+            defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
+            // Defensive: on a successful broadcast the Rust side always
+            // writes the canonical JSON, but fall back to an empty
+            // string rather than crashing if it is unexpectedly null.
+            let canonicalJSON = documentJsonPtr.map { String(cString: $0) } ?? ""
+            return (Data(documentIdBytes), canonicalJSON)
         }.value
     }
 
