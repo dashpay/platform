@@ -181,7 +181,8 @@ impl StateTransitionAddressBalancesAndNoncesValidation for StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => false,
+            | StateTransition::ShieldedWithdrawal(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_) => false,
         }
     }
 
@@ -249,7 +250,8 @@ impl StateTransitionAddressBalancesAndNoncesValidation for StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => {
+            | StateTransition::ShieldedWithdrawal(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_) => {
                 Ok(ConsensusValidationResult::new_with_data(BTreeMap::new()))
             }
         }

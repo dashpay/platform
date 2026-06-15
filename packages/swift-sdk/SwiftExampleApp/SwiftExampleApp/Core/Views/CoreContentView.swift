@@ -89,7 +89,7 @@ struct CoreContentView: View {
     }
 
     private var isSpvRunning: Bool {
-        walletManager.spvProgress.overallState.isRunning
+        walletManager.spvIsRunning
     }
 
     private func heightDisplay(numerator: UInt32, denominator: UInt32) -> String {
@@ -431,6 +431,84 @@ var body: some View {
                     // and reflect the whole pool rather than a single
                     // bound wallet.
                     ShieldedNetworkSummaryRows(walletIds: walletIdsOnNetwork)
+
+                    // Per-pass wall-clock timing. While a sync is
+                    // in-flight, shows the live ticker (driven by a
+                    // 1Hz timer on ShieldedService). After
+                    // completion, shows the most recent non-cooldown
+                    // pass duration. Mono digits keep the number
+                    // readable as it ticks during long initial
+                    // syncs (e.g. 10 min at N=1M). See
+                    // `docs/shielded-sync-timing-spec.md`.
+                    if shieldedService.isSyncing,
+                       let elapsed = shieldedService.currentSyncElapsed {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Syncing… elapsed")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text(String(format: "%.1f s", elapsed))
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .monospacedDigit()
+                            }
+                            // Dual per-pass progress (P1.2). Two bars
+                            // share the same denominator — the on-chain
+                            // MMR total leaf count (total notes == total
+                            // leaves) — carried straight from Rust in the
+                            // tree-progress callback's second arg. The
+                            // "Downloaded" bar tracks notes pulled off the
+                            // wire; the "Checked" bar tracks commitments
+                            // appended to the local Orchard tree. When the
+                            // total is unknown (RPC unavailable, or before
+                            // the first tree batch lands) `currentTreeTotal`
+                            // is nil/0 and each bar falls back to an
+                            // indeterminate spinner with the raw count.
+                            if shieldedService.currentSyncScanned != nil
+                                || shieldedService.currentTreeCommitted != nil {
+                                ShieldedDualProgressRows(
+                                    downloaded: shieldedService.currentSyncScanned,
+                                    checked: shieldedService.currentTreeCommitted,
+                                    total: shieldedService.currentTreeTotal
+                                )
+                            }
+                        }
+                    } else if let duration = shieldedService.lastSyncDuration {
+                        HStack {
+                            Text("Last sync duration")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(String(format: "%.2f s", max(0, duration)))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .monospacedDigit()
+                        }
+                    }
+
+                    // "Longest pass" row — survives short steady-state
+                    // re-passes so the cold-sync wall clock (the
+                    // headline number for 1M-note devnet stress) stays
+                    // visible after subsequent fast deltas overwrite
+                    // `lastSyncDuration`. Only rendered when it
+                    // actually exceeds the most recent pass to avoid
+                    // redundant display.
+                    if let longest = shieldedService.longestSyncDuration,
+                       let last = shieldedService.lastSyncDuration,
+                       longest > last + 0.05 {
+                        HStack {
+                            Text("Longest pass")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(String(format: "%.2f s", longest))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .monospacedDigit()
+                                .foregroundColor(.secondary)
+                        }
+                    }
 
                     // Sync counters since launch — `total_scanned`
                     // is the wire-level encrypted-note count (every
@@ -1346,5 +1424,82 @@ private struct ShieldedNetworkSummaryRows: View {
                     .fontWeight(.medium)
             }
         }
+    }
+}
+
+/// Dual live progress for an in-flight shielded sync pass: a
+/// "Downloaded" bar (notes pulled off the wire) stacked over a
+/// "Checked" bar (commitments appended to the local Orchard tree).
+///
+/// Both bars share the same denominator — `total`, the on-chain MMR
+/// total leaf count carried straight from Rust in the tree-progress
+/// callback (total notes == total leaves). No Swift-side math derives
+/// it. When `total` is nil or 0 the total is indeterminate (the count
+/// RPC was unavailable, or no tree batch has landed yet) and each bar
+/// degrades to an indeterminate spinner alongside its raw count.
+private struct ShieldedDualProgressRows: View {
+    /// Cumulative notes downloaded this pass; nil before the first
+    /// download chunk.
+    let downloaded: UInt64?
+    /// Cumulative commitments appended to the tree this pass; nil
+    /// before the first committed batch.
+    let checked: UInt64?
+    /// Shared denominator (on-chain MMR total). nil/0 ⇒ indeterminate.
+    let total: UInt64?
+
+    /// Determinate only when Rust handed us a positive total.
+    private var hasTotal: Bool {
+        if let total, total > 0 { return true }
+        return false
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            progressRow(label: "Downloaded", value: downloaded)
+            progressRow(label: "Checked", value: checked)
+        }
+    }
+
+    @ViewBuilder
+    private func progressRow(label: String, value: UInt64?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(label)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(countText(value: value))
+                    .font(.caption2)
+                    .monospacedDigit()
+                    .foregroundColor(.secondary)
+            }
+            if hasTotal, let value, let total {
+                // Clamp so a value that briefly overshoots the cached
+                // total (batch lands before the denominator refreshes)
+                // can't push the bar past 1.0.
+                ProgressView(
+                    value: Double(min(value, total)),
+                    total: Double(total)
+                )
+                .progressViewStyle(.linear)
+                .tint(.purple)
+            } else {
+                // Indeterminate: total unknown ⇒ spinner, not a fake bar.
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .tint(.purple)
+            }
+        }
+    }
+
+    /// "12,288 / 1,000,000 notes" when the total is known, else
+    /// "12,288 notes" — matches the existing scanned-count presentation.
+    private func countText(value: UInt64?) -> String {
+        let count = value ?? 0
+        let countStr = count.formatted(.number)
+        if hasTotal, let total {
+            return "\(countStr) / \(total.formatted(.number)) notes"
+        }
+        return "\(countStr) notes"
     }
 }

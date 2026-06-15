@@ -58,3 +58,52 @@ echo '{"v0":{"prove":false,"data_contract_id":"NmK7YeF/rj6ilM9gMZf7CqttURgL2LYQT
       echo "---"
     done
 ```
+
+## register-contract
+
+Registers a data contract on Dash Platform from a JSON file.
+
+The script fetches the supplied identity, finds which of its public keys
+corresponds to the supplied private key, and broadcasts a
+`DataContractCreate` state transition. The `id` and `ownerId` fields in
+the JSON file are overridden: the on-chain contract id is regenerated
+deterministically from `(identity_id, identity_nonce)` and the owner is
+set to `--identity`, so fixture contracts under
+`packages/rs-drive/tests/supporting_files/contract/` work as-is.
+
+### Usage
+
+```bash
+cargo run -p rs-scripts --bin register-contract -- \
+  -c <CONTRACT_FILE> \
+  -i <IDENTITY_ID> \
+  -k <PRIVATE_KEY> \
+  -a <DAPI_ADDRESS> \
+  [-n testnet|mainnet|devnet|regtest] \
+  [--devnet <DEVNET_NAME>]
+```
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `-c, --contract` | yes | Path to the contract JSON file |
+| `-i, --identity` | yes | Identity id (base58) that will own the new contract |
+| `-k, --private-key` | yes | Private key for that identity — WIF or 64-char hex |
+| `-a, --address` | yes | DAPI address, e.g. `https://52.12.176.90:1443` |
+| `-n, --network` | no | `mainnet` \| `testnet` \| `devnet` \| `regtest` (default: `testnet`) |
+| `--devnet` | no | Devnet name (only with `--network devnet`) |
+
+The private key must correspond to an `AUTHENTICATION` + `CRITICAL` +
+`ECDSA_SECP256K1` key on the identity — that's the only key shape DPP
+accepts on a contract-create signature.
+
+### Example
+
+Register the `family` fixture contract under a testnet identity:
+
+```bash
+cargo run -p rs-scripts --bin register-contract -- \
+  -c packages/rs-drive/tests/supporting_files/contract/family/family-contract.json \
+  -i HccabTZZpMEDAqU4oQFk3PE47kS6jDDmCjoxR88gFttA \
+  -k cTPVy... \
+  -a https://52.12.176.90:1443
+```

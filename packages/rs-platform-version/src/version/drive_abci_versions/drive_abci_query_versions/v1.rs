@@ -24,6 +24,11 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
         max_version: 1,
         default_current_version: 1,
     },
+    document_history: FeatureVersionBounds {
+        min_version: 0,
+        max_version: 0,
+        default_current_version: 0,
+    },
     document_query_helpers: DriveAbciDocumentQueryHelperVersions {
         compute_aggregate_mode_and_check_limit: 0,
     },
@@ -279,27 +284,12 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
             max_version: 0,
             default_current_version: 0,
         },
+        notes_count: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
         nullifiers: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
-        },
-        nullifiers_trunk_state: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
-        },
-        nullifiers_branch_state: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
-        },
-        recent_nullifier_changes: FeatureVersionBounds {
-            min_version: 0,
-            max_version: 0,
-            default_current_version: 0,
-        },
-        recent_compacted_nullifier_changes: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,

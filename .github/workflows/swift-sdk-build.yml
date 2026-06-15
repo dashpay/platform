@@ -1,11 +1,11 @@
-name: Build Swift SDK and Example (no warnings)
+name: Build and test Swift SDK (no warnings)
 
 on:
   workflow_call:
 
 jobs:
   swift-sdk-build:
-    name: Swift SDK and Example build (warnings as errors)
+    name: Swift SDK build + tests (warnings as errors)
     runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 90
 
@@ -22,28 +22,7 @@ jobs:
             -e target/ \
             -e target/**
 
-      - name: Debug - Show BaseViewModel.swift content
-        run: |
-          echo "=== BaseViewModel.swift line count ==="
-          wc -l packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/ViewModels/BaseViewModel.swift
-          echo "=== BaseViewModel.swift full content ==="
-          cat -n packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/ViewModels/BaseViewModel.swift
-          echo "=== Git status ==="
-          git status
-          echo "=== Git log -1 ==="
-          git log -1 --oneline
-
-      - name: Force download correct BaseViewModel.swift from GitHub
-        run: |
-          curl -sL "https://raw.githubusercontent.com/dashpay/platform/${{ github.sha }}/packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/ViewModels/BaseViewModel.swift" -o packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/ViewModels/BaseViewModel.swift
-          echo "=== After curl - BaseViewModel.swift line count ==="
-          wc -l packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/ViewModels/BaseViewModel.swift
-
-      - name: Show Xcode and Swift versions (use default on self-hosted runner)
-        run: |
-          xcodebuild -version
-          swift --version
-
+      # Rust + Cargo cache to speed up FFI build
       - name: Set up Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
 
@@ -60,10 +39,6 @@ jobs:
       - name: Add iOS Rust targets
         run: |
           rustup target add aarch64-apple-ios aarch64-apple-ios-sim
-
-      - name: Install cbindgen (for header generation)
-        run: |
-          brew install cbindgen || true
 
       - name: Restore cached Protobuf (protoc)
         id: cache-protoc
@@ -111,9 +86,9 @@ jobs:
           rm -rf packages/swift-sdk/.build || true
           rm -rf packages/swift-sdk/SwiftExampleApp/.build || true
 
-      - name: Build DashSDKFFI.xcframework and install into Swift package
+      - name: Build and test Swift SDK
         run: |
-          bash packages/swift-sdk/build_ios.sh --target all --profile release
+          bash packages/swift-sdk/run_tests.sh
 
       - name: Zip XCFramework and compute checksum
         run: |
@@ -197,48 +172,3 @@ jobs:
                 body
               });
             }
-
-      - name: Build SwiftDashSDK package (warnings as errors)
-        working-directory: packages/swift-sdk
-        env:
-          OTHER_SWIFT_FLAGS: -warnings-as-errors
-          SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
-          SWIFT_SUPPRESS_WARNINGS: NO
-        run: |
-          xcodebuild \
-            -project SwiftExampleApp/SwiftExampleApp.xcodeproj \
-            -scheme SwiftDashSDK \
-            -destination 'generic/platform=iOS Simulator' \
-            -configuration Debug \
-            ARCHS=arm64 \
-            ONLY_ACTIVE_ARCH=YES \
-            OTHER_SWIFT_FLAGS="$OTHER_SWIFT_FLAGS" \
-            SWIFT_TREAT_WARNINGS_AS_ERRORS=$SWIFT_TREAT_WARNINGS_AS_ERRORS \
-            SWIFT_SUPPRESS_WARNINGS=$SWIFT_SUPPRESS_WARNINGS \
-            build
-
-      - name: Resolve ExampleApp dependencies
-        working-directory: packages/swift-sdk
-        run: |
-          xcodebuild -project SwiftExampleApp/SwiftExampleApp.xcodeproj -resolvePackageDependencies
-
-      - name: Build SwiftExampleApp (warnings as errors)
-        working-directory: packages/swift-sdk
-        env:
-          # Treat Swift warnings as errors during xcodebuild
-          OTHER_SWIFT_FLAGS: -warnings-as-errors
-          SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
-          SWIFT_SUPPRESS_WARNINGS: NO
-        run: |
-          xcodebuild \
-            -project SwiftExampleApp/SwiftExampleApp.xcodeproj \
-            -scheme SwiftExampleApp \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -configuration Debug \
-            ARCHS=arm64 \
-            ONLY_ACTIVE_ARCH=YES \
-            OTHER_SWIFT_FLAGS="$OTHER_SWIFT_FLAGS" \
-            SWIFT_TREAT_WARNINGS_AS_ERRORS=$SWIFT_TREAT_WARNINGS_AS_ERRORS \
-            SWIFT_SUPPRESS_WARNINGS=$SWIFT_SUPPRESS_WARNINGS \
-            build

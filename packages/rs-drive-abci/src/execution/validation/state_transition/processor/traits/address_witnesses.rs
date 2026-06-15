@@ -83,7 +83,8 @@ impl StateTransitionAddressWitnessValidationV0 for StateTransition {
                     | StateTransition::ShieldedTransfer(_)
                     | StateTransition::Unshield(_)
                     | StateTransition::ShieldFromAssetLock(_)
-                    | StateTransition::ShieldedWithdrawal(_) => {
+                    | StateTransition::ShieldedWithdrawal(_)
+                    | StateTransition::IdentityCreateFromShieldedPool(_) => {
                         return Ok(SimpleConsensusValidationResult::new());
                     }
                 };
@@ -200,7 +201,8 @@ impl StateTransitionHasAddressWitnessValidationV0 for StateTransition {
                     | StateTransition::ShieldedTransfer(_)
                     | StateTransition::Unshield(_)
                     | StateTransition::ShieldFromAssetLock(_)
-                    | StateTransition::ShieldedWithdrawal(_) => false,
+                    | StateTransition::ShieldedWithdrawal(_)
+                    | StateTransition::IdentityCreateFromShieldedPool(_) => false,
                 };
 
                 Ok(has_address_witness_validation)

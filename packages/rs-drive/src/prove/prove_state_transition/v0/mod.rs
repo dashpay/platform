@@ -389,6 +389,7 @@ impl Drive {
             }
             StateTransition::ShieldFromAssetLock(st) => {
                 use dpp::identity::state_transition::AssetLockProved;
+                use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 
                 let outpoint = st.asset_lock_proof().out_point().ok_or_else(|| {
                     Error::Proof(ProofError::InvalidTransition(
@@ -400,10 +401,67 @@ impl Drive {
                 let mut query = grovedb::Query::new();
                 query.insert_key(outpoint_bytes.to_vec());
 
-                PathQuery::new(
+                let outpoint_pq = PathQuery::new(
                     vec![vec![RootTree::SpentAssetLockTransactions as u8]],
                     grovedb::SizedQuery::new(query, Some(1), None),
-                )
+                );
+
+                // No accessor trait exposes `surplus_output`, so read it directly off the V0 body.
+                let ShieldFromAssetLockTransition::V0(v0) = st;
+                match &v0.surplus_output {
+                    Some(surplus_address) => {
+                        // Mirror the Unshield arm: also prove the balance of the signed
+                        // surplus-output address so a light client can confirm the surplus
+                        // credit landed there. `PathQuery::merge` rejects sub-queries that carry
+                        // limits, so clear both before merging. The verifier rebuilds this exact
+                        // merged query (same sub-queries, same cleared limits, same merge) and
+                        // verifies it STRICTLY, so the proof cannot carry any extra data beyond
+                        // {outpoint, surplus-address}.
+                        let mut outpoint_pq = outpoint_pq;
+                        outpoint_pq.query.limit = None;
+
+                        let mut address_pq = Drive::balances_for_clear_addresses_query(
+                            std::iter::once(surplus_address),
+                        );
+                        address_pq.query.limit = None;
+
+                        PathQuery::merge(
+                            vec![&outpoint_pq, &address_pq],
+                            &platform_version.drive.grove_version,
+                        )?
+                    }
+                    None => outpoint_pq,
+                }
+            }
+            StateTransition::IdentityCreateFromShieldedPool(st) => {
+                use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
+                use dpp::state_transition::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+
+                // Prove BOTH the spent nullifiers AND the newly-created identity in a single merged
+                // multi-root proof. Built STRICT from day one (per #3812): the verifier rebuilds this
+                // exact merged query and verifies it with `verify_query` (succinctness on), so the
+                // proof cannot carry any branch beyond {nullifiers, identity}. The absence-proof
+                // variant is unusable here: it enumerates the query's terminal keys, which is
+                // impossible for `full_identity_query`'s unbounded all-keys range.
+                let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
+                let mut nf_query = grovedb::Query::new();
+                nf_query.insert_keys(nullifier_keys);
+                // `PathQuery::merge` rejects sub-queries that carry a limit, so leave it None.
+                let nullifier_pq = PathQuery::new(
+                    shielded_credit_pool_nullifiers_path_vec(),
+                    grovedb::SizedQuery::new(nf_query, None, None),
+                );
+
+                let mut identity_pq = Drive::full_identity_query(
+                    &st.identity_id().to_buffer(),
+                    &platform_version.drive.grove_version,
+                )?;
+                identity_pq.query.limit = None;
+
+                PathQuery::merge(
+                    vec![&nullifier_pq, &identity_pq],
+                    &platform_version.drive.grove_version,
+                )?
             }
         };
 

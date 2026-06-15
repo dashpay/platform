@@ -3,6 +3,8 @@ mod v0;
 pub use v0::*;
 
 #[cfg(feature = "state-transition-signing")]
+use crate::address_funds::PlatformAddress;
+#[cfg(feature = "state-transition-signing")]
 use crate::prelude::AssetLockProof;
 #[cfg(feature = "state-transition-signing")]
 use crate::shielded::SerializedAction;
@@ -27,6 +29,7 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransition {
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],
+        surplus_output: Option<PlatformAddress>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
         match platform_version
@@ -43,6 +46,7 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransition {
                 anchor,
                 proof,
                 binding_signature,
+                surplus_output,
                 platform_version,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -64,6 +68,7 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransition {
         anchor: [u8; 32],
         proof: Vec<u8>,
         binding_signature: [u8; 64],
+        surplus_output: Option<PlatformAddress>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError>
     where
@@ -85,6 +90,7 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransition {
                     anchor,
                     proof,
                     binding_signature,
+                    surplus_output,
                     platform_version,
                 )
                 .await

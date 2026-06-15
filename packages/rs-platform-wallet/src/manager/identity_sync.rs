@@ -166,6 +166,13 @@ where
     background_generation: AtomicU64,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
+    /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
+    /// drains an in-flight one. `sync_now` bails (after taking the
+    /// `is_syncing` slot) when this is set, so once `quiesce` observes
+    /// `is_syncing == false` no further pass can start — giving shutdown
+    /// a real "no more host-visible persister stores" barrier that
+    /// cancel-only [`stop`](Self::stop) does not provide.
+    quiescing: AtomicBool,
     /// Unix seconds of the last completed pass across all identities.
     /// `0` = never. Identity-level timestamps live on the per-identity
     /// rows in [`IdentitySyncManager::state`].
@@ -200,6 +207,7 @@ where
             background_generation: AtomicU64::new(0),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
+            quiescing: AtomicBool::new(false),
             last_sync_unix: AtomicU64::new(0),
             state: RwLock::new(BTreeMap::new()),
         }
@@ -429,6 +437,13 @@ where
     }
 
     /// Stop the background sync loop. No-op if not running.
+    ///
+    /// **Cancel-only**: requests cancellation and returns immediately. A
+    /// pass already inside `sync_now` keeps running to completion,
+    /// including its `persister.store(...)` fan-out. For a real "nothing
+    /// is running and nothing more will be persisted" barrier — required
+    /// by manager shutdown so the host can free the persister context —
+    /// use [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
         if let Some(token) = self
             .background_cancel
@@ -438,6 +453,33 @@ where
         {
             token.cancel();
         }
+    }
+
+    /// Cancel the background loop **and wait for any in-flight sync pass
+    /// to fully drain** before returning — a real quiescence barrier,
+    /// unlike cancel-only [`stop`](Self::stop).
+    ///
+    /// After this returns, no sync pass is running and none can start
+    /// until the next [`start`](Self::start) / `sync_now`, so a caller
+    /// that immediately tears the manager down (and frees the host-owned
+    /// persister context the FFI handed to us) cannot be raced by a pass
+    /// that calls `persister.store(...)` through a now-dangling pointer.
+    ///
+    /// Mechanism: set the `quiescing` gate so any pass that hasn't yet
+    /// taken the `is_syncing` slot bails, cancel the loop, then wait for
+    /// `is_syncing` to clear. `is_syncing` is held for the whole pass
+    /// including the persister fan-out (`sync_now` clears it only after
+    /// every `sync_identity` / `apply_fresh_balances` store completes),
+    /// so its falling edge (with the gate up) is a sound "fully drained"
+    /// signal. The gate is reopened before returning so a later
+    /// start/sync works normally.
+    pub async fn quiesce(&self) {
+        self.quiescing.store(true, Ordering::Release);
+        self.stop();
+        while self.is_syncing.load(Ordering::Acquire) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        self.quiescing.store(false, Ordering::Release);
     }
 
     /// Run one sync pass across every registered identity.
@@ -456,6 +498,15 @@ where
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
+            return;
+        }
+
+        // A `quiesce()` may have raised the gate between our CAS and
+        // here; if so, release the slot and bail without running a pass
+        // so the drain can complete and shutdown gets a true barrier
+        // (no further `persister.store(...)` after quiesce returns).
+        if self.quiescing.load(Ordering::Acquire) {
+            self.is_syncing.store(false, Ordering::Release);
             return;
         }
 
@@ -827,6 +878,85 @@ mod tests {
 
         mgr.set_interval(Duration::from_secs(120));
         assert_eq!(mgr.interval(), Duration::from_secs(120));
+    }
+
+    /// `quiesce()` must not return while a pass is in flight, and must
+    /// return promptly once the pass drains.
+    ///
+    /// Drives the real `is_syncing` lifecycle: a background task takes
+    /// the slot via the same `compare_exchange` the real `sync_now`
+    /// uses, holds it across a sleep (standing in for the pass body +
+    /// persister fan-out, which `sync_now` keeps the flag set across),
+    /// then clears it. We assert `quiesce()` is still pending while the
+    /// flag is held and completes after it falls — i.e. the falling edge
+    /// of `is_syncing` is what unblocks the barrier.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn quiesce_blocks_until_in_flight_pass_drains() {
+        let mgr = make_manager();
+
+        // Stand in for an in-flight `sync_now`: take the `is_syncing`
+        // slot exactly as the real pass does, hold it, then release.
+        let holder = Arc::clone(&mgr);
+        let pass = tokio::spawn(async move {
+            assert!(
+                holder
+                    .is_syncing
+                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok(),
+                "test should own the is_syncing slot"
+            );
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            holder.is_syncing.store(false, Ordering::Release);
+        });
+
+        // Give the holder task a chance to take the slot before we
+        // start draining.
+        while !mgr.is_syncing() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+
+        let quiesce_fut = mgr.quiesce();
+        tokio::pin!(quiesce_fut);
+
+        // While the pass holds the flag, quiesce must stay pending.
+        tokio::select! {
+            _ = &mut quiesce_fut => panic!("quiesce returned while a pass was in flight"),
+            _ = tokio::time::sleep(Duration::from_millis(50)) => {}
+        }
+        assert!(mgr.is_syncing(), "pass should still be in flight");
+
+        // Once the pass drains, quiesce must return (well within a
+        // generous bound — it polls every 20ms).
+        tokio::time::timeout(Duration::from_secs(2), &mut quiesce_fut)
+            .await
+            .expect("quiesce did not return after the pass drained");
+
+        // The gate is reopened before quiesce returns.
+        assert!(!mgr.quiescing.load(Ordering::Acquire));
+        assert!(!mgr.is_syncing());
+        pass.await.unwrap();
+    }
+
+    /// A `sync_now()` invoked while `quiescing` is set must bail without
+    /// running the pass — in particular, without calling
+    /// `persister.store(...)`. This is the gate that prevents a pass
+    /// from slipping in between `quiesce`'s `stop()` and its drain.
+    #[tokio::test]
+    async fn sync_now_bails_when_quiescing() {
+        let (mgr, persister) = make_recording_manager();
+        let id_a = Identifier::from([1u8; 32]);
+        let token_x = Identifier::from([10u8; 32]);
+        mgr.register_identity(id_a, [token_x]).await;
+
+        // Raise the gate as `quiesce()` would.
+        mgr.quiescing.store(true, Ordering::Release);
+
+        mgr.sync_now().await;
+
+        // No persister store happened, and the slot was released so a
+        // later (post-quiesce) pass can still run.
+        assert_eq!(persister.stores.load(AtomicOrdering::SeqCst), 0);
+        assert!(!mgr.is_syncing());
     }
 
     /// Round-trip: register → read → update_watched_tokens → read.

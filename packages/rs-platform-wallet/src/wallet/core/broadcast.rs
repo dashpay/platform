@@ -54,12 +54,37 @@ pub(crate) fn classify_build_error(
     }
 }
 
+/// Post-`build_signed` defense-in-depth: re-snapshot the funding account's
+/// spendable UTXOs and confirm every outpoint the builder `selected` is
+/// still present. Returns [`PlatformWalletError::ConcurrentSpendConflict`]
+/// listing the missing outpoints otherwise.
+///
+/// Today every UTXO mutator goes through the wallet write lock the send
+/// flow holds across build, so this is unreachable — but a future mutator
+/// running outside that lock (mempool listener, chain reorg, etc.) would
+/// slip through the pre-build spendable snapshot; this fresh re-fetch
+/// catches it before broadcast. The reservations guard remains the primary
+/// in-process race defense; this is the cross-process / cross-subsystem net.
+///
+/// Both `selected` and `fresh_spendable` are caller-computed outpoint sets
+/// so this stays a pure set check, independent of the managed-account type.
+pub(crate) fn assert_selected_still_spendable(
+    selected: &BTreeSet<OutPoint>,
+    fresh_spendable: &BTreeSet<OutPoint>,
+) -> Result<(), PlatformWalletError> {
+    if selected.is_subset(fresh_spendable) {
+        return Ok(());
+    }
+    let missing: Vec<OutPoint> = selected.difference(fresh_spendable).copied().collect();
+    Err(PlatformWalletError::ConcurrentSpendConflict { selected: missing })
+}
+
 /// Shared send-flow tail used by [`CoreWallet::send_to_addresses`] and
 /// `IdentityWallet::send_payment`.
 ///
 /// Broadcasts `tx`, then under a single write lock acquisition reconciles
 /// wallet state and either releases or leaks the reservation guard
-/// according to the post-broadcast invariant (CMT-003):
+/// according to the post-broadcast invariant:
 ///
 /// * On broadcast failure the reservation is implicitly dropped — the
 ///   guard is moved into this function and unwinds via `Drop` when the
@@ -322,25 +347,15 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 });
             }
 
-            // Defense-in-depth: re-snapshot spendable UTXOs after `build_signed` and confirm
-            // every selected outpoint is still present. Today every UTXO mutator goes through
-            // the wallet write lock that we hold across build, so this is unreachable — but
-            // a future mutator running outside the lock (mempool listener, chain reorg, etc.)
-            // would slip through the pre-build `spendable` snapshot above; this fresh re-fetch
-            // catches it before broadcast. The reservations guard remains the primary in-process
-            // race defense; this is the cross-process / cross-subsystem net.
+            // Defense-in-depth: re-snapshot spendable UTXOs after
+            // `build_signed` and confirm every selected outpoint is still
+            // present. See [`assert_selected_still_spendable`] for why.
             let fresh_spendable_outpoints: BTreeSet<OutPoint> = managed_account
                 .spendable_utxos(current_height)
                 .into_iter()
                 .map(|utxo| utxo.outpoint)
                 .collect();
-            if !selected.is_subset(&fresh_spendable_outpoints) {
-                let missing: Vec<OutPoint> = selected
-                    .difference(&fresh_spendable_outpoints)
-                    .copied()
-                    .collect();
-                return Err(PlatformWalletError::ConcurrentSpendConflict { selected: missing });
-            }
+            assert_selected_still_spendable(&selected, &fresh_spendable_outpoints)?;
 
             // Reserve before releasing the lock so the next caller sees these outpoints
             // filtered out *and* skips the peeked change address. Guard held until
@@ -922,7 +937,7 @@ mod tests {
         }
     }
 
-    /// CMT-003: if `check_core_transaction` returns `is_relevant = false`
+    /// If `check_core_transaction` returns `is_relevant = false`
     /// after a successful broadcast (an internal invariant violation but a
     /// real-world possibility on a corrupted/stale wallet state), the
     /// reservation must stay held — releasing it could let a concurrent
@@ -988,7 +1003,7 @@ mod tests {
         let funding_outpoint = OutPoint::new(Txid::from_byte_array([7u8; 32]), 0);
 
         // Release the broadcast — the post-broadcast reconcile sees
-        // `is_relevant=false` and (per CMT-003) leaks the reservation.
+        // `is_relevant=false` and leaks the reservation.
         gate.notify_one();
 
         let result = handle.await.expect("task panicked");
@@ -1037,10 +1052,9 @@ mod tests {
 
     // ---- classify_build_error: typed BuilderError → PlatformWalletError ----
     //
-    // The mapper replaces the previous brittle Display-substring match
-    // (CMT-001 / CMT-004). These tests pin the typed contract directly so
-    // a future rename or rewording of the upstream `Display` impl cannot
-    // silently downgrade `NoSpendableInputs` back to `TransactionBuild`.
+    // These tests pin the typed contract directly so a future rename or
+    // rewording of the upstream `Display` impl cannot silently downgrade
+    // `NoSpendableInputs` back to `TransactionBuild`.
 
     use super::classify_build_error;
     use key_wallet::account::account_type::StandardAccountType;
@@ -1138,7 +1152,48 @@ mod tests {
         );
     }
 
-    // ---- broadcast_and_reconcile: shared post-broadcast helper (CMT-003) ----
+    // ---- assert_selected_still_spendable: post-build fresh-spendable net ----
+
+    use std::collections::BTreeSet;
+
+    use super::assert_selected_still_spendable;
+
+    fn op(byte: u8, vout: u32) -> OutPoint {
+        OutPoint::new(Txid::from_byte_array([byte; 32]), vout)
+    }
+
+    #[test]
+    fn selected_subset_of_fresh_spendable_is_ok() {
+        let selected: BTreeSet<OutPoint> = [op(1, 0), op(2, 0)].into_iter().collect();
+        let fresh: BTreeSet<OutPoint> = [op(1, 0), op(2, 0), op(3, 0)].into_iter().collect();
+        assert!(
+            assert_selected_still_spendable(&selected, &fresh).is_ok(),
+            "a selected set fully contained in the fresh spendable set must pass"
+        );
+    }
+
+    #[test]
+    fn selected_missing_from_fresh_spendable_reports_concurrent_spend_conflict() {
+        let gone = op(2, 0);
+        let selected: BTreeSet<OutPoint> = [op(1, 0), gone].into_iter().collect();
+        // `gone` disappeared between build and the post-build re-snapshot.
+        let fresh: BTreeSet<OutPoint> = [op(1, 0), op(3, 0)].into_iter().collect();
+
+        match assert_selected_still_spendable(&selected, &fresh) {
+            Err(PlatformWalletError::ConcurrentSpendConflict { selected: missing }) => {
+                assert_eq!(
+                    missing,
+                    vec![gone],
+                    "the conflict must list exactly the outpoint that vanished from the fresh set"
+                );
+            }
+            other => panic!(
+                "expected ConcurrentSpendConflict listing the missing outpoint; got: {other:?}"
+            ),
+        }
+    }
+
+    // ---- broadcast_and_reconcile: shared post-broadcast helper ----
     //
     // The helper centralises the broadcast → reconcile → release-or-leak
     // decision tree used by both `CoreWallet::send_to_addresses` and

@@ -157,10 +157,10 @@ impl<K: Eq + Hash + Clone + std::fmt::Debug> ReservationGuard<K> {
     /// a process restart (which drops the whole reservations set)
     /// releases them.
     ///
-    /// TODO(@thepastaclaw, PR #3585): a periodic-sync-driven
+    /// TODO: a periodic-sync-driven
     /// `Reservations::reclaim_committed(&[K])` API would let the next
     /// confirmation / balance-sync pass reconcile leaked reservations
-    /// without a restart. Tracked on the PR review thread.
+    /// without a restart. Tracked as a follow-up in #3770.
     pub(crate) fn leak_until_sync(self) {
         // `mem::forget` skips `Drop`, leaving the reservation entries
         // in the shared set. The guard's only owned heap allocation is

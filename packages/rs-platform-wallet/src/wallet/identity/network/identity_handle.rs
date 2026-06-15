@@ -221,6 +221,13 @@ pub fn derive_identity_auth_keypair(
 /// Thin wrapper over [`derive_identity_auth_keypair`] — shares the
 /// path-building + derivation so the FFI-side preview and the live
 /// scan can never drift from one another.
+///
+/// Requires a [`Wallet`] with resident private key material. For
+/// wallets whose seed lives outside the in-process wallet manager
+/// (`WalletType::ExternalSignable` — the iOS Keychain-backed shape),
+/// this errors with `External signable wallet has no private key`; use
+/// [`derive_identity_auth_key_hash_from_master`] instead, fed by a
+/// master xpriv the caller resolved from the mnemonic on demand.
 pub(crate) fn derive_identity_auth_key_hash(
     wallet: &Wallet,
     network: key_wallet::Network,
@@ -233,6 +240,41 @@ pub(crate) fn derive_identity_auth_key_hash(
         derive_identity_auth_keypair(wallet, network, identity_index, key_index)?;
     let public_key_bytes = public_key.serialize();
     let key_hash = ripemd160_sha256(&public_key_bytes);
+
+    let mut key_hash_array = [0u8; 20];
+    key_hash_array.copy_from_slice(&key_hash);
+
+    Ok(key_hash_array)
+}
+
+/// Master-xpriv sibling of [`derive_identity_auth_key_hash`]: derive the
+/// 20-byte RIPEMD160(SHA256) pubkey hash for the identity-authentication
+/// slot `(identity_index, key_index)` directly from a master
+/// `ExtendedPrivKey` instead of from an in-memory [`Wallet`].
+///
+/// Pure function — no `Wallet` required — so it works for the
+/// `WalletType::ExternalSignable` shape where the seed lives outside the
+/// in-process wallet manager (iOS Keychain). The caller resolves the
+/// mnemonic into a master xpriv on demand (see the FFI resolver path)
+/// and hands it in here.
+///
+/// Goes through [`derive_ecdsa_identity_auth_keypair_from_master`] so the
+/// rescan scan, the registration derive path, and the in-creation key #0
+/// can never drift on the path shape / secp256k1 derive: it derives the
+/// same compressed pubkey the wallet-internal
+/// [`derive_identity_auth_key_hash`] would for a key-resident wallet at
+/// the same slot, then `ripemd160_sha256`-hashes it identically.
+pub fn derive_identity_auth_key_hash_from_master(
+    master: &ExtendedPrivKey,
+    network: key_wallet::Network,
+    identity_index: u32,
+    key_index: u32,
+) -> Result<[u8; 20], PlatformWalletError> {
+    use dpp::util::hash::ripemd160_sha256;
+
+    let derived =
+        derive_ecdsa_identity_auth_keypair_from_master(master, network, identity_index, key_index)?;
+    let key_hash = ripemd160_sha256(&derived.public_key);
 
     let mut key_hash_array = [0u8; 20];
     key_hash_array.copy_from_slice(&key_hash);
@@ -277,7 +319,7 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// [`crate::CoreWallet`]). DashPay `send_payment` and core
     /// `send_to_addresses` both fund from the same BIP-44 account 0
     /// UTXOs, so they must consult the same reservation set to avoid
-    /// the same-UTXO concurrent-selection race (CMT-001). See
+    /// the same-UTXO concurrent-selection race. See
     /// [`crate::wallet::core::reservations`].
     pub(crate) reservations: crate::wallet::core::reservations::OutpointReservations,
 }
@@ -472,5 +514,176 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 e
             ))
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::util::hash::ripemd160_sha256;
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::Wallet;
+    use key_wallet::Network;
+
+    /// English BIP-39 test vector (all-zero entropy). Same fixture the
+    /// FFI-side derive tests use, so the derivations here can be
+    /// cross-checked against those if a regression ever appears on one
+    /// side only.
+    const TEST_MNEMONIC: &str =
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    /// Build a key-resident `WalletType::Mnemonic` wallet on `network`
+    /// from [`TEST_MNEMONIC`]. `WalletAccountCreationOptions::None`
+    /// skips the BLS/EdDSA provider accounts the discovery scan never
+    /// touches — the identity-auth derivation walks the master xpriv,
+    /// not the per-account collection, so no accounts are needed.
+    fn mnemonic_wallet(network: Network) -> Wallet {
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid English test mnemonic");
+        Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::None)
+            .expect("from_mnemonic should build a Mnemonic wallet")
+    }
+
+    /// The BIP-32 master node for [`TEST_MNEMONIC`] on `network` — the
+    /// same node `derive_extended_private_key` reconstructs internally
+    /// (`RootExtendedPrivKey::new_master(seed).to_extended_priv_key(network)`
+    /// is byte-for-byte `ExtendedPrivKey::new_master(network, seed)`).
+    fn master_for(network: Network) -> ExtendedPrivKey {
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid English test mnemonic");
+        let seed = mnemonic.to_seed("");
+        ExtendedPrivKey::new_master(network, &seed).expect("master xpriv from test seed")
+    }
+
+    /// (a) The master-based key-hash helper must produce the SAME 20-byte
+    /// hash as the wallet-internal `derive_identity_auth_key_hash` on a
+    /// key-resident `WalletType::Mnemonic` wallet, for every slot the
+    /// rescan probes. This is the core correctness guarantee: a rescan
+    /// driven through the resolved master derives exactly what a
+    /// key-resident wallet derives — same identity, same on-chain
+    /// pubkey-hash lookup.
+    #[test]
+    fn master_hash_matches_resident_wallet_hash() {
+        for network in [Network::Mainnet, Network::Testnet] {
+            let wallet = mnemonic_wallet(network);
+            let master = master_for(network);
+
+            // Walk a window matching the discovery scan's MASTER slot
+            // across several identity indices.
+            for identity_index in 0..6u32 {
+                let resident = derive_identity_auth_key_hash(
+                    &wallet,
+                    network,
+                    identity_index,
+                    MASTER_KEY_INDEX,
+                )
+                .expect("resident-wallet derive should succeed for a Mnemonic wallet");
+
+                let from_master = derive_identity_auth_key_hash_from_master(
+                    &master,
+                    network,
+                    identity_index,
+                    MASTER_KEY_INDEX,
+                )
+                .expect("master derive should succeed");
+
+                assert_eq!(
+                    resident, from_master,
+                    "master-based hash must equal resident-wallet hash \
+                     (network={network:?}, identity_index={identity_index})"
+                );
+            }
+
+            // Non-MASTER key indices must also agree — the helper is the
+            // generic per-slot derive, not MASTER-pinned.
+            let resident = derive_identity_auth_key_hash(&wallet, network, 3, 7)
+                .expect("resident derive at (3,7)");
+            let from_master = derive_identity_auth_key_hash_from_master(&master, network, 3, 7)
+                .expect("master derive at (3,7)");
+            assert_eq!(resident, from_master, "non-MASTER slot must also agree");
+        }
+    }
+
+    /// (b) Pin the bug and its fix: `derive_identity_auth_key_hash` on a
+    /// `WalletType::ExternalSignable` wallet ERRORS (the seed lives
+    /// outside the in-process wallet — this is the exact failure the
+    /// rescan UI surfaced), while the master-based helper SUCCEEDS for
+    /// the same slot and yields the same hash a key-resident wallet
+    /// would. Mirrors how registration derives on these wallets.
+    #[test]
+    fn external_signable_errors_but_master_succeeds() {
+        let network = Network::Testnet;
+
+        // Reference hash from a key-resident wallet at the probed slot.
+        let resident_wallet = mnemonic_wallet(network);
+        let expected =
+            derive_identity_auth_key_hash(&resident_wallet, network, 0, MASTER_KEY_INDEX)
+                .expect("resident derive should succeed");
+
+        // Downgrade a clone to ExternalSignable: same wallet id, but the
+        // key material is dropped — exactly the iOS Keychain-backed shape
+        // loaded into the in-process `WalletManager`.
+        let mut external = mnemonic_wallet(network);
+        external.downgrade_to_external_signable();
+
+        let resident_err = derive_identity_auth_key_hash(&external, network, 0, MASTER_KEY_INDEX);
+        let err = resident_err
+            .expect_err("ExternalSignable wallet has no resident key — derive must error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("External signable wallet has no private key"),
+            "error should be the External-signable no-private-key failure, got: {msg}"
+        );
+
+        // The master-based helper succeeds for the same slot and matches
+        // the key-resident reference hash — this is the rescan fix.
+        let master = master_for(network);
+        let from_master =
+            derive_identity_auth_key_hash_from_master(&master, network, 0, MASTER_KEY_INDEX)
+                .expect("master derive must succeed where the resident derive failed");
+        assert_eq!(
+            from_master, expected,
+            "master derive on an ExternalSignable wallet must reproduce the \
+             key-resident hash for the same slot"
+        );
+    }
+
+    /// (c) Parity with registration's in-creation key #0: the
+    /// master-based hash at `(identity_index, MASTER_KEY_INDEX)` must
+    /// equal `ripemd160_sha256` of the pubkey
+    /// `derive_ecdsa_identity_auth_keypair_from_master` produces at the
+    /// same slot — i.e. the rescan probes the hash of the very key
+    /// registration publishes as MASTER auth key #0.
+    #[test]
+    fn master_hash_matches_registration_keypair_pubkey_hash() {
+        let network = Network::Testnet;
+        let master = master_for(network);
+
+        for identity_index in 0..4u32 {
+            let keypair = derive_ecdsa_identity_auth_keypair_from_master(
+                &master,
+                network,
+                identity_index,
+                MASTER_KEY_INDEX,
+            )
+            .expect("registration-shaped keypair derive should succeed");
+            let expected = ripemd160_sha256(&keypair.public_key);
+
+            let hash = derive_identity_auth_key_hash_from_master(
+                &master,
+                network,
+                identity_index,
+                MASTER_KEY_INDEX,
+            )
+            .expect("master hash derive should succeed");
+
+            assert_eq!(
+                hash.as_slice(),
+                expected.as_slice(),
+                "rescan hash must be ripemd160_sha256 of the registration \
+                 keypair's pubkey (identity_index={identity_index})"
+            );
+        }
     }
 }

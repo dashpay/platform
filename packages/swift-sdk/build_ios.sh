@@ -3,8 +3,10 @@ set -euo pipefail
 
 IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-17.0}"
 IPHONESIMULATOR_DEPLOYMENT_TARGET="${IPHONESIMULATOR_DEPLOYMENT_TARGET:-17.0}"
+MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-15.0}"
 export IPHONEOS_DEPLOYMENT_TARGET
 export IPHONESIMULATOR_DEPLOYMENT_TARGET
+export MACOSX_DEPLOYMENT_TARGET
 
 # -------------------------------
 # Colors
@@ -21,7 +23,7 @@ ROOT_DIR="$SCRIPT_DIR/../../"
 TARGET_DIR="$ROOT_DIR/target"
 PACKAGE="rs-unified-sdk-ffi"
 XCFRAMEWORK="$SCRIPT_DIR/DashSDKFFI.xcframework"
-PROFILE="dev" # Rust doesn't allow us to use "debug" for some reason, the profile name internally is dev
+PROFILE="dev"
 
 # Crates whose cbindgen-generated headers ship in the unified framework.
 # Order matters: earlier headers define types referenced by later ones.
@@ -115,15 +117,13 @@ if ! $BUILD_IOS && ! $BUILD_SIM && ! $BUILD_MAC && ! $BUILD_INTEL_MAC; then
   show_help
 fi
 
+# Map the requested base profile (dev|release) onto its iOS-tuned custom
+# profile by appending "-ios" (dev-ios / release-ios)
+PROFILE="${PROFILE}-ios"
+OUTPUT_DIR="$PROFILE"
+
 log_info "Package: $PACKAGE"
 log_info "Profile: $PROFILE"
-
-# Rust writes the "dev" profile output to the "debug" directory
-if [ "$PROFILE" = "dev" ]; then
-  OUTPUT_DIR="debug"
-else
-  OUTPUT_DIR="$PROFILE"
-fi
 
 # -------------------------------
 # Build commands

@@ -52,7 +52,8 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// wallet. Not auto-started — call `start` after wallets are
     /// registered. See [`IdentitySyncManager`].
     pub(super) identity_sync_manager: Arc<IdentitySyncManager<P>>,
-    /// Periodic shielded (Orchard) note + nullifier sync coordinator.
+    /// Periodic shielded (Orchard) note sync coordinator (spends are
+    /// detected during the note scan, no separate nullifier pass).
     /// Iterates every wallet that has been bound via
     /// [`PlatformWallet::bind_shielded`](crate::wallet::PlatformWallet::bind_shielded);
     /// unbound wallets are skipped silently. Not auto-started — call
@@ -71,6 +72,15 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     #[cfg(feature = "shielded")]
     pub(super) shielded_coordinator:
         Arc<RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>>,
+    /// Shared `PlatformEventManager` — held on the manager so
+    /// `configure_shielded` can install a per-chunk progress handler
+    /// onto the freshly-created `NetworkShieldedCoordinator` that
+    /// forwards into `on_shielded_sync_progress`. Sub-managers
+    /// (`SpvRuntime`, `PlatformAddressSyncManager`, etc.) hold their
+    /// own clones already, so `configure_shielded` is the only reader of
+    /// this retained handle — hence it is `shielded`-gated.
+    #[cfg(feature = "shielded")]
+    pub(super) event_manager: Arc<PlatformEventManager>,
     pub(super) persister: Arc<P>,
     /// Cancellation token + join handle for the wallet-event adapter
     /// task. Held so [`shutdown`] can stop it cleanly when the manager
@@ -151,6 +161,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
             shielded_coordinator,
+            #[cfg(feature = "shielded")]
+            event_manager,
             persister,
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
@@ -208,6 +220,33 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             db_path,
             store,
         ));
+        // Bridge sync-internal chunk progress (~every 2048 notes)
+        // into the public `PlatformEventHandler::on_shielded_sync_progress`
+        // event so UI clients can render a live counter / progress
+        // bar during long cold syncs. Cheap closure — just forwards
+        // two u64s to the event manager.
+        let event_manager_for_progress = Arc::clone(&self.event_manager);
+        coordinator.install_progress_handler(Some(Arc::new(
+            move |cumulative_scanned: u64, block_height: u64| {
+                event_manager_for_progress
+                    .on_shielded_sync_progress(cumulative_scanned, block_height);
+            },
+        )));
+        // Bridge sync-internal tree-commit progress (once per
+        // committed batch) into the public
+        // `PlatformEventHandler::on_shielded_tree_progress` event — the
+        // second "checked / committed-to-tree" signal, distinct from
+        // the "downloaded" counter above. `leaves_committed` is the
+        // cumulative tree leaf count; `total_target` is the on-chain
+        // MMR total (0 ⇒ indeterminate). Lets UI clients render a dual
+        // ProgressView ("downloaded" vs "checked") during cold syncs.
+        let event_manager_for_tree_progress = Arc::clone(&self.event_manager);
+        coordinator.install_tree_progress_handler(Some(Arc::new(
+            move |leaves_committed: u64, total_target: u64| {
+                event_manager_for_tree_progress
+                    .on_shielded_tree_progress(leaves_committed, total_target);
+            },
+        )));
         *slot = Some(coordinator);
         Ok(())
     }
@@ -235,28 +274,45 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// nothing can re-persist notes after this returns), then **clear**
     /// the network coordinator's per-subwallet registries. Idempotent —
     /// the coordinator step is a no-op when shielded support was never
-    /// configured. The per-network commitment-tree SQLite file is left
-    /// intact (chain-wide data; the next bind re-syncs against it).
+    /// configured. The per-network commitment-tree SQLite file stays on
+    /// disk but its contents are reset to empty so the next bind cold-
+    /// resyncs from index 0.
+    ///
+    /// Returns an error if the coordinator's store reset fails; the host
+    /// must not commit its own persistence wipe in that case.
     #[cfg(feature = "shielded")]
-    pub async fn clear_shielded(&self) {
+    pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
         self.shielded_sync_manager.quiesce().await;
         if let Some(coord) = self.shielded_coordinator().await {
-            coord.clear().await;
+            coord.clear().await?;
         }
+        Ok(())
     }
 
     /// Stop all background tasks and wait for them to exit.
     ///
-    /// Stops the periodic coordinators (`PlatformAddressSyncManager`,
-    /// `IdentitySyncManager`) and the wallet-event adapter task.
+    /// **Quiesces** the periodic coordinators
+    /// (`PlatformAddressSyncManager`, `IdentitySyncManager`,
+    /// `ShieldedSyncManager`) — cancelling each loop *and draining any
+    /// in-flight pass to completion*, including its persister /
+    /// host-callback fan-out — then drains the wallet-event adapter task.
     /// Idempotent. Call before dropping the manager when a clean
     /// shutdown is required (e.g. on app termination); a dirty drop
     /// simply leaks the tasks until the runtime exits.
+    ///
+    /// Ordering matters: cancel-only `stop()` would let a pass already
+    /// inside `sync_now` keep running and call `persister.store(...)` /
+    /// fire a host completion callback after the FFI's `destroy`
+    /// returned and the host freed the persister / event-handler
+    /// context — a use-after-free. So we `quiesce()` the sync managers
+    /// FIRST (so no further persister store or host callback can start),
+    /// and only THEN cancel + join the event adapter, which is the sink
+    /// those stores feed into.
     pub async fn shutdown(&self) {
-        self.platform_address_sync_manager.stop();
-        self.identity_sync_manager.stop();
+        self.platform_address_sync_manager.quiesce().await;
+        self.identity_sync_manager.quiesce().await;
         #[cfg(feature = "shielded")]
-        self.shielded_sync_manager.stop();
+        self.shielded_sync_manager.quiesce().await;
 
         self.event_adapter_cancel.cancel();
         if let Some(handle) = self.event_adapter_join.lock().await.take() {
