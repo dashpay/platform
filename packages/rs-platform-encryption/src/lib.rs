@@ -137,64 +137,83 @@ pub fn decrypt_extended_public_key(
     decrypt_aes_256_cbc(shared_key, &iv, ciphertext)
 }
 
-/// Assemble the DIP-15 compact extended-public-key plaintext.
+/// The three components of a DIP-15 compact extended public key.
 ///
-/// Concatenates `parent_fingerprint ‖ chain_code ‖ pubkey` into the 69-byte
-/// compact form that DIP-15 defines for `encryptedPublicKey` (and that both
-/// reference clients emit). This is the plaintext that should be fed to
-/// [`encrypt_extended_public_key`] — *not* a BIP32/DIP-14 serialization, which
-/// carries extra version/depth/child-number metadata the wire format omits.
-///
-/// # Arguments
-/// * `parent_fingerprint` - 4-byte fingerprint of the parent key.
-/// * `chain_code` - 32-byte chain code of the shared (account) key.
-/// * `pubkey` - 33-byte compressed secp256k1 public key.
-///
-/// # Returns
-/// The 69-byte compact plaintext.
+/// `parent_fingerprint ‖ chain_code ‖ public_key` is the 69-byte compact
+/// form DIP-15 defines for `encryptedPublicKey`. A named struct (rather
+/// than a `([u8; 4], [u8; 32], [u8; 33])` tuple) keeps the component
+/// meaning explicit at every call site — the three byte arrays are
+/// otherwise easy to mis-read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompactXpub {
+    /// 4-byte fingerprint of the parent key.
+    pub parent_fingerprint: [u8; 4],
+    /// 32-byte chain code of the shared (account) key.
+    pub chain_code: [u8; 32],
+    /// 33-byte compressed secp256k1 public key.
+    pub public_key: [u8; 33],
+}
+
+impl CompactXpub {
+    /// Serialize to the 69-byte DIP-15 compact plaintext
+    /// (`parent_fingerprint ‖ chain_code ‖ public_key`). This is the
+    /// plaintext fed to [`encrypt_extended_public_key`] — *not* a
+    /// BIP32/DIP-14 serialization, which carries extra
+    /// version/depth/child-number metadata the wire format omits.
+    pub fn to_bytes(&self) -> [u8; COMPACT_XPUB_LEN] {
+        let mut out = [0u8; COMPACT_XPUB_LEN];
+        out[0..4].copy_from_slice(&self.parent_fingerprint);
+        out[4..36].copy_from_slice(&self.chain_code);
+        out[36..69].copy_from_slice(&self.public_key);
+        out
+    }
+}
+
+/// Assemble the DIP-15 compact extended-public-key plaintext from its
+/// three components. Thin wrapper over [`CompactXpub::to_bytes`] kept for
+/// call sites that have the components loose rather than in a struct.
 pub fn compact_xpub_bytes(
     parent_fingerprint: [u8; 4],
     chain_code: [u8; 32],
-    pubkey: [u8; 33],
+    public_key: [u8; 33],
 ) -> [u8; COMPACT_XPUB_LEN] {
-    let mut out = [0u8; COMPACT_XPUB_LEN];
-    out[0..4].copy_from_slice(&parent_fingerprint);
-    out[4..36].copy_from_slice(&chain_code);
-    out[36..69].copy_from_slice(&pubkey);
-    out
+    CompactXpub {
+        parent_fingerprint,
+        chain_code,
+        public_key,
+    }
+    .to_bytes()
 }
 
-/// Parse a DIP-15 compact extended-public-key plaintext back into its
-/// three components.
+/// Parse a DIP-15 compact extended-public-key plaintext into a
+/// [`CompactXpub`].
 ///
-/// Inverse of [`compact_xpub_bytes`]. Rejects any input whose length is not
-/// exactly [`COMPACT_XPUB_LEN`] (69) bytes — the reference clients hard-check
-/// this on receive, so a non-69-byte payload is not a valid DIP-15 compact
-/// xpub and must be handled separately (e.g. a legacy 78/107-byte BIP32/DIP-14
-/// serialization) by the caller.
-///
-/// # Arguments
-/// * `bytes` - The decrypted plaintext (must be exactly 69 bytes).
-///
-/// # Returns
-/// `(parent_fingerprint, chain_code, pubkey)` on success.
+/// Inverse of [`CompactXpub::to_bytes`] / [`compact_xpub_bytes`]. Rejects
+/// any input whose length is not exactly [`COMPACT_XPUB_LEN`] (69) bytes —
+/// the reference clients hard-check this on receive, so a non-69-byte
+/// payload is not a valid DIP-15 compact xpub and must be handled
+/// separately (e.g. a legacy 78/107-byte BIP32/DIP-14 serialization) by
+/// the caller.
 ///
 /// # Errors
 /// [`CryptoError::InvalidCompactXpubLength`] if `bytes.len() != 69`.
-#[allow(clippy::type_complexity)]
-pub fn parse_compact_xpub(bytes: &[u8]) -> Result<([u8; 4], [u8; 32], [u8; 33]), CryptoError> {
+pub fn parse_compact_xpub(bytes: &[u8]) -> Result<CompactXpub, CryptoError> {
     if bytes.len() != COMPACT_XPUB_LEN {
         return Err(CryptoError::InvalidCompactXpubLength(bytes.len()));
     }
 
     let mut parent_fingerprint = [0u8; 4];
     let mut chain_code = [0u8; 32];
-    let mut pubkey = [0u8; 33];
+    let mut public_key = [0u8; 33];
     parent_fingerprint.copy_from_slice(&bytes[0..4]);
     chain_code.copy_from_slice(&bytes[4..36]);
-    pubkey.copy_from_slice(&bytes[36..69]);
+    public_key.copy_from_slice(&bytes[36..69]);
 
-    Ok((parent_fingerprint, chain_code, pubkey))
+    Ok(CompactXpub {
+        parent_fingerprint,
+        chain_code,
+        public_key,
+    })
 }
 
 /// Encrypt an account label for DashPay (DIP-15)
@@ -391,10 +410,12 @@ mod tests {
         assert_eq!(&compact[4..36], &chain_code);
         assert_eq!(&compact[36..69], &pubkey);
 
-        let (fp, cc, pk) = parse_compact_xpub(&compact).expect("parse 69-byte compact");
-        assert_eq!(fp, parent_fingerprint);
-        assert_eq!(cc, chain_code);
-        assert_eq!(pk, pubkey);
+        let parsed = parse_compact_xpub(&compact).expect("parse 69-byte compact");
+        assert_eq!(parsed.parent_fingerprint, parent_fingerprint);
+        assert_eq!(parsed.chain_code, chain_code);
+        assert_eq!(parsed.public_key, pubkey);
+        // Struct round-trips back to the same bytes.
+        assert_eq!(parsed.to_bytes(), compact);
     }
 
     #[test]
@@ -487,7 +508,11 @@ mod contact_info_tests {
         // ECB and not CBC-with-zero-IV.
         let same_blocks = [0xAAu8; 32];
         let ct2 = encrypt_enc_to_user_id(&key, &same_blocks);
-        assert_eq!(ct2[..16], ct2[16..], "ECB: identical blocks encrypt identically");
+        assert_eq!(
+            ct2[..16],
+            ct2[16..],
+            "ECB: identical blocks encrypt identically"
+        );
 
         // Wrong key must not round-trip.
         assert_ne!(decrypt_enc_to_user_id(&[0x22u8; 32], &ct), id);

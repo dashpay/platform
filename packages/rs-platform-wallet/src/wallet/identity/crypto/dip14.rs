@@ -164,32 +164,29 @@ pub fn derive_contact_xpub(
 /// reconstructed key is non-hardened (a hardened child would refuse `ckd_pub`).
 ///
 /// # Arguments
-/// * `parent_fingerprint` - 4-byte parent fingerprint from the compact form.
-/// * `chain_code` - 32-byte chain code from the compact form.
-/// * `public_key` - 33-byte compressed public key from the compact form.
+/// * `compact` - the parsed [`CompactXpub`] components from the wire form.
 /// * `network` - Network for address encoding (from path context).
 pub fn reconstruct_contact_xpub(
-    parent_fingerprint: [u8; 4],
-    chain_code: [u8; 32],
-    public_key: [u8; 33],
+    compact: platform_encryption::CompactXpub,
     network: Network,
 ) -> Result<ExtendedPubKey, PlatformWalletError> {
-    let public_key = dashcore::secp256k1::PublicKey::from_slice(&public_key).map_err(|e| {
-        PlatformWalletError::InvalidIdentityData(format!(
-            "Compact contact xpub has an invalid compressed public key: {e}"
-        ))
-    })?;
+    let public_key =
+        dashcore::secp256k1::PublicKey::from_slice(&compact.public_key).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Compact contact xpub has an invalid compressed public key: {e}"
+            ))
+        })?;
 
     Ok(ExtendedPubKey {
         network,
         // Friendship-path leaf depth (m/9'/coin'/15'/0'/sender/recipient).
         depth: 6,
-        parent_fingerprint: key_wallet::bip32::Fingerprint::from_bytes(parent_fingerprint),
+        parent_fingerprint: key_wallet::bip32::Fingerprint::from_bytes(compact.parent_fingerprint),
         // Non-hardened so ckd_pub is permitted; index value is irrelevant to
         // non-hardened child derivation, which keys only off chain_code+pubkey.
         child_number: ChildNumber::Normal256 { index: [0u8; 32] },
         public_key,
-        chain_code: key_wallet::bip32::ChainCode::from_bytes(chain_code),
+        chain_code: key_wallet::bip32::ChainCode::from_bytes(compact.chain_code),
     })
 }
 
@@ -663,11 +660,10 @@ mod tests {
         assert_eq!(&compact[36..69], &data.public_key);
 
         // And it round-trips through the codec.
-        let (fp, cc, pk) =
-            platform_encryption::parse_compact_xpub(&compact).expect("parse compact");
-        assert_eq!(fp, data.parent_fingerprint);
-        assert_eq!(cc, data.chain_code);
-        assert_eq!(pk, data.public_key);
+        let parsed = platform_encryption::parse_compact_xpub(&compact).expect("parse compact");
+        assert_eq!(parsed.parent_fingerprint, data.parent_fingerprint);
+        assert_eq!(parsed.chain_code, data.chain_code);
+        assert_eq!(parsed.public_key, data.public_key);
     }
 
     #[test]
@@ -684,10 +680,9 @@ mod tests {
             .expect("derive contact xpub");
 
         let compact = data.compact_xpub();
-        let (fp, cc, pk) =
-            platform_encryption::parse_compact_xpub(&compact).expect("parse compact");
-        let reconstructed = reconstruct_contact_xpub(fp, cc, pk, Network::Testnet)
-            .expect("reconstruct from compact");
+        let parsed = platform_encryption::parse_compact_xpub(&compact).expect("parse compact");
+        let reconstructed =
+            reconstruct_contact_xpub(parsed, Network::Testnet).expect("reconstruct from compact");
 
         for i in 0..6u32 {
             let from_original = derive_contact_payment_address(&data.xpub, i, Network::Testnet)

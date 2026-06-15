@@ -553,14 +553,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         // confirms nothing nonconforming reached chain, but we keep one cheap
         // fallback branch as insurance.
         let contact_xpub = match platform_encryption::parse_compact_xpub(&decrypted_xpub_bytes) {
-            Ok((parent_fingerprint, chain_code, public_key)) => {
-                crate::wallet::identity::crypto::dip14::reconstruct_contact_xpub(
-                    parent_fingerprint,
-                    chain_code,
-                    public_key,
-                    self.sdk.network,
-                )?
-            }
+            Ok(compact) => crate::wallet::identity::crypto::dip14::reconstruct_contact_xpub(
+                compact,
+                self.sdk.network,
+            )?,
             Err(_) => {
                 key_wallet::bip32::ExtendedPubKey::decode(&decrypted_xpub_bytes).map_err(|e| {
                     PlatformWalletError::InvalidIdentityData(format!(
