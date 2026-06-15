@@ -22,11 +22,20 @@ async function main() {
   const { sdk, mod, network } = await connect();
   console.log(`Connected to ${network}.`);
 
+  const currentSchemaSha = schemaSha();
+
   // Short-circuit if already registered and still resolvable.
   const existing = readConfig(network);
   if (existing?.contractId && !values.force) {
     const onChain = await sdk.contracts.fetch(existing.contractId).catch(() => undefined);
     if (onChain) {
+      if (existing.schemaSha && existing.schemaSha !== currentSchemaSha) {
+        throw new Error(
+          `Existing contract ${existing.contractId} resolves, but the local schema changed `
+          + `(${existing.schemaSha} -> ${currentSchemaSha}). A data contract's schema is immutable, `
+          + 'so re-run with --force to publish a fresh contract (new id), or revert the schema.',
+        );
+      }
       console.log(`Already registered: ${existing.contractId} (still resolves on ${network}).`);
       console.log('Pass --force to register a fresh contract.');
       return;
@@ -57,7 +66,7 @@ async function main() {
     contractId,
     ownerId,
     documentTypes: Object.keys(schemas),
-    schemaSha: schemaSha(),
+    schemaSha: currentSchemaSha,
     planCommit: resolvePlanCommit() ?? null,
     registeredAt: new Date().toISOString(),
   };

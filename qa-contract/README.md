@@ -199,7 +199,7 @@ node src/query.mjs --type testRun --testId CORE-05 --proof
 
 ### Files
 
-```
+```text
 qa-contract/
 ├── schema/qa-contract.documents.json   # the two document types (the contract schema)
 ├── contract-id.testnet.json            # committed: live contract ID per network

@@ -76,7 +76,13 @@ async function main() {
   if (idFilter) rows = rows.filter((r) => idFilter.includes(r.testId));
   if (tierFilter) rows = rows.filter((r) => tierFilter.includes(r.tier.toLowerCase()));
   if (catFilter) rows = rows.filter((r) => catFilter.includes(r.category.toLowerCase()));
-  if (values.limit) rows = rows.slice(0, Number(values.limit));
+  if (values.limit !== undefined) {
+    const limit = Number(values.limit);
+    if (!Number.isInteger(limit) || limit <= 0) {
+      throw new Error(`--limit must be a positive integer (got '${values.limit}').`);
+    }
+    rows = rows.slice(0, limit);
+  }
 
   console.log(`Plan commit ${planCommit ?? 'unknown'}; seeding ${rows.length} testCase row(s).`);
 

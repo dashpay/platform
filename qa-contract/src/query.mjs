@@ -74,7 +74,15 @@ async function selfCheck(sdk, contractId, limit, proof) {
   printDocs("testRun index 'resultCreatedAt'  where result == pass order $createdAt desc", docs,
     ['testId', 'result', 'buildRef']);
 
-  console.log('\n✅ All indexed queries returned without error — indices are valid.');
+  // testRun.buildRef
+  docs = await run(sdk, {
+    dataContractId: contractId, documentTypeName: 'testRun',
+    where: [['buildRef', '==', '45fdf33901']], limit,
+  }, proof);
+  printDocs("testRun index 'buildRef'  where buildRef == 45fdf33901", docs,
+    ['testId', 'result', 'buildRef']);
+
+  console.log('\n✅ All 6 indexed queries returned without error — indices are valid.');
 }
 
 async function main() {
@@ -93,6 +101,9 @@ async function main() {
     },
   });
   const limit = Number(values.limit);
+  if (!Number.isInteger(limit) || limit <= 0) {
+    throw new Error(`--limit must be a positive integer (got '${values.limit}').`);
+  }
 
   const { sdk, network } = await connect();
   const cfg = readConfig(network);

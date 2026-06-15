@@ -11,7 +11,7 @@
 import { parseArgs } from 'node:util';
 import { randomBytes } from 'node:crypto';
 import {
-  loadDotEnv, connect, loadOwnerAuth, readConfig, getNetwork,
+  loadDotEnv, connect, loadOwnerAuth, readConfig,
 } from './sdk.mjs';
 
 const RESULTS = ['pass', 'fail', 'blocked', 'skipped'];
@@ -41,6 +41,10 @@ async function main() {
     throw new Error(`--result must be one of: ${RESULTS.join(', ')} (got '${result}').`);
   }
 
+  // --network selects the target network (so the connection, the loaded contract
+  // config, and the stamped properties.network all agree), defaulting to $NETWORK.
+  if (values.network?.trim()) process.env.NETWORK = values.network.trim();
+
   const { sdk, mod, network } = await connect();
   const cfg = readConfig(network);
   if (!cfg?.contractId) throw new Error(`No contract registered for ${network}. Run register.mjs first.`);
@@ -48,7 +52,7 @@ async function main() {
 
   const { ownerId, signer, identityKey } = await loadOwnerAuth(sdk, mod, network);
 
-  const properties = { testId, result, network: values.network?.trim() || getNetwork(), buildRef };
+  const properties = { testId, result, network, buildRef };
   if (values.device) properties.device = values.device;
   if (values.evidence) properties.evidence = values.evidence;
   if (values.notes) properties.notes = values.notes;
