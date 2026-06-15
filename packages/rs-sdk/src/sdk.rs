@@ -62,7 +62,7 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// `fetch_max` when the network reports a newer one. It is not a hard floor — an
 /// explicitly pinned version below it is preserved as-is.
 const fn min_protocol_version(_network: Network) -> u32 {
-    dpp::version::v10::PROTOCOL_VERSION_10 // TODO: set real per-network floors once the update mechanism is tested
+    dpp::version::v11::PROTOCOL_VERSION_11 // TODO: set real per-network floors once the update mechanism is tested
 }
 
 /// The default metadata time tolerance for checkpoint queries in milliseconds
@@ -1962,8 +1962,11 @@ mod test {
     /// under-reservation regression.
     #[tokio::test]
     async fn test_refresh_ratchets_up_via_proven_query() {
-        let mut sdk = mock_sdk_with_auto_detect(10);
-        assert_eq!(sdk.protocol_version_number(), 10);
+        let mut sdk = mock_sdk_with_auto_detect(super::min_protocol_version(Network::Mainnet));
+        assert_eq!(
+            sdk.protocol_version_number(),
+            super::min_protocol_version(Network::Mainnet)
+        );
 
         expect_epoch_refresh(&mut sdk).await;
 
