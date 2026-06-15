@@ -560,6 +560,50 @@ struct DashpayPaymentStorageListView: View {
     }
 }
 
+// MARK: - PersistentDashpayRejectedRequest
+
+struct DashpayRejectedRequestStorageListView: View {
+    let network: Network
+    @Query(sort: \PersistentDashpayRejectedRequest.rejectedAt, order: .reverse)
+    private var records: [PersistentDashpayRejectedRequest]
+
+    private var scoped: [PersistentDashpayRejectedRequest] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
+    var body: some View {
+        let visible = scoped
+        List(visible) { record in
+            NavigationLink(destination: DashpayRejectedRequestStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("ref \(record.accountReference)")
+                            .font(.body)
+                        Spacer()
+                        Text(record.rejectedAt, style: .date)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Text(record.senderIdentityId.toHexString())
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("Rejected Requests (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView(
+                    "No Records",
+                    systemImage: "person.crop.circle.badge.xmark"
+                )
+            }
+        }
+    }
+}
+
 // MARK: - PersistentToken
 
 struct TokenStorageListView: View {
