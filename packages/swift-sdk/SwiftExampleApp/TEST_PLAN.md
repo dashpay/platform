@@ -256,7 +256,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SH-08 | Shielded withdraw → Core L1 (Type 19) | Cross | Common | ✅ | Send flow (Shielded→Core) → `walletManager.shieldedWithdraw` (custom `core_fee_per_byte`). |
 | SH-09 | Prover warm-up / readiness | Shielded | Common | ✅ | `warmUpShieldedProver` / `shieldedProverIsReady` (~30s Halo2 key build; precondition for spends). |
 | SH-10 | Seed shielded pool (anonymity set) | Shielded | Uncommon | ✅ | `SeedShieldedPoolView` → `platform_wallet_manager_shielded_seed_pool_notes`. **Devnet/testnet only** — hard-errors on mainnet. |
-| SH-11 | Create identity from shielded pool (Type 20) | Cross | Uncommon | 🔌 | FFI `platform_wallet_manager_shielded_identity_create_from_pool`; no dedicated UI. |
+| SH-11 | Create identity from shielded pool (Type 20) | Cross | Common | 🔌 | FFI `platform_wallet_manager_shielded_identity_create_from_pool`; no dedicated UI. |
 | SH-12 | Clear shielded state (wipe notes + re-sync) | Shielded | Uncommon | ✅ | "Clear" button on the Sync tab (`CoreContentView` → `ShieldedService.clearLocalState` → `clearShielded`). Stops sync, wipes every wallet's shielded notes + sync state, zeroes the Swift mirror; bind credentials are kept so "Sync Now" rebinds and re-scans. (On-disk SQLite tree is intentionally retained.) Verify balance/activity reset, then restore after Sync Now. |
 | SH-13 | Display / share your shielded receive address | Shielded | Common | ✅ | "Receive Dash" sheet → **Shielded** tab (`ReceiveAddressView`, `ReceiveAddressTab.shielded`): QR + full `tdash1…`/`dash1…` bech32m address + Copy Address. Hand your shielded address to a payer, or grab wallet B's address for `MW-06`. |
 
