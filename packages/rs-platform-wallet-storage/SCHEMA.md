@@ -62,7 +62,7 @@ erDiagram
 
     ACCOUNT_REGISTRATIONS {
         BLOB wallet_id PK
-        TEXT account_type PK "standard | coinjoin | identity_registration | ..."
+        TEXT account_type PK "standard_bip44 | standard_bip32 | coinjoin | identity_registration | ..."
         INTEGER account_index PK
         BLOB account_xpub_bytes "bincode-encoded AccountRegistrationEntry"
     }
@@ -105,9 +105,9 @@ erDiagram
     CORE_DERIVED_ADDRESSES {
         BLOB wallet_id PK
         TEXT account_type PK
+        INTEGER account_index PK "owning account; also the value the read returns"
         TEXT pool_type PK "external | internal | absent | absent_hardened"
         INTEGER derivation_index PK
-        INTEGER account_index "account-level context; the value the read returns"
         TEXT address UK "bech32 / Base58 address string"
         INTEGER used "0 | 1"
     }
@@ -438,7 +438,7 @@ an emitter bug, never on a benign gap.
 > be a `new_utxos` UTXO address. This is an upstream classifier property
 > (`key-wallet` `account_checker`), not enforceable at the storage layer.
 
-- PK: `(wallet_id, account_type, pool_type, derivation_index)` — the BIP32
+- PK: `(wallet_id, account_type, account_index, pool_type, derivation_index)` — the BIP32
   leaf identity (one row per derived address).
 - `UNIQUE(wallet_id, address)` — the read-index invariant (one
   account_index per address); its index also backs the address lookup, so

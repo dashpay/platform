@@ -87,7 +87,7 @@ fn check_rejects_bad_pool_type() {
          VALUES (?1, ?2, ?3, ?4, ?5)",
         params![
             wid(3).as_slice(),
-            "standard",
+            "standard_bip44",
             0i64,
             "not_a_pool",
             &[0u8; 4][..]
