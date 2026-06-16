@@ -149,9 +149,6 @@ pub enum PlatformWalletError {
     #[error("No wallets configured — add a wallet before starting SPV")]
     NoWalletsConfigured,
 
-    #[error("SPV client is not running")]
-    SpvNotRunning,
-
     #[error("SPV error: {0}")]
     SpvError(String),
 
