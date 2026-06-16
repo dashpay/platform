@@ -104,7 +104,9 @@ async function main() {
     };
     setLine('QA_PRIVATE_KEY', pick.wif);
     if (Number.isFinite(pick.id)) setLine('QA_IDENTITY_KEY_ID', String(pick.id));
-    writeFileSync(envPath, env.endsWith('\n') ? env : `${env}\n`);
+    // mode on writeFileSync applies only when creating the file (closes the
+    // create-at-0644-then-chmod window); chmodSync covers the overwrite case.
+    writeFileSync(envPath, env.endsWith('\n') ? env : `${env}\n`, { mode: 0o600 });
     chmodSync(envPath, 0o600); // contains a private key + mnemonic — owner-only
     console.log(`\nWrote QA_PRIVATE_KEY${Number.isFinite(pick.id) ? ' + QA_IDENTITY_KEY_ID' : ''} to ${envPath} (chmod 0600).`);
   } else {

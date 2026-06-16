@@ -124,6 +124,11 @@ async function main() {
   if (['app', 'tier', 'category'].includes(values.type)) {
     orderBy.push(['code', 'asc']); // byCode index
   } else if (values.type === 'testCase') {
+    // Indices are testIdApp / appTier / appCategory — each pairs app with exactly
+    // one of testId/tier/category, so reject combinations no index can serve.
+    if ([values.testId, values.tier, values.category].filter(Boolean).length > 1) {
+      throw new Error('Use only one of --testId / --tier / --category for testCase (no app+tier+category index).');
+    }
     where.push(['app', '==', app]);
     if (values.testId) where.push(['testId', '==', values.testId]);
     if (values.tier) where.push(['tier', '==', tierCode(values.tier)]);
@@ -139,7 +144,10 @@ async function main() {
       if (ownerId) where.push(['$ownerId', '==', ownerId]);
     } else {
       if (!values.testId) {
-        throw new Error('testRun queries need --testId (with optional --result/--network), or --buildRef.');
+        throw new Error('testRun queries need --testId (with optional --result OR --network), or --buildRef.');
+      }
+      if (values.network && values.result) {
+        throw new Error('--network and --result can\'t be combined for testRun (no covering index; use one).');
       }
       if (ownerId) where.push(['$ownerId', '==', ownerId]);
       where.push(['app', '==', app]);

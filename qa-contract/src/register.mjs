@@ -27,7 +27,16 @@ async function main() {
   // Short-circuit if already registered and still resolvable.
   const existing = readConfig(network);
   if (existing?.contractId && !values.force) {
-    const onChain = await sdk.contracts.fetch(existing.contractId).catch(() => undefined);
+    // fetch() returns undefined for a genuinely absent contract (e.g. testnet
+    // reset). A *thrown* error is transient (gRPC/DNS/etc.) and must NOT be
+    // mistaken for "gone" — that would publish a duplicate contract. Abort instead.
+    let onChain;
+    try {
+      onChain = await sdk.contracts.fetch(existing.contractId);
+    } catch (e) {
+      throw new Error(`Could not verify existing contract ${existing.contractId} on ${network}: ${e?.message || e}. `
+        + 'Aborting to avoid registering a duplicate — re-run when reachable, or pass --force to deliberately register a fresh contract.');
+    }
     if (onChain) {
       if (existing.schemaSha && existing.schemaSha !== currentSchemaSha) {
         throw new Error(
