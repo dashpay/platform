@@ -104,7 +104,13 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
 
     /// One recipient row for `transfer(...)`.
     public struct TransferOutput: Sendable {
-        /// `0 = P2PKH`, `1 = P2SH`. Mirrors the Rust-side `PlatformAddress` discriminant.
+        /// Must be `0` (P2PKH). The platform-address transfer surface
+        /// supports P2PKH only: the Rust `TryFrom<PlatformAddressFFI>`
+        /// backing `parse_outputs`/`parse_explicit_inputs*` rejects
+        /// `address_type = 1` (P2SH) because inputs are signed by a
+        /// P2PKH-only `Signer<PlatformAddress>` and recipients on this
+        /// surface are always P2PKH. The field stays `UInt8` to mirror the
+        /// Rust discriminant layout, but `1` will be rejected by the FFI.
         public let addressType: UInt8
         /// 20-byte address hash.
         public let hash: Data
@@ -122,7 +128,11 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     /// every transfer. Carries no `credits` field — the wrapper computes
     /// the change amount itself as `sum(inputs) - sum(outputs)`.
     public struct ChangeAddress: Sendable {
-        /// `0 = P2PKH`, `1 = P2SH`. Mirrors the Rust-side `PlatformAddress` discriminant.
+        /// Must be `0` (P2PKH). Same P2PKH-only constraint as
+        /// `TransferOutput.addressType`: the change row becomes a transfer
+        /// output, which the Rust FFI accepts as P2PKH only. The field
+        /// stays `UInt8` to mirror the Rust discriminant layout, but `1`
+        /// (P2SH) will be rejected by the FFI.
         public let addressType: UInt8
         /// 20-byte address hash.
         public let hash: Data
@@ -555,7 +565,11 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     /// (the asset lock is consumed in full, so a remainder bucket is
     /// mandatory).
     public struct FundFromAssetLockRecipient: Sendable {
-        /// `0 = P2PKH`, `1 = P2SH`. Mirrors the Rust-side `PlatformAddress` discriminant.
+        /// Must be `0` (P2PKH). Funding recipients flow through the same
+        /// P2PKH-only Rust `TryFrom<PlatformAddressFFI>` as transfer
+        /// inputs/outputs, so `1` (P2SH) is rejected (also enforced
+        /// up-front by `fundFromAssetLockPreflight`). The field stays
+        /// `UInt8` to mirror the Rust discriminant layout.
         public let addressType: UInt8
         /// 20-byte address hash.
         public let hash: Data
@@ -782,11 +796,11 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         for r in recipients {
             // The Rust FFI accepts only addressType == 0 (P2PKH) — see
             // `impl TryFrom<PlatformAddressFFI> for PlatformAddress` in
-            // packages/rs-platform-wallet-ffi/src/platform_address_types.rs.
-            // Catch the P2SH discriminant the type signature still
-            // documents so the caller gets a synchronous, type-specific
+            // packages/rs-platform-wallet-ffi/src/platform_address_types.rs,
+            // which rejects P2SH with a type-specific message. Catch the
+            // P2SH discriminant here too so the caller gets a synchronous
             // error instead of paying for the Task detach + signer pin
-            // and then receiving a generic FFI failure.
+            // and then receiving the same rejection from Rust.
             guard r.addressType == 0 else {
                 throw PlatformWalletError.invalidParameter(
                     "FundFromAssetLockRecipient.addressType must be 0 (P2PKH) for platform-address funding (got \(r.addressType))"

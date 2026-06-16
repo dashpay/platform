@@ -497,10 +497,11 @@ class SendViewModel: ObservableObject {
                     return
                 }
                 // The Rust FFI's `PlatformAddressFFI → PlatformAddress`
-                // conversion (rs-platform-wallet-ffi/src/platform_address_types.rs:42)
-                // only accepts P2PKH; sending to a P2SH platform address
-                // would surface a raw "Unsupported address type" string
-                // from Rust. Fail fast with a user-readable message.
+                // conversion (rs-platform-wallet-ffi/src/platform_address_types.rs,
+                // `impl TryFrom<PlatformAddressFFI>`) accepts P2PKH only;
+                // sending to a P2SH platform address would surface a
+                // P2SH-specific rejection from Rust. Fail fast here with a
+                // user-readable message instead.
                 guard ffiAddressType == 0 else {
                     error = "P2SH platform addresses aren't supported yet. Use a P2PKH recipient."
                     return

@@ -10,10 +10,24 @@ use std::collections::BTreeMap;
 // ---------------------------------------------------------------------------
 
 /// Fixed-size C-compatible platform address.
+///
+/// `address_type` mirrors the [`PlatformAddress`] variant discriminant
+/// (`0 = P2pkh`, `1 = P2sh`) and is preserved faithfully by the
+/// [`From<PlatformAddress>`] direction. The **reverse** direction
+/// ([`TryFrom<PlatformAddressFFI>`]) used by the platform-address
+/// transfer/withdraw entry points (`parse_outputs`,
+/// `parse_explicit_inputs`, `parse_explicit_inputs_with_nonces`) accepts
+/// `0` (P2PKH) **only** — see that impl for why. Callers driving those
+/// entry points must pass `address_type = 0`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct PlatformAddressFFI {
-    /// 0 = P2pkh, 1 = P2sh
+    /// `0 = P2pkh`, `1 = P2sh`.
+    ///
+    /// NOTE: the platform-address transfer/withdraw surface only honors
+    /// `0` on the way **in** (see [`TryFrom<PlatformAddressFFI>`]); `1`
+    /// round-trips out of [`From<PlatformAddress>`] but is rejected if
+    /// fed back into a transfer/withdraw input or output.
     pub address_type: u8,
     /// 20-byte hash
     pub hash: [u8; 20],
@@ -36,10 +50,42 @@ impl From<PlatformAddress> for PlatformAddressFFI {
 
 impl TryFrom<PlatformAddressFFI> for PlatformAddress {
     type Error = &'static str;
+    /// Accepts `address_type = 0` (P2PKH) **only**.
+    ///
+    /// This conversion backs the platform-address transfer/withdraw
+    /// inputs and outputs (`parse_explicit_inputs`,
+    /// `parse_explicit_inputs_with_nonces`, `parse_outputs`). P2SH
+    /// (`address_type = 1`) is intentionally rejected here even though
+    /// the [`PlatformAddress`] enum and the consensus transition can
+    /// represent it:
+    ///
+    /// - **Inputs** are spent via `Signer<PlatformAddress>`, whose FFI
+    ///   `VTableSigner::sign_create_witness` produces only P2PKH
+    ///   witnesses and explicitly errors on P2SH (the iOS
+    ///   `KeychainSigner` holds P2PKH key material only). A P2SH input
+    ///   cannot be signed on this path.
+    /// - **Outputs/recipients** on this surface are always P2PKH in
+    ///   practice: the wallet derives P2PKH platform-payment addresses,
+    ///   and the Swift transfer UI tags own-wallet and pasted-hash
+    ///   recipients as P2PKH.
+    ///
+    /// Accepting `1` here would only relocate the failure deeper (to the
+    /// signer for inputs) without enabling a working P2SH transfer, so
+    /// the contract is narrowed to P2PKH and the rejection is specific.
+    /// The identity-side siblings (`identity_transfer.rs`,
+    /// `identity_registration_with_signer.rs`) accept `1` because there
+    /// the address is a pure recipient signed by an *identity* key, never
+    /// spent as a `PlatformAddress` — a genuinely different capability.
     fn try_from(ffi: PlatformAddressFFI) -> Result<Self, Self::Error> {
         match ffi.address_type {
             0 => Ok(PlatformAddress::P2pkh(ffi.hash)),
-            _ => Err("Unsupported address type"),
+            1 => Err("platform-address transfers/withdrawals support P2PKH \
+                      (address_type 0) only; P2SH (address_type 1) cannot be \
+                      signed or spent on this surface"),
+            _ => Err(
+                "invalid address_type (platform-address transfers/withdrawals \
+                      accept P2PKH, address_type 0, only)",
+            ),
         }
     }
 }
@@ -514,6 +560,109 @@ mod tests {
         let err = unsafe { parse_explicit_inputs_with_nonces(entries.as_ptr(), entries.len()) }
             .expect_err("duplicate input address must be rejected");
         assert_eq!(err, "Duplicate input address");
+    }
+
+    /// The platform-address transfer/withdraw surface accepts P2PKH
+    /// (`address_type = 0`) only. P2SH (`address_type = 1`) must be
+    /// rejected by the shared `TryFrom` with a P2SH-specific message, and
+    /// any other discriminant with the generic invalid-type message —
+    /// across all three parse entry points (outputs + both input shapes).
+    /// The `From<PlatformAddress>` direction still emits `1` for P2SH, so
+    /// the asymmetry is intentional and pinned here.
+    #[test]
+    fn try_from_accepts_p2pkh_and_rejects_p2sh_and_unknown() {
+        const P2SH_MSG: &str = "platform-address transfers/withdrawals support P2PKH \
+                                (address_type 0) only; P2SH (address_type 1) cannot be \
+                                signed or spent on this surface";
+        const UNKNOWN_MSG: &str = "invalid address_type (platform-address transfers/withdrawals \
+                                   accept P2PKH, address_type 0, only)";
+
+        // 0 → P2pkh round-trips.
+        let p2pkh = PlatformAddressFFI {
+            address_type: 0,
+            hash: [0x11; 20],
+        };
+        assert_eq!(
+            PlatformAddress::try_from(p2pkh).expect("address_type 0 must be accepted"),
+            PlatformAddress::P2pkh([0x11; 20]),
+        );
+
+        // 1 → rejected with the P2SH-specific message.
+        let p2sh = PlatformAddressFFI {
+            address_type: 1,
+            hash: [0x22; 20],
+        };
+        assert_eq!(
+            PlatformAddress::try_from(p2sh).expect_err("address_type 1 (P2SH) must be rejected"),
+            P2SH_MSG,
+        );
+
+        // Anything else → generic invalid-type message.
+        let unknown = PlatformAddressFFI {
+            address_type: 2,
+            hash: [0x33; 20],
+        };
+        assert_eq!(
+            PlatformAddress::try_from(unknown).expect_err("unknown address_type must be rejected"),
+            UNKNOWN_MSG,
+        );
+
+        // The `From` direction still faithfully emits the P2SH
+        // discriminant; only the reverse (transfer/withdraw input) path is
+        // narrowed.
+        assert_eq!(
+            PlatformAddressFFI::from(PlatformAddress::P2sh([0x44; 20])).address_type,
+            1,
+        );
+    }
+
+    /// All three input/output parse helpers funnel through the same
+    /// narrowed `TryFrom`, so a P2SH (`address_type = 1`) entry is rejected
+    /// with the P2SH-specific diagnostic on every entry point.
+    #[test]
+    fn parse_helpers_reject_p2sh_address_type() {
+        const P2SH_MSG: &str = "platform-address transfers/withdrawals support P2PKH \
+                                (address_type 0) only; P2SH (address_type 1) cannot be \
+                                signed or spent on this surface";
+
+        let p2sh = PlatformAddressFFI {
+            address_type: 1,
+            hash: [0xAB; 20],
+        };
+
+        let out = [AddressBalanceEntryFFI {
+            address: p2sh,
+            balance: 1_000_000,
+            nonce: 0,
+            account_index: 0,
+            address_index: 0,
+        }];
+        assert_eq!(
+            unsafe { parse_outputs(out.as_ptr(), out.len()) }
+                .expect_err("parse_outputs must reject P2SH"),
+            P2SH_MSG,
+        );
+
+        let inp = [ExplicitInputFFI {
+            address: p2sh,
+            balance: 1_000_000,
+        }];
+        assert_eq!(
+            unsafe { parse_explicit_inputs(inp.as_ptr(), inp.len()) }
+                .expect_err("parse_explicit_inputs must reject P2SH"),
+            P2SH_MSG,
+        );
+
+        let inp_nonce = [ExplicitInputWithNonceFFI {
+            address: p2sh,
+            nonce: 1,
+            balance: 1_000_000,
+        }];
+        assert_eq!(
+            unsafe { parse_explicit_inputs_with_nonces(inp_nonce.as_ptr(), inp_nonce.len()) }
+                .expect_err("parse_explicit_inputs_with_nonces must reject P2SH"),
+            P2SH_MSG,
+        );
     }
 
     /// Distinct addresses are accepted and the keys end up in DPP-canonical
