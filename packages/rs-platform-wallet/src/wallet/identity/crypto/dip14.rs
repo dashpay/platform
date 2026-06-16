@@ -345,7 +345,6 @@ pub const DEFAULT_CONTACT_GAP_LIMIT: u32 = 10;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use key_wallet::bip32::ExtendedPrivKey;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
     /// Helper: create a deterministic wallet from a fixed seed.
