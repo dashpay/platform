@@ -151,7 +151,7 @@ impl TryFrom<&str> for PlatformAddressWasm {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         // Try parsing as bech32m string first (e.g., "dash1..." or "tdash1...")
-        if let Ok((addr, _network)) = PlatformAddress::from_bech32m_string(value) {
+        if let Ok(addr) = PlatformAddress::from_bech32m_string(value) {
             return Ok(PlatformAddressWasm(addr));
         }
 
@@ -327,7 +327,7 @@ impl PlatformAddressWasm {
     #[wasm_bindgen(js_name = "fromBech32m")]
     pub fn from_bech32m(address: &str) -> WasmDppResult<PlatformAddressWasm> {
         PlatformAddress::from_bech32m_string(address)
-            .map(|(addr, _)| PlatformAddressWasm(addr))
+            .map(PlatformAddressWasm)
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))
     }
 
