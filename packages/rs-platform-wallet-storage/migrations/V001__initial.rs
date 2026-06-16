@@ -151,12 +151,13 @@ CREATE TABLE core_derived_addresses (
     derivation_index INTEGER NOT NULL,
     address TEXT NOT NULL,
     used INTEGER NOT NULL,
-    -- PK is the BIP32 leaf identity. `address` is a derived attribute, not
-    -- a key, so every collision (within- or cross-pool) trips
-    -- UNIQUE(address) loud. `account_index` is account-level context (the
-    -- value the read returns), not a uniqueness discriminator. The UNIQUE
-    -- index also backs ACCOUNT_INDEX_BY_ADDRESS_SQL.
-    PRIMARY KEY (wallet_id, account_type, pool_type, derivation_index),
+    -- PK is the BIP32 leaf identity: the full tuple (wallet, account_type,
+    -- account_index, pool, derivation_index) uniquely identifies one derived
+    -- leaf. `account_type` uses distinct labels per StandardAccountType
+    -- variant so BIP32 and BIP44 standard accounts never collapse. `address`
+    -- is a derived attribute — cross-leaf collisions trip UNIQUE(address).
+    -- The UNIQUE index also backs ACCOUNT_INDEX_BY_ADDRESS_SQL.
+    PRIMARY KEY (wallet_id, account_type, account_index, pool_type, derivation_index),
     UNIQUE (wallet_id, address),
     FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );

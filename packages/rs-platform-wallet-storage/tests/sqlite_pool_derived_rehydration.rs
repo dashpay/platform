@@ -224,7 +224,7 @@ fn old_style_db_resolves_via_cache_and_manifest_fallback() {
         conn.execute(
             "INSERT INTO core_derived_addresses \
                 (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
-             VALUES (?1, 'standard', ?2, 'external', ?3, ?4, 0)",
+             VALUES (?1, 'standard_bip44', ?2, 'external', ?3, ?4, 0)",
             rusqlite::params![
                 w.as_slice(),
                 i64::from(account_index),
@@ -373,7 +373,7 @@ fn partial_state_cache_hit_wins_over_manifest_fallback() {
         conn.execute(
             "INSERT INTO core_derived_addresses \
                 (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
-             VALUES (?1, 'standard', ?2, 'internal', 999, ?3, 1)",
+             VALUES (?1, 'standard_bip44', ?2, 'internal', 999, ?3, 1)",
             rusqlite::params![w.as_slice(), LIVE_ACCOUNT_INDEX, live_addr.to_string()],
         )
         .unwrap();
@@ -802,7 +802,7 @@ fn authoritative_redrive_preserves_used_true() {
         conn.execute(
             "INSERT INTO core_derived_addresses \
                 (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
-             VALUES (?1, 'standard', 0, 'external', 0, ?2, 1)",
+             VALUES (?1, 'standard_bip44', 0, 'external', 0, ?2, 1)",
             rusqlite::params![w.as_slice(), addr.to_string()],
         )
         .unwrap();
@@ -873,7 +873,7 @@ fn reload_keeps_single_live_row_for_pool_address() {
         conn.execute(
             "INSERT INTO core_derived_addresses \
                 (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
-             VALUES (?1, 'standard', 0, 'internal', ?2, ?3, 1)",
+             VALUES (?1, 'standard_bip44', 0, 'internal', ?2, ?3, 1)",
             rusqlite::params![w.as_slice(), LIVE_DERIVATION_INDEX, pool_addr],
         )
         .unwrap();
@@ -981,6 +981,284 @@ fn derivation_absent_from_manifest_is_fatal() {
         err.persistence_kind(),
         PersistenceErrorKind::Fatal,
         "the violation must classify Fatal at the trait boundary"
+    );
+}
+
+/// PK axis-1 regression: two Standard accounts with the same pool slot but
+/// DIFFERENT `account_index` (index 0 and index 1, both BIP44) must each
+/// persist their own row in `core_derived_addresses`. Before the fix both
+/// collapsed to the same PK and the second row was silently dropped.
+///
+/// Also verifies that a UTXO lookup at each address resolves to the CORRECT
+/// `account_index`, not the survivor's.
+#[test]
+fn multi_account_index_same_slot_persists_both_rows() {
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0x51);
+    ensure_wallet_meta(&persister, &w);
+
+    // Two BIP44 standard accounts at index 0 and 1, both deriving slot 0 of
+    // their external pool at distinct addresses.
+    let acct0 = AccountType::Standard {
+        index: 0,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    let acct1 = AccountType::Standard {
+        index: 1,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    let addr0 = addr_from(0xA0);
+    let addr1 = addr_from(0xA1);
+
+    // Register both pools so the emitter-contract guard accepts both events.
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![
+                    manifest_entry(acct0, AddressPoolType::External, 0, &addr0),
+                    manifest_entry(acct1, AddressPoolType::External, 0, &addr1),
+                ],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    // Live derive both leaves in the same changeset.
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    addresses_derived: vec![
+                        derived_at(acct0, AddressPoolType::External, 0, addr0.clone()),
+                        derived_at(acct1, AddressPoolType::External, 0, addr1.clone()),
+                    ],
+                    new_utxos: vec![utxo_at(&addr0, 0, 100_000), utxo_at(&addr1, 1, 200_000)],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .expect("both derived rows must survive (account_index is now in the PK)");
+
+    let conn = persister.lock_conn_for_test();
+    let derived = core_state::list_derived_addresses_for_test(&conn, &w).unwrap();
+    assert_eq!(
+        derived.len(),
+        2,
+        "both derived rows must exist — no PK collapse"
+    );
+
+    let by_account = core_state::list_unspent_utxos(&conn, &w).unwrap();
+    let utxo0 = by_account
+        .get(&0)
+        .and_then(|v| v.iter().find(|r| r.value == 100_000));
+    let utxo1 = by_account
+        .get(&1)
+        .and_then(|v| v.iter().find(|r| r.value == 200_000));
+    assert!(
+        utxo0.is_some(),
+        "the account-0 UTXO must resolve to account_index 0"
+    );
+    assert!(
+        utxo1.is_some(),
+        "the account-1 UTXO must resolve to account_index 1"
+    );
+}
+
+/// PK axis-2 regression: a BIP32 standard acct-0 and a BIP44 standard
+/// acct-0 derive to distinct addresses at the same pool slot. Before the
+/// fix both collapsed to one row (both mapped to the `"standard"` label),
+/// and the second write was dropped. After the fix the labels are distinct
+/// (`"standard_bip32"` vs `"standard_bip44"`) so both rows coexist.
+#[test]
+fn bip32_and_bip44_standard_acct0_persist_both_rows() {
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0x52);
+    ensure_wallet_meta(&persister, &w);
+
+    let bip44 = AccountType::Standard {
+        index: 0,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    let bip32 = AccountType::Standard {
+        index: 0,
+        standard_account_type: StandardAccountType::BIP32Account,
+    };
+    let addr_bip44 = addr_from(0xB4);
+    let addr_bip32 = addr_from(0xB2);
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![
+                    manifest_entry(bip44, AddressPoolType::External, 0, &addr_bip44),
+                    manifest_entry(bip32, AddressPoolType::External, 0, &addr_bip32),
+                ],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    addresses_derived: vec![
+                        derived_at(bip44, AddressPoolType::External, 0, addr_bip44.clone()),
+                        derived_at(bip32, AddressPoolType::External, 0, addr_bip32.clone()),
+                    ],
+                    new_utxos: vec![
+                        utxo_at(&addr_bip44, 0, 444_000),
+                        utxo_at(&addr_bip32, 1, 322_000),
+                    ],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .expect("BIP32 and BIP44 standard acct-0 rows must coexist (distinct labels)");
+
+    let conn = persister.lock_conn_for_test();
+    let derived = core_state::list_derived_addresses_for_test(&conn, &w).unwrap();
+    assert_eq!(
+        derived.len(),
+        2,
+        "BIP32 and BIP44 derived rows must both survive"
+    );
+    let labels: std::collections::BTreeSet<&str> =
+        derived.iter().map(|r| r.account_type.as_str()).collect();
+    assert!(
+        labels.contains("standard_bip44") && labels.contains("standard_bip32"),
+        "both account_type labels must be present in the derived cache"
+    );
+
+    let by_account = core_state::list_unspent_utxos(&conn, &w).unwrap();
+    let total: usize = by_account.values().map(|v| v.len()).sum();
+    assert_eq!(
+        total, 2,
+        "both UTXOs must resolve via their respective accounts"
+    );
+}
+
+/// `account_registrations` PK regression (todo 0e3ad26b): a BIP32 and a
+/// BIP44 standard acct-0 registered with DIFFERENT xpubs must each persist
+/// their own row. Before the fix both resolved to label `"standard"` so the
+/// second INSERT clobbered the first row's xpub. After the fix their labels
+/// differ and both rows coexist with their original xpubs intact.
+#[test]
+fn account_registrations_bip32_and_bip44_both_survive() {
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::Wallet;
+    use platform_wallet::changeset::AccountRegistrationEntry;
+    use platform_wallet_storage::sqlite::schema::accounts;
+
+    // Two distinct xpubs: seed them from different seed bytes.
+    let xpub_bip44 = {
+        let w = Wallet::from_seed_bytes(
+            [0xBBu8; 64],
+            key_wallet::Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        w.accounts
+            .all_accounts()
+            .first()
+            .expect("at least one account")
+            .account_xpub
+    };
+    let xpub_bip32 = {
+        let w = Wallet::from_seed_bytes(
+            [0xCCu8; 64],
+            key_wallet::Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        w.accounts
+            .all_accounts()
+            .first()
+            .expect("at least one account")
+            .account_xpub
+    };
+    assert_ne!(
+        xpub_bip44, xpub_bip32,
+        "fixture: seeds must yield distinct xpubs"
+    );
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0x53);
+    ensure_wallet_meta(&persister, &w);
+
+    let bip44_entry = AccountRegistrationEntry {
+        account_type: AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        },
+        account_xpub: xpub_bip44,
+    };
+    let bip32_entry = AccountRegistrationEntry {
+        account_type: AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP32Account,
+        },
+        account_xpub: xpub_bip32,
+    };
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_registrations: vec![bip44_entry.clone(), bip32_entry.clone()],
+                ..Default::default()
+            },
+        )
+        .expect("both registrations must persist without clobbering each other");
+
+    let conn = persister.lock_conn_for_test();
+    let manifest = accounts::load_state(&conn, &w).expect("load_state");
+    drop(conn);
+
+    assert_eq!(
+        manifest.len(),
+        2,
+        "both account_registrations rows must survive — no xpub clobber"
+    );
+
+    let has_bip44 = manifest.iter().any(|e| {
+        matches!(
+            e.account_type,
+            AccountType::Standard {
+                standard_account_type: StandardAccountType::BIP44Account,
+                ..
+            }
+        ) && e.account_xpub == xpub_bip44
+    });
+    let has_bip32 = manifest.iter().any(|e| {
+        matches!(
+            e.account_type,
+            AccountType::Standard {
+                standard_account_type: StandardAccountType::BIP32Account,
+                ..
+            }
+        ) && e.account_xpub == xpub_bip32
+    });
+    assert!(
+        has_bip44,
+        "the BIP44 registration with its original xpub must survive"
+    );
+    assert!(
+        has_bip32,
+        "the BIP32 registration with its original xpub must survive"
     );
 }
 

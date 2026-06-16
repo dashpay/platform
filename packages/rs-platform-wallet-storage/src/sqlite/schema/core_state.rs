@@ -249,7 +249,7 @@ fn execute_upsert_utxo(
 const UPSERT_DERIVED_ADDRESS_SQL: &str = "INSERT INTO core_derived_addresses \
         (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
-     ON CONFLICT(wallet_id, account_type, pool_type, derivation_index) DO NOTHING";
+     ON CONFLICT(wallet_id, account_type, account_index, pool_type, derivation_index) DO NOTHING";
 
 /// Upsert one `core_derived_addresses` row from the live
 /// `addresses_derived` event path. `used` is set on insert only — the
@@ -590,7 +590,7 @@ pub fn list_derived_addresses_for_test(
     let mut stmt = conn.prepare(
         "SELECT account_type, account_index, pool_type, derivation_index, address, used \
          FROM core_derived_addresses WHERE wallet_id = ?1 \
-         ORDER BY account_type, pool_type, derivation_index",
+         ORDER BY account_type, account_index, pool_type, derivation_index",
     )?;
     let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
         Ok(DerivedAddressRow {

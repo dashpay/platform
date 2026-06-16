@@ -187,8 +187,13 @@ pub fn load_state(
 /// `migrations/V001__initial.rs` interpolates it into each table's
 /// `CHECK (account_type IN (...))`; `account_type_labels_match_enum` keeps it
 /// in sync with [`account_type_db_label`].
+///
+/// `Standard` maps to two distinct labels by `StandardAccountType` variant
+/// (`"standard_bip44"` / `"standard_bip32"`) so BIP44 and BIP32 standard
+/// accounts with the same index never collide on their shared PK columns.
 pub(crate) const ACCOUNT_TYPE_LABELS: &[&str] = &[
-    "standard",
+    "standard_bip44",
+    "standard_bip32",
     "coinjoin",
     "identity_registration",
     "identity_topup",
@@ -215,13 +220,22 @@ pub(crate) const ACCOUNT_TYPE_LABELS: &[&str] = &[
 pub(crate) const POOL_TYPE_LABELS: &[&str] = &["external", "internal", "absent", "absent_hardened"];
 
 /// Stable database label for an `AccountType` variant (the `Debug` impl is not
-/// a stable format; this match is the contract). Variants sharing a label are
-/// distinguished by the companion `account_index` column. An added upstream
-/// variant fails this match's exhaustiveness check at compile time.
+/// a stable format; this match is the contract). An added upstream variant
+/// fails this match's exhaustiveness check at compile time.
+///
+/// `Standard` maps to two distinct labels by `StandardAccountType` so BIP44
+/// and BIP32 accounts with the same `index` never collapse onto the same PK.
 pub(crate) fn account_type_db_label(at: &key_wallet::account::AccountType) -> &'static str {
-    use key_wallet::account::AccountType;
+    use key_wallet::account::{AccountType, StandardAccountType};
     match at {
-        AccountType::Standard { .. } => "standard",
+        AccountType::Standard {
+            standard_account_type: StandardAccountType::BIP44Account,
+            ..
+        } => "standard_bip44",
+        AccountType::Standard {
+            standard_account_type: StandardAccountType::BIP32Account,
+            ..
+        } => "standard_bip32",
         AccountType::CoinJoin { .. } => "coinjoin",
         AccountType::IdentityRegistration => "identity_registration",
         AccountType::IdentityTopUp { .. } => "identity_topup",
@@ -282,13 +296,19 @@ mod tests {
     use std::collections::HashSet;
 
     /// Every [`key_wallet::account::AccountType`] variant; the wildcard-free
-    /// match below fails to compile if upstream adds one.
+    /// match below fails to compile if upstream adds one. `Standard` appears
+    /// twice — once per `StandardAccountType` — because both map to distinct
+    /// labels.
     fn all_account_type_variants() -> Vec<key_wallet::account::AccountType> {
         use key_wallet::account::{AccountType, StandardAccountType};
         let variants = vec![
             AccountType::Standard {
                 index: 0,
                 standard_account_type: StandardAccountType::BIP44Account,
+            },
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP32Account,
             },
             AccountType::CoinJoin { index: 0 },
             AccountType::IdentityRegistration,

@@ -78,7 +78,7 @@ fn tc047b_delete_wallet_cascades_derived_addresses() {
         conn.execute(
             "INSERT INTO core_derived_addresses \
                 (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
-             VALUES (?1, 'standard', 0, 'external', 0, 'addr', 0)",
+             VALUES (?1, 'standard_bip44', 0, 'external', 0, 'addr', 0)",
             rusqlite::params![w.as_slice()],
         )
         .unwrap();

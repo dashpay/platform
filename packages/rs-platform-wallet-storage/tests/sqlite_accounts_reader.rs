@@ -108,7 +108,7 @@ fn a1_corrupt_blob_is_hard_error() {
         conn.execute(
             "INSERT INTO account_registrations \
                 (wallet_id, account_type, account_index, account_xpub_bytes) \
-             VALUES (?1, 'standard', 0, X'00')",
+             VALUES (?1, 'standard_bip44', 0, X'00')",
             rusqlite::params![w.as_slice()],
         )
         .unwrap();

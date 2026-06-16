@@ -86,12 +86,12 @@ fn tc027_smoke_insert_every_table() {
             // Labels must match the writer-side canonical strings — see the
             // CHECK constraint sourced from `ACCOUNT_TYPE_LABELS` in
             // `sqlite::schema::accounts`.
-            "INSERT INTO account_registrations (wallet_id, account_type, account_index, account_xpub_bytes) VALUES (?1, 'standard', 0, X'00')",
+            "INSERT INTO account_registrations (wallet_id, account_type, account_index, account_xpub_bytes) VALUES (?1, 'standard_bip44', 0, X'00')",
             &[&wallet_id.as_slice()],
         ),
         (
             "account_address_pools",
-            "INSERT INTO account_address_pools (wallet_id, account_type, account_index, pool_type, snapshot_blob) VALUES (?1, 'standard', 0, 'external', X'00')",
+            "INSERT INTO account_address_pools (wallet_id, account_type, account_index, pool_type, snapshot_blob) VALUES (?1, 'standard_bip44', 0, 'external', X'00')",
             &[&wallet_id.as_slice()],
         ),
         (
@@ -111,7 +111,7 @@ fn tc027_smoke_insert_every_table() {
         ),
         (
             "core_derived_addresses",
-            "INSERT INTO core_derived_addresses (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) VALUES (?1, 'standard', 0, 'external', 0, 'addr', 0)",
+            "INSERT INTO core_derived_addresses (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) VALUES (?1, 'standard_bip44', 0, 'external', 0, 'addr', 0)",
             &[&wallet_id.as_slice()],
         ),
         (

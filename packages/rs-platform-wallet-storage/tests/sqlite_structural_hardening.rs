@@ -139,7 +139,7 @@ fn multi_account_utxos_bucket_to_real_account() {
             conn.execute(
                 "INSERT INTO core_derived_addresses \
                     (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
-                 VALUES (?1, 'standard', ?2, 'external', ?3, ?4, 0)",
+                 VALUES (?1, 'standard_bip44', ?2, 'external', ?3, ?4, 0)",
                 params![w.as_slice(), acct as i64, deriv as i64, addr.to_string()],
             )
             .unwrap();

@@ -1016,12 +1016,12 @@ fn delete_wallet_leaves_no_surviving_rows() {
         let txid = vec![0x01u8; 32];
         let outpoint = vec![0x02u8; 36];
         let stmts: &[(&str, &[&dyn rusqlite::ToSql])] = &[
-            ("INSERT INTO account_registrations (wallet_id, account_type, account_index, account_xpub_bytes) VALUES (?1, 'standard', 0, X'00')", &[&a.as_slice()]),
-            ("INSERT INTO account_address_pools (wallet_id, account_type, account_index, pool_type, snapshot_blob) VALUES (?1, 'standard', 0, 'external', X'00')", &[&a.as_slice()]),
+            ("INSERT INTO account_registrations (wallet_id, account_type, account_index, account_xpub_bytes) VALUES (?1, 'standard_bip44', 0, X'00')", &[&a.as_slice()]),
+            ("INSERT INTO account_address_pools (wallet_id, account_type, account_index, pool_type, snapshot_blob) VALUES (?1, 'standard_bip44', 0, 'external', X'00')", &[&a.as_slice()]),
             ("INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, X'00')", &[&a.as_slice(), &txid]),
             ("INSERT INTO core_utxos (wallet_id, outpoint, value, script, account_index, spent) VALUES (?1, ?2, 0, X'00', 0, 0)", &[&a.as_slice(), &outpoint]),
             ("INSERT INTO core_instant_locks (wallet_id, txid, islock_blob) VALUES (?1, ?2, X'00')", &[&a.as_slice(), &txid]),
-            ("INSERT INTO core_derived_addresses (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) VALUES (?1, 'standard', 0, 'external', 0, 'addr', 0)", &[&a.as_slice()]),
+            ("INSERT INTO core_derived_addresses (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) VALUES (?1, 'standard_bip44', 0, 'external', 0, 'addr', 0)", &[&a.as_slice()]),
             ("INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) VALUES (?1, 1, 1)", &[&a.as_slice()]),
             ("INSERT INTO identity_keys (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) VALUES (?1, ?2, 0, X'00', X'00', NULL)", &[&a.as_slice(), &idy.as_slice()]),
             ("INSERT INTO platform_address_sync (wallet_id, sync_height, sync_timestamp, last_known_recent_block) VALUES (?1, 0, 0, 0)", &[&a.as_slice()]),

@@ -108,7 +108,7 @@ fn check_rejects_bad_pool_type_on_derived_addresses() {
     let res = conn.execute(
         "INSERT INTO core_derived_addresses \
             (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
-         VALUES (?1, 'standard', 0, ?2, 0, 'addr', 0)",
+         VALUES (?1, 'standard_bip44', 0, ?2, 0, 'addr', 0)",
         params![wid(5).as_slice(), "not_a_pool"],
     );
     assert_constraint_check(res, "core_derived_addresses.pool_type");
