@@ -88,14 +88,23 @@ impl PlatformAddressWallet {
                     .await?
             }
             InputSelection::Auto => {
-                let inputs = self
-                    .auto_select_inputs_for_withdrawal(account_index, &fee_strategy, version)
+                // The AUTO path owns its own fee strategy: it picks the
+                // fee-source input by balance (largest selected input) and
+                // emits the matching `DeductFromInput(index)`, ignoring the
+                // caller's `fee_strategy`. The caller cannot know the final
+                // BTreeMap ordering of auto-selected inputs, so trusting a
+                // hardcoded index (e.g. the wrapper's `DeductFromInput(0)`,
+                // which resolves to the lex-smallest address regardless of
+                // balance) would reserve the fee on an arbitrarily small
+                // input and reject otherwise-fundable withdrawals.
+                let (inputs, auto_fee_strategy) = self
+                    .auto_select_inputs_for_withdrawal(account_index, version)
                     .await?;
                 self.sdk
                     .withdraw_address_funds(
                         inputs,
                         None,
-                        fee_strategy,
+                        auto_fee_strategy,
                         core_fee_per_byte,
                         Pooling::Never,
                         output_script,
@@ -176,18 +185,26 @@ impl PlatformAddressWallet {
     /// in the drive-abci address-credit-withdrawal tests, and the transfer
     /// path's `select_inputs_deduct_from_input` for the same invariant.
     ///
-    /// We therefore select every funded address at its full balance, then,
-    /// for a `DeductFromInput`-based fee strategy, reduce the withdraw
-    /// amount on the fee-source input (the BTreeMap index-0 / lex-smallest
-    /// entry that `DeductFromInput(0)` resolves to) by the estimated fee so
-    /// that input keeps `≥ estimated_fee` of remaining balance for the chain
-    /// to deduct. The withdrawn total is the account balance minus the fee.
+    /// We therefore select every funded address at its full balance, then
+    /// reduce the withdraw amount on the **largest-balance** selected input
+    /// by the estimated fee so that input keeps `≥ estimated_fee` of
+    /// remaining balance for the chain to deduct. The largest input is the
+    /// most likely to absorb the fee while staying above `min_input_amount`,
+    /// so picking it (rather than the lexicographically-smallest index-0
+    /// entry) avoids rejecting an otherwise-fundable withdrawal when the
+    /// lex-smallest input happens to be tiny.
+    ///
+    /// Returns the adjusted withdraw-amount map together with the fee
+    /// strategy that targets the fee-source input. The AUTO path owns this
+    /// strategy because only it knows the final BTreeMap ordering of the
+    /// auto-selected inputs (and therefore which `DeductFromInput(index)`
+    /// resolves to the largest input).
     async fn auto_select_inputs_for_withdrawal(
         &self,
         account_index: u32,
-        fee_strategy: &[AddressFundsFeeStrategyStep],
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
+    ) -> Result<(BTreeMap<PlatformAddress, Credits>, AddressFundsFeeStrategy), PlatformWalletError>
+    {
         let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(format!(
@@ -227,33 +244,41 @@ impl PlatformAddressWallet {
             ));
         }
 
-        reserve_withdrawal_fee_on_fee_source(selected, fee_strategy, platform_version)
+        reserve_withdrawal_fee_on_largest_input(selected, platform_version)
     }
 }
 
 /// Convert a full-balance input map into a withdraw-amount map that leaves the
-/// chain enough fee headroom on the fee-source input.
+/// chain enough fee headroom on the fee-source input, and compute the fee
+/// strategy that targets that input.
 ///
 /// `selected` maps each chosen input address to its **full on-chain balance**.
 /// The chain deducts the transition fee from each input's *remaining* balance
 /// (`on_chain_balance − withdraw_amount`); since the auto path has no change
 /// output, withdrawing the full balance everywhere leaves zero remaining and
 /// the chain rejects the transition with `fee_fully_covered = false`. We reduce
-/// the withdraw amount on the fee-source input — the BTreeMap entry the first
-/// `DeductFromInput(index)` step resolves to — by the estimated fee, so that
-/// input retains exactly `estimated_fee` of remaining balance for the chain to
-/// deduct. This mirrors the transfer path's `select_inputs_deduct_from_input`
-/// invariant: the `DeductFromInput` target must keep `balance − consumed ≥
-/// estimated_fee`.
+/// the withdraw amount on the **largest-balance** selected input by the
+/// estimated fee, so that input retains exactly `estimated_fee` of remaining
+/// balance for the chain to deduct. This mirrors the transfer path's
+/// `select_inputs_deduct_from_input` invariant: the `DeductFromInput` target
+/// must keep `balance − consumed ≥ estimated_fee`.
 ///
-/// Returns the adjusted withdraw-amount map, or a typed
-/// [`PlatformWalletError::AddressOperation`] when no input can absorb the fee
-/// while respecting the per-input minimum / minimum withdrawal amount.
-fn reserve_withdrawal_fee_on_fee_source(
+/// Picking the largest input as the fee source (rather than the
+/// lexicographically-smallest index-0 entry) is what makes an otherwise-
+/// fundable withdrawal succeed: the on-chain `DeductFromInput(index)` resolves
+/// against BTreeMap iteration order, which is address-hash ordering — unrelated
+/// to balance. A tiny lex-smallest input could fail to absorb the fee even
+/// when a much larger peer trivially could. We therefore locate the largest
+/// input, then emit `DeductFromInput(<its position in BTreeMap order>)`.
+///
+/// Returns the adjusted withdraw-amount map and the fee strategy targeting the
+/// fee-source input, or a typed [`PlatformWalletError::AddressOperation`] when
+/// no input can absorb the fee while respecting the per-input minimum /
+/// minimum withdrawal amount.
+fn reserve_withdrawal_fee_on_largest_input(
     mut selected: BTreeMap<PlatformAddress, Credits>,
-    fee_strategy: &[AddressFundsFeeStrategyStep],
     platform_version: &PlatformVersion,
-) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
+) -> Result<(BTreeMap<PlatformAddress, Credits>, AddressFundsFeeStrategy), PlatformWalletError> {
     let accumulated: Credits = selected
         .values()
         .copied()
@@ -267,33 +292,18 @@ fn reserve_withdrawal_fee_on_fee_source(
         platform_version,
     );
 
-    // The fee-source input is the first `DeductFromInput` step's target index
-    // (production always sends `[DeductFromInput(0)]`). If the fee strategy
-    // never deducts from an input (e.g. `ReduceOutput`-only, which the auto
-    // path doesn't build today since there is no output), no input headroom is
-    // required and we withdraw every balance in full.
-    let fee_source_index = fee_strategy.iter().find_map(|s| match s {
-        AddressFundsFeeStrategyStep::DeductFromInput(index) => Some(*index as usize),
-        AddressFundsFeeStrategyStep::ReduceOutput(_) => None,
-    });
-
-    let Some(fee_source_index) = fee_source_index else {
-        return Ok(selected);
-    };
-
-    // Resolve the fee-source address by BTreeMap iteration order, matching how
-    // the chain's `deduct_fee_from_outputs_or_remaining_balance_of_inputs`
-    // resolves `DeductFromInput(index)` against the input map.
-    let Some((&fee_source_addr, &fee_source_balance)) = selected.iter().nth(fee_source_index)
-    else {
-        // Out-of-range index would be rejected by structure validation; surface
-        // a typed wallet-side error instead of shipping a doomed transition.
-        return Err(PlatformWalletError::AddressOperation(format!(
-            "Fee strategy DeductFromInput({}) is out of range for {} selected input(s)",
-            fee_source_index,
-            selected.len()
-        )));
-    };
+    // Locate the fee-source input: the largest balance, ties broken by the
+    // first in BTreeMap (address-hash) order so the choice is deterministic.
+    // `max_by_key` returns the *last* maximal element on ties, so iterate and
+    // keep the first occurrence of the maximum explicitly.
+    let (fee_source_index, fee_source_addr, fee_source_balance) = selected
+        .iter()
+        .enumerate()
+        .fold(None, |best, (idx, (&addr, &balance))| match best {
+            Some((_, _, best_balance)) if best_balance >= balance => best,
+            _ => Some((idx, addr, balance)),
+        })
+        .expect("selected is non-empty: callers reject empty input maps");
 
     // The reduced fee-source amount must still be ≥ `min_input_amount`, and the
     // overall withdrawal (accumulated − estimated_fee) must clear the minimum
@@ -316,20 +326,26 @@ fn reserve_withdrawal_fee_on_fee_source(
 
     let fee_source_amount = fee_source_balance.saturating_sub(estimated_fee);
     if fee_source_amount < min_input_amount {
+        // The largest input cannot absorb the fee while staying above the
+        // per-input minimum, so no input can: a genuine insufficiency.
         return Err(PlatformWalletError::AddressOperation(format!(
-            "Cannot reserve withdrawal fee on the fee-source input: balance {} \
-             minus estimated fee {} leaves {}, below the minimum input amount {}. \
-             Consolidate funds onto fewer addresses or fund the smallest address \
-             more before withdrawing.",
+            "Cannot reserve withdrawal fee on the fee-source input: largest input \
+             balance {} minus estimated fee {} leaves {}, below the minimum input \
+             amount {}. Consolidate funds onto fewer addresses or fund the largest \
+             address more before withdrawing.",
             fee_source_balance, estimated_fee, fee_source_amount, min_input_amount
         )));
     }
 
-    // Same key → BTreeMap ordering (and thus the index-0 resolution above) is
+    // Same key → BTreeMap ordering (and thus the index resolution below) is
     // preserved; only the withdraw amount on the fee-source input shrinks.
     selected.insert(fee_source_addr, fee_source_amount);
 
-    Ok(selected)
+    let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(
+        fee_source_index as u16,
+    )];
+
+    Ok((selected, fee_strategy))
 }
 
 #[cfg(test)]
@@ -351,7 +367,8 @@ mod tests {
     /// A single funded input must keep `estimated_fee` of headroom: the withdraw
     /// amount on the fee-source input is its balance minus the estimated fee, NOT
     /// the full balance (which would leave zero remaining → `fee_fully_covered =
-    /// false` on-chain).
+    /// false` on-chain). With one input it is trivially the largest, so the
+    /// emitted strategy targets index 0.
     #[test]
     fn reserves_fee_headroom_on_single_input() {
         let pv = PlatformVersion::latest();
@@ -361,74 +378,119 @@ mod tests {
         let mut input = BTreeMap::new();
         input.insert(addr(1), balance);
 
-        let result = reserve_withdrawal_fee_on_fee_source(
-            input,
-            &[AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            pv,
-        )
-        .expect("single funded input above the fee should select");
+        let (result, strategy) = reserve_withdrawal_fee_on_largest_input(input, pv)
+            .expect("single funded input above the fee should select");
 
         assert_eq!(result.get(&addr(1)).copied(), Some(balance - fee));
+        assert_eq!(
+            strategy,
+            vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            "the single input is the fee source at index 0"
+        );
     }
 
-    /// The reviewer's scenario: input[0] (lex-smallest, the `DeductFromInput(0)`
-    /// target) is much smaller than the fee while a larger input exists. The fee
-    /// must be reserved on input[0] itself (the index the chain deducts from), so
-    /// input[0]'s withdraw amount drops by the fee and the larger input is
-    /// withdrawn in full. Both must stay ≥ `min_input_amount`.
+    /// The reviewer's scenario, corrected: input[0] (lex-smallest, BTreeMap
+    /// index 0) is much smaller than the fee while a larger peer exists. The fee
+    /// must now be reserved on the LARGER peer (the fee source picked by
+    /// balance), so the small lex-smallest input is withdrawn in full and the
+    /// larger input's withdraw amount drops by the fee. The emitted strategy
+    /// must target the larger input's BTreeMap index, NOT index 0.
     #[test]
-    fn reserves_fee_on_lex_smallest_input_even_when_a_larger_input_exists() {
+    fn reserves_fee_on_largest_input_even_when_lex_smallest_is_tiny() {
         let pv = PlatformVersion::latest();
         let fee = estimated_fee(2, pv);
-        // Small input[0] still large enough to absorb the fee + keep min_input.
-        let small = fee + dpp::dash_to_credits!(0.5);
+        // Small lex-smallest input: too small to absorb the fee on its own
+        // (would have failed the old index-0 path), but withdrawn in full here.
+        let small = dpp::dash_to_credits!(0.001);
         let large = dpp::dash_to_credits!(10.0);
 
         let mut inputs = BTreeMap::new();
-        inputs.insert(addr(1), small); // lex-smallest → index 0
-        inputs.insert(addr(9), large);
+        inputs.insert(addr(1), small); // lex-smallest → BTreeMap index 0
+        inputs.insert(addr(9), large); // larger → BTreeMap index 1
 
-        let result = reserve_withdrawal_fee_on_fee_source(
-            inputs,
-            &[AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            pv,
-        )
-        .expect("fee-source input can absorb the fee");
+        let (result, strategy) = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+            .expect("the larger peer can absorb the fee");
 
         assert_eq!(
             result.get(&addr(1)).copied(),
-            Some(small - fee),
-            "fee is reserved on the lex-smallest (index-0) input"
+            Some(small),
+            "the small lex-smallest input is withdrawn in full"
         );
         assert_eq!(
             result.get(&addr(9)).copied(),
-            Some(large),
-            "the larger non-fee-source input is withdrawn in full"
+            Some(large - fee),
+            "the fee is reserved on the largest input"
+        );
+        assert_eq!(
+            strategy,
+            vec![AddressFundsFeeStrategyStep::DeductFromInput(1)],
+            "the emitted DeductFromInput index points at the largest input (BTreeMap index 1)"
         );
     }
 
-    /// When the fee-source input cannot retain `estimated_fee` while keeping its
-    /// withdraw amount ≥ `min_input_amount`, we error rather than ship a
-    /// guaranteed-rejected transition (mirrors the transfer path's headroom error).
+    /// The emitted `DeductFromInput` index points at the largest input even when
+    /// that input is NOT the last in BTreeMap (address-hash) order — i.e. the
+    /// balance ranking and the address-hash ranking disagree.
     #[test]
-    fn errors_when_fee_source_input_too_small_to_absorb_fee() {
+    fn emitted_index_points_at_largest_input_not_last() {
         let pv = PlatformVersion::latest();
-        let fee = estimated_fee(2, pv);
-        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
-        // Fee-source balance leaves < min_input after the fee is reserved.
-        let small = fee + min_input - 1;
+        let fee = estimated_fee(3, pv);
         let large = dpp::dash_to_credits!(10.0);
+        let small_a = dpp::dash_to_credits!(0.01);
+        let small_b = dpp::dash_to_credits!(0.02);
 
         let mut inputs = BTreeMap::new();
-        inputs.insert(addr(1), small);
+        inputs.insert(addr(1), large); // lex-smallest → BTreeMap index 0, largest balance
+        inputs.insert(addr(5), small_a); // index 1
+        inputs.insert(addr(9), small_b); // index 2
+
+        let (result, strategy) = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+            .expect("the largest input can absorb the fee");
+
+        assert_eq!(
+            strategy,
+            vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            "the largest input is at BTreeMap index 0, so the fee deducts from index 0"
+        );
+        assert_eq!(result.get(&addr(1)).copied(), Some(large - fee));
+        assert_eq!(result.get(&addr(5)).copied(), Some(small_a));
+        assert_eq!(result.get(&addr(9)).copied(), Some(small_b));
+    }
+
+    /// Genuine insufficiency: even the LARGEST input cannot retain
+    /// `estimated_fee` while keeping its withdraw amount ≥ `min_input_amount`,
+    /// so no input can. We error rather than ship a guaranteed-rejected
+    /// transition (mirrors the transfer path's headroom error). The aggregate
+    /// here clears `min_withdrawal_amount`, so the error is specifically the
+    /// per-input headroom failure, not the aggregate-too-small gate.
+    #[test]
+    fn errors_when_largest_input_too_small_to_absorb_fee() {
+        let pv = PlatformVersion::latest();
+        let fee = estimated_fee(3, pv);
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+        let min_withdrawal = pv.system_limits.min_withdrawal_amount;
+
+        // Largest input leaves < min_input after the fee is reserved.
+        let large = fee + min_input - 1;
+        // Two equal peers, each smaller than `large` so it stays the maximum,
+        // sized so the aggregate clears `min_withdrawal_amount + fee`.
+        let peer = large / 2;
+
+        let mut inputs = BTreeMap::new();
+        inputs.insert(addr(1), peer);
+        inputs.insert(addr(5), peer);
         inputs.insert(addr(9), large);
 
-        let err = reserve_withdrawal_fee_on_fee_source(
-            inputs,
-            &[AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            pv,
-        )
-        .expect_err("fee-source input below fee + min_input must error");
+        // Sanity: the aggregate clears the withdrawal minimum, so the only
+        // remaining failure path is the largest-input headroom check.
+        let accumulated = peer + peer + large;
+        assert!(
+            accumulated.saturating_sub(fee) >= min_withdrawal,
+            "test setup: aggregate must clear the withdrawal minimum"
+        );
+
+        let err = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+            .expect_err("largest input below fee + min_input must error");
         assert!(matches!(err, PlatformWalletError::AddressOperation(_)));
     }
 
@@ -442,12 +504,8 @@ mod tests {
         let mut inputs = BTreeMap::new();
         inputs.insert(addr(1), fee - 1);
 
-        let err = reserve_withdrawal_fee_on_fee_source(
-            inputs,
-            &[AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            pv,
-        )
-        .expect_err("balance below the fee must error");
+        let err = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+            .expect_err("balance below the fee must error");
         assert!(matches!(err, PlatformWalletError::AddressOperation(_)));
     }
 }

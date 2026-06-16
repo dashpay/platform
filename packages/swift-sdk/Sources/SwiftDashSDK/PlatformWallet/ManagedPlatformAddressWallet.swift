@@ -65,6 +65,41 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         }
     }
 
+    /// Get all platform addresses with their cached balances for a specific
+    /// platform-payment account (`accountIndex`, key class 0).
+    ///
+    /// Account-scoped sibling of `addressesWithBalances()`. The transfer
+    /// wrapper builds its explicit inputs from this so the spent source
+    /// account matches the `accountIndex` it persists/nonces against;
+    /// `addressesWithBalances()` always resolves account 0, which would let
+    /// `transfer(accountIndex: != 0)` spend account 0 while telling the chain
+    /// a different account.
+    public func addressesWithBalances(forAccount accountIndex: UInt32) throws -> [AddressBalance] {
+        var entriesPtr: UnsafeMutablePointer<AddressBalanceEntryFFI>?
+        var count: UInt = 0
+        try platform_address_wallet_addresses_with_balances_for_account(
+            handle, accountIndex, &entriesPtr, &count
+        ).check()
+
+        defer {
+            platform_address_wallet_free_address_balances(entriesPtr, count)
+        }
+
+        guard let entries = entriesPtr, count > 0 else {
+            return []
+        }
+
+        return (0..<Int(count)).map { i in
+            let entry = entries[i]
+            let hashData = withUnsafeBytes(of: entry.address.hash) { Data($0) }
+            return AddressBalance(
+                addressType: entry.address.address_type,
+                hash: hashData,
+                balance: entry.balance
+            )
+        }
+    }
+
     // MARK: - Transfer
 
     /// One recipient row for `transfer(...)`.
@@ -183,6 +218,18 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
             totalRecipientCredits = sum.partialValue
         }
 
+        // The sufficiency check needs `recipients + feeBuffer`. Compute it once
+        // with overflow checking: a near-UInt64.max recipient sum would trap the
+        // process on an unchecked `+`. Reject the overflow the same way the
+        // recipient-sum loop above rejects its own.
+        let neededSum = totalRecipientCredits.addingReportingOverflow(Self.feeBuffer)
+        if neededSum.overflow {
+            throw PlatformWalletError.invalidParameter(
+                "Recipient credits + fee buffer overflowed UInt64"
+            )
+        }
+        let totalNeeded = neededSum.partialValue
+
         // Read available balances. We pick inputs from balance-bearing
         // addresses; the change destination must differ from both the
         // recipient set and the chosen inputs.
@@ -202,7 +249,11 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
             }
         }
 
-        let balanced = try addressesWithBalances()
+        // Account-scoped: inputs come from the SAME account this transfer
+        // persists/nonces against. `addressesWithBalances()` (no account) always
+        // resolves account 0 in Rust, so spending from it while telling the
+        // chain `accountIndex` would drift the source vs. the persisted account.
+        let balanced = try addressesWithBalances(forAccount: accountIndex)
             .filter { $0.balance > 0 }
             .filter { !recipientHashes.contains($0.hash) }
             .sorted { $0.balance > $1.balance }
@@ -220,11 +271,11 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
             if let cc = changeAddress, b.hash == cc.hash { continue }
             selectedInputs.append(b)
             totalInputs += b.balance
-            if totalInputs >= totalRecipientCredits + Self.feeBuffer { break }
+            if totalInputs >= totalNeeded { break }
         }
-        guard totalInputs >= totalRecipientCredits + Self.feeBuffer else {
+        guard totalInputs >= totalNeeded else {
             throw PlatformWalletError.walletOperation(
-                "Insufficient platform balance: have \(totalInputs) credits across \(selectedInputs.count) input(s), need at least \(totalRecipientCredits + Self.feeBuffer)"
+                "Insufficient platform balance: have \(totalInputs) credits across \(selectedInputs.count) input(s), need at least \(totalNeeded)"
             )
         }
         let selectedHashes = Set(selectedInputs.map { $0.hash })
@@ -282,27 +333,34 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         let feeRows = feeStrategy
 
         return try await Task.detached(priority: .userInitiated) { () -> [UpdatedBalance] in
-            _ = signer
             var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
-            let result = inRows.withUnsafeBufferPointer {
-                inBp -> PlatformWalletFFIResult in
-                outRows.withUnsafeBufferPointer { outBp in
-                    feeRows.withUnsafeBufferPointer { feeBp in
-                        platform_address_wallet_transfer(
-                            handle,
-                            accountIndex,
-                            INPUT_SELECTION_TYPE_EXPLICIT,
-                            inBp.baseAddress,
-                            UInt(inBp.count),
-                            nil,
-                            0,
-                            outBp.baseAddress,
-                            UInt(outBp.count),
-                            feeBp.baseAddress,
-                            UInt(feeBp.count),
-                            signerHandle,
-                            &changeset
-                        )
+            // `withExtendedLifetime(signer)` pins the resolver-backed signer for
+            // the entire FFI call. `KeychainSigner` registers its vtable ctx via
+            // `Unmanaged.passUnretained(self)`, so a bare `_ = signer` can be
+            // elided by the -O optimizer and drop the signer mid-call, causing a
+            // use-after-free in the synchronous Rust vtable callback. Mirrors the
+            // `withdraw` / `fundFromAssetLock` wrappers.
+            let result = withExtendedLifetime(signer) {
+                inRows.withUnsafeBufferPointer {
+                    inBp -> PlatformWalletFFIResult in
+                    outRows.withUnsafeBufferPointer { outBp in
+                        feeRows.withUnsafeBufferPointer { feeBp in
+                            platform_address_wallet_transfer(
+                                handle,
+                                accountIndex,
+                                INPUT_SELECTION_TYPE_EXPLICIT,
+                                inBp.baseAddress,
+                                UInt(inBp.count),
+                                nil,
+                                0,
+                                outBp.baseAddress,
+                                UInt(outBp.count),
+                                feeBp.baseAddress,
+                                UInt(feeBp.count),
+                                signerHandle,
+                                &changeset
+                            )
+                        }
                     }
                 }
             }

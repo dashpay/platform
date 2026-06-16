@@ -286,27 +286,20 @@ struct TransferPlatformAddressView: View {
 
     /// Source accounts the transfer can actually spend from.
     ///
-    /// CONSTRAINED to the single *first* platform-payment account
-    /// (account index 0, key class 0). The `transfer` wrapper builds its
-    /// explicit inputs from `addressesWithBalances()`, which the Rust
-    /// `platform-wallet` crate resolves via
-    /// `first_platform_payment_managed_account()` — i.e. always account
-    /// (0, 0) — regardless of the `accountIndex` it is told to persist
-    /// against. Offering any other `accountType == 14` account here would
-    /// let the picker's choice diverge from the wrapper's real source:
-    /// picking account #1 would build inputs from account #0's addresses
-    /// while telling Rust `account_index = 1`, drifting persistence and
-    /// the sufficiency gate. Until an account-scoped input-selection FFI
-    /// exists in the Rust library (input selection belongs there, not in
-    /// Swift — see swift-sdk/CLAUDE.md), the picker must not offer an
-    /// account the stack won't honor. The withdraw flow has no such
-    /// divergence: its `INPUT_SELECTION_TYPE_AUTO` path is account-scoped
-    /// on the Rust side (`auto_select_inputs_for_withdrawal(account_index)`),
-    /// so its picker stays multi-account.
+    /// Offers every DIP-17 platform-payment account (`accountType == 14`,
+    /// key class 0) on this wallet. The `transfer` wrapper now builds its
+    /// explicit inputs from `addressesWithBalances(forAccount:)`, which the
+    /// Rust `platform-wallet` crate resolves via
+    /// `platform_payment_managed_account_at_index(account_index)` — i.e. the
+    /// chosen account — so the spent source matches the `accountIndex` the
+    /// transfer persists/nonces against. (Earlier this picker was pinned to
+    /// account 0 because the wrapper always resolved the first account; that
+    /// divergence is fixed end-to-end, so the picker is multi-account again,
+    /// matching the withdraw flow.)
     private var platformAccountOptions: [PlatformAccountOption] {
         let accounts = allAccounts
             .filter { $0.wallet.walletId == wallet.walletId }
-            .filter { $0.accountType == 14 && $0.accountIndex == 0 && $0.keyClass == 0 }
+            .filter { $0.accountType == 14 && $0.keyClass == 0 }
             .sorted { $0.accountIndex < $1.accountIndex }
         return accounts.map { acct in
             let total = allPlatformAddresses
