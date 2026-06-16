@@ -1,12 +1,15 @@
 {
   "network": "testnet",
-  "contractId": "2gevmsNEaWnWQURQpuWeN5QnLfC2ufrZG4SXkVMqeUgZ",
+  "contractId": "4PtPYwYJcjuPXgKigkficzcrpKLG9yucqkNKKK9UVmiv",
   "ownerId": "85KjYZLZXA7YZBPyFEjiMaH36xcQpBBZisKGBHF3uKuH",
   "documentTypes": [
+    "app",
+    "tier",
+    "category",
     "testCase",
     "testRun"
   ],
-  "schemaSha": "c6424e5a60bfe67d",
+  "schemaSha": "de54ab82068fc7d7",
   "planCommit": "45fdf33901",
-  "registeredAt": "2026-06-16T00:12:58.992Z"
+  "registeredAt": "2026-06-16T00:33:14.109Z"
 }

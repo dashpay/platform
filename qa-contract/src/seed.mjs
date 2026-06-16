@@ -1,29 +1,42 @@
-// Seed testCase documents from SwiftExampleApp/TEST_PLAN.md §4 catalog.
+// Seed the contract from an app's test plan (the iOS SwiftExampleApp/TEST_PLAN.md
+// §4 catalog). Seeds the app/tier/category lookup documents first, then one
+// testCase per plan row with integer foreign keys (app/tier/category codes).
 //
-// Idempotent: each row is keyed by its unique testId. Existing testCases are
-// skipped by default; pass --update to replace ones whose content changed.
+// Idempotent: lookups are keyed by `code`, testCases by the unique (testId, app).
+// Existing docs are skipped by default; --update replaces changed testCases.
 //
 // Usage:
 //   QA_IDENTITY_ID=... QA_PRIVATE_KEY=... node src/seed.mjs
-//   ... node src/seed.mjs --ids CORE-01,ID-04 --update
+//   ... node src/seed.mjs --app SwiftExampleApp --ids CORE-01,ID-04 --update
 //   ... node src/seed.mjs --tier Essential --category Identity --limit 10
 
 import { parseArgs } from 'node:util';
 import { randomBytes } from 'node:crypto';
-import {
-  loadDotEnv, connect, loadOwnerAuth, readConfig,
-} from './sdk.mjs';
+import { loadDotEnv, connect, loadOwnerAuth, readConfig } from './sdk.mjs';
 import { parseTestPlan, resolvePlanCommit, DEFAULT_TEST_PLAN } from './parse-test-plan.mjs';
+import {
+  APPS, TIERS, CATEGORIES, DEFAULT_APP, appCode, tierCode, categoryCode,
+} from './codes.mjs';
 
 const CONTENT_FIELDS = [
-  'testId', 'title', 'tier', 'category', 'layer', 'implStatus',
+  'testId', 'app', 'tier', 'category', 'title', 'layer', 'implStatus',
   'description', 'entryPoint', 'prerequisites', 'planCommit',
 ];
 
-function cleanProps(row) {
-  const props = {};
-  for (const f of CONTENT_FIELDS) {
-    if (row[f] !== undefined && row[f] !== null && row[f] !== '') props[f] = row[f];
+function entropy() { return Uint8Array.from(randomBytes(32)); }
+
+function testCaseProps(row, app) {
+  const props = {
+    testId: row.testId,
+    app,
+    tier: tierCode(row.tier),
+    category: categoryCode(row.category),
+    title: row.title,
+    layer: row.layer,
+    implStatus: row.implStatus,
+  };
+  for (const f of ['description', 'entryPoint', 'prerequisites', 'planCommit']) {
+    if (row[f]) props[f] = row[f];
   }
   return props;
 }
@@ -34,21 +47,39 @@ function contentEquals(existing, props) {
 
 function csv(v) { return v ? v.split(',').map((s) => s.trim()).filter(Boolean) : undefined; }
 
-async function findExisting(sdk, contractId, testId) {
+async function findOne(sdk, contractId, documentTypeName, where) {
   const res = await sdk.documents.query({
-    dataContractId: contractId,
-    documentTypeName: 'testCase',
-    where: [['testId', '==', testId]],
-    limit: 1,
+    dataContractId: contractId, documentTypeName, where, limit: 1,
   });
   for (const doc of res.values()) if (doc) return doc;
   return undefined;
+}
+
+// Ensure the app/tier/category lookup documents exist (keyed by `code`).
+async function seedLookups(sdk, Document, contractId, ownerId, signer, identityKey) {
+  let created = 0; let skipped = 0;
+  for (const [type, rows] of [['app', APPS], ['tier', TIERS], ['category', CATEGORIES]]) {
+    for (const row of rows) {
+      if (await findOne(sdk, contractId, type, [['code', '==', row.code]])) { skipped += 1; continue; }
+      const props = { code: row.code, name: row.name };
+      if (row.platform) props.platform = row.platform;
+      if (row.description) props.description = row.description;
+      const doc = new Document({
+        ownerId, dataContractId: contractId, documentTypeName: type, properties: props, entropy: entropy(),
+      });
+      await sdk.documents.create({ document: doc, identityKey, signer });
+      created += 1;
+      console.log(`  + ${type} ${row.code} = ${row.name}`);
+    }
+  }
+  console.log(`Lookups: ${created} created, ${skipped} skipped.`);
 }
 
 async function main() {
   loadDotEnv();
   const { values } = parseArgs({
     options: {
+      app: { type: 'string' },
       plan: { type: 'string' },
       ids: { type: 'string' },
       tier: { type: 'string' },
@@ -58,14 +89,20 @@ async function main() {
     },
   });
 
+  const appName = values.app || DEFAULT_APP;
+  const app = appCode(appName);
   const planPath = values.plan || DEFAULT_TEST_PLAN;
+
   const { sdk, mod, network } = await connect();
   const cfg = readConfig(network);
   if (!cfg?.contractId) throw new Error(`No contract registered for ${network}. Run register.mjs first.`);
   const contractId = cfg.contractId;
-  console.log(`Connected to ${network}. Contract ${contractId}.`);
+  console.log(`Connected to ${network}. Contract ${contractId}. App '${appName}' (code ${app}).`);
 
   const { ownerId, signer, identityKey } = await loadOwnerAuth(sdk, mod, network);
+  const { Document } = mod;
+
+  await seedLookups(sdk, Document, contractId, ownerId, signer, identityKey);
 
   const planCommit = resolvePlanCommit(planPath);
   let rows = parseTestPlan(planPath, planCommit);
@@ -86,17 +123,14 @@ async function main() {
 
   console.log(`Plan commit ${planCommit ?? 'unknown'}; seeding ${rows.length} testCase row(s).`);
 
-  const { Document } = mod;
   let created = 0; let updated = 0; let skipped = 0; let failed = 0;
-
   for (const row of rows) {
-    const props = cleanProps(row);
+    const props = testCaseProps(row, app);
     try {
-      const existing = await findExisting(sdk, contractId, row.testId);
+      const existing = await findOne(sdk, contractId, 'testCase', [['testId', '==', row.testId], ['app', '==', app]]);
       if (existing) {
         const existingJson = existing.toJSON();
-        if (!values.update) { skipped += 1; continue; }
-        if (contentEquals(existingJson, props)) { skipped += 1; continue; }
+        if (!values.update || contentEquals(existingJson, props)) { skipped += 1; continue; }
         const doc = new Document({
           id: String(existingJson.$id),
           ownerId,
@@ -110,11 +144,7 @@ async function main() {
         console.log(`  ~ updated ${row.testId}`);
       } else {
         const doc = new Document({
-          ownerId,
-          dataContractId: contractId,
-          documentTypeName: 'testCase',
-          properties: props,
-          entropy: Uint8Array.from(randomBytes(32)),
+          ownerId, dataContractId: contractId, documentTypeName: 'testCase', properties: props, entropy: entropy(),
         });
         await sdk.documents.create({ document: doc, identityKey, signer });
         created += 1;

@@ -13,6 +13,7 @@ import { randomBytes } from 'node:crypto';
 import {
   loadDotEnv, connect, loadOwnerAuth, readConfig, networkId,
 } from './sdk.mjs';
+import { appCode, DEFAULT_APP } from './codes.mjs';
 
 const RESULTS = ['pass', 'fail', 'blocked', 'skipped'];
 
@@ -21,6 +22,7 @@ async function main() {
   const { values } = parseArgs({
     options: {
       testId: { type: 'string' },
+      app: { type: 'string' },
       result: { type: 'string' },
       buildRef: { type: 'string' },
       network: { type: 'string' },
@@ -31,6 +33,8 @@ async function main() {
     },
   });
 
+  const appName = values.app || DEFAULT_APP;
+  const app = appCode(appName);
   const testId = values.testId?.trim();
   const result = values.result?.trim().toLowerCase();
   const buildRef = values.buildRef?.trim();
@@ -53,7 +57,7 @@ async function main() {
   const { ownerId, signer, identityKey } = await loadOwnerAuth(sdk, mod, network);
 
   const properties = {
-    testId, result, network: networkId(network), buildRef,
+    testId, app, result, network: networkId(network), buildRef,
   };
   if (values.device) properties.device = values.device;
   if (values.evidence) properties.evidence = values.evidence;
@@ -69,9 +73,9 @@ async function main() {
     entropy: Uint8Array.from(randomBytes(32)),
   });
 
-  console.log(`Submitting testRun: ${testId} = ${result} (build ${buildRef}) on ${network} ...`);
+  console.log(`Submitting testRun: ${appName}/${testId} = ${result} (build ${buildRef}) on ${network} ...`);
   await sdk.documents.create({ document: doc, identityKey, signer });
-  console.log(`✅ testRun recorded for ${testId} (${result}).`);
+  console.log(`✅ testRun recorded for ${appName}/${testId} (${result}).`);
 }
 
 main().catch((e) => { console.error('submit-run failed:', e?.stack || e); process.exit(1); });
