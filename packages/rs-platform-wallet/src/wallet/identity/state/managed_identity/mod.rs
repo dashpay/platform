@@ -356,4 +356,52 @@ mod tests {
         assert_eq!(managed.incoming_contact_requests.len(), 1);
         assert_eq!(managed.established_contacts.len(), 0);
     }
+
+    #[test]
+    fn test_disable_keys_stamps_disabled_at() {
+        use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+
+        let make_key = |id: u32| {
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id,
+                key_type: KeyType::ECDSA_SECP256K1,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds: None,
+                read_only: false,
+                data: BinaryData::new(vec![0x02; 33]),
+                disabled_at: None,
+            })
+        };
+
+        let mut identity = create_test_identity();
+        let mut keys = BTreeMap::new();
+        keys.insert(0, make_key(0));
+        keys.insert(1, make_key(1));
+        identity.set_public_keys(keys);
+
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let p = noop_persister();
+
+        // Disable key 1 plus a non-existent key 9 (must be skipped).
+        managed.disable_keys(&[1, 9], 1_700_000_000, &p);
+
+        let pk0 = managed.identity.get_public_key_by_id(0).unwrap();
+        let pk1 = managed.identity.get_public_key_by_id(1).unwrap();
+        assert_eq!(pk0.disabled_at(), None, "untouched key must stay enabled");
+        assert_eq!(
+            pk1.disabled_at(),
+            Some(1_700_000_000),
+            "targeted key must be stamped disabled"
+        );
+        // The skipped key id must not have materialized a phantom row.
+        assert!(
+            managed.identity.get_public_key_by_id(9).is_none(),
+            "non-existent key id must not be created"
+        );
+    }
 }
