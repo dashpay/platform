@@ -196,6 +196,11 @@ EOF
 # the bundled SDK exposes the platform-wallet shielded FFI.
 CARGO_FEATURES="shielded"
 
+if [ "$PROFILE" = "dev-ios" ]; then
+  CARGO_FEATURES="$CARGO_FEATURES tokio-metrics"
+  log_info "  → tokio-metrics enabled (dev profile)"
+fi
+
 # iOS device
 if $BUILD_IOS; then
   IOS_TARGET="aarch64-apple-ios"

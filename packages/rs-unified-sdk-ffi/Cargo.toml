@@ -19,3 +19,7 @@ default = []
 # shielded sync support into the unified iOS framework. Off by
 # default so the framework's transparent surface stays slim.
 shielded = ["platform-wallet-ffi/shielded"]
+tokio-metrics = [
+    "platform-wallet-ffi/tokio-metrics",
+    "rs-sdk-ffi/tokio-metrics",
+]
