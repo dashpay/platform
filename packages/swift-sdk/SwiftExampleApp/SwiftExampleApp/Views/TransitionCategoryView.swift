@@ -109,6 +109,14 @@ struct TransitionCategoryView: View {
                 // `WithdrawPlatformAddressView`). These raw forms paste a
                 // 64-char private key and exist only for low-level
                 // debugging / arbitrary-address operations.
+                //
+                // Gated behind `#if DEBUG` so a Release/TestFlight build
+                // can't direct users to paste a raw private key, bypassing
+                // the `KeychainSigner` boundary the production sheets
+                // enforce. The view definitions stay compiled (they live in
+                // AddressQueriesView.swift); only these entry-point
+                // NavigationLinks are debug-only.
+                #if DEBUG
                 Section {
                     NavigationLink(destination: TransferAddressFundsView()) {
                         VStack(alignment: .leading, spacing: 8) {
@@ -138,6 +146,7 @@ struct TransitionCategoryView: View {
                 } footer: {
                     Text("These paste a raw 64-char private key and bypass the wallet signer. Use the production sheets off the wallet's Platform Balance row instead.")
                 }
+                #endif
             }
             .navigationTitle(category.rawValue)
             .navigationBarTitleDisplayMode(.inline)

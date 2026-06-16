@@ -350,6 +350,14 @@ struct TransferPlatformAddressView: View {
     /// collides with a funded source input would enable the button here,
     /// then come up short Rust-side once that input is excluded. Gate on
     /// this set so the collision is caught up front.
+    ///
+    /// Scoped to key class 0 (`account?.keyClass == 0`), matching
+    /// `platformAccountOptions`: Rust resolves the source via
+    /// `platform_payment_managed_account_at_index(accountIndex)` (key
+    /// class 0) and only spends those rows, so a sibling non-key-class-0
+    /// row at the same `accountIndex` is not an input. Including it here
+    /// would wrongly drop it as a destination candidate, blocking
+    /// legitimate own-wallet/pasted recipients on multi-key-class wallets.
     private var sourceInputHashes: Set<Data> {
         guard let acctIdx = sourceAccountIndex else { return [] }
         return Set(
@@ -358,6 +366,7 @@ struct TransferPlatformAddressView: View {
                     $0.walletId == wallet.walletId
                         && $0.accountIndex == acctIdx
                         && $0.balance > 0
+                        && $0.account?.keyClass == 0
                 }
                 .map { $0.addressHash }
         )
