@@ -3,17 +3,25 @@ import SwiftDashSDK
 
 /// Client-side safety gate for the **Disable Key** action.
 ///
-/// Mirrors the consensus rules Drive enforces on an
-/// `IdentityUpdateTransition` that disables a key, so the app never
-/// broadcasts a transition that's doomed to be rejected. This is a
-/// pre-flight UI guard, not protocol logic — the authoritative checks
-/// still run in `rs-drive-abci`; we just refuse to spend fees on a
-/// transition we already know fails.
+/// This is a pre-flight UI guard, not protocol logic. It mixes two
+/// kinds of refusal:
+///
+/// - **Master key (consensus):** disabling a lone master key really is
+///   rejected by consensus (`validate_master_key_uniqueness_v0`), so
+///   refusing it here just avoids spending fees on a transition we
+///   already know `rs-drive-abci` will reject.
+/// - **Last auth / last transfer (client-side self-brick guards):**
+///   these are *not* protocol invariants. The drive-abci
+///   identity_update state validator only checks that every disabled
+///   key id exists in state and that master-key uniqueness holds — it
+///   would happily accept disabling the last enabled authentication or
+///   transfer key. We refuse those locally purely as a UX safeguard so
+///   the user can't strand (brick) their own identity.
 ///
 /// The gate is computed against the identity's full enabled key set
-/// (a disable is only valid relative to what else remains enabled),
-/// so callers pass `allKeys` (the identity's `identityPublicKeys`)
-/// alongside the `target` key being disabled.
+/// (these guards are only meaningful relative to what else remains
+/// enabled), so callers pass `allKeys` (the identity's
+/// `identityPublicKeys`) alongside the `target` key being disabled.
 enum KeyDisableGate {
     /// Result of evaluating whether `target` may be disabled.
     enum Evaluation: Equatable {
@@ -47,9 +55,12 @@ enum KeyDisableGate {
             )
         }
 
-        // Disabling the last enabled AUTHENTICATION key would leave
-        // the identity unable to authenticate / sign future
-        // transitions — consensus requires at least one.
+        // Client-side self-brick guard (not a consensus rule):
+        // drive-abci would accept this transition, but disabling the
+        // last enabled AUTHENTICATION key would leave the identity
+        // unable to authenticate / sign future transitions, so we
+        // refuse it locally to keep the user from stranding the
+        // identity.
         if target.purpose == .authentication
             && enabledCount(of: .authentication, in: allKeys) <= 1 {
             return .forbidden(
@@ -57,9 +68,12 @@ enum KeyDisableGate {
             )
         }
 
-        // Disabling the last enabled TRANSFER key breaks credit
-        // withdrawals / transfers (ID-10). Re-adding a transfer key
-        // currently requires the Add Key flow (ID-07).
+        // Client-side self-brick guard (not a consensus rule):
+        // drive-abci would accept this too, but disabling the last
+        // enabled TRANSFER key would break credit withdrawals /
+        // transfers (ID-10), and re-adding a transfer key currently
+        // requires the Add Key flow (ID-07). We refuse it locally as a
+        // UX safeguard.
         if target.purpose == .transfer
             && enabledCount(of: .transfer, in: allKeys) <= 1 {
             return .forbidden(
