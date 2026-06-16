@@ -22,7 +22,7 @@ import {
   existsSync, readFileSync, writeFileSync, chmodSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { loadDotEnv, connect, QA_DIR } from './sdk.mjs';
+import { loadDotEnv, connect, sdkNetwork, QA_DIR } from './sdk.mjs';
 
 const COIN = (net) => (net === 'mainnet' ? 5 : 1);
 const SEC_RANK = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
@@ -67,7 +67,7 @@ async function main() {
       for (let ki = 0; ki <= 6; ki += 1) {
         const path = `m/9'/${coin}'/5'/0'/${kt}'/${idIdx}'/${ki}'`;
         let d;
-        try { d = await mod.wallet.deriveKeyFromSeedWithPath({ mnemonic, path, network }); } catch { continue; }
+        try { d = await mod.wallet.deriveKeyFromSeedWithPath({ mnemonic, path, network: sdkNetwork(network) }); } catch { continue; }
         const pub = d.publicKey.toLowerCase();
         const hit = onChain.find((k) => k.hex === pub);
         if (hit) matches.push({ ...hit, path, wif: d.privateKeyWif });

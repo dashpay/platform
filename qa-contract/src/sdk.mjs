@@ -68,6 +68,11 @@ export function networkId(name = getNetwork()) {
   return id;
 }
 
+// evo-sdk key/address APIs accept a NetworkLike of mainnet/testnet/devnet/regtest
+// (not our 'local' alias). Map it so PrivateKey.fromHex / deriveKeyFromSeedWithPath
+// work when NETWORK=local (a dashmate regtest node).
+export const sdkNetwork = (name = getNetwork()) => (String(name).toLowerCase() === 'local' ? 'regtest' : name);
+
 // Connect a trusted SDK (trusted mode is required so state-transition responses
 // are proof-verified). Returns { sdk, mod, network }.
 export async function connect() {
@@ -94,7 +99,7 @@ export function buildSigner(mod, keyString, network) {
   if (!trimmed) throw new Error('Missing private key (set QA_PRIVATE_KEY).');
   const isHex = /^[0-9a-fA-F]{64}$/.test(trimmed);
   const privateKey = isHex
-    ? PrivateKey.fromHex(trimmed, network)
+    ? PrivateKey.fromHex(trimmed, sdkNetwork(network))
     : PrivateKey.fromWIF(trimmed);
   const signer = new IdentitySigner();
   signer.addKey(privateKey);
