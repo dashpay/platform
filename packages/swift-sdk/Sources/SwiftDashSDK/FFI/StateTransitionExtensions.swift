@@ -22,6 +22,21 @@ private final class SendableOpaque: @unchecked Sendable { let p: OpaquePointer; 
 /// AND whose private material is actually available in the Keychain
 /// (delegating to KeyManager.findSigningKey, which mirrors how the
 /// KeychainSigner trampoline resolves the key at sign time).
+///
+/// **Caller contract / known coupling:** availability is checked against
+/// `KeychainManager.shared`, so the `signer` handed to the document ops
+/// below must be backed by the shared Keychain. Every current caller
+/// passes a `KeychainSigner`, which defaults to `KeychainManager.shared`,
+/// so the store queried here is exactly the one the signer will use at
+/// sign time. A signer bound to a different `KeychainManager`, a raw
+/// private-key signer (`KeyManager.createSigner(from:)`), or a
+/// hardware-backed callback signer is NOT consulted here — this preflight
+/// could then reject a key that signer can actually sign. Removing the
+/// coupling would mean ranking candidates by purpose/security in Swift
+/// and delegating the availability check to the supplied signer (which
+/// needs a `dash_sdk_signer_can_sign`-style FFI that does not yet exist;
+/// the `can_sign` vtable slot is only invoked internally by Rust during
+/// signing).
 @MainActor
 private func selectSigningKey(from identity: DPPIdentity, operation: String) -> IdentityPublicKey? {
     print("🔑 [\(operation)] Selecting public key for identity \(identity.id.toBase58String())")
