@@ -220,13 +220,16 @@ fn encoder_dispatches_v0_via_query_settings_without_sdk() {
 
 #[test]
 fn sdk_builder_default_seeds_atomic_to_floor() {
-    // Auto-detect default: the atomic seeds to the floor
-    // `DEFAULT_INITIAL_PROTOCOL_VERSION`, which `version()` returns until the
-    // first response ratchets it upward.
+    // An unpinned SDK seeds to the upgrade-safe floor and `version()` returns
+    // it until the first network response ratchets it upward. That floor is the
+    // build-time clamp `max(DEFAULT_INITIAL_PROTOCOL_VERSION,
+    // min_protocol_version(network))` (see `Sdk::version`). `new_mock()`
+    // defaults to Mainnet, whose floor `PROTOCOL_VERSION_11` exceeds the
+    // unpinned default of 10 (raised by #3886), so the seed is 11.
     let sdk_default = SdkBuilder::new_mock().build().expect("mock sdk");
     assert_eq!(
         sdk_default.version().protocol_version,
-        DEFAULT_INITIAL_PROTOCOL_VERSION
+        DEFAULT_INITIAL_PROTOCOL_VERSION.max(dpp::version::v11::PROTOCOL_VERSION_11)
     );
 }
 
