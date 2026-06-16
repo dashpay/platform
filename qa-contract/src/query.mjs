@@ -74,9 +74,8 @@ async function selfCheck(sdk, contractId, ownerId, app, netId, limit, proof) {
   const trFields = ['testId', 'app', 'result', 'network', 'buildRef', 'createdAt'];
   const base = [['$ownerId', '==', ownerId], ['app', '==', app], ['testId', '==', 'CORE-05']];
   const desc = [['$createdAt', 'desc']];
-  printDocs(`testRun index 'ownerAppTestNetwork'  $ownerId, app==0, testId==CORE-05, network==${netId}`,
-    await q('testRun', [...base, ['network', '==', netId]]), trFields);
-  printDocs("testRun index 'ownerAppTestNetworkCreated'  + order $createdAt desc",
+  // ownerAppTestNetworkCreated also serves the equality-only [$ownerId,app,testId,network] prefix.
+  printDocs(`testRun index 'ownerAppTestNetworkCreated'  $ownerId, app==0, testId==CORE-05, network==${netId} order $createdAt desc`,
     await q('testRun', [...base, ['network', '==', netId]], desc), trFields);
   printDocs("testRun index 'ownerAppTestResultCreated'  + result==pass order $createdAt desc",
     await q('testRun', [...base, ['result', '==', 'pass']], desc), trFields);
@@ -85,7 +84,7 @@ async function selfCheck(sdk, contractId, ownerId, app, netId, limit, proof) {
   printDocs("testRun index 'buildRefOwner'  buildRef==45fdf33901, $ownerId==owner",
     await q('testRun', [['buildRef', '==', '45fdf33901'], ['$ownerId', '==', ownerId]]), trFields);
 
-  console.log('\n✅ All 14 indexed queries returned without error — indices are valid.');
+  console.log('\n✅ All 13 indexed queries returned without error — indices are valid.');
 }
 
 async function main() {
@@ -130,13 +129,21 @@ async function main() {
     if (values.tier) where.push(['tier', '==', tierCode(values.tier)]);
     if (values.category) where.push(['category', '==', categoryCode(values.category)]);
   } else if (values.type === 'testRun') {
+    // testRun indices are either buildRef-led (buildRefOwner) or $ownerId,app,testId-led.
+    // Reject combinations no index can serve so the failure is a clear CLI error.
     if (values.buildRef) {
+      if (values.testId || values.result || values.network) {
+        throw new Error('--buildRef uses the buildRefOwner index; it cannot be combined with --testId/--result/--network.');
+      }
       where.push(['buildRef', '==', values.buildRef]);
       if (ownerId) where.push(['$ownerId', '==', ownerId]);
     } else {
+      if (!values.testId) {
+        throw new Error('testRun queries need --testId (with optional --result/--network), or --buildRef.');
+      }
       if (ownerId) where.push(['$ownerId', '==', ownerId]);
       where.push(['app', '==', app]);
-      if (values.testId) where.push(['testId', '==', values.testId]);
+      where.push(['testId', '==', values.testId]);
       if (values.network) where.push(['network', '==', networkId(values.network)]);
       if (values.result) where.push(['result', '==', values.result]);
       orderBy.push(['$createdAt', 'desc']);

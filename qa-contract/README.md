@@ -31,8 +31,14 @@ so the ID changes when the contract is re-registered (see
 > registration with a new id. Consumers pinned to an older id must re-pin.
 > History: `2qEVUbg4znNgNRs3FJQ4kof4NKpB8q4fGtYa7qBouLzw` (v1) →
 > `2gevmsNEaWnWQURQpuWeN5QnLfC2ufrZG4SXkVMqeUgZ` (v2: integer `network` +
-> `$ownerId` testRun indices) → **current** (v3: normalized `app`/`tier`/`category`
+> `$ownerId` testRun indices) → **deployed** (v3: normalized `app`/`tier`/`category`
 > lookup types with integer foreign keys, `(testId, app)` unique).
+>
+> The committed schema additionally carries hardening (non-deletable lookup rows,
+> `result` enum, `network` `0..3`, and a dropped redundant `ownerAppTestNetwork`
+> index) that **post-dates the deployed v3 contract** and lands at the next
+> re-registration; `register.mjs` refuses a no-op re-run while this drift exists
+> (run with `--force` to publish it as the next contract).
 
 ```jsonc
 // contract-id.testnet.json (shape)
@@ -61,8 +67,10 @@ resolve `code → name` client-side; the canonical codes live in
 
 Each is `{ code: integer (unique), name: string (unique) }` (`app` also has
 optional `platform` + `description`). Indices: `byCode` (unique), `byName`
-(unique). Mutable; owner-only creation — add a new tier/category/app by creating
-a doc with the next `code`, **no contract update needed**. Canonical codes:
+(unique). Mutable but **non-deletable** (`canBeDeleted: false`) so a `code`
+referenced by a testCase/testRun can't be orphaned; owner-only creation — add a
+new tier/category/app by creating a doc with the next `code`, **no contract update
+needed**. Canonical codes:
 
 - **app**: `0`=SwiftExampleApp
 - **tier**: `0`=Essential, `1`=Common, `2`=Thorough, `3`=Uncommon, `4`=Manual, `5`=Unspecified
@@ -105,19 +113,17 @@ a doc with the next `code`, **no contract update needed**. Canonical codes:
 
 - Indices (all `asc`; `$ownerId`-prefixed so runs are queried per submitter —
   sets up multi-submitter; `app` pairs with `testId`):
-  - `ownerAppTestNetwork` — `$ownerId`, `app`, `testId`, `network`
-  - `ownerAppTestNetworkCreated` — `$ownerId`, `app`, `testId`, `network`, `$createdAt`
+  - `ownerAppTestNetworkCreated` — `$ownerId`, `app`, `testId`, `network`, `$createdAt` (also serves the equality-only `…, network` prefix)
   - `ownerAppTestResultCreated` — `$ownerId`, `app`, `testId`, `result`, `$createdAt`
   - `ownerAppTestCreated` — `$ownerId`, `app`, `testId`, `$createdAt`
   - `buildRefOwner` — `buildRef`, `$ownerId`
 - "Most recent run first" is done at query time with `orderBy [['$createdAt','desc']]`.
 - **Immutable + non-deletable** (`documentsMutable: false`, `canBeDeleted: false`):
   it is an audit log. `additionalProperties: false`.
-- `result` is constrained to `pass|fail|blocked|skipped` by `submit-run.mjs`, and
-  `submit-run.mjs` refuses an unknown `(testId, app)` (the run would be a permanent
-  orphan) unless `--force`. Folding `enum:[…]` into the schema itself is a planned
-  follow-up — it needs a re-registration (a contract's schema is immutable), so it
-  will land with the next one (testnet reset or the next schema change).
+- `result` is constrained on-chain to `enum:[pass,fail,blocked,skipped]` and
+  `network` to `0..3`, so out-of-vocabulary values can't enter the immutable log.
+  `submit-run.mjs` additionally refuses an unknown `(testId, app)` (the run would
+  be a permanent orphan) unless `--force`.
 
 > **Platform schema constraints baked into this schema:**
 > - Indexed string properties are capped at `maxLength ≤ 63`, which is why the

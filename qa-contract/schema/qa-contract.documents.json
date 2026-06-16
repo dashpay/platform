@@ -2,7 +2,7 @@
   "app": {
     "type": "object",
     "documentsMutable": true,
-    "canBeDeleted": true,
+    "canBeDeleted": false,
     "creationRestrictionMode": 1,
     "indices": [
       { "name": "byCode", "properties": [{ "code": "asc" }], "unique": true },
@@ -42,7 +42,7 @@
   "tier": {
     "type": "object",
     "documentsMutable": true,
-    "canBeDeleted": true,
+    "canBeDeleted": false,
     "creationRestrictionMode": 1,
     "indices": [
       { "name": "byCode", "properties": [{ "code": "asc" }], "unique": true },
@@ -70,7 +70,7 @@
   "category": {
     "type": "object",
     "documentsMutable": true,
-    "canBeDeleted": true,
+    "canBeDeleted": false,
     "creationRestrictionMode": 1,
     "indices": [
       { "name": "byCode", "properties": [{ "code": "asc" }], "unique": true },
@@ -198,10 +198,6 @@
     "creationRestrictionMode": 1,
     "indices": [
       {
-        "name": "ownerAppTestNetwork",
-        "properties": [{ "$ownerId": "asc" }, { "app": "asc" }, { "testId": "asc" }, { "network": "asc" }]
-      },
-      {
         "name": "ownerAppTestNetworkCreated",
         "properties": [{ "$ownerId": "asc" }, { "app": "asc" }, { "testId": "asc" }, { "network": "asc" }, { "$createdAt": "asc" }]
       },
@@ -236,12 +232,14 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 16,
+        "enum": ["pass", "fail", "blocked", "skipped"],
         "position": 2,
         "description": "Outcome. One of: pass, fail, blocked, skipped."
       },
       "network": {
         "type": "integer",
         "minimum": 0,
+        "maximum": 3,
         "position": 3,
         "description": "Network id the run executed against: 0=mainnet, 1=testnet, 2=devnet, 3=regtest."
       },
