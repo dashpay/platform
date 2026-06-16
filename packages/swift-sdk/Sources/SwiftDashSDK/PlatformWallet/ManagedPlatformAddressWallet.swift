@@ -387,15 +387,20 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
 
     // MARK: - Withdraw
 
-    /// Withdraw this platform-payment account's full credit balance to
-    /// a Core L1 address.
+    /// Withdraw this platform-payment account's credit balance to a Core
+    /// L1 address (less the transition fee).
     ///
-    /// `AddressCreditWithdrawalTransition` consumes the **entire**
-    /// funded balance of every input address it selects — there is no
-    /// change output. We therefore drive the Rust side with
-    /// `INPUT_SELECTION_TYPE_AUTO`, which selects every funded address
-    /// on `accountIndex`, and `DeductFromInput(0)` so the on-chain fee
-    /// comes out of the inputs (not a non-existent change/output row).
+    /// `AddressCreditWithdrawalTransition` has no change output, so the
+    /// on-chain fee is deducted from the inputs. We drive the Rust side
+    /// with `INPUT_SELECTION_TYPE_AUTO`, which selects every funded
+    /// address on `accountIndex`, and `DeductFromInput(0)` so the fee
+    /// comes out of the fee-source input. The Rust auto-selector reserves
+    /// the estimated fee on that input (the lexicographically-smallest
+    /// address, which `DeductFromInput(0)` resolves to) — it withdraws
+    /// `balance − estimated_fee` there and the full balance from every
+    /// other input. Without that reservation a full-balance withdraw would
+    /// leave zero remaining on the fee-source input and the chain would
+    /// reject the transition with `fee_fully_covered = false`.
     ///
     /// `coreAddress` is a base58 Core address (e.g. `yXV…` on testnet,
     /// `X…` on mainnet). It is parsed **and network-checked on the
@@ -413,7 +418,8 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     /// `KeychainSigner.swift`). Pass `KeychainSigner(modelContainer:)`.
     ///
     /// Returns the per-address `UpdatedBalance`s the Rust changeset
-    /// reports (each drained input now reads `0`).
+    /// reports (drained inputs read `0`; the fee-source input retains the
+    /// reserved-fee remainder until the chain books the fee).
     @discardableResult
     public func withdraw(
         accountIndex: UInt32,
@@ -433,8 +439,10 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
 
         return try await Task.detached(priority: .userInitiated) {
             () -> [UpdatedBalance] in
-            // Withdrawals consume the full funded balance with no
-            // change output, so the fee is deducted from the inputs.
+            // Withdrawals have no change output, so the fee is deducted
+            // from the inputs. The Rust auto-selector reserves the
+            // estimated fee on the index-0 (fee-source) input so the chain
+            // can cover it; see this wrapper's doc comment.
             let feeRows: [FeeStrategyStepFFI] = [
                 FeeStrategyStepFFI(step_type: 0, index: 0)  // 0 = DeductFromInput
             ]
