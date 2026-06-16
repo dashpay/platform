@@ -361,12 +361,23 @@ struct TransferPlatformAddressView: View {
 
     /// Lowest-index unused, zero-balance address on the source account —
     /// the change destination. Picked internally; never exposed in the UI.
+    ///
+    /// Scoped to `account?.keyClass == 0` to match the Rust transfer path,
+    /// which routes change through `platform_payment_managed_account_at_index`
+    /// (key class 0). A sibling PlatformPayment account at the same
+    /// `accountIndex` with a different key class can legitimately own an
+    /// unused, zero-balance row (PersistentAccount's unique constraint
+    /// includes keyClass); without this scope the picker could route change to
+    /// a key-class != 0 address that Rust never surfaces, stranding the funds.
+    /// Mirrors the `keyClass == 0` filter applied to the source picker /
+    /// balance sum.
     private var autoChangeAddress: PersistentPlatformAddress? {
         guard let acctIdx = sourceAccountIndex else { return nil }
         return allPlatformAddresses
             .filter {
                 $0.walletId == wallet.walletId
                     && $0.accountIndex == acctIdx
+                    && $0.account?.keyClass == 0
                     && !$0.isUsed
                     && $0.balance == 0
             }

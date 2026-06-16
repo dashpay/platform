@@ -11,6 +11,7 @@ use dpp::withdrawal::Pooling;
 use key_wallet::PlatformP2PKHAddress;
 
 use super::InputSelection;
+use crate::changeset::Merge;
 use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFunds;
@@ -167,6 +168,19 @@ impl PlatformAddressWallet {
                         funds,
                     });
                 }
+            }
+        }
+        drop(wm);
+
+        // Mirror `transfer.rs` / `sync.rs`: persist post-broadcast balances so a
+        // restart doesn't reseed `auto_select_inputs_for_withdrawal` from stale
+        // rows (which would let a non-Swift caller, or any host where the
+        // SwiftData write side-channel is absent, build invalid follow-up spends
+        // against pre-withdrawal balances). Log-on-error because the on-chain
+        // transition already succeeded.
+        if !cs.is_empty() {
+            if let Err(e) = self.persister.store(cs.clone().into()) {
+                tracing::error!("Failed to persist withdrawal changeset: {}", e);
             }
         }
 
