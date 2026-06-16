@@ -17,37 +17,38 @@ private final class SendableOpaque: @unchecked Sendable { let p: OpaquePointer; 
 
 // MARK: - Key Selection Helpers
 
-/// Helper to select the appropriate key for signing operations
-/// Returns the key we most likely have the private key for
+/// Helper to select the appropriate key for signing operations.
+/// Picks a key whose purpose matches the state-transition requirement
+/// AND whose private material is actually available in the Keychain
+/// (delegating to KeyManager.findSigningKey, which mirrors how the
+/// KeychainSigner trampoline resolves the key at sign time).
+@MainActor
 private func selectSigningKey(from identity: DPPIdentity, operation: String) -> IdentityPublicKey? {
-    // Select a suitable public key based on policy only. Availability of a
-    // matching private key is enforced by the caller when creating the signer.
     print("🔑 [\(operation)] Selecting public key for identity \(identity.id.toBase58String())")
 
-    let keys = Array(identity.publicKeys.values)
+    let km = KeyManager.withSharedKeychain()
 
-    // For contract create/update, require CRITICAL + AUTHENTICATION
+    // Contract create/update require a CRITICAL + AUTHENTICATION key.
     if operation == "CONTRACT CREATE" || operation == "CONTRACT UPDATE" {
-        if let k = keys.first(where: { $0.securityLevel == .critical && $0.purpose == .authentication }) {
+        if let k = km.findSigningKey(for: identity, purpose: .authentication, minimumSecurityLevel: .critical, preferCritical: true) {
             print("📝 [\(operation)] Selected CRITICAL AUTHENTICATION key #\(k.id)")
             return k
         }
-        print("❌ [\(operation)] No CRITICAL AUTHENTICATION key found")
+        print("❌ [\(operation)] No CRITICAL AUTHENTICATION key with available private material")
         return nil
     }
 
-    // Otherwise prefer CRITICAL, then AUTHENTICATION, then any
-    if let k = keys.first(where: { $0.securityLevel == .critical }) {
-        print("📝 [\(operation)] Selected CRITICAL key #\(k.id)")
+    // Document state transitions require an AUTHENTICATION-purpose key.
+    // Prefer a CRITICAL auth key, but findSigningKey skips any candidate
+    // whose private key is not in the Keychain, so an identity whose only
+    // CRITICAL key is a TRANSFER key (or a CRITICAL auth key with no stored
+    // private material) correctly falls through to its HIGH auth key.
+    if let k = km.findSigningKey(for: identity, purpose: .authentication, minimumSecurityLevel: nil, preferCritical: true) {
+        print("📝 [\(operation)] Selected AUTHENTICATION key #\(k.id) (security \(k.securityLevel.name))")
         return k
     }
-    if let k = keys.first(where: { $0.purpose == .authentication }) {
-        print("📝 [\(operation)] Selected AUTHENTICATION key #\(k.id)")
-        return k
-    }
-    let k = keys.first
-    if let k = k { print("📝 [\(operation)] Selected fallback key #\(k.id)") }
-    return k
+    print("❌ [\(operation)] No AUTHENTICATION key with available private material")
+    return nil
 }
 
 /// Helper to create a public key handle from an IdentityPublicKey
@@ -473,6 +474,12 @@ extension SDK {
             throw SDKError.invalidParameter("Failed to serialize properties to JSON")
         }
 
+        // Select the signing key on the MainActor (KeyManager is @MainActor)
+        // before dispatching the FFI work off-actor.
+        guard let signingKey = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT CREATE") else {
+            throw SDKError.invalidParameter("No public key found for identity")
+        }
+
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: Any], Error>) in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -547,11 +554,8 @@ extension SDK {
                 // 2. Create identity public key handle directly from our local data (no network fetch)
                 print("📝 [DOCUMENT CREATE] Getting public key handle...")
 
-                // Select the appropriate key for signing
-                guard let keyToUse = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT CREATE") else {
-                    continuation.resume(throwing: SDKError.invalidParameter("No public key found for identity"))
-                    return
-                }
+                // Key selection happened on the MainActor before dispatch.
+                let keyToUse = signingKey
 
                 // Create public key handle
                 guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT CREATE") else {
@@ -649,6 +653,12 @@ extension SDK {
         print("📝 [DOCUMENT REPLACE] Starting at \(startTime)")
         print("📝 [DOCUMENT REPLACE] Contract: \(contractId), Type: \(documentType), Doc: \(documentId)")
 
+        // Select the signing key on the MainActor (KeyManager is @MainActor)
+        // before dispatching the FFI work off-actor.
+        guard let signingKey = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT REPLACE") else {
+            throw SDKError.invalidParameter("No public key found")
+        }
+
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -732,11 +742,8 @@ extension SDK {
                 // 3. Get appropriate key for signing
                 print("📝 [DOCUMENT REPLACE] Getting public key handle...")
 
-                // Select the appropriate key for signing
-                guard let keyToUse = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT REPLACE") else {
-                    continuation.resume(throwing: SDKError.invalidParameter("No public key found"))
-                    return
-                }
+                // Key selection happened on the MainActor before dispatch.
+                let keyToUse = signingKey
 
                 // Create public key handle
                 guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT REPLACE") else {
@@ -808,6 +815,12 @@ extension SDK {
         print("🗑️ [DOCUMENT DELETE] Starting at \(startTime)")
         print("🗑️ [DOCUMENT DELETE] Contract: \(contractId), Type: \(documentType), Doc: \(documentId)")
 
+        // Select the signing key on the MainActor (KeyManager is @MainActor)
+        // before dispatching the FFI work off-actor.
+        guard let signingKey = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT DELETE") else {
+            throw SDKError.protocolError("No suitable key found for signing")
+        }
+
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -824,10 +837,8 @@ extension SDK {
                         throw SDKError.serializationError("Failed to encode strings to C strings")
                     }
 
-                    // Select the signing key using the helper
-                    guard let keyToUse = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT DELETE") else {
-                        throw SDKError.protocolError("No suitable key found for signing")
-                    }
+                    // Key selection happened on the MainActor before dispatch.
+                    let keyToUse = signingKey
 
                     // Create public key handle
                     guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT DELETE") else {
@@ -894,6 +905,12 @@ extension SDK {
         print("🔁 [DOCUMENT TRANSFER] Contract: \(contractId), Type: \(documentType), Doc: \(documentId)")
         print("🔁 [DOCUMENT TRANSFER] From: \(fromIdentity.id.toBase58String()), To: \(toIdentityId)")
 
+        // Select the signing key on the MainActor (KeyManager is @MainActor)
+        // before dispatching the FFI work off-actor.
+        guard let signingKey = selectSigningKey(from: fromIdentity, operation: "DOCUMENT TRANSFER") else {
+            throw SDKError.invalidParameter("No suitable key found for signing")
+        }
+
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: Any], Error>) in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -910,11 +927,8 @@ extension SDK {
                     return
                 }
 
-                // Select signing key
-                guard let keyToUse = selectSigningKey(from: fromIdentity, operation: "DOCUMENT TRANSFER") else {
-                    continuation.resume(throwing: SDKError.invalidParameter("No suitable key found for signing"))
-                    return
-                }
+                // Key selection happened on the MainActor before dispatch.
+                let keyToUse = signingKey
 
                 // Create public key handle
                 guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT TRANSFER") else {
@@ -1080,6 +1094,12 @@ extension SDK {
         print("💰 [DOCUMENT UPDATE PRICE] Contract: \(contractId), Type: \(documentType)")
         print("💰 [DOCUMENT UPDATE PRICE] Document: \(documentId), New Price: \(newPrice)")
 
+        // Select the signing key on the MainActor (KeyManager is @MainActor)
+        // before dispatching the FFI work off-actor.
+        guard let signingKey = selectSigningKey(from: ownerIdentity, operation: "UPDATE_PRICE") else {
+            throw SDKError.invalidParameter("No suitable signing key found")
+        }
+
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -1145,12 +1165,8 @@ extension SDK {
 
                 print("✅ [DOCUMENT UPDATE PRICE] Document fetched successfully")
 
-                // Step 3: Select signing key
-                print("💰 [DOCUMENT UPDATE PRICE] Step 3: Selecting signing key...")
-                guard let keyToUse = selectSigningKey(from: ownerIdentity, operation: "UPDATE_PRICE") else {
-                    continuation.resume(throwing: SDKError.invalidParameter("No suitable signing key found"))
-                    return
-                }
+                // Step 3: Key selection happened on the MainActor before dispatch.
+                let keyToUse = signingKey
 
                 guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "UPDATE_PRICE") else {
                     continuation.resume(throwing: SDKError.serializationError("Failed to create key handle"))
@@ -1220,6 +1236,12 @@ extension SDK {
             throw SDKError.invalidState("SDK not initialized")
         }
 
+        // Select the signing key on the MainActor (KeyManager is @MainActor)
+        // before entering the continuation, for consistency with the other ops.
+        guard let signingKey = selectSigningKey(from: purchaserIdentity, operation: "DOCUMENT PURCHASE") else {
+            throw SDKError.invalidParameter("No suitable key found for signing")
+        }
+
         return try await withCheckedThrowingContinuation { continuation in
                 // Convert strings to C strings
                 guard let contractIdCString = contractId.cString(using: .utf8),
@@ -1230,11 +1252,8 @@ extension SDK {
                     return
                 }
 
-                // Select signing key
-                guard let keyToUse = selectSigningKey(from: purchaserIdentity, operation: "DOCUMENT PURCHASE") else {
-                    continuation.resume(throwing: SDKError.invalidParameter("No suitable key found for signing"))
-                    return
-                }
+                // Key selection happened on the MainActor before the continuation.
+                let keyToUse = signingKey
 
                 // Create public key handle
                 guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT PURCHASE") else {
