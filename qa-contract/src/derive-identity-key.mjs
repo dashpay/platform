@@ -12,10 +12,15 @@
 // signing contract/document transitions.
 //
 // Usage:
-//   QA_MNEMONIC="..." QA_IDENTITY_ID=... node src/derive-identity-key.mjs [--write]
+//   QA_MNEMONIC="..." QA_IDENTITY_ID=... node src/derive-identity-key.mjs [--write] [--print]
+//
+// The recovered WIF is masked by default; pass --print to echo it in full.
+// --write saves it to .env and chmods the file to 0600.
 
 import { parseArgs } from 'node:util';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync, readFileSync, writeFileSync, chmodSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { loadDotEnv, connect, QA_DIR } from './sdk.mjs';
 
@@ -34,7 +39,12 @@ function normHex(data) {
 
 async function main() {
   loadDotEnv();
-  const { values } = parseArgs({ options: { write: { type: 'boolean', default: false } } });
+  const { values } = parseArgs({
+    options: {
+      write: { type: 'boolean', default: false },
+      print: { type: 'boolean', default: false },
+    },
+  });
 
   const mnemonic = (process.env.QA_MNEMONIC || '').trim();
   const identityId = (process.env.QA_IDENTITY_ID || '').trim();
@@ -81,8 +91,9 @@ async function main() {
   const pick = signable.find((m) => m.securityLevel === 'HIGH') || signable[0];
   if (!pick) throw new Error('No writable HIGH/CRITICAL AUTHENTICATION key matched.');
 
+  const maskedWif = `${pick.wif.slice(0, 4)}…${pick.wif.slice(-4)}`;
   console.log(`\nSigning key: id=${pick.id} ${pick.securityLevel} AUTHENTICATION`);
-  console.log(`  WIF: ${pick.wif}`);
+  console.log(`  WIF: ${values.print ? pick.wif : maskedWif}${values.print ? '' : '  (masked — pass --print to reveal)'}`);
 
   if (values.write) {
     const envPath = join(QA_DIR, '.env');
@@ -94,9 +105,10 @@ async function main() {
     setLine('QA_PRIVATE_KEY', pick.wif);
     if (Number.isFinite(pick.id)) setLine('QA_IDENTITY_KEY_ID', String(pick.id));
     writeFileSync(envPath, env.endsWith('\n') ? env : `${env}\n`);
-    console.log(`\nWrote QA_PRIVATE_KEY${Number.isFinite(pick.id) ? ' + QA_IDENTITY_KEY_ID' : ''} to ${envPath}`);
+    chmodSync(envPath, 0o600); // contains a private key + mnemonic — owner-only
+    console.log(`\nWrote QA_PRIVATE_KEY${Number.isFinite(pick.id) ? ' + QA_IDENTITY_KEY_ID' : ''} to ${envPath} (chmod 0600).`);
   } else {
-    console.log('\nRe-run with --write to save QA_PRIVATE_KEY + QA_IDENTITY_KEY_ID into .env.');
+    console.log('\nRe-run with --write to save QA_PRIVATE_KEY + QA_IDENTITY_KEY_ID into .env (chmod 0600).');
   }
 }
 

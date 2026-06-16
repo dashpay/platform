@@ -41,8 +41,14 @@ function testCaseProps(row, app) {
   return props;
 }
 
-function contentEquals(existing, props) {
-  return CONTENT_FIELDS.every((f) => (existing?.[f] ?? undefined) === (props[f] ?? undefined));
+function pickContent(json) {
+  const out = {};
+  for (const f of CONTENT_FIELDS) if (json?.[f] !== undefined) out[f] = json[f];
+  return out;
+}
+
+function contentEquals(a, b) {
+  return CONTENT_FIELDS.every((f) => (a?.[f] ?? undefined) === (b?.[f] ?? undefined));
 }
 
 function csv(v) { return v ? v.split(',').map((s) => s.trim()).filter(Boolean) : undefined; }
@@ -130,13 +136,16 @@ async function main() {
       const existing = await findOne(sdk, contractId, 'testCase', [['testId', '==', row.testId], ['app', '==', app]]);
       if (existing) {
         const existingJson = existing.toJSON();
-        if (!values.update || contentEquals(existingJson, props)) { skipped += 1; continue; }
+        // Carry forward fields the new row doesn't set (e.g. planCommit when git
+        // history is unavailable) so --update never silently drops provenance.
+        const merged = { ...pickContent(existingJson), ...props };
+        if (!values.update || contentEquals(existingJson, merged)) { skipped += 1; continue; }
         const doc = new Document({
           id: String(existingJson.$id),
           ownerId,
           dataContractId: contractId,
           documentTypeName: 'testCase',
-          properties: props,
+          properties: merged,
           revision: BigInt(existingJson.$revision ?? 1) + 1n,
         });
         await sdk.documents.replace({ document: doc, identityKey, signer });

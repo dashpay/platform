@@ -113,6 +113,11 @@ a doc with the next `code`, **no contract update needed**. Canonical codes:
 - "Most recent run first" is done at query time with `orderBy [['$createdAt','desc']]`.
 - **Immutable + non-deletable** (`documentsMutable: false`, `canBeDeleted: false`):
   it is an audit log. `additionalProperties: false`.
+- `result` is constrained to `pass|fail|blocked|skipped` by `submit-run.mjs`, and
+  `submit-run.mjs` refuses an unknown `(testId, app)` (the run would be a permanent
+  orphan) unless `--force`. Folding `enum:[…]` into the schema itself is a planned
+  follow-up — it needs a re-registration (a contract's schema is immutable), so it
+  will land with the next one (testnet reset or the next schema change).
 
 > **Platform schema constraints baked into this schema:**
 > - Indexed string properties are capped at `maxLength ≤ 63`, which is why the

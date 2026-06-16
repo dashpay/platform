@@ -30,6 +30,7 @@ async function main() {
       evidence: { type: 'string' },
       notes: { type: 'string' },
       blockerReason: { type: 'string' },
+      force: { type: 'boolean', default: false },
     },
   });
 
@@ -55,6 +56,23 @@ async function main() {
   const contractId = cfg.contractId;
 
   const { ownerId, signer, identityKey } = await loadOwnerAuth(sdk, mod, network);
+
+  // testRun is immutable + non-deletable, so a typo'd testId would create a
+  // permanent orphan. Require the matching (testId, app) testCase to exist first.
+  if (!values.force) {
+    const res = await sdk.documents.query({
+      dataContractId: contractId,
+      documentTypeName: 'testCase',
+      where: [['testId', '==', testId], ['app', '==', app]],
+      limit: 1,
+    });
+    let exists = false;
+    for (const d of res.values()) if (d) exists = true;
+    if (!exists) {
+      throw new Error(`No testCase '${testId}' for app '${appName}' (code ${app}) on ${network}. `
+        + 'Seed it first, or pass --force to record the run anyway.');
+    }
+  }
 
   const properties = {
     testId, app, result, network: networkId(network), buildRef,
