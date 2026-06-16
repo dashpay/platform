@@ -4,12 +4,22 @@ import SwiftUI
 struct KeysListView: View {
   struct IdentifiableInt: Identifiable { let id: Int }
   let identity: PersistentIdentity
+  @Environment(\.modelContext) private var modelContext
+  @EnvironmentObject var appState: AppState
+  @EnvironmentObject var walletManager: PlatformWalletManager
   @State private var showingPrivateKey: IdentifiableInt? = nil
   @State private var copiedKeyId: Int? = nil
   /// Drives the Add-Key sheet. Bool flag rather than presentation
   /// state because the sheet's content is parameter-free — the
   /// view binds to the surrounding `identity` directly.
   @State private var showingAddKey = false
+  /// The key the user swiped to disable, pending confirmation. Drives
+  /// a value-based `.confirmationDialog`. The canonical disable home is
+  /// `KeyDetailView`; this swipe action is a shortcut that also reaches
+  /// keys whose row taps into `PrivateKeyView` instead of the detail.
+  @State private var pendingDisableKey: IdentityPublicKey?
+  @State private var isDisabling = false
+  @State private var disableError: String?
 
   private var publicKeys: [IdentityPublicKey] {
     identity.identityPublicKeys
@@ -38,6 +48,9 @@ struct KeysListView: View {
               )
             }
             .foregroundColor(.primary)
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+              disableSwipeButton(for: publicKey)
+            }
           } else {
             // For keys without private keys, use NavigationLink
             NavigationLink(destination: KeyDetailView(identity: identity, publicKey: publicKey)) {
@@ -45,6 +58,9 @@ struct KeysListView: View {
                 publicKey: publicKey,
                 privateKeyAvailable: false
               )
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+              disableSwipeButton(for: publicKey)
             }
           }
         }
@@ -117,6 +133,105 @@ struct KeysListView: View {
         CopiedToast(message: "Private key #\(copiedId) copied")
           .transition(.move(edge: .bottom).combined(with: .opacity))
       }
+    }
+    .confirmationDialog(
+      pendingDisableKey.map { "Disable Key #\($0.id)?" } ?? "Disable Key?",
+      isPresented: Binding(
+        get: { pendingDisableKey != nil },
+        set: { if !$0 { pendingDisableKey = nil } }
+      ),
+      titleVisibility: .visible
+    ) {
+      if let key = pendingDisableKey {
+        Button("Disable Key", role: .destructive) {
+          Task { await disableKey(key) }
+        }
+      }
+      Button("Cancel", role: .cancel) { pendingDisableKey = nil }
+    } message: {
+      if let key = pendingDisableKey {
+        Text("This permanently and irreversibly disables key #\(key.id) on-chain. It can never be re-enabled — you would have to add a new key instead.")
+      }
+    }
+    .alert(
+      "Disable Failed",
+      isPresented: Binding(
+        get: { disableError != nil },
+        set: { if !$0 { disableError = nil } }
+      )
+    ) {
+      Button("OK", role: .cancel) { disableError = nil }
+    } message: {
+      Text(disableError ?? "")
+    }
+  }
+
+  /// Trailing-edge swipe button for a row. Only shown for keys that
+  /// pass the disable gate; already-disabled or gate-failing keys get
+  /// no swipe action (the full reason is surfaced in `KeyDetailView`).
+  @ViewBuilder
+  private func disableSwipeButton(for publicKey: IdentityPublicKey) -> some View {
+    if case .allowed = KeyDisableGate.evaluate(
+      target: publicKey,
+      allKeys: publicKeys
+    ) {
+      Button(role: .destructive) {
+        pendingDisableKey = publicKey
+      } label: {
+        Label("Disable", systemImage: "xmark.circle")
+      }
+      .disabled(isDisabling)
+    }
+  }
+
+  /// Submit an `IdentityUpdate` disabling `publicKey`, mirroring
+  /// `KeyDetailView.disableKey()` / `AddIdentityKeyView.submit()`: same
+  /// wallet + signer resolution, same `_ = signer` keepalive, same
+  /// post-submit key refresh so the disabled badge appears.
+  @MainActor
+  private func disableKey(_ publicKey: IdentityPublicKey) async {
+    pendingDisableKey = nil
+
+    // Re-check the gate at submit time — the key set could have
+    // changed since the swipe (background sync, a sibling disable).
+    guard case .allowed = KeyDisableGate.evaluate(
+      target: publicKey,
+      allKeys: publicKeys
+    ) else { return }
+
+    guard let walletId = identity.wallet?.walletId else {
+      disableError = "Identity has no wallet linkage; cannot sign the disable transition."
+      return
+    }
+    guard let wallet = walletManager.wallet(for: walletId) else {
+      disableError = "Wallet not loaded in the wallet manager."
+      return
+    }
+    guard let sdk = appState.sdk else {
+      disableError = "SDK not initialized."
+      return
+    }
+
+    isDisabling = true
+    defer { isDisabling = false }
+
+    do {
+      let signer = KeychainSigner(modelContainer: modelContext.container)
+      try await wallet.updateIdentity(
+        identityId: identity.identityId,
+        addPublicKeys: [],
+        disablePublicKeyIds: [publicKey.id],
+        signer: signer
+      )
+      _ = signer  // keepalive: see KeychainSigner lifetime contract.
+
+      try? await IdentityKeyRefresher.refreshBalanceAndKeys(
+        identity: identity,
+        sdk: sdk,
+        modelContext: modelContext
+      )
+    } catch {
+      disableError = error.localizedDescription
     }
   }
 
