@@ -33,8 +33,14 @@ so the ID changes when the contract is re-registered (see
 > `2gevmsNEaWnWQURQpuWeN5QnLfC2ufrZG4SXkVMqeUgZ` (v2: integer `network` +
 > `$ownerId` testRun indices) → `4PtPYwYJcjuPXgKigkficzcrpKLG9yucqkNKKK9UVmiv`
 > (v3: normalized `app`/`tier`/`category` lookup types with integer foreign keys,
-> `(testId, app)` unique) → **current** (v4: hardening — non-deletable lookup rows,
+> `(testId, app)` unique) → **deployed** (v4: hardening — non-deletable lookup rows,
 > `result` enum, `network` `0..3`, redundant `ownerAppTestNetwork` index dropped).
+>
+> The committed schema additionally makes the `app`/`tier`/`category` lookups
+> fully **immutable** (`documentsMutable: false`, so a `code`'s name can't be
+> relabeled under historical runs). That post-dates the deployed v4 contract and
+> applies at the next re-registration; `register.mjs` flags the drift (use
+> `--force` to publish it as the next contract).
 
 ```jsonc
 // contract-id.testnet.json (shape)
@@ -63,10 +69,10 @@ resolve `code → name` client-side; the canonical codes live in
 
 Each is `{ code: integer (unique), name: string (unique) }` (`app` also has
 optional `platform` + `description`). Indices: `byCode` (unique), `byName`
-(unique). Mutable but **non-deletable** (`canBeDeleted: false`) so a `code`
-referenced by a testCase/testRun can't be orphaned; owner-only creation — add a
-new tier/category/app by creating a doc with the next `code`, **no contract update
-needed**. Canonical codes:
+(unique). **Immutable** (`documentsMutable: false`, `canBeDeleted: false`) — a
+stable code table, so a `code` referenced by an immutable testRun can't be
+orphaned *or relabeled*; owner-only creation — add a new tier/category/app by
+creating a doc with the next `code`, **no contract update needed**. Canonical codes:
 
 - **app**: `0`=SwiftExampleApp
 - **tier**: `0`=Essential, `1`=Common, `2`=Thorough, `3`=Uncommon, `4`=Manual, `5`=Unspecified
