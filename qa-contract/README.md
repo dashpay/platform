@@ -203,8 +203,12 @@ mode (required so state-transition responses are proof-verified). Node ≥ 18.18
 
 ```sh
 cd qa-contract
-yarn install        # or npm install
+npm install
 ```
+
+> Use `npm`, not `yarn`, here: `qa-contract` is intentionally *not* a member of
+> the repo's Yarn workspaces, and Yarn 4 aborts when run from a non-member dir.
+> (Option B builds the workspace SDK instead and needs no install in this dir.)
 
 **Option B — in-repo (workspace build):** build the workspace SDK once and point
 the scripts at the bundle (no `yarn install` in this dir needed):
