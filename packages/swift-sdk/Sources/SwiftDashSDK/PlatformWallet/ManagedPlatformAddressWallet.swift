@@ -385,6 +385,93 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         )
     }
 
+    // MARK: - Withdraw
+
+    /// Withdraw this platform-payment account's full credit balance to
+    /// a Core L1 address.
+    ///
+    /// `AddressCreditWithdrawalTransition` consumes the **entire**
+    /// funded balance of every input address it selects — there is no
+    /// change output. We therefore drive the Rust side with
+    /// `INPUT_SELECTION_TYPE_AUTO`, which selects every funded address
+    /// on `accountIndex`, and `DeductFromInput(0)` so the on-chain fee
+    /// comes out of the inputs (not a non-existent change/output row).
+    ///
+    /// `coreAddress` is a base58 Core address (e.g. `yXV…` on testnet,
+    /// `X…` on mainnet). It is parsed **and network-checked on the
+    /// Rust side** against the wallet's own network by
+    /// `platform_address_wallet_withdraw_to_address` — a wrong-network
+    /// address fails fast with a typed error before any signing.
+    ///
+    /// `coreFeePerByte` is the Core L1 fee rate (duffs/byte) used to
+    /// size the eventual L1 payout transaction; `1` is the usual
+    /// default.
+    ///
+    /// The signer must be able to sign for the selected inputs — i.e.
+    /// the `KeychainSigner` resolves their derivation paths via
+    /// SwiftData + the wallet mnemonic (the `0xFF` branch in
+    /// `KeychainSigner.swift`). Pass `KeychainSigner(modelContainer:)`.
+    ///
+    /// Returns the per-address `UpdatedBalance`s the Rust changeset
+    /// reports (each drained input now reads `0`).
+    @discardableResult
+    public func withdraw(
+        accountIndex: UInt32,
+        coreAddress: String,
+        coreFeePerByte: UInt32 = 1,
+        signer: KeychainSigner
+    ) async throws -> [UpdatedBalance] {
+        let trimmed = coreAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw PlatformWalletError.invalidParameter("coreAddress is empty")
+        }
+
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let address = trimmed
+        let feePerByte = coreFeePerByte
+
+        return try await Task.detached(priority: .userInitiated) {
+            () -> [UpdatedBalance] in
+            // Withdrawals consume the full funded balance with no
+            // change output, so the fee is deducted from the inputs.
+            let feeRows: [FeeStrategyStepFFI] = [
+                FeeStrategyStepFFI(step_type: 0, index: 0)  // 0 = DeductFromInput
+            ]
+            var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
+            // `withExtendedLifetime(signer)` pins the resolver-backed
+            // signer for the entire FFI call. Mirrors the
+            // `fundFromAssetLock` wrapper: a bare `_ = signer` can be
+            // elided by the -O optimizer and drop the signer mid-call,
+            // causing a use-after-free in the vtable callback.
+            let result = withExtendedLifetime(signer) {
+                address.withCString { addrCStr in
+                    feeRows.withUnsafeBufferPointer { feeBp in
+                        platform_address_wallet_withdraw_to_address(
+                            handle,
+                            accountIndex,
+                            INPUT_SELECTION_TYPE_AUTO,
+                            nil,
+                            0,
+                            nil,
+                            0,
+                            addrCStr,
+                            feePerByte,
+                            feeBp.baseAddress,
+                            UInt(feeBp.count),
+                            signerHandle,
+                            &changeset
+                        )
+                    }
+                }
+            }
+            try result.check()
+
+            defer { platform_address_wallet_free_changeset(&changeset) }
+            return Self.decodeChangeset(&changeset)
+        }.value
+    }
+
     // MARK: - Fund from Core asset lock
 
     /// Recipient entry for `fundFromAssetLock(...)`.

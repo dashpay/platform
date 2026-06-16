@@ -53,30 +53,6 @@ struct TransitionCategoryView: View {
     var body: some View {
         if category == .address {
             List {
-                NavigationLink(destination: TransferAddressFundsView()) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Transfer Address Funds")
-                            .font(.headline)
-                        Text("Transfer credits between Platform addresses")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(2)
-                    }
-                    .padding(.vertical, 4)
-                }
-
-                NavigationLink(destination: WithdrawAddressFundsView()) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Withdraw Address Funds")
-                            .font(.headline)
-                        Text("Withdraw credits from Platform to Core (L1)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(2)
-                    }
-                    .padding(.vertical, 4)
-                }
-
                 NavigationLink(destination: TopUpAddressFromAssetLockView()) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Top Up Address (Asset Lock)")
@@ -123,6 +99,44 @@ struct TransitionCategoryView: View {
                             .lineLimit(2)
                     }
                     .padding(.vertical, 4)
+                }
+
+                // Debug-only raw (private-key) forms. The production,
+                // wallet-signed equivalents now live off the
+                // `WalletDetailView` Platform Balance row's ⋯ menu:
+                // Transfer Credits (ADDR-02, `TransferPlatformAddressView`)
+                // and Withdraw to Core (ADDR-04,
+                // `WithdrawPlatformAddressView`). These raw forms paste a
+                // 64-char private key and exist only for low-level
+                // debugging / arbitrary-address operations.
+                Section {
+                    NavigationLink(destination: TransferAddressFundsView()) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("🧪 Transfer Address Funds (raw)")
+                                .font(.headline)
+                            Text("Debug-only: transfer credits between Platform addresses using a pasted private key. Production path: Wallet → Platform Balance → ⋯ → Transfer Credits.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(3)
+                        }
+                        .padding(.vertical, 4)
+                    }
+
+                    NavigationLink(destination: WithdrawAddressFundsView()) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("🧪 Withdraw Address Funds (raw)")
+                                .font(.headline)
+                            Text("Debug-only: withdraw credits from Platform to Core (L1) using a pasted private key. Production path: Wallet → Platform Balance → ⋯ → Withdraw to Core.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(3)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                } header: {
+                    Text("Debug / Raw (private-key) forms")
+                } footer: {
+                    Text("These paste a raw 64-char private key and bypass the wallet signer. Use the production sheets off the wallet's Platform Balance row instead.")
                 }
             }
             .navigationTitle(category.rawValue)
