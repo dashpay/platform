@@ -54,8 +54,15 @@ struct TransferPlatformAddressView: View {
     @State private var isSubmitting = false
     @State private var didSucceed = false
 
-    /// 1e11 credits per DASH. Matches `CreateIdentityView`.
-    private static let creditsPerDash: Double = 100_000_000_000.0
+    /// 1e11 credits per DASH. Matches `CreateIdentityView`. Integer so
+    /// the amount→credits conversion is exact — binary floating point
+    /// can't represent every credit value at the 1e11 boundary, and a
+    /// value-transfer path must not round the user's intended amount.
+    private static let creditsPerDash: UInt64 = 100_000_000_000
+    /// Number of fractional decimal digits in one DASH worth of credits
+    /// (1e11 = 11 zeros). Anything finer than 1e-11 DASH is sub-credit
+    /// and rejected rather than truncated.
+    private static let creditFractionDigits = 11
 
     /// Mirror of `ManagedPlatformAddressWallet.feeBuffer` (held back so
     /// the change output survives the on-chain fee). Used here only to
@@ -94,6 +101,10 @@ struct TransferPlatformAddressView: View {
                 )
             }
             .onAppear(perform: autoSelectDefaults)
+            // Block swipe-to-dismiss while a transfer is in flight — only
+            // the (disabled) Cancel button otherwise gates it, so a swipe
+            // could tear the sheet down mid-submit.
+            .interactiveDismissDisabled(isSubmitting)
         }
     }
 
@@ -210,7 +221,8 @@ struct TransferPlatformAddressView: View {
         } footer: {
             if let credits = parsedCredits {
                 let available = selectedSourceAccountCredits
-                if credits + Self.feeBuffer > available {
+                let needed = credits.addingReportingOverflow(Self.feeBuffer)
+                if needed.overflow || needed.partialValue > available {
                     Text("Insufficient balance: \(formatCredits(credits)) + fee exceeds the account's \(formatCredits(available)).")
                         .foregroundColor(.red)
                 } else {
@@ -292,16 +304,39 @@ struct TransferPlatformAddressView: View {
         return platformAccountOptions.first(where: { $0.accountIndex == idx })?.totalCredits ?? 0
     }
 
+    /// Funded addresses on the selected source account for this wallet.
+    /// The `transfer` wrapper picks its inputs from these (balance > 0),
+    /// and the `AddressFundsTransferTransition` protocol forbids any
+    /// output address from also being an input. The wrapper excludes
+    /// recipient hashes from input selection *before* its sufficiency
+    /// check, so a recipient that collides with a funded source input
+    /// would enable the button here, then fail Rust-side once that input
+    /// is removed. Gate on this set so the collision is caught up front.
+    private var sourceInputHashes: Set<Data> {
+        guard let acctIdx = sourceAccountIndex else { return [] }
+        return Set(
+            allPlatformAddresses
+                .filter {
+                    $0.walletId == wallet.walletId
+                        && $0.accountIndex == acctIdx
+                        && $0.balance > 0
+                }
+                .map { $0.addressHash }
+        )
+    }
+
     /// Own-wallet recipients: any address on the wallet that is NOT the
-    /// auto-selected change address and NOT a source-account input that
-    /// holds balance. We surface unused (zero-balance) addresses on any
+    /// auto-selected change address and NOT a funded source-account
+    /// input. We surface unused (zero-balance) addresses on any
     /// platform-payment account so the user can send to a fresh address;
     /// the FFI wrapper rejects a recipient that collides with an input.
     private var ownWalletRecipientCandidates: [PersistentPlatformAddress] {
         let changeHash = autoChangeAddress?.addressHash
+        let inputs = sourceInputHashes
         return allPlatformAddresses
             .filter { $0.walletId == wallet.walletId }
             .filter { $0.addressHash != changeHash }
+            .filter { !inputs.contains($0.addressHash) }
             .sorted { ($0.accountIndex, $0.addressIndex) < ($1.accountIndex, $1.addressIndex) }
     }
 
@@ -340,8 +375,13 @@ struct TransferPlatformAddressView: View {
     private var resolvedDestination: (addressType: UInt8, hash: Data)? {
         switch destinationMode {
         case .ownWallet:
+            // Scope by walletId AND hash: a hash-only lookup can match
+            // another wallet's row in a multi-wallet store and route the
+            // transfer to the wrong wallet's address.
             guard let hash = selectedRecipientHash,
-                let row = allPlatformAddresses.first(where: { $0.addressHash == hash })
+                let row = allPlatformAddresses.first(where: {
+                    $0.walletId == wallet.walletId && $0.addressHash == hash
+                })
             else { return nil }
             return (row.addressType, row.addressHash)
         case .external:
@@ -351,12 +391,45 @@ struct TransferPlatformAddressView: View {
         }
     }
 
+    /// Exact decimal→credits conversion. The amount is a value-transfer
+    /// quantity, so it must NOT pass through `Double` (binary FP can't
+    /// represent every credit value at the 1e11 boundary and would round
+    /// the user's intended amount). Parse the decimal string directly:
+    /// split on ".", require digits only, ≤11 fractional digits, then
+    /// `whole * 1e11 + fractionalPaddedTo11` with overflow rejection.
+    /// Returns nil for any malformed / zero / overflowing input.
     private var parsedCredits: UInt64? {
         let raw = amountDash.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let dash = Double(raw), dash > 0 else { return nil }
-        let creditsDouble = dash * Self.creditsPerDash
-        guard creditsDouble.isFinite, creditsDouble <= Double(UInt64.max) else { return nil }
-        return UInt64(creditsDouble.rounded(.toNearestOrAwayFromZero))
+        guard !raw.isEmpty else { return nil }
+
+        let parts = raw.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count <= 2 else { return nil }
+        let wholeStr = String(parts.first ?? "")
+        let fracStr = parts.count == 2 ? String(parts[1]) : ""
+
+        // Reject empty/sign/non-digit components. An empty whole part is
+        // allowed only when there's a fractional part (".5" → "0.5").
+        guard wholeStr.allSatisfy(\.isNumber), fracStr.allSatisfy(\.isNumber) else { return nil }
+        guard !(wholeStr.isEmpty && fracStr.isEmpty) else { return nil }
+        guard fracStr.count <= Self.creditFractionDigits else { return nil }
+
+        let whole = wholeStr.isEmpty ? 0 : UInt64(wholeStr)
+        guard wholeStr.isEmpty || whole != nil else { return nil }
+
+        // whole * 1e11
+        let scaled = (whole ?? 0).multipliedReportingOverflow(by: Self.creditsPerDash)
+        guard !scaled.overflow else { return nil }
+
+        // Pad the fractional part to 11 digits so it expresses credits
+        // directly, then add. (".5" → "50000000000" credits.)
+        let paddedFrac = fracStr.padding(
+            toLength: Self.creditFractionDigits, withPad: "0", startingAt: 0
+        )
+        guard let fracCredits = paddedFrac.isEmpty ? 0 : UInt64(paddedFrac) else { return nil }
+
+        let total = scaled.partialValue.addingReportingOverflow(fracCredits)
+        guard !total.overflow, total.partialValue > 0 else { return nil }
+        return total.partialValue
     }
 
     private var canSubmit: Bool {
@@ -370,6 +443,11 @@ struct TransferPlatformAddressView: View {
         // Reject change-address / recipient collision up front (the
         // wrapper rejects it too, but a dead button is worse UX).
         if dest.hash == autoChangeAddress?.addressHash { return false }
+        // Reject a recipient that collides with a funded source input.
+        // The wrapper drops it from input selection before its
+        // sufficiency check, so the button would enable then fail
+        // Rust-side. Covers both own-wallet picks and pasted externals.
+        if sourceInputHashes.contains(dest.hash) { return false }
         // Gate on amount + fee buffer <= account balance.
         let needed = credits.addingReportingOverflow(Self.feeBuffer)
         if needed.overflow { return false }
@@ -409,6 +487,13 @@ struct TransferPlatformAddressView: View {
             return
         }
 
+        guard !sourceInputHashes.contains(dest.hash) else {
+            submitError = SubmitError(
+                message: "The destination is a funded address on the source account, which the transfer uses as an input. Pick a different recipient."
+            )
+            return
+        }
+
         let managedHolder = walletManager.wallet(for: wallet.walletId)
         guard let managedHolder else {
             submitError = SubmitError(message: "Wallet handle not found in the wallet manager.")
@@ -439,12 +524,17 @@ struct TransferPlatformAddressView: View {
         Task {
             defer { isSubmitting = false }
             do {
-                _ = try await addressWallet.transfer(
+                let updated = try await addressWallet.transfer(
                     accountIndex: sourceAccount,
                     outputs: outputs,
                     changeAddress: changeAddress,
                     signer: signer
                 )
+                // Persist the post-transfer balances Rust reported BEFORE
+                // the resync so SwiftData doesn't show spent inputs as
+                // spendable in the gap before `performSync()` catches up.
+                // Mirrors the BLAST persister callback's upsert shape.
+                persistUpdatedBalances(updated)
                 // Trigger a DIP-17 resync so balances + the unused-
                 // address pool catch up after the transfer.
                 await platformBalanceSyncService.performSync()
@@ -455,10 +545,40 @@ struct TransferPlatformAddressView: View {
         }
     }
 
+    /// Apply the per-address `UpdatedBalance`s from a transfer's Rust
+    /// changeset to the matching `PersistentPlatformAddress` rows. Scoped
+    /// to this wallet and matched by 20-byte `addressHash`, mirroring the
+    /// BLAST `persistAddressBalances` callback so the row state is
+    /// consistent whether it lands from here or from the next sync round.
+    private func persistUpdatedBalances(
+        _ updated: [ManagedPlatformAddressWallet.UpdatedBalance]
+    ) {
+        guard !updated.isEmpty else { return }
+        let walletId = wallet.walletId
+        for entry in updated {
+            let hash = entry.hash
+            let descriptor = FetchDescriptor<PersistentPlatformAddress>(
+                predicate: #Predicate {
+                    $0.walletId == walletId && $0.addressHash == hash
+                }
+            )
+            guard let row = try? modelContext.fetch(descriptor).first else { continue }
+            row.balance = entry.balance
+            row.nonce = entry.nonce
+            if entry.balance > 0 || entry.nonce > 0 {
+                row.isUsed = true
+            }
+            row.lastUpdated = Date()
+        }
+        try? modelContext.save()
+    }
+
     // MARK: - Helpers
 
     private func formatCredits(_ credits: UInt64) -> String {
-        let dash = Double(credits) / Self.creditsPerDash
+        // Display only — the Double divide here never feeds a transfer
+        // amount, so the FP imprecision the parse path avoids is fine.
+        let dash = Double(credits) / Double(Self.creditsPerDash)
         return String(format: "%.6f DASH", dash)
     }
 

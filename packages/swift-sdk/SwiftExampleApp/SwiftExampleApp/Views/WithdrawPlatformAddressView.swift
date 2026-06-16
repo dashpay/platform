@@ -61,6 +61,14 @@ struct WithdrawPlatformAddressView: View {
 
     private static let creditsPerDash: Double = 100_000_000_000.0
 
+    /// Upper bound on the Core L1 fee rate (duffs/byte). The normal rate
+    /// is 1; even heavy congestion rarely exceeds a few hundred. Because a
+    /// withdrawal is full-balance with the fee deducted from inputs, a
+    /// fat-fingered rate could eat the entire payout, so we cap well above
+    /// any legitimate manual override (10_000 = 10,000× the default) while
+    /// still rejecting obviously destructive values.
+    private static let maxFeePerByte: UInt32 = 10_000
+
     var body: some View {
         NavigationStack {
             Form {
@@ -101,6 +109,10 @@ struct WithdrawPlatformAddressView: View {
             .onChange(of: destinationMode) { _, mode in
                 if mode == .myWallet { resolveMyWalletAddress() }
             }
+            // Block swipe-to-dismiss while a withdrawal is in flight —
+            // only the (disabled) Cancel button otherwise gates it, so a
+            // swipe could tear the sheet down mid-submit.
+            .interactiveDismissDisabled(isSubmitting)
         }
     }
 
@@ -224,7 +236,13 @@ struct WithdrawPlatformAddressView: View {
         } header: {
             Text("Core Fee Rate")
         } footer: {
-            Text("Fee rate for the eventual L1 payout transaction. Default is 1.")
+            if !coreFeePerByte.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && parsedFeePerByte == nil {
+                Text("Enter a whole number between 1 and \(Self.maxFeePerByte) duffs/byte. A higher rate would eat the withdrawal, since the fee is deducted from the payout.")
+                    .foregroundColor(.red)
+            } else {
+                Text("Fee rate for the eventual L1 payout transaction. Default is 1.")
+            }
         }
     }
 
@@ -315,7 +333,7 @@ struct WithdrawPlatformAddressView: View {
 
     private var parsedFeePerByte: UInt32? {
         let raw = coreFeePerByte.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let v = UInt32(raw), v > 0 else { return nil }
+        guard let v = UInt32(raw), v > 0, v <= Self.maxFeePerByte else { return nil }
         return v
     }
 
@@ -415,18 +433,52 @@ struct WithdrawPlatformAddressView: View {
         Task {
             defer { isSubmitting = false }
             do {
-                _ = try await addressWallet.withdraw(
+                let updated = try await addressWallet.withdraw(
                     accountIndex: sourceAccount,
                     coreAddress: coreAddress,
                     coreFeePerByte: feePerByte,
                     signer: signer
                 )
+                // Persist the drained balances Rust just reported BEFORE
+                // the resync so SwiftData stops showing the consumed
+                // inputs as spendable in the gap before `performSync()`
+                // catches up. Mirrors the BLAST persister callback's
+                // upsert shape (`persistAddressBalances`).
+                persistUpdatedBalances(updated)
                 await platformBalanceSyncService.performSync()
                 didSucceed = true
             } catch {
                 submitError = SubmitError(message: error.localizedDescription)
             }
         }
+    }
+
+    /// Apply the per-address `UpdatedBalance`s from a withdrawal's Rust
+    /// changeset to the matching `PersistentPlatformAddress` rows. Scoped
+    /// to this wallet and matched by 20-byte `addressHash`, mirroring the
+    /// BLAST `persistAddressBalances` callback so the row state is
+    /// consistent whether it lands from here or from the next sync round.
+    private func persistUpdatedBalances(
+        _ updated: [ManagedPlatformAddressWallet.UpdatedBalance]
+    ) {
+        guard !updated.isEmpty else { return }
+        let walletId = wallet.walletId
+        for entry in updated {
+            let hash = entry.hash
+            let descriptor = FetchDescriptor<PersistentPlatformAddress>(
+                predicate: #Predicate {
+                    $0.walletId == walletId && $0.addressHash == hash
+                }
+            )
+            guard let row = try? modelContext.fetch(descriptor).first else { continue }
+            row.balance = entry.balance
+            row.nonce = entry.nonce
+            if entry.balance > 0 || entry.nonce > 0 {
+                row.isUsed = true
+            }
+            row.lastUpdated = Date()
+        }
+        try? modelContext.save()
     }
 
     // MARK: - Helpers
