@@ -426,8 +426,18 @@ fn reserve_withdrawal_fee_on_largest_input(
     // preserved; only the withdraw amount on the fee-source input shrinks.
     selected.insert(fee_source_addr, fee_source_amount);
 
+    // The fee-strategy index is a u16; guard the narrowing so a pathological
+    // input count (> u16::MAX) errors instead of silently wrapping to the
+    // wrong fee-source input.
+    let fee_source_index_u16: u16 = fee_source_index.try_into().map_err(|_| {
+        PlatformWalletError::AddressOperation(format!(
+            "Too many withdrawal inputs: fee-source index {} exceeds u16::MAX",
+            fee_source_index
+        ))
+    })?;
+
     let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(
-        fee_source_index as u16,
+        fee_source_index_u16,
     )];
 
     Ok((selected, fee_strategy))
