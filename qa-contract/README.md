@@ -23,7 +23,7 @@ so the ID changes when the contract is re-registered (see
 
 | | |
 |---|---|
-| Contract ID | `4PtPYwYJcjuPXgKigkficzcrpKLG9yucqkNKKK9UVmiv` |
+| Contract ID | `67ctgcKJgCs7U4hhAxGj1QQUVq15xkkvMk88CT2AbjCF` |
 | Owner (QA identity) | `85KjYZLZXA7YZBPyFEjiMaH36xcQpBBZisKGBHF3uKuH` |
 | Network | testnet |
 
@@ -31,14 +31,10 @@ so the ID changes when the contract is re-registered (see
 > registration with a new id. Consumers pinned to an older id must re-pin.
 > History: `2qEVUbg4znNgNRs3FJQ4kof4NKpB8q4fGtYa7qBouLzw` (v1) →
 > `2gevmsNEaWnWQURQpuWeN5QnLfC2ufrZG4SXkVMqeUgZ` (v2: integer `network` +
-> `$ownerId` testRun indices) → **deployed** (v3: normalized `app`/`tier`/`category`
-> lookup types with integer foreign keys, `(testId, app)` unique).
->
-> The committed schema additionally carries hardening (non-deletable lookup rows,
-> `result` enum, `network` `0..3`, and a dropped redundant `ownerAppTestNetwork`
-> index) that **post-dates the deployed v3 contract** and lands at the next
-> re-registration; `register.mjs` refuses a no-op re-run while this drift exists
-> (run with `--force` to publish it as the next contract).
+> `$ownerId` testRun indices) → `4PtPYwYJcjuPXgKigkficzcrpKLG9yucqkNKKK9UVmiv`
+> (v3: normalized `app`/`tier`/`category` lookup types with integer foreign keys,
+> `(testId, app)` unique) → **current** (v4: hardening — non-deletable lookup rows,
+> `result` enum, `network` `0..3`, redundant `ownerAppTestNetwork` index dropped).
 
 ```jsonc
 // contract-id.testnet.json (shape)
