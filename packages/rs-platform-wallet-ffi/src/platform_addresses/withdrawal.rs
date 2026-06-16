@@ -133,37 +133,46 @@ pub unsafe extern "C" fn platform_address_wallet_withdraw_to_address(
     // non-destroyed handle that outlives this call.
     let address_signer: &VTableSigner = &*(signer_address_handle as *const VTableSigner);
 
+    // The closure returns a typed `PlatformWalletFFIResult` on the error
+    // side so the network-mismatch case can surface as the dedicated
+    // `ErrorInvalidNetwork` code instead of flattening to `ErrorUnknown`
+    // via the blanket `From<PlatformWalletError>` impl. The withdraw
+    // error still routes through that blanket conversion (`.into()`),
+    // preserving its per-variant code mapping.
     let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
         // Network check: reject an address that doesn't belong to the
         // wallet's network before any signing or submission happens.
         // Mirrors the `require_network` precedent used elsewhere in the
-        // FFI for Core-address handling. `dashcore::address::Error` has
-        // no `From` impl on `PlatformWalletError`, so map it into the
-        // typed `AddressOperation` variant the rest of this path uses.
+        // FFI for Core-address handling. `require_network` consumes the
+        // unchecked address, which isn't reused afterwards.
         let checked_address = unchecked_address
-            .clone()
             .require_network(wallet.network())
             .map_err(|e| {
-                platform_wallet::PlatformWalletError::AddressOperation(format!(
-                    "Core address is not valid for the wallet's network ({:?}): {e}",
-                    wallet.network()
-                ))
+                PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidNetwork,
+                    format!(
+                        "Core address is not valid for the wallet's network ({:?}): {e}",
+                        wallet.network()
+                    ),
+                )
             })?;
         let core_script = CoreScript::new(checked_address.script_pubkey());
-        runtime().block_on(wallet.withdraw(
-            account_index,
-            input_selection,
-            core_script,
-            core_fee_per_byte,
-            fee,
-            None,
-            address_signer,
-        ))
+        runtime()
+            .block_on(wallet.withdraw(
+                account_index,
+                input_selection,
+                core_script,
+                core_fee_per_byte,
+                fee,
+                None,
+                address_signer,
+            ))
+            .map_err(PlatformWalletFFIResult::from)
     });
+    // `result` is `Result<PlatformAddressChangeSet, PlatformWalletFFIResult>`:
+    // a network mismatch is already a typed `ErrorInvalidNetwork` result,
+    // any other withdraw failure is the blanket-mapped wallet error.
     let result = unwrap_option_or_return!(option);
-    // `result` is `Result<PlatformAddressChangeSet, PlatformWalletError>`
-    // where the address-network failure surfaces as a
-    // `dashcore::address::Error` widened into `PlatformWalletError`.
     let changeset = unwrap_result_or_return!(result);
     *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);
     PlatformWalletFFIResult::ok()
