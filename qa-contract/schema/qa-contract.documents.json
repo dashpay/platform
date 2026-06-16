@@ -117,10 +117,30 @@
     "creationRestrictionMode": 1,
     "indices": [
       {
-        "name": "testIdCreatedAt",
+        "name": "ownerTestNetwork",
         "properties": [
           {
+            "$ownerId": "asc"
+          },
+          {
             "testId": "asc"
+          },
+          {
+            "network": "asc"
+          }
+        ]
+      },
+      {
+        "name": "ownerTestNetworkCreated",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "testId": "asc"
+          },
+          {
+            "network": "asc"
           },
           {
             "$createdAt": "asc"
@@ -128,8 +148,14 @@
         ]
       },
       {
-        "name": "resultCreatedAt",
+        "name": "ownerTestResultCreated",
         "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "testId": "asc"
+          },
           {
             "result": "asc"
           },
@@ -139,10 +165,27 @@
         ]
       },
       {
-        "name": "buildRef",
+        "name": "ownerTestCreated",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "testId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "buildRefOwner",
         "properties": [
           {
             "buildRef": "asc"
+          },
+          {
+            "$ownerId": "asc"
           }
         ]
       }
@@ -163,11 +206,10 @@
         "description": "Outcome. One of: pass, fail, blocked, skipped."
       },
       "network": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 32,
+        "type": "integer",
+        "minimum": 0,
         "position": 2,
-        "description": "Network the run executed against (e.g. testnet, devnet)."
+        "description": "Network id the run executed against: 0=mainnet, 1=testnet, 2=devnet, 3=regtest."
       },
       "buildRef": {
         "type": "string",

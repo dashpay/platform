@@ -56,6 +56,18 @@ export function getNetwork() {
   return (process.env.NETWORK || 'testnet').toLowerCase();
 }
 
+// Canonical network id (matches the SDK/app Network enum): mainnet=0, testnet=1,
+// devnet=2, regtest=3. `local` (dashmate) maps to regtest. Used for the integer
+// `network` field on testRun documents.
+export const NETWORK_IDS = {
+  mainnet: 0, testnet: 1, devnet: 2, regtest: 3, local: 3,
+};
+export function networkId(name = getNetwork()) {
+  const id = NETWORK_IDS[String(name).toLowerCase()];
+  if (id === undefined) throw new Error(`Unknown network '${name}' (expected one of ${Object.keys(NETWORK_IDS).join(', ')}).`);
+  return id;
+}
+
 // Connect a trusted SDK (trusted mode is required so state-transition responses
 // are proof-verified). Returns { sdk, mod, network }.
 export async function connect() {

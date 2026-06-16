@@ -11,7 +11,7 @@
 import { parseArgs } from 'node:util';
 import { randomBytes } from 'node:crypto';
 import {
-  loadDotEnv, connect, loadOwnerAuth, readConfig,
+  loadDotEnv, connect, loadOwnerAuth, readConfig, networkId,
 } from './sdk.mjs';
 
 const RESULTS = ['pass', 'fail', 'blocked', 'skipped'];
@@ -52,7 +52,9 @@ async function main() {
 
   const { ownerId, signer, identityKey } = await loadOwnerAuth(sdk, mod, network);
 
-  const properties = { testId, result, network, buildRef };
+  const properties = {
+    testId, result, network: networkId(network), buildRef,
+  };
   if (values.device) properties.device = values.device;
   if (values.evidence) properties.evidence = values.evidence;
   if (values.notes) properties.notes = values.notes;

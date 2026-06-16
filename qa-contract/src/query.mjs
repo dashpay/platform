@@ -5,13 +5,18 @@
 //   node src/query.mjs                       # self-check: exercises every index
 //   node src/query.mjs --type testCase --tier Essential
 //   node src/query.mjs --type testCase --category Identity --limit 5
-//   node src/query.mjs --type testRun --testId CORE-05
-//   node src/query.mjs --type testRun --result pass
+//   node src/query.mjs --type testRun --testId CORE-05            # owner+test, newest first
+//   node src/query.mjs --type testRun --testId CORE-05 --result pass
+//   node src/query.mjs --type testRun --testId CORE-05 --network testnet
 //   node src/query.mjs --type testRun --buildRef 45fdf33901
 //   add --proof to fetch with a verified Platform proof, --json for raw output.
+//   testRun indices are $ownerId-prefixed, so non-buildRef queries scope to the
+//   contract owner (read from contract-id.<network>.json) and need a --testId.
 
 import { parseArgs } from 'node:util';
-import { loadDotEnv, connect, readConfig } from './sdk.mjs';
+import {
+  loadDotEnv, connect, readConfig, networkId,
+} from './sdk.mjs';
 
 function toPlain(map) {
   const out = [];
@@ -34,55 +39,70 @@ function printDocs(label, docs, fields) {
   }
 }
 
-async function selfCheck(sdk, contractId, limit, proof) {
+async function selfCheck(sdk, contractId, ownerId, netId, limit, proof) {
   console.log('Index self-check — each query below requires the named index to succeed.\n');
 
-  // testCase.testId (unique)
+  // --- testCase indices: testId (unique), tier, category ---
   let docs = await run(sdk, {
     dataContractId: contractId, documentTypeName: 'testCase',
     where: [['testId', '==', 'CORE-05']], limit: 1,
   }, proof);
   printDocs("testCase index 'testId'  where testId == CORE-05", docs, ['testId', 'title', 'tier', 'implStatus']);
 
-  // testCase.tier
   docs = await run(sdk, {
     dataContractId: contractId, documentTypeName: 'testCase',
     where: [['tier', '==', 'Essential']], orderBy: [['tier', 'asc']], limit,
   }, proof);
   printDocs("testCase index 'tier'  where tier == Essential", docs, ['testId', 'tier', 'category']);
 
-  // testCase.category
   docs = await run(sdk, {
     dataContractId: contractId, documentTypeName: 'testCase',
     where: [['category', '==', 'Identity']], orderBy: [['category', 'asc']], limit,
   }, proof);
   printDocs("testCase index 'category'  where category == Identity", docs, ['testId', 'category', 'tier']);
 
-  // testRun.testIdCreatedAt
+  // --- testRun indices (all $ownerId-prefixed) ---
+  const trFields = ['testId', 'result', 'network', 'buildRef', 'createdAt'];
+
+  // ownerTestNetwork: $ownerId, testId, network
   docs = await run(sdk, {
     dataContractId: contractId, documentTypeName: 'testRun',
-    where: [['testId', '==', 'CORE-05']], orderBy: [['$createdAt', 'desc']], limit,
+    where: [['$ownerId', '==', ownerId], ['testId', '==', 'CORE-05'], ['network', '==', netId]], limit,
   }, proof);
-  printDocs("testRun index 'testIdCreatedAt'  where testId == CORE-05 order $createdAt desc", docs,
-    ['testId', 'result', 'buildRef', 'createdAt']);
+  printDocs(`testRun index 'ownerTestNetwork'  $ownerId==owner, testId==CORE-05, network==${netId}`, docs, trFields);
 
-  // testRun.resultCreatedAt
+  // ownerTestNetworkCreated: $ownerId, testId, network, $createdAt
   docs = await run(sdk, {
     dataContractId: contractId, documentTypeName: 'testRun',
-    where: [['result', '==', 'pass']], orderBy: [['$createdAt', 'desc']], limit,
+    where: [['$ownerId', '==', ownerId], ['testId', '==', 'CORE-05'], ['network', '==', netId]],
+    orderBy: [['$createdAt', 'desc']], limit,
   }, proof);
-  printDocs("testRun index 'resultCreatedAt'  where result == pass order $createdAt desc", docs,
-    ['testId', 'result', 'buildRef']);
+  printDocs("testRun index 'ownerTestNetworkCreated'  + order $createdAt desc", docs, trFields);
 
-  // testRun.buildRef
+  // ownerTestResultCreated: $ownerId, testId, result, $createdAt
   docs = await run(sdk, {
     dataContractId: contractId, documentTypeName: 'testRun',
-    where: [['buildRef', '==', '45fdf33901']], limit,
+    where: [['$ownerId', '==', ownerId], ['testId', '==', 'CORE-05'], ['result', '==', 'pass']],
+    orderBy: [['$createdAt', 'desc']], limit,
   }, proof);
-  printDocs("testRun index 'buildRef'  where buildRef == 45fdf33901", docs,
-    ['testId', 'result', 'buildRef']);
+  printDocs("testRun index 'ownerTestResultCreated'  $ownerId==owner, testId==CORE-05, result==pass order $createdAt desc", docs, trFields);
 
-  console.log('\n✅ All 6 indexed queries returned without error — indices are valid.');
+  // ownerTestCreated: $ownerId, testId, $createdAt
+  docs = await run(sdk, {
+    dataContractId: contractId, documentTypeName: 'testRun',
+    where: [['$ownerId', '==', ownerId], ['testId', '==', 'CORE-05']],
+    orderBy: [['$createdAt', 'desc']], limit,
+  }, proof);
+  printDocs("testRun index 'ownerTestCreated'  $ownerId==owner, testId==CORE-05 order $createdAt desc", docs, trFields);
+
+  // buildRefOwner: buildRef, $ownerId
+  docs = await run(sdk, {
+    dataContractId: contractId, documentTypeName: 'testRun',
+    where: [['buildRef', '==', '45fdf33901'], ['$ownerId', '==', ownerId]], limit,
+  }, proof);
+  printDocs("testRun index 'buildRefOwner'  buildRef==45fdf33901, $ownerId==owner", docs, trFields);
+
+  console.log('\n✅ All 8 indexed queries returned without error — indices are valid.');
 }
 
 async function main() {
@@ -94,6 +114,7 @@ async function main() {
       tier: { type: 'string' },
       category: { type: 'string' },
       result: { type: 'string' },
+      network: { type: 'string' },
       buildRef: { type: 'string' },
       limit: { type: 'string', default: '50' },
       proof: { type: 'boolean', default: false },
@@ -109,9 +130,11 @@ async function main() {
   const cfg = readConfig(network);
   if (!cfg?.contractId) throw new Error(`No contract registered for ${network}. Run register.mjs first.`);
   const contractId = cfg.contractId;
+  const ownerId = cfg.ownerId;
+  const netId = networkId(network);
   console.log(`Connected to ${network}. Contract ${contractId}${values.proof ? ' (proof-verified)' : ''}.`);
 
-  if (!values.type) { await selfCheck(sdk, contractId, limit, values.proof); return; }
+  if (!values.type) { await selfCheck(sdk, contractId, ownerId, netId, limit, values.proof); return; }
 
   const where = []; const orderBy = [];
   if (values.type === 'testCase') {
@@ -119,9 +142,19 @@ async function main() {
     if (values.tier) { where.push(['tier', '==', values.tier]); orderBy.push(['tier', 'asc']); }
     if (values.category) { where.push(['category', '==', values.category]); orderBy.push(['category', 'asc']); }
   } else if (values.type === 'testRun') {
-    if (values.testId) { where.push(['testId', '==', values.testId]); orderBy.push(['$createdAt', 'desc']); }
-    if (values.result) { where.push(['result', '==', values.result]); orderBy.push(['$createdAt', 'desc']); }
-    if (values.buildRef) where.push(['buildRef', '==', values.buildRef]);
+    // testRun indices are $ownerId-prefixed (except buildRefOwner). Query by buildRef
+    // alone uses buildRefOwner; otherwise scope to the owner + testId per the
+    // owner/test/{network,result}/$createdAt indices.
+    if (values.buildRef) {
+      where.push(['buildRef', '==', values.buildRef]);
+      if (ownerId) where.push(['$ownerId', '==', ownerId]);
+    } else {
+      if (ownerId) where.push(['$ownerId', '==', ownerId]);
+      if (values.testId) where.push(['testId', '==', values.testId]);
+      if (values.network) where.push(['network', '==', networkId(values.network)]);
+      if (values.result) where.push(['result', '==', values.result]);
+      orderBy.push(['$createdAt', 'desc']);
+    }
   } else {
     throw new Error("--type must be 'testCase' or 'testRun'.");
   }

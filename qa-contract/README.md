@@ -23,9 +23,13 @@ so the ID changes when the contract is re-registered (see
 
 | | |
 |---|---|
-| Contract ID | `2qEVUbg4znNgNRs3FJQ4kof4NKpB8q4fGtYa7qBouLzw` |
+| Contract ID | `2gevmsNEaWnWQURQpuWeN5QnLfC2ufrZG4SXkVMqeUgZ` |
 | Owner (QA identity) | `85KjYZLZXA7YZBPyFEjiMaH36xcQpBBZisKGBHF3uKuH` |
 | Network | testnet |
+
+> Supersedes the initial contract `2qEVUbg4znNgNRs3FJQ4kof4NKpB8q4fGtYa7qBouLzw`
+> (re-registered with an integer `network` field and `$ownerId`-prefixed testRun
+> indices). Consumers pinned to the old id must re-pin to the one above.
 
 ```jsonc
 // contract-id.testnet.json (shape)
@@ -71,7 +75,7 @@ Two document types (full schema in
 |---|---|---|
 | `testId` | string (≤32) | matches `testCase.testId`. **Indexed (compound).** |
 | `result` | string (≤16) | `pass` / `fail` / `blocked` / `skipped`. **Indexed (compound).** |
-| `network` | string (≤32) | network the run executed against |
+| `network` | integer | network id: `0`=mainnet, `1`=testnet, `2`=devnet, `3`=regtest. **Indexed (compound).** |
 | `buildRef` | string (≤63) | build under test (commit/branch/build no.). **Indexed.** |
 | `device` | string (≤128) | device / simulator |
 | `evidence` | string (≤512) | txid / on-chain id / screenshot path / URL |
@@ -79,9 +83,14 @@ Two document types (full schema in
 | `blockerReason` | string (≤512) | why blocked/skipped |
 | `$createdAt` | system | **run time**, stamped by the platform; required + indexed |
 
-- Indices: `testIdCreatedAt` (`testId`, `$createdAt`) · `resultCreatedAt`
-  (`result`, `$createdAt`) · `buildRef`. "Most recent run first" is done at query
-  time with `orderBy [['$createdAt','desc']]` (see below).
+- Indices (all `asc`; `$ownerId`-prefixed so runs are queried per submitter — sets
+  up v2 multi-submitter):
+  - `ownerTestNetwork` — `$ownerId`, `testId`, `network`
+  - `ownerTestNetworkCreated` — `$ownerId`, `testId`, `network`, `$createdAt`
+  - `ownerTestResultCreated` — `$ownerId`, `testId`, `result`, `$createdAt`
+  - `ownerTestCreated` — `$ownerId`, `testId`, `$createdAt`
+  - `buildRefOwner` — `buildRef`, `$ownerId`
+- "Most recent run first" is done at query time with `orderBy [['$createdAt','desc']]`.
 - **Immutable + non-deletable** (`documentsMutable: false`, `canBeDeleted: false`):
   it is an audit log. `additionalProperties: false`.
 
