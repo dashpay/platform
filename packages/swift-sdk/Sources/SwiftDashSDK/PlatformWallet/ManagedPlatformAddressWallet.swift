@@ -445,20 +445,24 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
 
     // MARK: - Withdraw
 
-    /// Withdraw this platform-payment account's credit balance to a Core
-    /// L1 address (less the transition fee).
+    /// Withdraw this platform-payment account's withdrawable credit
+    /// balance to a Core L1 address (less the transition fee).
     ///
     /// `AddressCreditWithdrawalTransition` has no change output, so the
     /// on-chain fee is deducted from the inputs. We drive the Rust side
-    /// with `INPUT_SELECTION_TYPE_AUTO`, which selects every funded
-    /// address on `accountIndex`, and `DeductFromInput(0)` so the fee
-    /// comes out of the fee-source input. The Rust auto-selector reserves
-    /// the estimated fee on that input (the lexicographically-smallest
-    /// address, which `DeductFromInput(0)` resolves to) — it withdraws
-    /// `balance − estimated_fee` there and the full balance from every
-    /// other input. Without that reservation a full-balance withdraw would
-    /// leave zero remaining on the fee-source input and the chain would
-    /// reject the transition with `fee_fully_covered = false`.
+    /// with `INPUT_SELECTION_TYPE_AUTO`, which on `accountIndex` selects
+    /// every funded address whose balance clears the per-input minimum
+    /// (sub-minimum "dust" addresses are skipped so they can't sink the
+    /// whole transition) and **owns its own fee strategy**: it picks the
+    /// largest-balance selected input as the fee source and emits the
+    /// matching `DeductFromInput(<that input's index>)`, ignoring whatever
+    /// fee strategy the caller passes. We therefore pass an empty strategy
+    /// here — anything we passed would be discarded. The auto-selector
+    /// withdraws `balance − estimated_fee` from the fee-source input and
+    /// the full balance from every other input; without that reservation a
+    /// full-balance withdraw would leave zero remaining on the fee-source
+    /// input and the chain would reject the transition with
+    /// `fee_fully_covered = false`.
     ///
     /// `coreAddress` is a base58 Core address (e.g. `yXV…` on testnet,
     /// `X…` on mainnet). It is parsed **and network-checked on the
@@ -489,6 +493,15 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         guard !trimmed.isEmpty else {
             throw PlatformWalletError.invalidParameter("coreAddress is empty")
         }
+        // A Swift String can carry an embedded NUL that survives into the
+        // `withCString` buffer; Rust's `CStr::from_ptr(...).to_str()` stops
+        // at the first NUL, so `valid\0suffix` would withdraw to `valid`
+        // while the Swift value differs. Reject it before it can diverge.
+        guard !trimmed.utf8.contains(0) else {
+            throw PlatformWalletError.invalidParameter(
+                "coreAddress contains an embedded NUL byte"
+            )
+        }
 
         let handle = self.handle
         let signerHandle = signer.handle
@@ -497,13 +510,10 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
 
         return try await Task.detached(priority: .userInitiated) {
             () -> [UpdatedBalance] in
-            // Withdrawals have no change output, so the fee is deducted
-            // from the inputs. The Rust auto-selector reserves the
-            // estimated fee on the index-0 (fee-source) input so the chain
-            // can cover it; see this wrapper's doc comment.
-            let feeRows: [FeeStrategyStepFFI] = [
-                FeeStrategyStepFFI(step_type: 0, index: 0)  // 0 = DeductFromInput
-            ]
+            // The AUTO path owns its own fee strategy (largest-balance
+            // input as the fee source) and ignores the caller's, so we
+            // pass an empty strategy (`nil, 0`); see this wrapper's doc
+            // comment.
             var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
             // `withExtendedLifetime(signer)` pins the resolver-backed
             // signer for the entire FFI call. Mirrors the
@@ -512,23 +522,21 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
             // causing a use-after-free in the vtable callback.
             let result = withExtendedLifetime(signer) {
                 address.withCString { addrCStr in
-                    feeRows.withUnsafeBufferPointer { feeBp in
-                        platform_address_wallet_withdraw_to_address(
-                            handle,
-                            accountIndex,
-                            INPUT_SELECTION_TYPE_AUTO,
-                            nil,
-                            0,
-                            nil,
-                            0,
-                            addrCStr,
-                            feePerByte,
-                            feeBp.baseAddress,
-                            UInt(feeBp.count),
-                            signerHandle,
-                            &changeset
-                        )
-                    }
+                    platform_address_wallet_withdraw_to_address(
+                        handle,
+                        accountIndex,
+                        INPUT_SELECTION_TYPE_AUTO,
+                        nil,
+                        0,
+                        nil,
+                        0,
+                        addrCStr,
+                        feePerByte,
+                        nil,
+                        0,
+                        signerHandle,
+                        &changeset
+                    )
                 }
             }
             try result.check()

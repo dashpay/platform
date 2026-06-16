@@ -302,9 +302,16 @@ struct TransferPlatformAddressView: View {
             .filter { $0.accountType == 14 && $0.keyClass == 0 }
             .sorted { $0.accountIndex < $1.accountIndex }
         return accounts.map { acct in
+            // Sum only addresses whose parent account is key class 0
+            // (`account?.keyClass == 0`). Rust spends the key-class-0
+            // account at this index, so summing every row at `accountIndex`
+            // regardless of key class would inflate the total and let
+            // `canSubmit` promise more than Rust will spend.
             let total = allPlatformAddresses
                 .filter {
-                    $0.walletId == wallet.walletId && $0.accountIndex == acct.accountIndex
+                    $0.walletId == wallet.walletId
+                        && $0.accountIndex == acct.accountIndex
+                        && $0.account?.keyClass == 0
                 }
                 .reduce(into: UInt64(0)) { acc, addr in acc &+= addr.balance }
             return PlatformAccountOption(accountIndex: acct.accountIndex, totalCredits: total)

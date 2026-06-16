@@ -173,7 +173,22 @@ impl PlatformAddressWallet {
         Ok(cs)
     }
 
-    /// Auto-select all funded addresses for withdrawal.
+    /// Auto-select the withdrawable funded addresses for withdrawal.
+    ///
+    /// Only addresses whose balance reaches `min_input_amount` are selected:
+    /// DPP's `AddressCreditWithdrawalTransition` v0 validator rejects the
+    /// *entire* transition if any input amount is below
+    /// `platform_version.dpp.state_transitions.address_funds.min_input_amount`
+    /// (see `InputBelowMinimumError` in
+    /// `address_credit_withdrawal_transition/v0/state_transition_validation.rs`),
+    /// so a single sub-minimum "dust" address would otherwise fail an
+    /// otherwise-fundable withdrawal. The auto path therefore withdraws the
+    /// full *withdrawable* (≥ `min_input_amount`) balance, NOT literally every
+    /// credit — sub-minimum dust is left in place. This mirrors the transfer
+    /// path's `build_auto_select_candidates`, which applies the same filter.
+    /// When every funded address is dust we return a typed
+    /// [`PlatformWalletError::OnlyDustInputs`], matching the transfer path's
+    /// `detect_no_selectable_inputs`.
     ///
     /// The per-input `Credits` value in the returned map is the amount to
     /// *withdraw* from that address, not its on-chain balance. The chain
@@ -185,7 +200,7 @@ impl PlatformAddressWallet {
     /// in the drive-abci address-credit-withdrawal tests, and the transfer
     /// path's `select_inputs_deduct_from_input` for the same invariant.
     ///
-    /// We therefore select every funded address at its full balance, then
+    /// We therefore select every withdrawable address at its full balance, then
     /// reduce the withdraw amount on the **largest-balance** selected input
     /// by the estimated fee so that input keeps `≥ estimated_fee` of
     /// remaining balance for the chain to deduct. The largest input is the
@@ -223,29 +238,85 @@ impl PlatformAddressWallet {
                 ))
             })?;
 
-        // Select all funded addresses.
-        let mut selected = BTreeMap::new();
-        let mut accumulated: Credits = 0;
+        // Collect every funded address's (PlatformAddress, on-chain balance)
+        // pair, then let the helper apply the per-input-minimum filter and
+        // classify the dust-only case. Keeping the filter in a free function
+        // mirrors the transfer path and makes the dust policy unit-testable
+        // without a live wallet.
+        let funded = account
+            .addresses
+            .addresses
+            .values()
+            .filter_map(|addr_info| {
+                PlatformP2PKHAddress::from_address(&addr_info.address)
+                    .ok()
+                    .map(|p2pkh| {
+                        let balance = account.address_credit_balance(&p2pkh);
+                        (PlatformAddress::P2pkh(p2pkh.to_bytes()), balance)
+                    })
+            });
 
-        for addr_info in account.addresses.addresses.values() {
-            if let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address) {
-                let balance = account.address_credit_balance(&p2pkh);
-                if balance > 0 {
-                    let address = PlatformAddress::P2pkh(p2pkh.to_bytes());
-                    selected.insert(address, balance);
-                    accumulated = accumulated.saturating_add(balance);
-                }
-            }
-        }
-
-        if selected.is_empty() {
-            return Err(PlatformWalletError::AddressOperation(
-                "No funded addresses available for withdrawal".to_string(),
-            ));
-        }
+        let selected = select_withdrawable_inputs(funded, platform_version)?;
 
         reserve_withdrawal_fee_on_largest_input(selected, platform_version)
     }
+}
+
+/// Filter the funded addresses to those withdrawable on their own — i.e. with a
+/// balance of at least `min_input_amount`.
+///
+/// DPP's `AddressCreditWithdrawalTransition` v0 validator rejects the **entire**
+/// transition if *any* input amount is below
+/// `platform_version.dpp.state_transitions.address_funds.min_input_amount`, so a
+/// single sub-minimum "dust" address would otherwise sink an otherwise-fundable
+/// withdrawal. We therefore drop dust here, mirroring the transfer path's
+/// `build_auto_select_candidates`.
+///
+/// Returns the selected full-balance input map. When no address clears the
+/// minimum we return a typed error: [`PlatformWalletError::OnlyDustInputs`] when
+/// every funded address is dust (an actionable consolidate-funds case, mirroring
+/// the transfer path's `detect_no_selectable_inputs`), or
+/// [`PlatformWalletError::AddressOperation`] when there are no funds at all.
+fn select_withdrawable_inputs<I>(
+    funded: I,
+    platform_version: &PlatformVersion,
+) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError>
+where
+    I: IntoIterator<Item = (PlatformAddress, Credits)>,
+{
+    let min_input_amount = platform_version
+        .dpp
+        .state_transitions
+        .address_funds
+        .min_input_amount;
+
+    let mut selected = BTreeMap::new();
+    let mut sub_min_count: usize = 0;
+    let mut sub_min_aggregate: Credits = 0;
+
+    for (address, balance) in funded {
+        if balance >= min_input_amount {
+            selected.insert(address, balance);
+        } else if balance > 0 {
+            sub_min_count = sub_min_count.saturating_add(1);
+            sub_min_aggregate = sub_min_aggregate.saturating_add(balance);
+        }
+    }
+
+    if selected.is_empty() {
+        if sub_min_count > 0 {
+            return Err(PlatformWalletError::OnlyDustInputs {
+                sub_min_count,
+                sub_min_aggregate,
+                min_input_amount,
+            });
+        }
+        return Err(PlatformWalletError::AddressOperation(
+            "No funded addresses available for withdrawal".to_string(),
+        ));
+    }
+
+    Ok(selected)
 }
 
 /// Convert a full-balance input map into a withdraw-amount map that leaves the
@@ -507,5 +578,85 @@ mod tests {
         let err = reserve_withdrawal_fee_on_largest_input(inputs, pv)
             .expect_err("balance below the fee must error");
         assert!(matches!(err, PlatformWalletError::AddressOperation(_)));
+    }
+
+    /// AUTO selection must drop sub-`min_input_amount` dust: the chain rejects
+    /// the whole transition if any input is below the per-input minimum, so a
+    /// single dust address must NOT sink an otherwise-fundable withdrawal. The
+    /// fundable peers are selected at full balance; the dust address is
+    /// excluded. (Withdrawal therefore takes the full *withdrawable* balance,
+    /// not literally every credit.)
+    #[test]
+    fn select_withdrawable_inputs_excludes_dust_keeps_fundable() {
+        let pv = PlatformVersion::latest();
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+
+        let dust = min_input - 1; // below the per-input minimum
+        let fundable_a = min_input; // exactly at the minimum is withdrawable
+        let fundable_b = dpp::dash_to_credits!(1.0);
+
+        let funded = vec![
+            (addr(1), dust),
+            (addr(5), fundable_a),
+            (addr(9), fundable_b),
+        ];
+
+        let selected =
+            select_withdrawable_inputs(funded, pv).expect("fundable peers exist beside the dust");
+
+        assert_eq!(
+            selected.get(&addr(1)).copied(),
+            None,
+            "the sub-minimum dust address is excluded"
+        );
+        assert_eq!(selected.get(&addr(5)).copied(), Some(fundable_a));
+        assert_eq!(selected.get(&addr(9)).copied(), Some(fundable_b));
+        assert_eq!(selected.len(), 2, "only the two fundable inputs survive");
+    }
+
+    /// An account whose every funded address is dust returns the typed
+    /// `OnlyDustInputs` error (mirroring the transfer path), carrying the
+    /// dust count/aggregate and the active `min_input_amount` so the UI can
+    /// tell the user to consolidate funds — never a guaranteed-rejected
+    /// transition.
+    #[test]
+    fn select_withdrawable_inputs_only_dust_errors_typed() {
+        let pv = PlatformVersion::latest();
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+
+        let dust_a = min_input - 1;
+        let dust_b = min_input / 2;
+        let funded = vec![(addr(1), dust_a), (addr(9), dust_b)];
+
+        let err = select_withdrawable_inputs(funded, pv)
+            .expect_err("an all-dust account cannot withdraw");
+        match err {
+            PlatformWalletError::OnlyDustInputs {
+                sub_min_count,
+                sub_min_aggregate,
+                min_input_amount,
+            } => {
+                assert_eq!(sub_min_count, 2);
+                assert_eq!(sub_min_aggregate, dust_a + dust_b);
+                assert_eq!(min_input_amount, min_input);
+            }
+            other => panic!("expected OnlyDustInputs, got {other:?}"),
+        }
+    }
+
+    /// No funds at all (every balance is zero) is distinct from the dust case:
+    /// it falls through to the generic `AddressOperation` error rather than
+    /// `OnlyDustInputs`.
+    #[test]
+    fn select_withdrawable_inputs_no_funds_errors_generic() {
+        let pv = PlatformVersion::latest();
+        let funded = vec![(addr(1), 0u64), (addr(9), 0u64)];
+
+        let err = select_withdrawable_inputs(funded, pv)
+            .expect_err("a zero-balance account cannot withdraw");
+        assert!(
+            matches!(err, PlatformWalletError::AddressOperation(_)),
+            "no-funds case is the generic error, not OnlyDustInputs"
+        );
     }
 }

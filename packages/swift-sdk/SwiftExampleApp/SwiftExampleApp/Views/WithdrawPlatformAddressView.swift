@@ -311,15 +311,28 @@ struct WithdrawPlatformAddressView: View {
         let totalCredits: UInt64
     }
 
+    /// Source accounts: only DIP-17 PlatformPayment (`accountType == 14`)
+    /// accounts on the **default key class** (`keyClass == 0`). The Rust
+    /// `platform-wallet` crate resolves the withdraw source via
+    /// `platform_payment_managed_account_at_index(account_index)` = key
+    /// class 0, so a key-class-other account at the same index would never
+    /// be the spent source. Mirrors `TransferPlatformAddressView`.
+    ///
+    /// The displayed per-account balance sums only addresses whose parent
+    /// account is key class 0 (`account?.keyClass == 0`); summing every row
+    /// at `accountIndex` regardless of key class would inflate the total
+    /// and let `canSubmit` promise more than Rust (key class 0) will spend.
     private var platformAccountOptions: [PlatformAccountOption] {
         let accounts = allAccounts
             .filter { $0.wallet.walletId == wallet.walletId }
-            .filter { $0.accountType == 14 }
+            .filter { $0.accountType == 14 && $0.keyClass == 0 }
             .sorted { $0.accountIndex < $1.accountIndex }
         return accounts.map { acct in
             let total = allPlatformAddresses
                 .filter {
-                    $0.walletId == wallet.walletId && $0.accountIndex == acct.accountIndex
+                    $0.walletId == wallet.walletId
+                        && $0.accountIndex == acct.accountIndex
+                        && $0.account?.keyClass == 0
                 }
                 .reduce(into: UInt64(0)) { acc, addr in acc &+= addr.balance }
             return PlatformAccountOption(accountIndex: acct.accountIndex, totalCredits: total)
