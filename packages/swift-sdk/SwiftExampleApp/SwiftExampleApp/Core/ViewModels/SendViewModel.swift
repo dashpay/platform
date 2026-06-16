@@ -147,6 +147,27 @@ class SendViewModel: ObservableObject {
     /// (Core uses duffs; Platform / shielded use credits).
     var amountDuffs: UInt64? { amount }
 
+    /// The recipient's 20-byte platform address hash, when the typed/scanned
+    /// recipient resolves to a platform address (`detectedAddressType ==
+    /// .platform`). `nil` for every other address type or a malformed
+    /// payload.
+    ///
+    /// This is the SAME already-decoded payload `executeSend`'s
+    /// `.platformToPlatform` branch reads — `detectedAddressType` is
+    /// populated by `DashAddress.parse` (via the `recipientAddress` `didSet`),
+    /// and the 21-byte platform payload is `[type byte] + [20-byte hash]`
+    /// (see rs-dpp/src/address_funds/platform_address.rs). We slice the hash
+    /// out here rather than re-running any address decoding, so the view can
+    /// exclude an own-wallet recipient that collides with a candidate source
+    /// input — mirroring `TransferPlatformAddressView.sourceInputHashes` and
+    /// the Rust Auto selector, which forbid an address being both an input
+    /// and an output of the same transfer.
+    var platformRecipientHash: Data? {
+        guard case .platform(let payload) = detectedAddressType,
+              payload.count == 21 else { return nil }
+        return payload.subdata(in: 1..<21)
+    }
+
     // MARK: - Multi-recipient (coreToCore only)
 
     /// Append an empty extra Core output. The Rust coin-selector handles

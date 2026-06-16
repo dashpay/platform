@@ -451,12 +451,14 @@ struct SendTransactionView: View {
     /// Aggregates each key-class-0 PlatformPayment account's balance from
     /// the BLAST-synced `addressBalances` rows (scoping by
     /// `accountType == 14 && keyClass == 0`, matching the dedicated
-    /// transfer/withdraw sheets and the Rust source resolution), then
-    /// delegates the pick to the pure `PlatformPaymentAccountSelection`
-    /// helper. The Rust Auto selector spends inputs WITHIN one account
-    /// only, so a covering account must hold the whole amount + fee on its
-    /// own — not merely contribute to the aggregate the Send button gates
-    /// on.
+    /// transfer/withdraw sheets and the Rust source resolution) — but
+    /// EXCLUDES the recipient's own row (an own-wallet send to a key-class-0
+    /// address), since the Rust Auto selector can't use the output address as
+    /// an input — then delegates the pick to the pure
+    /// `PlatformPaymentAccountSelection` helper. The Rust Auto selector
+    /// spends inputs WITHIN one account only, so a covering account must hold
+    /// the whole amount + fee on its own (minus any recipient-collision row)
+    /// — not merely contribute to the aggregate the Send button gates on.
     ///
     /// `viewModel.amountCredits` and `viewModel.estimatedFee` are both
     /// available on this path (`canSend` requires `amountCredits > 0` for
@@ -465,12 +467,32 @@ struct SendTransactionView: View {
     /// account — strictly better than the prior "first positive" pick —
     /// rather than blocking the send.
     private func resolvePlatformSenderAccountIndex() -> UInt32? {
-        // Aggregate balance per key-class-0 PlatformPayment account.
+        // The Rust Auto selector excludes the recipient address from its
+        // input set — DPP forbids an address being both an input and an
+        // output of the same transfer (the invariant
+        // `TransferPlatformAddressView.sourceInputHashes` also enforces).
+        // So when the recipient is an own-wallet address in a key-class-0
+        // Platform Payment account, its balance must NOT count toward that
+        // account's spendable coverage; otherwise the picker could choose an
+        // account whose recipient-excluded balance is below amount + fee and
+        // Rust would reject the send the UI enabled. `platformRecipientHash`
+        // is the already-decoded recipient hash (no address decoding is
+        // re-run here); a non-platform recipient yields `nil`, which excludes
+        // nothing.
+        let recipientHash = viewModel.platformRecipientHash
+
+        // Aggregate balance per key-class-0 PlatformPayment account,
+        // excluding any row that IS the recipient (saturating subtraction).
         var totals: [UInt32: UInt64] = [:]
         for row in addressBalances {
             guard let account = row.account,
                   account.accountType == 14,
                   account.keyClass == 0 else { continue }
+            // Skip the recipient row: it's an output, so the Auto selector
+            // won't spend it. Scoped to this same key-class-0 / account-type
+            // set (and this wallet via `addressBalances`' query predicate),
+            // mirroring `sourceInputHashes`.
+            if let recipientHash, row.addressHash == recipientHash { continue }
             let (sum, overflow) = (totals[row.accountIndex] ?? 0)
                 .addingReportingOverflow(row.balance)
             // An overflowing per-account sum is treated as "saturated" so
