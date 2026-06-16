@@ -17,52 +17,104 @@ private final class SendableOpaque: @unchecked Sendable { let p: OpaquePointer; 
 
 // MARK: - Key Selection Helpers
 
-/// Helper to select the appropriate key for signing operations.
-/// Picks a key whose purpose matches the state-transition requirement
-/// AND whose private material is actually available in the Keychain
-/// (delegating to KeyManager.findSigningKey, which mirrors how the
-/// KeychainSigner trampoline resolves the key at sign time).
+/// Ask the SUPPLIED signer — not `KeychainManager.shared` — whether it holds
+/// signable private material for `key`. Pure marshalling: it ships the key's
+/// raw public-key bytes + `KeyType` discriminant byte across the FFI and
+/// returns the signer's own verdict via `dash_sdk_signer_can_sign`. The
+/// availability *decision* lives entirely in Rust / the signer; Swift only
+/// converts the bytes. Never pulls private-key material across the boundary.
 ///
-/// **Caller contract / known coupling:** availability is checked against
-/// `KeychainManager.shared`, so the `signer` handed to the document ops
-/// below must be backed by the shared Keychain. Every current caller
-/// passes a `KeychainSigner`, which defaults to `KeychainManager.shared`,
-/// so the store queried here is exactly the one the signer will use at
-/// sign time. A signer bound to a different `KeychainManager`, a raw
-/// private-key signer (`KeyManager.createSigner(from:)`), or a
-/// hardware-backed callback signer is NOT consulted here — this preflight
-/// could then reject a key that signer can actually sign. Removing the
-/// coupling would mean ranking candidates by purpose/security in Swift
-/// and delegating the availability check to the supplied signer (which
-/// needs a `dash_sdk_signer_can_sign`-style FFI that does not yet exist;
-/// the `can_sign` vtable slot is only invoked internally by Rust during
-/// signing).
+/// `key.keyType.rawValue` is the dpp `KeyType` discriminant (0–4) the Rust
+/// side expects; identity keys only.
+private func signerCanSign(_ signer: OpaquePointer, _ key: IdentityPublicKey) -> Bool {
+    key.data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> Bool in
+        dash_sdk_signer_can_sign(
+            signerConst(signer),
+            raw.bindMemory(to: UInt8.self).baseAddress,
+            UInt(key.data.count),
+            key.keyType.rawValue
+        )
+    }
+}
+
+/// Helper to select the appropriate key for signing operations.
+///
+/// Key-selection *policy* (rank candidates by purpose / security level) runs
+/// in Swift via `KeyManager.rankSigningCandidates`; the *availability* check
+/// ("does this signer actually hold the private material?") is delegated to
+/// the SUPPLIED `signer` through `dash_sdk_signer_can_sign`. This removes the
+/// old coupling to `KeychainManager.shared`: a signer bound to a different
+/// `KeychainManager`, a raw private-key signer (`KeyManager.createSigner`),
+/// or a hardware-backed callback signer is now consulted directly, so the
+/// preflight matches exactly what will happen at sign time.
+///
+/// When `signer == nil` (no signer available to ask) this falls back to the
+/// shared-Keychain `KeyManager.findSigningKey` path — same behavior as before
+/// the FFI delegation existed.
 @MainActor
-private func selectSigningKey(from identity: DPPIdentity, operation: String) -> IdentityPublicKey? {
+private func selectSigningKey(
+    from identity: DPPIdentity,
+    operation: String,
+    signer: OpaquePointer?
+) -> IdentityPublicKey? {
     print("🔑 [\(operation)] Selecting public key for identity \(identity.id.toBase58String())")
+
+    // Contract create/update require a CRITICAL + AUTHENTICATION key;
+    // document ops require any AUTHENTICATION key (prefer CRITICAL).
+    let isContractOp = operation == "CONTRACT CREATE" || operation == "CONTRACT UPDATE"
+    let minimumSecurityLevel: SecurityLevel? = isContractOp ? .critical : nil
 
     let km = KeyManager.withSharedKeychain()
 
-    // Contract create/update require a CRITICAL + AUTHENTICATION key.
-    if operation == "CONTRACT CREATE" || operation == "CONTRACT UPDATE" {
-        if let k = km.findSigningKey(for: identity, purpose: .authentication, minimumSecurityLevel: .critical, preferCritical: true) {
-            print("📝 [\(operation)] Selected CRITICAL AUTHENTICATION key #\(k.id)")
+    // No signer to ask → fall back to the shared-Keychain availability check.
+    guard let signer = signer else {
+        if let k = km.findSigningKey(
+            for: identity,
+            purpose: .authentication,
+            minimumSecurityLevel: minimumSecurityLevel,
+            preferCritical: true
+        ) {
+            if isContractOp {
+                print("📝 [\(operation)] Selected CRITICAL AUTHENTICATION key #\(k.id)")
+            } else {
+                print("📝 [\(operation)] Selected AUTHENTICATION key #\(k.id) (security \(k.securityLevel.name))")
+            }
             return k
         }
-        print("❌ [\(operation)] No CRITICAL AUTHENTICATION key with available private material")
+        if isContractOp {
+            print("❌ [\(operation)] No CRITICAL AUTHENTICATION key with available private material")
+        } else {
+            print("❌ [\(operation)] No AUTHENTICATION key with available private material")
+        }
         return nil
     }
 
-    // Document state transitions require an AUTHENTICATION-purpose key.
-    // Prefer a CRITICAL auth key, but findSigningKey skips any candidate
-    // whose private key is not in the Keychain, so an identity whose only
-    // CRITICAL key is a TRANSFER key (or a CRITICAL auth key with no stored
-    // private material) correctly falls through to its HIGH auth key.
-    if let k = km.findSigningKey(for: identity, purpose: .authentication, minimumSecurityLevel: nil, preferCritical: true) {
-        print("📝 [\(operation)] Selected AUTHENTICATION key #\(k.id) (security \(k.securityLevel.name))")
+    // Rank candidates by purpose/security in Swift, then delegate the
+    // availability decision to the supplied signer. Prefer a CRITICAL auth
+    // key, but skip any candidate the signer can't actually sign with, so an
+    // identity whose only CRITICAL key is a TRANSFER key (or a CRITICAL auth
+    // key with no stored private material) correctly falls through to its
+    // HIGH auth key.
+    let candidates = km.rankSigningCandidates(
+        for: identity,
+        purpose: .authentication,
+        minimumSecurityLevel: minimumSecurityLevel,
+        preferCritical: true
+    )
+    for k in candidates where signerCanSign(signer, k) {
+        if isContractOp {
+            print("📝 [\(operation)] Selected CRITICAL AUTHENTICATION key #\(k.id)")
+        } else {
+            print("📝 [\(operation)] Selected AUTHENTICATION key #\(k.id) (security \(k.securityLevel.name))")
+        }
         return k
     }
-    print("❌ [\(operation)] No AUTHENTICATION key with available private material")
+
+    if isContractOp {
+        print("❌ [\(operation)] No CRITICAL AUTHENTICATION key with available private material")
+    } else {
+        print("❌ [\(operation)] No AUTHENTICATION key with available private material")
+    }
     return nil
 }
 
@@ -491,7 +543,7 @@ extension SDK {
 
         // Select the signing key on the MainActor (KeyManager is @MainActor)
         // before dispatching the FFI work off-actor.
-        guard let signingKey = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT CREATE") else {
+        guard let signingKey = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT CREATE", signer: signer) else {
             throw SDKError.invalidParameter("No public key found for identity")
         }
 
@@ -670,7 +722,7 @@ extension SDK {
 
         // Select the signing key on the MainActor (KeyManager is @MainActor)
         // before dispatching the FFI work off-actor.
-        guard let signingKey = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT REPLACE") else {
+        guard let signingKey = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT REPLACE", signer: signer) else {
             throw SDKError.invalidParameter("No public key found")
         }
 
@@ -832,7 +884,7 @@ extension SDK {
 
         // Select the signing key on the MainActor (KeyManager is @MainActor)
         // before dispatching the FFI work off-actor.
-        guard let signingKey = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT DELETE") else {
+        guard let signingKey = selectSigningKey(from: ownerIdentity, operation: "DOCUMENT DELETE", signer: signer) else {
             throw SDKError.protocolError("No suitable key found for signing")
         }
 
@@ -922,7 +974,7 @@ extension SDK {
 
         // Select the signing key on the MainActor (KeyManager is @MainActor)
         // before dispatching the FFI work off-actor.
-        guard let signingKey = selectSigningKey(from: fromIdentity, operation: "DOCUMENT TRANSFER") else {
+        guard let signingKey = selectSigningKey(from: fromIdentity, operation: "DOCUMENT TRANSFER", signer: signer) else {
             throw SDKError.invalidParameter("No suitable key found for signing")
         }
 
@@ -1111,7 +1163,7 @@ extension SDK {
 
         // Select the signing key on the MainActor (KeyManager is @MainActor)
         // before dispatching the FFI work off-actor.
-        guard let signingKey = selectSigningKey(from: ownerIdentity, operation: "UPDATE_PRICE") else {
+        guard let signingKey = selectSigningKey(from: ownerIdentity, operation: "UPDATE_PRICE", signer: signer) else {
             throw SDKError.invalidParameter("No suitable signing key found")
         }
 
@@ -1253,7 +1305,7 @@ extension SDK {
 
         // Select the signing key on the MainActor (KeyManager is @MainActor)
         // before entering the continuation, for consistency with the other ops.
-        guard let signingKey = selectSigningKey(from: purchaserIdentity, operation: "DOCUMENT PURCHASE") else {
+        guard let signingKey = selectSigningKey(from: purchaserIdentity, operation: "DOCUMENT PURCHASE", signer: signer) else {
             throw SDKError.invalidParameter("No suitable key found for signing")
         }
 
