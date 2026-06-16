@@ -231,8 +231,16 @@ struct SendTransactionView: View {
                             // Pick the account holding the platform
                             // balance. Most wallets have a single
                             // PlatformPayment account (index 0);
-                            // fallback handles that case too.
+                            // fallback handles that case too. Scope to
+                            // key class 0 because the Rust transfer path
+                            // resolves the source via
+                            // `platform_payment_managed_account_at_index`
+                            // (key class 0); picking an index from a
+                            // non-key-class-0 sibling account would tell
+                            // Rust to spend a key-class-0 account that may
+                            // be empty at that index.
                             let senderAccountIndex = addressBalances
+                                .filter { $0.account?.keyClass == 0 }
                                 .first(where: { $0.balance > 0 })?
                                 .accountIndex ?? 0
                             // Input selection and surplus handling are owned
