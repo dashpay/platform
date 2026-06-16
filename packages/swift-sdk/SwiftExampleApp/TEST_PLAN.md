@@ -4,6 +4,8 @@ A catalog of **every action theoretically possible** on Dash via the Platform gR
 
 This file is meant to be read by an automated QA agent. A human or agent can say *"test the Essential, Platform-only actions"* and the agent filters the tables below by `Tier = Essential` and `Layer = Platform`, then drives each action in the booted simulator (see the `simulator-control` skill) and reports pass/fail.
 
+> **📊 Live QA status dashboard.** A read-only web dashboard visualises these tests' on-chain results — the `dash-qa` data contract seeded from this plan: **<https://dashpay.github.io/qa-dashboard-site/>**. It renders a tier × category status matrix, per-test latest result + run history, summary counts, and filters (network / build / tier / category / result). Source: [`dashpay/qa-dashboard-site`](https://github.com/dashpay/qa-dashboard-site).
+
 > **Provenance & maintenance.** Generated from a full source scan of the `v3.1-dev` line (proto, `rs-dpp`, `rs-sdk`, `rs-sdk-ffi`, `rs-platform-wallet[-ffi]`, `swift-sdk`, `SwiftExampleApp`). It is a snapshot — when features land or move, update the affected rows (status, entry point) and re-tier if behavior changes. Treat the codebase as the source of truth if a row looks stale.
 
 ---
@@ -16,7 +18,7 @@ Every catalog row carries four orthogonal, machine-filterable fields. Select tes
 
 - **Tier** ∈ `Essential` · `Common` · `Thorough` · `Uncommon` · `Manual`
 - **Layer** ∈ `Core` · `Platform` · `Cross` · `Shielded`
-- **Status** ∈ `✅` · `🧪` · `⚠️` · `🔌` · `🚫`
+- **Status** ∈ `✅` · `🧪` · `⚠️` · `🔌` · `🚫` · `➖`
 - **Category** ∈ `Core` · `Identity` · `Address` · `DPNS` · `Voting` · `Contract` · `Document` · `Token` · `Shielded` · `DashPay` · `Group` · `System` · `MultiWallet` (the feature area; shown as `Domain=…` on each §4 section header — "Category" and "Domain" are the same axis)
 
 A test is **automatable now** only if Status is `✅`, `🧪`, or `⚠️` (reachable and drivable in the simulator) **and** `Tier ≠ Manual`. `Tier=Manual` marks implemented features that need a human on a physical device (e.g. a camera) — the automated QA agent must **skip and flag them for manual testing**, never mark them failed. `🔌`/`🚫` rows are listed for completeness — skip them unless asked to confirm absence.
@@ -95,8 +97,9 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ⚠️ | UI exists but is **local-only / mock** — does not broadcast. | Partially (UI only) |
 | 🔌 | FFI and/or Swift wrapper exists, but **no UI** to trigger it. | No (SDK only) |
 | 🚫 | Not implemented anywhere (no FFI, no UI). | No |
+| ➖ | Retired — the thing this row tracked was removed or folded into another row. | n/a |
 
-> **Entry-point reality check.** A set of Platform write transitions (identity credit withdrawal, document create/replace/delete/transfer/price/purchase, data-contract create/update, identity key-disable) are reachable in the app **only through `Settings → Platform State Transitions` → `TransitionDetailView`** (marked 🧪). They broadcast for real, but there is no per-identity "happy path" button for them. The QA agent must navigate to the builder for those rows. (Identity credit *transfer*, `ID-04`, now has a production button in `IdentityDetailView` — see that row.) The builder and the read-only **Platform Queries** catalog both live under the **Settings** tab's **Platform** section (scroll past *Network* and *Data*).
+> **Entry-point reality check.** A set of Platform write transitions (document create/replace/delete/transfer/price/purchase, data-contract create/update, identity key-disable) are reachable in the app **only through `Settings → Platform State Transitions` → `TransitionDetailView`** (marked 🧪). They broadcast for real, but there is no per-identity "happy path" button for them. The QA agent must navigate to the builder for those rows. (Identity credit *transfer*, `ID-04`, and *withdrawal*, `ID-10`, now have production buttons in `IdentityDetailView` — see those rows.) The builder and the read-only **Platform Queries** catalog both live under the **Settings** tab's **Platform** section (scroll past *Network* and *Data*).
 
 ---
 
@@ -115,7 +118,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | CORE-07 | SPV sync (start / stop / progress) | Core | Essential | ✅ | Global sync indicator (`ContentView`) → `platform_wallet_manager_spv_*`. Headers/filters/masternodes advance to tip. |
 | CORE-08 | QR scan recipient | Core | Manual | ✅ | `QRScannerView`, reachable in the Send flow — but scanning needs a real camera the simulator doesn't have, so it can't be automated (`Tier=Manual`). On a device: Send → QR-scan button → point at a Dash address QR → recipient field populates. |
 | CORE-09 | Multiple HD accounts (within one wallet) | Core | Common | ✅ | Account selection / `AccountDetailView`; balances per `account_index`. Distinct from holding multiple *wallets* — see CORE-14+. |
-| CORE-10 | Multi-recipient Core send | Core | Common | 🔌 | FFI `core_wallet_send_to_addresses` takes parallel address/amount arrays; UI is single-recipient — verify before claiming. |
+| CORE-10 | Multi-recipient Core send | Core | Common | ✅ | Send flow (`SendTransactionView`, Core→Core) → "Add recipient" appends extra address/amount rows → `SendViewModel.coreRecipients` → `core_wallet_send_to_addresses` (parallel arrays; Rust coin-selects + builds the multi-output tx). One tx with N outputs; balance drops by sum+fee. Verified: 2-output testnet send (txid `30010050…17f840fc`, txlock, 3 vouts) credited both recipients. |
 | CORE-11 | Custom fee on transparent send | Core | Uncommon | 🚫 | Not exposed on the transparent send path (custom Core fee only on shielded withdraw `SH-08` and platform-address funding). |
 | CORE-12 | CoinJoin / mixing | Core | Uncommon | 🚫 | Not implemented anywhere (SPV crate or FFI). |
 | CORE-13 | Send explicitly via InstantSend | Core | Uncommon | 🚫 | IS is observe-only (used to obtain asset-lock proofs); no user-facing send toggle. |
@@ -150,7 +153,7 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | ID-07 | Update identity — add public key | Platform | Common | ✅ | `AddIdentityKeyView` (from `KeysListView`) → `updateIdentity(addPublicKeys:)`. |
 | ID-08 | Create identity (from Platform addresses) | Cross | Common | ✅ | `AddressQueriesView` → CreateIdentityFromAddresses → `dash_sdk_identity_create_from_addresses`. |
 | ID-09 | Set / edit local alias | Platform | Common | ✅ | `IdentityDetailView` (Add Alias). Local only — persists across relaunch; no broadcast. |
-| ID-10 | Withdraw credits → Dash L1 address | Cross | Common | 🧪 | *Settings builder → Identity Credit Withdrawal* → `dash_sdk_identity_withdraw`. Credits burned; L1 payout observed. |
+| ID-10 | Withdraw credits → Dash L1 address | Cross | Common | ✅ | `IdentityDetailView` → **Withdraw Credits** (sheet, `WithdrawCreditsView`) → `wallet.withdrawCredits` → `platform_wallet_withdraw_credits_with_signer` (keychain-signed). Destination L1 address typed in + validated against the wallet's network; amount validated against balance. Identity credit balance drops by amount + fee; L1 payout is pooled and processed asynchronously by the network (no immediate txid). Requires the identity to have a TRANSFER/CRITICAL key — newly-derived identities get one (keyId 3); older identities may need one added first via `ID-07`. (Also reachable via the *Settings → Platform State Transitions → Identity Credit Withdrawal* builder → `dash_sdk_identity_withdraw` with a test signer.) |
 | ID-11 | Transfer credits → Platform addresses | Platform | Common | ✅ | `AddressQueriesView` → TransferIdentityToAddresses → `dash_sdk_identity_transfer_credits_to_addresses`. |
 | ID-12 | Update identity — disable key | Platform | Thorough | 🧪 | *Settings builder → Identity Update* (disable path) → `executeIdentityUpdate`. |
 | ID-13 | Top up identity (builder path) | Cross | — | 🧪 | Builder entry is a stub (`notImplemented`). Use `ID-05`/`ID-06`. Listed so QA doesn't mistake the stub for a defect. |
@@ -204,14 +207,14 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | ID | Action | Layer | Tier | Status | Entry point & test notes |
 |---|---|---|---|---|---|
 | DOC-01 | Query documents / single document | Platform | Common | ✅ | `DocumentsView` / `PlatformQueriesView` → `dash_sdk_document_search` / `_fetch`. |
-| DOC-02 | Create document (broadcast) | Platform | Common | 🧪 | *Settings builder → Document Create* → `dash_sdk_document_create` (put_to_platform). NB `DOC-09` is the local mock. |
+| DOC-02 | Create document (broadcast) | Platform | Common | ✅ | Production UI: Contracts → contract → document type → **New Document** (`DocumentTypeDetailsView` / schema-driven `CreateDocumentView`) → `platform_wallet_create_document_with_signer` (routes through `rs-platform-wallet` `IdentityWallet::create_document_with_signer` → SDK `put_to_platform_and_wait_for_response`, signed by the wallet's keychain signer). Driven end-to-end: created a `preorder` doc (`saltedDomainHash`) on `GWRSAV…S31Ec` from funded idx1 — network-confirmed, doc id `7i1hJgvVt8fJms26kGwkEZ6jVZxrfd3BrqfmAfpqXMoG`, persisted & appears in the documents list. *(Settings builder → Document Create / `dash_sdk_document_create` remains as a test-signer alternative.)* |
 | DOC-03 | Replace document | Platform | Thorough | 🧪 | *Settings builder* → `dash_sdk_document_replace_on_platform`. |
 | DOC-04 | Delete document | Platform | Thorough | 🧪 | *Settings builder* → `dash_sdk_document_delete`. |
 | DOC-05 | Transfer document | Platform | Uncommon | 🧪 | *Settings builder* → `dash_sdk_document_transfer_to_identity`. |
 | DOC-06 | Update document price | Platform | Uncommon | 🧪 | *Settings builder* / `DocumentWithPriceView` → `dash_sdk_document_update_price_of_document`. |
 | DOC-07 | Purchase document | Platform | Uncommon | 🧪 | *Settings builder* → `dash_sdk_document_purchase`. |
 | DOC-08 | Document count / sum / average aggregation | Platform | Uncommon | 🔌 | FFI `dash_sdk_document_count` / `_sum` / `_average`; no UI. |
-| DOC-09 | Create document (local demo) | Platform | — | ⚠️ | `DocumentsView` create is local-only mock (no broadcast). Use `DOC-02` for a real write. |
+| DOC-09 | Create document (local demo) | Platform | — | ➖ | Retired. The old `DocumentsView` local-only mock was replaced by the real broadcast flow (`CreateDocumentView`); see `DOC-02`. |
 
 ### 4.8 Tokens — `Domain=Token`
 
@@ -253,7 +256,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SH-08 | Shielded withdraw → Core L1 (Type 19) | Cross | Common | ✅ | Send flow (Shielded→Core) → `walletManager.shieldedWithdraw` (custom `core_fee_per_byte`). |
 | SH-09 | Prover warm-up / readiness | Shielded | Common | ✅ | `warmUpShieldedProver` / `shieldedProverIsReady` (~30s Halo2 key build; precondition for spends). |
 | SH-10 | Seed shielded pool (anonymity set) | Shielded | Uncommon | ✅ | `SeedShieldedPoolView` → `platform_wallet_manager_shielded_seed_pool_notes`. **Devnet/testnet only** — hard-errors on mainnet. |
-| SH-11 | Create identity from shielded pool (Type 20) | Cross | Uncommon | 🔌 | FFI `platform_wallet_manager_shielded_identity_create_from_pool`; no dedicated UI. |
+| SH-11 | Create identity from shielded pool (Type 20) | Cross | Common | ✅ | `CreateIdentityView` → funding source **Shielded balance** (fixed denominations 0.1 / 0.3 / 0.5 / 1.0 DASH, gated on the bound pool's balance) → `IdentityRegistrationController` (`.shieldedPool`) → `shieldedIdentityCreateFromPool` → `platform_wallet_manager_shielded_identity_create_from_pool`. Requires a synced shielded pool with sufficient balance. |
 | SH-12 | Clear shielded state (wipe notes + re-sync) | Shielded | Uncommon | ✅ | "Clear" button on the Sync tab (`CoreContentView` → `ShieldedService.clearLocalState` → `clearShielded`). Stops sync, wipes every wallet's shielded notes + sync state, zeroes the Swift mirror; bind credentials are kept so "Sync Now" rebinds and re-scans. (On-disk SQLite tree is intentionally retained.) Verify balance/activity reset, then restore after Sync Now. |
 | SH-13 | Display / share your shielded receive address | Shielded | Common | ✅ | "Receive Dash" sheet → **Shielded** tab (`ReceiveAddressView`, `ReceiveAddressTab.shielded`): QR + full `tdash1…`/`dash1…` bech32m address + Copy Address. Hand your shielded address to a payer, or grab wallet B's address for `MW-06`. |
 
@@ -470,7 +473,6 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 For completeness (the "everything gRPC + Core can do" requirement), these exist at the protocol/FFI level but have **no app entry point** today:
 
 **🔌 SDK-only (FFI/wrapper exists, no UI):**
-- `CORE-10` multi-recipient Core send (FFI supports arrays; UI single-recipient)
 - `ADDR-05` address balance-change history (recent / compacted / branch / trunk)
 - `DOC-08` document count / sum / average aggregation
 - `TOK-17` calculate token ID

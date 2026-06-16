@@ -40,7 +40,13 @@ fn enable_file_logging(log_level: &str, path: &Path) -> bool {
     let Some(f_sdk) = open_file(path.join("dash_sdk").join("run.log")) else {
         return false;
     };
+    let Some(f_sdk_metrics) = open_file(path.join("dash_sdk").join("metrics.log")) else {
+        return false;
+    };
     let Some(f_pw) = open_file(path.join("platform_wallet").join("run.log")) else {
+        return false;
+    };
+    let Some(f_pw_metrics) = open_file(path.join("platform_wallet").join("metrics.log")) else {
         return false;
     };
     let Some(f_spv) = open_file(path.join("dash_spv").join("run.log")) else {
@@ -57,14 +63,29 @@ fn enable_file_logging(log_level: &str, path: &Path) -> bool {
         .with_writer(Mutex::new(f_sdk))
         .with_ansi(false)
         .with_filter(tracing_subscriber::EnvFilter::new(format!(
-            "dash_sdk={log_level},rs_sdk_ffi={log_level}"
+            "dash_sdk={log_level},rs_sdk_ffi={log_level},rs_sdk_ffi::metrics=off"
+        )));
+
+    let l_sdk_metrics = tracing_subscriber::fmt::layer()
+        .with_writer(Mutex::new(f_sdk_metrics))
+        .with_ansi(false)
+        .with_filter(tracing_subscriber::EnvFilter::new(format!(
+            "rs_sdk_ffi::metrics={log_level}"
         )));
 
     let l_pw = tracing_subscriber::fmt::layer()
         .with_writer(Mutex::new(f_pw))
         .with_ansi(false)
         .with_filter(tracing_subscriber::EnvFilter::new(format!(
-            "platform_wallet={log_level},platform_wallet_ffi={log_level}"
+            "platform_wallet={log_level},platform_wallet_ffi={log_level},\
+             platform_wallet_ffi::metrics=off"
+        )));
+
+    let l_pw_metrics = tracing_subscriber::fmt::layer()
+        .with_writer(Mutex::new(f_pw_metrics))
+        .with_ansi(false)
+        .with_filter(tracing_subscriber::EnvFilter::new(format!(
+            "platform_wallet_ffi::metrics={log_level}"
         )));
 
     let l_spv = tracing_subscriber::fmt::layer()
@@ -95,13 +116,19 @@ fn enable_file_logging(log_level: &str, path: &Path) -> bool {
 
     let stdout_layer = tracing_subscriber::fmt::layer().with_filter(broad_env_filter(log_level));
 
+    let layers: Vec<Box<dyn Layer<tracing_subscriber::Registry> + Send + Sync>> = vec![
+        stdout_layer.boxed(),
+        l_sdk.boxed(),
+        l_sdk_metrics.boxed(),
+        l_pw.boxed(),
+        l_pw_metrics.boxed(),
+        l_spv.boxed(),
+        l_kw.boxed(),
+        l_grpc.boxed(),
+    ];
+
     if tracing_subscriber::registry()
-        .with(stdout_layer)
-        .with(l_sdk)
-        .with(l_pw)
-        .with(l_spv)
-        .with(l_kw)
-        .with(l_grpc)
+        .with(layers)
         .try_init()
         .is_err()
     {

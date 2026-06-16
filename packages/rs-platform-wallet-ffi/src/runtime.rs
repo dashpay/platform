@@ -31,11 +31,16 @@ const WORKER_STACK_BYTES: usize = 8 * 1024 * 1024;
 /// here, rather than the (small) calling thread.
 pub(crate) fn runtime() -> &'static tokio::runtime::Runtime {
     static RT: once_cell::sync::Lazy<tokio::runtime::Runtime> = once_cell::sync::Lazy::new(|| {
-        tokio::runtime::Builder::new_multi_thread()
+        let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .thread_stack_size(WORKER_STACK_BYTES)
             .build()
-            .expect("Failed to create tokio runtime for platform-wallet-ffi")
+            .expect("Failed to create tokio runtime for platform-wallet-ffi");
+
+        #[cfg(feature = "tokio-metrics")]
+        metrics::spawn_sampler(&rt);
+
+        rt
     });
     &RT
 }
@@ -53,4 +58,34 @@ where
 {
     let rt = runtime();
     rt.block_on(async move { rt.spawn(future).await.expect("tokio worker panicked") })
+}
+
+#[cfg(feature = "tokio-metrics")]
+mod metrics {
+    use std::time::Duration;
+
+    pub(super) fn spawn_sampler(rt: &tokio::runtime::Runtime) {
+        let runtime_monitor = tokio_metrics::RuntimeMonitor::new(rt.handle());
+        let mut rt_intervals = runtime_monitor.intervals();
+
+        rt.spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                let Some(r) = rt_intervals.next() else { break };
+
+                tracing::info!(
+                    target: "platform_wallet_ffi::metrics",
+                    workers = r.workers_count,
+                    live_tasks = r.live_tasks_count,
+                    busy_ratio = r.busy_ratio(),
+                    mean_poll_us = r.mean_poll_duration.as_micros() as u64,
+                    mean_polls_per_park = r.mean_polls_per_park(),
+                    steals = r.total_steal_count,
+                    global_queue_depth = r.global_queue_depth,
+                    local_queue_depth = r.total_local_queue_depth,
+                    overflow = r.total_overflow_count,
+                );
+            }
+        });
+    }
 }
