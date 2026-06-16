@@ -119,9 +119,6 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | CORE-08 | QR scan recipient | Core | Manual | ✅ | `QRScannerView`, reachable in the Send flow — but scanning needs a real camera the simulator doesn't have, so it can't be automated (`Tier=Manual`). On a device: Send → QR-scan button → point at a Dash address QR → recipient field populates. |
 | CORE-09 | Multiple HD accounts (within one wallet) | Core | Common | ✅ | Account selection / `AccountDetailView`; balances per `account_index`. Distinct from holding multiple *wallets* — see CORE-14+. |
 | CORE-10 | Multi-recipient Core send | Core | Common | ✅ | Send flow (`SendTransactionView`, Core→Core) → "Add recipient" appends extra address/amount rows → `SendViewModel.coreRecipients` → `core_wallet_send_to_addresses` (parallel arrays; Rust coin-selects + builds the multi-output tx). One tx with N outputs; balance drops by sum+fee. Verified: 2-output testnet send (txid `30010050…17f840fc`, txlock, 3 vouts) credited both recipients. |
-| CORE-11 | Custom fee on transparent send | Core | Uncommon | 🚫 | Not exposed on the transparent send path (custom Core fee only on shielded withdraw `SH-08` and platform-address funding). |
-| CORE-12 | CoinJoin / mixing | Core | Uncommon | 🚫 | Not implemented anywhere (SPV crate or FFI). |
-| CORE-13 | Send explicitly via InstantSend | Core | Uncommon | 🚫 | IS is observe-only (used to obtain asset-lock proofs); no user-facing send toggle. |
 
 #### Multiple wallets on one device
 
@@ -480,9 +477,6 @@ For completeness (the "everything gRPC + Core can do" requirement), these exist 
 - `SYS-06` raw GroveDB path elements
 
 **🚫 Not implemented anywhere:**
-- `CORE-11` custom fee on transparent Core send
-- `CORE-12` CoinJoin / mixing
-- `CORE-13` explicit send-via-InstantSend
 - `GRP-04` standalone group lifecycle management
 - `getConsensusParams` (served via Tenderdash RPC, not the SDK)
 
