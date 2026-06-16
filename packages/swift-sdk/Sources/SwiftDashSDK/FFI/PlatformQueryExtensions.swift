@@ -19,8 +19,11 @@ extension SDK {
         if let error = result.error {
             let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
             print("❌ processJSONResult: FFI returned error: \(errorMessage)")
+            // Preserve the FFI error code so transport failures surface as
+            // .networkError / .timeout rather than a misleading .internalError.
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw sdkError
         }
 
         guard let dataPtr = result.data else {
@@ -51,9 +54,11 @@ extension SDK {
     /// Process DashSDKResult and extract JSON array
     private func processJSONArrayResult(_ result: DashSDKResult) throws -> [[String: Any]] {
         if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+            // Preserve the FFI error code so transport failures surface as
+            // .networkError / .timeout rather than a misleading .internalError.
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw sdkError
         }
 
         guard let dataPtr = result.data else {
@@ -74,9 +79,11 @@ extension SDK {
     /// Process DashSDKResult and extract string
     private func processStringResult(_ result: DashSDKResult) throws -> String {
         if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+            // Preserve the FFI error code so transport failures surface as
+            // .networkError / .timeout rather than a misleading .internalError.
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw sdkError
         }
 
         guard let dataPtr = result.data else {
@@ -1078,9 +1085,12 @@ extension SDK {
 
         // Special handling for protocol version upgrade state which returns an array
         if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+            // Preserve the FFI error code so transport failures (e.g. an evonode
+            // serving an expired TLS certificate) surface as .networkError
+            // rather than a misleading .internalError.
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
             dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw sdkError
         }
 
         // If no data, return empty result
