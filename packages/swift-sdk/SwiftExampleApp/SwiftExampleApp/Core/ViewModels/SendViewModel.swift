@@ -530,16 +530,21 @@ class SendViewModel: ObservableObject {
                 // persister callback ordering ever changes.
                 //
                 // Mirrors PlatformWalletPersistenceHandler.persistAddressBalances:
-                // fetch each row by `addressHash`, update the
-                // volatile fields, stamp `lastUpdated`. Every entry
-                // returned was touched by the transition, so
-                // `isUsed = true` unconditionally. Rows that aren't
-                // found are silently skipped — same defensive shape
-                // the BLAST handler uses.
+                // fetch each row by `walletId + addressHash`, update the
+                // volatile fields, stamp `lastUpdated`. Scope by `walletId`
+                // too (mirroring the dedicated transfer sheet): a hash-only
+                // predicate can match another wallet's row in a multi-wallet
+                // store. Every entry returned was touched by the transition,
+                // so `isUsed = true` unconditionally. Rows that aren't found
+                // are silently skipped — same defensive shape the BLAST
+                // handler uses.
+                let walletId = wallet.walletId
                 for entry in updated {
                     let entryHash = entry.hash
                     let descriptor = FetchDescriptor<PersistentPlatformAddress>(
-                        predicate: #Predicate { $0.addressHash == entryHash }
+                        predicate: #Predicate {
+                            $0.walletId == walletId && $0.addressHash == entryHash
+                        }
                     )
                     guard let row = try? modelContext.fetch(descriptor).first else {
                         continue
@@ -549,14 +554,22 @@ class SendViewModel: ObservableObject {
                     row.isUsed = true
                     row.lastUpdated = Date()
                 }
+                // The transfer has ALREADY succeeded on-chain by this point,
+                // and a DIP-17 resync corrects balances regardless. So a
+                // local SwiftData `save()` failure must NOT be reported as
+                // the transfer having failed (that would make the user
+                // think credits didn't move when they did) — but it also
+                // must not be silently swallowed. Keep the SUCCESS message
+                // and append a non-fatal caveat noting balances will refresh
+                // on the next sync.
                 do {
                     try modelContext.save()
+                    successMessage = "Platform transfer sent"
                 } catch {
-                    self.error = "Couldn't persist post-transfer balances: \(error.localizedDescription)"
-                    return
+                    successMessage = "Platform transfer sent. Local balances "
+                        + "couldn't be updated — they'll refresh on the next "
+                        + "sync: \(error.localizedDescription)"
                 }
-
-                successMessage = "Platform transfer sent"
 
             case .shieldedToShielded:
                 // Shielded → Shielded: spend notes from this

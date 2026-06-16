@@ -55,6 +55,13 @@ struct TransferPlatformAddressView: View {
     @State private var submitError: SubmitError? = nil
     @State private var isSubmitting = false
     @State private var didSucceed = false
+    /// Non-fatal caveat shown on the success screen when the transfer
+    /// succeeded on-chain but the local SwiftData balance write failed.
+    /// The transfer itself is NOT a failure (the `performSync()` that runs
+    /// right after corrects balances regardless), so this must not be
+    /// surfaced as `submitError` — but it must not be silently swallowed
+    /// either.
+    @State private var saveWarning: String? = nil
 
     /// 1e11 credits per DASH. Matches `CreateIdentityView`. Integer so
     /// the amount→credits conversion is exact — binary floating point
@@ -275,6 +282,12 @@ struct TransferPlatformAddressView: View {
                 Text("The transfer was submitted and your balances are resyncing.")
                     .font(.callout)
                     .foregroundColor(.secondary)
+                if let saveWarning {
+                    Label(saveWarning, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .accessibilityIdentifier("transferPlatform.saveWarning")
+                }
                 Button {
                     dismiss()
                 } label: {
@@ -358,10 +371,18 @@ struct TransferPlatformAddressView: View {
     /// so a recipient that collides with a funded source input would be
     /// dropped from selection — we exclude those here so the button isn't
     /// enabled for a recipient Rust would refuse to fund against.
+    ///
+    /// Restricted to P2PKH rows (`addressType == 0`): the transfer FFI's
+    /// `PlatformAddressFFI → PlatformAddress` conversion accepts P2PKH
+    /// only (the P2PKH-only contract established earlier in this PR), so a
+    /// persisted P2SH (`addressType == 1`) own-wallet row would parse here
+    /// but only fail after submit. Filtering it out keeps the picker in
+    /// step with what Rust will actually accept.
     private var ownWalletRecipientCandidates: [PersistentPlatformAddress] {
         let inputs = sourceInputHashes
         return allPlatformAddresses
             .filter { $0.walletId == wallet.walletId }
+            .filter { $0.addressType == 0 }
             .filter { !inputs.contains($0.addressHash) }
             .sorted { ($0.accountIndex, $0.addressIndex) < ($1.accountIndex, $1.addressIndex) }
     }
@@ -392,7 +413,12 @@ struct TransferPlatformAddressView: View {
             guard let hash = selectedRecipientHash,
                 let row = allPlatformAddresses.first(where: {
                     $0.walletId == wallet.walletId && $0.addressHash == hash
-                })
+                }),
+                // P2PKH only: the transfer FFI rejects `addressType == 1`
+                // (P2SH). `ownWalletRecipientCandidates` already filters
+                // these out of the picker, but guard here too so a stale
+                // `selectedRecipientHash` can't resolve to a P2SH row.
+                row.addressType == 0
             else { return nil }
             return (row.addressType, row.addressHash)
         case .external:
@@ -529,11 +555,24 @@ struct TransferPlatformAddressView: View {
                     outputs: outputs,
                     signer: signer
                 )
+                // The transfer has ALREADY succeeded on-chain here.
                 // Persist the post-transfer balances Rust reported BEFORE
                 // the resync so SwiftData doesn't show spent inputs as
                 // spendable in the gap before `performSync()` catches up.
                 // Mirrors the BLAST persister callback's upsert shape.
-                persistUpdatedBalances(updated)
+                //
+                // A local save failure must NOT mark the transfer as failed
+                // (it succeeded; `performSync()` below corrects balances
+                // regardless) — but it must not be swallowed either. Surface
+                // it as a non-fatal caveat on the success screen rather than
+                // the hard error alert.
+                do {
+                    try persistUpdatedBalances(updated)
+                } catch {
+                    saveWarning = "Submitted successfully, but local balances "
+                        + "couldn't be updated — they'll refresh on the next "
+                        + "sync: \(error.localizedDescription)"
+                }
                 // Trigger a DIP-17 resync so balances + the unused-
                 // address pool catch up after the transfer.
                 await platformBalanceSyncService.performSync()
@@ -549,9 +588,15 @@ struct TransferPlatformAddressView: View {
     /// to this wallet and matched by 20-byte `addressHash`, mirroring the
     /// BLAST `persistAddressBalances` callback so the row state is
     /// consistent whether it lands from here or from the next sync round.
+    ///
+    /// Throws the SwiftData `save()` error to the caller rather than
+    /// swallowing it with `try?`. The caller has already confirmed the
+    /// on-chain transfer succeeded, so it routes this to a non-fatal
+    /// caveat (NOT the failure path) — the transfer stands and the next
+    /// sync reconciles balances regardless.
     private func persistUpdatedBalances(
         _ updated: [ManagedPlatformAddressWallet.UpdatedBalance]
-    ) {
+    ) throws {
         guard !updated.isEmpty else { return }
         let walletId = wallet.walletId
         for entry in updated {
@@ -569,7 +614,7 @@ struct TransferPlatformAddressView: View {
             }
             row.lastUpdated = Date()
         }
-        try? modelContext.save()
+        try modelContext.save()
     }
 
     // MARK: - Helpers

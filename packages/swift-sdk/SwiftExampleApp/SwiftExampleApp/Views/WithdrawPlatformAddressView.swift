@@ -60,6 +60,13 @@ struct WithdrawPlatformAddressView: View {
     @State private var submitError: SubmitError? = nil
     @State private var isSubmitting = false
     @State private var didSucceed = false
+    /// Non-fatal caveat shown on the success screen when the withdrawal
+    /// succeeded on-chain but the local SwiftData balance write failed.
+    /// The withdrawal itself is NOT a failure (the `performSync()` that
+    /// runs right after corrects balances regardless), so this must not be
+    /// surfaced as `submitError` — but it must not be silently swallowed
+    /// either.
+    @State private var saveWarning: String? = nil
 
     private static let creditsPerDash: Double = 100_000_000_000.0
 
@@ -301,6 +308,12 @@ struct WithdrawPlatformAddressView: View {
                 Text("The withdrawal was submitted. Credits will arrive on L1 once the payout is processed; balances are resyncing.")
                     .font(.callout)
                     .foregroundColor(.secondary)
+                if let saveWarning {
+                    Label(saveWarning, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .accessibilityIdentifier("withdrawPlatform.saveWarning")
+                }
                 Button {
                     dismiss()
                 } label: {
@@ -462,12 +475,25 @@ struct WithdrawPlatformAddressView: View {
                     coreFeePerByte: feePerByte,
                     signer: signer
                 )
+                // The withdrawal has ALREADY succeeded on-chain here.
                 // Persist the drained balances Rust just reported BEFORE
                 // the resync so SwiftData stops showing the consumed
                 // inputs as spendable in the gap before `performSync()`
                 // catches up. Mirrors the BLAST persister callback's
                 // upsert shape (`persistAddressBalances`).
-                persistUpdatedBalances(updated)
+                //
+                // A local save failure must NOT mark the withdrawal as
+                // failed (it succeeded; `performSync()` below corrects
+                // balances regardless) — but it must not be swallowed
+                // either. Surface it as a non-fatal caveat on the success
+                // screen rather than the hard error alert.
+                do {
+                    try persistUpdatedBalances(updated)
+                } catch {
+                    saveWarning = "Submitted successfully, but local balances "
+                        + "couldn't be updated — they'll refresh on the next "
+                        + "sync: \(error.localizedDescription)"
+                }
                 await platformBalanceSyncService.performSync()
                 didSucceed = true
             } catch {
@@ -481,9 +507,15 @@ struct WithdrawPlatformAddressView: View {
     /// to this wallet and matched by 20-byte `addressHash`, mirroring the
     /// BLAST `persistAddressBalances` callback so the row state is
     /// consistent whether it lands from here or from the next sync round.
+    ///
+    /// Throws the SwiftData `save()` error to the caller rather than
+    /// swallowing it with `try?`. The caller has already confirmed the
+    /// on-chain withdrawal succeeded, so it routes this to a non-fatal
+    /// caveat (NOT the failure path) — the withdrawal stands and the next
+    /// sync reconciles balances regardless.
     private func persistUpdatedBalances(
         _ updated: [ManagedPlatformAddressWallet.UpdatedBalance]
-    ) {
+    ) throws {
         guard !updated.isEmpty else { return }
         let walletId = wallet.walletId
         for entry in updated {
@@ -501,7 +533,7 @@ struct WithdrawPlatformAddressView: View {
             }
             row.lastUpdated = Date()
         }
-        try? modelContext.save()
+        try modelContext.save()
     }
 
     // MARK: - Helpers

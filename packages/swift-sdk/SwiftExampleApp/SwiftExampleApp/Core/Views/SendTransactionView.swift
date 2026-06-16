@@ -228,21 +228,39 @@ struct SendTransactionView: View {
                             let managed = walletManager.wallet(for: wallet.walletId)
                             let coreWallet = try? managed?.coreWallet()
                             let platformAddressWallet = try? managed?.platformAddressWallet()
-                            // Pick the account holding the platform
-                            // balance. Most wallets have a single
-                            // PlatformPayment account (index 0);
-                            // fallback handles that case too. Scope to
-                            // key class 0 because the Rust transfer path
+                            // Pick the account that will FUND a platform →
+                            // platform transfer. The Rust Auto selector
                             // resolves the source via
                             // `platform_payment_managed_account_at_index`
-                            // (key class 0); picking an index from a
-                            // non-key-class-0 sibling account would tell
-                            // Rust to spend a key-class-0 account that may
-                            // be empty at that index.
-                            let senderAccountIndex = addressBalances
-                                .filter { $0.account?.keyClass == 0 }
-                                .first(where: { $0.balance > 0 })?
-                                .accountIndex ?? 0
+                            // (key class 0) and selects its inputs WITHIN
+                            // that single account — it does not span
+                            // accounts. `canSend` only gates on the
+                            // aggregate platform balance, so with multiple
+                            // key-class-0 Platform Payment accounts we must
+                            // choose an account whose OWN balance covers the
+                            // requested amount + fee; otherwise we'd enable a
+                            // send Rust rejects. The selection is factored
+                            // into the pure, unit-tested
+                            // `PlatformPaymentAccountSelection` helper.
+                            //
+                            // Only the platform → platform path needs this
+                            // coverage-aware pick; every other flow ignores
+                            // `senderAccountIndex`, so the prior
+                            // "first key-class-0 positive balance, else 0"
+                            // behaviour is preserved for them.
+                            let senderAccountIndex: UInt32
+                            if viewModel.detectedFlow == .platformToPlatform {
+                                guard let resolved = resolvePlatformSenderAccountIndex() else {
+                                    viewModel.error = "No single Platform Payment account has enough credits for this transfer."
+                                    return
+                                }
+                                senderAccountIndex = resolved
+                            } else {
+                                senderAccountIndex = addressBalances
+                                    .filter { $0.account?.keyClass == 0 }
+                                    .first(where: { $0.balance > 0 })?
+                                    .accountIndex ?? 0
+                            }
                             // Input selection and surplus handling are owned
                             // by the Rust Auto path (surplus stays on the
                             // source addresses in the credit-balance model),
@@ -424,6 +442,68 @@ struct SendTransactionView: View {
             return blastBalance
         }
         return wallet.identities.reduce(UInt64(0)) { $0 + UInt64(bitPattern: $1.balance) }
+    }
+
+    /// Choose which key-class-0 Platform Payment account funds a
+    /// platform → platform transfer, returning `nil` when no single
+    /// account can cover the requested amount + fee.
+    ///
+    /// Aggregates each key-class-0 PlatformPayment account's balance from
+    /// the BLAST-synced `addressBalances` rows (scoping by
+    /// `accountType == 14 && keyClass == 0`, matching the dedicated
+    /// transfer/withdraw sheets and the Rust source resolution), then
+    /// delegates the pick to the pure `PlatformPaymentAccountSelection`
+    /// helper. The Rust Auto selector spends inputs WITHIN one account
+    /// only, so a covering account must hold the whole amount + fee on its
+    /// own — not merely contribute to the aggregate the Send button gates
+    /// on.
+    ///
+    /// `viewModel.amountCredits` and `viewModel.estimatedFee` are both
+    /// available on this path (`canSend` requires `amountCredits > 0` for
+    /// the credits flows, and `updateFlow()` populates `estimatedFee`).
+    /// If either is somehow absent we fall back to the largest-balance
+    /// account — strictly better than the prior "first positive" pick —
+    /// rather than blocking the send.
+    private func resolvePlatformSenderAccountIndex() -> UInt32? {
+        // Aggregate balance per key-class-0 PlatformPayment account.
+        var totals: [UInt32: UInt64] = [:]
+        for row in addressBalances {
+            guard let account = row.account,
+                  account.accountType == 14,
+                  account.keyClass == 0 else { continue }
+            let (sum, overflow) = (totals[row.accountIndex] ?? 0)
+                .addingReportingOverflow(row.balance)
+            // An overflowing per-account sum is treated as "saturated" so
+            // it still ranks as a (more than) covering account rather than
+            // wrapping to a small value.
+            totals[row.accountIndex] = overflow ? UInt64.max : sum
+        }
+
+        let candidates = totals.map {
+            PlatformPaymentAccountSelection.Candidate(
+                accountIndex: $0.key,
+                balance: $0.value
+            )
+        }
+
+        // Amount + fee for this transfer (credits). `?? 0` only triggers
+        // off-path; with a 0 requirement the largest account trivially
+        // "covers" it, yielding the largest-balance fallback.
+        let amount = viewModel.amountCredits ?? 0
+        let fee = viewModel.estimatedFee ?? SendFlow.platformToPlatform.estimatedFee
+
+        switch PlatformPaymentAccountSelection.choose(
+            from: candidates,
+            amount: amount,
+            fee: fee
+        ) {
+        case .covering(let accountIndex):
+            return accountIndex
+        case .insufficient:
+            // No single account covers amount + fee — don't silently pick
+            // an underfunded account; let the caller surface a clear error.
+            return nil
+        }
     }
 
     private func availableSources(coreBalance: UInt64) -> [FundSource] {
