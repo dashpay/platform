@@ -430,7 +430,6 @@ class SendViewModel: ObservableObject {
         platformAddressWallet: ManagedPlatformAddressWallet?,
         signer: KeychainSigner?,
         senderAccountIndex: UInt32,
-        changeAddressRow: PersistentPlatformAddress?,
         modelContext: ModelContext
     ) async {
         guard let flow = detectedFlow else { return }
@@ -512,19 +511,12 @@ class SendViewModel: ObservableObject {
                     hash: hash,
                     credits: credits
                 )
-                // If the view passed a fresh unused HD address from the
-                // pool, use it as the dedicated change destination —
-                // matches the Receive screen's lowest-unused selection.
-                let change: ManagedPlatformAddressWallet.ChangeAddress? = changeAddressRow.map {
-                    ManagedPlatformAddressWallet.ChangeAddress(
-                        addressType: $0.addressType,
-                        hash: $0.addressHash
-                    )
-                }
+                // Input selection, fee strategy, and the surplus (left on
+                // the source addresses in the credit-balance model) are all
+                // owned by the Rust Auto path — no change address to pass.
                 let updated = try await addressWallet.transfer(
                     accountIndex: senderAccountIndex,
                     outputs: [output],
-                    changeAddress: change,
                     signer: signer
                 )
 

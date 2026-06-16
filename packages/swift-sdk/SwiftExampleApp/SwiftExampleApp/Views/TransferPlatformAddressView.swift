@@ -7,13 +7,15 @@
 // → Submit) and drives `ManagedPlatformAddressWallet.transfer(...)`
 // end-to-end with a `KeychainSigner`.
 //
-// No private keys are ever entered here. Input selection, change
-// routing, fee strategy, nonce selection (Auto), and signing all
-// happen inside the Rust `platform-wallet` crate via the FFI wrapper —
-// the only thing this view decides is the source account, the amount,
-// the destination address, and which (unused) wallet address to route
-// change to. Contrast with the raw `TransferAddressFundsView` debug
-// form, which pastes a 64-char private key.
+// No private keys are ever entered here. Input selection (Auto),
+// the `Σ inputs == Σ outputs` balancing, fee strategy, nonce
+// selection, and signing all happen inside the Rust `platform-wallet`
+// crate via the FFI wrapper — the only thing this view decides is the
+// source account, the amount, and the destination address. The
+// credit-balance model leaves surplus on the source addresses, so
+// there is no change address to pick. Contrast with the raw
+// `TransferAddressFundsView` debug form, which pastes a 64-char
+// private key.
 
 import SwiftUI
 import SwiftDashSDK
@@ -64,10 +66,17 @@ struct TransferPlatformAddressView: View {
     /// and rejected rather than truncated.
     private static let creditFractionDigits = 11
 
-    /// Mirror of `ManagedPlatformAddressWallet.feeBuffer` (held back so
-    /// the change output survives the on-chain fee). Used here only to
-    /// gate the submit button with the same accounting the wrapper
-    /// enforces — the wrapper still throws if this is violated.
+    /// UI-only cushion: the Rust Auto path deducts the on-chain fee from
+    /// the lex-smallest selected input's remaining balance
+    /// (`[DeductFromInput(0)]`), so the source account must hold the
+    /// transfer amount PLUS the fee. We hold back this cushion when
+    /// gating the submit button so the button isn't enabled for an amount
+    /// the account can't actually cover once the fee is taken. The Rust
+    /// side computes the exact fee and returns a typed insufficient-
+    /// balance error if this estimate is wrong; this is purely to avoid a
+    /// dead-on-tap button. Observed fee for a small transfer is ~6.5M
+    /// credits; this is intentionally an order of magnitude larger so
+    /// estimation drift doesn't surprise the user.
     private static let feeBuffer: UInt64 = 100_000_000
 
     var body: some View {
@@ -200,7 +209,7 @@ struct TransferPlatformAddressView: View {
         } header: {
             Text("Destination Address")
         } footer: {
-            Text("Send to another address on this wallet, or paste a 20-byte P2PKH address hash. Change routes automatically to a fresh unused address.")
+            Text("Send to another address on this wallet, or paste a 20-byte P2PKH address hash. Surplus stays on the source addresses — there's no change address to pick.")
         }
     }
 
@@ -226,7 +235,7 @@ struct TransferPlatformAddressView: View {
                     Text("Insufficient balance: \(formatCredits(credits)) + fee exceeds the account's \(formatCredits(available)).")
                         .foregroundColor(.red)
                 } else {
-                    Text("\(formatCredits(credits)) will be transferred (plus a small on-chain fee held back from change).")
+                    Text("\(formatCredits(credits)) will be transferred (plus a small on-chain fee taken from the source balance).")
                 }
             } else {
                 Text("Enter an amount in DASH.")
@@ -287,15 +296,12 @@ struct TransferPlatformAddressView: View {
     /// Source accounts the transfer can actually spend from.
     ///
     /// Offers every DIP-17 platform-payment account (`accountType == 14`,
-    /// key class 0) on this wallet. The `transfer` wrapper now builds its
-    /// explicit inputs from `addressesWithBalances(forAccount:)`, which the
-    /// Rust `platform-wallet` crate resolves via
-    /// `platform_payment_managed_account_at_index(account_index)` — i.e. the
-    /// chosen account — so the spent source matches the `accountIndex` the
-    /// transfer persists/nonces against. (Earlier this picker was pinned to
-    /// account 0 because the wrapper always resolved the first account; that
-    /// divergence is fixed end-to-end, so the picker is multi-account again,
-    /// matching the withdraw flow.)
+    /// key class 0) on this wallet. The Rust `platform-wallet` Auto selector
+    /// resolves the chosen `accountIndex` via
+    /// `platform_payment_managed_account_at_index(account_index)` (key class 0)
+    /// and spends from that account, so the source matches the `accountIndex`
+    /// the transfer persists/nonces against — the picker is multi-account,
+    /// matching the withdraw flow.
     private var platformAccountOptions: [PlatformAccountOption] {
         let accounts = allAccounts
             .filter { $0.wallet.walletId == wallet.walletId }
@@ -324,13 +330,13 @@ struct TransferPlatformAddressView: View {
     }
 
     /// Funded addresses on the selected source account for this wallet.
-    /// The `transfer` wrapper picks its inputs from these (balance > 0),
+    /// The Rust Auto selector picks its inputs from these (balance > 0),
     /// and the `AddressFundsTransferTransition` protocol forbids any
-    /// output address from also being an input. The wrapper excludes
-    /// recipient hashes from input selection *before* its sufficiency
-    /// check, so a recipient that collides with a funded source input
-    /// would enable the button here, then fail Rust-side once that input
-    /// is removed. Gate on this set so the collision is caught up front.
+    /// output address from also being an input. The selector excludes
+    /// recipient addresses from its input set, so a recipient that
+    /// collides with a funded source input would enable the button here,
+    /// then come up short Rust-side once that input is excluded. Gate on
+    /// this set so the collision is caught up front.
     private var sourceInputHashes: Set<Data> {
         guard let acctIdx = sourceAccountIndex else { return [] }
         return Set(
@@ -344,45 +350,20 @@ struct TransferPlatformAddressView: View {
         )
     }
 
-    /// Own-wallet recipients: any address on the wallet that is NOT the
-    /// auto-selected change address and NOT a funded source-account
-    /// input. We surface unused (zero-balance) addresses on any
-    /// platform-payment account so the user can send to a fresh address;
-    /// the FFI wrapper rejects a recipient that collides with an input.
+    /// Own-wallet recipients: any address on the wallet that is NOT a
+    /// funded source-account input. We surface unused (zero-balance)
+    /// addresses on any platform-payment account so the user can send to a
+    /// fresh address; the Rust Auto selector excludes recipients from its
+    /// input set (DPP forbids the same address as both input and output),
+    /// so a recipient that collides with a funded source input would be
+    /// dropped from selection — we exclude those here so the button isn't
+    /// enabled for a recipient Rust would refuse to fund against.
     private var ownWalletRecipientCandidates: [PersistentPlatformAddress] {
-        let changeHash = autoChangeAddress?.addressHash
         let inputs = sourceInputHashes
         return allPlatformAddresses
             .filter { $0.walletId == wallet.walletId }
-            .filter { $0.addressHash != changeHash }
             .filter { !inputs.contains($0.addressHash) }
             .sorted { ($0.accountIndex, $0.addressIndex) < ($1.accountIndex, $1.addressIndex) }
-    }
-
-    /// Lowest-index unused, zero-balance address on the source account —
-    /// the change destination. Picked internally; never exposed in the UI.
-    ///
-    /// Scoped to `account?.keyClass == 0` to match the Rust transfer path,
-    /// which routes change through `platform_payment_managed_account_at_index`
-    /// (key class 0). A sibling PlatformPayment account at the same
-    /// `accountIndex` with a different key class can legitimately own an
-    /// unused, zero-balance row (PersistentAccount's unique constraint
-    /// includes keyClass); without this scope the picker could route change to
-    /// a key-class != 0 address that Rust never surfaces, stranding the funds.
-    /// Mirrors the `keyClass == 0` filter applied to the source picker /
-    /// balance sum.
-    private var autoChangeAddress: PersistentPlatformAddress? {
-        guard let acctIdx = sourceAccountIndex else { return nil }
-        return allPlatformAddresses
-            .filter {
-                $0.walletId == wallet.walletId
-                    && $0.accountIndex == acctIdx
-                    && $0.account?.keyClass == 0
-                    && !$0.isUsed
-                    && $0.balance == 0
-            }
-            .sorted { $0.addressIndex < $1.addressIndex }
-            .first
     }
 
     /// Parse the pasted external hash (40 hex chars → 20 bytes).
@@ -467,18 +448,19 @@ struct TransferPlatformAddressView: View {
             !isSubmitting,
             sourceAccountIndex != nil,
             let credits = parsedCredits, credits > 0,
-            let dest = resolvedDestination,
-            autoChangeAddress != nil
+            let dest = resolvedDestination
         else { return false }
-        // Reject change-address / recipient collision up front (the
-        // wrapper rejects it too, but a dead button is worse UX).
-        if dest.hash == autoChangeAddress?.addressHash { return false }
         // Reject a recipient that collides with a funded source input.
-        // The wrapper drops it from input selection before its
-        // sufficiency check, so the button would enable then fail
-        // Rust-side. Covers both own-wallet picks and pasted externals.
+        // The Rust Auto selector excludes recipients from its input set,
+        // so a recipient on a funded source input would be dropped from
+        // selection and the transfer could come up short Rust-side.
+        // Covers both own-wallet picks and pasted externals.
         if sourceInputHashes.contains(dest.hash) { return false }
-        // Gate on amount + fee buffer <= account balance.
+        // Gate on amount + fee cushion <= account balance. The Auto path
+        // deducts the on-chain fee from the source balance, so the account
+        // must cover amount + fee; this is a conservative UI gate (Rust
+        // computes the exact fee and rejects an over-spend with a typed
+        // error).
         let needed = credits.addingReportingOverflow(Self.feeBuffer)
         if needed.overflow { return false }
         return selectedSourceAccountCredits >= needed.partialValue
@@ -506,16 +488,8 @@ struct TransferPlatformAddressView: View {
         guard
             let sourceAccount = sourceAccountIndex,
             let credits = parsedCredits,
-            let dest = resolvedDestination,
-            let change = autoChangeAddress
+            let dest = resolvedDestination
         else { return }
-
-        guard dest.hash != change.addressHash else {
-            submitError = SubmitError(
-                message: "The destination collides with the auto-selected change address. Pick a different recipient."
-            )
-            return
-        }
 
         guard !sourceInputHashes.contains(dest.hash) else {
             submitError = SubmitError(
@@ -545,10 +519,6 @@ struct TransferPlatformAddressView: View {
                 credits: credits
             )
         ]
-        let changeAddress = ManagedPlatformAddressWallet.ChangeAddress(
-            addressType: change.addressType,
-            hash: change.addressHash
-        )
 
         isSubmitting = true
         Task {
@@ -557,7 +527,6 @@ struct TransferPlatformAddressView: View {
                 let updated = try await addressWallet.transfer(
                     accountIndex: sourceAccount,
                     outputs: outputs,
-                    changeAddress: changeAddress,
                     signer: signer
                 )
                 // Persist the post-transfer balances Rust reported BEFORE

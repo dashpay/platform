@@ -301,47 +301,15 @@ impl PlatformAddressWallet {
     /// [`transfer`](Self::transfer), or [`withdraw`](Self::withdraw).
     ///
     /// Resolves against the **first** platform-payment account (account index 0,
-    /// key class 0). Callers that need a specific account must use
-    /// [`addresses_with_balances_for_account`](Self::addresses_with_balances_for_account)
-    /// so input selection and persistence agree on the source account.
+    /// key class 0). This is a read-only display query; account-scoped input
+    /// selection for transfers/withdrawals happens inside
+    /// [`transfer`](Self::transfer) / [`withdraw`](Self::withdraw) via
+    /// [`InputSelection::Auto`](super::InputSelection::Auto), which resolves the
+    /// requested account on the Rust side.
     pub async fn addresses_with_balances(&self) -> Vec<(PlatformAddress, Credits)> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.core_wallet.first_platform_payment_managed_account())
-            .map(|account| {
-                account
-                    .address_balances
-                    .iter()
-                    .map(|(p2pkh, &bal)| (PlatformAddress::P2pkh(p2pkh.to_bytes()), bal))
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    /// Get all platform addresses with their cached balances for a specific
-    /// platform-payment account.
-    ///
-    /// Account-scoped sibling of [`addresses_with_balances`](Self::addresses_with_balances):
-    /// resolves the account via `platform_payment_managed_account_at_index`
-    /// (key class 0) so the returned balances come from the requested
-    /// `account_index` rather than always the first account. The transfer path
-    /// builds its explicit inputs from this so the spent source account matches
-    /// the `account_index` it persists/nonces against — without this the public
-    /// `transfer(account_index, ..)` API would silently spend account 0 while
-    /// telling the chain a different account.
-    ///
-    /// Returns an empty vec (not an error) when the account has no addresses,
-    /// matching `addresses_with_balances`'s behaviour for a missing account.
-    pub async fn addresses_with_balances_for_account(
-        &self,
-        account_index: u32,
-    ) -> Vec<(PlatformAddress, Credits)> {
-        let wm = self.wallet_manager.read().await;
-        wm.get_wallet_info(&self.wallet_id)
-            .and_then(|info| {
-                info.core_wallet
-                    .platform_payment_managed_account_at_index(account_index)
-            })
             .map(|account| {
                 account
                     .address_balances

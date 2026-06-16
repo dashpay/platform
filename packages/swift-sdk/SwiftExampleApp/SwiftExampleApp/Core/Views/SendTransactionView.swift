@@ -235,21 +235,10 @@ struct SendTransactionView: View {
                             let senderAccountIndex = addressBalances
                                 .first(where: { $0.balance > 0 })?
                                 .accountIndex ?? 0
-                            // Mirror ReceiveAddressView's selection:
-                            // the lowest-indexed HD address that has
-                            // never been used. Used as the change
-                            // destination so the transition doesn't
-                            // collide with any input address. Scoped
-                            // to `senderAccountIndex` so multi-account
-                            // wallets don't land change on a different
-                            // platform-payment account than the inputs.
-                            let changeAddressRow = addressBalances
-                                .filter {
-                                    $0.accountIndex == senderAccountIndex
-                                        && !$0.isUsed
-                                        && $0.balance == 0
-                                }
-                                .min(by: { $0.addressIndex < $1.addressIndex })
+                            // Input selection and surplus handling are owned
+                            // by the Rust Auto path (surplus stays on the
+                            // source addresses in the credit-balance model),
+                            // so there's no change address to pick here.
                             let signer = KeychainSigner(
                                 modelContainer: modelContext.container
                             )
@@ -263,7 +252,6 @@ struct SendTransactionView: View {
                                 platformAddressWallet: platformAddressWallet,
                                 signer: signer,
                                 senderAccountIndex: senderAccountIndex,
-                                changeAddressRow: changeAddressRow,
                                 modelContext: modelContext
                             )
                         }

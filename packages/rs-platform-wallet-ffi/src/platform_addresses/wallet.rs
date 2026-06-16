@@ -112,52 +112,6 @@ pub unsafe extern "C" fn platform_address_wallet_addresses_with_balances(
     PlatformWalletFFIResult::ok()
 }
 
-/// Get all platform addresses with their cached balances for a specific
-/// platform-payment account (`account_index`, key class 0).
-///
-/// Account-scoped sibling of
-/// [`platform_address_wallet_addresses_with_balances`]: resolves the requested
-/// account rather than always the first one, and stamps each returned entry's
-/// `account_index` with the requested value. Callers that build explicit
-/// transfer inputs must use this so the spent source account matches the
-/// `account_index` the transfer persists/nonces against.
-///
-/// On success, `out_entries` and `out_count` are set to a heap-allocated array.
-/// Free with `platform_address_wallet_free_address_balances`.
-#[no_mangle]
-pub unsafe extern "C" fn platform_address_wallet_addresses_with_balances_for_account(
-    handle: Handle,
-    account_index: u32,
-    out_entries: *mut *mut AddressBalanceEntryFFI,
-    out_count: *mut usize,
-) -> PlatformWalletFFIResult {
-    check_ptr!(out_entries);
-    check_ptr!(out_count);
-
-    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
-        let balances =
-            runtime().block_on(wallet.addresses_with_balances_for_account(account_index));
-        balances
-            .into_iter()
-            .map(|(address, balance)| AddressBalanceEntryFFI {
-                address: address.into(),
-                balance,
-                nonce: 0,
-                account_index,
-                address_index: 0,
-            })
-            .collect::<Vec<_>>()
-    });
-    let entries = unwrap_option_or_return!(option);
-    *out_count = entries.len();
-    if entries.is_empty() {
-        *out_entries = std::ptr::null_mut();
-    } else {
-        *out_entries = Box::into_raw(entries.into_boxed_slice()) as *mut AddressBalanceEntryFFI;
-    }
-    PlatformWalletFFIResult::ok()
-}
-
 // ---------------------------------------------------------------------------
 // Memory deallocation
 // ---------------------------------------------------------------------------
