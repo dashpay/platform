@@ -172,45 +172,29 @@ mod tests {
         cols.iter().any(|c| c == column)
     }
 
-    /// Regression: a database that already applied V001 — exactly the state
-    /// of a `v4.0.0-beta.4` / `rc.1` / `rc.2` install — must upgrade to V002
-    /// and gain the DashPay sync-correctness schema.
+    /// The initial schema (V001) creates the DashPay sync-correctness
+    /// objects directly — the `contacts.payment_channel_broken` column and
+    /// the `rejected_contact_requests` tombstone table.
     ///
-    /// This is what editing V001 in place would have broken: refinery marks
-    /// V001 applied by checksum, so folding the new column/table back into
-    /// V001 would either abort the open on a checksum mismatch or silently
-    /// skip the DDL (V001 already applied) — leaving an upgraded DB without
-    /// `payment_channel_broken` / `rejected_contact_requests`. Pinning that
-    /// the additions live in an append-only V002 keeps the upgrade path live.
+    /// These were briefly split into an append-only V002 (to avoid editing a
+    /// migration that ships in `v4.0.0-beta.4` / `rc.1` / `rc.2`), then
+    /// squashed back into V001: the storage crate has no product consumers
+    /// yet — nothing instantiates `SqlitePersister` or runs these migrations
+    /// — so no real database ever applied V001, and a single clean initial
+    /// schema is preferable for a pre-release crate. This test pins that the
+    /// objects exist after the (only) migration runs.
     #[test]
-    fn v001_database_upgrades_to_v002_schema() {
+    fn v001_creates_dashpay_sync_schema() {
         let mut conn = Connection::open_in_memory().unwrap();
-
-        // Apply ONLY V001 (the released beta.4/rc state).
-        runner()
-            .set_target(refinery::Target::Version(1))
-            .run(&mut conn)
-            .unwrap();
-
-        assert!(
-            !table_exists(&conn, "rejected_contact_requests"),
-            "rejected_contact_requests must be a V002 addition — absent at V001"
-        );
-        assert!(
-            !column_exists(&conn, "contacts", "payment_channel_broken"),
-            "payment_channel_broken must be a V002 addition — absent at V001"
-        );
-
-        // Upgrade to HEAD: V002 applies on top of the already-applied V001.
         run(&mut conn).unwrap();
 
         assert!(
             table_exists(&conn, "rejected_contact_requests"),
-            "V002 must create the rejected-tombstone table when upgrading from V001"
+            "V001 must create the rejected-tombstone table"
         );
         assert!(
             column_exists(&conn, "contacts", "payment_channel_broken"),
-            "V002 must add the broken-channel column when upgrading from V001"
+            "V001 must create the contacts.payment_channel_broken column"
         );
     }
 }

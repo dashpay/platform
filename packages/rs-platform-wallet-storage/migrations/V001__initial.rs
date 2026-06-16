@@ -186,8 +186,31 @@ CREATE TABLE contacts (
     note TEXT,
     is_hidden INTEGER,
     accepted_accounts BLOB,
+    -- G1c: set when external-account registration permanently fails for a
+    -- contact (so the sync sweep stops retrying a poisoned channel);
+    -- cleared on a superseding rotation. Nullable — readers treat NULL as
+    -- `false`.
+    payment_channel_broken INTEGER,
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
     PRIMARY KEY (wallet_id, owner_id, contact_id),
+    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+);
+
+-- Rejected-request tombstone (G5 stage 1). Keyed by
+-- `(wallet_id, owner_id, sender_id, account_reference)` — NOT bare sender
+-- id — so a once-rejected sender can still re-request via a bumped
+-- accountReference (the DIP-15 rotation mechanism), while a replay of the
+-- exact same immutable request stays suppressed. `document_id` is carried
+-- for audit / exact-match suppression. The sync ingest path consults this
+-- table before re-ingesting a received contactRequest.
+CREATE TABLE rejected_contact_requests (
+    wallet_id BLOB NOT NULL,
+    owner_id BLOB NOT NULL,
+    sender_id BLOB NOT NULL,
+    account_reference INTEGER NOT NULL,
+    document_id BLOB,
+    rejected_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (wallet_id, owner_id, sender_id, account_reference),
     FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
 );
 
