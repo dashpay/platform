@@ -12,7 +12,19 @@ struct ContentView: View {
     let bootstrapError: Error?
     let onRetry: () -> Void
 
-    @EnvironmentObject var walletManager: PlatformWalletManager
+    // NOTE: `walletManager` is intentionally NOT declared here. An
+    // `@EnvironmentObject` subscribes the entire view to that object's
+    // `objectWillChange`, and `walletManager` publishes `spvProgress` on
+    // a fast cadence during sync — holding it on this root view
+    // re-rendered the whole `TabView` several times a second, tearing
+    // down each tab's content and any sheet/pushed view inside it. That
+    // observation now lives in the leaf `GlobalSyncIndicatorOverlay`, so
+    // sync ticks no longer invalidate `ContentView.body`.
+    //
+    // `appUIState` IS declared: it owns the root tab selection (so deep
+    // views like DashPayTabView / IdentityDetailView can switch tabs)
+    // and only publishes on low-frequency UI events (tab switch, banner
+    // toggle), never on sync progress.
     @EnvironmentObject var walletManagerStore: WalletManagerStore
     @EnvironmentObject var appUIState: AppUIState
     @EnvironmentObject var platformState: AppState
@@ -138,10 +150,17 @@ struct ContentView: View {
                     .tag(RootTab.settings)
             }
             .overlay(alignment: .top) {
-                let state = walletManager.spvProgress.overallState
-                if state == .syncing || state == .waitingForConnections {
-                    GlobalSyncIndicator(showDetails: appUIState.selectedTab == .sync && appUIState.showWalletsSyncDetails)
-                }
+                // The sync indicator depends on `walletManager.spvProgress`,
+                // which publishes on a fast cadence while syncing. Reading
+                // it directly in `ContentView.body` would subscribe the
+                // whole `TabView` to every progress tick, re-creating each
+                // tab's content (including `ContractsTabView` and any sheet
+                // it presents) several times a second — which tears down a
+                // pushed drill-down and dismisses sheets presented from it
+                // (e.g. the document-create flow). Isolating the volatile
+                // observation in this leaf keeps the tab content stable;
+                // only the overlay re-renders on progress.
+                GlobalSyncIndicatorOverlay(isSyncTab: selectedTab.wrappedValue == .sync)
             }
             .onAppear { checkForOrphanMnemonic() }
             .onChange(of: persistentWallets.count) { _, _ in
@@ -579,6 +598,24 @@ struct ContentView: View {
             recoveryError = "Failed to delete mnemonic"
                 + (failures.count == 1 ? "" : "s")
                 + ": " + failures.joined(separator: "; ")
+        }
+    }
+}
+
+/// Leaf wrapper that owns the volatile `walletManager` / `appUIState`
+/// observations so the sync-progress publish cadence re-renders only
+/// this overlay, not the parent `TabView`. `isSyncTab` is passed as a
+/// plain value (it changes only on tab switch), keeping this view's
+/// only fast-publishing dependency local.
+struct GlobalSyncIndicatorOverlay: View {
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var appUIState: AppUIState
+    let isSyncTab: Bool
+
+    var body: some View {
+        let state = walletManager.spvProgress.overallState
+        if state == .syncing || state == .waitingForConnections {
+            GlobalSyncIndicator(showDetails: isSyncTab && appUIState.showWalletsSyncDetails)
         }
     }
 }

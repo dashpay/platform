@@ -87,6 +87,13 @@ struct IdentityDetailView: View {
     /// owns recipient + amount selection and signs via the Keychain.
     @State private var showingTransferCredits = false
 
+    /// Drives presentation of `WithdrawCreditsView`. Tapped from the
+    /// "Withdraw Credits" button below "Transfer Credits" — the flow
+    /// owns destination-address + amount entry and signs via the
+    /// Keychain. The L1 payout is processed asynchronously by the
+    /// network.
+    @State private var showingWithdrawCredits = false
+
     var body: some View {
         if let identity = identity {
             List {
@@ -176,6 +183,24 @@ struct IdentityDetailView: View {
                     } label: {
                         HStack {
                             Label("Transfer Credits", systemImage: "arrow.left.arrow.right.circle")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    // Withdraw credits to an L1 Dash address. Same
+                    // gating as Top Up / Transfer: on-chain identity
+                    // backed by a loaded wallet so the signer can derive
+                    // the state-transition key. The L1 payout is
+                    // processed asynchronously by the network.
+                    Button {
+                        showingWithdrawCredits = true
+                    } label: {
+                        HStack {
+                            Label("Withdraw Credits", systemImage: "arrow.up.circle")
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .foregroundColor(.secondary)
@@ -438,6 +463,10 @@ struct IdentityDetailView: View {
         }
         .sheet(isPresented: $showingTransferCredits) {
             TransferCreditsView(identity: identity)
+                .environmentObject(walletManager)
+        }
+        .sheet(isPresented: $showingWithdrawCredits) {
+            WithdrawCreditsView(identity: identity)
                 .environmentObject(walletManager)
         }
         .onAppear {

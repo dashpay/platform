@@ -18,6 +18,7 @@
 // Core handle + identity-lifecycle operations.
 mod contract;
 mod discovery;
+mod document;
 mod dpns;
 mod identity_handle;
 mod loading;
