@@ -1,11 +1,10 @@
-//! DashPay `contactInfo` document sync + publish (M3 task 13 / G10 +
-//! G5 stage 2).
+//! DashPay `contactInfo` document sync + publish (gaps G10 / G5 stage 2).
 //!
 //! `contactInfo` carries the owner's PRIVATE per-contact metadata
 //! (alias, note, `displayHidden`) self-encrypted per
 //! [`crate::wallet::identity::crypto::contact_info`] — publishing it
 //! is what makes alias/note/hide survive restore-from-seed and sync
-//! across devices (the M2 app stored these device-locally).
+//! across devices (otherwise they live only on the local device).
 //!
 //! Document identity: the unique index is
 //! `($ownerId, rootEncryptionKeyIndex, derivationEncryptionKeyIndex)`
@@ -132,7 +131,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
             let Some(identity_index) = managed.identity_index else {
                 // Watch-only / out-of-wallet identity — no HD slot to
-                // derive the self-encryption keys from (G4 hook later).
+                // derive the self-encryption keys from (see gap G4).
                 return Ok((Vec::new(), std::collections::BTreeMap::new()));
             };
             let wallet = wm
@@ -387,7 +386,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let Some(identity_index) = identity_index else {
             tracing::info!(
                 identity = %identity_id,
-                "contactInfo publish skipped for watch-only/seedless identity (G4 pending); local state updated"
+                "contactInfo publish skipped for watch-only/seedless identity (no host-side signing hook, gap G4); local state updated"
             );
             return Ok(ContactInfoPublishOutcome::SkippedWatchOnly);
         };

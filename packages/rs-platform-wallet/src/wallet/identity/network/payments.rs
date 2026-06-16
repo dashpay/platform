@@ -776,8 +776,9 @@ mod tests {
     /// next launch with no signal. The user-initiated `reject` path must
     /// return the error instead.
     ///
-    /// RED before the fix: `reject_contact_request` logged the store error
-    /// and returned `Ok(())`. GREEN: it returns `Err(Persistence)`.
+    /// The hazard: if `reject_contact_request` merely logged the store error
+    /// and returned `Ok(())`, the rejection would be lost; it must return
+    /// `Err(Persistence)`.
     #[tokio::test]
     async fn reject_propagates_persist_failure() {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
@@ -849,9 +850,9 @@ mod tests {
     /// channel.** `register_external_contact_account` returns a typed
     /// `RegisterExternalError` so the unattended sync sweep marks a contact
     /// `payment_channel_broken` (G1c) only on a *permanent* crypto/data
-    /// fault — not on a transient infra/persistence hiccup. Previously a
-    /// transient DAPI fetch *inside* the method was indistinguishable from
-    /// a malformed request and killed payments to the contact forever.
+    /// fault — not on a transient infra/persistence hiccup. A transient DAPI
+    /// fetch *inside* the method would otherwise be indistinguishable from a
+    /// malformed request and kill payments to the contact forever.
     ///
     /// An unmanaged owner identity is an infra-state miss → must classify
     /// `Transient` (channel left intact, retried next sweep). This fails

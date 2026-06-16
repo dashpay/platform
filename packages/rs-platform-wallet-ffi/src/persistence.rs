@@ -3444,9 +3444,8 @@ fn build_wallet_start_state(
 /// side), so the restored `Identity.public_keys` map is populated at
 /// load time. An identity with no persisted keys (e.g. an in-flight
 /// registration whose key-persist round hasn't completed) loads with
-/// an empty map and gets refreshed on the next sync round — same
-/// degraded-but-usable behaviour as before this change for that
-/// narrow case.
+/// an empty map and gets refreshed on the next sync round —
+/// degraded-but-usable for that narrow case.
 /// Rebuild the `unused_asset_locks` map carried on
 /// [`ClientWalletStartState`] from the `tracked_asset_locks` slice the
 /// Swift load callback hands back. Mirrors the encoding used by
@@ -4521,9 +4520,9 @@ mod tests {
     /// **H1 — DashPay payment history is restored at load.**
     /// The fold must rebuild `dashpay_payments` (Sent AND Received, with
     /// memos) from the persisted rows, mapping the direction/status
-    /// discriminants and decoding the c-strings. RED before the fix: there
-    /// was no payment restore at all, so the in-memory map started empty
-    /// and Sent entries vanished on relaunch.
+    /// discriminants and decoding the c-strings. Without this restore step
+    /// there is no payment restore at all, so the in-memory map starts empty
+    /// and Sent entries vanish on relaunch.
     #[test]
     fn restore_payments_fold_rebuilds_sent_and_received() {
         use platform_wallet::wallet::identity::{PaymentDirection, PaymentStatus};

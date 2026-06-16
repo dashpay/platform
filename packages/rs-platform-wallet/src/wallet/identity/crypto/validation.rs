@@ -418,7 +418,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // G15 key-purpose alignment (M1 task 9). The verified testnet reality
+    // G15 key-purpose alignment. The verified testnet reality
     // (368 on-chain docs, research/06 §G15): the dominant mobile cohort
     // references an UNBOUND ENCRYPTION key for BOTH senderKeyIndex and
     // recipientKeyIndex (mobile identities carry no DECRYPTION key); the
@@ -430,10 +430,10 @@ mod tests {
 
     /// Mobile-cohort shape: sender references an ENCRYPTION key, recipient
     /// (our key) is ALSO an ENCRYPTION key (mobile identities have no
-    /// DECRYPTION key). This must pass — RED before task 9 because the
-    /// recipient side had no purpose gate at all, so it "passed" for the
-    /// wrong reason; the companion AUTHENTICATION test below is the one that
-    /// proves the gate was previously missing.
+    /// DECRYPTION key). This must pass. The companion AUTHENTICATION test
+    /// below pins the recipient-purpose gate: without that gate an
+    /// AUTHENTICATION recipient key is silently accepted (it "passes" for
+    /// the wrong reason).
     #[test]
     fn mobile_cohort_recipient_encryption_key_is_accepted() {
         let sender = make_identity(vec![make_key(
@@ -457,9 +457,9 @@ mod tests {
     }
 
     /// A recipient key of purpose AUTHENTICATION must FAIL validation (legacy
-    /// 2024 cohort / test-noise shape). RED before task 9: the recipient side
-    /// had NO purpose check, so an AUTHENTICATION recipient key was silently
-    /// accepted and a wrong shared secret could be derived.
+    /// 2024 cohort / test-noise shape). Without the recipient-purpose gate an
+    /// AUTHENTICATION recipient key is silently accepted and a wrong shared
+    /// secret could be derived.
     #[test]
     fn recipient_authentication_key_is_rejected_as_purpose_mismatch() {
         let sender = make_identity(vec![make_key(

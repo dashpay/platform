@@ -514,7 +514,7 @@ mod tests {
         assert_ne!(
             reference & 0x0FFF_FFFF,
             old_ask28,
-            "head-of-digest extraction is the pre-G3 bug"
+            "head-of-digest extraction is the old bug"
         );
     }
 
@@ -624,9 +624,9 @@ mod tests {
         // the 107-byte DIP-14 serialization (ends in a Normal256 child) and
         // encrypts to 128 bytes — failing the contract's maxItems: 96.
         //
-        // Before the fix, the producer at contact_requests.rs:150 used
-        // `account_xpub.encode()`; against that code this assertion is RED
-        // (107 != 69). This pins the byte-exact compact layout.
+        // The earlier `account_xpub.encode()` producer emitted the 107-byte
+        // form (107 != 69); this assertion pins the byte-exact compact layout
+        // so a revert to `encode()` is caught.
         let wallet = test_wallet(Network::Testnet);
         let (sender, recipient) = test_identifiers();
 

@@ -1673,9 +1673,9 @@ mod sweep_tests {
     /// them to the single newest by (created_at, accountReference) so the
     /// stale doc can't be re-ingested as a phantom rotation each pass.
     ///
-    /// RED before the fix: the ingest loop processed every doc and compared
+    /// Without the collapse, the ingest loop processes every doc and compares
     /// each against the single tracked reference, so the non-matching doc
-    /// flipped the stored state every sweep. GREEN: only the newest survives.
+    /// flips the stored state every sweep; with it, only the newest survives.
     #[test]
     fn newest_received_per_sender_collapses_rotated_sender_to_latest_doc() {
         let sender = 2u8;
@@ -1719,9 +1719,9 @@ mod sweep_tests {
     /// consults the pending map returns `None` → version resets to 0 →
     /// reproduces the original accountReference → unique-index rejection.
     ///
-    /// RED before the fix: `prior_sent_account_reference` consulted only
-    /// `sent_contact_requests`, returning `None` for an established contact.
-    /// GREEN: it falls back to the established outgoing request.
+    /// The hazard: if `prior_sent_account_reference` consulted only
+    /// `sent_contact_requests` it would return `None` for an established
+    /// contact; it must fall back to the established outgoing request.
     #[test]
     fn prior_sent_account_reference_falls_back_to_established_outgoing() {
         let our = 1u8;
@@ -1798,8 +1798,8 @@ mod sweep_tests {
 // Verified testnet reality (research/06 §G15): the dominant mobile cohort has
 // an ENCRYPTION key but NO DECRYPTION key, and references its ENCRYPTION key
 // for recipientKeyIndex. Sending to such a recipient must succeed by falling
-// back to the ENCRYPTION key — RED before task 9 (errored "no decryption
-// key"), GREEN after.
+// back to the ENCRYPTION key — without that fallback the send errors with
+// "no decryption key" for the dominant mobile cohort.
 // ---------------------------------------------------------------------------
 #[cfg(test)]
 mod recipient_key_selection_tests {

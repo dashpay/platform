@@ -1,7 +1,8 @@
 # DashPay implementation map — `rs-platform-wallet` (+ FFI, storage)
 
-Research snapshot of the current DashPay flow in the platform wallet, with
-file:line citations and an implemented/stub assessment per flow.
+Research date: 2026-06-10. Snapshot of the DashPay flow in the platform
+wallet at the start of this work, with file:line citations and an
+implemented/stub assessment per flow.
 
 Scope packages:
 - `packages/rs-platform-wallet` — library (logic)

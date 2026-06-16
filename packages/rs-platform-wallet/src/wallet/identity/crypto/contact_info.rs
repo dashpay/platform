@@ -62,9 +62,9 @@ pub struct ContactInfoKeys {
 /// `root_encryption_key_id` is the identity's registered ENCRYPTION
 /// key id (the document's `rootEncryptionKeyIndex`);
 /// `derivation_index` is the per-document
-/// `derivationEncryptionKeyIndex`. Requires a key-resident wallet —
-/// external-signable wallets route through the G4 host hook once M4
-/// lands.
+/// `derivationEncryptionKeyIndex`. Requires a key-resident wallet;
+/// external-signable wallets have no in-process HD slot and need a
+/// host-side signing hook (gap G4).
 pub fn derive_contact_info_keys(
     wallet: &Wallet,
     network: Network,

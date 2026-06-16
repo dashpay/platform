@@ -581,9 +581,9 @@ mod tests {
         // (InvalidDocumentTransitionIdError) unless
         //   generate_document_id_v0(contract, owner, "contactRequest", entropy) == base.id.
         //
-        // Before the fix, ContactRequestResult had no `entropy` field and
-        // send_contact_request generated fresh entropy E2 != E1, so this invariant
-        // could not even be expressed. This test pins it.
+        // Without the `entropy` field on ContactRequestResult,
+        // send_contact_request would generate fresh entropy E2 != E1 and this
+        // invariant could not even be expressed. This test pins it.
         let mut rng = StdRng::seed_from_u64(0x6732_4732); // deterministic, no network
         let entropy = Bytes32::random_with_rng(&mut rng);
 
@@ -623,8 +623,8 @@ mod tests {
         // G15: the recipient-key assertion must accept DECRYPTION (our
         // original convention / newest cohort) OR ENCRYPTION (the dominant
         // mobile cohort, whose identities have no DECRYPTION key and reference
-        // their ENCRYPTION key for recipientKeyIndex). Before task 9 only
-        // DECRYPTION was accepted, so sending to a mobile recipient errored
+        // their ENCRYPTION key for recipientKeyIndex). Accepting only
+        // DECRYPTION would make sending to a mobile recipient error with
         // "Recipient key ... is not a decryption key".
         assert!(
             recipient_key_purpose_is_valid(Purpose::DECRYPTION),
@@ -632,7 +632,7 @@ mod tests {
         );
         assert!(
             recipient_key_purpose_is_valid(Purpose::ENCRYPTION),
-            "ENCRYPTION recipient key (mobile cohort) must be accepted — RED before G15"
+            "ENCRYPTION recipient key (mobile cohort) must be accepted"
         );
     }
 
