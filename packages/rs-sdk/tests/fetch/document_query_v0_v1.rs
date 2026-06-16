@@ -221,7 +221,7 @@ fn encoder_dispatches_v0_via_query_settings_without_sdk() {
 fn sdk_builder_default_seeds_atomic_to_floor() {
     // Auto-detect default uses mainnet, so the atomic seeds to the mainnet
     // `min_protocol_version` floor, which `version()` returns until the first
-    // response ratchets it upward. PV_11 tracks the flat floor in
+    // response ratchets it upward. Mainnet's floor is PV_11 in
     // `Sdk::min_protocol_version`.
     let sdk_default = SdkBuilder::new_mock().build().expect("mock sdk");
     assert_eq!(

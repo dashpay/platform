@@ -53,16 +53,18 @@ pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 pub const DEFAULT_TOKEN_CONFIG_CACHE_SIZE: usize = 100;
 /// How many quorum public keys fit in the cache.
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
-/// The default initial protocol version for a network, used when no version is
-/// pinned via [`SdkBuilder::with_version`] or seeded via
-/// [`SdkBuilder::with_initial_version`].
+/// Per-network lower bound an unpinned SDK seeds from and never drops below.
 ///
-/// This is only the starting point: auto-detect
-/// ([`Sdk::maybe_update_protocol_version`]) ratchets the version *upward* via
-/// `fetch_max` when the network reports a newer one. It is not a hard floor — an
-/// explicitly pinned version below it is preserved as-is.
-const fn min_protocol_version(_network: Network) -> u32 {
-    dpp::version::v11::PROTOCOL_VERSION_11 // TODO: set real per-network floors once the update mechanism is tested
+/// A floor, not a pin: auto-detect ([`Sdk::maybe_update_protocol_version`]) still
+/// ratchets the version *upward* via `fetch_max` when the network reports a newer
+/// one.
+const fn min_protocol_version(network: Network) -> u32 {
+    match network {
+        Network::Mainnet => dpp::version::v11::PROTOCOL_VERSION_11,
+        Network::Testnet => dpp::version::v12::PROTOCOL_VERSION_12,
+        Network::Devnet => dpp::version::v12::PROTOCOL_VERSION_12,
+        Network::Regtest => dpp::version::v12::PROTOCOL_VERSION_12,
+    }
 }
 
 /// The default metadata time tolerance for checkpoint queries in milliseconds
