@@ -357,6 +357,33 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 /// like a "rotation" away from the tracked state, thrashing it back and
 /// forth each pass. Collapsing to the newest first makes the sweep a
 /// fixpoint.
+/// High-water rewind window applied to the incremental contact-request query.
+/// Re-fetching the last 10 minutes each sweep covers clock skew **and**
+/// equal-`$createdAt` documents straddling a page boundary, so it is
+/// correctness-load-bearing — NOT a tunable; `0` is invalid. See
+/// `docs/dashpay/SYNC_CORRECTNESS_SPEC.md` §4.1.
+const SYNC_OVERLAP_MS: u64 = 10 * 60_000;
+
+/// Lower bound for the incremental `$createdAt >` query: the high-water minus
+/// the overlap window. `None` (no cursor yet) ⇒ full fetch.
+fn query_lower_bound(high_water: Option<u64>) -> Option<u64> {
+    high_water.map(|hw| hw.saturating_sub(SYNC_OVERLAP_MS))
+}
+
+/// Advance a high-water cursor to the max `$createdAt` fetched this sweep,
+/// never below its current value. `max_fetched` is the max over docs *seen*
+/// (including ones ingest later collapses or skips — the cursor records
+/// fetch-completeness, not ingest-success), `None` when nothing was fetched (a
+/// zero-doc sweep leaves the cursor unchanged). The caller must only invoke
+/// this when the paginate exhausted without error.
+fn advance_high_water(current: Option<u64>, max_fetched: Option<u64>) -> Option<u64> {
+    match (current, max_fetched) {
+        (Some(c), Some(m)) => Some(c.max(m)),
+        (None, m) => m,
+        (c, None) => c,
+    }
+}
+
 fn newest_received_per_sender(
     requests: impl IntoIterator<Item = ContactRequest>,
 ) -> std::collections::BTreeMap<Identifier, ContactRequest> {
@@ -455,7 +482,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ///
     /// Returns all newly discovered incoming contact requests.
     pub async fn sync_contact_requests(&self) -> Result<Vec<ContactRequest>, PlatformWalletError> {
-        let identity_ids: Vec<Identifier> = {
+        // Snapshot each identity's high-water cursors up front so the
+        // incremental query bound is read before any mutation this sweep.
+        let identities: Vec<(Identifier, Option<u64>, Option<u64>)> = {
             let wm = self.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
@@ -463,13 +492,21 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             info.identity_manager
                 .all_identities()
                 .into_iter()
-                .map(|i| i.id())
+                .map(|i| {
+                    let id = i.id();
+                    let (hwr, hws) = info
+                        .identity_manager
+                        .managed_identity(&id)
+                        .map(|m| (m.high_water_received_ms, m.high_water_sent_ms))
+                        .unwrap_or((None, None));
+                    (id, hwr, hws)
+                })
                 .collect()
         };
 
         let mut all_requests = Vec::new();
 
-        for identity_id in identity_ids {
+        for (identity_id, hw_received, hw_sent) in identities {
             // --- Fetch (no guard held during the awaits). ---
             //
             // Log-and-continue per identity: a fetch failure for one
@@ -479,7 +516,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             // sync for every other identity on the wallet.
             let received_docs = match self
                 .sdk
-                .fetch_received_contact_requests(identity_id, None)
+                .fetch_received_contact_requests(identity_id, query_lower_bound(hw_received))
                 .await
             {
                 Ok(docs) => docs,
@@ -495,10 +532,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             // G13: also fetch our own sent requests so a restored / second
             // device reconciles established contacts instead of rendering
             // them as bare incoming requests. A failure here is logged but
-            // does not skip the received-side ingest already fetched above.
+            // does not skip the received-side ingest already fetched above —
+            // and the sent cursor is NOT advanced when this fails.
+            let mut sent_ok = true;
             let sent_docs = match self
                 .sdk
-                .fetch_sent_contact_requests(identity_id, None)
+                .fetch_sent_contact_requests(identity_id, query_lower_bound(hw_sent))
                 .await
             {
                 Ok(docs) => docs,
@@ -508,9 +547,26 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         error = %e,
                         "Failed to fetch sent contact requests; reconciling received side only"
                     );
+                    sent_ok = false;
                     Default::default()
                 }
             };
+
+            // Max `$createdAt` over docs FETCHED this sweep (not over docs that
+            // survive ingest's collapse/dedup) — the cursor records
+            // fetch-completeness. Reaching here means the received fetch
+            // exhausted without error, so its cursor may advance; the sent
+            // cursor advances only if `sent_ok`.
+            let max_received = received_docs
+                .values()
+                .filter_map(|d| d.as_ref())
+                .filter_map(|d| d.created_at())
+                .max();
+            let max_sent = sent_docs
+                .values()
+                .filter_map(|d| d.as_ref())
+                .filter_map(|d| d.created_at())
+                .max();
 
             // --- Ingest under the write guard; collect account-building
             //     candidates; then DROP the guard before registering. ---
@@ -643,6 +699,19 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         .accounts
                         .dashpay_external_accounts
                         .remove(&key);
+                }
+
+                // Advance the high-water cursors to the max `$createdAt`
+                // fetched this sweep, never below the current value. The
+                // received fetch reached here only on success; advance the
+                // sent cursor only if its fetch also succeeded. A mid-sweep
+                // fetch error therefore leaves that direction's cursor intact
+                // so the overlap re-fetches next sweep (no burying).
+                managed.high_water_received_ms =
+                    advance_high_water(managed.high_water_received_ms, max_received);
+                if sent_ok {
+                    managed.high_water_sent_ms =
+                        advance_high_water(managed.high_water_sent_ms, max_sent);
                 }
 
                 // (3) Collect account-building candidates: every established
@@ -1412,6 +1481,48 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 // metadata-preserving re-establish, tombstone-by-accountReference) are
 // pinned in `state/managed_identity/contact_requests.rs`.
 // ---------------------------------------------------------------------------
+#[cfg(test)]
+mod cursor_tests {
+    use super::{advance_high_water, query_lower_bound, SYNC_OVERLAP_MS};
+
+    /// No cursor ⇒ full fetch (no lower bound).
+    #[test]
+    fn lower_bound_none_is_full_fetch() {
+        assert_eq!(query_lower_bound(None), None);
+    }
+
+    /// The query bound is the high-water minus the (mandatory) overlap window,
+    /// saturating at 0 — the overlap is what re-includes equal-`$createdAt`
+    /// docs at a page boundary, so it must always be subtracted.
+    #[test]
+    fn lower_bound_subtracts_overlap() {
+        assert_eq!(
+            query_lower_bound(Some(20 * 60_000)),
+            Some(20 * 60_000 - SYNC_OVERLAP_MS)
+        );
+        // Saturates rather than underflowing for a high-water below the window.
+        assert_eq!(query_lower_bound(Some(5 * 60_000)), Some(0));
+        assert!(SYNC_OVERLAP_MS > 0, "overlap must be > 0 for correctness");
+    }
+
+    /// Advancing never moves the cursor backward (guards out-of-order /
+    /// stale-max sweeps and restore over-shoot), and a zero-doc sweep leaves
+    /// it unchanged.
+    #[test]
+    fn advance_never_goes_backward_and_zero_doc_is_noop() {
+        // First sweep from empty: adopt the max fetched.
+        assert_eq!(advance_high_water(None, Some(100)), Some(100));
+        // Forward progress.
+        assert_eq!(advance_high_water(Some(100), Some(200)), Some(200));
+        // A lower max (re-fetch within the overlap, or out-of-order) must NOT
+        // pull the cursor backward.
+        assert_eq!(advance_high_water(Some(200), Some(50)), Some(200));
+        // A zero-doc sweep leaves the cursor exactly where it was.
+        assert_eq!(advance_high_water(Some(200), None), Some(200));
+        assert_eq!(advance_high_water(None, None), None);
+    }
+}
+
 #[cfg(test)]
 mod sweep_tests {
     use super::*;

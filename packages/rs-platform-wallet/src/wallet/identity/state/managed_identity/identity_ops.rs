@@ -90,6 +90,8 @@ impl ManagedIdentity {
             wallet_id: None,
             dashpay_profile: None,
             dashpay_payments: BTreeMap::new(),
+            high_water_received_ms: None,
+            high_water_sent_ms: None,
         }
     }
 
@@ -115,6 +117,8 @@ impl ManagedIdentity {
             wallet_id: None,
             dashpay_profile: None,
             dashpay_payments: BTreeMap::new(),
+            high_water_received_ms: None,
+            high_water_sent_ms: None,
         }
     }
 
