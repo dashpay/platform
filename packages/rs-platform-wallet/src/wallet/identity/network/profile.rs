@@ -767,7 +767,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             {
                 profile.avatar_url = None;
             }
-            out.insert(owner, Some(profile));
+            // A doc that parses to no populated field is treated as
+            // confirmed-absent (negative cache), not a cached-present empty
+            // profile — so self-heal keeps it honest.
+            let entry = (profile != DashPayProfile::default()).then_some(profile);
+            out.insert(owner, entry);
         }
         Ok(out)
     }

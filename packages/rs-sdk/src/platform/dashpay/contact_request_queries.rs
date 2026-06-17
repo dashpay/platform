@@ -89,7 +89,10 @@ impl Sdk {
             let page_len = page.len();
             // The last document id in query order seeds the next page's
             // cursor (distinct from the `$createdAt` high-water the caller
-            // tracks — this id cursor is ephemeral, per-loop).
+            // tracks — this id cursor is ephemeral, per-loop). Relies on
+            // `Documents` being insertion-ordered (`IndexMap`) so `keys().last()`
+            // is the `$createdAt`-ascending last doc; a `BTreeMap` here would
+            // silently reorder by doc id and break pagination.
             let last_id = page.keys().last().copied();
             for (id, doc) in page {
                 all.insert(id, doc);

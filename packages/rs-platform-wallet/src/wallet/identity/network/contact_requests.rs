@@ -378,9 +378,9 @@ fn query_lower_bound(high_water: Option<u64>) -> Option<u64> {
 /// this when the paginate exhausted without error.
 fn advance_high_water(current: Option<u64>, max_fetched: Option<u64>) -> Option<u64> {
     match (current, max_fetched) {
-        (Some(c), Some(m)) => Some(c.max(m)),
-        (None, m) => m,
-        (c, None) => c,
+        (Some(c), Some(m)) => Some(c.max(m)), // never move backward
+        (None, m) => m,                       // first sweep: adopt what was fetched
+        (current, None) => current,           // zero-doc sweep: leave unchanged
     }
 }
 
@@ -1520,6 +1520,13 @@ mod cursor_tests {
         // A zero-doc sweep leaves the cursor exactly where it was.
         assert_eq!(advance_high_water(Some(200), None), Some(200));
         assert_eq!(advance_high_water(None, None), None);
+
+        // `0` is a real cursor value distinct from `None` (a doc at
+        // `$createdAt == 0`, or a freshly-restored 0 cursor) — pin that a
+        // future "treat 0 as unset" refactor would regress.
+        assert_eq!(advance_high_water(None, Some(0)), Some(0));
+        assert_eq!(advance_high_water(Some(0), None), Some(0));
+        assert_eq!(query_lower_bound(Some(0)), Some(0));
     }
 }
 

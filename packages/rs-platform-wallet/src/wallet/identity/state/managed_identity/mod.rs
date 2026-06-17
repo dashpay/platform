@@ -119,11 +119,12 @@ pub struct ManagedIdentity {
 
     /// Incremental-sync high-water marks (`$createdAt` ms of the newest
     /// `contactRequest` fetched) per direction. `None` ⇒ never synced; the
-    /// next sweep does a full fetch. Restored from the persister; a lost or
-    /// too-low value just triggers one extra full re-fetch (ingest is a
-    /// fixpoint), so restore must tolerate only under-shoot — never restore a
-    /// value higher than the contact state justifies. See
-    /// `docs/dashpay/SYNC_CORRECTNESS_SPEC.md` §4.1.
+    /// next sweep does a full fetch. Held in memory: it survives across sweeps
+    /// within a session but resets to `None` on cold restart, triggering one
+    /// full re-fetch (safe — ingest is a fixpoint, so under-shoot is free).
+    /// Durable cross-relaunch persistence is a follow-up; when added, restore
+    /// must tolerate only under-shoot — never a value higher than the contact
+    /// state justifies. See `docs/dashpay/SYNC_CORRECTNESS_SPEC.md` §4.1.
     pub high_water_received_ms: Option<u64>,
     /// High-water mark for the sent direction (`$ownerId == me`).
     pub high_water_sent_ms: Option<u64>,
