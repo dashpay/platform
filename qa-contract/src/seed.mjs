@@ -113,6 +113,16 @@ async function main() {
   const planCommit = resolvePlanCommit(planPath);
   let rows = parseTestPlan(planPath, planCommit);
 
+  // Retired (➖) rows are historical markers in the plan, not runnable tests —
+  // skip them so the on-chain catalog (and the dashboard) never carries a
+  // confusing "Unspecified / Unknown, no runs" entry. E.g. DOC-09, whose
+  // local-demo mock was folded into the real broadcast flow (see DOC-02).
+  const retired = rows.filter((r) => (r.implStatus || '').trim() === '➖');
+  if (retired.length) {
+    console.log(`Skipping ${retired.length} retired (➖) row(s): ${retired.map((r) => r.testId).join(', ')}`);
+    rows = rows.filter((r) => (r.implStatus || '').trim() !== '➖');
+  }
+
   const idFilter = csv(values.ids);
   const tierFilter = csv(values.tier)?.map((s) => s.toLowerCase());
   const catFilter = csv(values.category)?.map((s) => s.toLowerCase());
