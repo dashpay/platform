@@ -333,26 +333,47 @@ struct TransitionInputView: View {
                 .background(Color.orange.opacity(0.1))
                 .cornerRadius(8)
         } else {
-            Picker("Select Contract", selection: $value) {
-                Text("Select a contract...")
-                    .tag("")
-                    .accessibilityIdentifier("transition.\(input.name).contract.none")
-                ForEach(availableContracts, id: \.idBase58) { contract in
-                    Text(getContractDisplayName(contract))
-                        .tag(contract.idBase58)
-                        .accessibilityIdentifier("transition.\(input.name).contract.\(contract.idBase58)")
+            // Push a real selectable list (rather than a menu / inline
+            // Picker) so UI automation (idb) can tap a specific contract by a
+            // stable per-row `…contractPicker.row.<idBase58>` identifier.
+            //
+            // We deliberately do NOT use `.pickerStyle(.navigationLink)` /
+            // `.accessibleFormPicker` here: that style only commits its
+            // selection binding when it has a `List`/`Form` ancestor, and
+            // TransitionDetailView hosts these inputs in a `ScrollView`/
+            // `VStack`. In that host the navigationLink picker renders and
+            // navigates but silently drops the selection. An explicit
+            // `NavigationLink` + selection list writes the binding directly,
+            // so it commits in any host. Shared by every document-transition
+            // builder (Purchase / Transfer / Update Price / Create / Replace
+            // / Delete), so all of them become idb-drivable through this.
+            NavigationLink {
+                ContractSelectionList(
+                    inputName: input.name,
+                    contracts: availableContracts,
+                    displayName: getContractDisplayName,
+                    selection: $value,
+                    onSelect: { newValue in
+                        selectedContractId = newValue
+                        // Notify parent to update related fields
+                        onSpecialAction("contractSelected:\(newValue)")
+                    }
+                )
+            } label: {
+                HStack {
+                    Text("Select Contract")
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Text(availableContracts.first(where: { $0.idBase58 == value })
+                        .map(getContractDisplayName) ?? "Select a contract...")
+                        .foregroundColor(.secondary)
                 }
             }
-            .accessibleInlinePicker("transition.\(input.name).contractPicker")
+            .accessibilityIdentifier("transition.\(input.name).contractPicker")
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.gray.opacity(0.1))
             .cornerRadius(8)
-            .onChange(of: value) { _, newValue in
-                selectedContractId = newValue
-                // Notify parent to update related fields
-                onSpecialAction("contractSelected:\(newValue)")
-            }
         }
     }
 
@@ -426,26 +447,37 @@ struct TransitionInputView: View {
                         .background(Color.orange.opacity(0.1))
                         .cornerRadius(8)
                 } else {
-                    Picker("Select Document Type", selection: $value) {
-                        Text("Select a type...")
-                            .tag("")
-                            .accessibilityIdentifier("transition.\(input.name).documentType.none")
-                        ForEach(availableDocTypes, id: \.name) { docType in
-                            Text(docType.name)
-                                .tag(docType.name)
-                                .accessibilityIdentifier("transition.\(input.name).documentType.\(docType.name)")
+                    // Same rationale as contractPicker(): push a real
+                    // selectable list with stable per-row identifiers so idb
+                    // can tap a document type. The inline Picker renders as an
+                    // opaque control here (idb sees only a "Slider"), and a
+                    // navigationLink Picker wouldn't commit its selection
+                    // outside a List/Form ancestor.
+                    NavigationLink {
+                        DocumentTypeSelectionList(
+                            inputName: input.name,
+                            docTypeNames: availableDocTypes.map { $0.name },
+                            selection: $value,
+                            onSelect: { newValue in
+                                selectedDocumentType = newValue
+                                // Notify parent to update schema
+                                onSpecialAction("documentTypeSelected:\(newValue)")
+                            }
+                        )
+                    } label: {
+                        HStack {
+                            Text("Select Document Type")
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Text(value.isEmpty ? "Select a type..." : value)
+                                .foregroundColor(.secondary)
                         }
                     }
-                    .accessibleInlinePicker("transition.\(input.name).documentTypePicker")
+                    .accessibilityIdentifier("transition.\(input.name).documentTypePicker")
                     .padding()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.gray.opacity(0.1))
                     .cornerRadius(8)
-                    .onChange(of: value) { _, newValue in
-                        selectedDocumentType = newValue
-                        // Notify parent to update schema
-                        onSpecialAction("documentTypeSelected:\(newValue)")
-                    }
 
                     // Show warning if document type has owner-only creation restriction
                     if isCreateOperation && !value.isEmpty,
@@ -624,5 +656,103 @@ struct TransitionInputView: View {
             currentIdentityId: identityId
         )
         .environmentObject(appState)
+    }
+}
+
+/// Pushed contract-selection list backing `contractPicker()`.
+///
+/// Each contract is a `Button` row carrying a stable
+/// `transition.<inputName>.contractPicker.row.<idBase58>` accessibility
+/// identifier, so UI automation (idb) can tap a specific contract reliably.
+/// The row's action writes the selection binding directly and dismisses —
+/// unlike `.pickerStyle(.navigationLink)`, which only commits inside a
+/// `List`/`Form` ancestor (TransitionDetailView hosts inputs in a
+/// `ScrollView`/`VStack`, where that style drops the selection).
+private struct ContractSelectionList: View {
+    let inputName: String
+    let contracts: [PersistentDataContract]
+    let displayName: (PersistentDataContract) -> String
+    @Binding var selection: String
+    let onSelect: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            selectionRow(id: "", label: "Select a contract...")
+            ForEach(contracts, id: \.idBase58) { contract in
+                selectionRow(id: contract.idBase58, label: displayName(contract))
+            }
+        }
+        .navigationTitle("Select Contract")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder
+    private func selectionRow(id: String, label: String) -> some View {
+        Button {
+            selection = id
+            onSelect(id)
+            dismiss()
+        } label: {
+            HStack {
+                Text(label)
+                    .foregroundColor(.primary)
+                Spacer()
+                if selection == id {
+                    Image(systemName: "checkmark")
+                        .foregroundColor(.accentColor)
+                }
+            }
+        }
+        .accessibilityIdentifier(
+            "transition.\(inputName).contractPicker.row.\(id.isEmpty ? "none" : id)"
+        )
+    }
+}
+
+/// Pushed document-type-selection list backing `documentTypePicker()`.
+///
+/// Mirrors `ContractSelectionList`: each type is a `Button` row carrying a
+/// stable `transition.<inputName>.documentTypePicker.row.<name>`
+/// accessibility identifier so UI automation can tap it, and the row writes
+/// the selection binding directly + dismisses.
+private struct DocumentTypeSelectionList: View {
+    let inputName: String
+    let docTypeNames: [String]
+    @Binding var selection: String
+    let onSelect: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            selectionRow(id: "", label: "Select a type...")
+            ForEach(docTypeNames, id: \.self) { name in
+                selectionRow(id: name, label: name)
+            }
+        }
+        .navigationTitle("Select Document Type")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder
+    private func selectionRow(id: String, label: String) -> some View {
+        Button {
+            selection = id
+            onSelect(id)
+            dismiss()
+        } label: {
+            HStack {
+                Text(label)
+                    .foregroundColor(.primary)
+                Spacer()
+                if selection == id {
+                    Image(systemName: "checkmark")
+                        .foregroundColor(.accentColor)
+                }
+            }
+        }
+        .accessibilityIdentifier(
+            "transition.\(inputName).documentTypePicker.row.\(id.isEmpty ? "none" : id)"
+        )
     }
 }

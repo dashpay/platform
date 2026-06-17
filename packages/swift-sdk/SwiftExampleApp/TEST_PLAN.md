@@ -99,7 +99,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | 🚫 | Not implemented anywhere (no FFI, no UI). | No |
 | ➖ | Retired — the thing this row tracked was removed or folded into another row. | n/a |
 
-> **Entry-point reality check.** A set of Platform write transitions (document create/replace/delete/transfer/price/purchase, data-contract create/update, identity key-disable) are reachable in the app **only through `Settings → Platform State Transitions` → `TransitionDetailView`** (marked 🧪). They broadcast for real, but there is no per-identity "happy path" button for them. The QA agent must navigate to the builder for those rows. (Identity credit *transfer*, `ID-04`, and *withdrawal*, `ID-10`, now have production buttons in `IdentityDetailView` — see those rows.) The builder and the read-only **Platform Queries** catalog both live under the **Settings** tab's **Platform** section (scroll past *Network* and *Data*).
+> **Entry-point reality check.** A set of Platform write transitions (document create/replace/delete/transfer/price/purchase, data-contract create/update) are reachable in the app **only through `Settings → Platform State Transitions` → `TransitionDetailView`** (marked 🧪). They broadcast for real, but there is no per-identity "happy path" button for them. The QA agent must navigate to the builder for those rows. (Identity credit *transfer*, `ID-04`, *withdrawal*, `ID-10`, now have production buttons in `IdentityDetailView`, and identity *key-disable*, `ID-12`, now has a production action in `KeyDetailView` — see those rows.) The builder and the read-only **Platform Queries** catalog both live under the **Settings** tab's **Platform** section (scroll past *Network* and *Data*).
 
 ---
 
@@ -119,9 +119,6 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | CORE-08 | QR scan recipient | Core | Manual | ✅ | `QRScannerView`, reachable in the Send flow — but scanning needs a real camera the simulator doesn't have, so it can't be automated (`Tier=Manual`). On a device: Send → QR-scan button → point at a Dash address QR → recipient field populates. |
 | CORE-09 | Multiple HD accounts (within one wallet) | Core | Common | ✅ | Account selection / `AccountDetailView`; balances per `account_index`. Distinct from holding multiple *wallets* — see CORE-14+. |
 | CORE-10 | Multi-recipient Core send | Core | Common | ✅ | Send flow (`SendTransactionView`, Core→Core) → "Add recipient" appends extra address/amount rows → `SendViewModel.coreRecipients` → `core_wallet_send_to_addresses` (parallel arrays; Rust coin-selects + builds the multi-output tx). One tx with N outputs; balance drops by sum+fee. Verified: 2-output testnet send (txid `30010050…17f840fc`, txlock, 3 vouts) credited both recipients. |
-| CORE-11 | Custom fee on transparent send | Core | Uncommon | 🚫 | Not exposed on the transparent send path (custom Core fee only on shielded withdraw `SH-08` and platform-address funding). |
-| CORE-12 | CoinJoin / mixing | Core | Uncommon | 🚫 | Not implemented anywhere (SPV crate or FFI). |
-| CORE-13 | Send explicitly via InstantSend | Core | Uncommon | 🚫 | IS is observe-only (used to obtain asset-lock proofs); no user-facing send toggle. |
 
 #### Multiple wallets on one device
 
@@ -155,7 +152,7 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | ID-09 | Set / edit local alias | Platform | Common | ✅ | `IdentityDetailView` (Add Alias). Local only — persists across relaunch; no broadcast. |
 | ID-10 | Withdraw credits → Dash L1 address | Cross | Common | ✅ | `IdentityDetailView` → **Withdraw Credits** (sheet, `WithdrawCreditsView`) → `wallet.withdrawCredits` → `platform_wallet_withdraw_credits_with_signer` (keychain-signed). Destination L1 address typed in + validated against the wallet's network; amount validated against balance. Identity credit balance drops by amount + fee; L1 payout is pooled and processed asynchronously by the network (no immediate txid). Requires the identity to have a TRANSFER/CRITICAL key — newly-derived identities get one (keyId 3); older identities may need one added first via `ID-07`. (Also reachable via the *Settings → Platform State Transitions → Identity Credit Withdrawal* builder → `dash_sdk_identity_withdraw` with a test signer.) |
 | ID-11 | Transfer credits → Platform addresses | Platform | Common | ✅ | `AddressQueriesView` → TransferIdentityToAddresses → `dash_sdk_identity_transfer_credits_to_addresses`. |
-| ID-12 | Update identity — disable key | Platform | Thorough | 🧪 | *Settings builder → Identity Update* (disable path) → `executeIdentityUpdate`. |
+| ID-12 | Update identity — disable key | Platform | Thorough | ✅ | `KeyDetailView` (drill into a key from `KeysListView`) → **Key Status → Disable Key** → confirm (permanent / irreversible) → `wallet.updateIdentity(disablePublicKeyIds:)` → `platform_wallet_update_identity_with_signer` (keychain-signed). The button is gated to match consensus: it's hidden/disabled for master-level keys, the last enabled authentication key, and the last enabled transfer key (each shows an inline reason), and already-disabled keys show a read-only "Disabled" row. On success the identity's keys are re-fetched so the disabled badge appears, then the view pops back. A swipe-to-Disable shortcut on each eligible row in `KeysListView` routes into the same confirm + submit (reaches keys whose row tap opens `PrivateKeyView` instead of the detail). (Also reachable via *Settings → Platform State Transitions → Identity Update* (disable path) → `executeIdentityUpdate` with a test signer.) |
 | ID-13 | Top up identity (builder path) | Cross | — | 🧪 | Builder entry is a stub (`notImplemented`). Use `ID-05`/`ID-06`. Listed so QA doesn't mistake the stub for a defect. |
 
 ### 4.3 Platform Addresses (DIP-17 credit addresses) — `Domain=Address`
@@ -480,9 +477,6 @@ For completeness (the "everything gRPC + Core can do" requirement), these exist 
 - `SYS-06` raw GroveDB path elements
 
 **🚫 Not implemented anywhere:**
-- `CORE-11` custom fee on transparent Core send
-- `CORE-12` CoinJoin / mixing
-- `CORE-13` explicit send-via-InstantSend
 - `GRP-04` standalone group lifecycle management
 - `getConsensusParams` (served via Tenderdash RPC, not the SDK)
 
