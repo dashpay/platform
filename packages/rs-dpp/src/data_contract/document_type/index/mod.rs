@@ -53,22 +53,103 @@ impl TryFrom<u8> for ContestedIndexResolution {
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
+    serde(
+        into = "ContestedIndexFieldMatchRepr",
+        from = "ContestedIndexFieldMatchRepr"
+    )
 )]
 pub enum ContestedIndexFieldMatch {
     Regex(LazyRegex),
-    // `u128` in a tuple variant — `#[json_safe_fields]` can't auto-annotate it,
-    // and a bare `u128` is never JS-safe once it exceeds `MAX_SAFE_INTEGER`, so
-    // serialize it as a string in human-readable JSON (native `u128` in binary /
-    // `Value`). See the manual `JsonSafeFields` marker in
-    // `serialization/json/safe_fields.rs`.
-    PositiveIntegerMatch(
-        #[cfg_attr(
-            feature = "json-conversion",
-            serde(with = "crate::serialization::json_safe_u128")
-        )]
-        u128,
-    ),
+    PositiveIntegerMatch(u128),
+}
+
+// Internal-`type` serde shape with a uniform `value` payload, via a
+// struct-variant Repr (tuple variants can't auto-internal-tag). `LazyRegex`
+// round-trips as a bare string; `json_safe_u128` keeps the integer JS-safe
+// (string above `MAX_SAFE_INTEGER`) in human-readable JSON — native `u128` in
+// `Value` / bincode.
+#[cfg(feature = "serde-conversion")]
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum ContestedIndexFieldMatchRepr {
+    Regex {
+        value: LazyRegex,
+    },
+    PositiveIntegerMatch {
+        #[serde(with = "positive_integer_match_value")]
+        value: u128,
+    },
+}
+
+// Internal tagging buffers the map through serde's `Content`, which cannot hold
+// a 128-bit integer (no `serialize_u128`) in this serde version — so the usual
+// `json_safe_u128` (which emits `serialize_u128` in non-HR) breaks on
+// deserialize. Encode Content-safely instead: a plain number while it fits in
+// `u64`, a string once it doesn't (and, in human-readable JSON, once it exceeds
+// `Number.MAX_SAFE_INTEGER`, for JS safety). Never emits `serialize_u128`.
+#[cfg(feature = "serde-conversion")]
+mod positive_integer_match_value {
+    use serde::de::{self, Visitor};
+    use serde::{Deserializer, Serializer};
+
+    const JS_MAX_SAFE_INTEGER: u128 = 9_007_199_254_740_991; // 2^53 - 1
+
+    pub fn serialize<S: Serializer>(value: &u128, serializer: S) -> Result<S::Ok, S::Error> {
+        let stringify_above = if serializer.is_human_readable() {
+            JS_MAX_SAFE_INTEGER
+        } else {
+            u64::MAX as u128
+        };
+        if *value > stringify_above {
+            serializer.serialize_str(&value.to_string())
+        } else {
+            serializer.serialize_u64(*value as u64)
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u128, D::Error> {
+        struct V;
+        impl Visitor<'_> for V {
+            type Value = u128;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a u128 as a number or string")
+            }
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<u128, E> {
+                Ok(v as u128)
+            }
+            fn visit_u128<E: de::Error>(self, v: u128) -> Result<u128, E> {
+                Ok(v)
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<u128, E> {
+                v.parse().map_err(|_| de::Error::custom(format!("invalid u128 string: {v}")))
+            }
+        }
+        deserializer.deserialize_any(V)
+    }
+}
+
+#[cfg(feature = "serde-conversion")]
+impl From<ContestedIndexFieldMatch> for ContestedIndexFieldMatchRepr {
+    fn from(m: ContestedIndexFieldMatch) -> Self {
+        match m {
+            ContestedIndexFieldMatch::Regex(value) => Self::Regex { value },
+            ContestedIndexFieldMatch::PositiveIntegerMatch(value) => {
+                Self::PositiveIntegerMatch { value }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "serde-conversion")]
+impl From<ContestedIndexFieldMatchRepr> for ContestedIndexFieldMatch {
+    fn from(r: ContestedIndexFieldMatchRepr) -> Self {
+        match r {
+            ContestedIndexFieldMatchRepr::Regex { value } => Self::Regex(value),
+            ContestedIndexFieldMatchRepr::PositiveIntegerMatch { value } => {
+                Self::PositiveIntegerMatch(value)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -2169,20 +2250,19 @@ mod json_convertible_tests {
         assert_eq!(original, recovered);
     }
 
-    // --- ContestedIndexFieldMatch (Phase D step 11) ---
-    // Wire shape: externally-tagged enum with camelCase variant tags
-    // (matches codebase convention for JSON wire shapes).
-    //   `{"regex": "<pattern>"}` -> Regex(LazyRegex)
-    //   `{"positiveIntegerMatch": <u128>}` -> PositiveIntegerMatch
+    // --- ContestedIndexFieldMatch (internal `type` tag) ---
+    // Wire shape: internally tagged with a uniform `value` payload.
+    //   `{"type":"regex","value":"<pattern>"}` -> Regex(LazyRegex)
+    //   `{"type":"positiveIntegerMatch","value":<u128>}` -> PositiveIntegerMatch
     // LazyRegex serializes as the bare regex string via
-    // `serde(from = "String", into = "String")`.
+    // `serde(from = "String", into = "String")`, carried in `value`.
 
     #[test]
     fn json_round_trip_contested_index_field_match_regex() {
         use crate::serialization::JsonConvertible;
         let original = ContestedIndexFieldMatch::Regex(LazyRegex::new("^dash$".to_string()));
         let json = original.to_json().expect("to_json");
-        assert_eq!(json, serde_json::json!({ "regex": "^dash$" }));
+        assert_eq!(json, serde_json::json!({ "type": "regex", "value": "^dash$" }));
         let recovered = ContestedIndexFieldMatch::from_json(json).expect("from_json");
         match recovered {
             ContestedIndexFieldMatch::Regex(r) => assert_eq!(r.as_str(), "^dash$"),
@@ -2195,7 +2275,10 @@ mod json_convertible_tests {
         use crate::serialization::JsonConvertible;
         let original = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
         let json = original.to_json().expect("to_json");
-        assert_eq!(json, serde_json::json!({ "positiveIntegerMatch": 42 }));
+        assert_eq!(
+            json,
+            serde_json::json!({ "type": "positiveIntegerMatch", "value": 42 })
+        );
         let recovered = ContestedIndexFieldMatch::from_json(json).expect("from_json");
         match recovered {
             ContestedIndexFieldMatch::PositiveIntegerMatch(n) => assert_eq!(n, 42),
@@ -2208,6 +2291,11 @@ mod json_convertible_tests {
         use crate::serialization::ValueConvertible;
         let original = ContestedIndexFieldMatch::Regex(LazyRegex::new("[a-z]+".to_string()));
         let value = original.to_object().expect("to_object");
+        // LazyRegex serializes as a bare string in non-HR Value too.
+        assert_eq!(
+            value,
+            platform_value::platform_value!({ "type": "regex", "value": "[a-z]+" })
+        );
         let recovered = ContestedIndexFieldMatch::from_object(value).expect("from_object");
         match recovered {
             ContestedIndexFieldMatch::Regex(r) => assert_eq!(r.as_str(), "[a-z]+"),
@@ -2220,6 +2308,13 @@ mod json_convertible_tests {
         use crate::serialization::ValueConvertible;
         let original = ContestedIndexFieldMatch::PositiveIntegerMatch(u128::MAX);
         let value = original.to_object().expect("to_object");
+        // u128::MAX exceeds u64::MAX, so it's encoded as a string (Content-safe;
+        // serde's internal-tag buffer can't hold a 128-bit int). Values that fit
+        // in u64 stay numeric.
+        assert_eq!(
+            value,
+            platform_value::platform_value!({ "type": "positiveIntegerMatch", "value": "340282366920938463463374607431768211455" })
+        );
         let recovered = ContestedIndexFieldMatch::from_object(value).expect("from_object");
         match recovered {
             ContestedIndexFieldMatch::PositiveIntegerMatch(n) => assert_eq!(n, u128::MAX),
