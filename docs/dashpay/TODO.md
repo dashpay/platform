@@ -78,13 +78,18 @@ track, and the multi-agent reviews. Prioritized; check off as done.
   (`1f53897b63`), cadence 60→15s (`a06fdd00a0`), review fixes (`ef35ca55cb`).
   Cursor + `contact_profiles` are **in-memory** (survive a session; reset on cold
   restart = one safe full re-fetch).
-  - [ ] **Remaining surface (FFI/Swift — route via swift-rust-ffi-engineer):**
-    durable persistence for `high_water_*_ms` + `contact_profiles` (IdentityEntryFFI
-    + IdentityRestoreEntryFFI + `restore_*` + SwiftData model + Swift handler, with
-    under-shoot-clamp restore for the cursor); the **contact-keyed FFI accessor**
-    `platform_wallet_get_contact_profile(owner, contact)` + UI bind in
-    `ContactsView`/`ContactDetailView`/`ContactRequestsView` (stage 2 is otherwise
-    write-only — fetched but not displayed).
+  - [x] **Contact-keyed FFI accessor + UI bind** (`b1936a7312`):
+    `platform_wallet_get_contact_profile(owner, contact)` + `getContactProfile`
+    Swift wrapper; the five `cachedProfile`/profile reads (ContactsView,
+    ContactDetailView, ContactRequestsView, AddContactView, SendDashPayPaymentSheet)
+    now read the contact cache (own-profile fallback for self-contacts). Verified by
+    a clean `build_ios.sh --target sim` + app build. Stage 2 displays end-to-end.
+  - [ ] **Durable persistence (FFI/Swift — route via swift-rust-ffi-engineer):**
+    `high_water_*_ms` + `contact_profiles` round-trip (IdentityEntry + from_managed
+    + merge + IdentityEntryFFI + IdentityRestoreEntryFFI + `restore_*` + SwiftData
+    `PersistentDashpayProfile` + Swift handler, with under-shoot-clamp cursor
+    restore + reactive `@Query`). Optimization-grade: in-memory degrades gracefully
+    (cursor resets → one safe full re-fetch; profiles repopulate ~15s after relaunch).
   - [ ] **Devnet integration tests** (need a paginated mock/real harness): >100
     no-bury, partial-page-no-advance, equal-`$createdAt` boundary, In-query proof
     binding (Q-c stage-1 testnet check).
