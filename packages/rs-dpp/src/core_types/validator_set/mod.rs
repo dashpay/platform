@@ -189,23 +189,20 @@ mod json_convertible_tests {
     #[test]
     fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
-        let (original, validator_pubkey, threshold_pubkey) = build_fixture();
+        let (original, ..) = build_fixture();
         let json = original.to_json().expect("to_json");
 
         // BLS public keys serialize as 96-char compressed-G1 hex on the HR
-        // path. We interpolate `serde_json::to_value` of the same pubkeys
-        // rather than baking in the literal hex — the values are deterministic
-        // for the seeded `StdRng(42)` but inlining a 96-char string per key
-        // hurts readability (and the `bls_pubkey_serde` module has its own
-        // dedicated tests for the BLS round-trip). The rest of the wire
-        // structure is fully asserted: `tag = "$formatVersion"` convention,
-        // snake_case inner fields (no `rename_all`), `BTreeMap` members
-        // emitted as a struct keyed by ProTxHash hex, hash fields as lowercase
-        // hex strings, sized-int fields preserved. The inner Validator's
-        // own `$formatVersion` tag (now applied) appears alongside its
-        // other snake_case fields.
-        let validator_pk_json = serde_json::to_value(&validator_pubkey).expect("pk to json");
-        let threshold_pk_json = serde_json::to_value(&threshold_pubkey).expect("pk to json");
+        // path. The keys are deterministic (seeded `StdRng(42)`), so the exact
+        // hex is baked in below — the on-wire format is directly visible and
+        // verifiable in-place. The rest of the wire structure is fully
+        // asserted too: `tag = "$formatVersion"` convention, snake_case inner
+        // fields (no `rename_all`), `BTreeMap` members emitted as a struct
+        // keyed by ProTxHash hex, hash fields as lowercase hex strings,
+        // sized-int fields preserved. The inner Validator's own
+        // `$formatVersion` tag (now applied) appears alongside its other
+        // snake_case fields. (`bls_pubkey_serde` additionally has its own
+        // dedicated BLS round-trip tests.)
         assert_eq!(
             json,
             json!({
@@ -219,7 +216,7 @@ mod json_convertible_tests {
                         // `BTreeMap<ProTxHash, Validator>`), so the inner is the bare V0
                         // struct without its enum's `$formatVersion` tag.
                         "pro_tx_hash": "1111111111111111111111111111111111111111111111111111111111111111",
-                        "public_key": validator_pk_json,
+                        "public_key": "85d81dd12c73cca83f7d1bf8b78fadb695e3a2bc21d53b35ff2f74eaa28c6e163c98d3d5f9bb7252b4d836e484c7cc60",
                         "node_ip": "127.0.0.1",
                         "node_id": "2222222222222222222222222222222222222222",
                         "core_port": 9999,
@@ -228,7 +225,7 @@ mod json_convertible_tests {
                         "is_banned": false,
                     }
                 },
-                "threshold_public_key": threshold_pk_json,
+                "threshold_public_key": "969c5d5873f49aa994c5f6a850924ca1840c4ad1791aaaecd90093d4a5c0c3799f2d98540f5366cfa0a33f143fd69263",
             })
         );
         let recovered = ValidatorSet::from_json(json).expect("from_json");
