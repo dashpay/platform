@@ -24,37 +24,73 @@ use crate::ProtocolError;
     PartialOrd,
 )]
 #[platform_serialize(unversioned)]
+// serde routes through `RewardDistributionMomentRepr` to get internal `type`
+// tagging (`{"type":"blockBasedMoment","value":N}`). The outer enum keeps its
+// tuple variants for the Rust/bincode API; `Encode`/`Decode` are independent of
+// serde, so the consensus binary path is unchanged by this reshape.
+#[serde(
+    into = "RewardDistributionMomentRepr",
+    from = "RewardDistributionMomentRepr"
+)]
 pub enum RewardDistributionMoment {
     /// The reward was distributed at a block height
-    //
-    // `BlockHeight`/`TimestampMillis` are `u64` carried in tuple variants, which
-    // `#[json_safe_fields]` cannot auto-annotate. Apply the JS-safe helper
-    // directly so values above `Number.MAX_SAFE_INTEGER` serialize as strings in
-    // human-readable JSON (no effect on bincode / `Value`). See the manual
-    // `JsonSafeFields` marker in `serialization/json/safe_fields.rs`.
-    BlockBasedMoment(
-        #[cfg_attr(
-            feature = "json-conversion",
-            serde(with = "crate::serialization::json_safe_u64")
-        )]
-        BlockHeight,
-    ),
+    BlockBasedMoment(BlockHeight),
     /// The reward was distributed at a time
-    TimeBasedMoment(
-        #[cfg_attr(
-            feature = "json-conversion",
-            serde(with = "crate::serialization::json_safe_u64")
-        )]
-        TimestampMillis,
-    ),
+    TimeBasedMoment(TimestampMillis),
     /// The reward was distributed at an epoch
     EpochBasedMoment(EpochIndex),
 }
 
-// Manual impls because RewardDistributionMoment is a flat enum (not versioned
-// V0/V1). Externally-tagged tuple-variant shape (`{"BlockBasedMoment": 123}`)
-// is kept — consistent with its sibling output types
-// (`TokenDistributionInfo`, `TokenDistributionTypeWithResolvedRecipient`).
+// Internal-`type` serde shape with a uniform `value` payload. This struct-variant
+// helper auto-derives the internal tagging the tuple-variant outer enum cannot.
+// `json_safe_u64` keeps block/time values JS-safe (string above
+// `Number.MAX_SAFE_INTEGER`) in human-readable JSON; no effect on `Value` or
+// bincode. `EpochIndex` is `u16` — always JS-safe, no annotation needed.
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum RewardDistributionMomentRepr {
+    BlockBasedMoment {
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json_safe_u64")
+        )]
+        value: BlockHeight,
+    },
+    TimeBasedMoment {
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json_safe_u64")
+        )]
+        value: TimestampMillis,
+    },
+    EpochBasedMoment {
+        value: EpochIndex,
+    },
+}
+
+impl From<RewardDistributionMoment> for RewardDistributionMomentRepr {
+    fn from(m: RewardDistributionMoment) -> Self {
+        match m {
+            RewardDistributionMoment::BlockBasedMoment(value) => Self::BlockBasedMoment { value },
+            RewardDistributionMoment::TimeBasedMoment(value) => Self::TimeBasedMoment { value },
+            RewardDistributionMoment::EpochBasedMoment(value) => Self::EpochBasedMoment { value },
+        }
+    }
+}
+
+impl From<RewardDistributionMomentRepr> for RewardDistributionMoment {
+    fn from(r: RewardDistributionMomentRepr) -> Self {
+        match r {
+            RewardDistributionMomentRepr::BlockBasedMoment { value } => {
+                Self::BlockBasedMoment(value)
+            }
+            RewardDistributionMomentRepr::TimeBasedMoment { value } => Self::TimeBasedMoment(value),
+            RewardDistributionMomentRepr::EpochBasedMoment { value } => {
+                Self::EpochBasedMoment(value)
+            }
+        }
+    }
+}
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
 impl crate::serialization::JsonConvertible for RewardDistributionMoment {}
 
@@ -82,15 +118,15 @@ mod json_convertible_tests {
         let cases = vec![
             (
                 RewardDistributionMoment::BlockBasedMoment(123_456),
-                json!({"BlockBasedMoment": 123_456}),
+                json!({"type": "blockBasedMoment", "value": 123_456}),
             ),
             (
                 RewardDistributionMoment::TimeBasedMoment(1_700_000_000_000u64),
-                json!({"TimeBasedMoment": 1_700_000_000_000u64}),
+                json!({"type": "timeBasedMoment", "value": 1_700_000_000_000u64}),
             ),
             (
                 RewardDistributionMoment::EpochBasedMoment(42),
-                json!({"EpochBasedMoment": 42}),
+                json!({"type": "epochBasedMoment", "value": 42}),
             ),
         ];
         for (original, expected) in cases {
@@ -106,15 +142,15 @@ mod json_convertible_tests {
         let cases = vec![
             (
                 RewardDistributionMoment::BlockBasedMoment(123_456),
-                platform_value!({"BlockBasedMoment": 123_456u64}),
+                platform_value!({"type": "blockBasedMoment", "value": 123_456u64}),
             ),
             (
                 RewardDistributionMoment::TimeBasedMoment(1_700_000_000_000u64),
-                platform_value!({"TimeBasedMoment": 1_700_000_000_000u64}),
+                platform_value!({"type": "timeBasedMoment", "value": 1_700_000_000_000u64}),
             ),
             (
                 RewardDistributionMoment::EpochBasedMoment(42),
-                platform_value!({"EpochBasedMoment": 42u16}),
+                platform_value!({"type": "epochBasedMoment", "value": 42u16}),
             ),
         ];
         for (original, expected) in cases {
@@ -123,6 +159,22 @@ mod json_convertible_tests {
             let recovered = RewardDistributionMoment::from_object(value).expect("from_object");
             assert_eq!(original, recovered);
         }
+    }
+
+    #[test]
+    fn json_large_block_height_serializes_as_string_for_js_safety() {
+        // Above `Number.MAX_SAFE_INTEGER` (2^53 - 1) → must serialize as a
+        // string in human-readable JSON so JS doesn't silently lose precision.
+        // This pins that `json_safe_u64` survives the `into/from = Repr` path
+        // (the Repr's `value` field carries the `serde(with = json_safe_u64)`).
+        let original = RewardDistributionMoment::BlockBasedMoment(9_007_199_254_740_993); // 2^53 + 1
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({"type": "blockBasedMoment", "value": "9007199254740993"})
+        );
+        let recovered = RewardDistributionMoment::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
     }
 }
 
