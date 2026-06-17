@@ -83,7 +83,10 @@ struct ContactDetailView: View {
               let wallet = walletManager.wallet(for: walletId) else {
             return nil
         }
-        return (try? wallet.getDashPayProfile(identityId: contactId)) ?? nil
+        return (try? wallet.getContactProfile(
+            ownerIdentityId: identity.identityId,
+            contactIdentityId: contactId
+        )) ?? (try? wallet.getDashPayProfile(identityId: contactId)) ?? nil
     }
 
     private var displayName: String {

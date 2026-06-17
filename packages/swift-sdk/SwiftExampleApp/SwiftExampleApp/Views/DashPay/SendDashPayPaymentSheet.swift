@@ -299,12 +299,13 @@ struct SendDashPayPaymentSheet: View {
               let wallet = walletManager.wallet(for: walletId) else {
             return
         }
-        do {
-            recipientProfile = try wallet.getDashPayProfile(identityId: contact.identityId)
-        } catch {
-            // Profile isn't cached — stay with fallback rendering.
-            recipientProfile = nil
-        }
+        // Recipient is a contact: read the contact-profile cache first, with
+        // an own-profile fallback for a recipient that is one of our own
+        // identities. A miss leaves the fallback hex-id rendering.
+        recipientProfile = (try? wallet.getContactProfile(
+            ownerIdentityId: senderIdentity.identityId,
+            contactIdentityId: contact.identityId
+        )) ?? (try? wallet.getDashPayProfile(identityId: contact.identityId)) ?? nil
         do {
             let managed = try wallet.managedIdentity(identityId: contact.identityId)
             let names = (try? managed.getDpnsNames()) ?? []

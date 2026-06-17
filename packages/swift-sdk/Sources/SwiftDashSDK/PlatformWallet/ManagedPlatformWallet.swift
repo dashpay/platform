@@ -1875,6 +1875,42 @@ extension ManagedPlatformWallet {
         return DashPayProfile(ffi: ffiProfile)
     }
 
+    /// Read the cached profile of a **contact** (by contact identity id)
+    /// under `ownerIdentityId`, from this wallet's live state.
+    ///
+    /// Returns `nil` when the owner has no cached entry for that contact, or
+    /// the contact published no profile on Platform. The cache is populated by
+    /// the background contact-profile sync and covers established contacts and
+    /// pending senders. For a contact that is itself one of the wallet's own
+    /// identities, use `getDashPayProfile(identityId:)` (its own profile is
+    /// authoritative) — the contact cache intentionally skips such ids.
+    ///
+    /// Sync, lock-free read of the in-memory cache.
+    public func getContactProfile(
+        ownerIdentityId: Identifier,
+        contactIdentityId: Identifier
+    ) throws -> DashPayProfile? {
+        var ffiProfile = DashPayProfileFFI()
+        var hasProfile: Bool = false
+
+        let result = ownerIdentityId.withFFIBytes { ownerPtr in
+            contactIdentityId.withFFIBytes { contactPtr in
+                platform_wallet_get_contact_profile(
+                    handle,
+                    ownerPtr,
+                    contactPtr,
+                    &ffiProfile,
+                    &hasProfile
+                )
+            }
+        }
+        defer { dashpay_profile_ffi_free(&ffiProfile) }
+
+        try result.check()
+        guard hasProfile else { return nil }
+        return DashPayProfile(ffi: ffiProfile)
+    }
+
     /// Read the DashPay payment history for `identityId` directly
     /// from this wallet's live state.
     ///

@@ -144,6 +144,46 @@ pub unsafe extern "C" fn platform_wallet_get_dashpay_profile(
     PlatformWalletFFIResult::ok()
 }
 
+/// Read the cached profile of a **contact** (by contact identity id) under
+/// the given owner identity. `out_has_profile` is false when the owner has no
+/// cached entry for that contact, or the entry is confirmed-absent (the
+/// contact published no profile on Platform). Populated by the background
+/// contact-profile sync; covers established contacts and pending senders.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_get_contact_profile(
+    wallet_handle: Handle,
+    owner_identity_id: *const u8,
+    contact_identity_id: *const u8,
+    out_profile: *mut DashPayProfileFFI,
+    out_has_profile: *mut bool,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_profile);
+    check_ptr!(out_has_profile);
+
+    let owner = unwrap_result_or_return!(unsafe { read_identifier(owner_identity_id) });
+    let contact = unwrap_result_or_return!(unsafe { read_identifier(contact_identity_id) });
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let wm = wallet.wallet_manager().blocking_read();
+        let info = wm.get_wallet_info(&wallet.wallet_id())?;
+        info.identity_manager
+            .managed_identity(&owner)
+            .and_then(|m| m.contact_profiles.get(&contact).cloned())
+    });
+    let entry = unwrap_option_or_return!(option);
+    match entry.and_then(|e| e.profile) {
+        Some(profile) => unsafe {
+            *out_profile = DashPayProfileFFI::from_profile(&profile);
+            *out_has_profile = true;
+        },
+        None => unsafe {
+            *out_profile = DashPayProfileFFI::empty();
+            *out_has_profile = false;
+        },
+    }
+    PlatformWalletFFIResult::ok()
+}
+
 /// Release strings owned by a [`DashPayProfileFFI`].
 #[no_mangle]
 pub unsafe extern "C" fn dashpay_profile_ffi_free(profile: *mut DashPayProfileFFI) {

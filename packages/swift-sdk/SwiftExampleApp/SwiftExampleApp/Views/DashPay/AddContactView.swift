@@ -374,7 +374,10 @@ struct AddContactView: View {
 
     private func cachedProfile(_ contactId: Identifier) -> DashPayProfile? {
         guard let wallet = try? requireWallet() else { return nil }
-        return (try? wallet.getDashPayProfile(identityId: contactId)) ?? nil
+        return (try? wallet.getContactProfile(
+            ownerIdentityId: identity.identityId,
+            contactIdentityId: contactId
+        )) ?? (try? wallet.getDashPayProfile(identityId: contactId)) ?? nil
     }
 
     private func requireWallet() throws -> ManagedPlatformWallet {
