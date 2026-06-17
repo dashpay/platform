@@ -176,6 +176,82 @@ pub(crate) async fn record_incoming_dashpay_payments(
     }
 }
 
+/// Advance a sender's `Sent` [`PaymentEntry`] from `Pending` to
+/// `Confirmed` once its broadcast transaction confirms on-chain.
+///
+/// [`IdentityWallet::send_payment`] records the outgoing entry as
+/// `Pending` at broadcast time and nothing else advances it. The wallet
+/// re-emits `TransactionDetected` for the sender's own transaction as it
+/// moves through mempool → in-block → chain-locked, so when a
+/// re-detection reports the transaction confirmed (a block `height` is
+/// set) the matching entry is flipped in place. Idempotent: once
+/// `Confirmed`, later re-detections find nothing to change and skip the
+/// persistence round.
+pub(crate) async fn confirm_sent_dashpay_payment(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    persister: &crate::wallet::persister::WalletPersister,
+    record: &key_wallet::managed_account::transaction_record::TransactionRecord,
+) {
+    // Only a confirmed (mined) transaction advances the entry. A mempool
+    // re-detection leaves it `Pending` — which it genuinely still is.
+    if !record.is_confirmed() {
+        return;
+    }
+    confirm_sent_payment_by_txid(wallet_manager, wallet_id, persister, &record.txid.to_string())
+        .await;
+}
+
+/// Flip the `Pending` `Sent` [`PaymentEntry`] under `txid` (if any) to
+/// `Confirmed`, in place, preserving amount/memo/counterparty.
+///
+/// No-op when no entry exists for `txid`, it is not a `Sent` entry, or it
+/// is already past `Pending` (so repeated confirmed re-detections are
+/// idempotent and skip the persistence round). Separated from the event
+/// glue above so the state transition is unit-testable without
+/// constructing a full `TransactionRecord`.
+async fn confirm_sent_payment_by_txid(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    persister: &crate::wallet::persister::WalletPersister,
+    txid: &str,
+) {
+    use crate::wallet::identity::types::dashpay::payment::{PaymentDirection, PaymentStatus};
+
+    let mut wm = wallet_manager.write().await;
+    let Some(info) = wm.get_wallet_info_mut(wallet_id) else {
+        return;
+    };
+
+    // The sent transaction belongs to one managed identity; find the
+    // `Pending` `Sent` entry under this txid and confirm it in place.
+    for owner in info.identity_manager.identity_ids() {
+        let Some(managed) = info.identity_manager.managed_identity_mut(&owner) else {
+            continue;
+        };
+        let confirmed = match managed.dashpay_payments.get(txid) {
+            Some(entry)
+                if entry.direction == PaymentDirection::Sent
+                    && entry.status == PaymentStatus::Pending =>
+            {
+                let mut updated = entry.clone();
+                updated.status = PaymentStatus::Confirmed;
+                updated
+            }
+            _ => continue,
+        };
+        tracing::info!(owner = %owner, %txid, "Confirming sent DashPay payment");
+        if let Err(e) = managed.record_dashpay_payment(txid.to_string(), confirmed, persister) {
+            tracing::warn!(
+                error = %e,
+                "Failed to persist sent-payment confirmation; will retry on next detection"
+            );
+        }
+        // txid is unique — only one identity can hold this entry.
+        break;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Send payment to contact
 // ---------------------------------------------------------------------------
@@ -843,6 +919,88 @@ mod tests {
             matches!(result, Err(PlatformWalletError::Persistence(_))),
             "reject must propagate a persist failure (got {result:?}), \
              else the tombstone is lost and the contact resurrects"
+        );
+    }
+
+    /// A `Sent` payment must advance `Pending → Confirmed` once its
+    /// transaction confirms on-chain. `send_payment` records it `Pending`
+    /// and nothing else moved it, so before the confirm path was wired the
+    /// entry was stuck `Pending` forever (UAT: sent payments never showed
+    /// confirmed). Pins the flip, idempotency on re-detection, and that
+    /// amount/memo are preserved.
+    #[tokio::test]
+    async fn confirm_flips_sent_payment_pending_to_confirmed() {
+        use crate::wallet::identity::types::dashpay::payment::{
+            PaymentDirection, PaymentEntry, PaymentStatus,
+        };
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let txid = "a".repeat(64);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid.clone(),
+                    PaymentEntry::new_sent(contact, 50_000, Some("dinner".into())),
+                    &p,
+                )
+                .expect("record pending sent");
+        }
+
+        // Read the current entry under a short-lived read lock.
+        async fn read_entry(
+            iw: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
+            wallet_id: &WalletId,
+            owner: &Identifier,
+            txid: &str,
+        ) -> PaymentEntry {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(wallet_id).expect("info");
+            info.identity_manager
+                .managed_identity(owner)
+                .unwrap()
+                .dashpay_payments
+                .get(txid)
+                .cloned()
+                .expect("entry")
+        }
+
+        assert_eq!(
+            read_entry(iw, &wallet_id, &owner, &txid).await.status,
+            PaymentStatus::Pending,
+            "precondition: entry starts Pending"
+        );
+
+        // A confirmed detection flips it to Confirmed, preserving fields.
+        super::confirm_sent_payment_by_txid(&iw.wallet_manager, &wallet_id, &p, &txid).await;
+        let entry = read_entry(iw, &wallet_id, &owner, &txid).await;
+        assert_eq!(
+            entry.status,
+            PaymentStatus::Confirmed,
+            "a confirmed tx must flip the Sent entry to Confirmed"
+        );
+        assert_eq!(entry.direction, PaymentDirection::Sent);
+        assert_eq!(entry.amount_duffs, 50_000);
+        assert_eq!(entry.memo.as_deref(), Some("dinner"), "memo preserved");
+
+        // Idempotent: a second confirmed re-detection changes nothing.
+        super::confirm_sent_payment_by_txid(&iw.wallet_manager, &wallet_id, &p, &txid).await;
+        assert_eq!(
+            read_entry(iw, &wallet_id, &owner, &txid).await.status,
+            PaymentStatus::Confirmed
         );
     }
 

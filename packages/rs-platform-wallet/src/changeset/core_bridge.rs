@@ -115,6 +115,16 @@ where
                                     record,
                                 )
                                 .await;
+                                // Sender side: a confirmed re-detection of our
+                                // own sent transaction advances its `Sent`
+                                // entry `Pending → Confirmed`.
+                                crate::wallet::identity::network::confirm_sent_dashpay_payment(
+                                    &wallet_manager,
+                                    &wallet_id,
+                                    &wallet_persister,
+                                    record,
+                                )
+                                .await;
                             }
                         }
                         Err(RecvError::Closed) if cancel.is_cancelled() => break,
