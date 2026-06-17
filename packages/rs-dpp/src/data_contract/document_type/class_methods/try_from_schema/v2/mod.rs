@@ -509,6 +509,7 @@ mod tests {
     //! `DocumentTypeV2::try_from_schema` rather than at the per-index
     //! `Index::try_from` boundary.
     use super::*;
+    use crate::data_contract::config::v0::DataContractConfigSettersV0;
     use platform_value::platform_value;
 
     /// Build a minimal v2-shaped document-type schema with
@@ -582,6 +583,14 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let config = DataContractConfig::default_for_version(platform_version)
             .expect("default config available on latest platform version");
+        parse_with_config(schema, &config)
+    }
+
+    fn parse_with_config(
+        schema: Value,
+        config: &DataContractConfig,
+    ) -> Result<DocumentTypeV2, ProtocolError> {
+        let platform_version = PlatformVersion::latest();
         DocumentTypeV2::try_from_schema(
             Identifier::new([1; 32]),
             1,
@@ -595,6 +604,35 @@ mod tests {
             &mut vec![],
             platform_version,
         )
+    }
+
+    fn basic_message_schema(extra: Vec<(&'static str, Value)>) -> Value {
+        let mut schema_map = vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                platform_value!({
+                    "message": {
+                        "type": "string",
+                        "maxLength": 50,
+                        "position": 0,
+                    },
+                }),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+        ];
+
+        for (key, value) in extra {
+            schema_map.push((Value::Text(key.to_string()), value));
+        }
+
+        Value::Map(schema_map)
     }
 
     /// `documentsAverageable: "score" + rangeAverageable: true +
@@ -813,19 +851,10 @@ mod tests {
     /// check). Once the guard lands, this test locks the behavior in.
     #[test]
     fn doctype_keep_history_with_can_be_deleted_rejected() {
-        let schema = platform_value!({
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "maxLength": 50,
-                    "position": 0,
-                },
-            },
-            "additionalProperties": false,
-            "documentsKeepHistory": true,
-            "canBeDeleted": true,
-        });
+        let schema = basic_message_schema(vec![
+            ("documentsKeepHistory", Value::Bool(true)),
+            ("canBeDeleted", Value::Bool(true)),
+        ]);
         let result = parse(schema);
         assert!(
             result.is_err(),
@@ -843,6 +872,87 @@ mod tests {
         );
     }
 
+    /// Same contradiction as the explicit `documentsKeepHistory: true`
+    /// + `canBeDeleted: true` test, but both values are inherited from
+    /// contract defaults. The parser resolves defaults before storing
+    /// the document type, so the guard must inspect the resolved
+    /// booleans, not only the raw keys present in the document schema.
+    #[test]
+    fn doctype_keep_history_with_can_be_deleted_inherited_from_defaults_rejected() {
+        let mut config = DataContractConfig::default_for_version(PlatformVersion::latest())
+            .expect("default config available on latest platform version");
+        config.set_documents_keep_history_contract_default(true);
+        config.set_documents_can_be_deleted_contract_default(true);
+
+        let result = parse_with_config(basic_message_schema(vec![]), &config);
+
+        assert!(
+            result.is_err(),
+            "contract defaults resolving to documentsKeepHistory: true + canBeDeleted: true \
+             must be rejected just like explicit document-type flags"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("documentsKeepHistory") && msg.contains("canBeDeleted"),
+            "error must name both resolved conflicting flags; got {msg}"
+        );
+    }
+
+    /// One-sided inheritance: keep-history comes from the contract
+    /// default, while `canBeDeleted: true` is explicitly set on the
+    /// document type. This is equally impossible to execute and must
+    /// not slip through a guard that only checks for both raw keys on
+    /// the same schema object.
+    #[test]
+    fn doctype_keep_history_default_with_explicit_can_be_deleted_rejected() {
+        let mut config = DataContractConfig::default_for_version(PlatformVersion::latest())
+            .expect("default config available on latest platform version");
+        config.set_documents_keep_history_contract_default(true);
+        config.set_documents_can_be_deleted_contract_default(false);
+
+        let result = parse_with_config(
+            basic_message_schema(vec![("canBeDeleted", Value::Bool(true))]),
+            &config,
+        );
+
+        assert!(
+            result.is_err(),
+            "documentsKeepHistory inherited true + explicit canBeDeleted: true must be rejected"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("documentsKeepHistory") && msg.contains("canBeDeleted"),
+            "error must name both resolved conflicting flags; got {msg}"
+        );
+    }
+
+    /// Opposite one-sided inheritance: `canBeDeleted: true` comes from
+    /// the contract default, while the document type explicitly opts
+    /// into history. This is the shape most likely to surprise
+    /// contract authors because canBeDeleted defaults to true.
+    #[test]
+    fn doctype_explicit_keep_history_with_can_be_deleted_default_rejected() {
+        let mut config = DataContractConfig::default_for_version(PlatformVersion::latest())
+            .expect("default config available on latest platform version");
+        config.set_documents_keep_history_contract_default(false);
+        config.set_documents_can_be_deleted_contract_default(true);
+
+        let result = parse_with_config(
+            basic_message_schema(vec![("documentsKeepHistory", Value::Bool(true))]),
+            &config,
+        );
+
+        assert!(
+            result.is_err(),
+            "explicit documentsKeepHistory: true + inherited canBeDeleted: true must be rejected"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("documentsKeepHistory") && msg.contains("canBeDeleted"),
+            "error must name both resolved conflicting flags; got {msg}"
+        );
+    }
+
     /// Companion to the rejection test: `documentsKeepHistory: true`
     /// with `canBeDeleted: false` (or absent) must keep parsing
     /// cleanly. Guards the future guard against being over-broad — only
@@ -850,19 +960,10 @@ mod tests {
     /// types that are (correctly) non-deletable must remain valid.
     #[test]
     fn doctype_keep_history_with_can_be_deleted_false_accepted() {
-        let schema = platform_value!({
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "maxLength": 50,
-                    "position": 0,
-                },
-            },
-            "additionalProperties": false,
-            "documentsKeepHistory": true,
-            "canBeDeleted": false,
-        });
+        let schema = basic_message_schema(vec![
+            ("documentsKeepHistory", Value::Bool(true)),
+            ("canBeDeleted", Value::Bool(false)),
+        ]);
         let v2 = parse(schema).expect("keep-history + canBeDeleted: false is a valid combination");
         assert!(
             v2.documents_keep_history,

@@ -554,6 +554,7 @@ impl SpecializedDocumentFactoryV0 {
 #[allow(clippy::type_complexity)]
 mod tests {
     use super::*;
+    use crate::data_contract::schema::DataContractSchemaMethodsV0;
     use crate::document::DocumentV0Getters;
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::util::entropy_generator::EntropyGenerator;
@@ -572,6 +573,39 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created = get_data_contract_fixture(None, 0, platform_version.protocol_version);
         let data_contract = created.data_contract_owned();
+        let factory = SpecializedDocumentFactoryV0::new_with_entropy_generator(
+            platform_version.protocol_version,
+            data_contract.clone(),
+            Box::new(TestEntropyGenerator),
+        );
+        (factory, data_contract)
+    }
+
+    fn setup_factory_with_keep_history_can_be_deleted_document(
+    ) -> (SpecializedDocumentFactoryV0, DataContract) {
+        let platform_version = PlatformVersion::latest();
+        let created = get_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let mut data_contract = created.data_contract_owned();
+        data_contract
+            .set_document_schema(
+                "historyDocument",
+                platform_value!({
+                    "type": "object",
+                    "documentsKeepHistory": true,
+                    "canBeDeleted": true,
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "position": 0,
+                        },
+                    },
+                    "additionalProperties": false,
+                }),
+                false,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("current parser accepts the contradictory doctype");
         let factory = SpecializedDocumentFactoryV0::new_with_entropy_generator(
             platform_version.protocol_version,
             data_contract.clone(),
@@ -1055,6 +1089,32 @@ mod tests {
             assert_eq!(batch.transitions_len(), 1);
             let key = (owner_id, data_contract.id());
             assert_eq!(*nonce_counter.get(&key).unwrap(), 1);
+        }
+
+        #[test]
+        fn create_state_transition_delete_with_keep_history_document_returns_error() {
+            let (factory, data_contract) =
+                setup_factory_with_keep_history_can_be_deleted_document();
+            let owner_id = Identifier::from([7u8; 32]);
+            let doc_type = data_contract
+                .document_type_for_name("historyDocument")
+                .unwrap();
+            assert!(doc_type.documents_keep_history());
+            assert!(doc_type.documents_can_be_deleted());
+
+            let doc = build_document(&factory, owner_id, "historyDocument");
+            let mut nonce_counter = BTreeMap::new();
+            let entries = vec![(
+                DocumentTransitionActionType::Delete,
+                vec![(doc, doc_type, Bytes32::default(), None)],
+            )];
+            let result = factory.create_state_transition(entries, &mut nonce_counter);
+
+            assert!(
+                result.is_err(),
+                "SpecializedDocumentFactoryV0 must reject delete transitions for keep-history \
+                 document types before they can be signed and broadcast"
+            );
         }
 
         #[test]

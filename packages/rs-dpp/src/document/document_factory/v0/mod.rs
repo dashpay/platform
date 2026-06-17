@@ -544,15 +544,19 @@ impl DocumentFactoryV0 {
 
 #[cfg(test)]
 mod test {
+    use crate::data_contract::schema::DataContractSchemaMethodsV0;
     use data_contracts::SystemDataContract;
+    use platform_value::platform_value;
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
 
     use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use crate::document::document_factory::DocumentFactoryV0;
     use crate::document::{Document, DocumentV0};
     use crate::identifier::Identifier;
     use crate::system_data_contracts::load_system_data_contract;
+    use crate::tests::fixtures::get_data_contract_fixture;
 
     #[test]
     /// Create a delete transition in DocumentFactoryV0 for an immutable but deletable document type
@@ -607,5 +611,73 @@ mod test {
         assert!(result.is_ok(), "The function should succeed");
         let transitions = result.unwrap();
         assert_eq!(transitions.len(), 1, "There should be one transition");
+    }
+
+    #[test]
+    /// A keep-history document type can never be deleted by Drive, even if the
+    /// contract advertises `canBeDeleted: true`. The generic DPP factory should
+    /// reject that delete locally instead of constructing a transition that will
+    /// be doomed at ABCI/Drive execution.
+    fn delete_keep_history_document_is_rejected_locally() {
+        let platform_version = PlatformVersion::latest();
+        let mut data_contract =
+            get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                .data_contract_owned();
+        data_contract
+            .set_document_schema(
+                "historyDocument",
+                platform_value!({
+                    "type": "object",
+                    "documentsKeepHistory": true,
+                    "canBeDeleted": true,
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "position": 0,
+                        },
+                    },
+                    "additionalProperties": false,
+                }),
+                false,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("current parser accepts the contradictory doctype");
+
+        let document_type = data_contract
+            .document_type_for_name("historyDocument")
+            .expect("expected historyDocument document type");
+        assert!(document_type.documents_keep_history());
+        assert!(document_type.documents_can_be_deleted());
+
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::random(),
+            owner_id: Identifier::random(),
+            properties: BTreeMap::new(),
+            revision: Some(1),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        });
+
+        let mut nonce_counter = BTreeMap::new();
+        let result = DocumentFactoryV0::document_delete_transitions(
+            vec![(document, document_type, None)],
+            &mut nonce_counter,
+            platform_version,
+        );
+
+        assert!(
+            result.is_err(),
+            "DocumentFactoryV0 must reject delete transitions for keep-history document types \
+             before they can be signed and broadcast"
+        );
     }
 }

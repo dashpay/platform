@@ -385,12 +385,32 @@ mod deletion_tests {
     /// contradiction only when the transition mysteriously fails to apply.
     #[tokio::test]
     async fn test_document_delete_on_document_type_that_keeps_history_is_rejected() {
+        run_document_delete_on_keep_history_can_be_deleted_contract_is_rejected(
+            "tests/supporting_files/contract/note/note-contract-keep-history-and-can-be-deleted.json",
+        )
+        .await;
+    }
+
+    /// Same delete-execution gap, but the contradictory document-type
+    /// flags are inherited from contract defaults rather than spelled
+    /// directly on the `note` schema. The structure validator sees only
+    /// the resolved `DocumentTypeRef`, so the future guard must reject
+    /// this path too.
+    #[tokio::test]
+    async fn test_document_delete_on_document_type_that_inherits_keep_history_and_can_be_deleted_is_rejected(
+    ) {
+        run_document_delete_on_keep_history_can_be_deleted_contract_is_rejected(
+            "tests/supporting_files/contract/note/note-contract-keep-history-and-can-be-deleted-by-default.json",
+        )
+        .await;
+    }
+
+    async fn run_document_delete_on_keep_history_can_be_deleted_contract_is_rejected(
+        contract_path: &str,
+    ) {
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
-
-        let contract_path =
-            "tests/supporting_files/contract/note/note-contract-keep-history-and-can-be-deleted.json";
 
         let platform_state = platform.state.load();
         let platform_version = platform_state
