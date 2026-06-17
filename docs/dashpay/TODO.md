@@ -17,12 +17,13 @@ track, and the multi-agent reviews. Prioritized; check off as done.
   the `Sent` entry `Pending→Confirmed` in place. `payments.rs`, `core_bridge.rs`.
 - [ ] **Contact-request fetch truncates at 100, no pagination/high-water.**
   Newest requests buried permanently under a flood; non-incremental re-fetch every
-  sweep. → tracked by **`SYNC_CORRECTNESS_SPEC.md`** (review + implement).
+  sweep. → **`SYNC_CORRECTNESS_SPEC.md` stage 1** (REVIEWED — implement).
   `contact_request_queries.rs:65,117`.
 - [ ] **Contact-profile sync entirely absent.** We sync our *own* profile but
-  never fetch contacts' displayName/avatar (`all_identities()` excludes contacts).
-  Mirror kotlin `updateContactProfiles` (batch `whereIn $ownerId`, incremental).
-  → new work in `sync_profiles` / `profile.rs`; `accessors.rs:54`.
+  never fetch contacts'/senders' displayName/avatar (`all_identities()` excludes
+  contacts). → folded into **`SYNC_CORRECTNESS_SPEC.md` stage 2** (REVIEWED —
+  id-keyed `contact_profiles` cache, established + pending senders).
+  `accessors.rs:54`.
 
 ## P1 — interop (cross-client correctness)
 
@@ -70,9 +71,10 @@ track, and the multi-agent reviews. Prioritized; check off as done.
 
 ## Spec / design track (in order — sync is FIRST)
 
-- [ ] **Spec 0 — `SYNC_CORRECTNESS_SPEC.md`** (written, DRAFT): incremental
-  high-water + 10-min overlap + cursor pagination, both directions, dedicated
-  cursor state. **Run multi-agent review → implement.** *(this is P0 #3 above)*
+- [ ] **Spec 0 — `SYNC_CORRECTNESS_SPEC.md`** (**REVIEWED** — 5-lens; resolutions
+  folded in §9). Now covers BOTH stages: stage 1 = incremental high-water +
+  10-min overlap + cursor pagination (P0 #3); stage 2 = id-keyed contact-profile
+  cache for established + pending senders (P0 #4). Two commits. **Implement next.**
   > **MODEL DECISION (2026-06-17): collapse reject + block + ignore into ONE
   > concept — `ignore` (per-sender mute, = block, reversible). DROP per-request
   > reject.** Rationale: reject's only justification (don't suppress a legit
