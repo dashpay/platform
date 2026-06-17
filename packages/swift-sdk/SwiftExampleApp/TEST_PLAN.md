@@ -153,7 +153,7 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | ID-10 | Withdraw credits → Dash L1 address | Cross | Common | ✅ | `IdentityDetailView` → **Withdraw Credits** (sheet, `WithdrawCreditsView`) → `wallet.withdrawCredits` → `platform_wallet_withdraw_credits_with_signer` (keychain-signed). Destination L1 address typed in + validated against the wallet's network; amount validated against balance. Identity credit balance drops by amount + fee; L1 payout is pooled and processed asynchronously by the network (no immediate txid). Requires the identity to have a TRANSFER/CRITICAL key — newly-derived identities get one (keyId 3); older identities may need one added first via `ID-07`. (Also reachable via the *Settings → Platform State Transitions → Identity Credit Withdrawal* builder → `dash_sdk_identity_withdraw` with a test signer.) |
 | ID-11 | Transfer credits → Platform addresses | Platform | Common | ✅ | `AddressQueriesView` → TransferIdentityToAddresses → `dash_sdk_identity_transfer_credits_to_addresses`. |
 | ID-12 | Update identity — disable key | Platform | Thorough | ✅ | `KeyDetailView` (drill into a key from `KeysListView`) → **Key Status → Disable Key** → confirm (permanent / irreversible) → `wallet.updateIdentity(disablePublicKeyIds:)` → `platform_wallet_update_identity_with_signer` (keychain-signed). The button is gated to match consensus: it's hidden/disabled for master-level keys, the last enabled authentication key, and the last enabled transfer key (each shows an inline reason), and already-disabled keys show a read-only "Disabled" row. On success the identity's keys are re-fetched so the disabled badge appears, then the view pops back. A swipe-to-Disable shortcut on each eligible row in `KeysListView` routes into the same confirm + submit (reaches keys whose row tap opens `PrivateKeyView` instead of the detail). (Also reachable via *Settings → Platform State Transitions → Identity Update* (disable path) → `executeIdentityUpdate` with a test signer.) |
-| ID-13 | Top up identity (builder path) | Cross | — | 🧪 | Builder entry is a stub (`notImplemented`). Use `ID-05`/`ID-06`. Listed so QA doesn't mistake the stub for a defect. |
+| ID-13 | Top up identity (builder path) | Cross | — | ➖ | Retired — builder entry is a stub (`notImplemented`); identity top-up is covered by `ID-05`/`ID-06`. Kept here to document the stub; not seeded to the QA catalog. |
 
 ### 4.3 Platform Addresses (DIP-17 credit addresses) — `Domain=Address`
 
@@ -188,7 +188,7 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | VOTE-04 | Query voters for a contestant identity | Platform | Thorough | ✅ | `PlatformQueriesView` (getContestedResourceVotersForIdentity). |
 | VOTE-05 | Query an identity's votes | Platform | Thorough | ✅ | `PlatformQueriesView` (getContestedResourceIdentityVotes). |
 | VOTE-06 | Query vote polls by end date | Platform | Thorough | ✅ | `PlatformQueriesView` (getVotePollsByEndDate). |
-| VOTE-07 | Masternode vote (generic builder entry) | Platform | — | 🧪 | Builder entry is a stub (`default → notImplemented`). Use `VOTE-01`. |
+| VOTE-07 | Masternode vote (generic builder entry) | Platform | — | ➖ | Retired — builder entry is a stub (`default → notImplemented`); masternode voting is covered by `VOTE-01`. Kept here to document the stub; not seeded to the QA catalog. |
 
 ### 4.6 Data Contracts — `Domain=Contract`
 
