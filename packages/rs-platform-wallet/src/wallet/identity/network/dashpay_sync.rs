@@ -46,6 +46,18 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             );
         }
 
+        // Contact profiles (established contacts + pending senders) so the
+        // UI shows their name/avatar. A distinct step from `sync_profiles`
+        // (own identities) — different target set and cache. Log-and-continue:
+        // a fetch failure degrades display only, never the sweep outcome.
+        if let Err(e) = self.sync_contact_profiles().await {
+            tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id()),
+                error = %e,
+                "DashPay contact-profile sync failed"
+            );
+        }
+
         // Step 3: contactInfo (alias/note/hidden) — cross-device
         // metadata. Log-and-continue like the steps above; a failure
         // here must not abort the payment reconcile below.

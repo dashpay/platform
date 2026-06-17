@@ -92,6 +92,7 @@ impl ManagedIdentity {
             dashpay_payments: BTreeMap::new(),
             high_water_received_ms: None,
             high_water_sent_ms: None,
+            contact_profiles: BTreeMap::new(),
         }
     }
 
@@ -119,6 +120,7 @@ impl ManagedIdentity {
             dashpay_payments: BTreeMap::new(),
             high_water_received_ms: None,
             high_water_sent_ms: None,
+            contact_profiles: BTreeMap::new(),
         }
     }
 

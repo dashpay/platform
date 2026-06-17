@@ -15,6 +15,7 @@ use dpp::prelude::Identifier;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
+use crate::wallet::identity::{ContactProfileEntry, DashPayProfile};
 
 // ---------------------------------------------------------------------------
 // Sync profiles
@@ -537,6 +538,241 @@ fn profile_from_properties(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Contact-profile sync (stage 2)
+// ---------------------------------------------------------------------------
+
+/// Max length of a DashPay `avatarUrl` (DIP-15). Longer is rejected.
+const MAX_AVATAR_URL_LEN: usize = 2048;
+/// Platform `In`-clause cardinality cap; also the profile-fetch chunk size.
+const CONTACT_PROFILE_IN_CAP: usize = 100;
+/// Re-fetch / re-check window for a cached contact profile. A present profile
+/// is refreshed and a confirmed-absent one re-checked at most once per window,
+/// bounding sync cost without the (unprovable-as-a-batch) `$updatedAt`
+/// incremental query. See SYNC_CORRECTNESS_SPEC §4.4 / §5 (Q-inc).
+const CONTACT_PROFILE_REFRESH_MS: u64 = 60 * 60_000;
+
+/// Current UNIX time in ms. Used only to rate-limit re-fetches (gates cost,
+/// never correctness), so a clock anomaly is harmless.
+fn unix_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// An `avatarUrl` is cached only if it is a bounded `https://` URL. An
+/// attacker-controlled `http:` / `file:` / `javascript:` / oversized URL is
+/// dropped before it can reach the persistent cache and the UI's image loader
+/// (SSRF / tracking-pixel vector). See SYNC_CORRECTNESS_SPEC §4.7.
+fn is_valid_avatar_url(url: &str) -> bool {
+    !url.is_empty() && url.len() <= MAX_AVATAR_URL_LEN && url.starts_with("https://")
+}
+
+/// Whether a contact id should be (re)fetched this sweep: never-checked ids
+/// always, otherwise only past the refresh window. The window applies equally
+/// to present and confirmed-absent entries — for the latter it is the negative
+/// cache that stops a profile-less contact being re-queried every sweep.
+fn should_fetch_profile(entry: Option<&ContactProfileEntry>, now_ms: u64) -> bool {
+    match entry {
+        None => true,
+        Some(e) => now_ms.saturating_sub(e.checked_at_ms) >= CONTACT_PROFILE_REFRESH_MS,
+    }
+}
+
+/// Apply a freshly-fetched profile (`Some`) or confirmed-absent result
+/// (`None`) to the cache with **full-replace** semantics (NOT a field merge —
+/// a contact who removed a field must lose it), returning whether the stored
+/// profile changed so the caller persists only on change. `checked_at_ms` is
+/// always refreshed; a pure timestamp bump is not a change.
+fn apply_fetched_profile(
+    cache: &mut std::collections::BTreeMap<Identifier, ContactProfileEntry>,
+    contact_id: Identifier,
+    fetched: Option<DashPayProfile>,
+    now_ms: u64,
+) -> bool {
+    let changed = cache.get(&contact_id).map(|e| &e.profile) != Some(&fetched);
+    cache.insert(
+        contact_id,
+        ContactProfileEntry {
+            profile: fetched,
+            checked_at_ms: now_ms,
+        },
+    );
+    changed
+}
+
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+    /// Fetch and cache **contact** profiles — established contacts + pending
+    /// incoming-request senders — so the UI can show their name/avatar.
+    ///
+    /// Stage 2 of `SYNC_CORRECTNESS_SPEC.md`. Mirrors Android's
+    /// `updateContactProfiles`: iterate the full contact set every sweep
+    /// (so a contact established before this shipped is backfilled, and a
+    /// dropped fetch self-heals next sweep), skip recently-checked ids,
+    /// fetch in `In`-chunks with per-chunk failure isolation, and write the
+    /// per-owner cache with full-replace + persist-on-change. Contacts that
+    /// are themselves managed identities are skipped (their own
+    /// `dashpay_profile` is authoritative). Display-only: a failure never
+    /// aborts the sweep. Returns the number of cache entries changed.
+    pub async fn sync_contact_profiles(&self) -> Result<u32, PlatformWalletError> {
+        let now_ms = unix_now_ms();
+        let dashpay_contract = super::dashpay_contract()?;
+
+        // 1. Under a read guard: per owner, the contact ids worth fetching
+        //    this sweep (established ∪ pending senders, minus own identities,
+        //    minus recently-checked).
+        let plan: Vec<(Identifier, Vec<Identifier>)> = {
+            let wm = self.wallet_manager.read().await;
+            let Some(info) = wm.get_wallet_info(&self.wallet_id) else {
+                return Ok(0);
+            };
+            let own: std::collections::BTreeSet<Identifier> = info
+                .identity_manager
+                .all_identities()
+                .into_iter()
+                .map(|i| i.id())
+                .collect();
+
+            own.iter()
+                .filter_map(|owner_id| {
+                    let managed = info.identity_manager.managed_identity(owner_id)?;
+                    let mut targets: std::collections::BTreeSet<Identifier> =
+                        managed.established_contacts.keys().copied().collect();
+                    targets.extend(managed.incoming_contact_requests.keys().copied());
+                    let to_fetch: Vec<Identifier> = targets
+                        .into_iter()
+                        .filter(|id| !own.contains(id))
+                        .filter(|id| {
+                            should_fetch_profile(managed.contact_profiles.get(id), now_ms)
+                        })
+                        .collect();
+                    (!to_fetch.is_empty()).then_some((*owner_id, to_fetch))
+                })
+                .collect()
+        };
+
+        if plan.is_empty() {
+            return Ok(0);
+        }
+
+        // 2. Fetch (no guard held). Per chunk: one `In` query over ≤IN_CAP
+        //    owner ids; a chunk failure logs and continues so the others
+        //    still land. An id present in the chunk but absent from the
+        //    result is confirmed-absent (cached as `None` — the negative
+        //    cache).
+        let mut results: Vec<(Identifier, Vec<(Identifier, Option<DashPayProfile>)>)> = Vec::new();
+        for (owner_id, to_fetch) in plan {
+            let mut owner_results: Vec<(Identifier, Option<DashPayProfile>)> = Vec::new();
+            for chunk in to_fetch.chunks(CONTACT_PROFILE_IN_CAP) {
+                match self
+                    .fetch_contact_profiles_chunk(&dashpay_contract, chunk)
+                    .await
+                {
+                    Ok(found) => {
+                        for id in chunk {
+                            owner_results.push((*id, found.get(id).cloned().flatten()));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            owner = %owner_id,
+                            error = %e,
+                            "Failed to fetch a contact-profile chunk; will retry next sweep"
+                        );
+                    }
+                }
+            }
+            if !owner_results.is_empty() {
+                results.push((owner_id, owner_results));
+            }
+        }
+
+        // 3. Under the write guard: full-replace, persist-on-change.
+        let mut written = 0u32;
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+                return Ok(0);
+            };
+            for (owner_id, owner_results) in results {
+                let Some(managed) = info.identity_manager.managed_identity_mut(&owner_id) else {
+                    continue;
+                };
+                for (contact_id, profile) in owner_results {
+                    if apply_fetched_profile(
+                        &mut managed.contact_profiles,
+                        contact_id,
+                        profile,
+                        now_ms,
+                    ) {
+                        written += 1;
+                    }
+                }
+            }
+        }
+
+        Ok(written)
+    }
+
+    /// Run one `$ownerId In [chunk]` profile query, returning the present
+    /// profiles keyed by owner id (absent ids are simply missing). The
+    /// `profile` `ownerId` index is unique, so the set lookup proves cleanly
+    /// with an empty `order_by` and no pagination (≤1 profile per owner).
+    async fn fetch_contact_profiles_chunk(
+        &self,
+        dashpay_contract: &Arc<dpp::data_contract::DataContract>,
+        chunk: &[Identifier],
+    ) -> Result<std::collections::BTreeMap<Identifier, Option<DashPayProfile>>, PlatformWalletError>
+    {
+        use dash_sdk::drive::query::{WhereClause, WhereOperator};
+        use dash_sdk::platform::FetchMany;
+        use dpp::document::Document;
+        use dpp::platform_value::{platform_value, Value};
+
+        if chunk.is_empty() {
+            return Ok(Default::default());
+        }
+        let in_values = Value::Array(chunk.iter().map(|id| platform_value!(id)).collect());
+        let query = dash_sdk::platform::DocumentQuery {
+            select: dash_sdk::drive::query::SelectProjection::documents(),
+            data_contract: Arc::clone(dashpay_contract),
+            document_type_name: "profile".to_string(),
+            where_clauses: vec![WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::In,
+                value: in_values,
+            }],
+            group_by: vec![],
+            having: vec![],
+            order_by_clauses: vec![],
+            limit: CONTACT_PROFILE_IN_CAP as u32,
+            start: None,
+        };
+
+        let docs = Document::fetch_many(&self.sdk, query)
+            .await
+            .map_err(PlatformWalletError::Sdk)?;
+
+        let mut out = std::collections::BTreeMap::new();
+        for (_doc_id, maybe_doc) in docs {
+            let Some(doc) = maybe_doc else { continue };
+            let owner = doc.owner_id();
+            let mut profile = profile_from_properties(doc.properties());
+            // Drop an untrusted avatar URL rather than caching it.
+            if profile
+                .avatar_url
+                .as_deref()
+                .is_some_and(|u| !is_valid_avatar_url(u))
+            {
+                profile.avatar_url = None;
+            }
+            out.insert(owner, Some(profile));
+        }
+        Ok(out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -633,5 +869,84 @@ mod tests {
         assert_eq!(prof.public_message.as_deref(), Some("hello world"));
         assert_eq!(prof.bio.as_deref(), Some("hello world"));
         assert_eq!(prof.avatar_url.as_deref(), Some("https://x/a.png"));
+    }
+
+    // --- Stage 2: contact-profile sync helpers ---
+
+    /// Only bounded `https://` avatar URLs are cached — `http:`, scheme
+    /// tricks, oversized, and empty are rejected (SSRF / tracking-pixel).
+    #[test]
+    fn avatar_url_validation_allows_only_bounded_https() {
+        assert!(is_valid_avatar_url("https://example.com/a.png"));
+        assert!(!is_valid_avatar_url("http://example.com/a.png"));
+        assert!(!is_valid_avatar_url("javascript:alert(1)"));
+        assert!(!is_valid_avatar_url("file:///etc/passwd"));
+        assert!(!is_valid_avatar_url(""));
+        let too_long = format!("https://x/{}", "a".repeat(MAX_AVATAR_URL_LEN));
+        assert!(!is_valid_avatar_url(&too_long));
+    }
+
+    /// A never-checked id is fetched; a recently-checked one is skipped; a
+    /// stale one (past the window) is re-fetched. Holds for both a present
+    /// and a confirmed-absent (negative-cache) entry.
+    #[test]
+    fn should_fetch_respects_refresh_window_for_present_and_absent() {
+        let now = 10 * CONTACT_PROFILE_REFRESH_MS;
+        assert!(should_fetch_profile(None, now), "never-checked => fetch");
+
+        for profile in [Some(DashPayProfile::default()), None] {
+            let recent = ContactProfileEntry {
+                profile: profile.clone(),
+                checked_at_ms: now - 1, // just checked
+            };
+            assert!(
+                !should_fetch_profile(Some(&recent), now),
+                "recently-checked => skip (negative cache for absent)"
+            );
+            let stale = ContactProfileEntry {
+                profile,
+                checked_at_ms: now - CONTACT_PROFILE_REFRESH_MS,
+            };
+            assert!(
+                should_fetch_profile(Some(&stale), now),
+                "past the window => re-fetch / re-check"
+            );
+        }
+    }
+
+    /// Full-replace + persist-on-change: a new id changes; the same profile
+    /// again does not (only the timestamp bumps); a different profile and a
+    /// present→absent transition both change. Removed fields disappear.
+    #[test]
+    fn apply_fetched_profile_full_replace_and_change_detection() {
+        let mut cache: BTreeMap<Identifier, ContactProfileEntry> = BTreeMap::new();
+        let id = Identifier::from([0xC1; 32]);
+        let with_avatar = DashPayProfile {
+            display_name: Some("Bob".into()),
+            avatar_url: Some("https://x/b.png".into()),
+            ..Default::default()
+        };
+
+        // First write changes; checked_at recorded.
+        assert!(apply_fetched_profile(&mut cache, id, Some(with_avatar.clone()), 100));
+        assert_eq!(cache[&id].checked_at_ms, 100);
+
+        // Identical profile again: no change, but the timestamp advances.
+        assert!(!apply_fetched_profile(&mut cache, id, Some(with_avatar), 200));
+        assert_eq!(cache[&id].checked_at_ms, 200);
+
+        // Contact removed their avatar: full-replace drops it (a merge would
+        // have kept it) — this is a change.
+        let no_avatar = DashPayProfile {
+            display_name: Some("Bob".into()),
+            avatar_url: None,
+            ..Default::default()
+        };
+        assert!(apply_fetched_profile(&mut cache, id, Some(no_avatar), 300));
+        assert_eq!(cache[&id].profile.as_ref().unwrap().avatar_url, None);
+
+        // Present -> confirmed-absent is a change and caches the negative.
+        assert!(apply_fetched_profile(&mut cache, id, None, 400));
+        assert!(cache[&id].profile.is_none());
     }
 }

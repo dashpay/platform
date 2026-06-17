@@ -17,7 +17,9 @@ pub use crate::wallet::identity::types::key_storage::{
     self, DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData,
 };
 
-use crate::wallet::identity::{ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry};
+use crate::wallet::identity::{
+    ContactProfileEntry, ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry,
+};
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use std::collections::BTreeMap;
@@ -125,6 +127,13 @@ pub struct ManagedIdentity {
     pub high_water_received_ms: Option<u64>,
     /// High-water mark for the sent direction (`$ownerId == me`).
     pub high_water_sent_ms: Option<u64>,
+
+    /// Cached **contact** profiles keyed by the contact's identity id —
+    /// established contacts, pending incoming-request senders, and (later)
+    /// ignored senders, independent of relationship state. Populated by
+    /// `sync_contact_profiles`; public-data only (never `contactInfo`-derived).
+    /// See `docs/dashpay/SYNC_CORRECTNESS_SPEC.md` §4.5.
+    pub contact_profiles: BTreeMap<Identifier, ContactProfileEntry>,
 }
 
 #[cfg(test)]
