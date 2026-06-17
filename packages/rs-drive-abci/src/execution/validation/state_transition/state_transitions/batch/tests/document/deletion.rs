@@ -361,6 +361,200 @@ mod deletion_tests {
         assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
     }
 
+    /// A document type with `documentsKeepHistory: true` can never be deleted:
+    /// rs-drive's delete path returns `InvalidDeletionOfDocumentThatKeepsHistory`
+    /// unconditionally when `documents_keep_history()` is true (see
+    /// `force_delete_document_for_contract_operations_v0`). The
+    /// delete-transition STRUCTURE validator, however, only checks
+    /// `documents_can_be_deleted()` — NOT `documents_keep_history()` (see
+    /// `document_delete_transition_action/advanced_structure_v0/mod.rs`). So if a
+    /// contract sets BOTH `documentsKeepHistory: true` AND `canBeDeleted: true`
+    /// (a self-contradiction that contract validation does not currently
+    /// prevent — testnet contract `5CBPiadGmx3Zsjc26g5onopcx7pdxHPbrRAUD2T2yAbC`'s
+    /// `note` type is a live example), a delete sails through structure
+    /// validation and is only refused deep in Drive at execution.
+    ///
+    /// This test pins the behavior we WANT: the delete is refused as an invalid
+    /// (paid) state transition, leaving the document in place — the same outcome
+    /// the `can_not_be_deleted` sibling test above asserts. It is expected to
+    /// FAIL against current code, marking the missing guard in the delete
+    /// transition's structure validator (the keep-history check should sit next
+    /// to the existing `documents_can_be_deleted()` check there). Once that guard
+    /// lands, the doomed delete is rejected up front at broadcast time with a
+    /// clear consensus error, instead of an SDK user discovering the
+    /// contradiction only when the transition mysteriously fails to apply.
+    #[tokio::test]
+    async fn test_document_delete_on_document_type_that_keeps_history_is_rejected() {
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let contract_path =
+            "tests/supporting_files/contract/note/note-contract-keep-history-and-can-be-deleted.json";
+
+        let platform_state = platform.state.load();
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected to get current platform version");
+
+        let note_contract = json_document_to_contract(contract_path, true, platform_version)
+            .expect("expected to get data contract");
+        platform
+            .drive
+            .apply_contract(
+                &note_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        let mut rng = StdRng::seed_from_u64(437);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let note_document_type = note_contract
+            .document_type_for_name("note")
+            .expect("expected a note document type");
+
+        // Precondition: this is the contradictory flag combination — the type
+        // keeps history (so Drive will refuse deletion) yet advertises that its
+        // documents can be deleted.
+        assert!(note_document_type.documents_keep_history());
+        assert!(note_document_type.documents_can_be_deleted());
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let document = note_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        let mut altered_document = document.clone();
+        altered_document.set_revision(Some(1));
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                note_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let documents_batch_deletion_transition =
+            BatchTransition::new_document_deletion_transition_from_document(
+                altered_document,
+                note_document_type,
+                &key,
+                3,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_deletion_serialized_transition = documents_batch_deletion_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_deletion_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        // Desired behavior: the delete targeting a keep-history document type is
+        // refused as an invalid (paid) state transition — exactly like the
+        // `can_not_be_deleted` sibling test.
+        //
+        // FAILS today, and the failure mode is the important part: the
+        // transition is classified as neither valid nor invalid. It passes
+        // structure validation (which never checks `documents_keep_history()`)
+        // and then, at execution, Drive's `InvalidDeletionOfDocumentThatKeepsHistory`
+        // — a `DriveError`, not a consensus error — surfaces as an
+        // `ExecutionResult::InternalError`, leaving valid_count == 0 AND
+        // invalid_paid_count == 0. An internal error is "the node failed to
+        // process this", not "this transition is invalid": there is no clean
+        // consensus rejection for the client to observe, which is the root of
+        // the "delete hangs on the network" symptom. The fix is to reject the
+        // delete in the structure validator so it becomes a normal invalid
+        // (paid) transition instead.
+        assert_eq!(
+            processing_result.invalid_paid_count(),
+            1,
+            "delete of a keep-history document type must be rejected up front as an \
+             invalid state transition (the delete-transition structure validator should \
+             refuse it, mirroring the can_not_be_deleted path), not be accepted here and \
+             fail only at Drive execution"
+        );
+        assert_eq!(processing_result.valid_count(), 0);
+    }
+
     #[tokio::test]
     async fn test_document_delete_on_document_type_that_is_not_mutable_and_can_be_deleted() {
         run_document_delete_on_document_type_that_is_not_mutable_and_can_be_deleted_at_protocol_version(

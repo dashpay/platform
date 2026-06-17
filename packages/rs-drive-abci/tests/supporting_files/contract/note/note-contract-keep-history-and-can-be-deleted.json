@@ -1,0 +1,36 @@
+{
+    "$formatVersion": "0",
+    "id": "8MjTnX7JUbGfYYswyuCtHU7ZqcYU9s1fUaNiqD9s5tEw",
+    "ownerId": "2QjL594djCH2NyDsn45vd6yQjEDHupMKo7CEGVTHtQxU",
+    "version": 1,
+    "documentSchemas": {
+        "note": {
+            "type": "object",
+            "documentsMutable": true,
+            "documentsKeepHistory": true,
+            "canBeDeleted": true,
+            "indices": [
+                {
+                    "name": "ownerId",
+                    "properties": [
+                        {
+                            "$ownerId": "asc"
+                        }
+                    ]
+                }
+            ],
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "maxLength": 140,
+                    "position": 0
+                }
+            },
+            "required": [
+                "$createdAt",
+                "$updatedAt"
+            ],
+            "additionalProperties": false
+        }
+    }
+}

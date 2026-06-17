@@ -781,6 +781,99 @@ mod tests {
         );
     }
 
+    /// `documentsKeepHistory: true` + `canBeDeleted: true` is a
+    /// self-contradictory document-type configuration that contract
+    /// validation MUST reject at creation time.
+    ///
+    /// The two flags are mutually exclusive in practice: when a
+    /// document type keeps history, rs-drive's delete path rejects
+    /// every deletion with `InvalidDeletionOfDocumentThatKeepsHistory`
+    /// (see `force_delete_document_for_contract_operations_v0` in
+    /// `rs-drive/src/drive/document/delete/.../v0/mod.rs`, which returns
+    /// the error unconditionally when `documents_keep_history()` is
+    /// true). So `canBeDeleted: true` on a keep-history type advertises
+    /// a capability the storage layer will always refuse.
+    ///
+    /// Today nothing catches this contradiction up front: the parser
+    /// accepts the contract, the delete state-transition structure
+    /// validator only checks `documents_can_be_deleted()` (not
+    /// `documents_keep_history()`), and the contradiction surfaces only
+    /// at execution — after the transition has already passed broadcast
+    /// validation. An SDK user can deploy such a contract (testnet
+    /// contract `5CBPiadGmx3Zsjc26g5onopcx7pdxHPbrRAUD2T2yAbC`'s `note`
+    /// type is a live example) and only discover the problem when a
+    /// delete fails deep in Drive.
+    ///
+    /// This test asserts the behavior we WANT — rejection at
+    /// contract-creation parse time, naming both offending flags so the
+    /// author can fix the schema immediately. It FAILS against current
+    /// code (the contract parses cleanly), pinning the missing guard to
+    /// the flag-parsing region of `try_from_schema` (mirror the existing
+    /// cross-flag `ContestedUniqueIndexOnMutableDocumentTypeError`
+    /// check). Once the guard lands, this test locks the behavior in.
+    #[test]
+    fn doctype_keep_history_with_can_be_deleted_rejected() {
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "position": 0,
+                },
+            },
+            "additionalProperties": false,
+            "documentsKeepHistory": true,
+            "canBeDeleted": true,
+        });
+        let result = parse(schema);
+        assert!(
+            result.is_err(),
+            "documentsKeepHistory: true + canBeDeleted: true must be rejected at \
+             contract-creation parse time: a keep-history document type can never be \
+             deleted (rs-drive returns InvalidDeletionOfDocumentThatKeepsHistory), so \
+             advertising canBeDeleted: true is a self-contradiction that should be caught \
+             here rather than at delete-execution time"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("documentsKeepHistory") && msg.contains("canBeDeleted"),
+            "rejection error must name both documentsKeepHistory and canBeDeleted so the \
+             contract author knows which flags conflict; got {msg}"
+        );
+    }
+
+    /// Companion to the rejection test: `documentsKeepHistory: true`
+    /// with `canBeDeleted: false` (or absent) must keep parsing
+    /// cleanly. Guards the future guard against being over-broad — only
+    /// the `true + true` combination is contradictory; keep-history
+    /// types that are (correctly) non-deletable must remain valid.
+    #[test]
+    fn doctype_keep_history_with_can_be_deleted_false_accepted() {
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "position": 0,
+                },
+            },
+            "additionalProperties": false,
+            "documentsKeepHistory": true,
+            "canBeDeleted": false,
+        });
+        let v2 = parse(schema).expect("keep-history + canBeDeleted: false is a valid combination");
+        assert!(
+            v2.documents_keep_history,
+            "documentsKeepHistory: true must be carried into v2"
+        );
+        assert!(
+            !v2.documents_can_be_deleted,
+            "canBeDeleted: false must be carried into v2"
+        );
+    }
+
     /// Shorthand `documentsAverageable: "score"` with
     /// `rangeSummable: true` (no `rangeAverageable`, no
     /// `rangeCountable`) must desugar to the SAME
