@@ -50,6 +50,25 @@ struct TransferPlatformAddressView: View {
     @State private var externalHashHex: String = ""
     @State private var amountDash: String = "0.0001"
 
+    /// Per-input minimum credit amount (`min_input_amount`) the chain
+    /// enforces for address-funds transitions, resolved from the wallet's
+    /// current platform version via
+    /// `ManagedPlatformAddressWallet.minInputAmount()` once on appear. The
+    /// Rust Auto selector drops any funded address below this floor, so the
+    /// per-account total and the submit gate must sum only balances `>=` it
+    /// to match the input set Rust will actually consume.
+    ///
+    /// `nil` until resolved (or if resolution fails). We treat an
+    /// unresolved floor as a closed gate (`canSubmit` requires it to be
+    /// known) rather than substituting a numeric default: a fallback like
+    /// `0` would re-introduce the over-permissive behavior this fixes
+    /// (every dust row counted) and let the button enable an op Rust would
+    /// reject as dust-only, while hardcoding the `100_000` protocol
+    /// constant would violate the no-Swift-mirror rule. The view still
+    /// renders fully when it's `nil`; only the spendable total reads `0`
+    /// and submit stays disabled until the version-locked floor loads.
+    @State private var minInputAmount: UInt64? = nil
+
     // MARK: - Submit state
 
     @State private var submitError: SubmitError? = nil
@@ -116,7 +135,10 @@ struct TransferPlatformAddressView: View {
                     dismissButton: .default(Text("OK"))
                 )
             }
-            .onAppear(perform: autoSelectDefaults)
+            .onAppear {
+                resolveMinInputAmount()
+                autoSelectDefaults()
+            }
             // Block swipe-to-dismiss while a transfer is in flight — only
             // the (disabled) Cancel button otherwise gates it, so a swipe
             // could tear the sheet down mid-submit.
@@ -316,21 +338,34 @@ struct TransferPlatformAddressView: View {
     /// the transfer persists/nonces against — the picker is multi-account,
     /// matching the withdraw flow.
     private var platformAccountOptions: [PlatformAccountOption] {
+        // Spendable threshold: a funded address can only be an input if its
+        // balance reaches the chain's `min_input_amount`. When the floor
+        // hasn't resolved yet (`nil`), `UInt64.max` makes every row dust so
+        // the spendable total is 0 and the submit gate stays closed — we
+        // never count an unknown-floor balance as spendable. See the
+        // `minInputAmount` doc comment for why we don't fall back to a
+        // numeric default.
+        let threshold = minInputAmount ?? UInt64.max
         let accounts = allAccounts
             .filter { $0.wallet.walletId == wallet.walletId }
             .filter { $0.accountType == 14 && $0.keyClass == 0 }
             .sorted { $0.accountIndex < $1.accountIndex }
         return accounts.map { acct in
             // Sum only addresses whose parent account is key class 0
-            // (`account?.keyClass == 0`). Rust spends the key-class-0
-            // account at this index, so summing every row at `accountIndex`
-            // regardless of key class would inflate the total and let
-            // `canSubmit` promise more than Rust will spend.
+            // (`account?.keyClass == 0`) AND whose balance clears the
+            // per-input minimum (`balance >= threshold`). Rust's Auto
+            // selector drops sub-`min_input_amount` dust before selecting
+            // inputs (and returns `OnlyDustInputs` if nothing clears it), so
+            // counting dust here would inflate the total and let `canSubmit`
+            // promise more than Rust will spend — enabling a transfer Rust
+            // then refuses. Summing every key-class-0 row regardless of key
+            // class would likewise over-count.
             let total = allPlatformAddresses
                 .filter {
                     $0.walletId == wallet.walletId
                         && $0.accountIndex == acct.accountIndex
                         && $0.account?.keyClass == 0
+                        && $0.balance >= threshold
                 }
                 .reduce(into: UInt64(0)) { acc, addr in acc &+= addr.balance }
             return PlatformAccountOption(accountIndex: acct.accountIndex, totalCredits: total)
@@ -485,6 +520,12 @@ struct TransferPlatformAddressView: View {
     private var canSubmit: Bool {
         guard
             !isSubmitting,
+            // The per-input minimum must be known before we can promise the
+            // account covers the transfer: `selectedSourceAccountCredits`
+            // sums only balances ≥ this floor, and an unresolved floor makes
+            // that figure 0. Keep the gate closed until it loads rather than
+            // gating on an unknown/over-permissive spendable total.
+            minInputAmount != nil,
             sourceAccountIndex != nil,
             let credits = parsedCredits, credits > 0,
             let dest = resolvedDestination
@@ -506,6 +547,24 @@ struct TransferPlatformAddressView: View {
     }
 
     // MARK: - Actions
+
+    /// Resolve the chain's per-input minimum (`min_input_amount`) once from
+    /// the wallet's current platform version (version-locked, read on the
+    /// Rust side). Called on appear. On any failure we leave
+    /// `minInputAmount == nil`, which keeps the spendable total at 0 and the
+    /// submit gate closed — a deliberately conservative fallback that never
+    /// *under*-gates (see the `minInputAmount` doc comment).
+    private func resolveMinInputAmount() {
+        guard minInputAmount == nil else { return }
+        guard let managedHolder = walletManager.wallet(for: wallet.walletId) else { return }
+        do {
+            let addressWallet = try managedHolder.platformAddressWallet()
+            minInputAmount = try addressWallet.minInputAmount()
+        } catch {
+            // Leave nil: gate stays closed until a later appearance resolves it.
+            minInputAmount = nil
+        }
+    }
 
     private func autoSelectDefaults() {
         if sourceAccountIndex == nil {

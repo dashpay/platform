@@ -162,6 +162,35 @@ impl PlatformAddressWallet {
         self.sdk.network
     }
 
+    /// The per-input minimum credit amount enforced by the chain for
+    /// address-funds transitions, read from the wallet's **current**
+    /// platform version
+    /// (`platform_version.dpp.state_transitions.address_funds.min_input_amount`).
+    ///
+    /// This is the same constant the transfer/withdraw auto-selectors use
+    /// to drop sub-minimum "dust" inputs (see
+    /// [`select_withdrawable_inputs`](super::withdrawal) and
+    /// [`build_auto_select_candidates`](super::transfer)): DPP rejects any
+    /// address-funds input below this floor, so an address whose balance is
+    /// under it cannot be spent on its own. Exposed so UI gating can sum
+    /// only spendable (≥ this) balances instead of every funded row,
+    /// keeping the enabled/disabled decision in step with what the Rust
+    /// selectors will actually consume.
+    ///
+    /// The version is resolved from the wallet's SDK
+    /// ([`dash_sdk::Sdk::version`]), the same network-floored,
+    /// protocol-version-tracking source the spend paths run under — so the
+    /// figure is version-locked rather than a hardcoded mirror of the
+    /// constant.
+    pub fn min_input_amount(&self) -> Credits {
+        self.sdk
+            .version()
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount
+    }
+
     /// Wallet id this `PlatformAddressWallet` operates on. Exposed so
     /// FFI callers that build a `MnemonicResolverCoreSigner` on demand
     /// can thread the wallet id through to the resolver callback.
@@ -352,5 +381,61 @@ impl std::fmt::Debug for PlatformAddressWallet {
         f.debug_struct("PlatformAddressWallet")
             .field("network", &self.sdk.network)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PlatformAddressWallet;
+
+    /// Build a `PlatformAddressWallet` on a mock SDK for getter tests that
+    /// touch no I/O. Mirrors `transfer::tests::build_short_circuit_wallet`,
+    /// duplicated here because that helper is private to the transfer
+    /// module's `tests`.
+    fn build_test_wallet() -> PlatformAddressWallet {
+        use crate::broadcaster::SpvBroadcaster;
+        use crate::events::PlatformEventManager;
+        use crate::spv::SpvRuntime;
+        use crate::wallet::asset_lock::manager::AssetLockManager;
+        use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+        use std::sync::Arc;
+        use tokio::sync::{Notify, RwLock};
+
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let wallet_manager = Arc::new(RwLock::new(key_wallet_manager::WalletManager::new(
+            sdk.network,
+        )));
+        let persister = WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence));
+        let event_manager = Arc::new(PlatformEventManager::new(Vec::new()));
+        let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallet_manager), event_manager));
+        let broadcaster = Arc::new(SpvBroadcaster::new(spv));
+        let asset_locks = Arc::new(AssetLockManager::new(
+            Arc::clone(&sdk),
+            Arc::clone(&wallet_manager),
+            [0u8; 32],
+            Arc::new(Notify::new()),
+            broadcaster,
+            persister.clone(),
+        ));
+        PlatformAddressWallet::new(sdk, wallet_manager, [0u8; 32], asset_locks, persister)
+    }
+
+    /// `min_input_amount()` must return the constant from the wallet's own
+    /// SDK-resolved `PlatformVersion`, i.e. exactly
+    /// `version.dpp.state_transitions.address_funds.min_input_amount` — the
+    /// same floor the auto-selectors use to drop dust. Pins the getter to
+    /// the version's value rather than a hardcoded literal, so the UI gate
+    /// stays version-locked.
+    #[test]
+    fn min_input_amount_matches_sdk_version_constant() {
+        let wallet = build_test_wallet();
+        let expected = wallet
+            .sdk
+            .version()
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        assert_eq!(wallet.min_input_amount(), expected);
     }
 }

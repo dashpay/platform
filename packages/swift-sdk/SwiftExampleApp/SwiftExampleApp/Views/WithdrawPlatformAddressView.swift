@@ -49,6 +49,27 @@ struct WithdrawPlatformAddressView: View {
     /// to a protocol-valid value (see `validFeeRates`); defaults to 1.
     @State private var coreFeePerByte: UInt32 = 1
 
+    /// Per-input minimum credit amount (`min_input_amount`) the chain
+    /// enforces for address-funds transitions, resolved from the wallet's
+    /// current platform version via
+    /// `ManagedPlatformAddressWallet.minInputAmount()` once on appear. The
+    /// Rust withdraw selector (`select_withdrawable_inputs`) keeps only
+    /// addresses whose balance reaches this floor and returns
+    /// `OnlyDustInputs` when none do, so the "Total to Withdraw" figure and
+    /// the submit gate must sum only balances `>=` it to reflect the
+    /// *withdrawable* balance Rust will actually take.
+    ///
+    /// `nil` until resolved (or if resolution fails). We treat an
+    /// unresolved floor as a closed gate (`canSubmit` requires it to be
+    /// known) rather than substituting a numeric default: a fallback like
+    /// `0` would re-introduce the over-permissive behavior this fixes (every
+    /// dust row counted) and let the button enable a dust-only withdrawal
+    /// Rust would reject, while hardcoding the `100_000` protocol constant
+    /// would violate the no-Swift-mirror rule. The view still renders fully
+    /// when it's `nil`; only the withdrawable total reads `0` and submit
+    /// stays disabled until the version-locked floor loads.
+    @State private var minInputAmount: UInt64? = nil
+
     // MARK: - Core readiness
 
     /// nil = not yet checked, true/false = Core wallet usable.
@@ -125,6 +146,7 @@ struct WithdrawPlatformAddressView: View {
             }
             .onAppear {
                 checkCoreReady()
+                resolveMinInputAmount()
                 autoSelectDefaults()
             }
             .onChange(of: destinationMode) { _, mode in
@@ -340,10 +362,23 @@ struct WithdrawPlatformAddressView: View {
     /// be the spent source. Mirrors `TransferPlatformAddressView`.
     ///
     /// The displayed per-account balance sums only addresses whose parent
-    /// account is key class 0 (`account?.keyClass == 0`); summing every row
-    /// at `accountIndex` regardless of key class would inflate the total
-    /// and let `canSubmit` promise more than Rust (key class 0) will spend.
+    /// account is key class 0 (`account?.keyClass == 0`) AND whose balance
+    /// clears the chain's per-input minimum (`balance >= threshold`). The
+    /// Rust withdraw selector keeps only inputs that reach
+    /// `min_input_amount` and withdraws that *withdrawable* balance (dropping
+    /// sub-minimum dust, or failing with `OnlyDustInputs` if none clear it),
+    /// so this is the figure actually paid out. Summing every key-class-0
+    /// row regardless of key class or balance would inflate the total and
+    /// let `canSubmit` enable a withdrawal Rust then refuses as dust-only.
     private var platformAccountOptions: [PlatformAccountOption] {
+        // Withdrawable threshold: an address can only be a withdrawal input
+        // if its balance reaches the chain's `min_input_amount`. When the
+        // floor hasn't resolved yet (`nil`), `UInt64.max` makes every row
+        // dust so the withdrawable total is 0 and the submit gate stays
+        // closed — we never count an unknown-floor balance as withdrawable.
+        // See the `minInputAmount` doc comment for why we don't fall back to
+        // a numeric default.
+        let threshold = minInputAmount ?? UInt64.max
         let accounts = allAccounts
             .filter { $0.wallet.walletId == wallet.walletId }
             .filter { $0.accountType == 14 && $0.keyClass == 0 }
@@ -354,6 +389,7 @@ struct WithdrawPlatformAddressView: View {
                     $0.walletId == wallet.walletId
                         && $0.accountIndex == acct.accountIndex
                         && $0.account?.keyClass == 0
+                        && $0.balance >= threshold
                 }
                 .reduce(into: UInt64(0)) { acc, addr in acc &+= addr.balance }
             return PlatformAccountOption(accountIndex: acct.accountIndex, totalCredits: total)
@@ -388,7 +424,17 @@ struct WithdrawPlatformAddressView: View {
         guard
             !isSubmitting,
             coreReady == true,
+            // The per-input minimum must be known before we can promise the
+            // account has anything withdrawable: `selectedSourceAccountCredits`
+            // sums only balances ≥ this floor, and an unresolved floor makes
+            // that figure 0. The `> 0` check below already closes the gate in
+            // that case; this makes the dependency explicit.
+            minInputAmount != nil,
             sourceAccountIndex != nil,
+            // Require the dust-FILTERED (withdrawable) total > 0, not the raw
+            // total: the Rust selector returns `OnlyDustInputs` when no
+            // address clears `min_input_amount`, so a purely-dust account
+            // (raw balance > 0) must not enable the button.
             selectedSourceAccountCredits > 0,
             parsedFeePerByte != nil,
             let addr = resolvedCoreAddress, !addr.isEmpty
@@ -426,6 +472,24 @@ struct WithdrawPlatformAddressView: View {
         } catch {
             coreReady = false
             coreNotReadyReason = "Core wallet is not ready: \(error.localizedDescription)"
+        }
+    }
+
+    /// Resolve the chain's per-input minimum (`min_input_amount`) once from
+    /// the wallet's current platform version (version-locked, read on the
+    /// Rust side). Called on appear. On any failure we leave
+    /// `minInputAmount == nil`, which keeps the withdrawable total at 0 and
+    /// the submit gate closed — a deliberately conservative fallback that
+    /// never *under*-gates (see the `minInputAmount` doc comment).
+    private func resolveMinInputAmount() {
+        guard minInputAmount == nil else { return }
+        guard let managedHolder = walletManager.wallet(for: wallet.walletId) else { return }
+        do {
+            let addressWallet = try managedHolder.platformAddressWallet()
+            minInputAmount = try addressWallet.minInputAmount()
+        } catch {
+            // Leave nil: gate stays closed until a later appearance resolves it.
+            minInputAmount = nil
         }
     }
 

@@ -40,6 +40,24 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         return credits
     }
 
+    /// The per-input minimum credit amount (`min_input_amount`) the chain
+    /// enforces for address-funds transitions, read from the wallet's
+    /// current platform version on the Rust side.
+    ///
+    /// This is the same floor the Rust transfer/withdraw auto-selectors use
+    /// to drop sub-minimum "dust" inputs (DPP rejects any address-funds
+    /// input below it, so an address whose balance is under this can't be
+    /// spent on its own). UI that gates a transfer/withdraw should sum only
+    /// balances `>= this` so the enabled/disabled decision matches what
+    /// Rust will actually consume — rather than mirroring the `100_000`
+    /// protocol constant in Swift, which would drift if the version
+    /// changed it.
+    public func minInputAmount() throws -> UInt64 {
+        var amount: UInt64 = 0
+        try platform_address_wallet_min_input_amount(handle, &amount).check()
+        return amount
+    }
+
     /// Get all platform addresses with their cached balances.
     public func addressesWithBalances() throws -> [AddressBalance] {
         var entriesPtr: UnsafeMutablePointer<AddressBalanceEntryFFI>?

@@ -76,6 +76,29 @@ pub unsafe extern "C" fn platform_address_wallet_total_credits(
     PlatformWalletFFIResult::ok()
 }
 
+/// Get the per-input minimum credit amount (`min_input_amount`) the
+/// chain enforces for address-funds transitions, read from the wallet's
+/// current platform version.
+///
+/// Pure getter: resolve the handle, read
+/// `PlatformAddressWallet::min_input_amount()` (which reads the constant
+/// off the wallet's SDK-resolved `PlatformVersion`), write it to
+/// `out_min_input_amount`. This is the same floor the transfer/withdraw
+/// auto-selectors use to drop sub-minimum dust inputs, so a UI gate that
+/// sums only balances ≥ this stays in step with what Rust will spend.
+#[no_mangle]
+pub unsafe extern "C" fn platform_address_wallet_min_input_amount(
+    handle: Handle,
+    out_min_input_amount: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_min_input_amount);
+
+    let option =
+        PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| wallet.min_input_amount());
+    *out_min_input_amount = unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
+}
+
 /// Get all platform addresses with their cached balances.
 ///
 /// On success, `out_entries` and `out_count` are set to a heap-allocated array.
