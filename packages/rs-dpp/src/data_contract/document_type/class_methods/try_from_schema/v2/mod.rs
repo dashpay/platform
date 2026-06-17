@@ -326,7 +326,6 @@ impl DocumentTypeV2 {
         // into an invalid (paid) transition with a bump action — a bare
         // `ProtocolError::DataContractError` would propagate as an internal
         // execution error in validator mode.
-        #[cfg(feature = "validation")]
         if full_validation && v1.documents_keep_history && v1.documents_can_be_deleted {
             return Err(consensus_or_protocol_data_contract_error(
                 DataContractError::InvalidContractStructure(format!(
