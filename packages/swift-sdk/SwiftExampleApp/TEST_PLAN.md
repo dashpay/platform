@@ -210,8 +210,13 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | DOC-05 | Transfer document | Platform | Uncommon | 🧪 | *Settings builder* → `dash_sdk_document_transfer_to_identity`. |
 | DOC-06 | Update document price | Platform | Uncommon | 🧪 | *Settings builder* / `DocumentWithPriceView` → `dash_sdk_document_update_price_of_document`. |
 | DOC-07 | Purchase document | Platform | Uncommon | 🧪 | *Settings builder* → `dash_sdk_document_purchase`. |
-| DOC-08 | Document count / sum / average aggregation | Platform | Uncommon | 🔌 | FFI `dash_sdk_document_count` / `_sum` / `_average`; no UI. |
+| DOC-08 | Document aggregation (umbrella) | Platform | Uncommon | ➖ | Split into the rows below — `DOC-10` (count total), `DOC-11` (count filtered), `DOC-12` (count grouped), `DOC-13` (sum), `DOC-14` (average). Kept as a pointer only; select the specific row. |
 | DOC-09 | Create document (local demo) | Platform | — | ➖ | Retired. The old `DocumentsView` local-only mock was replaced by the real broadcast flow (`CreateDocumentView`); see `DOC-02`. |
+| DOC-10 | Aggregation — count documents (total) | Platform | Uncommon | 🧪 | **Count Documents** read view → Swift wrapper over FFI `dash_sdk_document_count` (proof-verified). Total count is `counts[""]` in the `{counts:{hexKey:u64}}` result. Requires a contract whose doc type sets `documentsCountable: true` (e.g. the `countable` QA fixture). |
+| DOC-11 | Aggregation — count documents, filtered (`where`) | Platform | Uncommon | 🧪 | Same Count view with a `where` clause → `dash_sdk_document_count(where_json=…)`. The filtered field must be a `countable` index. |
+| DOC-12 | Aggregation — count documents, grouped (`group_by`) | Platform | Uncommon | 🧪 | Same Count view with a `group_by` field → `dash_sdk_document_count(group_by_json=…)`; returns one count per group (hex-encoded group key → `u64`). |
+| DOC-13 | Aggregation — sum of a numeric property | Platform | Uncommon | 🚫 | FFI `dash_sdk_document_sum` returns `NotImplemented` — blocked upstream on grovedb PR 670 (range/sum aggregate). Will need a `summable` index once unblocked. |
+| DOC-14 | Aggregation — average of a numeric property | Platform | Uncommon | 🚫 | FFI `dash_sdk_document_average` returns `NotImplemented` — blocked upstream on grovedb PR 670. Will need a `summable` index once unblocked. |
 
 ### 4.8 Tokens — `Domain=Token`
 
@@ -347,7 +352,7 @@ Membership of each feature category across **all** sections (primary section mem
 - **DPNS** — `DPNS-01..07`, `MW-05`
 - **Voting** — `VOTE-01..07`, `DPNS-05`, `MW-05`
 - **Contract** — `DC-01..04`
-- **Document** — `DOC-01..09`, `MW-04`
+- **Document** — `DOC-01..14`, `MW-04`
 - **Token** — `TOK-01..16`, `MW-02`, `GRP-03`
 - **Shielded** — `SH-01..13`, `CORE-21`, `MW-06`, `MW-07`, `MW-11`
 - **DashPay** — `DP-01..06`, `MW-03`
@@ -386,7 +391,7 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 ### Document
 | RPC | Tier | Status | Where |
 |---|---|---|---|
-| getDocuments (incl. V1 COUNT/SUM/AVG, group_by, having) | Common | ✅ / 🔌 | `DocumentsView` / catalog; aggregation surface is FFI-only (`DOC-08`) |
+| getDocuments (incl. V1 COUNT/SUM/AVG, group_by, having) | Common | ✅ / 🧪 / 🚫 | `DocumentsView` / catalog. COUNT (total/`where`/`group_by`) now has a **Count Documents** read view — `DOC-10/11/12`. SUM/AVG are upstream-blocked (grovedb PR 670) — `DOC-13/14`. `having` is not exposed by the FFI. |
 | getDocumentHistory | Thorough | ✅ | catalog |
 
 ### Token
@@ -470,11 +475,12 @@ For completeness (the "everything gRPC + Core can do" requirement), these exist 
 
 **🔌 SDK-only (FFI/wrapper exists, no UI):**
 - `ADDR-05` address balance-change history (recent / compacted / branch / trunk)
-- `DOC-08` document count / sum / average aggregation
 - `SH-11` create identity from shielded pool (Type 20)
 - `SYS-06` raw GroveDB path elements
 
 **🚫 Not implemented anywhere:**
+- `DOC-13` document SUM aggregation — FFI stub returns `NotImplemented` (blocked on grovedb PR 670)
+- `DOC-14` document AVERAGE aggregation — FFI stub returns `NotImplemented` (blocked on grovedb PR 670)
 - `GRP-04` standalone group lifecycle management
 - `getConsensusParams` (served via Tenderdash RPC, not the SDK)
 
