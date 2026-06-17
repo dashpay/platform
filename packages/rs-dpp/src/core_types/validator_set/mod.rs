@@ -186,6 +186,26 @@ mod json_convertible_tests {
         (set, validator_pubkey, threshold_pubkey)
     }
 
+    // Deterministic compressed-G1 BLS pubkeys for the seeded `StdRng(42)`
+    // fixture, spelled out as hex (96 chars = 48 bytes) so the wire format is
+    // visible and verifiable in-place — neither path interpolates `to_json` /
+    // `to_value` of the object under test. JSON (HR) uses the hex string
+    // directly; the non-HR `Value` form is the *same* 48 bytes decoded into an
+    // `Array` of `U8` (blstrs serializes the pubkey through a `u8` tuple, which
+    // platform_value collects as `Array[U8]` — NOT a typed `Bytes` variant).
+    const VALIDATOR_PK_HEX: &str =
+        "85d81dd12c73cca83f7d1bf8b78fadb695e3a2bc21d53b35ff2f74eaa28c6e163c98d3d5f9bb7252b4d836e484c7cc60";
+    const THRESHOLD_PK_HEX: &str =
+        "969c5d5873f49aa994c5f6a850924ca1840c4ad1791aaaecd90093d4a5c0c3799f2d98540f5366cfa0a33f143fd69263";
+
+    fn bls_pubkey_value(hex: &str) -> Value {
+        Value::Array(
+            (0..hex.len() / 2)
+                .map(|i| Value::U8(u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).expect("hex")))
+                .collect(),
+        )
+    }
+
     #[test]
     fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
@@ -216,7 +236,7 @@ mod json_convertible_tests {
                         // `BTreeMap<ProTxHash, Validator>`), so the inner is the bare V0
                         // struct without its enum's `$formatVersion` tag.
                         "pro_tx_hash": "1111111111111111111111111111111111111111111111111111111111111111",
-                        "public_key": "85d81dd12c73cca83f7d1bf8b78fadb695e3a2bc21d53b35ff2f74eaa28c6e163c98d3d5f9bb7252b4d836e484c7cc60",
+                        "public_key": VALIDATOR_PK_HEX,
                         "node_ip": "127.0.0.1",
                         "node_id": "2222222222222222222222222222222222222222",
                         "core_port": 9999,
@@ -225,7 +245,7 @@ mod json_convertible_tests {
                         "is_banned": false,
                     }
                 },
-                "threshold_public_key": "969c5d5873f49aa994c5f6a850924ca1840c4ad1791aaaecd90093d4a5c0c3799f2d98540f5366cfa0a33f143fd69263",
+                "threshold_public_key": THRESHOLD_PK_HEX,
             })
         );
         let recovered = ValidatorSet::from_json(json).expect("from_json");
@@ -244,28 +264,21 @@ mod json_convertible_tests {
                 bump that dep, drop this `#[ignore]` and the `bls_pubkey_serde` wrapper."]
     fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
-        let (original, validator_pubkey, threshold_pubkey) = build_fixture();
+        let (original, ..) = build_fixture();
         let value = original.to_object().expect("to_object");
 
-        // On the non-HR path BLS pubkeys serialize as a 48-byte tuple, which
-        // platform_value collapses into a typed bytes variant. Same as for
-        // JSON: we interpolate the canonical Value form of the actual
-        // fixture pubkeys rather than spelling out 48 bytes inline. Hash
-        // fields (`Bytes32`/`Bytes20`) are explicit.
-        // ProTxHash on the BTreeMap-key side serializes through dashcore as
-        // a `Value::Bytes32` (32-byte sized variant) on the non-HR path.
-        // The `platform_value!` macro doesn't accept non-string keys (it only
-        // takes literal/parenthesized-expression keys that implement
-        // `Into<Value>` from a string-like form), so we build the inner
-        // members map by hand for the typed-bytes key.
-        let validator_pk_value = platform_value::to_value(&validator_pubkey).expect("pk to value");
-        let threshold_pk_value = platform_value::to_value(&threshold_pubkey).expect("pk to value");
+        // BLS pubkeys on the non-HR path = the 48 compressed-G1 bytes as an
+        // `Array` of `U8`, decoded from the *same* hex consts the JSON test
+        // uses (one source of truth, no interpolation of the object under
+        // test). Hash fields (`Bytes32`/`Bytes20`) are explicit. The
+        // `platform_value!` macro doesn't accept non-string keys, so the
+        // members map (keyed by a typed-bytes `ProTxHash`) is built by hand.
         // Note: members are typed `BTreeMap<ProTxHash, ValidatorV0>` (not
         // `BTreeMap<ProTxHash, Validator>`), so the inner is the bare V0
         // struct without its enum's `$formatVersion` tag.
         let inner_validator = platform_value!({
             "pro_tx_hash": Value::Bytes32([0x11; 32]),
-            "public_key": validator_pk_value,
+            "public_key": bls_pubkey_value(VALIDATOR_PK_HEX),
             "node_ip": "127.0.0.1",
             "node_id": Value::Bytes20([0x22; 20]),
             "core_port": 9999u16,
@@ -280,7 +293,7 @@ mod json_convertible_tests {
             "quorum_index": 7u32,
             "core_height": 1234u32,
             "members": members_value,
-            "threshold_public_key": threshold_pk_value,
+            "threshold_public_key": bls_pubkey_value(THRESHOLD_PK_HEX),
         });
         assert_eq!(value, expected);
         let recovered = ValidatorSet::from_object(value).expect("from_object");
