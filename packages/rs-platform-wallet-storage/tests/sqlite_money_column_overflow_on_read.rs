@@ -30,8 +30,8 @@ fn platform_address_balance_negative_on_disk_errors_on_load() {
         let conn = persister.lock_conn_for_test();
         conn.execute(
             "INSERT INTO platform_addresses \
-                (wallet_id, account_index, address_index, address, balance, nonce) \
-             VALUES (?1, 0, 0, X'0000000000000000000000000000000000000000', ?2, 0)",
+                (wallet_id, account_index, key_class, address_index, address, balance, nonce) \
+             VALUES (?1, 0, 0, 0, X'0000000000000000000000000000000000000000', ?2, 0)",
             params![w.as_slice(), -1i64],
         )
         .unwrap();

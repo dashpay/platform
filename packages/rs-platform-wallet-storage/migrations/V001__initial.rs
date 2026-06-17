@@ -216,11 +216,13 @@ CREATE TABLE contacts (
 CREATE TABLE platform_addresses (
     wallet_id BLOB NOT NULL,
     account_index INTEGER NOT NULL,
+    key_class INTEGER NOT NULL,
     address_index INTEGER NOT NULL,
     address BLOB NOT NULL,
     balance INTEGER NOT NULL,
     nonce INTEGER NOT NULL,
     PRIMARY KEY (wallet_id, address),
+    UNIQUE (wallet_id, account_index, key_class, address_index),
     FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 

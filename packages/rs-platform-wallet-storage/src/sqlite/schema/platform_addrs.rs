@@ -24,10 +24,11 @@ pub fn apply(
     if !cs.addresses.is_empty() {
         let mut stmt = tx.prepare_cached(
             "INSERT INTO platform_addresses \
-                (wallet_id, account_index, address_index, address, balance, nonce) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+                (wallet_id, account_index, key_class, address_index, address, balance, nonce) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
              ON CONFLICT(wallet_id, address) DO UPDATE SET \
                 account_index = excluded.account_index, \
+                key_class = excluded.key_class, \
                 address_index = excluded.address_index, \
                 balance = excluded.balance, \
                 nonce = excluded.nonce",
@@ -44,6 +45,7 @@ pub fn apply(
             stmt.execute(params![
                 wallet_id.as_slice(),
                 i64::from(entry.account_index),
+                i64::from(entry.key_class),
                 i64::from(entry.address_index),
                 entry.address.as_bytes(),
                 safe_cast::u64_to_i64("platform_addresses.balance", entry.funds.balance)?,
@@ -100,6 +102,7 @@ pub fn apply(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlatformAddressRow {
     pub account_index: u32,
+    pub key_class: u32,
     pub address_index: u32,
     pub address: PlatformP2PKHAddress,
     pub funds: AddressFunds,
@@ -111,24 +114,26 @@ pub fn list_per_wallet(
     wallet_id: &WalletId,
 ) -> Result<Vec<PlatformAddressRow>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT account_index, address_index, address, balance, nonce \
+        "SELECT account_index, key_class, address_index, address, balance, nonce \
          FROM platform_addresses WHERE wallet_id = ?1 \
-         ORDER BY account_index, address_index, address",
+         ORDER BY account_index, key_class, address_index, address",
     )?;
     let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
         Ok((
             row.get::<_, i64>(0)?,
             row.get::<_, i64>(1)?,
-            row.get::<_, Vec<u8>>(2)?,
-            row.get::<_, i64>(3)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, Vec<u8>>(3)?,
             row.get::<_, i64>(4)?,
+            row.get::<_, i64>(5)?,
         ))
     })?;
     let mut out = Vec::new();
     for r in rows {
-        let (account_index, address_index, address_bytes, balance, nonce) = r?;
+        let (account_index, key_class, address_index, address_bytes, balance, nonce) = r?;
         out.push(decode_address_row(
             account_index,
+            key_class,
             address_index,
             &address_bytes,
             balance,
@@ -173,7 +178,20 @@ fn account_state_from_rows(
         .iter()
         .filter(|r| r.account_index == account_index)
     {
-        state.insert_persisted_entry(row.address_index, row.address, row.funds);
+        if let Err(e) =
+            state.insert_persisted_entry(row.key_class, row.address_index, row.address, row.funds)
+        {
+            // A persisted slot collision means two rows claim the same
+            // (key_class, address_index) with different addresses — the
+            // UNIQUE constraint should make this impossible, so log and
+            // skip the offending row rather than poison the whole load.
+            tracing::error!(
+                account_index,
+                key_class = row.key_class,
+                address_index = row.address_index,
+                "account_state_from_rows: conflicting persisted platform address slot: {e}"
+            );
+        }
     }
     state
 }
@@ -322,25 +340,29 @@ fn all_address_rows(
     conn: &Connection,
 ) -> Result<BTreeMap<WalletId, Vec<PlatformAddressRow>>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT wallet_id, account_index, address_index, address, balance, nonce \
-         FROM platform_addresses ORDER BY wallet_id, account_index, address_index, address",
+        "SELECT wallet_id, account_index, key_class, address_index, address, balance, nonce \
+         FROM platform_addresses \
+         ORDER BY wallet_id, account_index, key_class, address_index, address",
     )?;
     let rows = stmt.query_map([], |row| {
         Ok((
             row.get::<_, Vec<u8>>(0)?,
             row.get::<_, i64>(1)?,
             row.get::<_, i64>(2)?,
-            row.get::<_, Vec<u8>>(3)?,
-            row.get::<_, i64>(4)?,
+            row.get::<_, i64>(3)?,
+            row.get::<_, Vec<u8>>(4)?,
             row.get::<_, i64>(5)?,
+            row.get::<_, i64>(6)?,
         ))
     })?;
     let mut out: BTreeMap<WalletId, Vec<PlatformAddressRow>> = BTreeMap::new();
     for r in rows {
-        let (wid_bytes, account_index, address_index, address_bytes, balance, nonce) = r?;
+        let (wid_bytes, account_index, key_class, address_index, address_bytes, balance, nonce) =
+            r?;
         let wallet_id = wallet_id_from_bytes(&wid_bytes)?;
         out.entry(wallet_id).or_default().push(decode_address_row(
             account_index,
+            key_class,
             address_index,
             &address_bytes,
             balance,
@@ -353,6 +375,7 @@ fn all_address_rows(
 /// Decode one `platform_addresses` row into a [`PlatformAddressRow`].
 fn decode_address_row(
     account_index: i64,
+    key_class: i64,
     address_index: i64,
     address_bytes: &[u8],
     balance: i64,
@@ -368,9 +391,11 @@ fn decode_address_row(
     let balance = safe_cast::i64_to_u64("platform_addresses.balance", balance)?;
     let nonce = safe_cast::i64_to_u32("platform_addresses.nonce", nonce)?;
     let account_index = safe_cast::i64_to_u32("platform_addresses.account_index", account_index)?;
+    let key_class = safe_cast::i64_to_u32("platform_addresses.key_class", key_class)?;
     let address_index = safe_cast::i64_to_u32("platform_addresses.address_index", address_index)?;
     Ok(PlatformAddressRow {
         account_index,
+        key_class,
         address_index,
         address: PlatformP2PKHAddress::new(hash160),
         funds: AddressFunds { balance, nonce },

@@ -167,8 +167,8 @@ pub fn ensure_platform_address(persister: &SqlitePersister, wallet_id: &WalletId
     let conn = persister.lock_conn_for_test();
     conn.execute(
         "INSERT OR IGNORE INTO platform_addresses \
-            (wallet_id, account_index, address_index, address, balance, nonce) \
-         VALUES (?1, 0, 0, ?2, 0, 0)",
+            (wallet_id, account_index, key_class, address_index, address, balance, nonce) \
+         VALUES (?1, 0, 0, 0, ?2, 0, 0)",
         params![wallet_id.as_slice(), address],
     )
     .expect("ensure platform_address");

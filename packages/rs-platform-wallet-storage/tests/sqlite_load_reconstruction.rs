@@ -22,9 +22,20 @@ fn entry(
     address_index: u32,
     byte: u8,
 ) -> PlatformAddressBalanceEntry {
+    entry_kc(wallet_id, account_index, 0, address_index, byte)
+}
+
+fn entry_kc(
+    wallet_id: [u8; 32],
+    account_index: u32,
+    key_class: u32,
+    address_index: u32,
+    byte: u8,
+) -> PlatformAddressBalanceEntry {
     PlatformAddressBalanceEntry {
         wallet_id,
         account_index,
+        key_class,
         address_index,
         address: PlatformP2PKHAddress::new([byte; 20]),
         funds: AddressFunds {
@@ -136,8 +147,8 @@ fn load_state_reconstructs_per_account_from_registration_and_addresses() {
     let addr0 = PlatformP2PKHAddress::new([0xB0; 20]);
     let addr1 = PlatformP2PKHAddress::new([0xB1; 20]);
     assert_eq!(account.addresses().len(), 2);
-    assert_eq!(account.addresses().get_by_left(&0), Some(&addr0));
-    assert_eq!(account.addresses().get_by_left(&1), Some(&addr1));
+    assert_eq!(account.addresses().get_by_left(&(0, 0)), Some(&addr0));
+    assert_eq!(account.addresses().get_by_left(&(0, 1)), Some(&addr1));
 
     // The funds map mirrors what `entry()` seeded for each address.
     assert_eq!(
@@ -158,6 +169,83 @@ fn load_state_reconstructs_per_account_from_registration_and_addresses() {
     );
 
     assert_eq!(state.sync_height, 5);
+}
+
+/// Two persisted rows that share `(account_index, address_index)` but
+/// differ in `key_class` must both survive a store→reopen→reconstruct
+/// cycle: the rebuilt `PerAccountPlatformAddressState` holds BOTH
+/// `(key_class, address_index)` slots with their own addresses and
+/// funds. Pre-fix the `(AddressIndex -> address)` bijection collapsed
+/// them onto one slot, silently dropping a funded address.
+#[test]
+fn tc_load_key_class_coexist() {
+    use platform_wallet::changeset::AccountRegistrationEntry;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0x77);
+    ensure_wallet_meta(&persister, &w);
+
+    let account_index = 4u32;
+    let reg = AccountRegistrationEntry {
+        account_type: key_wallet::account::AccountType::PlatformPayment {
+            account: account_index,
+            key_class: 0,
+        },
+        account_xpub: test_xpub(),
+    };
+    let addr_kc0 = PlatformP2PKHAddress::new([0xD0; 20]);
+    let addr_kc1 = PlatformP2PKHAddress::new([0xD1; 20]);
+
+    let mut cs = PlatformWalletChangeSet::default();
+    cs.account_registrations = vec![reg];
+    cs.platform_addresses = Some(PlatformAddressChangeSet {
+        addresses: vec![
+            // Same account_index + address_index (0), distinct key_class.
+            entry_kc(w, account_index, 0, 0, 0xD0),
+            entry_kc(w, account_index, 1, 0, 0xD1),
+        ],
+        sync_height: Some(8),
+        ..Default::default()
+    });
+    persister.store(w, cs).unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let state = platform_wallet_storage::sqlite::schema::platform_addrs::load_state(&conn, &w)
+        .expect("load_state");
+    drop(conn);
+
+    let account = state
+        .per_account
+        .get(&account_index)
+        .expect("account reconstructed");
+
+    // Both distinct (key_class, address_index) slots survived.
+    assert_eq!(
+        account.addresses().len(),
+        2,
+        "both key_class slots must reconstruct into the bijection"
+    );
+    assert_eq!(account.addresses().get_by_left(&(0, 0)), Some(&addr_kc0));
+    assert_eq!(account.addresses().get_by_left(&(1, 0)), Some(&addr_kc1));
+
+    // ...with the funds `entry_kc` seeded (balance = address_index * 100,
+    // nonce = address_index — both 0 here).
+    assert_eq!(
+        account.found().get(&addr_kc0),
+        Some(&AddressFunds {
+            balance: 0,
+            nonce: 0
+        })
+    );
+    assert_eq!(
+        account.found().get(&addr_kc1),
+        Some(&AddressFunds {
+            balance: 0,
+            nonce: 0
+        })
+    );
 }
 
 /// A registration with no addresses still populates `per_account` (the

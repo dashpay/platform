@@ -11,13 +11,14 @@
 //! wallets.
 //!
 //! The pending set is a single [`bimap::BiBTreeMap`] keyed by
-//! `(wallet_id, account_index, address_index)` on the left and the
-//! [`PlatformP2PKHAddress`] on the right. That bijection lets
+//! `(wallet_id, account_index, key_class, address_index)` on the left
+//! and the [`PlatformP2PKHAddress`] on the right. That bijection lets
 //! `on_address_found` / `on_address_absent` resolve the SDK's flat
-//! `AddressIndex` callback back to a `(wallet, account, index)` triple
-//! in one `remove_by_right`. The bijection is sound because different
-//! accounts (even across wallets) derive from different xpubs — a given
-//! address belongs to at most one `(wallet, account, index)` slot.
+//! `AddressIndex` callback back to a `(wallet, account, key_class,
+//! index)` tuple in one `remove_by_right`. The bijection is sound
+//! because different accounts (even across wallets) and different key
+//! classes derive from different xpubs/sub-paths — a given address
+//! belongs to at most one `(wallet, account, key_class, index)` slot.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -38,12 +39,29 @@ use dash_sdk::platform::address_sync::{
 use tokio::sync::RwLock;
 
 /// DIP-17 address coordinates used as both the pending-bimap key and
-/// the SDK sync engine's `Tag`. Having the SDK carry these three
-/// identifiers through its callback means `on_address_found` /
-/// `on_address_absent` don't need to reverse-lookup by
-/// [`PlatformP2PKHAddress`] to find which wallet and account an
-/// address belongs to.
-pub type PlatformAddressTag = (WalletId, u32, AddressIndex);
+/// the SDK sync engine's `Tag`: `(wallet_id, account_index, key_class,
+/// address_index)`. Having the SDK carry these four identifiers through
+/// its callback means `on_address_found` / `on_address_absent` don't
+/// need to reverse-lookup by [`PlatformP2PKHAddress`] to find which
+/// wallet, account, and key class an address belongs to.
+pub type PlatformAddressTag = (WalletId, u32, u32, AddressIndex);
+
+/// Conflict raised when a persisted entry would map an already-tracked
+/// `(key_class, address_index)` slot to a *different* address. Each
+/// DIP-17 slot derives exactly one address, so two distinct addresses
+/// in the same slot signal corrupted persisted state — surfaced rather
+/// than silently clobbered.
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "platform address slot (key_class={key_class}, address_index={address_index}) \
+     already maps to {existing}, refusing to overwrite with {incoming}"
+)]
+pub struct PersistedEntryConflict {
+    pub key_class: u32,
+    pub address_index: AddressIndex,
+    pub existing: PlatformP2PKHAddress,
+    pub incoming: PlatformP2PKHAddress,
+}
 
 /// Gap limit used across every platform payment account until we
 /// plumb per-account gap limits through again. Matches the default
@@ -60,13 +78,22 @@ pub struct PerAccountPlatformAddressState {
     /// gap-limit extension (inside
     /// [`PlatformPaymentAddressProvider::on_address_found`]) needs to
     /// produce a [`KeySource::Public`] on demand.
+    ///
+    // TODO(key_class): this holds a single xpub for the whole account,
+    // so gap extension / key_source use it for every key class. Correct
+    // only while key_class=0 is the sole class in use (the xpub for
+    // key_class=0 equals the account-level xpub). Derive a per-key_class
+    // xpub here before any key_class>0 producer ships. Tracked in memcan
+    // todo.
     extended_public_key: ExtendedPubKey,
     /// Every address this account has derived, as a bijection between
-    /// the DIP-17 derivation index and the P2PKH address. Lets
-    /// `found` / `absent` store bare [`PlatformP2PKHAddress`]
-    /// values and still recover the index when building
-    /// `current_balances` tuples.
-    addresses: BiBTreeMap<AddressIndex, PlatformP2PKHAddress>,
+    /// the DIP-17 `(key_class, derivation index)` slot and the P2PKH
+    /// address. The xpub is account-level, so one account state holds
+    /// every key class. Lets `found` / `absent` store bare
+    /// [`PlatformP2PKHAddress`] values and still recover the
+    /// `(key_class, index)` slot when building `current_balances`
+    /// tuples.
+    addresses: BiBTreeMap<(u32, AddressIndex), PlatformP2PKHAddress>,
     /// Addresses proven present with their balance. Persists across
     /// syncs — `on_address_found` overwrites entries when balances
     /// change, unchanged entries simply stay current, and the SDK
@@ -94,7 +121,7 @@ impl PerAccountPlatformAddressState {
     /// because it's point-in-time per-pass information.
     pub fn from_persisted(
         extended_public_key: ExtendedPubKey,
-        addresses: BiBTreeMap<AddressIndex, PlatformP2PKHAddress>,
+        addresses: BiBTreeMap<(u32, AddressIndex), PlatformP2PKHAddress>,
         found: BTreeMap<PlatformP2PKHAddress, AddressFunds>,
     ) -> Self {
         Self {
@@ -106,14 +133,34 @@ impl PerAccountPlatformAddressState {
     }
 
     /// Seed one persisted address/funds entry into the account state.
+    ///
+    /// The `(key_class, address_index)` slot derives exactly one
+    /// address. Re-inserting the same address into a slot is idempotent
+    /// (`Ok`); inserting a *different* address into an occupied slot is
+    /// rejected with [`PersistedEntryConflict`] instead of silently
+    /// clobbering the prior entry — a collision means the persisted
+    /// state is corrupt and the caller must reconcile.
     pub fn insert_persisted_entry(
         &mut self,
+        key_class: u32,
         address_index: AddressIndex,
         address: PlatformP2PKHAddress,
         funds: AddressFunds,
-    ) {
-        self.addresses.insert(address_index, address);
+    ) -> Result<(), PersistedEntryConflict> {
+        let slot = (key_class, address_index);
+        if let Some(existing) = self.addresses.get_by_left(&slot) {
+            if *existing != address {
+                return Err(PersistedEntryConflict {
+                    key_class,
+                    address_index,
+                    existing: *existing,
+                    incoming: address,
+                });
+            }
+        }
+        self.addresses.insert(slot, address);
         self.found.insert(address, funds);
+        Ok(())
     }
 
     /// Read-only view of the persisted `(address, funds)` entries.
@@ -129,9 +176,9 @@ impl PerAccountPlatformAddressState {
         &self.found
     }
 
-    /// Read-only view of the `index <-> address` bijection this account
-    /// has derived.
-    pub fn addresses(&self) -> &BiBTreeMap<AddressIndex, PlatformP2PKHAddress> {
+    /// Read-only view of the `(key_class, index) <-> address` bijection
+    /// this account has derived.
+    pub fn addresses(&self) -> &BiBTreeMap<(u32, AddressIndex), PlatformP2PKHAddress> {
         &self.addresses
     }
 
@@ -235,13 +282,11 @@ impl PlatformPaymentAddressProvider {
                     .map(|(k, v)| (k, v.account_xpub))
                 {
                     let account_index = account_key.account;
-                    if state.contains_key(&account_index) {
-                        continue;
-                    }
+                    let key_class = account_key.key_class;
 
                     let Some(managed) = info
                         .core_wallet
-                        .platform_payment_managed_account_at_index(account_index)
+                        .platform_payment_managed_account(account_index, key_class)
                     else {
                         // Missing managed state shouldn't happen if the
                         // key is in the HD account map, but skip
@@ -249,17 +294,22 @@ impl PlatformPaymentAddressProvider {
                         continue;
                     };
 
-                    let mut account_state = PerAccountPlatformAddressState::new(account_xpub);
+                    // One PerAccountPlatformAddressState per account
+                    // accumulates every key class — the xpub is
+                    // account-level, so the entry for the first key
+                    // class seen carries it and later key classes merge
+                    // their slots into the same bijection.
+                    let account_state = state
+                        .entry(account_index)
+                        .or_insert_with(|| PerAccountPlatformAddressState::new(account_xpub));
                     for (&index, addr_info) in &managed.addresses.addresses {
                         let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address)
                         else {
                             continue;
                         };
-                        pending.insert((wallet_id, account_index, index), p2pkh);
-                        account_state.addresses.insert(index, p2pkh);
+                        pending.insert((wallet_id, account_index, key_class, index), p2pkh);
+                        account_state.addresses.insert((key_class, index), p2pkh);
                     }
-
-                    state.insert(account_index, account_state);
                 }
 
                 per_wallet.insert(wallet_id, state);
@@ -313,31 +363,52 @@ impl PlatformPaymentAddressProvider {
 
                 let mut new_wallet_state = PerWalletPlatformAddressState::new();
                 for (account_index, mut account_state) in wallet_state {
-                    let managed = info
-                        .core_wallet
-                        .platform_payment_managed_account_at_index(account_index)
-                        .ok_or_else(|| {
-                            PlatformWalletError::AddressSync(format!(
-                                "from_persisted: wallet {} has no platform payment account {}",
-                                hex::encode(wallet_id),
-                                account_index
-                            ))
-                        })?;
-
-                    // Preserve the persisted address map, then merge
-                    // any newer live-pool addresses on top so startup
-                    // doesn't lose addresses that fell out of the
-                    // current in-memory gap window.
-                    for (&index, &p2pkh) in account_state.addresses.iter() {
-                        pending.insert((wallet_id, account_index, index), p2pkh);
+                    // Preserve the persisted address map first — every
+                    // persisted `(key_class, index)` slot becomes a
+                    // pending entry so startup doesn't lose addresses
+                    // that fell out of the current in-memory gap window.
+                    for (&(key_class, index), &p2pkh) in account_state.addresses.iter() {
+                        pending.insert((wallet_id, account_index, key_class, index), p2pkh);
                     }
-                    for (&index, addr_info) in &managed.addresses.addresses {
-                        let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address)
-                        else {
-                            continue;
-                        };
-                        pending.insert((wallet_id, account_index, index), p2pkh);
-                        account_state.addresses.insert(index, p2pkh);
+
+                    // Then merge any newer live-pool addresses on top,
+                    // one key class at a time. The persisted bijection
+                    // names the key classes this account tracks; require
+                    // a live managed account for each. Key class 0 is
+                    // always validated even for an account with no
+                    // persisted addresses, preserving the original
+                    // "the live key_class=0 account must exist" guard.
+                    let mut key_classes: BTreeSet<u32> = account_state
+                        .addresses
+                        .left_values()
+                        .map(|(key_class, _)| *key_class)
+                        .collect();
+                    key_classes.insert(0);
+                    let mut live_merges: Vec<(u32, AddressIndex, PlatformP2PKHAddress)> =
+                        Vec::new();
+                    for key_class in key_classes {
+                        let managed = info
+                            .core_wallet
+                            .platform_payment_managed_account(account_index, key_class)
+                            .ok_or_else(|| {
+                                PlatformWalletError::AddressSync(format!(
+                                    "from_persisted: wallet {} has no platform payment account {} key_class {}",
+                                    hex::encode(wallet_id),
+                                    account_index,
+                                    key_class
+                                ))
+                            })?;
+                        for (&index, addr_info) in &managed.addresses.addresses {
+                            let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address)
+                            else {
+                                continue;
+                            };
+                            live_merges.push((key_class, index, p2pkh));
+                        }
+                    }
+                    for (key_class, index, p2pkh) in live_merges {
+                        pending.insert((wallet_id, account_index, key_class, index), p2pkh);
+                        account_state.addresses.insert((key_class, index), p2pkh);
                     }
 
                     new_wallet_state.insert(account_index, account_state);
@@ -410,24 +481,34 @@ impl PlatformPaymentAddressProvider {
                 };
                 let account_indexes: Vec<u32> = state.keys().copied().collect();
                 for account_index in account_indexes {
-                    let Some(managed) = info
-                        .core_wallet
-                        .platform_payment_managed_account_at_index(account_index)
-                    else {
-                        continue;
-                    };
                     let Some(account_state) = state.get_mut(&account_index) else {
                         continue;
                     };
-                    for (&index, addr_info) in &managed.addresses.addresses {
-                        let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address)
+                    // Merge the live pool for each key class this account
+                    // already tracks, then rebuild pending from the
+                    // account's full `(key_class, index)` bijection.
+                    let key_classes: BTreeSet<u32> = account_state
+                        .addresses
+                        .left_values()
+                        .map(|(key_class, _)| *key_class)
+                        .collect();
+                    for key_class in key_classes {
+                        let Some(managed) = info
+                            .core_wallet
+                            .platform_payment_managed_account(account_index, key_class)
                         else {
                             continue;
                         };
-                        account_state.addresses.insert(index, p2pkh);
+                        for (&index, addr_info) in &managed.addresses.addresses {
+                            let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address)
+                            else {
+                                continue;
+                            };
+                            account_state.addresses.insert((key_class, index), p2pkh);
+                        }
                     }
-                    for (&index, &p2pkh) in account_state.addresses.iter() {
-                        out.insert((wallet_id, account_index, index), p2pkh);
+                    for (&(key_class, index), &p2pkh) in account_state.addresses.iter() {
+                        out.insert((wallet_id, account_index, key_class, index), p2pkh);
                     }
                 }
             }
@@ -548,7 +629,7 @@ impl AddressProvider for PlatformPaymentAddressProvider {
         funds: AddressFunds,
     ) {
         let p2pkh = *address;
-        let (wallet_id, account_index, address_index) = tag;
+        let (wallet_id, account_index, key_class, address_index) = tag;
 
         // Consume the pending entry. Missing is fine — the engine can
         // call this on incremental-catch-up hits that were never
@@ -570,11 +651,15 @@ impl AddressProvider for PlatformPaymentAddressProvider {
             );
             return;
         };
-        if !committed.addresses.contains_left(&address_index) {
+        if !committed
+            .addresses
+            .contains_left(&(key_class, address_index))
+        {
             tracing::error!(
-                "on_address_found: (wallet={}, account={}, index={}) missing from account bimap — state drift",
+                "on_address_found: (wallet={}, account={}, key_class={}, index={}) missing from account bimap — state drift",
                 hex::encode(wallet_id),
                 account_index,
+                key_class,
                 address_index
             );
             return;
@@ -607,11 +692,12 @@ impl AddressProvider for PlatformPaymentAddressProvider {
             };
             let Some(account) = info
                 .core_wallet
-                .platform_payment_managed_account_at_index_mut(account_index)
+                .platform_payment_managed_account_mut(account_index, key_class)
             else {
                 tracing::warn!(
-                    "on_address_found: no platform payment account {} in wallet {}",
+                    "on_address_found: no platform payment account {} key_class {} in wallet {}",
                     account_index,
+                    key_class,
                     hex::encode(wallet_id)
                 );
                 return;
@@ -624,7 +710,7 @@ impl AddressProvider for PlatformPaymentAddressProvider {
                 .addresses
                 .iter()
                 .filter_map(|(&index, addr_info)| {
-                    let key = (wallet_id, account_index, index);
+                    let key = (wallet_id, account_index, key_class, index);
                     if self.pending.contains_left(&key) {
                         return None;
                     }
@@ -636,20 +722,22 @@ impl AddressProvider for PlatformPaymentAddressProvider {
 
         for (index, new_p2pkh) in new_addresses {
             self.pending
-                .insert((wallet_id, account_index, index), new_p2pkh);
+                .insert((wallet_id, account_index, key_class, index), new_p2pkh);
             if let Some(account_state) = self
                 .per_wallet
                 .get_mut(&wallet_id)
                 .and_then(|s| s.get_mut(&account_index))
             {
-                account_state.addresses.insert(index, new_p2pkh);
+                account_state
+                    .addresses
+                    .insert((key_class, index), new_p2pkh);
             }
         }
     }
 
     async fn on_address_absent(&mut self, tag: PlatformAddressTag, address: &PlatformP2PKHAddress) {
         let p2pkh = *address;
-        let (wallet_id, account_index, address_index) = tag;
+        let (wallet_id, account_index, key_class, address_index) = tag;
 
         self.pending.remove_by_left(&tag);
 
@@ -665,11 +753,15 @@ impl AddressProvider for PlatformPaymentAddressProvider {
             );
             return;
         };
-        if !committed.addresses.contains_left(&address_index) {
+        if !committed
+            .addresses
+            .contains_left(&(key_class, address_index))
+        {
             tracing::error!(
-                "on_address_absent: (wallet={}, account={}, index={}) missing from account bimap — state drift",
+                "on_address_absent: (wallet={}, account={}, key_class={}, index={}) missing from account bimap — state drift",
                 hex::encode(wallet_id),
                 account_index,
+                key_class,
                 address_index
             );
             return;
@@ -700,7 +792,7 @@ impl AddressProvider for PlatformPaymentAddressProvider {
         };
         let Some(account) = info
             .core_wallet
-            .platform_payment_managed_account_at_index_mut(account_index)
+            .platform_payment_managed_account_mut(account_index, key_class)
         else {
             tracing::warn!(
                 "on_address_absent: no platform payment account {} in wallet {}",
@@ -765,8 +857,13 @@ impl AddressProvider for PlatformPaymentAddressProvider {
                         .found
                         .iter()
                         .filter_map(move |(p2pkh, &funds)| {
-                            let &address_index = account_state.addresses.get_by_right(p2pkh)?;
-                            Some(((*wallet_id, account_index, address_index), *p2pkh, funds))
+                            let &(key_class, address_index) =
+                                account_state.addresses.get_by_right(p2pkh)?;
+                            Some((
+                                (*wallet_id, account_index, key_class, address_index),
+                                *p2pkh,
+                                funds,
+                            ))
                         })
                 })
         })
@@ -791,6 +888,7 @@ mod tests {
 
     const WALLET: WalletId = [3u8; 32];
     const ACCOUNT: u32 = 0;
+    const KEY_CLASS: u32 = 0;
 
     fn test_xpub() -> ExtendedPubKey {
         let secp = Secp256k1::new();
@@ -821,7 +919,9 @@ mod tests {
             BiBTreeMap::new(),
             BTreeMap::new(),
         );
-        account_state.insert_persisted_entry(0, addr, f);
+        account_state
+            .insert_persisted_entry(KEY_CLASS, 0, addr, f)
+            .expect("seed entry");
 
         let mut wallet_state = PerWalletPlatformAddressState::new();
         wallet_state.insert(ACCOUNT, account_state);
@@ -830,7 +930,7 @@ mod tests {
         per_wallet.insert(wallet_id, wallet_state);
 
         let mut pending = BiBTreeMap::new();
-        pending.insert((wallet_id, ACCOUNT, 0u32), addr);
+        pending.insert((wallet_id, ACCOUNT, KEY_CLASS, 0u32), addr);
 
         PlatformPaymentAddressProvider {
             wallet_manager,
@@ -925,7 +1025,9 @@ mod tests {
             .get_mut(&WALLET)
             .and_then(|s| s.get_mut(&ACCOUNT))
         {
-            account_state.insert_persisted_entry(1, dropped, funds(999, 3));
+            account_state
+                .insert_persisted_entry(KEY_CLASS, 1, dropped, funds(999, 3))
+                .expect("seed second entry");
         }
 
         // Stage a fresh balance for `kept` via the found-scratch and mark
@@ -1080,7 +1182,7 @@ mod tests {
         );
 
         provider
-            .on_address_absent((wallet_id, ACCOUNT, 0), &addr)
+            .on_address_absent((wallet_id, ACCOUNT, KEY_CLASS, 0), &addr)
             .await;
 
         // The absent proof is staged in the per-pass scratch...
@@ -1104,5 +1206,56 @@ mod tests {
             0,
             "on_address_absent must zero the in-memory managed-account balance"
         );
+    }
+
+    /// `insert_persisted_entry` must reject a second, *different* address
+    /// for an already-occupied `(key_class, address_index)` slot rather
+    /// than silently clobbering it — that overwrite was the original
+    /// rehydration data-loss bug. Re-inserting the *same* address into a
+    /// slot stays idempotent (`Ok`).
+    #[test]
+    fn insert_persisted_entry_rejects_conflicting_address() {
+        let mut state = PerAccountPlatformAddressState::from_persisted(
+            test_xpub(),
+            BiBTreeMap::new(),
+            BTreeMap::new(),
+        );
+
+        let first = p2pkh(1);
+        let second = p2pkh(2);
+
+        // Seed slot (key_class=0, index=0) with `first`.
+        state
+            .insert_persisted_entry(0, 0, first, funds(100, 1))
+            .expect("first insert succeeds");
+
+        // Idempotent re-insert of the same address into the same slot,
+        // even with refreshed funds, is Ok and updates the funds.
+        state
+            .insert_persisted_entry(0, 0, first, funds(150, 2))
+            .expect("same-address re-insert is idempotent");
+        assert_eq!(state.found().get(&first), Some(&funds(150, 2)));
+
+        // A *different* address in the occupied slot is rejected.
+        let err = state
+            .insert_persisted_entry(0, 0, second, funds(999, 9))
+            .expect_err("conflicting address must be rejected");
+        assert_eq!(err.key_class, 0);
+        assert_eq!(err.address_index, 0);
+        assert_eq!(err.existing, first);
+        assert_eq!(err.incoming, second);
+
+        // The rejected insert left the slot untouched: still `first`,
+        // and `second` never entered the found map.
+        assert_eq!(state.addresses().get_by_left(&(0, 0)), Some(&first));
+        assert!(!state.found().contains_key(&second));
+
+        // The same address_index under a *different* key_class is a
+        // distinct slot and coexists.
+        state
+            .insert_persisted_entry(1, 0, second, funds(7, 0))
+            .expect("different key_class is a distinct slot");
+        assert_eq!(state.addresses().get_by_left(&(0, 0)), Some(&first));
+        assert_eq!(state.addresses().get_by_left(&(1, 0)), Some(&second));
     }
 }

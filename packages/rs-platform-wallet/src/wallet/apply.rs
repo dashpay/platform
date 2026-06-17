@@ -190,7 +190,7 @@ impl PlatformWalletInfo {
             for entry in addr_cs.addresses {
                 if let Some(account) = self
                     .core_wallet
-                    .platform_payment_managed_account_at_index_mut(entry.account_index)
+                    .platform_payment_managed_account_mut(entry.account_index, entry.key_class)
                 {
                     account.set_address_credit_balance(entry.address, entry.funds.balance, None);
                     // Nonce isn't stored on `ManagedPlatformAccount`;
@@ -533,6 +533,7 @@ mod tests {
         let entry = |address_index, address, funds| crate::PlatformAddressBalanceEntry {
             wallet_id,
             account_index: 0,
+            key_class: 0,
             address_index,
             address,
             funds,
@@ -1567,6 +1568,7 @@ mod tests {
         addr_cs.addresses.push(crate::PlatformAddressBalanceEntry {
             wallet_id: [0u8; 32],
             account_index: 0,
+            key_class: 0,
             address_index: 0,
             address: addr,
             funds: dash_sdk::platform::address_sync::AddressFunds {

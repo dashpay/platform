@@ -643,14 +643,17 @@ impl Merge for ContactChangeSet {
 /// per network, not one checkpoint per wallet.
 /// One updated platform payment address inside a
 /// [`PlatformAddressChangeSet`]. Carries full routing context —
-/// wallet id + DIP-17 account index + derivation index + P2PKH — so
-/// persisters can apply the entry without guessing which account or
-/// HD slot it belongs to.
+/// wallet id + DIP-17 `account'` index + `key_class'` + derivation
+/// index + P2PKH — so persisters can apply the entry without guessing
+/// which account, key class, or HD slot it belongs to. The DIP-17 path
+/// is `m/9'/coin'/17'/account'/key_class'/index`, so `key_class`
+/// distinguishes addresses that share `(account_index, address_index)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlatformAddressBalanceEntry {
     pub wallet_id: WalletId,
     pub account_index: u32,
+    pub key_class: u32,
     pub address_index: u32,
     pub address: PlatformP2PKHAddress,
     #[cfg_attr(
@@ -1124,6 +1127,7 @@ mod tests {
         let entry = |address_index, address, funds| PlatformAddressBalanceEntry {
             wallet_id,
             account_index: 0,
+            key_class: 0,
             address_index,
             address,
             funds,

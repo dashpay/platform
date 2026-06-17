@@ -339,23 +339,28 @@ impl
     ) -> Self {
         // FFI consumers only care about the derivation index from the
         // tag (the caller already knows which wallet/account is
-        // syncing). Flatten the tuple by dropping wallet_id and
-        // account_index here.
+        // syncing). Flatten the tuple by dropping wallet_id,
+        // account_index, and key_class here.
+        // TODO(key_class): FoundAddressEntryFFI / AbsentAddressEntryFFI
+        // drop the tag's key_class; surface it when a key_class>0
+        // consumer exists. Tracked in memcan todo.
         let found: Vec<FoundAddressEntryFFI> = result
             .found
             .iter()
-            .map(|(&((_, _, index), address), funds)| FoundAddressEntryFFI {
-                index,
-                address: address.into(),
-                nonce: funds.nonce,
-                balance: funds.balance,
-            })
+            .map(
+                |(&((_, _, _, index), address), funds)| FoundAddressEntryFFI {
+                    index,
+                    address: address.into(),
+                    nonce: funds.nonce,
+                    balance: funds.balance,
+                },
+            )
             .collect();
 
         let absent: Vec<AbsentAddressEntryFFI> = result
             .absent
             .iter()
-            .map(|&((_, _, index), address)| AbsentAddressEntryFFI {
+            .map(|&((_, _, _, index), address)| AbsentAddressEntryFFI {
                 index,
                 address: address.into(),
             })

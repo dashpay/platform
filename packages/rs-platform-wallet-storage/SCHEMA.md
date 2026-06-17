@@ -239,6 +239,7 @@ erDiagram
         BLOB wallet_id PK
         BLOB address PK "20-byte HASH160 of the platform P2PKH address"
         INTEGER account_index
+        INTEGER key_class "DIP-17 key_class' level (0 = default)"
         INTEGER address_index
         INTEGER balance "credits"
         INTEGER nonce
@@ -500,9 +501,16 @@ bincode-encoded `Vec<u32>`.
 
 Platform P2PKH address pool entries. `address` stores the 20-byte
 HASH160; `balance` and `nonce` are the last-synced values from the
-Platform layer.
+Platform layer. The DIP-17 derivation path
+`m/9'/coin'/17'/account'/key_class'/index` means an address is
+identified by `(account_index, key_class, address_index)`, so all four
+of those columns are needed to round-trip an entry without collision.
 
 - PK: `(wallet_id, address)`.
+- UNIQUE: `(wallet_id, account_index, key_class, address_index)` — one
+  address per derivation slot, so two distinct addresses sharing
+  `(account_index, address_index)` but differing only in `key_class`
+  coexist instead of clobbering each other on reload.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 
 ### `platform_address_sync`

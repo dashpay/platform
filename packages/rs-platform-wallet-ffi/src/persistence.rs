@@ -738,6 +738,11 @@ impl PlatformWalletPersistence for FFIPersister {
         // Send incremental address balance updates before merging.
         if let Some(ref addr_cs) = changeset.platform_addresses {
             if let Some(cb) = self.callbacks.on_persist_address_balances_fn {
+                // TODO(key_class): host SwiftData persister is
+                // key_class-blind; add key_class to AddressBalanceEntryFFI
+                // when a key_class>0 consumer exists. Tracked in memcan
+                // todo. Until then entry.key_class is dropped here and
+                // reconstruction below assumes key_class=0.
                 let entries: Vec<AddressBalanceEntryFFI> = addr_cs
                     .addresses
                     .iter()
@@ -3318,14 +3323,27 @@ fn build_wallet_start_state(
             continue;
         };
         let p2pkh = key_wallet::PlatformP2PKHAddress::new(persisted.address.hash);
-        account_state.insert_persisted_entry(
+        // TODO(key_class): AddressBalanceEntryFFI carries no key_class,
+        // so persisted FFI rows reconstruct into key_class=0 only. Thread
+        // key_class through the FFI struct when a key_class>0 consumer
+        // exists. Tracked in memcan todo.
+        if let Err(e) = account_state.insert_persisted_entry(
+            0,
             persisted.address_index,
             p2pkh,
             dash_sdk::platform::address_sync::AddressFunds {
                 nonce: persisted.nonce,
                 balance: persisted.balance,
             },
-        );
+        ) {
+            tracing::error!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                account_index = persisted.account_index,
+                address_index = persisted.address_index,
+                "load: skipping conflicting persisted platform-address row: {e}"
+            );
+            continue;
+        }
     }
     if dropped_unknown_account > 0 || dropped_unsupported_address_type > 0 {
         tracing::warn!(

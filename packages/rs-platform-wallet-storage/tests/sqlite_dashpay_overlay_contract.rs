@@ -72,6 +72,7 @@ fn overlay_only_write_does_not_corrupt_load() {
     let mut core_cs = PlatformWalletChangeSet::default();
     core_cs.wallet_metadata = Some(WalletMetadataEntry {
         network: key_wallet::Network::Testnet,
+        wallet_group_id: w,
         birth_height: 0,
     });
     core_cs.core = Some(CoreChangeSet {

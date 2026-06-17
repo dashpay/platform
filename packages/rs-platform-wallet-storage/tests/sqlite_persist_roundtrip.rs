@@ -280,6 +280,7 @@ fn tc009_platform_address_roundtrip() {
         PlatformAddressBalanceEntry {
             wallet_id: w,
             account_index: 0,
+            key_class: 0,
             address_index: 0,
             address: addr1,
             funds: AddressFunds {
@@ -290,6 +291,7 @@ fn tc009_platform_address_roundtrip() {
         PlatformAddressBalanceEntry {
             wallet_id: w,
             account_index: 0,
+            key_class: 0,
             address_index: 1,
             address: addr2,
             funds: AddressFunds {
@@ -324,6 +326,83 @@ fn tc009_platform_address_roundtrip() {
     assert_eq!(rows[0].funds.nonce, 1);
     assert_eq!(rows[1].address, addr2);
     assert_eq!(rows[1].funds.balance, 1500);
+    drop(tmp);
+}
+
+/// Two platform addresses sharing `(account_index, address_index)` but
+/// differing in `key_class` are distinct DIP-17 slots and must coexist:
+/// the `UNIQUE (wallet_id, account_index, key_class, address_index)`
+/// admits both, and `list_per_wallet` returns BOTH rows with the right
+/// key_class and funds. Pre-fix the schema dropped key_class, so the
+/// second row would clobber the first on reload.
+#[test]
+fn tc_platform_address_key_class_coexist() {
+    use dash_sdk::platform::address_sync::AddressFunds;
+    use key_wallet::PlatformP2PKHAddress;
+    use platform_wallet::changeset::{PlatformAddressBalanceEntry, PlatformAddressChangeSet};
+
+    let (persister, tmp, path) = fresh_persister();
+    let w = wid(0xC7);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr_kc0 = PlatformP2PKHAddress::new([0xA0; 20]);
+    let addr_kc1 = PlatformP2PKHAddress::new([0xA1; 20]);
+    let entries = vec![
+        PlatformAddressBalanceEntry {
+            wallet_id: w,
+            account_index: 0,
+            key_class: 0,
+            address_index: 0,
+            address: addr_kc0,
+            funds: AddressFunds {
+                nonce: 1,
+                balance: 700,
+            },
+        },
+        PlatformAddressBalanceEntry {
+            wallet_id: w,
+            account_index: 0,
+            key_class: 1,
+            address_index: 0,
+            address: addr_kc1,
+            funds: AddressFunds {
+                nonce: 2,
+                balance: 1300,
+            },
+        },
+    ];
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                platform_addresses: Some(PlatformAddressChangeSet {
+                    addresses: entries,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let rows = platform_wallet_storage::sqlite::schema::platform_addrs::list_per_wallet(
+        &p2.lock_conn_for_test(),
+        &w,
+    )
+    .unwrap();
+
+    assert_eq!(rows.len(), 2, "both key_class slots must persist");
+
+    // Ordered by (account_index, key_class, address_index): kc0 first.
+    let kc0 = rows.iter().find(|r| r.key_class == 0).expect("kc0 row");
+    let kc1 = rows.iter().find(|r| r.key_class == 1).expect("kc1 row");
+    assert_eq!(kc0.address, addr_kc0);
+    assert_eq!(kc0.funds.balance, 700);
+    assert_eq!(kc0.funds.nonce, 1);
+    assert_eq!(kc1.address, addr_kc1);
+    assert_eq!(kc1.funds.balance, 1300);
+    assert_eq!(kc1.funds.nonce, 2);
     drop(tmp);
 }
 

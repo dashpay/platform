@@ -102,6 +102,7 @@ fn c1_load_populates_keyless_wallet_payload() {
     let reg = PlatformWalletChangeSet {
         wallet_metadata: Some(WalletMetadataEntry {
             network: key_wallet::Network::Testnet,
+            wallet_group_id: w,
             birth_height: 7,
         }),
         account_registrations: manifest.clone(),

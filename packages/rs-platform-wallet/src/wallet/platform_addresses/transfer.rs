@@ -652,6 +652,9 @@ where
         entries.push(crate::PlatformAddressBalanceEntry {
             wallet_id,
             account_index,
+            // Transfer change/refund entries are key class 0; no
+            // key_class>0 producer exists yet.
+            key_class: 0,
             address_index,
             address: p2pkh,
             funds,

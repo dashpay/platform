@@ -430,6 +430,9 @@ impl PlatformAddressWallet {
                     cs.addresses.push(crate::PlatformAddressBalanceEntry {
                         wallet_id: self.wallet_id,
                         account_index: platform_account_index,
+                        // Asset-lock funding targets the default key
+                        // class (0); no key_class>0 producer exists yet.
+                        key_class: 0,
                         address_index,
                         address: p2pkh,
                         funds,

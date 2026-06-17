@@ -262,11 +262,11 @@ impl PlatformAddressWallet {
 
         let managed_account = info
             .core_wallet
-            .platform_payment_managed_account_at_index_mut(account_key.account)
+            .platform_payment_managed_account_mut(account_key.account, account_key.key_class)
             .ok_or_else(|| {
                 PlatformWalletError::AddressSync(format!(
-                    "No platform payment account at index {}",
-                    account_key.account
+                    "No platform payment account at index {} key_class {}",
+                    account_key.account, account_key.key_class
                 ))
             })?;
 

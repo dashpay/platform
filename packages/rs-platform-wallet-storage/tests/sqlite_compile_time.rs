@@ -38,7 +38,10 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "SELECT network, birth_height FROM wallets WHERE wallet_id",
     ),
     ("asset_locks.rs", "SELECT outpoint, account_index"),
-    ("platform_addrs.rs", "SELECT account_index, address_index"),
+    (
+        "platform_addrs.rs",
+        "SELECT account_index, key_class, address_index",
+    ),
     // Grouped bulk readers driving `load()` — fixed scans over the whole
     // table, not per-wallet fan-out.
     (
@@ -47,7 +50,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     ),
     (
         "platform_addrs.rs",
-        "SELECT wallet_id, account_index, address_index, address, balance, nonce",
+        "SELECT wallet_id, account_index, key_class, address_index, address, balance, nonce",
     ),
     (
         "accounts.rs",

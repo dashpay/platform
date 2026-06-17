@@ -137,7 +137,7 @@ fn tc027_smoke_insert_every_table() {
         ),
         (
             "platform_addresses",
-            "INSERT INTO platform_addresses (wallet_id, account_index, address_index, address, balance, nonce) VALUES (?1, 0, 0, X'0000000000000000000000000000000000000000', 0, 0)",
+            "INSERT INTO platform_addresses (wallet_id, account_index, key_class, address_index, address, balance, nonce) VALUES (?1, 0, 0, 0, X'0000000000000000000000000000000000000000', 0, 0)",
             &[&wallet_id.as_slice()],
         ),
         (

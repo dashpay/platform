@@ -77,6 +77,7 @@ fn platform_addr_mixed_wallet_rejected() {
         addresses: vec![PlatformAddressBalanceEntry {
             wallet_id: other,
             account_index: 0,
+            key_class: 0,
             address_index: 0,
             address: PlatformP2PKHAddress::new([1u8; 20]),
             funds: AddressFunds {
@@ -484,5 +485,39 @@ fn load_keeps_compaction_marker_only_wallet() {
     assert_eq!(
         state.platform_addresses[&w].last_known_recent_block, 42,
         "marker value should round-trip"
+    );
+}
+
+/// The `UNIQUE (wallet_id, account_index, key_class, address_index)`
+/// constraint forbids two *different* addresses occupying the same
+/// DIP-17 derivation slot. Two distinct addresses sharing
+/// `(account_index, key_class, address_index)` must trip the constraint
+/// at the raw-SQL layer — that uniqueness is what makes key_class a real
+/// part of the slot identity rather than a silently-dropped column.
+#[test]
+fn platform_addr_key_class_unique_violation() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xE4);
+    ensure_wallet_meta(&persister, &w);
+
+    let conn = persister.lock_conn_for_test();
+    let insert = |hash: &[u8; 20]| {
+        conn.execute(
+            "INSERT INTO platform_addresses \
+                (wallet_id, account_index, key_class, address_index, address, balance, nonce) \
+             VALUES (?1, 0, 0, 0, ?2, 0, 0)",
+            params![w.as_slice(), &hash[..]],
+        )
+    };
+
+    // First address claims slot (account=0, key_class=0, index=0).
+    insert(&[0x01; 20]).expect("first slot insert succeeds");
+
+    // A *different* address in the SAME slot must be rejected by UNIQUE.
+    let err = insert(&[0x02; 20]).expect_err("duplicate slot must violate UNIQUE");
+    let msg = err.to_string();
+    assert!(
+        msg.to_lowercase().contains("unique"),
+        "expected a UNIQUE constraint violation, got: {msg}"
     );
 }

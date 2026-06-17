@@ -43,7 +43,8 @@ where
 }
 
 pub use provider::{
-    PerAccountPlatformAddressState, PerWalletPlatformAddressState, PlatformAddressTag,
+    PerAccountPlatformAddressState, PerWalletPlatformAddressState, PersistedEntryConflict,
+    PlatformAddressTag,
 };
 pub use wallet::PlatformAddressWallet;
 

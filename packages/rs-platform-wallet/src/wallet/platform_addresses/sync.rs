@@ -49,10 +49,11 @@ pub(crate) fn compute_address_balance_diff(
         if before.get(&tag) == Some(&funds) {
             continue;
         }
-        let (wallet_id, account_index, address_index) = tag;
+        let (wallet_id, account_index, key_class, address_index) = tag;
         entries.push(PlatformAddressBalanceEntry {
             wallet_id,
             account_index,
+            key_class,
             address_index,
             address: p2pkh,
             funds,
@@ -76,10 +77,11 @@ pub(crate) fn compute_address_balance_diff(
         if !had_funds {
             continue;
         }
-        let (wallet_id, account_index, address_index) = tag;
+        let (wallet_id, account_index, key_class, address_index) = tag;
         entries.push(PlatformAddressBalanceEntry {
             wallet_id,
             account_index,
+            key_class,
             address_index,
             address: p2pkh,
             // Absent in state ⇒ no balance and no nonce. Reset both.
@@ -172,7 +174,7 @@ mod tests {
     const WALLET: crate::wallet::platform_wallet::WalletId = [7u8; 32];
 
     fn tag(address_index: u32) -> PlatformAddressTag {
-        (WALLET, 0, address_index)
+        (WALLET, 0, 0, address_index)
     }
 
     fn p2pkh(byte: u8) -> PlatformP2PKHAddress {
