@@ -150,6 +150,18 @@ impl ManagedIdentity {
             .insert((*sender_id, account_reference), tombstone.clone());
 
         let mut cs = ContactChangeSet::default();
+        // Emit `removed_incoming` too — NOT just the tombstone. The Rust
+        // SQLite contacts writer DELETEs the persisted `state='received'`
+        // row only on a `removed_incoming` entry; its `rejected` branch
+        // upserts solely the tombstone table. Without this the rejected
+        // request's row survives in SQLite and rehydrates as a live incoming
+        // entry on the next load — the user's reject is silently undone on
+        // that backend. (The SwiftData persister already deletes the row via
+        // its `rejected` handler, so this makes the two backends consistent.)
+        cs.removed_incoming.insert(ReceivedContactRequestKey {
+            owner_id,
+            sender_id: *sender_id,
+        });
         cs.rejected
             .insert((owner_id, *sender_id, account_reference), tombstone);
         cs
@@ -525,6 +537,42 @@ mod tests {
         assert!(managed.sent_contact_requests.contains_key(&recipient_id));
         assert_eq!(managed.incoming_contact_requests.len(), 0);
         assert_eq!(managed.established_contacts.len(), 0);
+    }
+
+    /// **Blocking — reject must DELETE the persisted incoming row, not only
+    /// tombstone it.** The Rust SQLite contacts writer issues `DELETE FROM
+    /// contacts` only on a `removed_incoming` changeset entry; its `rejected`
+    /// branch upserts solely the tombstone table. So if `record_rejected`
+    /// emits only `rejected`, the `state='received'` row survives in SQLite
+    /// and the rejected request rehydrates as live on the next load — the
+    /// user's reject silently undone on that backend. Pin that BOTH are
+    /// emitted.
+    #[test]
+    fn record_rejected_emits_removed_incoming_so_sqlite_deletes_the_row() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let owner_id = managed.id();
+        let sender_id = Identifier::from([2u8; 32]);
+        let p = noop_persister();
+
+        managed.add_incoming_contact_request(create_contact_request(sender_id, owner_id, 1234), &p);
+        assert_eq!(managed.incoming_contact_requests.len(), 1);
+
+        let cs = managed.record_rejected_contact_request(&sender_id, 0, None);
+
+        // The suppression tombstone is recorded...
+        assert!(
+            cs.rejected.contains_key(&(owner_id, sender_id, 0)),
+            "reject must record the suppression tombstone"
+        );
+        // ...AND the incoming-row deletion is emitted, so the SQLite writer
+        // actually removes the persisted `state='received'` row.
+        assert!(
+            cs.removed_incoming.contains(&ReceivedContactRequestKey {
+                owner_id,
+                sender_id,
+            }),
+            "reject must emit removed_incoming so the persisted contacts row is DELETEd"
+        );
     }
 
     #[test]
