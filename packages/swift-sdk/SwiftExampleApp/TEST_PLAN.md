@@ -235,7 +235,6 @@ All token actions support single-signer **and** group (propose / co-sign) modes 
 | TOK-14 | Config update / max supply | Platform | Uncommon | ✅ | `TokenUpdateMaxSupplyActionView` → `wallet.tokenUpdateConfig` (one `TokenConfigurationChangeItem` per tx). |
 | TOK-15 | Group action — propose | Platform | Uncommon | ✅ | Token action in `.propose` mode (`CoSignProposalView`). Applies to Mint/Burn/Freeze/Unfreeze/DestroyFrozen/Emergency/Config/SetPrice. |
 | TOK-16 | Group action — co-sign existing | Platform | Uncommon | ✅ | `PendingGroupActionsView` / `CoSignProposalView`. Action executes when accumulated signer power ≥ required. |
-| TOK-17 | Calculate token ID (utility) | Platform | Uncommon | 🔌 | FFI `dash_sdk_calculate_token_id`; no dedicated UI. |
 
 ### 4.9 Shielded Pool (Orchard) — `Domain=Shielded`
 
@@ -349,13 +348,13 @@ Membership of each feature category across **all** sections (primary section mem
 - **Voting** — `VOTE-01..07`, `DPNS-05`, `MW-05`
 - **Contract** — `DC-01..04`
 - **Document** — `DOC-01..09`, `MW-04`
-- **Token** — `TOK-01..17`, `MW-02`, `GRP-03`
+- **Token** — `TOK-01..16`, `MW-02`, `GRP-03`
 - **Shielded** — `SH-01..13`, `CORE-21`, `MW-06`, `MW-07`, `MW-11`
 - **DashPay** — `DP-01..06`, `MW-03`
 - **Group** — `GRP-01..04`, `TOK-15`, `TOK-16`
 - **System / Diagnostics** — `SYS-01..06`
 
-Worked example — *"run all non-Uncommon Token tests"*: take **Token** = `TOK-01..17`, `MW-02`, `GRP-03`; drop the `Uncommon` ones (`TOK-08..17`, `GRP-03`) → run **`TOK-01..07` + `MW-02`**.
+Worked example — *"run all non-Uncommon Token tests"*: take **Token** = `TOK-01..16`, `MW-02`, `GRP-03`; drop the `Uncommon` ones (`TOK-08..16`, `GRP-03`) → run **`TOK-01..07` + `MW-02`**.
 
 ---
 
@@ -472,7 +471,6 @@ For completeness (the "everything gRPC + Core can do" requirement), these exist 
 **🔌 SDK-only (FFI/wrapper exists, no UI):**
 - `ADDR-05` address balance-change history (recent / compacted / branch / trunk)
 - `DOC-08` document count / sum / average aggregation
-- `TOK-17` calculate token ID
 - `SH-11` create identity from shielded pool (Type 20)
 - `SYS-06` raw GroveDB path elements
 
