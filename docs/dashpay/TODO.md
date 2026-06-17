@@ -71,10 +71,23 @@ track, and the multi-agent reviews. Prioritized; check off as done.
 
 ## Spec / design track (in order — sync is FIRST)
 
-- [ ] **Spec 0 — `SYNC_CORRECTNESS_SPEC.md`** (**REVIEWED** — 5-lens; resolutions
-  folded in §9). Now covers BOTH stages: stage 1 = incremental high-water +
-  10-min overlap + cursor pagination (P0 #3); stage 2 = id-keyed contact-profile
-  cache for established + pending senders (P0 #4). Two commits. **Implement next.**
+- [~] **Spec 0 — `SYNC_CORRECTNESS_SPEC.md`** (**REVIEWED**; resolutions folded
+  in §9). **Rust core of both stages implemented, reviewed (2-lens: all 8
+  invariants upheld, no prod unwraps), fixed, committed** — stage 1 pagination +
+  high-water cursor (`3f2051e8b3`), stage 2 id-keyed contact-profile cache
+  (`1f53897b63`), cadence 60→15s (`a06fdd00a0`), review fixes (`ef35ca55cb`).
+  Cursor + `contact_profiles` are **in-memory** (survive a session; reset on cold
+  restart = one safe full re-fetch).
+  - [ ] **Remaining surface (FFI/Swift — route via swift-rust-ffi-engineer):**
+    durable persistence for `high_water_*_ms` + `contact_profiles` (IdentityEntryFFI
+    + IdentityRestoreEntryFFI + `restore_*` + SwiftData model + Swift handler, with
+    under-shoot-clamp restore for the cursor); the **contact-keyed FFI accessor**
+    `platform_wallet_get_contact_profile(owner, contact)` + UI bind in
+    `ContactsView`/`ContactDetailView`/`ContactRequestsView` (stage 2 is otherwise
+    write-only — fetched but not displayed).
+  - [ ] **Devnet integration tests** (need a paginated mock/real harness): >100
+    no-bury, partial-page-no-advance, equal-`$createdAt` boundary, In-query proof
+    binding (Q-c stage-1 testnet check).
   > **MODEL DECISION (2026-06-17): collapse reject + block + ignore into ONE
   > concept — `ignore` (per-sender mute, = block, reversible). DROP per-request
   > reject.** Rationale: reject's only justification (don't suppress a legit
