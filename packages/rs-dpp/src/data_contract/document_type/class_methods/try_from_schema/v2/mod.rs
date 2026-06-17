@@ -302,6 +302,34 @@ impl DocumentTypeV2 {
             platform_version,
         )?;
 
+        // `documentsKeepHistory: true` + `canBeDeleted: true` is self-contradictory:
+        // rs-drive unconditionally refuses to delete a document whose type keeps
+        // history (`force_delete_document_for_contract_operations_v0` returns
+        // `InvalidDeletionOfDocumentThatKeepsHistory`), so `canBeDeleted: true`
+        // advertises a capability the storage layer will always reject. Catching
+        // it at parse time turns the contradiction into a clean validation error
+        // at contract creation, before any delete is attempted. Mirrors the
+        // existing cross-flag rule for
+        // `ContestedUniqueIndexOnMutableDocumentTypeError`.
+        //
+        // Gated by `full_validation` so already-deployed contradictory contracts
+        // (e.g. testnet `5CBPiadGmx3Zsjc26g5onopcx7pdxHPbrRAUD2T2yAbC` document
+        // type `note`) continue to load when re-parsed at v12+ — the drive-abci
+        // delete-transition guard turns their deletes into normal invalid (paid)
+        // transitions instead of internal errors at that layer.
+        #[cfg(feature = "validation")]
+        if full_validation && v1.documents_keep_history && v1.documents_can_be_deleted {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{}\" sets both `documentsKeepHistory: true` and \
+                     `canBeDeleted: true`, but the storage layer unconditionally refuses to \
+                     delete a document whose type keeps history. Set one of the two flags to \
+                     false (or omit it).",
+                    name,
+                )),
+            ));
+        }
+
         // Convert to V2 and set the new fields
         let mut v2: DocumentTypeV2 = v1.into();
         v2.documents_countable = documents_countable || range_countable;
@@ -689,6 +717,9 @@ mod tests {
     /// AND that both flags survive into the parsed `v2`.
     #[test]
     fn doctype_keep_history_with_documents_summable_accepted() {
+        // `canBeDeleted: false` is required alongside `documentsKeepHistory: true`
+        // because the contract config's default for `canBeDeleted` is `true` and
+        // the cross-flag check rejects `keepHistory && canBeDeleted`.
         let schema = platform_value!({
             "type": "object",
             "properties": {
@@ -702,6 +733,7 @@ mod tests {
             "required": ["score"],
             "additionalProperties": false,
             "documentsKeepHistory": true,
+            "canBeDeleted": false,
             "documentsSummable": "score",
         });
         let v2 = parse(schema).expect(
@@ -727,6 +759,8 @@ mod tests {
     /// `CountSumTree` / `ProvableCountSumTree` variant.
     #[test]
     fn doctype_keep_history_with_documents_averageable_accepted() {
+        // `canBeDeleted: false` is required alongside `documentsKeepHistory: true`
+        // — see sibling `doctype_keep_history_with_documents_summable_accepted`.
         let schema = platform_value!({
             "type": "object",
             "properties": {
@@ -740,6 +774,7 @@ mod tests {
             "required": ["score"],
             "additionalProperties": false,
             "documentsKeepHistory": true,
+            "canBeDeleted": false,
             "documentsAverageable": "score",
         });
         let v2 = parse(schema).expect(
@@ -758,6 +793,8 @@ mod tests {
     /// every existing keep-history doctype.
     #[test]
     fn doctype_keep_history_without_summable_accepted() {
+        // `canBeDeleted: false` is required alongside `documentsKeepHistory: true`
+        // — see sibling `doctype_keep_history_with_documents_summable_accepted`.
         let schema = platform_value!({
             "type": "object",
             "properties": {
@@ -769,6 +806,7 @@ mod tests {
             },
             "additionalProperties": false,
             "documentsKeepHistory": true,
+            "canBeDeleted": false,
         });
         let v2 = parse(schema).expect("keep-history without summable must parse cleanly");
         assert!(
@@ -918,6 +956,92 @@ mod tests {
             "neither form requested rangeSummable; expected range_summable=false but got \
              true — the shorthand merge is leaking range_countable into the sum axis"
         );
+    }
+
+    /// `documentsKeepHistory: true` + `canBeDeleted: true` is
+    /// self-contradictory: rs-drive unconditionally refuses to delete
+    /// a document whose type keeps history
+    /// (`InvalidDeletionOfDocumentThatKeepsHistory`), so `canBeDeleted:
+    /// true` advertises a capability the storage layer will always
+    /// reject. The parser must reject the combination at contract
+    /// creation time so an SDK user gets a clean validation error
+    /// instead of the delete failing as an internal error at execution.
+    #[test]
+    fn doctype_keep_history_with_can_be_deleted_rejected() {
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "position": 0,
+                },
+            },
+            "additionalProperties": false,
+            "documentsKeepHistory": true,
+            "canBeDeleted": true,
+        });
+        let result = parse(schema);
+        assert!(
+            result.is_err(),
+            "documentsKeepHistory: true + canBeDeleted: true must be rejected"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("documentsKeepHistory") && msg.contains("canBeDeleted"),
+            "error must reference both documentsKeepHistory and canBeDeleted; got {msg}"
+        );
+    }
+
+    /// Guard against an over-broad fix: `documentsKeepHistory: true` +
+    /// `canBeDeleted: false` is consistent (the doctype is append-only)
+    /// and must continue to parse cleanly. Same for `documentsKeepHistory:
+    /// true` with `canBeDeleted` omitted — covered by the existing
+    /// `doctype_keep_history_without_summable_accepted` test, which
+    /// leaves `canBeDeleted` at its config default (false).
+    #[test]
+    fn doctype_keep_history_with_can_be_deleted_false_accepted() {
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "position": 0,
+                },
+            },
+            "additionalProperties": false,
+            "documentsKeepHistory": true,
+            "canBeDeleted": false,
+        });
+        let v2 = parse(schema).expect(
+            "documentsKeepHistory: true + canBeDeleted: false is consistent and must parse",
+        );
+        assert!(v2.documents_keep_history);
+        assert!(!v2.documents_can_be_deleted);
+    }
+
+    /// Symmetric guard: `canBeDeleted: true` on a non-keep-history
+    /// doctype must continue to parse cleanly. Catches a predicate that
+    /// triggers on `canBeDeleted: true` alone instead of the AND.
+    #[test]
+    fn doctype_can_be_deleted_without_keep_history_accepted() {
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "position": 0,
+                },
+            },
+            "additionalProperties": false,
+            "canBeDeleted": true,
+        });
+        let v2 = parse(schema)
+            .expect("canBeDeleted: true without documentsKeepHistory must parse cleanly");
+        assert!(!v2.documents_keep_history);
+        assert!(v2.documents_can_be_deleted);
     }
 
     /// Symmetric: `documentsSummable` on a NON-keep-history doctype
