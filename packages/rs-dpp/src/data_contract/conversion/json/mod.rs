@@ -81,12 +81,9 @@ mod tests {
                         "perpetualDistribution": {
                             "$formatVersion": "0",
                             "distributionType": {
-                                "BlockBasedDistribution": {
-                                    "interval": 10,
-                                    "function": {
-                                        "Stepwise": { "0": 100, "10": 50 }
-                                    }
-                                }
+                                "type": "blockBasedDistribution",
+                                "interval": 10,
+                                "function": { "type": "stepwise", "0": 100, "10": 50 }
                             },
                             "distributionRecipient": {"type": "contractOwner"}
                         },

@@ -45,6 +45,7 @@ pub const MAX_POL_A_PARAM: i64 = 256;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum DistributionFunction {
     /// Emits a constant (fixed) number of tokens for every period.
     ///
@@ -1314,20 +1315,22 @@ mod json_convertible_tests {
     use platform_value::platform_value;
     use serde_json::json;
 
-    // `DistributionFunction` is externally tagged (no `#[serde(tag = ...)]`).
-    // Round-trip tests cover one variant per shape:
-    //   - struct variant with named fields (`FixedAmount`)
-    //   - struct variant with multiple named fields (`Random`)
-    // The other 6 variants share these two shapes.
+    // `DistributionFunction` is internally tagged (`#[serde(tag = "type",
+    // rename_all = "camelCase")]`). Round-trip tests cover one variant per
+    // shape:
+    //   - struct variant with named fields (`FixedAmount` → `fixedAmount`)
+    //   - struct variant with multiple named fields (`Random` → `random`)
+    //   - newtype-of-map variant (`Stepwise` → `stepwise`, flattened)
+    // The other struct variants share the `FixedAmount`/`Random` shape.
 
     #[test]
     fn json_round_trip_fixed_amount() {
         use crate::serialization::JsonConvertible;
         let original = DistributionFunction::FixedAmount { amount: 1_000 };
         let json = original.to_json().expect("to_json");
-        // Externally-tagged struct variant → `{"FixedAmount": {<fields>}}`.
+        // Internally-tagged struct variant → `{"type":"fixedAmount", <fields>}`.
         // `TokenAmount` is `u64`; JSON erases the size.
-        assert_eq!(json, json!({ "FixedAmount": { "amount": 1_000 } }));
+        assert_eq!(json, json!({ "type": "fixedAmount", "amount": 1_000 }));
         let recovered = DistributionFunction::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
@@ -1337,8 +1340,37 @@ mod json_convertible_tests {
         use crate::serialization::JsonConvertible;
         let original = DistributionFunction::Random { min: 10, max: 100 };
         let json = original.to_json().expect("to_json");
-        assert_eq!(json, json!({ "Random": { "min": 10, "max": 100 } }));
+        assert_eq!(json, json!({ "type": "random", "min": 10, "max": 100 }));
         let recovered = DistributionFunction::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_stepwise() {
+        use crate::serialization::JsonConvertible;
+        // `Stepwise(BTreeMap<u64, TokenAmount>)` is a newtype-of-map variant.
+        // Internal tagging flattens it: the `"type"` discriminator sits
+        // alongside the map's numeric-string keys (u64 keys can never collide
+        // with `"type"`). Matches the convention's "no data wrapper" rule.
+        let original =
+            DistributionFunction::Stepwise(std::collections::BTreeMap::from([(0, 100), (100, 50)]));
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!({ "type": "stepwise", "0": 100, "100": 50 }));
+        let recovered = DistributionFunction::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_stepwise() {
+        use crate::serialization::ValueConvertible;
+        let original =
+            DistributionFunction::Stepwise(std::collections::BTreeMap::from([(0, 100), (100, 50)]));
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({ "type": "stepwise", "0": 100u64, "100": 50u64 })
+        );
+        let recovered = DistributionFunction::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
 
@@ -1349,7 +1381,7 @@ mod json_convertible_tests {
         let value = original.to_object().expect("to_object");
         assert_eq!(
             value,
-            platform_value!({ "FixedAmount": { "amount": 1_000u64 } })
+            platform_value!({ "type": "fixedAmount", "amount": 1_000u64 })
         );
         let recovered = DistributionFunction::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
@@ -1362,7 +1394,7 @@ mod json_convertible_tests {
         let value = original.to_object().expect("to_object");
         assert_eq!(
             value,
-            platform_value!({ "Random": { "min": 10u64, "max": 100u64 } })
+            platform_value!({ "type": "random", "min": 10u64, "max": 100u64 })
         );
         let recovered = DistributionFunction::from_object(value).expect("from_object");
         assert_eq!(original, recovered);

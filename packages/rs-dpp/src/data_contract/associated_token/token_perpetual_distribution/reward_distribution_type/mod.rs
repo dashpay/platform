@@ -15,6 +15,7 @@ use crate::ProtocolError;
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum RewardDistributionType {
     /// An amount of tokens is emitted every n blocks.
     /// The start and end are included if set.
@@ -602,10 +603,9 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "BlockBasedDistribution": {
-                    "interval": 100,
-                    "function": { "FixedAmount": { "amount": 50 } }
-                }
+                "type": "blockBasedDistribution",
+                "interval": 100,
+                "function": { "type": "fixedAmount", "amount": 50 }
             })
         );
         let recovered = RewardDistributionType::from_json(json).expect("from_json");
@@ -624,10 +624,9 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "EpochBasedDistribution": {
-                    "interval": 7,
-                    "function": { "FixedAmount": { "amount": 1_000 } }
-                }
+                "type": "epochBasedDistribution",
+                "interval": 7,
+                "function": { "type": "fixedAmount", "amount": 1_000 }
             })
         );
         let recovered = RewardDistributionType::from_json(json).expect("from_json");
@@ -646,10 +645,9 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "BlockBasedDistribution": {
-                    "interval": 100u64,
-                    "function": { "FixedAmount": { "amount": 50u64 } }
-                }
+                "type": "blockBasedDistribution",
+                "interval": 100u64,
+                "function": { "type": "fixedAmount", "amount": 50u64 }
             })
         );
         let recovered = RewardDistributionType::from_object(value).expect("from_object");
@@ -668,10 +666,9 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "EpochBasedDistribution": {
-                    "interval": 7u16,
-                    "function": { "FixedAmount": { "amount": 1_000u64 } }
-                }
+                "type": "epochBasedDistribution",
+                "interval": 7u16,
+                "function": { "type": "fixedAmount", "amount": 1_000u64 }
             })
         );
         let recovered = RewardDistributionType::from_object(value).expect("from_object");

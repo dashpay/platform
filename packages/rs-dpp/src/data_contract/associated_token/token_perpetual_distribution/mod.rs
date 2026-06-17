@@ -93,12 +93,9 @@ mod json_convertible_tests {
             json!({
                 "$formatVersion": "0",
                 "distributionType": {
-                    "BlockBasedDistribution": {
-                        "interval": 1000,
-                        "function": {
-                            "FixedAmount": {"amount": 100},
-                        },
-                    },
+                    "type": "blockBasedDistribution",
+                    "interval": 1000,
+                    "function": { "type": "fixedAmount", "amount": 100 },
                 },
                 "distributionRecipient": {"type": "contractOwner"},
             })
@@ -119,12 +116,9 @@ mod json_convertible_tests {
             platform_value!({
                 "$formatVersion": "0",
                 "distributionType": {
-                    "BlockBasedDistribution": {
-                        "interval": 1000u64,
-                        "function": {
-                            "FixedAmount": {"amount": 100u64},
-                        },
-                    },
+                    "type": "blockBasedDistribution",
+                    "interval": 1000u64,
+                    "function": { "type": "fixedAmount", "amount": 100u64 },
                 },
                 "distributionRecipient": {"type": "contractOwner"},
             })

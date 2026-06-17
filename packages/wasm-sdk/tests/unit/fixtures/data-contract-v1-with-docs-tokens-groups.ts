@@ -149,13 +149,11 @@ const contract = {
         perpetualDistribution: {
           $formatVersion: '0',
           distributionType: {
-            BlockBasedDistribution: {
-              interval: 100,
-              function: {
-                FixedAmount: {
-                  amount: 1,
-                },
-              },
+            type: 'blockBasedDistribution',
+            interval: 100,
+            function: {
+              type: 'fixedAmount',
+              amount: 1,
             },
           },
           distributionRecipient: { type: 'contractOwner' },
