@@ -3330,9 +3330,18 @@ public class PlatformWalletPersistenceHandler {
                     // PHASE 1: delete every identity's cascade-children
                     // whose inverse to identity is non-optional
                     // (DPNS names, DashPay profile, DashPay contact
-                    // requests). PublicKey, Document, and
+                    // requests, DashPay payments, DashPay rejection
+                    // tombstones). PublicKey, Document, and
                     // TokenBalance inverses to identity are already
                     // Optional and don't need pre-deletion.
+                    //
+                    // Payments AND rejection tombstones BOTH have a
+                    // non-optional `owner: PersistentIdentity`, so omitting
+                    // either makes PHASE 2's identity delete hit the exact
+                    // SwiftData fatal PHASE 1 exists to avoid — aborting the
+                    // wipe and leaving plaintext counterparty/memo/amount/txid
+                    // (payments) + privacy-relevant rejection tombstones on
+                    // disk after a user-initiated wallet wipe.
                     for identity in identitiesToDelete {
                         for name in Array(identity.dpnsNames) {
                             backgroundContext.delete(name)
@@ -3342,6 +3351,12 @@ public class PlatformWalletPersistenceHandler {
                         }
                         for cr in Array(identity.contactRequests) {
                             backgroundContext.delete(cr)
+                        }
+                        for payment in Array(identity.dashpayPayments) {
+                            backgroundContext.delete(payment)
+                        }
+                        for tomb in Array(identity.dashpayRejectedRequests) {
+                            backgroundContext.delete(tomb)
                         }
                     }
                     try backgroundContext.save()
