@@ -1,5 +1,7 @@
 use crate::data_contract::config::DataContractConfig;
-use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
+use crate::data_contract::document_type::class_methods::{
+    consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
+};
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property_names::{
     DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_SUMMABLE, RANGE_AVERAGEABLE,
@@ -317,9 +319,16 @@ impl DocumentTypeV2 {
         // type `note`) continue to load when re-parsed at v12+ — the drive-abci
         // delete-transition guard turns their deletes into normal invalid (paid)
         // transitions instead of internal errors at that layer.
+        //
+        // Use `consensus_or_protocol_data_contract_error` so that with the
+        // `validation` feature this surfaces as `ProtocolError::ConsensusError`;
+        // drive-abci's `transform_into_action_v0` only converts that variant
+        // into an invalid (paid) transition with a bump action — a bare
+        // `ProtocolError::DataContractError` would propagate as an internal
+        // execution error in validator mode.
         #[cfg(feature = "validation")]
         if full_validation && v1.documents_keep_history && v1.documents_can_be_deleted {
-            return Err(ProtocolError::DataContractError(
+            return Err(consensus_or_protocol_data_contract_error(
                 DataContractError::InvalidContractStructure(format!(
                     "document type \"{}\" sets both `documentsKeepHistory: true` and \
                      `canBeDeleted: true`, but the storage layer unconditionally refuses to \
@@ -966,6 +975,14 @@ mod tests {
     /// reject. The parser must reject the combination at contract
     /// creation time so an SDK user gets a clean validation error
     /// instead of the delete failing as an internal error at execution.
+    ///
+    /// With the `validation` feature enabled the rejection must surface
+    /// as `ProtocolError::ConsensusError` (not bare
+    /// `ProtocolError::DataContractError`) — drive-abci's
+    /// `transform_into_action_v0` only turns the consensus variant into
+    /// a clean invalid (paid) transition with a bump action; the
+    /// data-contract-error variant propagates as an internal execution
+    /// error in validator mode.
     #[test]
     fn doctype_keep_history_with_can_be_deleted_rejected() {
         let schema = platform_value!({
@@ -986,10 +1003,19 @@ mod tests {
             result.is_err(),
             "documentsKeepHistory: true + canBeDeleted: true must be rejected"
         );
-        let msg = format!("{:?}", result.unwrap_err());
+        let err = result.unwrap_err();
+        let msg = format!("{:?}", err);
         assert!(
             msg.contains("documentsKeepHistory") && msg.contains("canBeDeleted"),
             "error must reference both documentsKeepHistory and canBeDeleted; got {msg}"
+        );
+        #[cfg(feature = "validation")]
+        assert!(
+            matches!(err, ProtocolError::ConsensusError(_)),
+            "with `validation` feature the rejection must be ProtocolError::ConsensusError so \
+             drive-abci's transform_into_action turns it into an invalid (paid) transition \
+             with a bump action rather than propagating as an internal execution error; got \
+             {err:?}"
         );
     }
 
