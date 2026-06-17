@@ -27,15 +27,33 @@ impl DocumentDeleteTransitionActionStructureValidationV0 for DocumentDeleteTrans
         };
 
         if !document_type.documents_can_be_deleted() {
-            Ok(SimpleConsensusValidationResult::new_with_error(
+            return Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTransitionActionError::new(format!(
                     "documents of type {} can not be deleted",
                     document_type_name
                 ))
                 .into(),
-            ))
-        } else {
-            Ok(SimpleConsensusValidationResult::new())
+            ));
         }
+
+        // rs-drive's `force_delete_document_for_contract_operations_v0` returns
+        // `InvalidDeletionOfDocumentThatKeepsHistory` when the doctype keeps
+        // history. Without this check the transition reaches execution and
+        // surfaces as `ExecutionResult::InternalError` (neither valid nor
+        // invalid-paid). Rejecting here turns the delete into a normal invalid
+        // (paid) consensus error so already-deployed contradictory contracts —
+        // which the DPP cross-flag rule in `try_from_schema` cannot
+        // retroactively fix — fail fast and legibly. See issue #3927.
+        if document_type.documents_keep_history() {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidDocumentTransitionActionError::new(format!(
+                    "documents of type {} keep history and therefore can not be deleted",
+                    document_type_name
+                ))
+                .into(),
+            ));
+        }
+
+        Ok(SimpleConsensusValidationResult::new())
     }
 }

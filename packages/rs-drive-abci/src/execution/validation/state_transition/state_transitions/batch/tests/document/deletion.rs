@@ -361,6 +361,194 @@ mod deletion_tests {
         assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
     }
 
+    /// Regression test for #3927: a delete state transition against a
+    /// document type whose schema sets both `documentsKeepHistory: true`
+    /// and `canBeDeleted: true` must be classified as an invalid (paid)
+    /// consensus error, NOT surfaced as `ExecutionResult::InternalError`.
+    ///
+    /// Before the fix, the structure validator only checked
+    /// `documents_can_be_deleted()` and let the transition through; at
+    /// execution rs-drive's force-delete path returned
+    /// `InvalidDeletionOfDocumentThatKeepsHistory` which the processor
+    /// reclassified as `InternalError` — the transition was neither
+    /// valid nor invalid-paid, leaving the SDK with no clean accept/
+    /// reject signal. The fixture is loaded with `full_validation: false`
+    /// to simulate an already-deployed contradictory contract (the DPP
+    /// `try_from_schema` cross-flag rule prevents NEW contracts with
+    /// this combination but cannot fix on-chain ones).
+    #[tokio::test]
+    async fn test_document_delete_on_document_type_that_keeps_history_is_rejected() {
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let contract_path = "tests/supporting_files/contract/note/note-contract-keep-history-and-can-be-deleted.json";
+
+        let platform_state = platform.state.load();
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected to get current platform version");
+
+        // `full_validation: false` bypasses the DPP cross-flag check so the
+        // intentionally-contradictory fixture loads — mirrors the
+        // already-deployed-contract scenario this guard is meant to handle.
+        let note_contract = json_document_to_contract(contract_path, false, platform_version)
+            .expect("expected to get data contract");
+        platform
+            .drive
+            .apply_contract(
+                &note_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        let mut rng = StdRng::seed_from_u64(437);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
+
+        let note_document_type = note_contract
+            .document_type_for_name("note")
+            .expect("expected the note document type");
+
+        assert!(
+            note_document_type.documents_keep_history(),
+            "fixture sanity: doctype must keep history"
+        );
+        assert!(
+            note_document_type.documents_can_be_deleted(),
+            "fixture sanity: doctype must advertise canBeDeleted"
+        );
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let document = note_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        let mut altered_document = document.clone();
+        altered_document.set_revision(Some(1));
+
+        // Create the document (must succeed — keep-history doctypes accept
+        // creates, the contradiction only bites at delete time).
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                note_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        // Now attempt the delete — pre-fix this surfaces as InternalError,
+        // post-fix it's a clean invalid-paid consensus error.
+        let documents_batch_deletion_transition =
+            BatchTransition::new_document_deletion_transition_from_document(
+                altered_document,
+                note_document_type,
+                &key,
+                3,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_deletion_serialized_transition = documents_batch_deletion_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_deletion_serialized_transition.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_eq!(
+            processing_result.invalid_paid_count(),
+            1,
+            "delete against keep-history doctype must be classified as invalid-paid, \
+             not surfaced as InternalError"
+        );
+        assert_eq!(processing_result.invalid_unpaid_count(), 0);
+        assert_eq!(processing_result.valid_count(), 0);
+        // Pre-fix the result would have been an InternalError — assert none
+        // of the execution results are internal errors.
+        for result in processing_result.execution_results() {
+            assert!(
+                !matches!(result, StateTransitionExecutionResult::InternalError(_)),
+                "delete must not surface as InternalError; got {:?}",
+                result
+            );
+        }
+    }
+
     #[tokio::test]
     async fn test_document_delete_on_document_type_that_is_not_mutable_and_can_be_deleted() {
         run_document_delete_on_document_type_that_is_not_mutable_and_can_be_deleted_at_protocol_version(
