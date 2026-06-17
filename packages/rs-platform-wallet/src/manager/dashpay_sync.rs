@@ -57,12 +57,12 @@ use crate::wallet::PlatformWallet;
 
 /// Default cadence for the DashPay sync loop.
 ///
-/// Contact requests and profiles move slowly relative to UTXO balance,
-/// so a 60s default keeps background DAPI traffic modest while still
-/// surfacing new requests/profiles inside a minute. Matches the
-/// identity-token loop's default. Tunable at runtime via
-/// [`DashPaySyncManager::set_interval`].
-pub const DEFAULT_SYNC_INTERVAL_SECS: u64 = 60;
+/// Matches Android's `PlatformSyncService` 15s ticker so new contact
+/// requests, profiles, and payments surface within ~15s. The fetch is
+/// incremental (high-water cursor + overlap) and profiles are throttled by
+/// their own refresh window, so the tighter cadence does not multiply DAPI
+/// traffic by 4. Tunable at runtime via [`DashPaySyncManager::set_interval`].
+pub const DEFAULT_SYNC_INTERVAL_SECS: u64 = 15;
 
 /// Outcome of syncing a single wallet's DashPay state in a pass.
 #[derive(Debug)]
