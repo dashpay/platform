@@ -370,10 +370,17 @@ impl Sdk {
     /// query fails the failure is **non-fatal**: the stored version is left
     /// untouched — we never fall back to an unverified one.
     ///
+    /// On a proofs-disabled SDK ([`SdkBuilder::with_proofs`]`(false)`) this is a
+    /// no-op that returns the current version: refresh relies on a proven query,
+    /// so with proofs off there is no trusted source to ratchet from.
+    ///
     /// Returns the SDK's protocol version number after the (possible) ratchet.
     ///
     /// [`SdkBuilder::with_version`]: SdkBuilder::with_version
     pub async fn refresh_protocol_version(&self) -> Result<u32, Error> {
+        if !self.prove() {
+            return Ok(self.protocol_version_number());
+        }
         if !self.version_pinned {
             if let Err(error) = ExtendedEpochInfo::fetch_current(self).await {
                 tracing::warn!(
@@ -405,8 +412,8 @@ impl Sdk {
     /// The actual network version is learned only *after* proof parsing succeeds, when
     /// [`Self::verify_response_metadata()`] processes `metadata.protocol_version`.  If the
     /// connected network runs an older protocol version **and** proof interpretation differs
-    /// between that version and `latest()`, the very first request may fail before the SDK can
-    /// correct itself.  Subsequent requests will use the correct version.
+    /// between that version and the seeded [`min_protocol_version`], the very first request may
+    /// fail before the SDK can correct itself.  Subsequent requests will use the correct version.
     ///
     /// This is a known bootstrap limitation.  Callers that must guarantee correct version
     /// behaviour on the first request should pin the version explicitly via
@@ -536,8 +543,9 @@ impl Sdk {
     /// Return [Dash Platform version](PlatformVersion) information used by this SDK.
     ///
     /// With auto-detection (default) the SDK starts at the per-network
-    /// [`min_protocol_version`] and then tracks the network's version —
-    /// auto-detection only ever ratchets *upward* (`fetch_max`). A version pinned
+    /// [`min_protocol_version`] (or the seed set via
+    /// [`SdkBuilder::with_initial_version`]) and then tracks the network's version
+    /// — auto-detection only ever ratchets *upward* (`fetch_max`). A version pinned
     /// via [`SdkBuilder::with_version()`] is returned as pinned.
     pub fn version<'v>(&self) -> &'v PlatformVersion {
         let v = self.protocol_version.load(Ordering::Relaxed);
