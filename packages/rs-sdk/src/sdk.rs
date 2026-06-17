@@ -53,11 +53,13 @@ pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 pub const DEFAULT_TOKEN_CONFIG_CACHE_SIZE: usize = 100;
 /// How many quorum public keys fit in the cache.
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
-/// Per-network lower bound an unpinned SDK seeds from and never drops below.
+/// Per-network *default* seed used only when an unpinned SDK has no explicit
+/// initial version.
 ///
-/// A floor, not a pin: auto-detect ([`Sdk::maybe_update_protocol_version`]) still
-/// ratchets the version *upward* via `fetch_max` when the network reports a newer
-/// one.
+/// Not a runtime clamp: [`SdkBuilder::with_initial_version`] can seed an unpinned
+/// SDK *below* this value (no construction-time floor), and auto-detect
+/// ([`Sdk::maybe_update_protocol_version`]) only ratchets the stored version
+/// *upward* via `fetch_max` when the network reports a newer one.
 const fn min_protocol_version(network: Network) -> u32 {
     match network {
         Network::Mainnet => dpp::version::v11::PROTOCOL_VERSION_11,
@@ -959,12 +961,17 @@ impl SdkBuilder {
         self
     }
 
-    /// Configure initial platform version, replacing default defined in [`min_protocol_version`].
+    /// Override the initial protocol version seed while keeping auto-detect on.
     ///
-    /// Auto-detect already starts every unpinned SDK at the per-network
-    /// [`min_protocol_version`] and ratchets upward via `fetch_max` in
-    /// `maybe_update_protocol_version` once the network's version is observed. This
-    /// function allows overriding the initial seed version that auto-detect starts with.
+    /// Unpinned SDKs otherwise seed at the per-network [`min_protocol_version`] and
+    /// ratchet upward via `fetch_max` in `maybe_update_protocol_version` once the
+    /// network's version is observed. This replaces that seed with `version`.
+    ///
+    /// The seed is used verbatim — including versions *below* the per-network floor
+    /// (no construction-time clamp; configuring a valid seed is the caller's
+    /// responsibility). A sub-floor seed is only corrected once a proven response
+    /// ratchets the version upward; callers needing eager on-init discovery should
+    /// call [`Sdk::refresh_protocol_version`] after building.
     ///
     /// Seeds `self.version` and keeps `version_pinned` `false`, so auto-detect stays
     /// on. Builder chains are last-write-wins: a later `with_initial_version` re-enables
