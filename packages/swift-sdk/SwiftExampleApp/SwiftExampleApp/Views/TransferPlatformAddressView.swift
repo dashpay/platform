@@ -69,6 +69,26 @@ struct TransferPlatformAddressView: View {
     /// and submit stays disabled until the version-locked floor loads.
     @State private var minInputAmount: UInt64? = nil
 
+    /// Per-output minimum credit amount (`min_output_amount`) the chain
+    /// enforces for address-funds transitions, resolved from the wallet's
+    /// current platform version via
+    /// `ManagedPlatformAddressWallet.minOutputAmount()` once on appear. An
+    /// address-funds transfer sends exactly one output, and DPP rejects any
+    /// output below this floor (currently 500,000 credits), so a small amount
+    /// that clears `parsedCredits > 0` would still fail structure validation
+    /// after submit. The submit gate and the amount footer must enforce
+    /// `credits >= this` so the button reflects what DPP will accept.
+    ///
+    /// `nil` until resolved (or if resolution fails). Same safe pattern as
+    /// `minInputAmount`: an unresolved floor keeps the gate CLOSED
+    /// (`canSubmit` requires it to be known) rather than substituting a
+    /// numeric default — a fallback like `0` would re-open the gate for a
+    /// sub-minimum amount DPP rejects, and hardcoding the `500_000` protocol
+    /// constant would violate the no-Swift-mirror rule. This never
+    /// *under*-gates: when unknown, submit simply stays disabled until the
+    /// version-locked floor loads.
+    @State private var minOutputAmount: UInt64? = nil
+
     // MARK: - Submit state
 
     @State private var submitError: SubmitError? = nil
@@ -137,6 +157,7 @@ struct TransferPlatformAddressView: View {
             }
             .onAppear {
                 resolveMinInputAmount()
+                resolveMinOutputAmount()
                 autoSelectDefaults()
             }
             // Block swipe-to-dismiss while a transfer is in flight — only
@@ -258,9 +279,17 @@ struct TransferPlatformAddressView: View {
             Text("Amount")
         } footer: {
             if let credits = parsedCredits {
+                // Below-minimum takes precedence over the balance check: a tiny
+                // amount can clear the balance check yet still be rejected by
+                // DPP for falling under `min_output_amount`, so explain that
+                // first. Only shown once the floor has resolved (`minOutputAmount`
+                // non-nil) so we never claim a minimum we haven't read.
                 let available = selectedSourceAccountCredits
                 let needed = credits.addingReportingOverflow(Self.feeBuffer)
-                if needed.overflow || needed.partialValue > available {
+                if let minOutput = minOutputAmount, credits < minOutput {
+                    Text("Minimum transfer is \(formatCredits(minOutput)). Increase the amount to at least that.")
+                        .foregroundColor(.red)
+                } else if needed.overflow || needed.partialValue > available {
                     Text("Insufficient balance: \(formatCredits(credits)) + fee exceeds the account's \(formatCredits(available)).")
                         .foregroundColor(.red)
                 } else {
@@ -526,8 +555,18 @@ struct TransferPlatformAddressView: View {
             // that figure 0. Keep the gate closed until it loads rather than
             // gating on an unknown/over-permissive spendable total.
             minInputAmount != nil,
+            // The per-OUTPUT minimum must also be known before we enable
+            // submit: an address-funds transfer sends one output, and DPP
+            // rejects any output below `min_output_amount`. An unresolved
+            // floor keeps the gate closed (never *under*-gates) rather than
+            // letting a sub-minimum amount through to a post-submit failure.
+            let minOutput = minOutputAmount,
             sourceAccountIndex != nil,
             let credits = parsedCredits, credits > 0,
+            // The single output must reach `min_output_amount` or DPP rejects
+            // the transition after submit — gate on it up front so the button
+            // isn't enabled for an amount the chain will refuse.
+            credits >= minOutput,
             let dest = resolvedDestination
         else { return false }
         // Reject a recipient that collides with a funded source input.
@@ -563,6 +602,24 @@ struct TransferPlatformAddressView: View {
         } catch {
             // Leave nil: gate stays closed until a later appearance resolves it.
             minInputAmount = nil
+        }
+    }
+
+    /// Resolve the chain's per-output minimum (`min_output_amount`) once from
+    /// the wallet's current platform version (version-locked, read on the
+    /// Rust side). Called on appear. On any failure we leave
+    /// `minOutputAmount == nil`, which keeps the submit gate closed until a
+    /// later appearance resolves it — the same conservative fallback as
+    /// `resolveMinInputAmount`, which never *under*-gates.
+    private func resolveMinOutputAmount() {
+        guard minOutputAmount == nil else { return }
+        guard let managedHolder = walletManager.wallet(for: wallet.walletId) else { return }
+        do {
+            let addressWallet = try managedHolder.platformAddressWallet()
+            minOutputAmount = try addressWallet.minOutputAmount()
+        } catch {
+            // Leave nil: gate stays closed until a later appearance resolves it.
+            minOutputAmount = nil
         }
     }
 

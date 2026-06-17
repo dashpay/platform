@@ -99,6 +99,29 @@ pub unsafe extern "C" fn platform_address_wallet_min_input_amount(
     PlatformWalletFFIResult::ok()
 }
 
+/// Get the per-output minimum credit amount (`min_output_amount`) the
+/// chain enforces for address-funds transitions, read from the wallet's
+/// current platform version.
+///
+/// Pure getter: resolve the handle, read
+/// `PlatformAddressWallet::min_output_amount()` (which reads the constant
+/// off the wallet's SDK-resolved `PlatformVersion`), write it to
+/// `out_min_output_amount`. DPP rejects any address-funds output below
+/// this floor, so a transfer UI gate that requires the requested amount to
+/// reach it stays in step with what DPP will accept.
+#[no_mangle]
+pub unsafe extern "C" fn platform_address_wallet_min_output_amount(
+    handle: Handle,
+    out_min_output_amount: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_min_output_amount);
+
+    let option =
+        PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| wallet.min_output_amount());
+    *out_min_output_amount = unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
+}
+
 /// Get all platform addresses with their cached balances.
 ///
 /// On success, `out_entries` and `out_count` are set to a heap-allocated array.

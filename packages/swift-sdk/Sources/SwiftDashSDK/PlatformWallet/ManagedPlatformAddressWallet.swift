@@ -58,6 +58,23 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         return amount
     }
 
+    /// The per-output minimum credit amount (`min_output_amount`) the chain
+    /// enforces for address-funds transitions, read from the wallet's
+    /// current platform version on the Rust side.
+    ///
+    /// DPP rejects any address-funds output below this floor, so a transfer
+    /// that sends a single output under it fails structure validation after
+    /// submit. UI that gates a transfer should require the requested amount
+    /// to reach this (and explain why when it doesn't) so the
+    /// enabled/disabled decision matches what DPP will accept — rather than
+    /// mirroring the protocol constant in Swift, which would drift if the
+    /// version changed it. Companion to `minInputAmount()`.
+    public func minOutputAmount() throws -> UInt64 {
+        var amount: UInt64 = 0
+        try platform_address_wallet_min_output_amount(handle, &amount).check()
+        return amount
+    }
+
     /// Get all platform addresses with their cached balances.
     public func addressesWithBalances() throws -> [AddressBalance] {
         var entriesPtr: UnsafeMutablePointer<AddressBalanceEntryFFI>?

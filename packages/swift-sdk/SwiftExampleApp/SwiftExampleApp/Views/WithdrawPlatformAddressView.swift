@@ -456,9 +456,23 @@ struct WithdrawPlatformAddressView: View {
     }
 
     /// Gate the whole flow on the Core (SPV) wallet being usable.
-    /// `coreWallet()` throws if the Core side isn't initialized; we
-    /// also probe `nextReceiveAddress` so a half-initialized wallet
-    /// surfaces here rather than at submit time.
+    ///
+    /// This must be a NON-mutating probe: it runs on every sheet open, so
+    /// anything with a side effect would churn wallet state just from the
+    /// user glancing at the sheet. `coreWallet()` (`platform_wallet_get_core`)
+    /// already throws if the Core side isn't initialized, and `network()` is
+    /// a lock-free read that succeeds whenever the handle is live — together
+    /// they confirm the Core wallet is acquirable and answering without
+    /// touching the BIP-44 receive pool.
+    ///
+    /// The earlier implementation probed `nextReceiveAddress`, but that FFI
+    /// passes `advance = true` (`CoreWallet::next_receive_address_for_account`,
+    /// rs-platform-wallet/src/wallet/core/wallet.rs:103), so every readiness
+    /// check ADVANCED the external pool — opening the sheet repeatedly burned
+    /// receive addresses. The Core wallet FFI surface has no non-advancing
+    /// "peek" or "is account present" call, so we gate on `network()` here
+    /// and only consume an address when the user actually needs a My-Wallet
+    /// destination (see `resolveMyWalletAddress`, which caches its one fetch).
     private func checkCoreReady() {
         guard let managedHolder = walletManager.wallet(for: wallet.walletId) else {
             coreReady = false
@@ -467,7 +481,7 @@ struct WithdrawPlatformAddressView: View {
         }
         do {
             let core = try managedHolder.coreWallet()
-            _ = try core.nextReceiveAddress(accountIndex: 0)
+            _ = try core.network()
             coreReady = true
         } catch {
             coreReady = false
@@ -493,6 +507,19 @@ struct WithdrawPlatformAddressView: View {
         }
     }
 
+    /// Resolve a Core receive address for the "My Wallet" destination and
+    /// cache it in `myWalletAddress` for the sheet's lifetime.
+    ///
+    /// `core.nextReceiveAddress(accountIndex:)` ADVANCES the BIP-44 external
+    /// pool (`advance = true` on the Rust side), so it must be called at most
+    /// once per sheet session and only when the user actually needs a
+    /// My-Wallet destination — never as a readiness probe (see
+    /// `checkCoreReady`). The `myWalletAddress == nil` guard makes repeated
+    /// calls (e.g. toggling the destination segment back to My Wallet)
+    /// no-ops, so open/cancel/toggle consumes exactly one receive address,
+    /// not one per interaction. Only invoked from `autoSelectDefaults`
+    /// (when the default My-Wallet mode is active) and the destination-mode
+    /// `onChange` when switching back to My Wallet.
     private func resolveMyWalletAddress() {
         guard myWalletAddress == nil else { return }
         guard let managedHolder = walletManager.wallet(for: wallet.walletId) else { return }

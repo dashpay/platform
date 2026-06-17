@@ -191,6 +191,32 @@ impl PlatformAddressWallet {
             .min_input_amount
     }
 
+    /// The per-output minimum credit amount enforced by the chain for
+    /// address-funds transitions, read from the wallet's **current**
+    /// platform version
+    /// (`platform_version.dpp.state_transitions.address_funds.min_output_amount`).
+    ///
+    /// DPP rejects any address-funds *output* below this floor, so a transfer
+    /// that sends a single output under it deterministically fails structure
+    /// validation after submit. Exposed so UI gating can disable submit (and
+    /// explain why) when the requested amount is below the minimum, keeping
+    /// the enabled/disabled decision in step with what DPP will accept —
+    /// rather than mirroring the protocol constant in Swift, which would
+    /// drift if the version changed it.
+    ///
+    /// The version is resolved from the wallet's SDK
+    /// ([`dash_sdk::Sdk::version`]), the same network-floored,
+    /// protocol-version-tracking source the spend paths run under, so the
+    /// figure is version-locked. Companion to [`min_input_amount`](Self::min_input_amount).
+    pub fn min_output_amount(&self) -> Credits {
+        self.sdk
+            .version()
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_output_amount
+    }
+
     /// Wallet id this `PlatformAddressWallet` operates on. Exposed so
     /// FFI callers that build a `MnemonicResolverCoreSigner` on demand
     /// can thread the wallet id through to the resolver callback.
@@ -437,5 +463,24 @@ mod tests {
             .address_funds
             .min_input_amount;
         assert_eq!(wallet.min_input_amount(), expected);
+    }
+
+    /// `min_output_amount()` must likewise return the constant from the
+    /// wallet's own SDK-resolved `PlatformVersion`, i.e. exactly
+    /// `version.dpp.state_transitions.address_funds.min_output_amount` — the
+    /// per-output floor DPP enforces on address-funds transitions. Pins the
+    /// getter to the version's value rather than a hardcoded literal so the
+    /// transfer UI gate stays version-locked.
+    #[test]
+    fn min_output_amount_matches_sdk_version_constant() {
+        let wallet = build_test_wallet();
+        let expected = wallet
+            .sdk
+            .version()
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_output_amount;
+        assert_eq!(wallet.min_output_amount(), expected);
     }
 }
