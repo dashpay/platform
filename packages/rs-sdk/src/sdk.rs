@@ -1855,7 +1855,8 @@ mod test {
         );
     }
 
-    /// A pin *below* the per-network [`min_protocol_version`] is preserved
+    /// A pin *below* the per-network [`min_protocol_version`] is preserved as-is
+    /// (no construction-time clamp) and `version_pinned` stays `true`.
     #[test]
     fn test_explicit_pin_below_floor_is_preserved() {
         use dpp::version::PlatformVersion;
