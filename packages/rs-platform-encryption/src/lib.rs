@@ -418,6 +418,42 @@ mod tests {
         assert_eq!(parsed.to_bytes(), compact);
     }
 
+    /// Known-answer test for the ECDH shared-key convention. We had been
+    /// trusting `SharedSecret::new` to compute `SHA256((y[31]&1|2) || x)` from
+    /// a library comment, not bytes — a cross-impl mismatch with dashj would
+    /// break contactRequest/contactInfo interop silently. This recomputes the
+    /// shared key by hand for fixed keys and pins (a) symmetry `a·B == b·A` and
+    /// (b) the exact compressed-y-prefix-‖-x preimage convention.
+    #[test]
+    fn ecdh_matches_sha256_y_parity_prefix_convention() {
+        use dashcore::hashes::{sha256, Hash};
+        use dashcore::secp256k1::{Scalar, Secp256k1};
+
+        let secp = Secp256k1::new();
+        let priv_a = SecretKey::from_slice(&[0xC0u8; 32]).expect("valid scalar");
+        let priv_b = SecretKey::from_slice(&[0x0Du8; 32]).expect("valid scalar");
+        let pub_a = PublicKey::from_secret_key(&secp, &priv_a);
+        let pub_b = PublicKey::from_secret_key(&secp, &priv_b);
+
+        let ab = derive_shared_key_ecdh(&priv_a, &pub_b);
+        let ba = derive_shared_key_ecdh(&priv_b, &pub_a);
+        assert_eq!(ab, ba, "ECDH must be symmetric (a·B == b·A)");
+        assert_eq!(ab, derive_shared_key_ecdh(&priv_a, &pub_b), "deterministic");
+
+        // Recompute by hand: shared point P = a·B; shared key =
+        // SHA256( (0x02 | (P.y & 1)) ‖ P.x ). Pins that it's the compressed-y
+        // prefix + x, NOT x‖y or some other layout.
+        let scalar_a = Scalar::from_be_bytes([0xC0u8; 32]).expect("scalar in range");
+        let shared_point = pub_b.mul_tweak(&secp, &scalar_a).expect("point mul");
+        let uncompressed = shared_point.serialize_uncompressed(); // 0x04 ‖ x(32) ‖ y(32)
+        let prefix = 0x02u8 | (uncompressed[64] & 1); // y parity from the last y byte
+        let mut preimage = Vec::with_capacity(33);
+        preimage.push(prefix);
+        preimage.extend_from_slice(&uncompressed[1..33]); // x
+        let manual = sha256::Hash::hash(&preimage).to_byte_array();
+        assert_eq!(ab, manual, "ECDH must be SHA256((y&1|2)‖x)");
+    }
+
     #[test]
     fn test_encrypt_compact_xpub_is_exactly_96_bytes() {
         // The whole point of the 69-byte compact form: it encrypts to exactly
