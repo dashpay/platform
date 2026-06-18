@@ -261,14 +261,15 @@ impl ShieldedSyncManager {
                         }
                     }
 
-                    // Only clear `background_cancel` if the active
-                    // generation is still ours. Without this guard a
-                    // tight `stop()` → `start()` reschedule has the
-                    // exiting thread overwrite the *new* generation's
-                    // token, leaving the new loop running but
-                    // unreflectable via `is_running()` / `stop()`.
-                    if this.background_generation.load(Ordering::Acquire) == my_gen {
-                        if let Ok(mut guard) = this.background_cancel.lock() {
+                    // Clear `background_cancel` only if the active
+                    // generation is still ours. Acquire the lock
+                    // FIRST, then check — `start()` bumps the
+                    // generation while holding this same lock, so
+                    // once we hold it the generation is final w.r.t.
+                    // any concurrent token swap (no TOCTOU between
+                    // the check and the clear).
+                    if let Ok(mut guard) = this.background_cancel.lock() {
+                        if this.background_generation.load(Ordering::Acquire) == my_gen {
                             *guard = None;
                         }
                     }
