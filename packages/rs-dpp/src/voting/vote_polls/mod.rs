@@ -26,7 +26,7 @@ pub mod contested_document_resource_vote_poll;
     // discriminators only when the same wire-shape level has other `$`-prefixed
     // fields. Inner `ContestedDocumentResourceVotePoll` has only camelCase
     // fields, so plain `type` is the right discriminator key here.
-    serde(tag = "type", rename_all = "camelCase")
+    serde(tag = "$type", rename_all = "camelCase")
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)]

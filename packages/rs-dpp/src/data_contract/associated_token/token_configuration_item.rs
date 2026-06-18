@@ -71,8 +71,8 @@ pub enum TokenConfigurationChangeItem {
 
 // Internal-`type` serde shape via a struct-variant Repr (the outer enum mixes
 // AuthorizedActionTakers/struct variants with primitive/Option/unit variants
-// that serde cannot auto-internal-tag). Unit -> `{"type":"..."}`; data ->
-// `{"type":"...","value":...}`. `MaxSupply` gains the json_safe protection it
+// that serde cannot auto-internal-tag). Unit -> `{"$type":"..."}`; data ->
+// `{"$type":"...","value":...}`. `MaxSupply` gains the json_safe protection it
 // previously lacked (Option<u64> above MAX_SAFE_INTEGER -> string in HR JSON;
 // Content-safe — never emits u128). `MainControlGroup` is u16 (always JS-safe).
 // The macro keeps the Repr and both `From` impls in lockstep with one variant
@@ -84,7 +84,7 @@ macro_rules! token_configuration_change_item_repr {
         $( $variant:ident : $ty:ty $(, with = $with:literal)? );* $(;)?
     ) => {
         #[derive(Serialize, Deserialize)]
-        #[serde(tag = "type", rename_all = "camelCase")]
+        #[serde(tag = "$type", rename_all = "camelCase")]
         enum TokenConfigurationChangeItemRepr {
             $unit,
             $( $variant {
@@ -866,11 +866,11 @@ mod json_convertible_tests {
         let original = fixture();
         let json = original.to_json().expect("to_json");
         // `TokenConfigurationChangeItem` is internally tagged via its Repr:
-        // `{ "type":"maxSupply", "value":<inner> }` where `Some(x)` -> `x`.
+        // `{ "$type":"maxSupply", "value":<inner> }` where `Some(x)` -> `x`.
         // `MaxSupply` now carries json_safe (Option<u64> -> string above
         // MAX_SAFE_INTEGER in HR JSON); here 123_456_789 stays numeric.
         // The value-path assertion uses `123_456_789u64` to lock in `Value::U64`.
-        assert_eq!(json, json!({"type": "maxSupply", "value": 123_456_789u64}));
+        assert_eq!(json, json!({"$type": "maxSupply", "value": 123_456_789u64}));
         let recovered = TokenConfigurationChangeItem::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
@@ -884,7 +884,7 @@ mod json_convertible_tests {
         // `TokenAmount`'s u64 type. Bare integer would expand to `Value::I32`.
         assert_eq!(
             value,
-            platform_value!({"type": "maxSupply", "value": 123_456_789u64})
+            platform_value!({"$type": "maxSupply", "value": 123_456_789u64})
         );
         let recovered = TokenConfigurationChangeItem::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
@@ -901,7 +901,7 @@ mod json_convertible_tests {
         let json = original.to_json().expect("to_json");
         assert_eq!(
             json,
-            json!({"type": "maxSupply", "value": "9007199254740993"})
+            json!({"$type": "maxSupply", "value": "9007199254740993"})
         );
         let recovered = TokenConfigurationChangeItem::from_json(json).expect("from_json");
         assert_eq!(original, recovered);

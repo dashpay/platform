@@ -186,15 +186,15 @@ pub(crate) mod json_convertible_tests {
                     {"address": "012222222222222222222222222222222222222222", "nonce": 3, "amount": 500_000},
                 ],
                 "output": {"address": "003333333333333333333333333333333333333333", "amount": 250_000},
-                "feeStrategy": [{"type": "deductFromInput", "index": 0}],
+                "feeStrategy": [{"$type": "deductFromInput", "index": 0}],
                 "userFeeIncrease": 42,
                 "inputWitnesses": [
                     {
-                        "type": "p2pkh",
+                        "$type": "p2pkh",
                         "signature": "7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u4=",
                     },
                     {
-                        "type": "p2sh",
+                        "$type": "p2sh",
                         "signatures": [
                             "EhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhI=",
                         ],
@@ -244,15 +244,15 @@ pub(crate) mod json_convertible_tests {
                     {"address": Value::Bytes(p2sh22_bytes), "nonce": 3u32, "amount": 500_000u64},
                 ],
                 "output": {"address": Value::Bytes(p2pkh33_bytes), "amount": 250_000u64},
-                "feeStrategy": [{"type": "deductFromInput", "index": 0u16}],
+                "feeStrategy": [{"$type": "deductFromInput", "index": 0u16}],
                 "userFeeIncrease": 42u16,
                 "inputWitnesses": [
                     {
-                        "type": "p2pkh",
+                        "$type": "p2pkh",
                         "signature": Value::Bytes(vec![0xee; 65]),
                     },
                     {
-                        "type": "p2sh",
+                        "$type": "p2sh",
                         "signatures": [Value::Bytes(vec![0x12; 65])],
                         "redeemScript": Value::Bytes(vec![0xff; 30]),
                     },

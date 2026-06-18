@@ -157,12 +157,12 @@ pub(crate) mod json_convertible_tests {
                     },
                 ],
                 "feeStrategy": [
-                    {"type": "reduceOutput", "index": 0},
+                    {"$type": "reduceOutput", "index": 0},
                 ],
                 "userFeeIncrease": 17,
                 "inputWitnesses": [
                     {
-                        "type": "p2pkh",
+                        "$type": "p2pkh",
                         "signature": "qampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqampqak=",
                     },
                 ],
@@ -200,12 +200,12 @@ pub(crate) mod json_convertible_tests {
                     },
                 ],
                 "feeStrategy": [
-                    {"type": "reduceOutput", "index": 0u16},
+                    {"$type": "reduceOutput", "index": 0u16},
                 ],
                 "userFeeIncrease": 17u16,
                 "inputWitnesses": [
                     {
-                        "type": "p2pkh",
+                        "$type": "p2pkh",
                         "signature": Value::Bytes(vec![0xa9; 65]),
                     },
                 ],

@@ -499,8 +499,8 @@ mod json_convertible_tests {
     use super::*;
 
     /// Round-trip a StateTransition through both JSON and Value, asserting:
-    /// 1. The wire emits `{"type": "<expected_tag>", ...}` (umbrella's
-    ///    `tag = "type", rename_all = "camelCase"` is correctly applied).
+    /// 1. The wire emits `{"$type": "<expected_tag>", ...}` (umbrella's
+    ///    `tag = "$type", rename_all = "camelCase"` is correctly applied).
     /// 2. Round-trip preserves the variant.
     /// 3. Round-trip preserves structural equality (PartialEq on the inner).
     ///

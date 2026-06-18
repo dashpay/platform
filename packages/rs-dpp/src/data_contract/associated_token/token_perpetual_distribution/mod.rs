@@ -93,11 +93,11 @@ mod json_convertible_tests {
             json!({
                 "$formatVersion": "0",
                 "distributionType": {
-                    "type": "blockBasedDistribution",
+                    "$type": "blockBasedDistribution",
                     "interval": 1000,
-                    "function": { "type": "fixedAmount", "amount": 100 },
+                    "function": { "$type": "fixedAmount", "amount": 100 },
                 },
-                "distributionRecipient": {"type": "contractOwner"},
+                "distributionRecipient": {"$type": "contractOwner"},
             })
         );
         let recovered = TokenPerpetualDistribution::from_json(json).expect("from_json");
@@ -116,11 +116,11 @@ mod json_convertible_tests {
             platform_value!({
                 "$formatVersion": "0",
                 "distributionType": {
-                    "type": "blockBasedDistribution",
+                    "$type": "blockBasedDistribution",
                     "interval": 1000u64,
-                    "function": { "type": "fixedAmount", "amount": 100u64 },
+                    "function": { "$type": "fixedAmount", "amount": 100u64 },
                 },
-                "distributionRecipient": {"type": "contractOwner"},
+                "distributionRecipient": {"$type": "contractOwner"},
             })
         );
         let recovered = TokenPerpetualDistribution::from_object(value).expect("from_object");

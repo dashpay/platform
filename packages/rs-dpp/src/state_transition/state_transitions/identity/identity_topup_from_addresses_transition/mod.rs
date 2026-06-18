@@ -143,11 +143,11 @@ pub(crate) mod json_convertible_tests {
                 ],
                 "output": {"address": "015555555555555555555555555555555555555555", "amount": 100_000},
                 "identityId": "7tj9biW3KRJ7EEWmVUGigHiouCTXhV2dzcyvwma7Cyu7",
-                "feeStrategy": [{"type": "deductFromInput", "index": 0}],
+                "feeStrategy": [{"$type": "deductFromInput", "index": 0}],
                 "userFeeIncrease": 7,
                 "inputWitnesses": [
                     {
-                        "type": "p2pkh",
+                        "$type": "p2pkh",
                         "signature": "d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3c=",
                     },
                 ],
@@ -176,11 +176,11 @@ pub(crate) mod json_convertible_tests {
                 ],
                 "output": {"address": Value::Bytes(p2sh55), "amount": 100_000u64},
                 "identityId": identity_id,
-                "feeStrategy": [{"type": "deductFromInput", "index": 0u16}],
+                "feeStrategy": [{"$type": "deductFromInput", "index": 0u16}],
                 "userFeeIncrease": 7u16,
                 "inputWitnesses": [
                     {
-                        "type": "p2pkh",
+                        "$type": "p2pkh",
                         "signature": Value::Bytes(vec![0x77; 65]),
                     },
                 ],

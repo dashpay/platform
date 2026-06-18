@@ -25,17 +25,17 @@ pub mod validate_asset_lock_transaction_structure;
 // TODO: Serialization with bincode
 // TODO: Consider use Box for InstantAssetLockProof
 //
-// Wire-shape note: this is an *internally-tagged* enum (`#[serde(tag = "type")]`
+// Wire-shape note: this is an *internally-tagged* enum (`#[serde(tag = "$type")]`
 // with no `content`). serde's internal tagging works on newtype variants whose
 // inner is a struct — both `InstantAssetLockProof` and `ChainAssetLockProof`
 // qualify — so the inner struct's fields are flattened next to the `type`
-// discriminator: `{"type": "instant", "instantLock": ..., "transaction": ...,
+// discriminator: `{"$type": "instant", "instantLock": ..., "transaction": ...,
 // "outputIndex": ...}`. This matches the convention applied to other tagged
 // unions exposed to JS (see `AddressWitness`, `AddressFundsFeeStrategyStep`).
 // Bincode `Encode`/`Decode` derives are independent of serde, so consensus
 // binary format is unaffected.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "$type", rename_all = "camelCase")]
 #[allow(clippy::large_enum_variant)]
 pub enum AssetLockProof {
     Instant(#[bincode(with_serde)] InstantAssetLockProof),
@@ -46,7 +46,7 @@ pub enum AssetLockProof {
 /// produces, but routes the instant variant through `RawInstantLockProof` so the
 /// dashcore `InstantLock` can be reconstructed from its raw bytes form.
 #[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "$type", rename_all = "camelCase")]
 enum RawAssetLockProof {
     Instant(RawInstantLockProof),
     Chain(ChainAssetLockProof),
@@ -133,7 +133,7 @@ mod json_convertible_tests {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
-        // `AssetLockProof` is internally tagged (`#[serde(tag = "type")]`), so
+        // `AssetLockProof` is internally tagged (`#[serde(tag = "$type")]`), so
         // the inner `ChainAssetLockProof`'s fields are flattened next to the
         // discriminator. Surprising shape: `OutPoint` has a *string-form*
         // Serialize impl ("<txid>:<vout>") in dashcore which JSON consumes
@@ -145,7 +145,7 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "type": "chain",
+                "$type": "chain",
                 "coreChainLockedHeight": 12_345,
                 "outPoint": "0000000000000000000000000000000000000000000000000000000000000001:1",
             })
@@ -168,7 +168,7 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "type": "chain",
+                "$type": "chain",
                 "coreChainLockedHeight": 12_345u32,
                 "outPoint": {
                     "txid": platform_value::Value::Bytes32(txid_bytes),
@@ -270,7 +270,7 @@ impl AssetLockProof {
 // previous hack here accepted legacy integer-tagged
 // (`{type: 0|1, ...fields}`) and externally-tagged
 // (`{Instant: {...}}`) shapes — both predated the
-// `#[serde(tag = "type")]` Critical-2 fix. Audit (Phase D step 6)
+// `#[serde(tag = "$type")]` Critical-2 fix. Audit (Phase D step 6)
 // confirmed all currently-flowing values are canonical-tagged
 // (string `type`), so the hacks were dead.
 
@@ -322,7 +322,7 @@ mod tests {
 
         let json = serde_json::to_value(&proof).expect("serialize");
 
-        assert_eq!(json["type"], "chain");
+        assert_eq!(json["$type"], "chain");
         assert_eq!(json["coreChainLockedHeight"], 11);
         assert!(
             json.get("data").is_none(),
@@ -514,7 +514,7 @@ mod tests {
             let map = value.to_map_ref().expect("map");
             assert_eq!(
                 map.iter()
-                    .find_map(|(k, v)| (k.as_text() == Some("type")).then(|| v.as_text())),
+                    .find_map(|(k, v)| (k.as_text() == Some("$type")).then(|| v.as_text())),
                 Some(Some("chain"))
             );
 

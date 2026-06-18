@@ -17,8 +17,8 @@ pub const MAX_P2SH_SIGNATURES: usize = 17;
 /// This enum captures the different spending patterns for P2PKH and P2SH addresses.
 ///
 /// Wire shape (internally tagged on `type`, camelCase variants/fields):
-///   `{ "type": "p2pkh", "signature": <BinaryData> }`
-///   `{ "type": "p2sh", "signatures": [<BinaryData>, ...], "redeemScript": <BinaryData> }`
+///   `{ "$type": "p2pkh", "signature": <BinaryData> }`
+///   `{ "$type": "p2sh", "signatures": [<BinaryData>, ...], "redeemScript": <BinaryData> }`
 ///
 /// Note: `MAX_P2SH_SIGNATURES` is enforced by the bincode `Decode` path (the
 /// load-bearing wire format). The serde JSON/Value deserialize path does not
@@ -29,7 +29,7 @@ pub const MAX_P2SH_SIGNATURES: usize = 17;
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(tag = "type")
+    serde(tag = "$type")
 )]
 pub enum AddressWitness {
     /// P2PKH witness: recoverable signature only
@@ -653,7 +653,7 @@ mod json_convertible_tests {
     use serde_json::json;
 
     // `AddressWitness` has a manual Serialize/Deserialize that emits a
-    // `{ "type": "p2pkh"|"p2sh", ... }` discriminator shape. `BinaryData` is
+    // `{ "$type": "p2pkh"|"p2sh", ... }` discriminator shape. `BinaryData` is
     // base64-encoded in JSON (HR), and stored as `Value::Bytes` in non-HR.
 
     #[test]
@@ -666,7 +666,7 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "type": "p2pkh",
+                "$type": "p2pkh",
                 "signature": "oaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaE=",
             })
         );
@@ -685,7 +685,7 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "type": "p2sh",
+                "$type": "p2sh",
                 "signatures": [
                     "w8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8PDw8M=",
                 ],
@@ -708,7 +708,7 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "type": "p2pkh",
+                "$type": "p2pkh",
                 "signature": Value::Bytes(vec![0xa1; 65]),
             })
         );
@@ -728,7 +728,7 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "type": "p2sh",
+                "$type": "p2sh",
                 "signatures": [Value::Bytes(vec![0xc3; 65])],
                 "redeemScript": Value::Bytes(vec![0xb2; 30]),
             })

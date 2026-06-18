@@ -25,7 +25,7 @@ use crate::ProtocolError;
 )]
 #[platform_serialize(unversioned)]
 // serde routes through `RewardDistributionMomentRepr` to get internal `type`
-// tagging (`{"type":"blockBasedMoment","value":N}`). The outer enum keeps its
+// tagging (`{"$type":"blockBasedMoment","value":N}`). The outer enum keeps its
 // tuple variants for the Rust/bincode API; `Encode`/`Decode` are independent of
 // serde, so the consensus binary path is unchanged by this reshape.
 #[serde(
@@ -47,7 +47,7 @@ pub enum RewardDistributionMoment {
 // `Number.MAX_SAFE_INTEGER`) in human-readable JSON; no effect on `Value` or
 // bincode. `EpochIndex` is `u16` — always JS-safe, no annotation needed.
 #[derive(Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "$type", rename_all = "camelCase")]
 // Variant names mirror the outer enum (they drive the `type` discriminator);
 // the shared `BasedMoment` postfix is intentional.
 #[allow(clippy::enum_variant_names)]
@@ -121,15 +121,15 @@ mod json_convertible_tests {
         let cases = vec![
             (
                 RewardDistributionMoment::BlockBasedMoment(123_456),
-                json!({"type": "blockBasedMoment", "value": 123_456}),
+                json!({"$type": "blockBasedMoment", "value": 123_456}),
             ),
             (
                 RewardDistributionMoment::TimeBasedMoment(1_700_000_000_000u64),
-                json!({"type": "timeBasedMoment", "value": 1_700_000_000_000u64}),
+                json!({"$type": "timeBasedMoment", "value": 1_700_000_000_000u64}),
             ),
             (
                 RewardDistributionMoment::EpochBasedMoment(42),
-                json!({"type": "epochBasedMoment", "value": 42}),
+                json!({"$type": "epochBasedMoment", "value": 42}),
             ),
         ];
         for (original, expected) in cases {
@@ -145,15 +145,15 @@ mod json_convertible_tests {
         let cases = vec![
             (
                 RewardDistributionMoment::BlockBasedMoment(123_456),
-                platform_value!({"type": "blockBasedMoment", "value": 123_456u64}),
+                platform_value!({"$type": "blockBasedMoment", "value": 123_456u64}),
             ),
             (
                 RewardDistributionMoment::TimeBasedMoment(1_700_000_000_000u64),
-                platform_value!({"type": "timeBasedMoment", "value": 1_700_000_000_000u64}),
+                platform_value!({"$type": "timeBasedMoment", "value": 1_700_000_000_000u64}),
             ),
             (
                 RewardDistributionMoment::EpochBasedMoment(42),
-                platform_value!({"type": "epochBasedMoment", "value": 42u16}),
+                platform_value!({"$type": "epochBasedMoment", "value": 42u16}),
             ),
         ];
         for (original, expected) in cases {
@@ -174,7 +174,7 @@ mod json_convertible_tests {
         let json = original.to_json().expect("to_json");
         assert_eq!(
             json,
-            json!({"type": "blockBasedMoment", "value": "9007199254740993"})
+            json!({"$type": "blockBasedMoment", "value": "9007199254740993"})
         );
         let recovered = RewardDistributionMoment::from_json(json).expect("from_json");
         assert_eq!(original, recovered);

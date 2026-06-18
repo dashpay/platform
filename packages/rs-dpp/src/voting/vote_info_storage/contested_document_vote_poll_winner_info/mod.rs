@@ -12,7 +12,7 @@ use std::fmt;
 // `ResourceVoteChoice`. The `WonByIdentity` variant wraps `Identifier`
 // (a tuple struct that serializes as a base58 string, not a map), so
 // internal tagging doesn't apply natively. The custom impl emits a flat
-// `{"type": ..., "identity": ...}` shape with a synthesized `identity`
+// `{"$type": ..., "identity": ...}` shape with a synthesized `identity`
 // field name. Bincode `Encode` / `Decode` derives are untouched.
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 pub enum ContestedDocumentVotePollWinnerInfo {
@@ -28,18 +28,18 @@ impl Serialize for ContestedDocumentVotePollWinnerInfo {
         match self {
             ContestedDocumentVotePollWinnerInfo::NoWinner => {
                 let mut m = serializer.serialize_map(Some(1))?;
-                m.serialize_entry("type", "noWinner")?;
+                m.serialize_entry("$type", "noWinner")?;
                 m.end()
             }
             ContestedDocumentVotePollWinnerInfo::WonByIdentity(id) => {
                 let mut m = serializer.serialize_map(Some(2))?;
-                m.serialize_entry("type", "wonByIdentity")?;
+                m.serialize_entry("$type", "wonByIdentity")?;
                 m.serialize_entry("identity", id)?;
                 m.end()
             }
             ContestedDocumentVotePollWinnerInfo::Locked => {
                 let mut m = serializer.serialize_map(Some(1))?;
-                m.serialize_entry("type", "locked")?;
+                m.serialize_entry("$type", "locked")?;
                 m.end()
             }
         }
@@ -67,9 +67,9 @@ impl<'de> Deserialize<'de> for ContestedDocumentVotePollWinnerInfo {
 
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
-                        "type" => {
+                        "$type" => {
                             if variant.is_some() {
-                                return Err(de::Error::duplicate_field("type"));
+                                return Err(de::Error::duplicate_field("$type"));
                             }
                             variant = Some(map.next_value()?);
                         }
@@ -85,7 +85,7 @@ impl<'de> Deserialize<'de> for ContestedDocumentVotePollWinnerInfo {
                     }
                 }
 
-                let variant = variant.ok_or_else(|| de::Error::missing_field("type"))?;
+                let variant = variant.ok_or_else(|| de::Error::missing_field("$type"))?;
                 match variant.as_str() {
                     "noWinner" => Ok(ContestedDocumentVotePollWinnerInfo::NoWinner),
                     "wonByIdentity" => {
@@ -227,7 +227,7 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "type": "wonByIdentity",
+                "$type": "wonByIdentity",
                 "identity": "CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t",
             })
         );
@@ -246,7 +246,7 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "type": "wonByIdentity",
+                "$type": "wonByIdentity",
                 "identity": id,
             })
         );

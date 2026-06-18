@@ -285,14 +285,14 @@ pub(crate) mod json_convertible_tests {
                     "$type": "resourceVote",
                     "$formatVersion": "0",
                     "votePoll": {
-                        "type": "contestedDocumentResourceVotePoll",
+                        "$type": "contestedDocumentResourceVotePoll",
                         "contractId": Identifier::new([0x12; 32]),
                         "documentTypeName": "domain",
                         "indexName": "parentNameAndLabel",
                         "indexValues": ["dash"],
                     },
                     "resourceVoteChoice": {
-                        "type": "towardsIdentity",
+                        "$type": "towardsIdentity",
                         "identity": Identifier::new([0x34; 32]),
                     },
                 },
@@ -322,14 +322,14 @@ pub(crate) mod json_convertible_tests {
                     "$type": "resourceVote",
                     "$formatVersion": "0",
                     "votePoll": {
-                        "type": "contestedDocumentResourceVotePoll",
+                        "$type": "contestedDocumentResourceVotePoll",
                         "contractId": Identifier::new([0x12; 32]),
                         "documentTypeName": "domain",
                         "indexName": "parentNameAndLabel",
                         "indexValues": ["dash"],
                     },
                     "resourceVoteChoice": {
-                        "type": "towardsIdentity",
+                        "$type": "towardsIdentity",
                         "identity": Identifier::new([0x34; 32]),
                     },
                 },

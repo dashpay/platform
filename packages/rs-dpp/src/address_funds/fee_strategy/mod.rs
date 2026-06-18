@@ -25,7 +25,7 @@ impl Default for AddressFundsFeeStrategyStep {
 pub type AddressFundsFeeStrategy = Vec<AddressFundsFeeStrategyStep>;
 
 // Custom serde impls so JSON / wasm Object output uses the standard
-// `{ "type": "...", "index": N }` discriminator shape used elsewhere in
+// `{ "$type": "...", "index": N }` discriminator shape used elsewhere in
 // the DPP wasm bindings. The bincode `Encode` / `Decode` derives above are
 // the consensus-critical binary format and are intentionally untouched.
 #[cfg(feature = "serde-conversion")]
@@ -39,11 +39,11 @@ impl Serialize for AddressFundsFeeStrategyStep {
         let mut state = serializer.serialize_struct("AddressFundsFeeStrategyStep", 2)?;
         match self {
             AddressFundsFeeStrategyStep::DeductFromInput(index) => {
-                state.serialize_field("type", "deductFromInput")?;
+                state.serialize_field("$type", "deductFromInput")?;
                 state.serialize_field("index", index)?;
             }
             AddressFundsFeeStrategyStep::ReduceOutput(index) => {
-                state.serialize_field("type", "reduceOutput")?;
+                state.serialize_field("$type", "reduceOutput")?;
                 state.serialize_field("index", index)?;
             }
         }
@@ -78,9 +78,9 @@ impl<'de> Deserialize<'de> for AddressFundsFeeStrategyStep {
 
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
-                        "type" => {
+                        "$type" => {
                             if step_type.is_some() {
-                                return Err(de::Error::duplicate_field("type"));
+                                return Err(de::Error::duplicate_field("$type"));
                             }
                             step_type = Some(map.next_value()?);
                         }
@@ -96,7 +96,7 @@ impl<'de> Deserialize<'de> for AddressFundsFeeStrategyStep {
                     }
                 }
 
-                let step_type = step_type.ok_or_else(|| de::Error::missing_field("type"))?;
+                let step_type = step_type.ok_or_else(|| de::Error::missing_field("$type"))?;
                 let index = index.ok_or_else(|| de::Error::missing_field("index"))?;
 
                 match step_type.as_str() {
@@ -112,7 +112,7 @@ impl<'de> Deserialize<'de> for AddressFundsFeeStrategyStep {
 
         deserializer.deserialize_struct(
             "AddressFundsFeeStrategyStep",
-            &["type", "index"],
+            &["$type", "index"],
             StepVisitor,
         )
     }
@@ -128,7 +128,7 @@ mod tests {
         let json = serde_json::to_value(&step).unwrap();
         assert_eq!(
             json,
-            serde_json::json!({ "type": "deductFromInput", "index": 7 })
+            serde_json::json!({ "$type": "deductFromInput", "index": 7 })
         );
     }
 
@@ -138,19 +138,19 @@ mod tests {
         let json = serde_json::to_value(&step).unwrap();
         assert_eq!(
             json,
-            serde_json::json!({ "type": "reduceOutput", "index": 3 })
+            serde_json::json!({ "$type": "reduceOutput", "index": 3 })
         );
     }
 
     #[test]
     fn deserializes_from_type_and_index() {
         let step: AddressFundsFeeStrategyStep =
-            serde_json::from_value(serde_json::json!({ "type": "deductFromInput", "index": 9 }))
+            serde_json::from_value(serde_json::json!({ "$type": "deductFromInput", "index": 9 }))
                 .unwrap();
         assert_eq!(step, AddressFundsFeeStrategyStep::DeductFromInput(9));
 
         let step: AddressFundsFeeStrategyStep =
-            serde_json::from_value(serde_json::json!({ "type": "reduceOutput", "index": 2 }))
+            serde_json::from_value(serde_json::json!({ "$type": "reduceOutput", "index": 2 }))
                 .unwrap();
         assert_eq!(step, AddressFundsFeeStrategyStep::ReduceOutput(2));
     }
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn rejects_unknown_variant() {
         let result: Result<AddressFundsFeeStrategyStep, _> =
-            serde_json::from_value(serde_json::json!({ "type": "burn", "index": 0 }));
+            serde_json::from_value(serde_json::json!({ "$type": "burn", "index": 0 }));
         assert!(result.is_err());
     }
 
@@ -203,7 +203,7 @@ mod json_convertible_tests_address_funds_fee_strategy_step {
         // `index` is a `u16` in the source type. JSON has only one number
         // type, so the wire shape erases the U16 distinction (the value-path
         // assertion below uses `7u16` explicitly to lock in the typed variant).
-        assert_eq!(json, json!({"type": "deductFromInput", "index": 7}));
+        assert_eq!(json, json!({"$type": "deductFromInput", "index": 7}));
         let recovered = AddressFundsFeeStrategyStep::from_json(json).expect("from_json");
         assert_eq!(recovered, AddressFundsFeeStrategyStep::DeductFromInput(7));
     }
@@ -214,7 +214,7 @@ mod json_convertible_tests_address_funds_fee_strategy_step {
         let original = AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX);
         let json = original.to_json().expect("to_json");
         // `index` is a `u16`; JSON erases the size — see the deduct test above.
-        assert_eq!(json, json!({"type": "reduceOutput", "index": u16::MAX}));
+        assert_eq!(json, json!({"$type": "reduceOutput", "index": u16::MAX}));
         let recovered = AddressFundsFeeStrategyStep::from_json(json).expect("from_json");
         assert_eq!(
             recovered,
@@ -234,7 +234,7 @@ mod json_convertible_tests_address_funds_fee_strategy_step {
         // does, and what we want this test to lock in.
         assert_eq!(
             value,
-            platform_value!({"type": "deductFromInput", "index": 7u16})
+            platform_value!({"$type": "deductFromInput", "index": 7u16})
         );
         let recovered = AddressFundsFeeStrategyStep::from_object(value).expect("from_object");
         assert_eq!(recovered, AddressFundsFeeStrategyStep::DeductFromInput(7));
@@ -247,7 +247,7 @@ mod json_convertible_tests_address_funds_fee_strategy_step {
         let value = original.to_object().expect("to_object");
         assert_eq!(
             value,
-            platform_value!({"type": "reduceOutput", "index": u16::MAX})
+            platform_value!({"$type": "reduceOutput", "index": u16::MAX})
         );
         let recovered = AddressFundsFeeStrategyStep::from_object(value).expect("from_object");
         assert_eq!(

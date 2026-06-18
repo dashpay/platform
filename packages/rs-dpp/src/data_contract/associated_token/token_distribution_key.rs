@@ -44,7 +44,7 @@ pub enum TokenDistributionTypeWithResolvedRecipient {
 // Internal-`type` serde shape with a uniform `value` payload (single-payload
 // variants). Bincode `Encode`/`Decode` on the outer enum are untouched.
 #[derive(Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "$type", rename_all = "camelCase")]
 enum TokenDistributionTypeWithResolvedRecipientRepr {
     PreProgrammed { value: Identifier },
     Perpetual { value: TokenDistributionResolvedRecipient },
@@ -103,7 +103,7 @@ pub enum TokenDistributionInfo {
 // (string above MAX_SAFE_INTEGER in HR JSON), Content-safe (never u128).
 // `RewardDistributionMoment` is itself internally tagged; bincode untouched.
 #[derive(Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "$type", rename_all = "camelCase")]
 enum TokenDistributionInfoRepr {
     PreProgrammed {
         #[cfg_attr(
@@ -284,7 +284,7 @@ mod json_convertible_tests_token_distribution_type_and_key {
             json,
             json!({
                 "token_id": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
-                "recipient": {"type": "evonodesByParticipation"},
+                "recipient": {"$type": "evonodesByParticipation"},
                 "distribution_type": "Perpetual",
             })
         );
@@ -304,7 +304,7 @@ mod json_convertible_tests_token_distribution_type_and_key {
             (
                 Value::Text("recipient".to_string()),
                 Value::Map(vec![(
-                    Value::Text("type".to_string()),
+                    Value::Text("$type".to_string()),
                     Value::Text("evonodesByParticipation".to_string()),
                 )]),
             ),
@@ -343,14 +343,14 @@ mod json_convertible_tests_token_distribution_info {
         let original = fixture();
         let json = original.to_json().expect("to_json");
         // Internally tagged with named fields:
-        // `{ "type":"preProgrammed", "timestamp":<ts>, "identity":<id> }`.
+        // `{ "$type":"preProgrammed", "timestamp":<ts>, "identity":<id> }`.
         // `TimestampMillis` is `u64`; JSON erases the size — see the value-
         // path assertion which uses `Value::U64` to lock it in.
         // `Identifier` is rendered as the base58-encoded string in JSON.
         assert_eq!(
             json,
             json!({
-                "type": "preProgrammed",
+                "$type": "preProgrammed",
                 "timestamp": 1_700_000_000_000u64,
                 "identity": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
             })
@@ -370,7 +370,7 @@ mod json_convertible_tests_token_distribution_info {
         // typed-bytes variant is preserved exactly.
         let expected = Value::Map(vec![
             (
-                Value::Text("type".to_string()),
+                Value::Text("$type".to_string()),
                 Value::Text("preProgrammed".to_string()),
             ),
             (

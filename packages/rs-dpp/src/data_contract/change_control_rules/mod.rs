@@ -225,14 +225,14 @@ mod json_convertible_tests {
         let original = fixture();
         let json = original.to_json().expect("to_json");
         // `AuthorizedActionTakers` uses a custom internally-tagged serde impl
-        // (`{"type": ...}` maps — see authorized_action_takers.rs); unit and
+        // (`{"$type": ...}` maps — see authorized_action_takers.rs); unit and
         // payload variants share the same flat map shape.
         assert_eq!(
             json,
             json!({
                 "$formatVersion": "0",
-                "authorizedToMakeChange": {"type": "contractOwner"},
-                "adminActionTakers": {"type": "mainGroup"},
+                "authorizedToMakeChange": {"$type": "contractOwner"},
+                "adminActionTakers": {"$type": "mainGroup"},
                 "changingAuthorizedActionTakersToNoOneAllowed": true,
                 "changingAdminActionTakersToNoOneAllowed": false,
                 "selfChangingAdminActionTakersAllowed": true,
@@ -248,14 +248,14 @@ mod json_convertible_tests {
         let original = fixture();
         let value = original.to_object().expect("to_object");
         // No sized integers in this fixture — only Text + Bool. The custom
-        // `AuthorizedActionTakers` impl emits `{"type": ...}` maps on both
+        // `AuthorizedActionTakers` impl emits `{"$type": ...}` maps on both
         // wire formats.
         assert_eq!(
             value,
             platform_value!({
                 "$formatVersion": "0",
-                "authorizedToMakeChange": {"type": "contractOwner"},
-                "adminActionTakers": {"type": "mainGroup"},
+                "authorizedToMakeChange": {"$type": "contractOwner"},
+                "adminActionTakers": {"$type": "mainGroup"},
                 "changingAuthorizedActionTakersToNoOneAllowed": true,
                 "changingAdminActionTakersToNoOneAllowed": false,
                 "selfChangingAdminActionTakersAllowed": true,

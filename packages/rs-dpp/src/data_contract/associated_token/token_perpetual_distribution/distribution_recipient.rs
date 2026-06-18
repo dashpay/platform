@@ -16,7 +16,7 @@ use std::fmt;
 // can't produce the desired flat wire shape because the `Identity` variant
 // wraps `Identifier` (serializes as a base58 string, not a map), so internal
 // tagging doesn't apply. The custom impl emits a flat
-// `{"type": ..., "identity": ...}` shape with a synthesized field name (same
+// `{"$type": ..., "identity": ...}` shape with a synthesized field name (same
 // pattern as `ResourceVoteChoice` / `AuthorizedActionTakers`). Bincode
 // `Encode` / `Decode` derives are untouched (consensus binary format is
 // unaffected).
@@ -37,18 +37,18 @@ impl Serialize for TokenDistributionRecipient {
         match self {
             TokenDistributionRecipient::ContractOwner => {
                 let mut m = serializer.serialize_map(Some(1))?;
-                m.serialize_entry("type", "contractOwner")?;
+                m.serialize_entry("$type", "contractOwner")?;
                 m.end()
             }
             TokenDistributionRecipient::Identity(id) => {
                 let mut m = serializer.serialize_map(Some(2))?;
-                m.serialize_entry("type", "identity")?;
+                m.serialize_entry("$type", "identity")?;
                 m.serialize_entry("identity", id)?;
                 m.end()
             }
             TokenDistributionRecipient::EvonodesByParticipation => {
                 let mut m = serializer.serialize_map(Some(1))?;
-                m.serialize_entry("type", "evonodesByParticipation")?;
+                m.serialize_entry("$type", "evonodesByParticipation")?;
                 m.end()
             }
         }
@@ -81,9 +81,9 @@ impl<'de> Deserialize<'de> for TokenDistributionRecipient {
 
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
-                        "type" => {
+                        "$type" => {
                             if variant.is_some() {
-                                return Err(de::Error::duplicate_field("type"));
+                                return Err(de::Error::duplicate_field("$type"));
                             }
                             variant = Some(map.next_value()?);
                         }
@@ -99,7 +99,7 @@ impl<'de> Deserialize<'de> for TokenDistributionRecipient {
                     }
                 }
 
-                let variant = variant.ok_or_else(|| de::Error::missing_field("type"))?;
+                let variant = variant.ok_or_else(|| de::Error::missing_field("$type"))?;
                 match variant.as_str() {
                     "contractOwner" => Ok(TokenDistributionRecipient::ContractOwner),
                     "identity" => {
@@ -193,7 +193,7 @@ pub type TokenDistributionWeight = u64;
 #[platform_serialize(unversioned)]
 // Custom `Serialize` / `Deserialize` below — every variant wraps `Identifier`
 // (a base58 string in JSON, not a map), so serde's internal tagging can't
-// auto-derive. The custom impl emits a flat `{"type": ..., "identity": ...}`
+// auto-derive. The custom impl emits a flat `{"$type": ..., "identity": ...}`
 // shape (same pattern as `TokenDistributionRecipient` above). Bincode
 // `Encode` / `Decode` derives are untouched.
 pub enum TokenDistributionResolvedRecipient {
@@ -216,7 +216,7 @@ impl Serialize for TokenDistributionResolvedRecipient {
             TokenDistributionResolvedRecipient::Evonode(id) => ("evonode", id),
         };
         let mut m = serializer.serialize_map(Some(2))?;
-        m.serialize_entry("type", variant)?;
+        m.serialize_entry("$type", variant)?;
         m.serialize_entry("identity", id)?;
         m.end()
     }
@@ -245,9 +245,9 @@ impl<'de> Deserialize<'de> for TokenDistributionResolvedRecipient {
 
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
-                        "type" => {
+                        "$type" => {
                             if variant.is_some() {
-                                return Err(de::Error::duplicate_field("type"));
+                                return Err(de::Error::duplicate_field("$type"));
                             }
                             variant = Some(map.next_value()?);
                         }
@@ -263,7 +263,7 @@ impl<'de> Deserialize<'de> for TokenDistributionResolvedRecipient {
                     }
                 }
 
-                let variant = variant.ok_or_else(|| de::Error::missing_field("type"))?;
+                let variant = variant.ok_or_else(|| de::Error::missing_field("$type"))?;
                 let id = identity.ok_or_else(|| de::Error::missing_field("identity"))?;
                 match variant.as_str() {
                     "contractOwnerIdentity" => Ok(
@@ -688,15 +688,15 @@ mod json_convertible_tests {
         let cases = vec![
             (
                 TokenDistributionRecipient::ContractOwner,
-                json!({"type": "contractOwner"}),
+                json!({"$type": "contractOwner"}),
             ),
             (
                 TokenDistributionRecipient::Identity(id()),
-                json!({"type": "identity", "identity": ID_B58}),
+                json!({"$type": "identity", "identity": ID_B58}),
             ),
             (
                 TokenDistributionRecipient::EvonodesByParticipation,
-                json!({"type": "evonodesByParticipation"}),
+                json!({"$type": "evonodesByParticipation"}),
             ),
         ];
         for (original, expected) in cases {
@@ -713,13 +713,13 @@ mod json_convertible_tests {
         let cases = vec![
             (
                 TokenDistributionRecipient::ContractOwner,
-                platform_value!({"type": "contractOwner"}),
+                platform_value!({"$type": "contractOwner"}),
             ),
             (
                 TokenDistributionRecipient::Identity(id()),
                 Value::Map(vec![
                     (
-                        Value::Text("type".to_string()),
+                        Value::Text("$type".to_string()),
                         Value::Text("identity".to_string()),
                     ),
                     (
@@ -730,7 +730,7 @@ mod json_convertible_tests {
             ),
             (
                 TokenDistributionRecipient::EvonodesByParticipation,
-                platform_value!({"type": "evonodesByParticipation"}),
+                platform_value!({"$type": "evonodesByParticipation"}),
             ),
         ];
         for (original, expected) in cases {
@@ -746,15 +746,15 @@ mod json_convertible_tests {
         let cases = vec![
             (
                 TokenDistributionResolvedRecipient::ContractOwnerIdentity(id()),
-                json!({"type": "contractOwnerIdentity", "identity": ID_B58}),
+                json!({"$type": "contractOwnerIdentity", "identity": ID_B58}),
             ),
             (
                 TokenDistributionResolvedRecipient::Identity(id()),
-                json!({"type": "identity", "identity": ID_B58}),
+                json!({"$type": "identity", "identity": ID_B58}),
             ),
             (
                 TokenDistributionResolvedRecipient::Evonode(id()),
-                json!({"type": "evonode", "identity": ID_B58}),
+                json!({"$type": "evonode", "identity": ID_B58}),
             ),
         ];
         for (original, expected) in cases {
@@ -783,7 +783,7 @@ mod json_convertible_tests {
             let value = original.to_object().expect("to_object");
             let expected = Value::Map(vec![
                 (
-                    Value::Text("type".to_string()),
+                    Value::Text("$type".to_string()),
                     Value::Text(expected_tag.to_string()),
                 ),
                 (

@@ -64,7 +64,7 @@ pub type FrozenIdentifier = Identifier;
 // with all-tuple variants. Internal tagging requires struct variants or
 // newtype-of-named-struct, which doesn't apply to tuple shapes. The custom
 // impl maps positional tuple fields to named JSON keys per variant, emits
-// internal `tag = "type"` (no `data` wrapper, plain `type` per the rule
+// internal `tag = "$type"` (no `data` wrapper, plain `type` per the rule
 // because no `$`-fields exist at this level), and uses the `json_safe_u64`
 // / `json_safe_option_encrypted_note` helpers for u64 + encrypted-note
 // fields. Bincode `Encode` / `Decode` derives above are untouched —
@@ -191,7 +191,7 @@ impl serde::Serialize for TokenEvent {
         match self {
             TokenEvent::Mint(amount, recipient, note) => {
                 let mut m = serializer.serialize_map(Some(4))?;
-                m.serialize_entry("type", "mint")?;
+                m.serialize_entry("$type", "mint")?;
                 m.serialize_entry("amount", &SafeU64(amount))?;
                 m.serialize_entry("recipient", recipient)?;
                 m.serialize_entry("publicNote", note)?;
@@ -199,7 +199,7 @@ impl serde::Serialize for TokenEvent {
             }
             TokenEvent::Burn(amount, from, note) => {
                 let mut m = serializer.serialize_map(Some(4))?;
-                m.serialize_entry("type", "burn")?;
+                m.serialize_entry("$type", "burn")?;
                 m.serialize_entry("amount", &SafeU64(amount))?;
                 m.serialize_entry("burnFromIdentifier", from)?;
                 m.serialize_entry("publicNote", note)?;
@@ -207,21 +207,21 @@ impl serde::Serialize for TokenEvent {
             }
             TokenEvent::Freeze(frozen, note) => {
                 let mut m = serializer.serialize_map(Some(3))?;
-                m.serialize_entry("type", "freeze")?;
+                m.serialize_entry("$type", "freeze")?;
                 m.serialize_entry("frozenIdentifier", frozen)?;
                 m.serialize_entry("publicNote", note)?;
                 m.end()
             }
             TokenEvent::Unfreeze(frozen, note) => {
                 let mut m = serializer.serialize_map(Some(3))?;
-                m.serialize_entry("type", "unfreeze")?;
+                m.serialize_entry("$type", "unfreeze")?;
                 m.serialize_entry("frozenIdentifier", frozen)?;
                 m.serialize_entry("publicNote", note)?;
                 m.end()
             }
             TokenEvent::DestroyFrozenFunds(frozen, amount, note) => {
                 let mut m = serializer.serialize_map(Some(4))?;
-                m.serialize_entry("type", "destroyFrozenFunds")?;
+                m.serialize_entry("$type", "destroyFrozenFunds")?;
                 m.serialize_entry("frozenIdentifier", frozen)?;
                 m.serialize_entry("amount", &SafeU64(amount))?;
                 m.serialize_entry("publicNote", note)?;
@@ -229,7 +229,7 @@ impl serde::Serialize for TokenEvent {
             }
             TokenEvent::Transfer(recipient, note, shared, private, amount) => {
                 let mut m = serializer.serialize_map(Some(6))?;
-                m.serialize_entry("type", "transfer")?;
+                m.serialize_entry("$type", "transfer")?;
                 m.serialize_entry("recipient", recipient)?;
                 m.serialize_entry("publicNote", note)?;
                 m.serialize_entry("sharedEncryptedNote", &SafeOptEncNote(shared))?;
@@ -239,7 +239,7 @@ impl serde::Serialize for TokenEvent {
             }
             TokenEvent::Claim(distribution_type, amount, note) => {
                 let mut m = serializer.serialize_map(Some(4))?;
-                m.serialize_entry("type", "claim")?;
+                m.serialize_entry("$type", "claim")?;
                 m.serialize_entry("distributionType", distribution_type)?;
                 m.serialize_entry("amount", &SafeU64(amount))?;
                 m.serialize_entry("publicNote", note)?;
@@ -247,28 +247,28 @@ impl serde::Serialize for TokenEvent {
             }
             TokenEvent::EmergencyAction(action, note) => {
                 let mut m = serializer.serialize_map(Some(3))?;
-                m.serialize_entry("type", "emergencyAction")?;
+                m.serialize_entry("$type", "emergencyAction")?;
                 m.serialize_entry("action", action)?;
                 m.serialize_entry("publicNote", note)?;
                 m.end()
             }
             TokenEvent::ConfigUpdate(change, note) => {
                 let mut m = serializer.serialize_map(Some(3))?;
-                m.serialize_entry("type", "configUpdate")?;
+                m.serialize_entry("$type", "configUpdate")?;
                 m.serialize_entry("configurationChange", change)?;
                 m.serialize_entry("publicNote", note)?;
                 m.end()
             }
             TokenEvent::ChangePriceForDirectPurchase(schedule, note) => {
                 let mut m = serializer.serialize_map(Some(3))?;
-                m.serialize_entry("type", "changePriceForDirectPurchase")?;
+                m.serialize_entry("$type", "changePriceForDirectPurchase")?;
                 m.serialize_entry("pricingSchedule", schedule)?;
                 m.serialize_entry("publicNote", note)?;
                 m.end()
             }
             TokenEvent::DirectPurchase(amount, credits) => {
                 let mut m = serializer.serialize_map(Some(3))?;
-                m.serialize_entry("type", "directPurchase")?;
+                m.serialize_entry("$type", "directPurchase")?;
                 m.serialize_entry("amount", &SafeU64(amount))?;
                 m.serialize_entry("credits", &SafeU64(credits))?;
                 m.end()
@@ -326,7 +326,7 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
 
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
-                        "type" => ty = Some(map.next_value()?),
+                        "$type" => ty = Some(map.next_value()?),
                         "amount" => amount = Some(map.next_value::<U64Safe>()?.0),
                         "credits" => credits = Some(map.next_value::<U64Safe>()?.0),
                         "recipient" => recipient = Some(map.next_value()?),
@@ -349,7 +349,7 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                     }
                 }
 
-                let ty = ty.ok_or_else(|| A::Error::missing_field("type"))?;
+                let ty = ty.ok_or_else(|| A::Error::missing_field("$type"))?;
                 match ty.as_str() {
                     "mint" => Ok(TokenEvent::Mint(
                         amount.ok_or_else(|| A::Error::missing_field("amount"))?,
@@ -463,7 +463,7 @@ pub(crate) mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "type": "mint",
+                "$type": "mint",
                 "amount": 5_000,
                 "recipient": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
                 "publicNote": "genesis mint",
@@ -481,7 +481,7 @@ pub(crate) mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "type": "freeze",
+                "$type": "freeze",
                 "frozenIdentifier": "D2ZcUbtpG5sKq7XLeB4YnpNnTGSptKCxTddoNeydzJQq",
                 "publicNote": null,
             })
@@ -498,7 +498,7 @@ pub(crate) mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "type": "directPurchase",
+                "$type": "directPurchase",
                 "amount": 100,
                 "credits": 5_000,
             })
@@ -516,7 +516,7 @@ pub(crate) mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "type": "mint",
+                "$type": "mint",
                 "amount": 5_000u64,
                 "recipient": Identifier::new([0xa1; 32]),
                 "publicNote": "genesis mint",
@@ -534,7 +534,7 @@ pub(crate) mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "type": "freeze",
+                "$type": "freeze",
                 "frozenIdentifier": Identifier::new([0xb2; 32]),
                 "publicNote": null,
             })
@@ -552,7 +552,7 @@ pub(crate) mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "type": "directPurchase",
+                "$type": "directPurchase",
                 "amount": 100u64,
                 "credits": 5_000u64,
             })

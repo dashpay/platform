@@ -115,7 +115,7 @@ pub(crate) mod json_convertible_tests {
 
     /// Wrapping helper — drives a single `TokenTransition::*` variant through
     /// JSON and Value round-trips and asserts the outer wire shape carries
-    /// `"type": <variantName>` with the inner-leaf fields merged in (internally
+    /// `"$type": <variantName>` with the inner-leaf fields merged in (internally
     /// tagged). Each leaf already has its own per-property assertion test.
     fn assert_umbrella_round_trip(transition: TokenTransition, expected_type: &str) {
         use crate::serialization::{JsonConvertible, ValueConvertible};

@@ -76,7 +76,7 @@ pub(crate) mod json_convertible_tests {
         let json = original.to_json().expect("to_json");
         // `TokenConfigurationChangeItem` is now internally tagged, so its unit
         // variant `TokenConfigurationNoChange` serializes to the object
-        // `{"type":"tokenConfigurationNoChange"}` (not a bare string).
+        // `{"$type":"tokenConfigurationNoChange"}` (not a bare string).
         // `updateTokenConfigurationItem` and `publicNote` come from the parent
         // struct's camelCase rule.
         assert_eq!(
@@ -89,7 +89,7 @@ pub(crate) mod json_convertible_tests {
                         "$dataContractId": Identifier::new([0xa1; 32]),
                         "$tokenId": Identifier::new([0xb2; 32]),
 
-                    "updateTokenConfigurationItem": { "type": "tokenConfigurationNoChange" },
+                    "updateTokenConfigurationItem": { "$type": "tokenConfigurationNoChange" },
                     "publicNote": "config update",
             })
         );
@@ -105,7 +105,7 @@ pub(crate) mod json_convertible_tests {
         // `13u64`/`2u16`: identity_contract_nonce is `u64`,
         // token_contract_position is `u16`. The unit-variant
         // `TokenConfigurationNoChange` is now an internally-tagged map
-        // `{"type":"tokenConfigurationNoChange"}`, matching its JSON form.
+        // `{"$type":"tokenConfigurationNoChange"}`, matching its JSON form.
         assert_eq!(
             value,
             platform_value!({
@@ -116,7 +116,7 @@ pub(crate) mod json_convertible_tests {
                         "$dataContractId": Identifier::new([0xa1; 32]),
                         "$tokenId": Identifier::new([0xb2; 32]),
 
-                    "updateTokenConfigurationItem": { "type": "tokenConfigurationNoChange" },
+                    "updateTokenConfigurationItem": { "$type": "tokenConfigurationNoChange" },
                     "publicNote": "config update",
             })
         );

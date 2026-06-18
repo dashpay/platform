@@ -21,8 +21,8 @@ use serde::{Deserialize, Serialize};
     // adjacent-tag discriminator (and is consensus-binary-locked, can't
     // rename). `kind` is distinct, semantically reads naturally ("the kind
     // is tokenEvent"), and lets us drop the `data` wrapper. Wire shape:
-    //   {"kind": "tokenEvent", "type": "mint", "data": [...]}
-    serde(tag = "kind", rename_all = "camelCase")
+    //   {"$kind": "tokenEvent", "$type": "mint", "data": [...]}
+    serde(tag = "$kind", rename_all = "camelCase")
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
@@ -46,7 +46,7 @@ mod json_convertible_tests {
     use platform_value::platform_value;
     use serde_json::json;
 
-    // `GroupActionEvent` uses `tag = "kind"` (internal). Plain `kind`
+    // `GroupActionEvent` uses `tag = "$kind"` (internal). Plain `kind`
     // (no `$` prefix) because the wire level has no other `$`-prefixed
     // fields. Distinct from the inner `TokenEvent`'s `type` discriminator
     // — both keys coexist at the flattened top level without collision.
@@ -63,8 +63,8 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "kind": "tokenEvent",
-                "type": "mint",
+                "$kind": "tokenEvent",
+                "$type": "mint",
                 "amount": 5_000,
                 "recipient": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
                 "publicNote": "genesis mint",
@@ -84,8 +84,8 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "kind": "tokenEvent",
-                "type": "mint",
+                "$kind": "tokenEvent",
+                "$type": "mint",
                 "amount": 5_000u64,
                 "recipient": platform_value::Identifier::new([0xa1; 32]),
                 "publicNote": "genesis mint",
@@ -96,7 +96,7 @@ mod json_convertible_tests {
     }
 
     // The two tests below pin the deepest custom-serde composition in the
-    // crate: GroupActionEvent (`tag = "kind"`, derive — buffers inner content
+    // crate: GroupActionEvent (`tag = "$kind"`, derive — buffers inner content
     // through serde's ContentDeserializer) → TokenEvent (custom impl) →
     // externally-tagged TokenConfigurationChangeItem /
     // TokenDistributionTypeWithResolvedRecipient → the custom
@@ -139,12 +139,12 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "kind": "tokenEvent",
-                "type": "configUpdate",
+                "$kind": "tokenEvent",
+                "$type": "configUpdate",
                 "configurationChange": {
-                    "type": "conventionsControlGroup",
+                    "$type": "conventionsControlGroup",
                     "value": {
-                        "type": "identity",
+                        "$type": "identity",
                         "identity": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
                     },
                 },
@@ -163,12 +163,12 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "kind": "tokenEvent",
-                "type": "configUpdate",
+                "$kind": "tokenEvent",
+                "$type": "configUpdate",
                 "configurationChange": {
-                    "type": "conventionsControlGroup",
+                    "$type": "conventionsControlGroup",
                     "value": {
-                        "type": "identity",
+                        "$type": "identity",
                         "identity": platform_value::Identifier::from([0x42u8; 32]),
                     },
                 },
@@ -187,12 +187,12 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "kind": "tokenEvent",
-                "type": "claim",
+                "$kind": "tokenEvent",
+                "$type": "claim",
                 "distributionType": {
-                    "type": "perpetual",
+                    "$type": "perpetual",
                     "value": {
-                        "type": "evonode",
+                        "$type": "evonode",
                         "identity": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
                     },
                 },
@@ -212,12 +212,12 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "kind": "tokenEvent",
-                "type": "claim",
+                "$kind": "tokenEvent",
+                "$type": "claim",
                 "distributionType": {
-                    "type": "perpetual",
+                    "$type": "perpetual",
                     "value": {
-                        "type": "evonode",
+                        "$type": "evonode",
                         "identity": platform_value::Identifier::from([0x42u8; 32]),
                     },
                 },

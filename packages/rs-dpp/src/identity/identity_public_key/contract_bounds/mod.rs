@@ -24,7 +24,7 @@ pub type ContractBoundsType = u8;
     Debug, PartialEq, Eq, Clone, Serialize, Deserialize, Encode, Decode, Ord, PartialOrd, Hash,
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "$type", rename_all = "camelCase")]
 pub enum ContractBounds {
     /// this key can only be used within a specific contract
     #[serde(rename = "singleContract")]

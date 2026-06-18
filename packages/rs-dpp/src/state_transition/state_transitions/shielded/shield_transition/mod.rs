@@ -149,10 +149,10 @@ pub(crate) mod json_convertible_tests {
                 "anchor": "d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3c=",
                 "proof": "iIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI",
                 "bindingSignature": "mZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmQ==",
-                "feeStrategy": [{"type": "deductFromInput", "index": 0}],
+                "feeStrategy": [{"$type": "deductFromInput", "index": 0}],
                 "userFeeIncrease": 5,
                 "inputWitnesses": [{
-                    "type": "p2pkh",
+                    "$type": "p2pkh",
                     "signature": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo=",
                 }],
             })
@@ -193,10 +193,10 @@ pub(crate) mod json_convertible_tests {
                 "anchor": Bytes32::new([0x77; 32]),
                 "proof": platform_value::Value::Bytes(vec![0x88; 192]),
                 "bindingSignature": platform_value::Value::Bytes(vec![0x99; 64]),
-                "feeStrategy": [{"type": "deductFromInput", "index": 0u16}],
+                "feeStrategy": [{"$type": "deductFromInput", "index": 0u16}],
                 "userFeeIncrease": 5u16,
                 "inputWitnesses": [{
-                    "type": "p2pkh",
+                    "$type": "p2pkh",
                     "signature": BinaryData::new(vec![0xaa; 65]),
                 }],
             })

@@ -70,7 +70,7 @@ pub enum ContestedIndexFieldMatch {
 // `Value` / bincode.
 #[cfg(feature = "serde-conversion")]
 #[derive(Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "$type", rename_all = "camelCase")]
 enum ContestedIndexFieldMatchRepr {
     Regex {
         value: LazyRegex,
@@ -2252,8 +2252,8 @@ mod json_convertible_tests {
 
     // --- ContestedIndexFieldMatch (internal `type` tag) ---
     // Wire shape: internally tagged with a uniform `value` payload.
-    //   `{"type":"regex","value":"<pattern>"}` -> Regex(LazyRegex)
-    //   `{"type":"positiveIntegerMatch","value":<u128>}` -> PositiveIntegerMatch
+    //   `{"$type":"regex","value":"<pattern>"}` -> Regex(LazyRegex)
+    //   `{"$type":"positiveIntegerMatch","value":<u128>}` -> PositiveIntegerMatch
     // LazyRegex serializes as the bare regex string via
     // `serde(from = "String", into = "String")`, carried in `value`.
 
@@ -2262,7 +2262,7 @@ mod json_convertible_tests {
         use crate::serialization::JsonConvertible;
         let original = ContestedIndexFieldMatch::Regex(LazyRegex::new("^dash$".to_string()));
         let json = original.to_json().expect("to_json");
-        assert_eq!(json, serde_json::json!({ "type": "regex", "value": "^dash$" }));
+        assert_eq!(json, serde_json::json!({ "$type": "regex", "value": "^dash$" }));
         let recovered = ContestedIndexFieldMatch::from_json(json).expect("from_json");
         match recovered {
             ContestedIndexFieldMatch::Regex(r) => assert_eq!(r.as_str(), "^dash$"),
@@ -2277,7 +2277,7 @@ mod json_convertible_tests {
         let json = original.to_json().expect("to_json");
         assert_eq!(
             json,
-            serde_json::json!({ "type": "positiveIntegerMatch", "value": 42 })
+            serde_json::json!({ "$type": "positiveIntegerMatch", "value": 42 })
         );
         let recovered = ContestedIndexFieldMatch::from_json(json).expect("from_json");
         match recovered {
@@ -2294,7 +2294,7 @@ mod json_convertible_tests {
         // LazyRegex serializes as a bare string in non-HR Value too.
         assert_eq!(
             value,
-            platform_value::platform_value!({ "type": "regex", "value": "[a-z]+" })
+            platform_value::platform_value!({ "$type": "regex", "value": "[a-z]+" })
         );
         let recovered = ContestedIndexFieldMatch::from_object(value).expect("from_object");
         match recovered {
@@ -2313,7 +2313,7 @@ mod json_convertible_tests {
         // in u64 stay numeric.
         assert_eq!(
             value,
-            platform_value::platform_value!({ "type": "positiveIntegerMatch", "value": "340282366920938463463374607431768211455" })
+            platform_value::platform_value!({ "$type": "positiveIntegerMatch", "value": "340282366920938463463374607431768211455" })
         );
         let recovered = ContestedIndexFieldMatch::from_object(value).expect("from_object");
         match recovered {

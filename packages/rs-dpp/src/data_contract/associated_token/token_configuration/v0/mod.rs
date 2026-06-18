@@ -352,7 +352,7 @@ mod json_convertible_tests_preset {
             json,
             json!({
                 "features": "WithAllAdvancedActions",
-                "actionTaker": {"type": "group", "position": 7},
+                "actionTaker": {"$type": "group", "position": 7},
             })
         );
         let recovered = TokenConfigurationPreset::from_json(json).expect("from_json");
@@ -367,7 +367,7 @@ mod json_convertible_tests_preset {
             value,
             platform_value!({
                 "features": "WithAllAdvancedActions",
-                "actionTaker": {"type": "group", "position": 7u16},
+                "actionTaker": {"$type": "group", "position": 7u16},
             })
         );
         let recovered = TokenConfigurationPreset::from_object(value).expect("from_object");

@@ -72,24 +72,24 @@ mod json_convertible_tests_resource_vote {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
-        // `VotePoll` uses internal tagging (`tag = "type"`), so its variant
+        // `VotePoll` uses internal tagging (`tag = "$type"`), so its variant
         // body fields are flattened next to the `type` discriminator.
         // `ResourceVoteChoice` uses a custom Serialize/Deserialize that
-        // emits `{"type": "towardsIdentity", "identity": <id>}` for the
+        // emits `{"$type": "towardsIdentity", "identity": <id>}` for the
         // newtype variant. Identifiers render as base58 strings in JSON.
         assert_eq!(
             json,
             json!({
                 "$formatVersion": "0",
                 "votePoll": {
-                    "type": "contestedDocumentResourceVotePoll",
+                    "$type": "contestedDocumentResourceVotePoll",
                     "contractId": "E3M3d7sy8ZKivUGxBexL9wxE7ebqzGWFqkdeFMedCJFS",
                     "documentTypeName": "preorder",
                     "indexName": "parentNameAndLabel",
                     "indexValues": ["dash"],
                 },
                 "resourceVoteChoice": {
-                    "type": "towardsIdentity",
+                    "$type": "towardsIdentity",
                     "identity": "CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t",
                 },
             })
@@ -112,14 +112,14 @@ mod json_convertible_tests_resource_vote {
             platform_value!({
                 "$formatVersion": "0",
                 "votePoll": {
-                    "type": "contestedDocumentResourceVotePoll",
+                    "$type": "contestedDocumentResourceVotePoll",
                     "contractId": contract_id,
                     "documentTypeName": "preorder",
                     "indexName": "parentNameAndLabel",
                     "indexValues": ["dash"],
                 },
                 "resourceVoteChoice": {
-                    "type": "towardsIdentity",
+                    "$type": "towardsIdentity",
                     "identity": voter_id,
                 },
             })

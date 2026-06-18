@@ -18,7 +18,7 @@ use std::fmt;
 // can't produce the desired flat wire shape because the `Identity` variant
 // wraps `Identifier` (serializes as a base58 string, not a map) and `Group`
 // wraps a bare `u16`, so internal tagging doesn't apply. The custom impl
-// emits a flat `{"type": ..., "identity"/"position": ...}` shape with
+// emits a flat `{"$type": ..., "identity"/"position": ...}` shape with
 // synthesized field names (same pattern as `ResourceVoteChoice`). Bincode
 // `Encode` / `Decode` derives are untouched (consensus binary format is
 // unaffected).
@@ -38,28 +38,28 @@ impl Serialize for AuthorizedActionTakers {
         match self {
             AuthorizedActionTakers::NoOne => {
                 let mut m = serializer.serialize_map(Some(1))?;
-                m.serialize_entry("type", "noOne")?;
+                m.serialize_entry("$type", "noOne")?;
                 m.end()
             }
             AuthorizedActionTakers::ContractOwner => {
                 let mut m = serializer.serialize_map(Some(1))?;
-                m.serialize_entry("type", "contractOwner")?;
+                m.serialize_entry("$type", "contractOwner")?;
                 m.end()
             }
             AuthorizedActionTakers::Identity(id) => {
                 let mut m = serializer.serialize_map(Some(2))?;
-                m.serialize_entry("type", "identity")?;
+                m.serialize_entry("$type", "identity")?;
                 m.serialize_entry("identity", id)?;
                 m.end()
             }
             AuthorizedActionTakers::MainGroup => {
                 let mut m = serializer.serialize_map(Some(1))?;
-                m.serialize_entry("type", "mainGroup")?;
+                m.serialize_entry("$type", "mainGroup")?;
                 m.end()
             }
             AuthorizedActionTakers::Group(position) => {
                 let mut m = serializer.serialize_map(Some(2))?;
-                m.serialize_entry("type", "group")?;
+                m.serialize_entry("$type", "group")?;
                 m.serialize_entry("position", position)?;
                 m.end()
             }
@@ -94,9 +94,9 @@ impl<'de> Deserialize<'de> for AuthorizedActionTakers {
 
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
-                        "type" => {
+                        "$type" => {
                             if variant.is_some() {
-                                return Err(de::Error::duplicate_field("type"));
+                                return Err(de::Error::duplicate_field("$type"));
                             }
                             variant = Some(map.next_value()?);
                         }
@@ -118,7 +118,7 @@ impl<'de> Deserialize<'de> for AuthorizedActionTakers {
                     }
                 }
 
-                let variant = variant.ok_or_else(|| de::Error::missing_field("type"))?;
+                let variant = variant.ok_or_else(|| de::Error::missing_field("$type"))?;
                 match variant.as_str() {
                     "noOne" => Ok(AuthorizedActionTakers::NoOne),
                     "contractOwner" => Ok(AuthorizedActionTakers::ContractOwner),
@@ -836,24 +836,24 @@ mod json_convertible_tests {
     fn json_round_trip_with_full_wire_shape_all_variants() {
         use crate::serialization::JsonConvertible;
         let cases = vec![
-            (AuthorizedActionTakers::NoOne, json!({"type": "noOne"})),
+            (AuthorizedActionTakers::NoOne, json!({"$type": "noOne"})),
             (
                 AuthorizedActionTakers::ContractOwner,
-                json!({"type": "contractOwner"}),
+                json!({"$type": "contractOwner"}),
             ),
             (
                 AuthorizedActionTakers::Identity(id()),
-                json!({"type": "identity", "identity": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf"}),
+                json!({"$type": "identity", "identity": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf"}),
             ),
             (
                 AuthorizedActionTakers::MainGroup,
-                json!({"type": "mainGroup"}),
+                json!({"$type": "mainGroup"}),
             ),
             // `position` is u16 (GroupContractPosition); JSON erases the size —
             // the value-path test locks the typed variant.
             (
                 AuthorizedActionTakers::Group(42),
-                json!({"type": "group", "position": 42}),
+                json!({"$type": "group", "position": 42}),
             ),
         ];
         for (original, expected) in cases {
@@ -870,23 +870,23 @@ mod json_convertible_tests {
         let cases = vec![
             (
                 AuthorizedActionTakers::NoOne,
-                platform_value!({"type": "noOne"}),
+                platform_value!({"$type": "noOne"}),
             ),
             (
                 AuthorizedActionTakers::ContractOwner,
-                platform_value!({"type": "contractOwner"}),
+                platform_value!({"$type": "contractOwner"}),
             ),
             (
                 AuthorizedActionTakers::Identity(id()),
-                platform_value!({"type": "identity", "identity": id()}),
+                platform_value!({"$type": "identity", "identity": id()}),
             ),
             (
                 AuthorizedActionTakers::MainGroup,
-                platform_value!({"type": "mainGroup"}),
+                platform_value!({"$type": "mainGroup"}),
             ),
             (
                 AuthorizedActionTakers::Group(42),
-                platform_value!({"type": "group", "position": 42u16}),
+                platform_value!({"$type": "group", "position": 42u16}),
             ),
         ];
         for (original, expected) in cases {

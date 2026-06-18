@@ -244,7 +244,7 @@ pub(crate) mod json_convertible_tests {
             .get("assetLockProof")
             .and_then(|v| v.as_object())
             .expect("assetLockProof is an object");
-        assert_eq!(proof.get("type"), Some(&serde_json::json!("instant")));
+        assert_eq!(proof.get("$type"), Some(&serde_json::json!("instant")));
         assert_eq!(proof.get("outputIndex"), Some(&serde_json::json!(0)));
         assert!(proof.get("instantLock").is_some_and(|v| v.is_string()));
         assert!(proof.get("transaction").is_some_and(|v| v.is_string()));
@@ -287,7 +287,7 @@ pub(crate) mod json_convertible_tests {
                 .map(|(_, v)| v)
         };
         assert_eq!(
-            pget("type"),
+            pget("$type"),
             Some(&platform_value::Value::Text("instant".to_string()))
         );
         assert_eq!(pget("outputIndex"), Some(&platform_value::Value::U32(0)));

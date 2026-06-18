@@ -73,7 +73,7 @@ pub(crate) mod json_convertible_tests {
 
     /// Wrapping helper — drives a single `DocumentTransition::*` variant through
     /// JSON and Value round-trips and asserts the outer wire shape carries
-    /// `"type": <variantName>` with the inner-leaf fields merged in (internally
+    /// `"$type": <variantName>` with the inner-leaf fields merged in (internally
     /// tagged). Each leaf already has its own per-property assertion test, so
     /// here we only verify the umbrella adds the discriminator without altering
     /// the rest of the shape.

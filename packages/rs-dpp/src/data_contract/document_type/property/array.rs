@@ -18,12 +18,12 @@ pub enum ArrayItemType {
 
 // Internal-`type` serde shape. Mixed unit + 2-tuple variants, so a
 // struct-variant Repr (serde can't auto-internal-tag tuple variants). Unit
-// variants -> `{"type":"integer"}`; the tuple variants get named size bounds
+// variants -> `{"$type":"integer"}`; the tuple variants get named size bounds
 // (`#[serde(default)]` so an omitted bound deserializes as `None`). Serde-only
 // type (no bincode); its on-wire form is exercised solely by these tests —
 // document-schema parsing goes through `TryFrom<&Value>`, not serde.
 #[derive(Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "$type", rename_all = "camelCase")]
 enum ArrayItemTypeRepr {
     Integer,
     Number,
@@ -717,10 +717,10 @@ mod json_convertible_tests {
         use crate::serialization::JsonConvertible;
         use serde_json::json;
         // `Integer` is a unit variant — internally tagged it serializes as
-        // `{"type":"integer"}` (camelCase variant name).
+        // `{"$type":"integer"}` (camelCase variant name).
         let original = ArrayItemType::Integer;
         let json = original.to_json().expect("to_json");
-        assert_eq!(json, json!({"type": "integer"}));
+        assert_eq!(json, json!({"$type": "integer"}));
         let recovered = ArrayItemType::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
@@ -731,7 +731,7 @@ mod json_convertible_tests {
         use serde_json::json;
         let original = ArrayItemType::Number;
         let json = original.to_json().expect("to_json");
-        assert_eq!(json, json!({"type": "number"}));
+        assert_eq!(json, json!({"$type": "number"}));
         let recovered = ArrayItemType::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
@@ -741,13 +741,13 @@ mod json_convertible_tests {
         use crate::serialization::JsonConvertible;
         use serde_json::json;
         // `String(Option<usize>, Option<usize>)` — tuple variant, internally
-        // tagged with named size bounds: `{"type":"string","minLength":min,
+        // tagged with named size bounds: `{"$type":"string","minLength":min,
         // "maxLength":max}`. JSON erases the `usize` size.
         let original = ArrayItemType::String(Some(3), Some(50));
         let json = original.to_json().expect("to_json");
         assert_eq!(
             json,
-            json!({"type": "string", "minLength": 3, "maxLength": 50})
+            json!({"$type": "string", "minLength": 3, "maxLength": 50})
         );
         let recovered = ArrayItemType::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
@@ -761,7 +761,7 @@ mod json_convertible_tests {
         let json = original.to_json().expect("to_json");
         assert_eq!(
             json,
-            json!({"type": "byteArray", "minSize": 0, "maxSize": 64})
+            json!({"$type": "byteArray", "minSize": 0, "maxSize": 64})
         );
         let recovered = ArrayItemType::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
@@ -773,7 +773,7 @@ mod json_convertible_tests {
         use serde_json::json;
         let original = ArrayItemType::Identifier;
         let json = original.to_json().expect("to_json");
-        assert_eq!(json, json!({"type": "identifier"}));
+        assert_eq!(json, json!({"$type": "identifier"}));
         let recovered = ArrayItemType::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
@@ -784,7 +784,7 @@ mod json_convertible_tests {
         use platform_value::platform_value;
         let original = ArrayItemType::Integer;
         let value = original.to_object().expect("to_object");
-        assert_eq!(value, platform_value!({"type": "integer"}));
+        assert_eq!(value, platform_value!({"$type": "integer"}));
         let recovered = ArrayItemType::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
@@ -795,7 +795,7 @@ mod json_convertible_tests {
         use platform_value::platform_value;
         let original = ArrayItemType::Number;
         let value = original.to_object().expect("to_object");
-        assert_eq!(value, platform_value!({"type": "number"}));
+        assert_eq!(value, platform_value!({"$type": "number"}));
         let recovered = ArrayItemType::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
@@ -809,7 +809,7 @@ mod json_convertible_tests {
         let value = original.to_object().expect("to_object");
         assert_eq!(
             value,
-            platform_value!({"type": "string", "minLength": 3u64, "maxLength": 50u64})
+            platform_value!({"$type": "string", "minLength": 3u64, "maxLength": 50u64})
         );
         let recovered = ArrayItemType::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
@@ -823,7 +823,7 @@ mod json_convertible_tests {
         let value = original.to_object().expect("to_object");
         assert_eq!(
             value,
-            platform_value!({"type": "byteArray", "minSize": 0u64, "maxSize": 64u64})
+            platform_value!({"$type": "byteArray", "minSize": 0u64, "maxSize": 64u64})
         );
         let recovered = ArrayItemType::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
@@ -835,7 +835,7 @@ mod json_convertible_tests {
         use platform_value::platform_value;
         let original = ArrayItemType::Identifier;
         let value = original.to_object().expect("to_object");
-        assert_eq!(value, platform_value!({"type": "identifier"}));
+        assert_eq!(value, platform_value!({"$type": "identifier"}));
         let recovered = ArrayItemType::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }

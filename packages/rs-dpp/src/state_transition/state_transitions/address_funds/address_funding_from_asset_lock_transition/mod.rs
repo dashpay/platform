@@ -161,7 +161,7 @@ pub(crate) mod json_convertible_tests {
             json!({
                 "$formatVersion": "0",
                 "assetLockProof": {
-                    "type": "chain",
+                    "$type": "chain",
                     "coreChainLockedHeight": 12345,
                     "outPoint": "0000000000000000000000000000000000000000000000000000000000000001:1",
                 },
@@ -183,13 +183,13 @@ pub(crate) mod json_convertible_tests {
                     },
                 ],
                 "feeStrategy": [
-                    {"type": "deductFromInput", "index": 0},
+                    {"$type": "deductFromInput", "index": 0},
                 ],
                 "userFeeIncrease": 11,
                 "signature": "1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NQ=",
                 "inputWitnesses": [
                     {
-                        "type": "p2pkh",
+                        "$type": "p2pkh",
                         "signature": "5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eU=",
                     },
                 ],
@@ -222,7 +222,7 @@ pub(crate) mod json_convertible_tests {
             platform_value!({
                 "$formatVersion": "0",
                 "assetLockProof": {
-                    "type": "chain",
+                    "$type": "chain",
                     "coreChainLockedHeight": 12345u32,
                     "outPoint": {
                         "txid": Value::Bytes32(txid_bytes),
@@ -247,13 +247,13 @@ pub(crate) mod json_convertible_tests {
                     },
                 ],
                 "feeStrategy": [
-                    {"type": "deductFromInput", "index": 0u16},
+                    {"$type": "deductFromInput", "index": 0u16},
                 ],
                 "userFeeIncrease": 11u16,
                 "signature": Value::Bytes(vec![0xd4; 65]),
                 "inputWitnesses": [
                     {
-                        "type": "p2pkh",
+                        "$type": "p2pkh",
                         "signature": Value::Bytes(vec![0xe5; 65]),
                     },
                 ],

@@ -26,7 +26,7 @@ use std::fmt;
 // can't produce the desired flat wire shape because the `TowardsIdentity`
 // variant wraps `Identifier` (a tuple struct that serializes as a base58
 // string, not a map), so internal tagging doesn't apply. The custom impl
-// emits a flat `{"type": ..., "identity": ...}` shape with a synthesized
+// emits a flat `{"$type": ..., "identity": ...}` shape with a synthesized
 // `identity` field name. Bincode `Encode` / `Decode` derives are untouched
 // (consensus binary format is unaffected).
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
@@ -44,18 +44,18 @@ impl Serialize for ResourceVoteChoice {
         match self {
             ResourceVoteChoice::TowardsIdentity(id) => {
                 let mut m = serializer.serialize_map(Some(2))?;
-                m.serialize_entry("type", "towardsIdentity")?;
+                m.serialize_entry("$type", "towardsIdentity")?;
                 m.serialize_entry("identity", id)?;
                 m.end()
             }
             ResourceVoteChoice::Abstain => {
                 let mut m = serializer.serialize_map(Some(1))?;
-                m.serialize_entry("type", "abstain")?;
+                m.serialize_entry("$type", "abstain")?;
                 m.end()
             }
             ResourceVoteChoice::Lock => {
                 let mut m = serializer.serialize_map(Some(1))?;
-                m.serialize_entry("type", "lock")?;
+                m.serialize_entry("$type", "lock")?;
                 m.end()
             }
         }
@@ -82,9 +82,9 @@ impl<'de> Deserialize<'de> for ResourceVoteChoice {
 
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
-                        "type" => {
+                        "$type" => {
                             if variant.is_some() {
-                                return Err(de::Error::duplicate_field("type"));
+                                return Err(de::Error::duplicate_field("$type"));
                             }
                             variant = Some(map.next_value()?);
                         }
@@ -100,7 +100,7 @@ impl<'de> Deserialize<'de> for ResourceVoteChoice {
                     }
                 }
 
-                let variant = variant.ok_or_else(|| de::Error::missing_field("type"))?;
+                let variant = variant.ok_or_else(|| de::Error::missing_field("$type"))?;
                 match variant.as_str() {
                     "towardsIdentity" => {
                         let id = identity.ok_or_else(|| de::Error::missing_field("identity"))?;

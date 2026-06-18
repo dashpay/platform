@@ -354,11 +354,11 @@ impl DocumentTypeV0 {
                         ArrayItemType::Integer => json!({"type": "integer"}),
                         ArrayItemType::Number => json!({"type": "number"}),
                         ArrayItemType::ByteArray(min, max) => {
-                            json!({"type": "array", "items": {"type": "byte"}, "minItems": min, "maxItems": max})
+                            json!({"type": "array", "items": {"$type": "byte"}, "minItems": min, "maxItems": max})
                         },
                         ArrayItemType::Identifier => json!({"type": "array"}),
-                        ArrayItemType::Boolean => json!({"type": "bool"}),
-                        ArrayItemType::Date => json!({"type": "date"}),
+                        ArrayItemType::Boolean => json!({"$type": "bool"}),
+                        ArrayItemType::Date => json!({"$type": "date"}),
                     };
 
                     json!({
