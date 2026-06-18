@@ -32,7 +32,8 @@ extension SDK {
     ///
     /// The canonical on-chain token id is derived from the token's
     /// `contractId` + `position` via `calculateTokenId` — `token.id`
-    /// is a SwiftData uniqueness key (`contractId || u16_be(position)`),
+    /// is the local `PersistentToken` SwiftData uniqueness key (a
+    /// `contractId`-plus-position composite, treated opaquely here),
     /// *not* the canonical id the balance query is keyed by.
     ///
     /// Callers pass plain values (not the `PersistentToken` model) so
@@ -43,8 +44,9 @@ extension SDK {
     ///   - contractId: The 32-byte data-contract id that owns the token.
     ///   - tokenPosition: The token's position within the contract.
     ///   - tokenRelationshipKey: The local `PersistentToken.id`
-    ///     uniqueness key (`contractId || u16_be(position)`), used only
-    ///     to relink the `token` relationship on upserted rows.
+    ///     uniqueness key (a `contractId`-plus-position composite,
+    ///     treated opaquely), used only to relink the `token`
+    ///     relationship on upserted rows.
     ///   - identityIds: 32-byte identity ids to refresh. Identities
     ///     not present locally still have their `(tokenId, identityId)`
     ///     row upserted, but the `identity` relationship is only linked
@@ -54,8 +56,17 @@ extension SDK {
     ///
     /// `@MainActor`-isolated because it writes the SwiftData
     /// `ModelContext`. The blocking network query is hopped off-main
-    /// via `Task.detached` so the `await` suspends the main actor
-    /// rather than freezing the UI; only the upsert/save runs on main.
+    /// via `Task.detached` calling the `nonisolated`
+    /// `getIdentityTokenBalancesOffMain` (the plain `@MainActor`
+    /// variant would hop back to main and run the blocking FFI on the
+    /// UI thread). The `await` suspends the main actor rather than
+    /// freezing the UI; only the upsert/save runs on main.
+    ///
+    /// Per-identity fetches are independent: one identity failing (e.g.
+    /// a recipient the node can't serve) does not discard the others.
+    /// Whatever succeeds is persisted; the refresh only rethrows when
+    /// *every* identity failed, so a partial success still updates the
+    /// rows it could.
     @MainActor
     public func refreshTokenBalances(
         contractId: Data,
@@ -75,31 +86,55 @@ extension SDK {
         )
 
         // One fetch per identity. We deliberately use the
-        // single-identity query (`getIdentityTokenBalances`) rather
-        // than the multi-identity one: it parses `NSNumber` balances
-        // correctly and matches the precedent in
-        // `TokenActionPermissionsView`. At most two identities are
-        // refreshed in practice (sender + local recipient).
+        // single-identity query rather than the multi-identity one: it
+        // parses `NSNumber` balances correctly and matches the
+        // precedent in `TokenActionPermissionsView`. At most two
+        // identities are refreshed in practice (sender + local
+        // recipient).
         //
-        // `getIdentityTokenBalances` blocks on a Rust runtime, so run
-        // it off the main actor. `SDK` is `@unchecked Sendable`; only
+        // The query blocks on a Rust runtime (`runtime.block_on`), so
+        // run it off the main actor. We call the `nonisolated`
+        // `getIdentityTokenBalancesOffMain`: the plain `@MainActor`
+        // variant would hop back onto main from inside `Task.detached`
+        // and block the UI thread. `SDK` is `@unchecked Sendable`; only
         // `Sendable` values (the SDK, strings) cross into the task.
         let sdk = self
-        let freshBalances: [Data: UInt64] = try await Task.detached(priority: .userInitiated) {
-            var result: [Data: UInt64] = [:]
-            for identityId in identityIds {
-                let identityBase58 = identityId.toBase58String()
-                let balances = try await sdk.getIdentityTokenBalances(
-                    identityId: identityBase58,
-                    tokenIds: [canonicalTokenId]
-                )
-                // The query omits tokens the identity has never held;
-                // default those to 0 so a sender that drained to empty
-                // still gets its row zeroed.
-                result[identityId] = balances[canonicalTokenId] ?? 0
-            }
-            return result
-        }.value
+        // The detached task rethrows the first per-identity error only
+        // when *every* identity failed; otherwise it returns whatever
+        // succeeded. Throwing from inside the task (rather than handing
+        // an `Error?` back across `.value`) also keeps the task's
+        // `Success` type `Sendable` under Swift 6 strict concurrency —
+        // `any Error` is not `Sendable`.
+        let freshBalances: [Data: UInt64] =
+            try await Task.detached(priority: .userInitiated) {
+                var result: [Data: UInt64] = [:]
+                var firstError: Error?
+                for identityId in identityIds {
+                    let identityBase58 = identityId.toBase58String()
+                    do {
+                        let balances = try await sdk.getIdentityTokenBalancesOffMain(
+                            identityId: identityBase58,
+                            tokenIds: [canonicalTokenId]
+                        )
+                        // The query omits tokens the identity has never
+                        // held; default those to 0 so a sender that
+                        // drained to empty still gets its row zeroed.
+                        result[identityId] = balances[canonicalTokenId] ?? 0
+                    } catch {
+                        // Don't let one identity's failure (e.g. a
+                        // recipient the node can't serve) discard the
+                        // others' fresh balances. Remember the first
+                        // error so we can rethrow if *none* succeed.
+                        if firstError == nil { firstError = error }
+                    }
+                }
+                // None succeeded → surface the first error so the
+                // caller's best-effort catch logs it.
+                if result.isEmpty, let firstError {
+                    throw firstError
+                }
+                return result
+            }.value
 
         try Self.persistTokenBalances(
             canonicalTokenId: canonicalTokenId,
@@ -126,7 +161,9 @@ extension SDK {
         let tokenDescriptor = FetchDescriptor<PersistentToken>(
             predicate: #Predicate { $0.id == tokenRelationshipKey }
         )
-        let tokenRow = try? context.fetch(tokenDescriptor).first
+        // `try ... .first` (not `try?`): a genuine SwiftData fetch
+        // failure must propagate, not masquerade as "token row absent".
+        let tokenRow = try context.fetch(tokenDescriptor).first
 
         for (identityId, balance) in freshBalances {
             let descriptor = FetchDescriptor<PersistentTokenBalance>(
@@ -135,8 +172,13 @@ extension SDK {
                 }
             )
 
+            // `try ... .first` (not `try?`): `PersistentTokenBalance`
+            // has no unique constraint on `(tokenId, identityId)`, so a
+            // swallowed fetch error would fall through to the insert
+            // branch and create a *duplicate* row. Let the error
+            // propagate to the view's best-effort catch instead.
             let row: PersistentTokenBalance
-            if let existing = try? context.fetch(descriptor).first {
+            if let existing = try context.fetch(descriptor).first {
                 row = existing
             } else {
                 row = PersistentTokenBalance(
@@ -160,7 +202,10 @@ extension SDK {
                 let identityDescriptor = FetchDescriptor<PersistentIdentity>(
                     predicate: #Predicate { $0.identityId == identityId }
                 )
-                if let parent = try? context.fetch(identityDescriptor).first {
+                // `try ... .first` (not `try?`): propagate real fetch
+                // errors; `.first` still yields nil for a legit miss
+                // (identity not present locally).
+                if let parent = try context.fetch(identityDescriptor).first {
                     row.identity = parent
                 }
             }

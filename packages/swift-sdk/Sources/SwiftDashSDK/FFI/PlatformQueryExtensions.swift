@@ -1363,6 +1363,72 @@ extension SDK {
         return balances
     }
 
+    /// Off-main variant of ``getIdentityTokenBalances(identityId:tokenIds:)``.
+    ///
+    /// This is `nonisolated` on purpose. The surrounding `extension SDK`
+    /// is `@MainActor`-isolated, so the standard query above (and the
+    /// `processJSONResult` helper it leans on) is MainActor-bound:
+    /// `await`ing it from a `Task.detached` hops back to the main actor
+    /// and runs the *blocking* `dash_sdk_token_get_identity_balances`
+    /// FFI — which spins a Rust runtime via `runtime.block_on` — on the
+    /// iOS main thread, freezing the UI. By declaring this `nonisolated`
+    /// and inlining the (otherwise MainActor-bound) JSON parsing, the
+    /// FFI call genuinely executes off-main when invoked from a detached
+    /// task.
+    ///
+    /// `SDK` is a `@unchecked Sendable` final class whose `handle` is a
+    /// plain stored pointer (not actor-isolated), so reading it and
+    /// calling the C ABI off-main mirrors the existing `nonisolated`
+    /// `calculateTokenId` precedent in this file. The FFI itself is
+    /// internally synchronized (it owns the runtime), so concurrent
+    /// off-main calls are safe.
+    ///
+    /// Marshalling and result shape are identical to the MainActor
+    /// variant: comma-joined token ids in, `NSNumber` balances parsed to
+    /// `UInt64`, tokens the identity never held omitted from the map.
+    public nonisolated func getIdentityTokenBalancesOffMain(
+        identityId: String,
+        tokenIds: [String]
+    ) async throws -> [String: UInt64] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+
+        let tokenIdsStr = tokenIds.joined(separator: ",")
+
+        let result = dash_sdk_token_get_identity_balances(handle, identityId, tokenIdsStr)
+
+        // Inline the JSON extraction (the shared `processJSONResult`
+        // helper is MainActor-isolated and would re-introduce the hop).
+        if let error = result.error {
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
+            dash_sdk_error_free(error)
+            throw sdkError
+        }
+
+        guard let dataPtr = result.data,
+              dataPtr != UnsafeMutableRawPointer(bitPattern: 0) else {
+            throw SDKError.notFound("No data returned")
+        }
+
+        let jsonString = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+        dash_sdk_string_free(dataPtr)
+
+        guard let data = jsonString.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw SDKError.serializationError("Failed to parse JSON data")
+        }
+
+        var balances: [String: UInt64] = [:]
+        for (tokenId, balance) in json {
+            if let balanceNum = balance as? NSNumber {
+                balances[tokenId] = balanceNum.uint64Value
+            }
+        }
+
+        return balances
+    }
+
     /// Get identities token balances
     public func getIdentitiesTokenBalances(identityIds: [String], tokenId: String) async throws -> [String: UInt64] {
         guard let handle = handle else {
