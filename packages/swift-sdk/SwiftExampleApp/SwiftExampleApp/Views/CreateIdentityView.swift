@@ -58,11 +58,16 @@ struct CreateIdentityView: View {
     /// offered when its `boundWalletId` matches the selected wallet.
     @EnvironmentObject var shieldedService: ShieldedService
 
-    /// Default number of Platform identity authentication keys to
-    /// register in this first-pass flow. First key is MASTER, the
-    /// rest are HIGH. Advanced override is intentionally not exposed
-    /// here yet.
-    private static let defaultKeyCount: UInt32 = 3
+    /// Default number of Platform identity keys to register in this
+    /// first-pass flow. The Rust-owned per-slot policy
+    /// (`dash_sdk_derive_and_persist_identity_keys`) maps these to:
+    /// key 0 AUTHENTICATION/MASTER, key 1 AUTHENTICATION/CRITICAL,
+    /// key 2 AUTHENTICATION/HIGH, key 3 TRANSFER/CRITICAL. The
+    /// TRANSFER/CRITICAL key is required to sign IdentityCreditTransfer
+    /// (ID-04) and IdentityCreditWithdrawal (ID-10) — without it those
+    /// broadcasts are rejected on-chain with "no transfer public key".
+    /// Advanced override is intentionally not exposed here yet.
+    private static let defaultKeyCount: UInt32 = 4
 
     /// Number of extra keys added when `addDashPayKeys` is on
     /// (encryption + decryption).
@@ -124,8 +129,8 @@ struct CreateIdentityView: View {
     /// in `rs-platform-version`:
     ///   identity_create_base_cost (2_000_000 credits)
     ///   + asset_lock_base (200_000 duffs * 1000 credits/duff = 200_000_000)
-    ///   + identity_key_in_creation_cost (6_500_000) * defaultKeyCount (3)
-    ///   = 221_500_000 credits / 1000 = 221_500 duffs (0.002215 DASH).
+    ///   + identity_key_in_creation_cost (6_500_000) * defaultKeyCount (4)
+    ///   = 228_000_000 credits / 1000 = 228_000 duffs (0.002280 DASH).
     /// The v0 floor was 200_000 duffs but with key_in_creation_cost
     /// dynamic at v1, the per-key surcharge has to be added. Submitting
     /// below this gets rejected by Platform with
@@ -133,7 +138,7 @@ struct CreateIdentityView: View {
     /// `minFundingDuffs(forKeyCount:)` for the active per-flow value
     /// when extra keys (e.g. the DashPay encryption/decryption pair)
     /// bump the per-key surcharge.
-    private static let minIdentityFundingDuffsForDefaultKeys: UInt64 = 221_500
+    private static let minIdentityFundingDuffsForDefaultKeys: UInt64 = 228_000
 
     /// Recompute the minimum-funding floor for `keyCount` total
     /// identity keys. Formula above; result is in duffs (credits ÷ 1000).
@@ -475,14 +480,18 @@ struct CreateIdentityView: View {
             Picker("Source Wallet", selection: $walletSelection) {
                 Text("Select…")
                     .tag(Optional<WalletSelection>.none)
+                    .accessibilityIdentifier("createIdentity.sourceWallet.none")
                 ForEach(wallets) { wallet in
                     Text(walletLabel(for: wallet))
                         .tag(Optional(WalletSelection.wallet(id: wallet.walletId)))
+                        .accessibilityIdentifier("createIdentity.sourceWallet.wallet.\(wallet.walletId.toHexString())")
                 }
                 Divider()
                 Text("Create without Wallet")
                     .tag(Optional(WalletSelection.walletless))
+                    .accessibilityIdentifier("createIdentity.sourceWallet.walletless")
             }
+            .accessibleFormPicker("createIdentity.sourceWalletPicker")
             .onChange(of: walletSelection) { _, newValue in
                 // Reset downstream selection whenever the wallet
                 // changes so a stale account / proof / denomination
@@ -602,9 +611,11 @@ struct CreateIdentityView: View {
             Picker("Funding Source", selection: $fundingSelection) {
                 Text("Select…")
                     .tag(Optional<FundingSelection>.none)
+                    .accessibilityIdentifier("createIdentity.fundingSource.none")
                 ForEach(options) { option in
                     Text("\(option.label) — \(option.balanceText)")
                         .tag(Optional(FundingSelection.account(id: option.persistentId)))
+                        .accessibilityIdentifier("createIdentity.fundingSource.account.\(option.accountType).\(option.accountIndex)")
                 }
                 if showShielded {
                     let shieldedText = Self.formatDash(
@@ -613,8 +624,10 @@ struct CreateIdentityView: View {
                     )
                     Text("Shielded Balance — \(shieldedText)")
                         .tag(Optional(FundingSelection.shieldedBalance))
+                        .accessibilityIdentifier("createIdentity.fundingSource.shielded")
                 }
             }
+            .accessibleFormPicker("createIdentity.fundingSourcePicker")
             .onChange(of: fundingSelection) { _, newValue in
                 // Pre-fill the amount with the full available balance
                 // of the selected Platform Payment account so the
@@ -628,19 +641,20 @@ struct CreateIdentityView: View {
         } header: {
             Text("Funding Source")
         } footer: {
-            Text(
-                "Any account on the selected wallet with a balance can fund "
-                + "the identity — Core or Platform Payment. Empty accounts "
-                + "are hidden. "
-                + (showShielded
-                    ? "Shielded Balance funds the identity directly from this "
-                      + "wallet's shielded (Orchard) pool by spending a fixed "
-                      + "denomination. "
-                    : "")
-                + "To resume a prior in-flight registration, "
-                + "use the Resumable Registrations section on the Identities tab."
-            )
+            Text(Self.fundingSourceFooterText(showShielded: showShielded))
         }
+    }
+
+    private static func fundingSourceFooterText(showShielded: Bool) -> String {
+        var text = "Any account on the selected wallet with a balance can fund "
+            + "the identity — Core or Platform Payment. Empty accounts are hidden. "
+        if showShielded {
+            text += "Shielded Balance funds the identity directly from this "
+                + "wallet's shielded (Orchard) pool by spending a fixed denomination. "
+        }
+        text += "To resume a prior in-flight registration, "
+            + "use the Resumable Registrations section on the Identities tab."
+        return text
     }
 
     /// Amount (in DASH) to fund the new identity with. Shown for
@@ -727,14 +741,17 @@ struct CreateIdentityView: View {
                 Picker("Denomination", selection: $selectedDenomination) {
                     Text("Select…")
                         .tag(Optional<UInt64>.none)
+                        .accessibilityIdentifier("createIdentity.denomination.none")
                     ForEach(affordable, id: \.self) { denom in
                         Text(Self.formatDash(
                             raw: denom,
                             divisor: Double(Self.creditsPerDash)
                         ))
                         .tag(Optional(denom))
+                        .accessibilityIdentifier("createIdentity.denomination.\(denom)")
                     }
                 }
+                .accessibleFormPicker("createIdentity.denominationPicker")
                 .disabled(isCreating)
             }
         } header: {
@@ -1963,6 +1980,8 @@ struct CreateIdentityView: View {
                 )
                 return FundingAccountOption(
                     persistentId: account.persistentModelID,
+                    accountType: account.accountType,
+                    accountIndex: account.accountIndex,
                     label: Self.fundingLabel(for: account),
                     balanceText: balanceText
                 )
@@ -2177,6 +2196,17 @@ private enum FundingSelection: Hashable {
 
 private struct FundingAccountOption: Identifiable {
     let persistentId: PersistentIdentifier
+    /// HD account type tag (e.g. 0 = BIP44 standard, 14 = Platform
+    /// Payment). Paired with `accountIndex` in the row's accessibility
+    /// identifier because the index alone is NOT unique across account
+    /// types — this picker lists both Core and Platform Payment
+    /// accounts, so a bare `#0` would collide (BIP44 #0 vs Platform
+    /// Payment #0).
+    let accountType: UInt32
+    /// HD account index, carried only so the accessibility identifier
+    /// for this row can be stable across launches (the
+    /// `PersistentIdentifier` opaque id is not).
+    let accountIndex: UInt32
     let label: String
     /// Human-readable balance suffix (`"0.01 DASH"`). Zero-balance
     /// accounts are filtered out upstream so this is always a

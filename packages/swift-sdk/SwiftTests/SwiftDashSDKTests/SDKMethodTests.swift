@@ -2,8 +2,6 @@ import DashSDKFFI
 import SwiftDashSDK
 import XCTest
 
-@testable import SwiftExampleApp
-
 final class SDKMethodTests: XCTestCase {
 
   func testSDKMethodsAvailability() {

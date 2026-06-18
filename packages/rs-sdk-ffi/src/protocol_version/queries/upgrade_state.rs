@@ -1,5 +1,5 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
 use dash_sdk::dpp::version::ProtocolVersionVoteCount;
 use dash_sdk::platform::FetchMany;
 use std::ffi::CString;
@@ -50,57 +50,56 @@ pub unsafe extern "C" fn dash_sdk_protocol_version_get_upgrade_state(
             data: std::ptr::null_mut(),
             error: std::ptr::null_mut(),
         },
+        // Preserve the typed `dash_sdk::Error` classification (network /
+        // timeout / etc.) instead of flattening everything to InternalError.
+        // A transient DAPI transport failure (e.g. an evonode serving an
+        // expired TLS certificate) is a NetworkError, not an internal bug, and
+        // the UI should label it as such rather than "Internal Error".
         Err(e) => DashSDKResult {
             data_type: DashSDKResultDataType::NoData,
             data: std::ptr::null_mut(),
-            error: Box::into_raw(Box::new(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                e,
-            ))),
+            error: Box::into_raw(Box::new(DashSDKError::from(e))),
         },
     }
 }
 
 fn get_protocol_version_upgrade_state(
     sdk_handle: *const SDKHandle,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, FFIError> {
     if sdk_handle.is_null() {
-        return Err("SDK handle is null".to_string());
+        return Err(FFIError::InvalidState("SDK handle is null".to_string()));
     }
 
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
+    let rt = crate::runtime::BigStackRuntime::new_isolated()
+        .map_err(|e| FFIError::InternalError(format!("Failed to create Tokio runtime: {}", e)))?;
 
     let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
     let sdk = wrapper.sdk.clone();
 
     rt.block_on(async move {
-        match ProtocolVersionVoteCount::fetch_many(&sdk, ()).await {
-            Ok(upgrades) => {
-                let upgrades: dash_sdk::query_types::ProtocolVersionUpgrades = upgrades;
-                if upgrades.is_empty() {
-                    return Ok(None);
-                }
+        // Propagate the `dash_sdk::Error` unchanged via `?` so the FFI error
+        // converter classifies it (NetworkError, Timeout, ...). Returning a
+        // pre-formatted String here would erase that classification.
+        let upgrades: dash_sdk::query_types::ProtocolVersionUpgrades =
+            ProtocolVersionVoteCount::fetch_many(&sdk, ()).await?;
 
-                let upgrades_json: Vec<String> = upgrades
-                    .iter()
-                    .filter_map(|(version, vote_count_opt)| {
-                        vote_count_opt.as_ref().map(|vote_count| {
-                            format!(
-                                r#"{{"version_number":{},"vote_count":{}}}"#,
-                                version, vote_count
-                            )
-                        })
-                    })
-                    .collect();
-
-                Ok(Some(format!("[{}]", upgrades_json.join(","))))
-            }
-            Err(e) => Err(format!(
-                "Failed to fetch protocol version upgrade state: {}",
-                e
-            )),
+        if upgrades.is_empty() {
+            return Ok(None);
         }
+
+        let upgrades_json: Vec<String> = upgrades
+            .iter()
+            .filter_map(|(version, vote_count_opt)| {
+                vote_count_opt.as_ref().map(|vote_count| {
+                    format!(
+                        r#"{{"version_number":{},"vote_count":{}}}"#,
+                        version, vote_count
+                    )
+                })
+            })
+            .collect();
+
+        Ok(Some(format!("[{}]", upgrades_json.join(","))))
     })
 }
 

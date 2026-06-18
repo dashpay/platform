@@ -100,6 +100,78 @@ pub struct ShieldedSyncedIndexFFI {
     pub last_synced_index: u64,
 }
 
+/// One derived shielded-activity entry for the host to persist.
+///
+/// Mirror of `platform_wallet::wallet::shielded::ShieldedActivityEntry`.
+/// The host writes one row keyed by `(wallet_id, account_index,
+/// entry_id)` — NOT `entry_id` alone: the same entry id (sha256 of the
+/// visible output cmxs) legitimately appears under two accounts of one
+/// wallet, e.g. an intra-wallet transfer producing a Sent row on the
+/// sending account and a Received row on the receiving account.
+/// Re-persisting the same tuple is an upsert that refines the row
+/// (Pending→Confirmed/Failed, or a scan-derived `ShieldedSpend`
+/// upgraded to a richer kind). All pointers are valid only for the
+/// callback window — the host must copy.
+///
+/// `Option<T>` fields are flattened to a value + a `has_*` flag (`u8`,
+/// 1 = present) rather than a sentinel, so `0`/empty is unambiguous.
+#[repr(C)]
+pub struct ShieldedActivityFFI {
+    /// 32-byte wallet identifier.
+    pub wallet_id: [u8; 32],
+    /// ZIP-32 account index.
+    pub account_index: u32,
+    /// Entry id (sha256 of sorted visible output cmxs). Unique only
+    /// within `(wallet_id, account_index)` — see the struct doc.
+    pub entry_id: [u8; 32],
+    /// Kind discriminant (see `ShieldedActivityKind::tag`):
+    /// 0 Shield, 1 ShieldFromAssetLock, 2 Received, 3 Sent, 4 Unshield,
+    /// 5 Withdrawal, 6 IdentityCreate, 7 ShieldedSpend.
+    pub kind_tag: u8,
+    /// Direction: 0 In, 1 Out, 2 Self.
+    pub direction: u8,
+    /// Status: 0 Pending, 1 Confirmed, 2 Failed.
+    pub status: u8,
+    /// Display amount in credits (principal; excludes self-change and
+    /// zero-value fillers).
+    pub amount: u64,
+    /// Exact fee in credits when `has_fee == 1`.
+    pub fee: u64,
+    /// `1` if `fee` is meaningful, `0` if the fee is unknown.
+    pub has_fee: u8,
+    /// Block height when `has_block_height == 1`.
+    pub block_height: u64,
+    /// `1` if `block_height` is meaningful (confirmed), `0` while pending.
+    pub has_block_height: u8,
+    /// Created-at time in ms since the Unix epoch (display-only;
+    /// `block_height` is the canonical sort key).
+    pub created_at_ms: u64,
+    /// Created identity id (only meaningful when `kind_tag == 6` /
+    /// IdentityCreate); all-zero and ignored otherwise.
+    pub identity_id: [u8; 32],
+    /// `1` when `identity_id` is meaningful (IdentityCreate), else `0`.
+    pub has_identity_id: u8,
+    /// Counterparty bytes pointer (43B Orchard / 21B PlatformAddress /
+    /// Core script) or null. Valid for the callback window only.
+    pub counterparty_ptr: *const u8,
+    /// Length of `counterparty_ptr` in bytes (0 when null).
+    pub counterparty_len: usize,
+    /// 36-byte memo pointer or null. Valid for the callback window only.
+    pub memo_ptr: *const u8,
+    /// Length of `memo_ptr` in bytes (0 when null).
+    pub memo_len: usize,
+    /// Pointer to the concatenated visible-output cmxs (`note_cmxs_count`
+    /// × 32 bytes). Valid for the callback window only.
+    pub note_cmxs_ptr: *const u8,
+    /// Number of 32-byte cmxs at `note_cmxs_ptr`.
+    pub note_cmxs_count: usize,
+    /// Pointer to the concatenated spent nullifiers (`spent_nullifiers_count`
+    /// × 32 bytes). Valid for the callback window only.
+    pub spent_nullifiers_ptr: *const u8,
+    /// Number of 32-byte nullifiers at `spent_nullifiers_ptr`.
+    pub spent_nullifiers_count: usize,
+}
+
 // ── Restore (load) ──────────────────────────────────────────────────────
 
 /// One persisted note as the host hands it back at boot. Mirrors
@@ -144,6 +216,37 @@ pub struct ShieldedSubwalletSyncStateFFI {
     pub wallet_id: [u8; 32],
     pub account_index: u32,
     pub last_synced_index: u64,
+}
+
+/// One persisted activity entry as the host hands it back at boot.
+/// Mirrors [`ShieldedActivityFFI`] but lives in a Swift-allocated array,
+/// so the buffer ownership / free contract differs (see the matching
+/// `on_load_shielded_activity_free_fn`). Field semantics are identical
+/// to [`ShieldedActivityFFI`].
+#[repr(C)]
+pub struct ShieldedActivityRestoreFFI {
+    pub wallet_id: [u8; 32],
+    pub account_index: u32,
+    pub entry_id: [u8; 32],
+    pub kind_tag: u8,
+    pub direction: u8,
+    pub status: u8,
+    pub amount: u64,
+    pub fee: u64,
+    pub has_fee: u8,
+    pub block_height: u64,
+    pub has_block_height: u8,
+    pub created_at_ms: u64,
+    pub identity_id: [u8; 32],
+    pub has_identity_id: u8,
+    pub counterparty_ptr: *const u8,
+    pub counterparty_len: usize,
+    pub memo_ptr: *const u8,
+    pub memo_len: usize,
+    pub note_cmxs_ptr: *const u8,
+    pub note_cmxs_count: usize,
+    pub spent_nullifiers_ptr: *const u8,
+    pub spent_nullifiers_count: usize,
 }
 
 // The `on_load_shielded_*_fn` callback types are inlined inside

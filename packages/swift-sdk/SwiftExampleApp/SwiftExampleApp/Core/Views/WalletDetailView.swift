@@ -178,6 +178,29 @@ struct WalletDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal)
+
+                // Shielded Activity row — the derived private-operation
+                // history (shields, sends, unshields, withdrawals,
+                // identity-creates). Reads `PersistentShieldedActivity`
+                // from SwiftData; same value-based push as Transactions.
+                NavigationLink(value: ShieldedActivityRoute(walletId: wallet.walletId)) {
+                    HStack {
+                        Label("Shielded Activity", systemImage: "lock.rectangle.stack")
+                            .font(.subheadline)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 12)
+                    .background(Color(UIColor.secondarySystemBackground))
+                    .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .accessibilityIdentifier("walletDetail.shieldedActivityLink")
             }
 
             Divider()

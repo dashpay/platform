@@ -2,6 +2,7 @@
 
 #![deny(missing_docs)]
 
+mod address_ban_info;
 mod address_list;
 mod connection_pool;
 mod dapi_client;
@@ -13,6 +14,7 @@ pub mod mock;
 mod request_settings;
 pub mod transport;
 
+pub use address_ban_info::AddressBanInfo;
 pub use address_list::Address;
 pub use address_list::AddressList;
 pub use address_list::AddressListError;

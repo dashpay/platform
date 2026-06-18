@@ -2475,6 +2475,202 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Update an existing data contract owned by `ownerIdentityId`
+    /// and broadcast the change to Platform.
+    ///
+    /// Companion to `createDataContract`. The wallet fetches the
+    /// live contract from Platform, bumps its version, and applies
+    /// the supplied schemas / config at the next version — the
+    /// caller does NOT track contract version state. Every JSON
+    /// input has the same shape as `createDataContract`.
+    ///
+    /// `contractId` is the id of the existing contract to update.
+    /// Returns the (unchanged) contract id of the updated contract.
+    ///
+    /// Lifetime contract: the `signer` instance MUST stay alive for
+    /// the duration of the `await` (Rust holds a `passUnretained`
+    /// ctx pointer to the underlying `KeychainSigner`). A
+    /// `_ = signer` keepalive at the call site is the canonical way
+    /// to pin it.
+    public func updateDataContract(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentSchemasJSON: String,
+        tokenSchemasJSON: String? = nil,
+        groupsJSON: String? = nil,
+        keywordsJSON: String? = nil,
+        description: String? = nil,
+        contractConfigJSON: String? = nil,
+        signer: KeychainSigner
+    ) async throws -> Identifier {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            // Pin every borrowed payload across the FFI call: the
+            // owner-id + contract-id bytes, the required documents
+            // string, and each optional JSON / description string.
+            // Rust dereferences the C-string pointers synchronously
+            // inside `block_on_worker`, so the `withCString` scopes
+            // here are sufficient — the pointers don't need to
+            // outlive the call.
+            _ = signer
+            var contractIdBytes = [UInt8](repeating: 0, count: 32)
+
+            let result = ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                    documentSchemasJSON.withCString { docsPtr in
+                        Self.withOptionalCString(tokenSchemasJSON) { tokensPtr in
+                            Self.withOptionalCString(groupsJSON) { groupsPtr in
+                                Self.withOptionalCString(keywordsJSON) { keywordsPtr in
+                                    Self.withOptionalCString(description) { descriptionPtr in
+                                        Self.withOptionalCString(contractConfigJSON) { configPtr in
+                                            contractIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                                platform_wallet_update_data_contract_with_signer(
+                                                    handle,
+                                                    ownerBp.baseAddress!,
+                                                    contractBp.baseAddress!,
+                                                    docsPtr,
+                                                    tokensPtr,
+                                                    groupsPtr,
+                                                    keywordsPtr,
+                                                    descriptionPtr,
+                                                    configPtr,
+                                                    signerHandle,
+                                                    outBp.baseAddress!
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            return Data(contractIdBytes)
+        }.value
+    }
+
+    /// Create + broadcast a new revision-1 document on `contractId`'s
+    /// `documentType`, owned by `ownerIdentityId`. Returns the 32-byte
+    /// document id and the confirmed document's canonical query-side
+    /// JSON once Platform confirms the transition.
+    ///
+    /// The returned JSON is DPP's canonical representation of the
+    /// confirmed document (system fields `$id`/`$ownerId`/timestamps/
+    /// `$revision` with identifiers as base58 strings, only populated
+    /// fields present) — what a DOC-01 query would return. Callers
+    /// persist this verbatim so the local cache matches the on-chain
+    /// document rather than the user's raw form input.
+    ///
+    /// Routes through `IdentityWallet::create_document_with_signer`
+    /// (via `platform_wallet_create_document_with_signer`), the
+    /// production document-create path. The Rust side fetches the
+    /// on-chain contract, builds the document from `propertiesJSON`,
+    /// selects an AUTHENTICATION + ECDSA key whose security level
+    /// satisfies the document type's requirement, broadcasts on the
+    /// platform-wallet 8 MB worker stack, and waits for confirmation.
+    /// This deliberately does NOT use the rs-sdk-ffi test-signer
+    /// builder path (`dash_sdk_document_create` /
+    /// `dash_sdk_document_put_to_platform_and_wait`): per
+    /// `swift-sdk/CLAUDE.md`, the state-transition flow lives in the
+    /// `platform-wallet` library and the signing key never crosses
+    /// into Swift logic.
+    ///
+    /// `propertiesJSON` is a JSON object keyed by property name.
+    /// Byte-array fields must be encoded as hex strings and identifier
+    /// fields as base58 strings (the Rust schema-driven sanitize step
+    /// converts them to native bytes / identifiers). Pass `"{}"` for a
+    /// document type with no required properties.
+    ///
+    /// Lifetime contract: the `signer` instance MUST stay alive for the
+    /// duration of the synchronous FFI call inside this async wrapper
+    /// (Rust holds a `passUnretained` ctx pointer to the underlying
+    /// `KeychainSigner`). The wrapper pins it with
+    /// `withExtendedLifetime(signer)` around the full marshalling chain —
+    /// a bare `_ = signer` is unreliable (the optimizer may elide it).
+    public func createDocument(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        propertiesJSON: String,
+        signer: KeychainSigner
+    ) async throws -> (Identifier, String) {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            // Pin every borrowed payload across the FFI call: the
+            // owner-id + contract-id bytes, the document-type name,
+            // and the properties JSON. Rust dereferences the
+            // C-string pointers synchronously inside
+            // `block_on_worker`, so the `withCString` scopes here are
+            // sufficient — the pointers don't need to outlive the
+            // call.
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+            // Receives an owned canonical-document JSON C string on
+            // success; freed with `platform_wallet_string_free` below.
+            var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
+
+            // Pin `signer` for the whole FFI call. A bare `_ = signer` is
+            // unreliable folklore — the optimizer may elide it in -O and
+            // release the signer before Rust dereferences `signerHandle`
+            // (especially in a detached task), causing a use-after-free.
+            // `withExtendedLifetime` guarantees it, matching the other
+            // `*_with_signer` wrappers in this file.
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            propertiesJSON.withCString { propsPtr in
+                                documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                    platform_wallet_create_document_with_signer(
+                                        handle,
+                                        ownerBp.baseAddress!,
+                                        contractBp.baseAddress!,
+                                        typePtr,
+                                        propsPtr,
+                                        signerHandle,
+                                        outBp.baseAddress!,
+                                        &documentJsonPtr
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            // Take ownership of the JSON and release the Rust allocation.
+            defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
+            // On a successful broadcast the Rust side always writes the
+            // canonical JSON; a null pointer here is an FFI/ABI contract
+            // violation. Fail loudly rather than persist an empty body as
+            // if it were the canonical document.
+            guard let jsonPtr = documentJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "create_document_with_signer returned no canonical document JSON"
+                )
+            }
+            let canonicalJSON = String(cString: jsonPtr)
+            return (Data(documentIdBytes), canonicalJSON)
+        }.value
+    }
+
     /// Run `body` with a NUL-terminated C string for `value`, or
     /// `nil` when `value` is nil. Mirrors the `withCString`
     /// pattern but terminates the chain when the optional is

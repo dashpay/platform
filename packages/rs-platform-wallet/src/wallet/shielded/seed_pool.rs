@@ -139,6 +139,7 @@ impl PlatformWallet {
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_seed_pool_notes<AS, F>(
         &self,
+        coordinator: &std::sync::Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
         wallet_id: &[u8; 32],
         account: u32,
         target_total_notes: u64,
@@ -276,6 +277,7 @@ impl PlatformWallet {
                 attempt += 1;
                 match self
                     .shielded_fund_from_asset_lock(
+                        coordinator,
                         funding,
                         vec![(recipient, None)],
                         asset_lock_signer,

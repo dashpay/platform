@@ -166,6 +166,9 @@ mod tests {
             Code::Aborted,
             Code::Internal,
             Code::Unavailable,
+            // Retryable on another node: an old build in a mixed-version network
+            // returns Unimplemented for methods newer nodes already serve.
+            Code::Unimplemented,
         ];
 
         for code in retryable_codes {
@@ -187,7 +190,6 @@ mod tests {
             Code::PermissionDenied,
             Code::FailedPrecondition,
             Code::OutOfRange,
-            Code::Unimplemented,
             Code::Unauthenticated,
         ];
 
