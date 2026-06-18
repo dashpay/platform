@@ -34,6 +34,12 @@ struct TransitionDetailView: View {
   @State private var selectedContractId: String = ""
   @State private var selectedDocumentType: String = ""
   @State private var documentFieldValues: [String: Any] = [:]
+  /// Guards the one-time form setup in `.onAppear`. Contract / document-type
+  /// selection now pushes a child list onto the navigation stack; popping it
+  /// re-fires this view's `.onAppear`, and re-running `clearForm()` there
+  /// would wipe the in-progress form (including the just-picked contract).
+  /// Run setup only on the first appearance of each builder instance.
+  @State private var didInitializeForm = false
 
   // Query for data contracts
   @Query private var dataContracts: [PersistentDataContract]
@@ -119,12 +125,18 @@ struct TransitionDetailView: View {
     .navigationTitle(transitionLabel)
     .navigationBarTitleDisplayMode(.inline)
     .onAppear {
+      // Initialize once per builder instance. Popping a pushed picker (the
+      // contract / document-type selection lists) re-fires `.onAppear`, and
+      // re-running clearForm() would wipe the in-progress form — including
+      // the contract the user just picked. A fresh builder (navigated to
+      // anew) is a new view instance with didInitializeForm == false, so it
+      // still resets correctly.
+      guard !didInitializeForm else { return }
+      didInitializeForm = true
+
       clearForm()
-      // Re-apply caller-supplied pre-fills after every reset.
-      // `clearForm` runs on each appear and wipes back to schema
-      // defaults; merging the pre-fills on top keeps Pasteboard /
-      // Quick-Token entries visible when the user navigates back to
-      // the form mid-flow.
+      // Merge any caller-supplied pre-fills (Pasteboard / Quick-Token flows)
+      // on top of the schema defaults clearForm() just set.
       for (k, v) in initialInputs {
         formInputs[k] = v
       }

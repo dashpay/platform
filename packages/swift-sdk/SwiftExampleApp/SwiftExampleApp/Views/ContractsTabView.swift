@@ -80,6 +80,14 @@ struct ContractsTabView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showError = false
+    /// Saved contract whose details sheet is presented. Driven by the
+    /// row tap and presented from this stable `NavigationStack`/`List`
+    /// level rather than from inside the per-row `DataContractRow`. A
+    /// `.sheet` owned by a `ForEach` row is torn down whenever the
+    /// `@Query` re-runs (sync writes invalidate it continuously),
+    /// which would collapse a deep drill-down (the document-create
+    /// flow) presented inside it. Hoisting it here keeps it stable.
+    @State private var selectedContract: PersistentDataContract?
 
     /// Active preview the user is inspecting. Setting this drives the
     /// sheet presentation; `nil` dismisses the sheet. The struct
@@ -173,6 +181,15 @@ struct ContractsTabView: View {
                 RegisterContractSourceView()
                     .environmentObject(platformState)
                     .environmentObject(transitionState)
+                    .environment(\.modelContext, modelContext)
+            }
+            .sheet(item: $selectedContract) { contract in
+                // Saved-contract details. Presented from this stable
+                // container so a deep drill-down inside it (document
+                // type -> New Document) isn't torn down when the
+                // `@Query` list re-renders.
+                DataContractDetailsView(contract: contract)
+                    .environmentObject(platformState)
                     .environment(\.modelContext, modelContext)
             }
             .sheet(item: $pendingPreview) { preview in
@@ -275,7 +292,9 @@ struct ContractsTabView: View {
         } else {
             Section("My Contracts") {
                 ForEach(dataContracts) { contract in
-                    DataContractRow(contract: contract)
+                    DataContractRow(contract: contract) {
+                        selectedContract = contract
+                    }
                 }
                 .onDelete(perform: deleteContracts)
             }
