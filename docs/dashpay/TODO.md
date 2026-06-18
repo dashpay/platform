@@ -107,14 +107,14 @@ track, and the multi-agent reviews. Prioritized; check off as done.
   > Keep **established-contact rotation** (re-keying a friendship) separate and
   > untouched — that's not suppression.
 
-- [ ] **Spec 1 — `CONTACTINFO_FORMAT_SPEC.md` (ACTIVE — DIP-15 varint).** Replace
-  the CBOR `privateData` codec with the DIP-15 Dash-message **varint** format
-  (`version` = major<<16|minor, varstr `aliasName`/`note`, `displayHidden` u8,
-  `acceptedAccounts` varint-count+u32[]). The contract validates the ciphertext by
-  **length only** (the schema's "array in cbor" description is advisory, NOT
-  enforced), so **no contract change** — and DIP-15 is the authoritative format for
-  cross-client interop. Free window (no client decodes contactInfo yet). Review →
-  implement. → `crypto/contact_info.rs`.
+- [x] **Spec 1 — contactInfo `privateData` CBOR → DIP-15 varint: DONE.** Rewrote
+  `crypto/contact_info.rs` to the DIP-15 Dash-message format (`version`
+  major<<16|minor u32 LE, varstr `aliasName`/`note`, `displayHidden` u8,
+  `acceptedAccounts` varInt-count+u32[]); tolerant decode (unknown **major** ⇒
+  discard, unknown **minor**/trailing ⇒ ignore), padded to the 48-byte ciphertext
+  floor. Verified against canonical `dip-0015.md` with a **byte-vector** test +
+  round-trip / forward-compat / major-reject / truncation (8 tests). Struct gains
+  `accepted_accounts`; dropped the now-dead `ciborium` dep.
 - [ ] **Spec 2 — Ignore (per-sender mute), synced via contactInfo** (subsumes the
   old BLOCK_SPEC + reject→on-chain). Cross-device ignore signal rides a DIP-15
   **`relationshipState`** field — a minor-version extension on the Spec-1 varint

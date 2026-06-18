@@ -1,6 +1,7 @@
 # contactInfo `privateData` — DIP-15 varint format (migrate off CBOR)
 
-Status: **ACTIVE** — DIP-15 varint is the chosen format; ready to implement.
+Status: **IMPLEMENTED** (2026-06-18) — DIP-15 varint codec in `crypto/contact_info.rs`,
+byte-vector + compat tests. (Spec 2 layers `relationshipState` on top as minor 1.)
 Owner: platform-wallet / platform-encryption
 Relates to: Spec 2 (Ignore, adds `relationshipState`), `BLOCK_SPEC.md`,
 `research/07-contactinfo-conventions.md`.

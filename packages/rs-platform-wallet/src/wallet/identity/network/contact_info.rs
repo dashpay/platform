@@ -319,6 +319,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             alias_name: alias,
             note,
             display_hidden,
+            // Multi-account acceptance isn't populated yet (P2); a metadata
+            // update carries an empty `acceptedAccounts`.
+            accepted_accounts: Vec::new(),
         };
 
         // 1. Local state first — works offline and feeds SwiftData.

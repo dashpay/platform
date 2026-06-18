@@ -1,30 +1,33 @@
-//! DashPay `contactInfo` self-encryption (DIP-15, M3 task 13).
+//! DashPay `contactInfo` self-encryption (DIP-15).
 //!
-//! `contactInfo` documents carry the owner's PRIVATE per-contact
-//! metadata (alias, note, hidden flag) — encrypted so only the owner
-//! can read them, unlike `contactRequest` payloads which are shared
+//! `contactInfo` documents carry the owner's PRIVATE per-contact metadata
+//! (alias, note, hidden flag, accepted accounts) — encrypted so only the
+//! owner can read them, unlike `contactRequest` payloads which are shared
 //! with the counterparty via ECDH.
 //!
-//! **No reference client ever implemented this document type**
-//! (research/07: DashSync-iOS, dashj and dash-shared-core all lack
-//! it), so the conventions here SET the de-facto wire format:
+//! **No reference client has implemented this document type yet**
+//! (research/07: DashSync-iOS, dashj and dash-shared-core all lack it), so we
+//! follow the DIP-15 spec exactly so a future client interops:
 //!
 //! - Key derivation (DIP-15): two hardened children of the identity's
 //!   registered ENCRYPTION key in the owner's HD tree:
 //!   `root / 65536' / index'` for `encToUserId`,
 //!   `root / 65537' / index'` for `privateData`, where `root` is the
-//!   identity-auth path of the key referenced by
-//!   `rootEncryptionKeyIndex` and `index` is
-//!   `derivationEncryptionKeyIndex`.
-//! - `encToUserId`: AES-256-ECB of the 32-byte contact id (two raw
-//!   blocks, no IV/padding — see `platform_encryption`'s rationale).
-//! - `privateData`: `IV(16) ‖ AES-256-CBC(CBOR array
-//!   [aliasName, note, displayHidden, padding?])`. The deployed
-//!   schema's description ("array in cbor") wins over DIP-15 prose
-//!   (varint stream with version/acceptedAccounts) — research/07 §C.
-//!   A 4th byte-string element pads tiny payloads up to the schema's
-//!   48-byte ciphertext floor; decoders read the first three elements
-//!   and ignore the rest, which is also the forward-compat seam.
+//!   identity-auth path of the key referenced by `rootEncryptionKeyIndex`
+//!   and `index` is `derivationEncryptionKeyIndex`.
+//! - `encToUserId`: AES-256-ECB of the 32-byte contact id (two raw blocks,
+//!   no IV/padding — see `platform_encryption`'s rationale).
+//! - `privateData`: `IV(16) ‖ AES-256-CBC(plaintext)`, where the plaintext is
+//!   the DIP-15 "Dash message data" (Bitcoin P2P) serialization:
+//!   `version (u32 LE)`, `aliasName (varstr)`, `note (varstr)`,
+//!   `displayHidden (u8)`, `acceptedAccounts (varInt count + u32 LE[])`.
+//!   `version = major << 16 | minor`: an unknown MAJOR ⇒ discard the whole
+//!   document; an unknown MINOR ⇒ parse the known fields and ignore trailing
+//!   bytes (the forward-compat seam). The contract validates `privateData` by
+//!   LENGTH only (48–2048 bytes; the schema's "array in cbor" description is
+//!   advisory, not enforced), so tiny payloads are padded with trailing zero
+//!   bytes to the 48-byte ciphertext floor — a reader dispatches on `version`
+//!   and ignores them. See `docs/dashpay/CONTACTINFO_FORMAT_SPEC.md`.
 
 use key_wallet::bip32::ChildNumber;
 use key_wallet::wallet::Wallet;
@@ -44,10 +47,19 @@ pub const ENC_TO_USER_ID_CHILD: u32 = 1 << 16;
 /// DIP-15 child index for the `privateData` encryption key (2^16 + 1).
 pub const PRIVATE_DATA_CHILD: u32 = (1 << 16) + 1;
 
-/// The deployed schema's `privateData` minimum length (bytes,
-/// IV included). Tiny CBOR payloads are padded up to this floor via
-/// the 4th array element.
+/// The deployed schema's `privateData` minimum length (bytes, IV included).
 const PRIVATE_DATA_MIN_LEN: usize = 48;
+
+/// Plaintext floor so `IV(16) ‖ AES-256-CBC/PKCS7(plaintext)` reaches the
+/// 48-byte ciphertext floor: a 17-byte plaintext pads to 32 (CBC) + 16 (IV).
+const MIN_PLAINTEXT_LEN: usize = PRIVATE_DATA_MIN_LEN - 16 - 15;
+
+/// DIP-15 `version` for the v0 field set: `major(0) << 16 | minor(0)`.
+const PRIVATE_DATA_VERSION_V0: u32 = 0;
+
+/// The major version this codec understands. A document with a different
+/// major version is discarded whole (DIP-15 §"Versioning of Private Data").
+const SUPPORTED_MAJOR: u32 = 0;
 
 /// The pair of AES-256 keys for one `contactInfo` document.
 pub struct ContactInfoKeys {
@@ -106,88 +118,167 @@ pub fn derive_contact_info_keys(
     })
 }
 
-/// Decrypted `contactInfo.privateData` payload.
+/// Decrypted `contactInfo.privateData` payload (DIP-15 v0 fields).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ContactInfoPrivateData {
     /// User-chosen nickname for the contact.
     pub alias_name: Option<String>,
     /// Free-form note.
     pub note: Option<String>,
-    /// Whether the contact is hidden from the contact list (also the
-    /// cross-device reject signal — G5 stage 2).
+    /// Whether the contact is hidden / ignored (DIP-15 `displayHidden` — the
+    /// hide flag, also the cross-device ignore signal).
     pub display_hidden: bool,
+    /// Accepted rotated account-references of an established contact (DIP-15
+    /// `acceptedAccounts`). Empty until multi-account is populated.
+    pub accepted_accounts: Vec<u32>,
 }
 
-/// Encode the `privateData` plaintext as the CBOR array
-/// `[aliasName, note, displayHidden, padding?]`.
-///
-/// The optional 4th element is a CBOR byte string sized so the
-/// AES-256-CBC ciphertext (IV included) reaches the schema's 48-byte
-/// floor; decoders ignore it.
-pub fn encode_private_data(data: &ContactInfoPrivateData) -> Vec<u8> {
-    use ciborium::Value;
+// --- DIP-15 "Dash message data" (Bitcoin P2P) (de)serialization helpers ---
 
-    let text_or_null = |s: &Option<String>| match s {
-        Some(v) => Value::Text(v.clone()),
-        None => Value::Null,
-    };
-
-    let mut elements = vec![
-        text_or_null(&data.alias_name),
-        text_or_null(&data.note),
-        Value::Bool(data.display_hidden),
-    ];
-
-    let serialize = |elements: &[Value]| -> Vec<u8> {
-        let mut out = Vec::new();
-        ciborium::into_writer(&Value::Array(elements.to_vec()), &mut out)
-            .expect("CBOR serialization to a Vec cannot fail");
-        out
-    };
-
-    let bare = serialize(&elements);
-    // IV(16) + PKCS7-padded CBC needs ≥ 17 plaintext bytes to produce
-    // a ≥ 32-byte ciphertext block region, i.e. a 48-byte blob.
-    let min_plaintext = PRIVATE_DATA_MIN_LEN - 16 - 15;
-    if bare.len() < min_plaintext {
-        elements.push(Value::Bytes(vec![0u8; min_plaintext - bare.len()]));
-        return serialize(&elements);
+/// Append a Bitcoin CompactSize var-int.
+fn write_varint(out: &mut Vec<u8>, n: u64) {
+    if n < 0xFD {
+        out.push(n as u8);
+    } else if n <= 0xFFFF {
+        out.push(0xFD);
+        out.extend_from_slice(&(n as u16).to_le_bytes());
+    } else if n <= 0xFFFF_FFFF {
+        out.push(0xFE);
+        out.extend_from_slice(&(n as u32).to_le_bytes());
+    } else {
+        out.push(0xFF);
+        out.extend_from_slice(&n.to_le_bytes());
     }
-    bare
 }
 
-/// Decode a `privateData` plaintext (inverse of
-/// [`encode_private_data`]; tolerant of extra trailing elements).
-pub fn decode_private_data(bytes: &[u8]) -> Result<ContactInfoPrivateData, PlatformWalletError> {
-    use ciborium::Value;
+/// Append a Bitcoin variable-length string (var-int length + UTF-8 bytes).
+fn write_varstr(out: &mut Vec<u8>, s: &str) {
+    write_varint(out, s.len() as u64);
+    out.extend_from_slice(s.as_bytes());
+}
 
-    let value: Value = ciborium::from_reader(bytes).map_err(|e| {
-        PlatformWalletError::InvalidIdentityData(format!(
-            "contactInfo privateData is not CBOR: {e}"
-        ))
-    })?;
-    let Value::Array(elements) = value else {
-        return Err(PlatformWalletError::InvalidIdentityData(
-            "contactInfo privateData is not a CBOR array".to_string(),
-        ));
-    };
-    if elements.len() < 3 {
+/// Bounds-checked little-endian reader over the decrypted plaintext.
+struct Reader<'a> {
+    buf: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> Reader<'a> {
+    fn new(buf: &'a [u8]) -> Self {
+        Self { buf, pos: 0 }
+    }
+
+    fn take(&mut self, n: usize) -> Result<&'a [u8], PlatformWalletError> {
+        let end = self.pos.checked_add(n).filter(|&e| e <= self.buf.len());
+        let Some(end) = end else {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "contactInfo privateData is truncated".to_string(),
+            ));
+        };
+        let slice = &self.buf[self.pos..end];
+        self.pos = end;
+        Ok(slice)
+    }
+
+    fn u8(&mut self) -> Result<u8, PlatformWalletError> {
+        Ok(self.take(1)?[0])
+    }
+
+    fn u32_le(&mut self) -> Result<u32, PlatformWalletError> {
+        let b = self.take(4)?;
+        Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    }
+
+    fn varint(&mut self) -> Result<u64, PlatformWalletError> {
+        match self.u8()? {
+            0xFF => {
+                let b = self.take(8)?;
+                Ok(u64::from_le_bytes(b.try_into().expect("8 bytes")))
+            }
+            0xFE => Ok(self.u32_le()? as u64),
+            0xFD => {
+                let b = self.take(2)?;
+                Ok(u16::from_le_bytes([b[0], b[1]]) as u64)
+            }
+            n => Ok(n as u64),
+        }
+    }
+
+    fn varstr(&mut self) -> Result<String, PlatformWalletError> {
+        let len = self.varint()? as usize;
+        let bytes = self.take(len)?;
+        String::from_utf8(bytes.to_vec()).map_err(|_| {
+            PlatformWalletError::InvalidIdentityData(
+                "contactInfo privateData string is not valid UTF-8".to_string(),
+            )
+        })
+    }
+}
+
+fn empty_to_none(s: String) -> Option<String> {
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+/// Encode the `privateData` plaintext in the DIP-15 var-int format.
+///
+/// Pads with trailing zero bytes up to [`MIN_PLAINTEXT_LEN`] so the
+/// AES-256-CBC ciphertext (IV included) reaches the schema's 48-byte floor.
+/// A DIP-15 reader dispatches on `version` and ignores bytes past the final
+/// v0 field, so the padding round-trips invisibly.
+pub fn encode_private_data(data: &ContactInfoPrivateData) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&PRIVATE_DATA_VERSION_V0.to_le_bytes());
+    write_varstr(&mut out, data.alias_name.as_deref().unwrap_or(""));
+    write_varstr(&mut out, data.note.as_deref().unwrap_or(""));
+    out.push(u8::from(data.display_hidden));
+    write_varint(&mut out, data.accepted_accounts.len() as u64);
+    for account in &data.accepted_accounts {
+        out.extend_from_slice(&account.to_le_bytes());
+    }
+    if out.len() < MIN_PLAINTEXT_LEN {
+        out.resize(MIN_PLAINTEXT_LEN, 0);
+    }
+    out
+}
+
+/// Decode a `privateData` plaintext (inverse of [`encode_private_data`]).
+///
+/// Tolerant per DIP-15 versioning: an unknown **major** version discards the
+/// whole document (`Err`); trailing bytes past the known v0 fields (padding,
+/// or a higher **minor** version's extra fields) are ignored.
+pub fn decode_private_data(bytes: &[u8]) -> Result<ContactInfoPrivateData, PlatformWalletError> {
+    let mut r = Reader::new(bytes);
+
+    let version = r.u32_le()?;
+    let major = version >> 16;
+    if major != SUPPORTED_MAJOR {
         return Err(PlatformWalletError::InvalidIdentityData(format!(
-            "contactInfo privateData array has {} elements (need ≥ 3)",
-            elements.len()
+            "contactInfo privateData major version {major} is incompatible — discarding"
         )));
     }
 
-    let text_or_none = |v: &Value| match v {
-        Value::Text(s) => Some(s.clone()),
-        _ => None,
-    };
+    let alias_name = empty_to_none(r.varstr()?);
+    let note = empty_to_none(r.varstr()?);
+    let display_hidden = r.u8()? != 0;
 
+    let count = r.varint()?;
+    // Bounded by the read: a bogus huge count errors out on the first missing
+    // u32 (the buffer is ≤ 2048 bytes), so no unbounded allocation.
+    let mut accepted_accounts = Vec::new();
+    for _ in 0..count {
+        accepted_accounts.push(r.u32_le()?);
+    }
+
+    // Ignore any trailing bytes (padding / higher-minor fields).
     Ok(ContactInfoPrivateData {
-        alias_name: text_or_none(&elements[0]),
-        note: text_or_none(&elements[1]),
-        display_hidden: matches!(elements[2], Value::Bool(true))
-            || matches!(&elements[2], Value::Integer(i) if *i == 1.into()),
+        alias_name,
+        note,
+        display_hidden,
+        accepted_accounts,
     })
 }
 
@@ -225,31 +316,117 @@ mod tests {
         );
     }
 
-    /// CBOR round-trip across present/absent fields, and the padded
-    /// minimal payload still decodes (the 4th element is ignored).
+    /// DIP-15 round-trip across present/absent strings and empty/non-empty
+    /// `acceptedAccounts`.
     #[test]
-    fn private_data_cbor_round_trips_and_pads_to_schema_floor() {
-        let full = ContactInfoPrivateData {
-            alias_name: Some("Alice".to_string()),
-            note: Some("met at devnet UAT".to_string()),
-            display_hidden: true,
-        };
-        let decoded = decode_private_data(&encode_private_data(&full)).expect("decode");
-        assert_eq!(decoded, full);
+    fn private_data_dip15_round_trips() {
+        for data in [
+            ContactInfoPrivateData {
+                alias_name: Some("Alice".to_string()),
+                note: Some("met at devnet UAT".to_string()),
+                display_hidden: true,
+                accepted_accounts: vec![1, 0xDEAD_BEEF, 42],
+            },
+            ContactInfoPrivateData::default(),
+            ContactInfoPrivateData {
+                alias_name: None,
+                note: Some("note only".to_string()),
+                display_hidden: false,
+                accepted_accounts: vec![],
+            },
+        ] {
+            let decoded = decode_private_data(&encode_private_data(&data)).expect("decode");
+            assert_eq!(decoded, data);
+        }
+    }
 
+    /// The exact DIP-15 wire bytes for a fixed input — pins the cross-client
+    /// format so a refactor can't silently change it.
+    #[test]
+    fn private_data_wire_format_byte_vector() {
+        let data = ContactInfoPrivateData {
+            alias_name: Some("AB".to_string()),
+            note: None,
+            display_hidden: true,
+            accepted_accounts: vec![1],
+        };
+        let encoded = encode_private_data(&data);
+        assert_eq!(
+            encoded,
+            vec![
+                0x00, 0x00, 0x00, 0x00, // version = 0
+                0x02, 0x41, 0x42, // aliasName: len 2, "AB"
+                0x00, // note: len 0
+                0x01, // displayHidden = 1
+                0x01, 0x01, 0x00, 0x00, 0x00, // acceptedAccounts: count 1, [1]
+                0x00, 0x00, 0x00, // padding to the 17-byte plaintext floor
+            ],
+            "DIP-15 privateData wire format changed"
+        );
+        assert_eq!(decode_private_data(&encoded).expect("decode"), data);
+    }
+
+    /// Tiny payloads pad to the plaintext floor so the ciphertext clears 48
+    /// bytes; the padding is ignored on decode.
+    #[test]
+    fn private_data_pads_to_plaintext_floor() {
         let empty = ContactInfoPrivateData::default();
         let encoded = encode_private_data(&empty);
         assert!(
-            encoded.len() >= 17,
-            "tiny payloads must be padded so IV + CBC ciphertext ≥ 48 bytes (got {} plaintext)",
+            encoded.len() >= MIN_PLAINTEXT_LEN,
+            "tiny payloads must be padded to ≥{MIN_PLAINTEXT_LEN} plaintext bytes (got {})",
             encoded.len()
         );
-        let decoded = decode_private_data(&encoded).expect("decode padded");
-        assert_eq!(decoded, empty, "padding element must be ignored");
+        assert_eq!(
+            decode_private_data(&encoded).expect("decode padded"),
+            empty,
+            "padding must be ignored"
+        );
     }
 
-    /// End-to-end: derive keys, encrypt both fields, decrypt both
-    /// fields — and the ciphertext blob respects the schema bounds.
+    /// Forward-compat: a v0 decoder reading bytes with extra trailing data
+    /// (a higher minor version's fields) parses the v0 fields and ignores
+    /// the rest — DIP-15's minor-version rule.
+    #[test]
+    fn decode_ignores_trailing_higher_minor_fields() {
+        let data = ContactInfoPrivateData {
+            alias_name: Some("X".to_string()),
+            note: None,
+            display_hidden: false,
+            accepted_accounts: vec![7],
+        };
+        let mut wire = encode_private_data(&data);
+        // Append junk standing in for a future minor field after the v0 fields.
+        wire.extend_from_slice(&[0xAB, 0xCD, 0xEF, 0x99, 0x01]);
+        assert_eq!(
+            decode_private_data(&wire).expect("decode"),
+            data,
+            "trailing higher-minor bytes must be ignored"
+        );
+    }
+
+    /// An unknown MAJOR version discards the whole document.
+    #[test]
+    fn decode_rejects_incompatible_major() {
+        let mut wire = encode_private_data(&ContactInfoPrivateData::default());
+        // Set major = 1 (version = 1 << 16) — incompatible.
+        wire[0..4].copy_from_slice(&(1u32 << 16).to_le_bytes());
+        assert!(
+            decode_private_data(&wire).is_err(),
+            "an unknown major version must be rejected, not partially parsed"
+        );
+    }
+
+    /// A truncated payload errors rather than panicking.
+    #[test]
+    fn decode_truncated_errors() {
+        assert!(decode_private_data(&[0x00, 0x00]).is_err());
+        // version ok, but aliasName claims 5 bytes that aren't there.
+        assert!(decode_private_data(&[0x00, 0x00, 0x00, 0x00, 0x05, 0x41]).is_err());
+    }
+
+    /// End-to-end: derive keys, encrypt both fields, decrypt both — and the
+    /// ciphertext blob respects the schema's 48..=2048 bounds.
     #[test]
     fn full_contact_info_encryption_round_trip() {
         let wallet = test_wallet();
@@ -267,6 +444,7 @@ mod tests {
             alias_name: Some("Bob".to_string()),
             note: None,
             display_hidden: false,
+            accepted_accounts: vec![3],
         };
         let iv = [0x77u8; 16];
         let blob = platform_encryption::encrypt_private_data(

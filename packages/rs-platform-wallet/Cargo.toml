@@ -11,9 +11,6 @@ description = "Platform wallet with identity management support"
 dpp = { path = "../rs-dpp" }
 dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "wallet"] }
 platform-encryption = { path = "../rs-platform-encryption" }
-# contactInfo `privateData` CBOR codec (same version as rs-dpp's optional
-# ciborium so the lockfile resolves a single copy).
-ciborium = "0.2.2"
 
 # Key wallet dependencies (from rust-dashcore)
 key-wallet = { workspace = true }
