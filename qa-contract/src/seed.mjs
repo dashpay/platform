@@ -127,7 +127,7 @@ async function main() {
   // "Unspecified / Unknown, no runs" entry (e.g. DOC-09, folded into DOC-02).
   const retired = rows.filter((r) => (r.implStatus || '').trim() === '➖');
   rows = rows.filter((r) => (r.implStatus || '').trim() !== '➖');
-  let deleted = 0;
+  let deleted = 0; let retiredFailed = 0;
   for (const r of retired) {
     try {
       const existing = await findOne(sdk, contractId, 'testCase', [['testId', '==', r.testId], ['app', '==', app]]);
@@ -142,11 +142,12 @@ async function main() {
       deleted += 1;
       console.log(`  - retired ${r.testId} (deleted on-chain)`);
     } catch (e) {
+      retiredFailed += 1;
       console.error(`  ! retired ${r.testId} delete failed: ${e?.message || e}`);
     }
   }
   if (retired.length) {
-    console.log(`Retired (➖): ${retired.length} in scope (${retired.map((r) => r.testId).join(', ')}); ${deleted} deleted on-chain.`);
+    console.log(`Retired (➖): ${retired.length} in scope (${retired.map((r) => r.testId).join(', ')}); ${deleted} deleted, ${retiredFailed} failed.`);
   }
 
   if (values.limit !== undefined) {
@@ -195,8 +196,9 @@ async function main() {
     }
   }
 
-  console.log(`\nSeed complete: ${created} created, ${updated} updated, ${skipped} skipped, ${failed} failed.`);
-  if (failed) process.exit(1);
+  console.log(`\nSeed complete: ${created} created, ${updated} updated, ${skipped} skipped, `
+    + `${deleted} retired-deleted, ${failed + retiredFailed} failed.`);
+  if (failed || retiredFailed) process.exit(1);
 }
 
 main().catch((e) => { console.error('seed failed:', e?.stack || e); process.exit(1); });
