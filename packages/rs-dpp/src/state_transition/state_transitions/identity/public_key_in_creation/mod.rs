@@ -16,11 +16,9 @@ use serde::{Deserialize, Serialize};
 
 pub mod accessors;
 mod fields;
-#[cfg(feature = "json-conversion")]
 mod methods;
 mod types;
 pub mod v0;
-#[cfg(feature = "value-conversion")]
 mod version;
 
 #[cfg_attr(

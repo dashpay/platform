@@ -7,13 +7,11 @@ use crate::state_transition::identity_credit_withdrawal_transition::v0::Identity
 pub mod accessors;
 pub mod fields;
 mod identity_signed;
-#[cfg(feature = "json-conversion")]
 pub mod methods;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 pub mod v0;
 pub mod v1;
-#[cfg(feature = "value-conversion")]
 mod version;
 
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0Signable;

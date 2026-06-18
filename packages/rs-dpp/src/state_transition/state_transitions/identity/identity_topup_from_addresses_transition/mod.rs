@@ -1,13 +1,11 @@
 pub mod accessors;
 pub mod fields;
-#[cfg(feature = "json-conversion")]
 pub mod methods;
 mod state_transition_estimated_fee_validation;
 mod state_transition_fee_strategy;
 mod state_transition_like;
 mod state_transition_validation;
 pub mod v0;
-#[cfg(feature = "value-conversion")]
 mod version;
 
 #[cfg(feature = "json-conversion")]

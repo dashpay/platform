@@ -1,12 +1,10 @@
 pub mod accessors;
 pub mod fields;
 mod identity_signed;
-#[cfg(feature = "json-conversion")]
 pub mod methods;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 pub mod v0;
-#[cfg(feature = "value-conversion")]
 mod version;
 
 #[cfg(feature = "json-conversion")]

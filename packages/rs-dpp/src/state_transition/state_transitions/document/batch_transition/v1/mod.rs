@@ -1,10 +1,8 @@
 mod identity_signed;
-#[cfg(feature = "json-conversion")]
 mod state_transition_like;
 mod types;
 mod v0_methods;
 mod v1_methods;
-#[cfg(feature = "value-conversion")]
 mod version;
 
 use crate::identity::KeyID;

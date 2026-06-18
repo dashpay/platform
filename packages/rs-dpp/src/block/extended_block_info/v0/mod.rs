@@ -21,6 +21,7 @@ pub struct ExtendedBlockInfoV0 {
     /// The proposer pro_tx_hash
     pub proposer_pro_tx_hash: [u8; 32],
     /// Signature
+    #[serde(with = "crate::serialization::serde_bytes")]
     pub signature: [u8; 96],
     /// Round
     pub round: u32,

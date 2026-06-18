@@ -1,6 +1,10 @@
 #[cfg(feature = "json-conversion")]
 pub mod json;
-#[cfg(feature = "serde-conversion")]
+// Not gated behind `serde-conversion`: this fixed-size byte-array helper is
+// needed by modules that derive serde unconditionally (e.g. the always-serde
+// `block::extended_block_info::ExtendedBlockInfo`), so it must resolve in every
+// feature configuration. It only depends on `serde` and `base64`, both
+// non-optional dependencies.
 pub mod serde_bytes;
 #[cfg(feature = "serde-conversion")]
 pub mod serde_bytes_var;

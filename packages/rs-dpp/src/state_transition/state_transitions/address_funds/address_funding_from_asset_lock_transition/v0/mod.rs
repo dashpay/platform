@@ -1,10 +1,8 @@
-#[cfg(feature = "json-conversion")]
 mod proved;
 mod state_transition_like;
 mod state_transition_validation;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "value-conversion")]
 mod version;
 
 use std::collections::BTreeMap;

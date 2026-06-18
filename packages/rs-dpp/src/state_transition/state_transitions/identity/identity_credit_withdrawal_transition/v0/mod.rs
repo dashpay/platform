@@ -1,8 +1,6 @@
 mod identity_signed;
-#[cfg(feature = "json-conversion")]
 mod state_transition_like;
 mod types;
-#[cfg(feature = "value-conversion")]
 mod version;
 
 #[cfg(feature = "json-conversion")]

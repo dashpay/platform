@@ -1,9 +1,7 @@
-#[cfg(feature = "json-conversion")]
 mod proved;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "value-conversion")]
 mod version;
 
 #[cfg(feature = "json-conversion")]
