@@ -48,6 +48,9 @@ pub enum RewardDistributionMoment {
 // bincode. `EpochIndex` is `u16` — always JS-safe, no annotation needed.
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
+// Variant names mirror the outer enum (they drive the `type` discriminator);
+// the shared `BasedMoment` postfix is intentional.
+#[allow(clippy::enum_variant_names)]
 enum RewardDistributionMomentRepr {
     BlockBasedMoment {
         #[cfg_attr(
