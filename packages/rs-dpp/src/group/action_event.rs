@@ -188,7 +188,8 @@ mod json_convertible_tests {
                 "kind": "tokenEvent",
                 "type": "claim",
                 "distributionType": {
-                    "Perpetual": {
+                    "type": "perpetual",
+                    "value": {
                         "type": "evonode",
                         "identity": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
                     },
@@ -212,7 +213,8 @@ mod json_convertible_tests {
                 "kind": "tokenEvent",
                 "type": "claim",
                 "distributionType": {
-                    "Perpetual": {
+                    "type": "perpetual",
+                    "value": {
                         "type": "evonode",
                         "identity": platform_value::Identifier::from([0x42u8; 32]),
                     },

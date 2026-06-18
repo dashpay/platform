@@ -29,6 +29,10 @@ pub enum TokenDistributionType {
 /// - `PreProgrammed(Identifier)`: A predefined recipient for a scheduled distribution.
 /// - `Perpetual(TokenDistributionResolvedRecipient)`: A resolved recipient for an ongoing distribution.
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[serde(
+    into = "TokenDistributionTypeWithResolvedRecipientRepr",
+    from = "TokenDistributionTypeWithResolvedRecipientRepr"
+)]
 pub enum TokenDistributionTypeWithResolvedRecipient {
     /// A scheduled distribution with a known recipient.
     PreProgrammed(Identifier),
@@ -37,33 +41,113 @@ pub enum TokenDistributionTypeWithResolvedRecipient {
     Perpetual(TokenDistributionResolvedRecipient),
 }
 
+// Internal-`type` serde shape with a uniform `value` payload (single-payload
+// variants). Bincode `Encode`/`Decode` on the outer enum are untouched.
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum TokenDistributionTypeWithResolvedRecipientRepr {
+    PreProgrammed { value: Identifier },
+    Perpetual { value: TokenDistributionResolvedRecipient },
+}
+
+impl From<TokenDistributionTypeWithResolvedRecipient>
+    for TokenDistributionTypeWithResolvedRecipientRepr
+{
+    fn from(m: TokenDistributionTypeWithResolvedRecipient) -> Self {
+        match m {
+            TokenDistributionTypeWithResolvedRecipient::PreProgrammed(value) => {
+                Self::PreProgrammed { value }
+            }
+            TokenDistributionTypeWithResolvedRecipient::Perpetual(value) => {
+                Self::Perpetual { value }
+            }
+        }
+    }
+}
+
+impl From<TokenDistributionTypeWithResolvedRecipientRepr>
+    for TokenDistributionTypeWithResolvedRecipient
+{
+    fn from(r: TokenDistributionTypeWithResolvedRecipientRepr) -> Self {
+        match r {
+            TokenDistributionTypeWithResolvedRecipientRepr::PreProgrammed { value } => {
+                Self::PreProgrammed(value)
+            }
+            TokenDistributionTypeWithResolvedRecipientRepr::Perpetual { value } => {
+                Self::Perpetual(value)
+            }
+        }
+    }
+}
+
 /// Contains information about a specific token distribution instance.
 ///
 /// - `PreProgrammed(TimestampMillis, Identifier)`: A scheduled distribution with a timestamp and recipient.
 /// - `Perpetual(RewardDistributionMoment, RewardDistributionMoment, TokenDistributionResolvedRecipient)`:
 ///   A perpetual distribution with previous and next distribution moments, along with the resolved recipient.
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[serde(into = "TokenDistributionInfoRepr", from = "TokenDistributionInfoRepr")]
 pub enum TokenDistributionInfo {
     /// A pre-programmed token distribution set for a specific time.
     /// Contains the scheduled timestamp and the recipient’s identifier.
-    //
-    // `TimestampMillis` is a `u64` in a tuple variant that `#[json_safe_fields]`
-    // can't auto-annotate; apply the JS-safe helper directly (string in HR JSON
-    // above `MAX_SAFE_INTEGER`). `RewardDistributionMoment` in `Perpetual` is
-    // already JS-safe via its own `#[serde(with)]`.
-    PreProgrammed(
-        #[cfg_attr(
-            feature = "json-conversion",
-            serde(with = "crate::serialization::json_safe_u64")
-        )]
-        TimestampMillis,
-        Identifier,
-    ),
+    PreProgrammed(TimestampMillis, Identifier),
 
     /// A perpetual token distribution with moment for distribution.
     /// The moment is the beginning of the perpetual distribution cycle
     /// Includes the last and next distribution times and the resolved recipient.
     Perpetual(RewardDistributionMoment, TokenDistributionResolvedRecipient),
+}
+
+// Internal-`type` serde shape with named fields (multi-field variants).
+// `TimestampMillis` (u64) carries `json_safe_u64` on the Repr field — JS-safe
+// (string above MAX_SAFE_INTEGER in HR JSON), Content-safe (never u128).
+// `RewardDistributionMoment` is itself internally tagged; bincode untouched.
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum TokenDistributionInfoRepr {
+    PreProgrammed {
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json_safe_u64")
+        )]
+        timestamp: TimestampMillis,
+        identity: Identifier,
+    },
+    Perpetual {
+        moment: RewardDistributionMoment,
+        recipient: TokenDistributionResolvedRecipient,
+    },
+}
+
+impl From<TokenDistributionInfo> for TokenDistributionInfoRepr {
+    fn from(m: TokenDistributionInfo) -> Self {
+        match m {
+            TokenDistributionInfo::PreProgrammed(timestamp, identity) => {
+                Self::PreProgrammed {
+                    timestamp,
+                    identity,
+                }
+            }
+            TokenDistributionInfo::Perpetual(moment, recipient) => Self::Perpetual {
+                moment,
+                recipient,
+            },
+        }
+    }
+}
+
+impl From<TokenDistributionInfoRepr> for TokenDistributionInfo {
+    fn from(r: TokenDistributionInfoRepr) -> Self {
+        match r {
+            TokenDistributionInfoRepr::PreProgrammed {
+                timestamp,
+                identity,
+            } => Self::PreProgrammed(timestamp, identity),
+            TokenDistributionInfoRepr::Perpetual { moment, recipient } => {
+                Self::Perpetual(moment, recipient)
+            }
+        }
+    }
 }
 
 impl From<TokenDistributionInfo> for TokenDistributionTypeWithResolvedRecipient {
@@ -258,17 +342,17 @@ mod json_convertible_tests_token_distribution_info {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
-        // Externally-tagged tuple variant: `{ "PreProgrammed": [<ts>, <id>] }`.
+        // Internally tagged with named fields:
+        // `{ "type":"preProgrammed", "timestamp":<ts>, "identity":<id> }`.
         // `TimestampMillis` is `u64`; JSON erases the size — see the value-
-        // path assertion which uses `1_700_000_000_000u64` to lock in `Value::U64`.
+        // path assertion which uses `Value::U64` to lock it in.
         // `Identifier` is rendered as the base58-encoded string in JSON.
         assert_eq!(
             json,
             json!({
-                "PreProgrammed": [
-                    1_700_000_000_000u64,
-                    "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
-                ],
+                "type": "preProgrammed",
+                "timestamp": 1_700_000_000_000u64,
+                "identity": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
             })
         );
         let recovered = TokenDistributionInfo::from_json(json).expect("from_json");
@@ -280,18 +364,24 @@ mod json_convertible_tests_token_distribution_info {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
-        // `Identifier`'s `Serialize` impl emits the typed `Value::Identifier`
-        // variant (NOT `Value::Bytes32`). `platform_value!` interpolation goes
-        // through Serialize, so a raw `Value::Identifier(...)` literal in the
-        // macro would conflict — instead we construct the expected map by hand
-        // so the variant is preserved exactly.
-        let expected = Value::Map(vec![(
-            Value::Text("PreProgrammed".to_string()),
-            Value::Array(vec![
+        // Internally tagged with named fields. `Identifier`'s Serialize emits
+        // the typed `Value::Identifier` variant (NOT `Value::Bytes32`), which
+        // survives serde's internal-tag Content buffer. Built by hand so the
+        // typed-bytes variant is preserved exactly.
+        let expected = Value::Map(vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("preProgrammed".to_string()),
+            ),
+            (
+                Value::Text("timestamp".to_string()),
                 Value::U64(1_700_000_000_000),
+            ),
+            (
+                Value::Text("identity".to_string()),
                 Value::Identifier([0x42; 32]),
-            ]),
-        )]);
+            ),
+        ]);
         assert_eq!(value, expected);
         let recovered = TokenDistributionInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
