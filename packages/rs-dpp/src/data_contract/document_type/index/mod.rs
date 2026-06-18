@@ -63,7 +63,7 @@ pub enum ContestedIndexFieldMatch {
     PositiveIntegerMatch(u128),
 }
 
-// Internal-`type` serde shape with a uniform `value` payload, via a
+// Internal-`$type` serde shape with a uniform `value` payload, via a
 // struct-variant Repr (tuple variants can't auto-internal-tag). `LazyRegex`
 // round-trips as a bare string; `json_safe_u128` keeps the integer JS-safe
 // (string above `MAX_SAFE_INTEGER`) in human-readable JSON — native `u128` in
@@ -2250,7 +2250,7 @@ mod json_convertible_tests {
         assert_eq!(original, recovered);
     }
 
-    // --- ContestedIndexFieldMatch (internal `type` tag) ---
+    // --- ContestedIndexFieldMatch (internal `$type` tag) ---
     // Wire shape: internally tagged with a uniform `value` payload.
     //   `{"$type":"regex","value":"<pattern>"}` -> Regex(LazyRegex)
     //   `{"$type":"positiveIntegerMatch","value":<u128>}` -> PositiveIntegerMatch

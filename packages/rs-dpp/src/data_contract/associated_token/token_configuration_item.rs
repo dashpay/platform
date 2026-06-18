@@ -69,7 +69,7 @@ pub enum TokenConfigurationChangeItem {
     MainControlGroup(Option<GroupContractPosition>),
 }
 
-// Internal-`type` serde shape via a struct-variant Repr (the outer enum mixes
+// Internal-`$type` serde shape via a struct-variant Repr (the outer enum mixes
 // AuthorizedActionTakers/struct variants with primitive/Option/unit variants
 // that serde cannot auto-internal-tag). Unit -> `{"$type":"..."}`; data ->
 // `{"$type":"...","value":...}`. `MaxSupply` gains the json_safe protection it

@@ -41,14 +41,14 @@ pub enum RewardDistributionMoment {
     EpochBasedMoment(EpochIndex),
 }
 
-// Internal-`type` serde shape with a uniform `value` payload. This struct-variant
+// Internal-`$type` serde shape with a uniform `value` payload. This struct-variant
 // helper auto-derives the internal tagging the tuple-variant outer enum cannot.
 // `json_safe_u64` keeps block/time values JS-safe (string above
 // `Number.MAX_SAFE_INTEGER`) in human-readable JSON; no effect on `Value` or
 // bincode. `EpochIndex` is `u16` — always JS-safe, no annotation needed.
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "$type", rename_all = "camelCase")]
-// Variant names mirror the outer enum (they drive the `type` discriminator);
+// Variant names mirror the outer enum (they drive the `$type` discriminator);
 // the shared `BasedMoment` postfix is intentional.
 #[allow(clippy::enum_variant_names)]
 enum RewardDistributionMomentRepr {

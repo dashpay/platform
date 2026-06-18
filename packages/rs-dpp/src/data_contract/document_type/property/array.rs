@@ -16,7 +16,7 @@ pub enum ArrayItemType {
     Date,
 }
 
-// Internal-`type` serde shape. Mixed unit + 2-tuple variants, so a
+// Internal-`$type` serde shape. Mixed unit + 2-tuple variants, so a
 // struct-variant Repr (serde can't auto-internal-tag tuple variants). Unit
 // variants -> `{"$type":"integer"}`; the tuple variants get named size bounds
 // (`#[serde(default)]` so an omitted bound deserializes as `None`). Serde-only

@@ -41,7 +41,7 @@ pub enum TokenDistributionTypeWithResolvedRecipient {
     Perpetual(TokenDistributionResolvedRecipient),
 }
 
-// Internal-`type` serde shape with a uniform `value` payload (single-payload
+// Internal-`$type` serde shape with a uniform `value` payload (single-payload
 // variants). Bincode `Encode`/`Decode` on the outer enum are untouched.
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "$type", rename_all = "camelCase")]
@@ -98,7 +98,7 @@ pub enum TokenDistributionInfo {
     Perpetual(RewardDistributionMoment, TokenDistributionResolvedRecipient),
 }
 
-// Internal-`type` serde shape with named fields (multi-field variants).
+// Internal-`$type` serde shape with named fields (multi-field variants).
 // `TimestampMillis` (u64) carries `json_safe_u64` on the Repr field — JS-safe
 // (string above MAX_SAFE_INTEGER in HR JSON), Content-safe (never u128).
 // `RewardDistributionMoment` is itself internally tagged; bincode untouched.
