@@ -21,6 +21,11 @@ pub struct ExtendedBlockInfoV0 {
     /// The proposer pro_tx_hash
     pub proposer_pro_tx_hash: [u8; 32],
     /// Signature
+    // serde has no built-in `Serialize`/`Deserialize` for `[u8; N]` when N > 32,
+    // so this 96-byte field needs an explicit byte serializer. `json_safe_fields`
+    // injects one for byte fields, but only under `json-conversion`; this struct
+    // derives serde unconditionally (no feature gate), so the annotation is written
+    // out here to keep it compiling whenever `json-conversion` is off.
     #[serde(with = "crate::serialization::serde_bytes")]
     pub signature: [u8; 96],
     /// Round
