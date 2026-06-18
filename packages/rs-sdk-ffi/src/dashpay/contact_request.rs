@@ -185,6 +185,11 @@ pub struct DashSDKContactRequestResult {
     pub owner_id: *mut std::os::raw::c_char,
     /// Document properties as JSON string
     pub properties_json: *mut std::os::raw::c_char,
+    /// 32-byte entropy used to derive `document_id`. A generic (non-Rust)
+    /// embedder that submits the document via its own document-put needs this
+    /// so consensus can recompute and validate the id — without it the create
+    /// transition is rejected. Inline POD; no separate free.
+    pub entropy: [u8; 32],
 }
 
 /// Result of sending a contact request
@@ -436,6 +441,7 @@ pub unsafe extern "C" fn dash_sdk_dashpay_create_contact_request(
                 document_id: document_id_cstring,
                 owner_id: owner_id_cstring,
                 properties_json: properties_cstring,
+                entropy: contact_request_result.entropy.to_buffer(),
             });
 
             DashSDKResult::success(Box::into_raw(result) as *mut std::os::raw::c_void)
