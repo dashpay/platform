@@ -327,6 +327,20 @@ pub struct IdentityRestoreEntryFFI {
     /// no requests.
     pub rejected: *const crate::contact_persistence::ContactRequestRejectionFFI,
     pub rejected_count: usize,
+    /// DashPay cached **contact** profiles owned by this identity,
+    /// assembled from the per-identity `PersistentDashpayContactProfile`
+    /// SwiftData rows. Restores `ManagedIdentity.contact_profiles`
+    /// (present entries only) at load — without this the contact-profile
+    /// cache starts empty on every relaunch and the requests/contacts UI
+    /// shows raw identity ids until the next profile sweep re-fetches
+    /// every contact (write amplification + a visible cold-start flicker).
+    /// Only **present** profiles are persisted/restored; the
+    /// confirmed-absent negative cache rebuilds harmlessly on the next
+    /// sweep. Swift-owned for the callback window; the strings ride the
+    /// load allocation, NOT the Rust destructors. `null` / `0` when the
+    /// identity has no cached contact profiles.
+    pub contact_profiles: *const ContactProfileRestoreEntryFFI,
+    pub contact_profiles_count: usize,
 }
 
 /// One DashPay payment-history row to rehydrate into
@@ -351,6 +365,49 @@ pub struct PaymentRestoreEntryFFI {
     pub status_raw: u8,
     /// NUL-terminated memo, or null when the source `Option` was `None`.
     pub memo: *const std::os::raw::c_char,
+}
+
+/// One cached **contact** profile row to rehydrate into
+/// `ManagedIdentity.contact_profiles` (keyed by the contact's identity
+/// id) at load. Mirrors the persist-side
+/// [`crate::identity_persistence::ContactProfileRowFFI`] field-for-field
+/// (the leading `contact_id` key, the five public profile fields with
+/// their `_present` byte-array flags, and the trailing `checked_at_ms`
+/// self-heal timestamp).
+///
+/// Only **present** profiles ride this struct — the confirmed-absent
+/// negative cache is never persisted, so every restored entry rebuilds
+/// as `ContactProfileEntry { profile: Some(..), checked_at_ms }`. Swift
+/// owns the four optional c-strings for the callback window; gate the
+/// byte-array fields on their paired `_present` flag rather than
+/// checking for all-zero (a valid hash/fingerprint value).
+#[repr(C)]
+pub struct ContactProfileRestoreEntryFFI {
+    /// The contact's 32-byte identity id — the `contact_profiles` map
+    /// key.
+    pub contact_id: [u8; 32],
+    /// NUL-terminated `displayName`, or null when the source `Option`
+    /// was `None`.
+    pub display_name: *const std::os::raw::c_char,
+    /// NUL-terminated `bio`, or null when `None`.
+    pub bio: *const std::os::raw::c_char,
+    /// NUL-terminated `avatarUrl`, or null when `None`.
+    pub avatar_url: *const std::os::raw::c_char,
+    /// SHA-256 avatar hash; meaningful only when
+    /// [`Self::avatar_hash_present`] is `true`.
+    pub avatar_hash: [u8; 32],
+    /// `true` iff the source `avatar_hash` was `Some(_)`.
+    pub avatar_hash_present: bool,
+    /// DHash avatar fingerprint; meaningful only when
+    /// [`Self::avatar_fingerprint_present`] is `true`.
+    pub avatar_fingerprint: [u8; 8],
+    /// `true` iff the source `avatar_fingerprint` was `Some(_)`.
+    pub avatar_fingerprint_present: bool,
+    /// NUL-terminated `publicMessage`, or null when `None`.
+    pub public_message: *const std::os::raw::c_char,
+    /// Wall-clock ms of the last fetch attempt — the
+    /// `ContactProfileEntry::checked_at_ms` self-heal timestamp.
+    pub checked_at_ms: u64,
 }
 
 /// One unspent UTXO row to rehydrate into a funds-bearing account's

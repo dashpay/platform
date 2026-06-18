@@ -1208,6 +1208,22 @@ public class PlatformWalletPersistenceHandler {
                 upsertDashpayProfile(identityRow: row, profile: profile)
             }
 
+            // Upsert the cached contact-profile rows for this identity.
+            //
+            // One row per contact (keyed by `(owner, contact)`), distinct
+            // from the own-profile upsert above. Rust projects only
+            // present profiles (the negative cache is skipped), so a
+            // contact missing from this flush does NOT mean its profile
+            // was removed — we mirror the own-profile + DPNS policy:
+            // insert/refresh, never cascade-prune. An empty array leaves
+            // any existing rows intact.
+            if !entry.contactProfiles.isEmpty {
+                upsertDashpayContactProfiles(
+                    identityRow: row,
+                    profiles: entry.contactProfiles
+                )
+            }
+
             // Attach the identity to its owning `PersistentWallet`
             // via the relationship. This is the sole wallet-side
             // association on the row — there is no denormalized
@@ -1380,6 +1396,69 @@ public class PlatformWalletPersistenceHandler {
             // pointer from the `inverse:` declaration on
             // `PersistentIdentity.dashpayProfile`, so we don't need
             // to assign `identityRow.dashpayProfile = row` here.
+        }
+    }
+
+    /// Upsert one `PersistentDashpayContactProfile` row per cached
+    /// **contact** profile snapshot — keyed by `(networkRaw,
+    /// ownerIdentityId, contactIdentityId)`. Idempotent on repeated
+    /// flushes: an existing row is refreshed in place so SwiftUI views
+    /// observing it via `@Query` see field-level updates rather than
+    /// row-replacement churn.
+    ///
+    /// Full-REPLACE per contact, mirroring the Rust cache-write
+    /// semantics (§4.7): each fetched profile is the authoritative
+    /// *complete* state for that contact, so every column is overwritten
+    /// — a contact who *removes* their `avatarUrl` must not keep showing
+    /// a stale avatar. This is the same field-level overwrite the
+    /// own-profile `upsertDashpayProfile` does, just per contact.
+    ///
+    /// Append/refresh only: contacts absent from this flush keep their
+    /// existing rows (Rust projects only present profiles, so absence is
+    /// "no update", not "delete"). The cache cannot grow duplicate rows
+    /// for the same contact because of the `#Unique` compound key.
+    ///
+    /// Runs on `serialQueue` — only called from inside
+    /// `persistIdentities`'s `onQueue` body.
+    private func upsertDashpayContactProfiles(
+        identityRow: PersistentIdentity,
+        profiles: [ContactProfileSnapshot]
+    ) {
+        let ownerIdentityId = identityRow.identityId
+        for profile in profiles {
+            let contactIdentityId = profile.contactIdentityId
+            let descriptor = FetchDescriptor<PersistentDashpayContactProfile>(
+                predicate: PersistentDashpayContactProfile.predicate(
+                    ownerIdentityId: ownerIdentityId,
+                    contactIdentityId: contactIdentityId
+                )
+            )
+            if let existing = try? backgroundContext.fetch(descriptor).first {
+                existing.displayName = profile.displayName
+                existing.bio = profile.bio
+                existing.publicMessage = profile.publicMessage
+                existing.avatarUrl = profile.avatarUrl
+                existing.avatarHash = profile.avatarHash
+                existing.avatarFingerprint = profile.avatarFingerprint
+                existing.checkedAtMs = profile.checkedAtMs
+                existing.lastUpdated = Date()
+            } else {
+                let row = PersistentDashpayContactProfile(
+                    owner: identityRow,
+                    contactIdentityId: contactIdentityId,
+                    checkedAtMs: profile.checkedAtMs,
+                    displayName: profile.displayName,
+                    publicMessage: profile.publicMessage,
+                    bio: profile.bio,
+                    avatarUrl: profile.avatarUrl,
+                    avatarHash: profile.avatarHash,
+                    avatarFingerprint: profile.avatarFingerprint
+                )
+                backgroundContext.insert(row)
+                // SwiftData populates the inverse `owner.contactProfiles`
+                // collection from the `inverse:` declaration on
+                // `PersistentIdentity.contactProfiles`.
+            }
         }
     }
 
@@ -2233,6 +2312,40 @@ public class PlatformWalletPersistenceHandler {
         /// optional because every DashPay profile field but the
         /// implicit `$ownerId` is optional in the contract schema.
         let dashpayProfile: DashpayProfileSnapshot?
+        /// Cached **contact** profiles for this identity — one per
+        /// **present** entry of the Rust `contact_profiles` map
+        /// (`IdentityEntryFFI.contact_profiles`). Distinct from
+        /// `dashpayProfile` (the owner's own profile): these are
+        /// contacts' public profiles, keyed by the contact's identity
+        /// id. Empty when no contact profile rode this flush; the
+        /// per-contact rows are upserted independently and a missing
+        /// snapshot leaves existing rows intact (append/refresh, never
+        /// cascade-prune — same policy as the own-profile + DPNS paths).
+        let contactProfiles: [ContactProfileSnapshot]
+    }
+
+    /// Owned snapshot of one `ContactProfileRowFFI` — the contact's
+    /// identity id, the five public profile fields, and the
+    /// `checked_at_ms` self-heal timestamp. Decouples every contained
+    /// `String` / `Data` from the FFI heap so the callback can return
+    /// immediately and the Rust side can run its free-loop. Same
+    /// `*_present`-gated decode as `DashpayProfileSnapshot` plus the
+    /// leading `contactIdentityId` key and trailing `checkedAtMs`.
+    struct ContactProfileSnapshot {
+        let contactIdentityId: Data
+        let displayName: String?
+        let bio: String?
+        let publicMessage: String?
+        let avatarUrl: String?
+        /// 32-byte SHA-256 of the avatar binary. `nil` when the source
+        /// `avatar_hash_present == false`.
+        let avatarHash: Data?
+        /// 8-byte DHash perceptual fingerprint. `nil` when the source
+        /// `avatar_fingerprint_present == false`.
+        let avatarFingerprint: Data?
+        /// Wall-clock ms of the last fetch attempt on the Rust side
+        /// (`ContactProfileEntry.checked_at_ms`).
+        let checkedAtMs: UInt64
     }
 
     /// Owned snapshot of the `dashpay_profile_*` fields on
@@ -4709,6 +4822,73 @@ public class PlatformWalletPersistenceHandler {
                 allocation.rejectedArrays.append((rejectedBuf, rejectedRows.count))
             }
 
+            // Cached contact profiles — restores the contact_profiles map
+            // (present entries only) at load. Without this the cache
+            // starts empty on relaunch and the requests/contacts UI shows
+            // raw identity ids until the next profile sweep re-fetches
+            // every contact. Same ownership convention as the payments
+            // array above: Swift allocates + frees (via
+            // `allocation.contactProfileArrays` in `LoadAllocation.release`);
+            // Rust only reads + copies out, never frees.
+            // Drop any row with a wrong-length contact id BEFORE allocating —
+            // `copyBytes` would otherwise zero-pad it and restore the profile
+            // under a wrong key (matching the abort-on-corrupt convention the
+            // UTXO restore uses). Filtering up front also keeps the fixed-
+            // capacity buffer fully initialized so the count stays exact.
+            let contactProfileRows = identity.contactProfiles.filter {
+                $0.contactIdentityId.count == 32
+            }
+            if contactProfileRows.isEmpty {
+                entry.contact_profiles = nil
+                entry.contact_profiles_count = 0
+            } else {
+                let cpBuf = UnsafeMutablePointer<ContactProfileRestoreEntryFFI>.allocate(
+                    capacity: contactProfileRows.count
+                )
+                for (c, profile) in contactProfileRows.enumerated() {
+                    var row = ContactProfileRestoreEntryFFI()
+                    copyBytes(profile.contactIdentityId, into: &row.contact_id)
+                    if let displayName = profile.displayName, !displayName.isEmpty {
+                        row.display_name = UnsafePointer(
+                            duplicateCString(displayName, allocation: allocation))
+                    }
+                    if let bio = profile.bio, !bio.isEmpty {
+                        row.bio = UnsafePointer(
+                            duplicateCString(bio, allocation: allocation))
+                    }
+                    if let avatarUrl = profile.avatarUrl, !avatarUrl.isEmpty {
+                        row.avatar_url = UnsafePointer(
+                            duplicateCString(avatarUrl, allocation: allocation))
+                    }
+                    if let publicMessage = profile.publicMessage, !publicMessage.isEmpty {
+                        row.public_message = UnsafePointer(
+                            duplicateCString(publicMessage, allocation: allocation))
+                    }
+                    // Gate the byte arrays on presence — an absent hash /
+                    // fingerprint must round-trip as `_present == false`,
+                    // not as an all-zero value (which Rust would otherwise
+                    // restore as a real `Some([0u8; N])`).
+                    if let avatarHash = profile.avatarHash, avatarHash.count == 32 {
+                        copyBytes(avatarHash, into: &row.avatar_hash)
+                        row.avatar_hash_present = true
+                    } else {
+                        row.avatar_hash_present = false
+                    }
+                    if let avatarFingerprint = profile.avatarFingerprint,
+                       avatarFingerprint.count == 8 {
+                        copyBytes(avatarFingerprint, into: &row.avatar_fingerprint)
+                        row.avatar_fingerprint_present = true
+                    } else {
+                        row.avatar_fingerprint_present = false
+                    }
+                    row.checked_at_ms = profile.checkedAtMs
+                    cpBuf[c] = row
+                }
+                entry.contact_profiles = UnsafePointer(cpBuf)
+                entry.contact_profiles_count = UInt(contactProfileRows.count)
+                allocation.contactProfileArrays.append((cpBuf, contactProfileRows.count))
+            }
+
             buf[j] = entry
         }
         allocation.identityArrays.append((buf, identities.count))
@@ -4985,6 +5165,13 @@ private final class LoadAllocation {
     /// rejected-tombstone restore — G5 stage 1). Flat POD rows, no owned
     /// pointers, so nothing extra rides `scalarBuffers`/`cStringBuffers`.
     var rejectedArrays: [(UnsafeMutablePointer<ContactRequestRejectionFFI>, Int)] = []
+    /// Per-identity `ContactProfileRestoreEntryFFI` arrays (cached
+    /// contact-profile restore). The four optional profile strings each
+    /// row references live in `cStringBuffers`. NOTE: these rows are
+    /// load-allocation-owned — Rust only reads them; it must never run a
+    /// free over them.
+    var contactProfileArrays:
+        [(UnsafeMutablePointer<ContactProfileRestoreEntryFFI>, Int)] = []
     /// Byte buffers backing `root_xpub_bytes` and `account_xpub_bytes`.
     var scalarBuffers: [(UnsafeMutablePointer<UInt8>, Int)] = []
     /// NUL-terminated c-string buffers carried by identity entries
@@ -5053,6 +5240,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in rejectedArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in contactProfileArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
@@ -5555,6 +5746,42 @@ private func persistIdentitiesCallback(
                 dashpayProfile = nil
             }
 
+            // Walk the cached contact-profile rows into owned snapshots.
+            // Only present profiles are projected by Rust (the negative
+            // cache is skipped on the persist side), so every row here is
+            // a present profile. Each `*_present` sub-flag is checked
+            // individually because zero-valued payloads (empty strings,
+            // all-zero hashes / fingerprints) are valid contract values.
+            // The Rust-side `free_identity_entry_ffi` releases the row
+            // array + every C string after this callback returns.
+            var contactProfiles:
+                [PlatformWalletPersistenceHandler.ContactProfileSnapshot] = []
+            let contactProfilesCount = Int(e.contact_profiles_count)
+            if contactProfilesCount > 0, let rowsPtr = e.contact_profiles {
+                contactProfiles.reserveCapacity(contactProfilesCount)
+                for j in 0..<contactProfilesCount {
+                    let row = rowsPtr[j]
+                    let avatarHash: Data? = row.avatar_hash_present
+                        ? hashData(row.avatar_hash)
+                        : nil
+                    let avatarFingerprint: Data? = row.avatar_fingerprint_present
+                        ? Swift.withUnsafeBytes(of: row.avatar_fingerprint) { Data($0) }
+                        : nil
+                    contactProfiles.append(
+                        .init(
+                            contactIdentityId: dataFromTuple32(row.contact_id),
+                            displayName: row.display_name.map { String(cString: $0) },
+                            bio: row.bio.map { String(cString: $0) },
+                            publicMessage: row.public_message.map { String(cString: $0) },
+                            avatarUrl: row.avatar_url.map { String(cString: $0) },
+                            avatarHash: avatarHash,
+                            avatarFingerprint: avatarFingerprint,
+                            checkedAtMs: row.checked_at_ms
+                        )
+                    )
+                }
+            }
+
             upserts.append(.init(
                 identityId: identityId,
                 balance: e.balance,
@@ -5566,7 +5793,8 @@ private func persistIdentitiesCallback(
                 status: e.status,
                 walletId: walletIdField,
                 dpnsNames: dpnsNames,
-                dashpayProfile: dashpayProfile
+                dashpayProfile: dashpayProfile,
+                contactProfiles: contactProfiles
             ))
         }
     }

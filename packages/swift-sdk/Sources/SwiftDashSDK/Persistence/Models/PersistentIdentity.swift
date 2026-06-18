@@ -137,6 +137,18 @@ public final class PersistentIdentity {
     @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayRejectedRequest.owner)
     public var dashpayRejectedRequests: [PersistentDashpayRejectedRequest] = []
 
+    /// Cached DashPay **contact** profiles owned by this identity (one
+    /// per contact whose public profile has been fetched). Cascade-deleted
+    /// from the parent. Same query-by-denormalized-id pattern as
+    /// `contactRequests`: filters use
+    /// `PersistentDashpayContactProfile.predicate(ownerIdentityId:)` rather
+    /// than walking this collection from a SwiftUI view. Populated by the
+    /// persister callback (`IdentityEntryFFI.contact_profiles` rows) and
+    /// read back at load to rebuild the Rust `contact_profiles` map.
+    /// Distinct from the owner's own `dashpayProfile`.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayContactProfile.owner)
+    public var contactProfiles: [PersistentDashpayContactProfile] = []
+
     // Contracts in the local store that name this identity as their
     // owner. `.nullify` so deleting the identity leaves the contract
     // rows alive (with `ownerIdentity` nulled) — matches the user's
@@ -184,6 +196,7 @@ public final class PersistentIdentity {
         self.contactRequests = []
         self.dashpayPayments = []
         self.dashpayRejectedRequests = []
+        self.contactProfiles = []
         self.ownedDataContracts = []
         self.createdAt = Date()
         self.lastUpdated = Date()

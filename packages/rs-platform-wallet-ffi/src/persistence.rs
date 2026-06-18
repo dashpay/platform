@@ -47,9 +47,10 @@ use crate::platform_address_types::AddressBalanceEntryFFI;
 use crate::token_persistence::{TokenBalanceRemovalFFI, TokenBalanceUpsertFFI};
 use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
-    AccountSpecFFI, AccountTypeTagFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
-    LoadWalletListFreeFn, PaymentRestoreEntryFFI, StandardAccountTypeTagFFI,
-    UnresolvedAssetLockTxRecordFFI, UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
+    AccountSpecFFI, AccountTypeTagFFI, ContactProfileRestoreEntryFFI, IdentityKeyRestoreFFI,
+    IdentityRestoreEntryFFI, LoadWalletListFreeFn, PaymentRestoreEntryFFI,
+    StandardAccountTypeTagFFI, UnresolvedAssetLockTxRecordFFI, UtxoRestoreEntryFFI,
+    WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -3651,6 +3652,7 @@ fn build_wallet_identity_bucket(
         unsafe { restore_dashpay_contacts(spec, &identifier, &mut managed) };
         unsafe { restore_dashpay_payments(spec, &mut managed) };
         unsafe { restore_dashpay_rejected(spec, &mut managed) };
+        unsafe { restore_contact_profiles(spec, &mut managed) };
         bucket.insert(spec.identity_index, managed);
     }
 
@@ -3789,6 +3791,104 @@ unsafe fn apply_payment_rows(rows: &[PaymentRestoreEntryFFI], managed: &mut Mana
                 memo,
                 direction,
                 status,
+            },
+        );
+    }
+}
+
+/// Rebuild the per-identity cached **contact** profiles
+/// (`contact_profiles`) from the persisted SwiftData rows at load.
+///
+/// Without this the contact-profile cache starts empty on every
+/// relaunch, so the requests/contacts UI shows raw identity ids until
+/// the next profile sweep re-fetches every contact — a visible
+/// cold-start flicker plus write amplification. Direct map inserts, NO
+/// persister round — the rows ARE the persisted state. Only **present**
+/// profiles are persisted, so every restored entry rebuilds as
+/// `ContactProfileEntry { profile: Some(..), checked_at_ms }`; the
+/// confirmed-absent negative cache rebuilds on the next sweep.
+///
+/// # Safety
+///
+/// `spec.contact_profiles` must be either null or point at
+/// `spec.contact_profiles_count` valid [`ContactProfileRestoreEntryFFI`]
+/// rows whose four c-strings Swift owns for the duration of the load
+/// callback.
+unsafe fn restore_contact_profiles(spec: &IdentityRestoreEntryFFI, managed: &mut ManagedIdentity) {
+    if spec.contact_profiles.is_null() || spec.contact_profiles_count == 0 {
+        return;
+    }
+    let rows = slice::from_raw_parts(spec.contact_profiles, spec.contact_profiles_count);
+    apply_contact_profile_rows(rows, managed);
+}
+
+/// Maximum cached `avatarUrl` length — mirrors the
+/// `MAX_AVATAR_URL_LEN` gate `platform-wallet`'s profile fetch applies
+/// before caching (DIP-15's 2048-char cap).
+const MAX_AVATAR_URL_LEN: usize = 2048;
+
+/// Defensive re-validation of a cached `avatarUrl` at restore. The
+/// fetch path already dropped non-`https://` / over-length URLs before
+/// caching ([`platform_wallet`]'s `is_valid_avatar_url`), but the URL is
+/// attacker-controlled public data and the UI will load it, so we
+/// re-apply the same `https://`-only, length-capped rule on the way back
+/// in. A URL that fails is dropped to `None` (the rest of the profile is
+/// still restored) rather than discarding the whole row.
+fn is_valid_avatar_url(url: &str) -> bool {
+    !url.is_empty() && url.len() <= MAX_AVATAR_URL_LEN && url.starts_with("https://")
+}
+
+/// Fold a slice of [`ContactProfileRestoreEntryFFI`] rows into
+/// `managed.contact_profiles`. Split out from
+/// [`restore_contact_profiles`] so the c-string decode + avatar-url
+/// re-validation is unit-testable without a full
+/// [`IdentityRestoreEntryFFI`].
+///
+/// # Safety
+/// Each row's four string pointers must be null or point at valid
+/// NUL-terminated c-strings for the call's duration.
+unsafe fn apply_contact_profile_rows(
+    rows: &[ContactProfileRestoreEntryFFI],
+    managed: &mut ManagedIdentity,
+) {
+    use platform_wallet::{ContactProfileEntry, DashPayProfile};
+
+    let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
+        if ptr.is_null() {
+            None
+        } else {
+            CStr::from_ptr(ptr).to_str().ok().map(str::to_string)
+        }
+    };
+
+    for row in rows {
+        let avatar_hash = if row.avatar_hash_present {
+            Some(row.avatar_hash)
+        } else {
+            None
+        };
+        let avatar_fingerprint = if row.avatar_fingerprint_present {
+            Some(row.avatar_fingerprint)
+        } else {
+            None
+        };
+        // Re-validate the public, attacker-controlled avatar URL; drop
+        // just the URL field (keep the rest of the profile) if it no
+        // longer passes the `https://` / length rule.
+        let avatar_url = opt_string(row.avatar_url).filter(|u| is_valid_avatar_url(u));
+
+        managed.contact_profiles.insert(
+            Identifier::from(row.contact_id),
+            ContactProfileEntry {
+                profile: Some(DashPayProfile {
+                    display_name: opt_string(row.display_name),
+                    bio: opt_string(row.bio),
+                    avatar_url,
+                    avatar_hash,
+                    avatar_fingerprint,
+                    public_message: opt_string(row.public_message),
+                }),
+                checked_at_ms: row.checked_at_ms,
             },
         );
     }
@@ -4596,6 +4696,98 @@ mod tests {
             2,
             "a row with an unknown direction must be skipped, not inserted"
         );
+    }
+
+    /// **Cached contact profiles are restored at load.**
+    /// The fold must rebuild `contact_profiles` (keyed by the contact's
+    /// identity id) from the persisted rows, decoding the c-strings and
+    /// the `_present`-gated avatar hash / fingerprint, and re-validating
+    /// the public avatar URL. Without this restore step there is no
+    /// contact-profile restore at all, so the cache starts empty on
+    /// relaunch and the requests/contacts UI shows raw ids until the next
+    /// sweep re-fetches every contact.
+    #[test]
+    fn restore_contact_profiles_fold_rebuilds_cache() {
+        use crate::wallet_restore_types::ContactProfileRestoreEntryFFI;
+
+        let owner = IdentityV0 {
+            id: Identifier::from([0xAA; 32]),
+            public_keys: std::collections::BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        };
+        let mut managed = ManagedIdentity::new(Identity::V0(owner), 0);
+
+        // Keep the CStrings alive for the duration of the call.
+        let display_name = std::ffi::CString::new("Alice").unwrap();
+        let public_message = std::ffi::CString::new("gm").unwrap();
+        let good_url = std::ffi::CString::new("https://example.com/a.png").unwrap();
+        // A non-https URL: must be dropped to None, but the rest of the
+        // profile (display name) must still be restored.
+        let bad_url = std::ffi::CString::new("http://evil.example/track.gif").unwrap();
+        let other_name = std::ffi::CString::new("Bob").unwrap();
+
+        let rows = [
+            ContactProfileRestoreEntryFFI {
+                contact_id: [0xBB; 32],
+                display_name: display_name.as_ptr(),
+                bio: std::ptr::null(),
+                avatar_url: good_url.as_ptr(),
+                avatar_hash: [0x11; 32],
+                avatar_hash_present: true,
+                avatar_fingerprint: [0x22; 8],
+                avatar_fingerprint_present: true,
+                public_message: public_message.as_ptr(),
+                checked_at_ms: 1_700_000_000_000,
+            },
+            ContactProfileRestoreEntryFFI {
+                contact_id: [0xCC; 32],
+                display_name: other_name.as_ptr(),
+                bio: std::ptr::null(),
+                avatar_url: bad_url.as_ptr(),
+                avatar_hash: [0u8; 32],
+                avatar_hash_present: false,
+                avatar_fingerprint: [0u8; 8],
+                avatar_fingerprint_present: false,
+                public_message: std::ptr::null(),
+                checked_at_ms: 1_700_000_000_001,
+            },
+        ];
+
+        unsafe { apply_contact_profile_rows(&rows, &mut managed) };
+
+        assert_eq!(managed.contact_profiles.len(), 2);
+
+        let alice = managed
+            .contact_profiles
+            .get(&Identifier::from([0xBB; 32]))
+            .expect("alice contact profile restored");
+        assert_eq!(alice.checked_at_ms, 1_700_000_000_000);
+        let alice_profile = alice.profile.as_ref().expect("present profile");
+        assert_eq!(alice_profile.display_name.as_deref(), Some("Alice"));
+        assert_eq!(alice_profile.public_message.as_deref(), Some("gm"));
+        assert_eq!(
+            alice_profile.avatar_url.as_deref(),
+            Some("https://example.com/a.png")
+        );
+        assert_eq!(alice_profile.avatar_hash, Some([0x11; 32]));
+        assert_eq!(alice_profile.avatar_fingerprint, Some([0x22; 8]));
+        assert!(alice_profile.bio.is_none());
+
+        let bob = managed
+            .contact_profiles
+            .get(&Identifier::from([0xCC; 32]))
+            .expect("bob contact profile restored");
+        let bob_profile = bob.profile.as_ref().expect("present profile");
+        assert_eq!(bob_profile.display_name.as_deref(), Some("Bob"));
+        // The non-https avatar URL is dropped on the way back in; the
+        // rest of the profile survives.
+        assert!(
+            bob_profile.avatar_url.is_none(),
+            "a non-https avatar URL must be dropped at restore"
+        );
+        assert!(bob_profile.avatar_hash.is_none());
+        assert!(bob_profile.avatar_fingerprint.is_none());
     }
 
     /// Regression: rejected-request tombstones must be restored at load so

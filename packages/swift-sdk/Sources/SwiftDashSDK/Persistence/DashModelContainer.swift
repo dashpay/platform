@@ -9,6 +9,7 @@ public enum DashModelContainer {
             PersistentIdentity.self,
             PersistentDPNSName.self,
             PersistentDashpayProfile.self,
+            PersistentDashpayContactProfile.self,
             PersistentDashpayContactRequest.self,
             PersistentDashpayPayment.self,
             PersistentDashpayRejectedRequest.self,
@@ -176,6 +177,16 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 ///     Rust `rejected_contact_requests` suppression set can be restored
 ///     at load — without it a rejected contact resurrects on relaunch.
 ///     Additive model + additive relationship ⇒ lightweight migration.
+///   - `PersistentDashpayContactProfile` was added (cascade-owned by
+///     `PersistentIdentity` via the new `contactProfiles` collection).
+///     Mirrors one entry of the per-identity `contact_profiles` map
+///     (cached contacts' public profiles, keyed by the contact's
+///     identity id) projected by the persister as
+///     `IdentityEntryFFI.contact_profiles` rows, and read back at load to
+///     rebuild the Rust cache so contacts don't refetch on every
+///     relaunch. Distinct from `PersistentDashpayProfile` (the owner's
+///     own profile). Additive model + additive relationship ⇒
+///     lightweight migration.
 ///   - `PersistentAccount` gained `#Unique<…>([\.wallet, \.accountType,
 ///     \.accountIndex, \.userIdentityId, \.friendIdentityId])` plus
 ///     `@Attribute(.unique)` on `accountExtendedPubKeyBytes`. The

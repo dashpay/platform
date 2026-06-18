@@ -141,6 +141,73 @@ pub struct IdentityEntryFFI {
     /// [`free_identity_entry_ffi`]. Ignore unless
     /// [`Self::dashpay_profile_present`] is `true`.
     pub dashpay_profile_public_message: *const c_char,
+    /// Heap-allocated array of [`ContactProfileRowFFI`], one per
+    /// **present** cached contact profile on the underlying
+    /// [`IdentityEntry::contact_profiles`]. Confirmed-absent entries
+    /// (`profile: None`, the negative cache) are NOT projected — they
+    /// rebuild harmlessly on the next sync sweep, so persisting them
+    /// would only add write churn. Each row owns the same per-string
+    /// heap allocations the own-profile block does; every string plus
+    /// the outer boxed slice is released in [`free_identity_entry_ffi`].
+    /// `null` when [`Self::contact_profiles_count`] is 0.
+    ///
+    /// Distinct from `dashpay_profile_*` above: that block is the
+    /// owner's *own* profile (one per identity); this array is the
+    /// *contacts'* profiles, keyed by each contact's identity id. They
+    /// land in separate SwiftData stores on the Swift side.
+    pub contact_profiles: *const ContactProfileRowFFI,
+    /// Number of rows pointed at by [`Self::contact_profiles`]. `0`
+    /// when the identity has no present cached contact profiles.
+    pub contact_profiles_count: usize,
+}
+
+/// Flat C mirror of one **present** cached contact profile —
+/// `(contact_id, DashPayProfile, checked_at_ms)` — projected from a
+/// single entry of [`IdentityEntry::contact_profiles`].
+///
+/// The profile-field block (`display_name` … `public_message`) is the
+/// SAME shape as the own-profile fields on [`IdentityEntryFFI`]; the
+/// only additions are the leading `contact_id` key and the trailing
+/// `checked_at_ms` self-heal timestamp. Confirmed-absent cache entries
+/// never reach this struct (see [`IdentityEntryFFI::contact_profiles`]).
+///
+/// All four `*const c_char` strings are heap-allocated via
+/// [`optional_c_string`] and owned by the parent [`IdentityEntryFFI`];
+/// they are released row-by-row in [`free_identity_entry_ffi`] before
+/// the outer boxed slice drops. Gate the byte-array fields on their
+/// paired `_present` flag — `[0u8; N]` is a valid (if unlikely) hash /
+/// fingerprint value.
+#[repr(C)]
+pub struct ContactProfileRowFFI {
+    /// The contact's 32-byte identity id — the
+    /// [`IdentityEntry::contact_profiles`] map key. Becomes the
+    /// `contactIdentityId` half of the SwiftData row's compound key.
+    pub contact_id: [u8; 32],
+    /// Heap-allocated `displayName`; `null` when the source field was
+    /// `None`. Freed in [`free_identity_entry_ffi`].
+    pub display_name: *const c_char,
+    /// Heap-allocated `bio`; `null` when `None`. Freed in
+    /// [`free_identity_entry_ffi`].
+    pub bio: *const c_char,
+    /// Heap-allocated `avatarUrl`; `null` when `None`. Freed in
+    /// [`free_identity_entry_ffi`].
+    pub avatar_url: *const c_char,
+    /// SHA-256 avatar hash; zeroed when [`Self::avatar_hash_present`]
+    /// is `false`.
+    pub avatar_hash: [u8; 32],
+    /// `true` iff the source `avatar_hash` was `Some(_)`.
+    pub avatar_hash_present: bool,
+    /// DHash avatar fingerprint; zeroed when
+    /// [`Self::avatar_fingerprint_present`] is `false`.
+    pub avatar_fingerprint: [u8; 8],
+    /// `true` iff the source `avatar_fingerprint` was `Some(_)`.
+    pub avatar_fingerprint_present: bool,
+    /// Heap-allocated `publicMessage`; `null` when `None`. Freed in
+    /// [`free_identity_entry_ffi`].
+    pub public_message: *const c_char,
+    /// Wall-clock ms of the last fetch attempt — the
+    /// [`ContactProfileEntry::checked_at_ms`] self-heal timestamp.
+    pub checked_at_ms: u64,
 }
 
 /// Flat C mirror of [`IdentityKeyEntry`] for forwarding across FFI.
@@ -302,9 +369,11 @@ const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityKeyEntryFFI>()];
 //   193       dashpay_profile_avatar_fingerprint_present bool
 //   194..=199 (padding to 8 for pointer alignment)
 //   200..=207 dashpay_profile_public_message           *const c_char
+//   208..=215 contact_profiles                         *const ContactProfileRowFFI
+//   216..=223 contact_profiles_count                   usize
 //
-// Total size = 208, alignment = 8 (from u64 / pointer).
-const _: [u8; 208] = [0u8; std::mem::size_of::<IdentityEntryFFI>()];
+// Total size = 224, alignment = 8 (from u64 / pointer).
+const _: [u8; 224] = [0u8; std::mem::size_of::<IdentityEntryFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityEntryFFI>()];
 
 // ---------------------------------------------------------------------------
@@ -344,6 +413,9 @@ impl IdentityEntryFFI {
             None => DashPayProfileFields::absent(),
         };
 
+        let (contact_profiles, contact_profiles_count) =
+            allocate_contact_profile_rows(&entry.contact_profiles);
+
         Self {
             identity_id: entry.id.to_buffer(),
             balance: entry.balance,
@@ -365,6 +437,8 @@ impl IdentityEntryFFI {
             dashpay_profile_avatar_fingerprint: profile_fields.avatar_fingerprint,
             dashpay_profile_avatar_fingerprint_present: profile_fields.avatar_fingerprint_present,
             dashpay_profile_public_message: profile_fields.public_message,
+            contact_profiles,
+            contact_profiles_count,
         }
     }
 }
@@ -483,6 +557,69 @@ fn allocate_dpns_arrays(
     (labels_ptr, acquired_ptr, count)
 }
 
+/// Allocate the [`ContactProfileRowFFI`] array carried on
+/// [`IdentityEntryFFI`] from the source
+/// [`IdentityEntry::contact_profiles`] map. Returns `(rows, count)` —
+/// both `null`/`0` when no entry carries a **present** profile.
+///
+/// **Present profiles only.** Confirmed-absent entries
+/// (`ContactProfileEntry::profile == None`, the negative cache) are
+/// skipped: they rebuild harmlessly on the next sync sweep, so
+/// persisting them would only add write churn (the boundary the spec's
+/// §4.7 "persist only on change" discipline draws). The returned `count`
+/// is therefore the number of *present* profiles, not the map length.
+///
+/// `rows` is a `Box<[ContactProfileRowFFI]>` (via [`Box::into_raw`]).
+/// Each row's four nullable C-strings are [`CString::into_raw`]
+/// pointers — every one must be released with `CString::from_raw`
+/// before the outer slice drops. [`free_identity_entry_ffi`] does this
+/// row-by-row, mirroring the DPNS label-array free path exactly.
+fn allocate_contact_profile_rows(
+    contact_profiles: &std::collections::BTreeMap<
+        dpp::prelude::Identifier,
+        platform_wallet::ContactProfileEntry,
+    >,
+) -> (*const ContactProfileRowFFI, usize) {
+    if contact_profiles.is_empty() {
+        return (ptr::null(), 0);
+    }
+    let mut rows: Vec<ContactProfileRowFFI> = Vec::with_capacity(contact_profiles.len());
+    for (contact_id, entry) in contact_profiles {
+        // Skip confirmed-absent entries — the negative cache is not
+        // persisted; it rebuilds on the next sweep.
+        let Some(profile) = entry.profile.as_ref() else {
+            continue;
+        };
+        let (avatar_hash, avatar_hash_present) = match profile.avatar_hash {
+            Some(h) => (h, true),
+            None => ([0u8; 32], false),
+        };
+        let (avatar_fingerprint, avatar_fingerprint_present) = match profile.avatar_fingerprint {
+            Some(f) => (f, true),
+            None => ([0u8; 8], false),
+        };
+        rows.push(ContactProfileRowFFI {
+            contact_id: contact_id.to_buffer(),
+            display_name: optional_c_string(profile.display_name.as_deref()),
+            bio: optional_c_string(profile.bio.as_deref()),
+            avatar_url: optional_c_string(profile.avatar_url.as_deref()),
+            avatar_hash,
+            avatar_hash_present,
+            avatar_fingerprint,
+            avatar_fingerprint_present,
+            public_message: optional_c_string(profile.public_message.as_deref()),
+            checked_at_ms: entry.checked_at_ms,
+        });
+    }
+    if rows.is_empty() {
+        // Every entry was confirmed-absent — nothing present to carry.
+        return (ptr::null(), 0);
+    }
+    let count = rows.len();
+    let rows_ptr = Box::into_raw(rows.into_boxed_slice()) as *const ContactProfileRowFFI;
+    (rows_ptr, count)
+}
+
 impl IdentityKeyEntryFFI {
     /// Copy an [`IdentityKeyEntry`] into a fresh FFI struct. The
     /// caller owns the heap-allocated `public_key_data_ptr` byte
@@ -581,9 +718,11 @@ fn status_discriminant(status: IdentityStatus) -> u8 {
 
 /// Release heap allocations owned by an [`IdentityEntryFFI`] —
 /// the DPNS label C-string array (each entry plus the outer boxed
-/// slice), the parallel `acquired_at` timestamp array, and (when
+/// slice), the parallel `acquired_at` timestamp array, (when
 /// [`IdentityEntryFFI::dashpay_profile_present`] is true) the
-/// per-string profile C-strings.
+/// own-profile per-string C-strings, and the cached contact-profile
+/// row array (each row's four per-string C-strings plus the outer
+/// boxed slice).
 ///
 /// Idempotent: pointers are nulled, the `_present` flag is reset,
 /// and counts are zeroed after release, so a second call is a no-op.
@@ -644,6 +783,31 @@ pub unsafe fn free_identity_entry_ffi(entry: &mut IdentityEntryFFI) {
         entry.dashpay_profile_avatar_fingerprint_present = false;
         entry.dashpay_profile_present = false;
     }
+
+    // Release the cached contact-profile rows. Mirrors the DPNS
+    // label-array free path: reconstruct the `Box<[ContactProfileRowFFI]>`
+    // we created via `Box::into_raw`, walk every row to release its four
+    // per-string `CString`s, then drop the outer slice. Each string was
+    // produced by `optional_c_string` (`CString::into_raw`) so it MUST be
+    // reclaimed with `CString::from_raw` — the byte arrays are inline and
+    // need no free.
+    if !entry.contact_profiles.is_null() && entry.contact_profiles_count > 0 {
+        let rows = unsafe {
+            std::slice::from_raw_parts_mut(
+                entry.contact_profiles as *mut ContactProfileRowFFI,
+                entry.contact_profiles_count,
+            )
+        };
+        for row in rows.iter_mut() {
+            free_optional_c_string(&mut row.display_name);
+            free_optional_c_string(&mut row.bio);
+            free_optional_c_string(&mut row.avatar_url);
+            free_optional_c_string(&mut row.public_message);
+        }
+        let _ = unsafe { Box::from_raw(rows as *mut [ContactProfileRowFFI]) };
+        entry.contact_profiles = ptr::null();
+    }
+    entry.contact_profiles_count = 0;
 }
 
 /// Release a heap-allocated C string produced by
@@ -727,6 +891,7 @@ mod tests {
             wallet_id: Some([9u8; 32]),
             dashpay_profile: None,
             dashpay_payments: Default::default(),
+            contact_profiles: Default::default(),
         };
         let mut ffi = IdentityEntryFFI::from_entry(&entry);
         assert_eq!(ffi.identity_id, [7u8; 32]);
@@ -768,6 +933,7 @@ mod tests {
             wallet_id: None,
             dashpay_profile: None,
             dashpay_payments: Default::default(),
+            contact_profiles: Default::default(),
         };
         let mut ffi = IdentityEntryFFI::from_entry(&entry);
         assert_eq!(ffi.dpns_names_count, 2);
@@ -825,6 +991,7 @@ mod tests {
                 public_message: None,
             }),
             dashpay_payments: Default::default(),
+            contact_profiles: Default::default(),
         };
         let mut ffi = IdentityEntryFFI::from_entry(&entry);
         assert!(ffi.dashpay_profile_present);
@@ -872,6 +1039,7 @@ mod tests {
             wallet_id: None,
             dashpay_profile: None,
             dashpay_payments: Default::default(),
+            contact_profiles: Default::default(),
         };
         let mut ffi = IdentityEntryFFI::from_entry(&entry);
         assert!(!ffi.wallet_id_is_some);
