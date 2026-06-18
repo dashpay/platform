@@ -204,20 +204,35 @@ pub fn reconstruct_contact_xpub(
 ///   (dash-shared-core `keys.rs`) and Android (dashj
 ///   `serializeContactPub`) agree on this; our old helper hashed the
 ///   107-byte DIP-14 `encode()`.
-/// - **ASK28 byte order matches iOS dash-shared-core**: the digest is
-///   treated as a Dash-style reversed hash, so the "28 most
-///   significant bits" come from bytes `[28..32]` big-endian. The two
-///   reference clients disagree with each other here (Android reads
-///   bytes `[0..4]` little-endian); recipients MUST disregard the
-///   field per DIP-15, so the only consumer is the sender's own
-///   round-trip — we match the Rust reference implementation
-///   (dash-shared-core) and flag the divergence for a DIP
-///   clarification.
+/// - **ASK28 byte order matches iOS dash-shared-core.** DIP-15 leaves the
+///   extraction ambiguous ("28 most significant bits of ASK", no byte order),
+///   and FOUR conventions exist in the wild (verified 2026-06 against the live
+///   sources):
+///     - ours / iOS dash-shared-core: `be(ASK[28..32]) >> 4` — iOS reverses the
+///       digest then reads LE first-4, which is *algebraically identical* to
+///       our BE last-4;
+///     - Android (kotlin-platform): `le(ASK[0..4]) >> 4`;
+///     - dash-evo-tool AND the literal DIP reading (the digest as a 256-bit
+///       big-endian integer): `be(ASK[0..4]) >> 4`.
+///   They give different 28-bit values — but DIP-15 defines `accountReference`
+///   as a one-time-pad obfuscation that **recipients MUST ignore**; only the
+///   original sender ever un-masks it (to read the rotation version on
+///   re-send). So every convention round-trips for its own sender and there is
+///   **no on-chain interop failure** to observe and no canonical value to
+///   match. We match iOS (the most-deployed DashPay wallet) so our sent
+///   requests are bit-identical to the incumbent's — note this is *not*
+///   "matching the DIP literal" (that reading equals dash-evo-tool).
 fn account_secret_key_28(sender_secret_key: &[u8; 32], compact_xpub: &[u8]) -> u32 {
     let mut engine = HmacEngine::<sha256::Hash>::new(sender_secret_key);
     engine.input(compact_xpub);
     let ask = Hmac::<sha256::Hash>::from_engine(engine);
-    let ask_bytes = ask.to_byte_array();
+    extract_ask28(&ask.to_byte_array())
+}
+
+/// Extract `ASK28` from the 32-byte HMAC digest using the iOS dash-shared-core
+/// convention: `be(ASK[28..32]) >> 4`. See [`account_secret_key_28`] for the
+/// four-way convention split and why this choice is interop-neutral.
+fn extract_ask28(ask_bytes: &[u8; 32]) -> u32 {
     u32::from_be_bytes([ask_bytes[28], ask_bytes[29], ask_bytes[30], ask_bytes[31]]) >> 4
 }
 
@@ -541,6 +556,28 @@ mod tests {
         let reference = calculate_account_reference(&secret_key, &compact, 5, 0);
         let (_, wrong) = unmask_account_reference(reference, &[0x08u8; 32], &compact);
         assert_ne!(wrong, 5, "different PRF key must not unmask the account");
+    }
+
+    /// Known-answer test pinning the ASK28 extraction to the iOS
+    /// dash-shared-core convention (`be(ASK[28..32]) >> 4`), and documenting
+    /// the other deployed conventions' values for the same digest so a future
+    /// reader sees exactly how they diverge. `accountReference` is a one-time
+    /// pad recipients ignore, so this is sender-private — but the byte order
+    /// must stay locked to keep our sent requests bit-identical to iOS.
+    #[test]
+    fn ask28_extraction_matches_ios_and_diverges_from_others() {
+        let ask: [u8; 32] = std::array::from_fn(|i| i as u8); // ask[i] = i
+
+        // Ours == iOS dash-shared-core (reversed digest → be[28..32]>>4).
+        assert_eq!(extract_ask28(&ask), 0x01c1_d1e1);
+
+        // The other live conventions, for the record (all differ):
+        let android = u32::from_le_bytes([ask[0], ask[1], ask[2], ask[3]]) >> 4;
+        let dip_literal = u32::from_be_bytes([ask[0], ask[1], ask[2], ask[3]]) >> 4;
+        assert_eq!(android, 0x0030_2010, "kotlin-platform: le(ASK[0..4])>>4");
+        assert_eq!(dip_literal, 0x0000_1020, "dash-evo-tool / DIP literal: be(ASK[0..4])>>4");
+        assert_ne!(extract_ask28(&ask), android);
+        assert_ne!(extract_ask28(&ask), dip_literal);
     }
 
     #[test]
