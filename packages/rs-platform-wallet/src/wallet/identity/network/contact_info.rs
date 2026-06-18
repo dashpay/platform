@@ -89,35 +89,56 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         use dpp::document::DocumentV0Getters;
         use dpp::platform_value::platform_value;
 
+        use dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
+
         let dashpay_contract = super::dashpay_contract()?;
 
-        let query = dash_sdk::platform::DocumentQuery {
-            select: dash_sdk::drive::query::SelectProjection::documents(),
-            data_contract: dashpay_contract,
-            document_type_name: "contactInfo".to_string(),
-            where_clauses: vec![WhereClause {
-                field: "$ownerId".to_string(),
-                operator: WhereOperator::Equal,
-                value: platform_value!(identity_id),
-            }],
-            group_by: vec![],
-            having: vec![],
-            // Load-bearing, not cosmetic: drive answers a bare
-            // secondary-index equality with a verified proof of
-            // ABSENCE (same trap the contact-request queries hit —
-            // see fetch_received_contact_requests). The order-by
-            // binds the query to the ownerIdAndUpdatedAt index.
-            order_by_clauses: vec![OrderClause {
-                field: "$updatedAt".to_string(),
-                ascending: true,
-            }],
-            limit: 100,
-            start: None,
-        };
+        // Paginated retrieve-all — no truncation. contactInfos are owner-scoped
+        // (bounded by the contact count), but a wallet with >100 contacts would
+        // otherwise silently drop the rest, like the old contact-request fetch.
+        const CONTACT_INFO_PAGE: u32 = 100;
+        let mut docs: Vec<(Identifier, Option<Document>)> = Vec::new();
+        let mut start: Option<Start> = None;
+        loop {
+            let query = dash_sdk::platform::DocumentQuery {
+                select: dash_sdk::drive::query::SelectProjection::documents(),
+                data_contract: std::sync::Arc::clone(&dashpay_contract),
+                document_type_name: "contactInfo".to_string(),
+                where_clauses: vec![WhereClause {
+                    field: "$ownerId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: platform_value!(identity_id),
+                }],
+                group_by: vec![],
+                having: vec![],
+                // Load-bearing, not cosmetic: drive answers a bare
+                // secondary-index equality with a verified proof of ABSENCE
+                // (same trap the contact-request queries hit). The order-by
+                // binds the query to the ownerIdAndUpdatedAt index and gives
+                // the deterministic order pagination relies on.
+                order_by_clauses: vec![OrderClause {
+                    field: "$updatedAt".to_string(),
+                    ascending: true,
+                }],
+                limit: CONTACT_INFO_PAGE,
+                start: start.clone(),
+            };
 
-        let docs = Document::fetch_many(&self.sdk, query)
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
+            let page = Document::fetch_many(&self.sdk, query)
+                .await
+                .map_err(PlatformWalletError::Sdk)?;
+            let page_len = page.len();
+            let last_id = page.keys().last().copied();
+            docs.extend(page);
+
+            if page_len < CONTACT_INFO_PAGE as usize {
+                break;
+            }
+            match last_id {
+                Some(id) => start = Some(Start::StartAfter(id.to_buffer().to_vec())),
+                None => break,
+            }
+        }
 
         // Resolve the wallet HD slot once; decryption is per-doc.
         let (identity_index, wallet_snapshot) = {
