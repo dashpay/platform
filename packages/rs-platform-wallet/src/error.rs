@@ -1,4 +1,3 @@
-use dashcore::OutPoint;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
@@ -73,12 +72,6 @@ pub enum PlatformWalletError {
 
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
-
-    #[error(
-        "Transaction builder selected an unavailable UTXO (concurrent spend); retry. \
-         Selected outpoints: {selected:?}"
-    )]
-    ConcurrentSpendConflict { selected: Vec<OutPoint> },
 
     #[error("no spendable inputs available on {account_type} account {account_index}: {context}")]
     NoSpendableInputs {

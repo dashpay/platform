@@ -188,39 +188,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     }
                 })?;
 
-            // Defense-in-depth: unreachable under normal builder contract but guards against
-            // a future regression where coin selection picks an outpoint outside `spendable`.
             let selected: BTreeSet<OutPoint> =
                 tx.input.iter().map(|txin| txin.previous_output).collect();
-            let spendable_outpoints: BTreeSet<OutPoint> =
-                spendable.iter().map(|utxo| utxo.outpoint).collect();
-            if !selected.is_subset(&spendable_outpoints) {
-                // Typed retryable variant: forward-compatible with cross-process
-                // concurrent-spend surfacing; today only a builder regression hits it.
-                return Err(PlatformWalletError::ConcurrentSpendConflict {
-                    selected: selected.into_iter().collect(),
-                });
-            }
-
-            // Defense-in-depth: re-snapshot spendable UTXOs after `build_signed` and confirm
-            // every selected outpoint is still present. Today every UTXO mutator goes through
-            // the wallet write lock that we hold across build, so this is unreachable — but
-            // a future mutator running outside the lock (mempool listener, chain reorg, etc.)
-            // would slip through the pre-build `spendable` snapshot above; this fresh re-fetch
-            // catches it before broadcast. The reservations guard remains the primary in-process
-            // race defense; this is the cross-process / cross-subsystem net.
-            let fresh_spendable_outpoints: BTreeSet<OutPoint> = managed_account
-                .spendable_utxos(current_height)
-                .into_iter()
-                .map(|utxo| utxo.outpoint)
-                .collect();
-            if !selected.is_subset(&fresh_spendable_outpoints) {
-                let missing: Vec<OutPoint> = selected
-                    .difference(&fresh_spendable_outpoints)
-                    .copied()
-                    .collect();
-                return Err(PlatformWalletError::ConcurrentSpendConflict { selected: missing });
-            }
 
             // Reserve before releasing the lock so the next caller sees these outpoints
             // filtered out. Guard held until `check_core_transaction` marks them spent
