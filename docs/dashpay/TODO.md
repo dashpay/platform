@@ -115,28 +115,21 @@ track, and the multi-agent reviews. Prioritized; check off as done.
   floor. Verified against canonical `dip-0015.md` with a **byte-vector** test +
   round-trip / forward-compat / major-reject / truncation (8 tests). Struct gains
   `accepted_accounts`; dropped the now-dead `ciborium` dep.
-- [ ] **Spec 2 — Ignore (per-sender mute) — LOCAL-ONLY** (subsumes the old
-  BLOCK_SPEC + reject). **R1 resolved: do NOT sync incoming-request ignores via
-  `contactInfo`** — it leaks who you ignored (timing-correlation on the public
-  `ownerIdAndUpdatedAt` ↔ `userIdCreatedAt` indices; the DIP-15 ≥2-contacts gate
-  doesn't cover a fresh non-established sender). So ignore is **per-device** for
-  now: rename the existing `reject` machinery to `ignore`, suppress ignored senders
-  from the **main incoming list** (all their requests, rotations included),
-  reversible (un-ignore). **No on-chain ignore artifact.** `BLOCK_SPEC.md` (§0
-  R1–R10) is the starting point — per-sender; keep Q1 (un-ignore resyncs / rewind
-  cursor). Cross-device sync is deferred to the encrypted-profile-field contract
-  item (Contract track below).
-  - [ ] **Ignored list (UI + state):** a dedicated "Ignored" screen lists the
-    ignored senders with an **Un-ignore** action — ignored ≠ invisible, just hidden
-    from the main pending list. Requires persisting enough to display each
-    (identity id min; **name/avatar needs their profile → depends on the
-    contact-profile-sync fix, P0 #4**) and a query over `ignored_senders`.
-- [ ] **Refactor: collapse `reject` → per-sender `ignore`.** `rejected_contact_requests`
-  (keyed `(sender, accountReference)`) → `ignored_senders` (keyed by sender);
-  `is_request_rejected(sender,ref)` → `is_sender_ignored(sender)`; simplify the
-  restore/wipe/persist plumbing built this session. Decide terminology: `ignore`
-  (Android term) vs keep `reject`/`block` in code. Established-contact rotation
-  (`apply_rotated_incoming_request`) is UNCHANGED.
+- [x] **Spec 2 — Ignore (per-sender mute) — LOCAL-ONLY: DONE** (`62b7ad1875`).
+  Refactored the per-request reject machinery → per-sender `ignored_senders`
+  (`ignore_sender`/`is_sender_ignored`/`unignore_sender`); sync suppresses ALL of
+  an ignored sender's requests incl. rotations; established-contact rotation
+  untouched; `removed_incoming` still emitted. FFI `restore_dashpay_ignored` +
+  `platform_wallet_(un)ignore_contact_sender`. No on-chain artifact (R1). Reviewed
+  (correctness + FFI memory-safety audit); fixed a TOCTOU where a sync sweep could
+  clobber the un-ignore cursor rewind (`advance_if_unchanged`, unit-pinned). 273 +
+  110 tests + iOS build green. Cross-device deferred to the encrypted-profile
+  contract item below.
+  - [x] **Ignored list (UI + state)** — `IgnoredContactsView` (`@Query`-driven,
+    name/avatar via `getContactProfile`, Un-ignore); `PersistentDashpayIgnoredSender`.
+- [x] **Refactor: collapse `reject` → per-sender `ignore`: DONE** (folded into
+  Spec 2 above — `rejected_contact_requests`→`ignored_senders`, renamed across
+  Rust/FFI/SwiftData/Swift; `apply_rotated_incoming_request` UNCHANGED).
 - [x] **R1 privacy investigation — RESOLVED (2026-06-18): non-established ignore is
   LEAKY → go local-only.** A `contactInfo` about a non-established sender leaks who
   you ignored: its public `$createdAt`/`$updatedAt` (enumerable via the
