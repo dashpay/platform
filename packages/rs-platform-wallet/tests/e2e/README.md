@@ -236,6 +236,24 @@ cargo test --test e2e --features e2e -- --nocapture transfer_between_two_platfor
 Tracing output (SPV sync events, balance polls, sweep results) is written to stderr.
 `--nocapture` keeps it visible in the terminal.
 
+### Recommended invocation
+
+Full-suite runs take 30+ minutes and emit substantial tracing output. Two practices keep them manageable:
+
+**Run in parallel.** The harness is built for in-process parallelism (see [Parallelism](#parallelism)): every test gets its own fresh wallet and only the funding broadcast serialises (via `FUNDING_MUTEX`). Do _not_ add `--test-threads=1` — it turns a naturally-parallel suite into a sequential crawl. Use an explicit count or rely on libtest's default (one thread per logical CPU):
+
+> `--test-threads` is a libtest flag controlling how many _test cases_ run concurrently. It is distinct from the `worker_threads = 12` inside each test's `#[tokio_shared_rt::test]` attribute, which governs the async runtime's thread pool _within_ one test. Both operate simultaneously.
+
+**Log to a file.** A full run streams megabytes of tracing to stderr. Pipe both stdout and stderr through `tee` so results survive terminal scrollback loss and remain greppable afterwards:
+
+```bash
+cargo test -p platform-wallet --test e2e --features e2e \
+  -- --nocapture --include-ignored --test-threads=14 \
+  2>&1 | tee /tmp/platform-wallet-e2e.log
+# afterwards:
+grep -E 'test result:|FAILED' /tmp/platform-wallet-e2e.log
+```
+
 ### Logging on a live devnet
 
 A blanket `RUST_LOG=trace` against a **live devnet** is a footgun. During SPV sync
