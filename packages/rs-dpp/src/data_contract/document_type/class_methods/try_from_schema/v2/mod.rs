@@ -1018,6 +1018,54 @@ mod tests {
         );
     }
 
+    /// `documentsKeepHistory: true` + `canBeDeleted: true` is rejected
+    /// ONLY when `full_validation: true`. With `full_validation: false`
+    /// (the restore / migration / cache-warmup path) the same schema must
+    /// parse cleanly so already-deployed contradictory contracts continue
+    /// to load at v12+ — the drive-abci delete-transition guard turns
+    /// their deletes into clean invalid (paid) transitions instead of
+    /// rejecting them as internal errors at the contract-load layer.
+    /// Mirrors the gating in `try_from_schema` (search for
+    /// `full_validation && v1.documents_keep_history`).
+    #[test]
+    fn doctype_keep_history_with_can_be_deleted_accepted_without_full_validation() {
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "maxLength": 50,
+                    "position": 0,
+                },
+            },
+            "additionalProperties": false,
+            "documentsKeepHistory": true,
+            "canBeDeleted": true,
+        });
+        let platform_version = PlatformVersion::latest();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("default config available on latest platform version");
+        let v2 = DocumentTypeV2::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "test_doc",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut vec![],
+            platform_version,
+        )
+        .expect(
+            "documentsKeepHistory: true + canBeDeleted: true must be accepted when \
+             full_validation: false so already-deployed contradictory contracts continue to load",
+        );
+        assert!(v2.documents_keep_history);
+        assert!(v2.documents_can_be_deleted);
+    }
+
     /// Guard against an over-broad fix: `documentsKeepHistory: true` +
     /// `canBeDeleted: false` is consistent (the doctype is append-only)
     /// and must continue to parse cleanly. Same for `documentsKeepHistory:

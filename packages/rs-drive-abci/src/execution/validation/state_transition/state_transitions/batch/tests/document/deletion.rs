@@ -378,16 +378,27 @@ mod deletion_tests {
     /// this combination but cannot fix on-chain ones).
     #[tokio::test]
     async fn test_document_delete_on_document_type_that_keeps_history_is_rejected() {
+        // Pinned to protocol v12 — the keep-history delete guard is
+        // version-gated to v12 (validation v8 selects
+        // `document_delete_transition_structure_validation: 1`, which
+        // dispatches to `advanced_structure_v1` adding the
+        // `documents_keep_history()` check). Pre-fix this test ran against
+        // `current_platform_version()` (i.e. whatever the test rig's
+        // initial state landed on), so as new protocol versions ship the
+        // test would silently exercise a different version's validation
+        // path — possibly one where the guard regressed. Pinning here keeps
+        // the regression assertion bit-for-bit reproducible.
+        const PROTOCOL_VERSION: dpp::version::ProtocolVersion = 12;
+        let platform_version = PlatformVersion::get(PROTOCOL_VERSION)
+            .expect("expected platform version for protocol_version 12");
         let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(PROTOCOL_VERSION)
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
         let contract_path = "tests/supporting_files/contract/note/note-contract-keep-history-and-can-be-deleted.json";
 
         let platform_state = platform.state.load();
-        let platform_version = platform_state
-            .current_platform_version()
-            .expect("expected to get current platform version");
 
         // `full_validation: false` bypasses the DPP cross-flag check so the
         // intentionally-contradictory fixture loads — mirrors the
