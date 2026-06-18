@@ -253,15 +253,6 @@ mod json_convertible_tests {
     }
 
     #[test]
-    #[ignore = "Pending blstrs_plus upstream fix for BLS public-key dual-shape deserialize \
-                (separate from dashcore #708/#729 which are now merged). \
-                `ValidatorSetV0::threshold_public_key: BlsPublicKey<Bls12381G2Impl>` routes \
-                through the local `bls_pubkey_serde` wrapper, but the inner blstrs_plus \
-                Deserialize uses a borrowed `<&str>::deserialize(d)?` that fails through \
-                ContentDeserializer's HR-quirk with 'invalid type: sequence, expected a \
-                string'. Validator (this file's twin) doesn't hit it because its fixture \
-                has `public_key: None`. Once the blstrs_plus upstream PR merges and we \
-                bump that dep, drop this `#[ignore]` and the `bls_pubkey_serde` wrapper."]
     fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let (original, ..) = build_fixture();
