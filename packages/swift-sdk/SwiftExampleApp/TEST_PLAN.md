@@ -391,7 +391,7 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 ### Document
 | RPC | Tier | Status | Where |
 |---|---|---|---|
-| getDocuments (incl. V1 COUNT/SUM/AVG, group_by, having) | Common | ✅ / 🧪 / 🚫 | `DocumentsView` / catalog. COUNT (total/`where`/`group_by`) now has a **Count Documents** read view — `DOC-10/11/12`. SUM/AVG are upstream-blocked (grovedb PR 670) — `DOC-13/14`. `having` is not exposed by the FFI. |
+| getDocuments (incl. V1 COUNT/SUM/AVG, group_by, having) | Common | ✅ / 🧪 / 🔌 | `DocumentsView` / catalog. COUNT (total/`where`/`group_by`) now has a **Count Documents** read view — `DOC-10/11/12`. SUM/AVG are FFI-available (`DOC-13/14`) — no app UI yet. `having` is not exposed by the FFI. |
 | getDocumentHistory | Thorough | ✅ | catalog |
 
 ### Token
@@ -476,10 +476,10 @@ For completeness (the "everything gRPC + Core can do" requirement), these exist 
 **🔌 SDK-only (FFI/wrapper exists, no UI):**
 - `ADDR-05` address balance-change history (recent / compacted / branch / trunk)
 - `SH-11` create identity from shielded pool (Type 20)
+- `DOC-13` document SUM aggregation (FFI `dash_sdk_document_sum`)
+- `DOC-14` document AVERAGE aggregation (FFI `dash_sdk_document_average`)
 
 **🚫 Not implemented anywhere:**
-- `DOC-13` document SUM aggregation — FFI stub returns `NotImplemented` (blocked on grovedb PR 670)
-- `DOC-14` document AVERAGE aggregation — FFI stub returns `NotImplemented` (blocked on grovedb PR 670)
 - `GRP-04` standalone group lifecycle management
 - `getConsensusParams` (served via Tenderdash RPC, not the SDK)
 
