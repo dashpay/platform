@@ -66,6 +66,9 @@ impl IdentityManager {
             }
             existing.dashpay_payments.extend(entry.dashpay_payments);
             existing.contact_profiles.extend(entry.contact_profiles);
+            // Ignored senders: union (un-ignore is carried by an explicit
+            // `ContactChangeSet::unignored` removal, applied separately).
+            existing.ignored_senders.extend(entry.ignored_senders);
             return;
         }
 
@@ -109,6 +112,7 @@ impl IdentityManager {
                 managed.dashpay_profile = entry.dashpay_profile;
                 managed.dashpay_payments = entry.dashpay_payments;
                 managed.contact_profiles = entry.contact_profiles;
+                managed.ignored_senders = entry.ignored_senders;
 
                 self.wallet_identities
                     .entry(wallet_id)
@@ -136,6 +140,7 @@ impl IdentityManager {
                 managed.dashpay_profile = entry.dashpay_profile;
                 managed.dashpay_payments = entry.dashpay_payments;
                 managed.contact_profiles = entry.contact_profiles;
+                managed.ignored_senders = entry.ignored_senders;
 
                 self.out_of_wallet_identities.insert(id, managed);
                 self.location_index_insert(id, IdentityLocation::OutOfWallet);

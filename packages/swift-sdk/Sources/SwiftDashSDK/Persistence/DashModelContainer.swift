@@ -12,7 +12,7 @@ public enum DashModelContainer {
             PersistentDashpayContactProfile.self,
             PersistentDashpayContactRequest.self,
             PersistentDashpayPayment.self,
-            PersistentDashpayRejectedRequest.self,
+            PersistentDashpayIgnoredSender.self,
             PersistentDocument.self,
             PersistentDataContract.self,
             PersistentPublicKey.self,
@@ -170,13 +170,17 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 ///     refreshed by `PlatformWalletManager.refreshDashPayPayments`
 ///     (the persister doesn't project payment history). Additive
 ///     model + additive relationship ⇒ lightweight migration.
-///   - `PersistentDashpayRejectedRequest` was added (cascade-owned by
-///     `PersistentIdentity` via the new `dashpayRejectedRequests`
-///     collection). Persists the G5-stage-1 rejection tombstones the
-///     persister projects in the `rejected` changeset array so the
-///     Rust `rejected_contact_requests` suppression set can be restored
-///     at load — without it a rejected contact resurrects on relaunch.
-///     Additive model + additive relationship ⇒ lightweight migration.
+///   - `PersistentDashpayIgnoredSender` was added (cascade-owned by
+///     `PersistentIdentity` via the new `dashpayIgnoredSenders`
+///     collection). Persists per-sender ignores (local-only mute, =
+///     block, reversible) the persister projects in the `ignored`
+///     changeset array so the Rust `ignored_senders` set can be restored
+///     at load — without it an ignored sender resurfaces on relaunch.
+///     Keyed per-sender (no `accountReference`), so an ignored sender's
+///     rotated requests are suppressed too. Additive model + additive
+///     relationship ⇒ lightweight migration. (Replaces the earlier
+///     per-`(sender, accountReference)` `PersistentDashpayRejectedRequest`
+///     — the model decision collapsed reject into ignore.)
 ///   - `PersistentDashpayContactProfile` was added (cascade-owned by
 ///     `PersistentIdentity` via the new `contactProfiles` collection).
 ///     Mirrors one entry of the per-identity `contact_profiles` map

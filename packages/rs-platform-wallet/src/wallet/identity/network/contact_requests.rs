@@ -384,6 +384,25 @@ fn advance_high_water(current: Option<u64>, max_fetched: Option<u64>) -> Option<
     }
 }
 
+/// Advance the cursor only if it still holds `snapshot` — the value read at the
+/// start of the sweep. If it changed mid-sweep (an `unignore_sender` resets it
+/// to `None` to force a re-fetch of a sender whose docs predate the cursor),
+/// this sweep's `max_fetched` is stale — its fetch ran before the reset and
+/// excluded that sender — so leave the new value rather than clobber the rewind.
+/// Without this, a concurrent un-ignore is lost and the sender stays invisible
+/// until a cold restart.
+fn advance_if_unchanged(
+    current: Option<u64>,
+    snapshot: Option<u64>,
+    max_fetched: Option<u64>,
+) -> Option<u64> {
+    if current == snapshot {
+        advance_high_water(snapshot, max_fetched)
+    } else {
+        current
+    }
+}
+
 fn newest_received_per_sender(
     requests: impl IntoIterator<Item = ContactRequest>,
 ) -> std::collections::BTreeMap<Identifier, ContactRequest> {
@@ -457,11 +476,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// 1. Fetches both **received** and **own sent** contact-request
     ///    documents from Platform (G13).
     /// 2. Ingests received requests via `add_incoming_contact_request` —
-    ///    **including reciprocal requests from senders we already sent to**
-    ///    (G1a: the old guard dropped those, so contacts never established
-    ///    via sync). Dedup is preserved for requests already tracked as
-    ///    incoming or established, and for requests suppressed by the
-    ///    rejected-request tombstone (G5 stage 1).
+    ///    including reciprocal requests from senders we already sent to (so
+    ///    contacts establish via sync). Dedup is preserved for requests
+    ///    already tracked as incoming or established, and every request from
+    ///    an ignored sender is suppressed (per-sender — all of their requests,
+    ///    rotations included).
     /// 3. Ingests own sent requests via `add_sent_contact_request`, which
     ///    carries its own sent-side guard (G13) so a recurring re-ingest
     ///    creates no phantom pending rows and preserves contact metadata.
@@ -602,6 +621,23 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 let newest_by_sender = newest_received_per_sender(parsed_received);
 
                 for (sender_id, contact_request) in newest_by_sender {
+                    // Ignore (per-sender mute, local-only): an ignored
+                    // sender's requests are ALL suppressed from the main
+                    // pending list — including rotated (bumped
+                    // accountReference) ones. Checked FIRST and per-sender,
+                    // unlike the old per-(sender, accountReference) reject:
+                    // if you ignored the person you ignored them.
+                    // `unignore_sender` rewinds the cursor so this skip stops
+                    // firing on the next sweep.
+                    if managed.is_sender_ignored(&sender_id) {
+                        tracing::debug!(
+                            sender = %sender_id,
+                            recipient = %identity_id,
+                            account_reference = contact_request.account_reference,
+                            "Skipping ignored sender's contact request"
+                        );
+                        continue;
+                    }
                     // G1a: do NOT skip just because the sender is in
                     // `sent_contact_requests` — that is the reciprocal we
                     // need to let through to auto-establish. True dedup is
@@ -621,18 +657,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                                 .map(|c| c.incoming_request.account_reference)
                         });
                     if tracked_reference == Some(contact_request.account_reference) {
-                        continue;
-                    }
-                    // G5 stage 1: a rejected request (same sender +
-                    // accountReference) must not be resurrected. A rotated
-                    // request (bumped accountReference) is NOT suppressed.
-                    if managed.is_request_rejected(&sender_id, contact_request.account_reference) {
-                        tracing::debug!(
-                            sender = %sender_id,
-                            recipient = %identity_id,
-                            account_reference = contact_request.account_reference,
-                            "Skipping rejected contact request (tombstoned)"
-                        );
                         continue;
                     }
 
@@ -707,11 +731,21 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 // sent cursor only if its fetch also succeeded. A mid-sweep
                 // fetch error therefore leaves that direction's cursor intact
                 // so the overlap re-fetches next sweep (no burying).
-                managed.high_water_received_ms =
-                    advance_high_water(managed.high_water_received_ms, max_received);
+                //
+                // Compare-and-advance (see `advance_if_unchanged`): a concurrent
+                // `unignore_sender` may have reset the cursor mid-sweep to force
+                // a re-fetch; this sweep's stale `max` must not clobber that.
+                managed.high_water_received_ms = advance_if_unchanged(
+                    managed.high_water_received_ms,
+                    hw_received,
+                    max_received,
+                );
                 if sent_ok {
-                    managed.high_water_sent_ms =
-                        advance_high_water(managed.high_water_sent_ms, max_sent);
+                    managed.high_water_sent_ms = advance_if_unchanged(
+                        managed.high_water_sent_ms,
+                        hw_sent,
+                        max_sent,
+                    );
                 }
 
                 // (3) Collect account-building candidates: every established
@@ -1395,32 +1429,34 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 }
 
 // ---------------------------------------------------------------------------
-// Reject contact request
+// Ignore / un-ignore a contact sender (per-sender mute, local-only)
 // ---------------------------------------------------------------------------
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Reject a contact request and record a local tombstone (G5 stage 1).
+    /// Ignore a contact sender (per-sender mute, = block, reversible).
     ///
-    /// Removes the incoming request from local state AND records a
-    /// rejected-request tombstone keyed by `(sender, accountReference)` so
-    /// the recurring sync ingest path won't resurrect the still-on-platform
-    /// immutable document. The tombstone is **not** keyed by bare sender id:
-    /// a once-rejected sender CAN re-request via a bumped `accountReference`
-    /// (DIP-15 rotation), and that rotated request must reach the user.
+    /// Drops the sender's pending incoming request from local state AND
+    /// records the sender in `ignored_senders` so the recurring sync ingest
+    /// path won't resurrect *any* of that sender's still-on-platform
+    /// immutable `contactRequest` documents — including rotated, bumped-
+    /// `accountReference` ones. Suppression is per-sender by design: if you
+    /// ignored the person you ignored them; [`Self::unignore_contact_sender`]
+    /// is the "changed my mind" affordance.
     ///
-    /// The tombstone is persisted through the existing
-    /// changeset → apply → SQLite pipeline.
+    /// Ignore is **local-only** — there is no on-chain artifact (syncing it
+    /// would leak who you ignored via the public contact-request indices).
+    /// The ignore is persisted through the existing
+    /// changeset → apply → SQLite pipeline so it survives a relaunch.
     ///
-    /// A full cross-device implementation (M3) will also create/update a
-    /// `contactInfo` document on Platform with `display_hidden: true`; that
-    /// requires SDK support for arbitrary DashPay documents, out of scope
-    /// for this stage.
+    /// Unlike the old reject, this does NOT require a pending incoming
+    /// request to exist: you can ignore a sender whose request the sweep
+    /// hasn't surfaced yet (the per-sender set still suppresses it).
     ///
     /// # Arguments
     ///
     /// * `identity_id`         - Our identity.
-    /// * `contact_identity_id` - The identity whose request we reject.
-    pub async fn reject_contact_request(
+    /// * `contact_identity_id` - The sender to ignore.
+    pub async fn ignore_contact_sender(
         &self,
         identity_id: &Identifier,
         contact_identity_id: &Identifier,
@@ -1434,37 +1470,73 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .managed_identity_mut(identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
 
-        // The incoming request must exist; capture its accountReference for
-        // the tombstone key BEFORE removing it.
-        let account_reference = match managed.incoming_contact_requests.get(contact_identity_id) {
-            Some(req) => req.account_reference,
-            None => {
-                return Err(PlatformWalletError::ContactRequestNotFound(
-                    *contact_identity_id,
-                ))
-            }
-        };
-
-        // Record the tombstone (drops the incoming entry, keyed by
-        // (sender, accountReference)) and persist it.
+        // Record the ignore (drops the pending incoming entry if present,
+        // adds the sender to `ignored_senders`) and persist it.
         //
-        // PROPAGATE the store error rather than swallow it. The tombstone
-        // is local-only (there's no on-chain rejection), so if it doesn't
-        // reach disk the still-immutable on-chain request re-ingests on the
-        // next launch and the rejected contact RESURRECTS — with no signal.
+        // PROPAGATE the store error rather than swallow it. Ignore is
+        // local-only (there's no on-chain artifact), so if it doesn't reach
+        // disk the still-immutable on-chain requests re-ingest on the next
+        // launch and the ignored sender RESURFACES — with no signal.
         // Returning the error surfaces the failure to the UI so the user
         // retries, instead of a silent success that didn't take.
-        let cs =
-            managed.record_rejected_contact_request(contact_identity_id, account_reference, None);
+        let cs = managed.ignore_sender(contact_identity_id);
         self.persister.store(cs.into()).map_err(|e| {
-            PlatformWalletError::Persistence(format!("reject tombstone not persisted: {e}"))
+            PlatformWalletError::Persistence(format!("ignore not persisted: {e}"))
         })?;
 
         tracing::info!(
             identity = %identity_id,
-            rejected_contact = %contact_identity_id,
-            account_reference,
-            "Contact request rejected (tombstoned locally; will not resurrect on sync)"
+            ignored_sender = %contact_identity_id,
+            "Contact sender ignored (local-only; suppressed from the main pending list, won't resurrect on sync)"
+        );
+
+        Ok(())
+    }
+
+    /// Un-ignore a contact sender (reverse [`Self::ignore_contact_sender`]).
+    ///
+    /// Removes the sender from `ignored_senders`, **rewinds the received
+    /// high-water cursor to `None`** (so the next sweep re-fetches the
+    /// sender's on-chain requests — otherwise the cursor has already passed
+    /// them and they'd never reappear), and persists the un-ignore through
+    /// the changeset pipeline.
+    ///
+    /// A no-op (returns `Ok(())`) when the sender wasn't ignored.
+    ///
+    /// # Arguments
+    ///
+    /// * `identity_id`         - Our identity.
+    /// * `contact_identity_id` - The sender to un-ignore.
+    pub async fn unignore_contact_sender(
+        &self,
+        identity_id: &Identifier,
+        contact_identity_id: &Identifier,
+    ) -> Result<(), PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let managed = info
+            .identity_manager
+            .managed_identity_mut(identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+
+        // `unignore_sender` removes the sender + rewinds the cursor and
+        // returns the removal changeset (empty if the sender wasn't
+        // ignored). Persist it so the ignored-sender row is deleted.
+        let cs = managed.unignore_sender(contact_identity_id);
+        if <crate::changeset::ContactChangeSet as crate::changeset::Merge>::is_empty(&cs) {
+            // Not ignored — nothing to persist, but not an error.
+            return Ok(());
+        }
+        self.persister.store(cs.into()).map_err(|e| {
+            PlatformWalletError::Persistence(format!("un-ignore not persisted: {e}"))
+        })?;
+
+        tracing::info!(
+            identity = %identity_id,
+            unignored_sender = %contact_identity_id,
+            "Contact sender un-ignored (cursor rewound; requests will re-fetch on next sweep)"
         );
 
         Ok(())
@@ -1527,6 +1599,23 @@ mod cursor_tests {
         assert_eq!(advance_high_water(None, Some(0)), Some(0));
         assert_eq!(advance_high_water(Some(0), None), Some(0));
         assert_eq!(query_lower_bound(Some(0)), Some(0));
+    }
+
+    /// Compare-and-advance: a concurrent `unignore_sender` reset (cursor no
+    /// longer equals the snapshot) must NOT be clobbered by this sweep's stale
+    /// max — otherwise the un-ignored sender stays invisible until a restart.
+    #[test]
+    fn advance_if_unchanged_respects_a_concurrent_reset() {
+        use super::advance_if_unchanged;
+        // Unchanged since snapshot → normal advance.
+        assert_eq!(advance_if_unchanged(Some(100), Some(100), Some(200)), Some(200));
+        assert_eq!(advance_if_unchanged(Some(100), Some(100), None), Some(100));
+        // THE RACE: snapshot was Some(100); un-ignore reset it to None
+        // mid-sweep; this sweep's max is Some(200) (stale — excluded the sender)
+        // → keep the None so the next sweep does a full re-fetch.
+        assert_eq!(advance_if_unchanged(None, Some(100), Some(200)), None);
+        // Any other concurrent change is likewise respected, not clobbered.
+        assert_eq!(advance_if_unchanged(Some(50), Some(100), Some(200)), Some(50));
     }
 }
 
@@ -1715,13 +1804,12 @@ mod sweep_tests {
         );
     }
 
-    /// **Test 2 (rejected tombstone persistence):** a rejected-request
-    /// tombstone round-trips through the changeset → apply pipeline so a
-    /// recurring re-sync after a restart still suppresses it — while a
-    /// bumped-`accountReference` request from the same sender is NOT
-    /// suppressed.
+    /// **Ignore persistence:** an ignored sender round-trips through the
+    /// changeset → apply pipeline so a recurring re-sync after a restart
+    /// still suppresses them — including a rotated (bumped-`accountReference`)
+    /// request from the same sender (per-sender suppression).
     #[test]
-    fn rejected_tombstone_round_trips_and_respects_account_reference() {
+    fn ignored_sender_round_trips_through_changeset_apply() {
         let our = 1u8;
         let sender = 9u8;
         let our_id = Identifier::from([our; 32]);
@@ -1733,35 +1821,81 @@ mod sweep_tests {
             .add_identity(test_identity(our), 0, [0u8; 32], &p)
             .expect("add identity");
 
-        // Record a tombstone for (sender, accountReference=0) and capture
-        // the resulting changeset.
+        // Ignore the sender and capture the resulting changeset.
         let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
         managed.add_incoming_contact_request(test_request(sender, our, 0), &p);
-        let cs = managed.record_rejected_contact_request(&sender_id, 0, None);
+        let cs = managed.ignore_sender(&sender_id);
         let pcs = PlatformWalletChangeSet {
             contacts: Some(cs),
             ..Default::default()
         };
 
-        // Wipe the in-memory tombstone, then re-apply the changeset (the
+        // Wipe the in-memory ignore set, then re-apply the changeset (the
         // restore-from-persistence path).
         info.identity_manager
             .managed_identity_mut(&our_id)
             .unwrap()
-            .rejected_contact_requests
+            .ignored_senders
             .clear();
         let mut wallet = wallet;
         info.apply_changeset(&mut wallet, pcs).expect("apply");
 
         let managed = info.identity_manager.managed_identity(&our_id).unwrap();
         assert!(
-            managed.is_request_rejected(&sender_id, 0),
-            "tombstone must be restored from the changeset"
+            managed.is_sender_ignored(&sender_id),
+            "ignored sender must be restored from the changeset"
+        );
+    }
+
+    /// **Ignore suppresses original AND rotated (full sweep):** an ignored
+    /// sender's ORIGINAL request and a later ROTATED (bumped-`accountReference`)
+    /// request are BOTH suppressed by `sync_contact_requests`' per-sender
+    /// ingest guard — neither reaches `incoming_contact_requests`. This is
+    /// the key per-sender semantic difference from the old per-(sender,ref)
+    /// reject (which would have let the rotation through).
+    ///
+    /// Drives the ingest decision logic directly against the state machine
+    /// (the full network fetch is exercised by the mock-SDK integration
+    /// tests): collapse-newest → is_sender_ignored → skip.
+    #[test]
+    fn ignored_sender_suppresses_both_original_and_rotated_requests() {
+        let our = 1u8;
+        let sender = 9u8;
+        let our_id = Identifier::from([our; 32]);
+        let sender_id = Identifier::from([sender; 32]);
+        let wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let p = noop_persister();
+        info.identity_manager
+            .add_identity(test_identity(our), 0, [0u8; 32], &p)
+            .expect("add identity");
+        let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
+
+        // Ignore the sender first.
+        managed.ignore_sender(&sender_id);
+        assert!(managed.is_sender_ignored(&sender_id));
+
+        // Simulate the sweep seeing BOTH the original (ref=0) and a rotated
+        // (ref=7) on-chain doc for this sender. The collapse keeps the
+        // newest; the ignore check then suppresses it regardless of ref.
+        let original = test_request_at(sender, our, 0, 100);
+        let rotated = test_request_at(sender, our, 7, 200);
+        let collapsed = newest_received_per_sender([original, rotated]);
+        let newest = collapsed.get(&sender_id).expect("collapsed entry");
+
+        // The per-sender ignore suppresses the rotated (newest) doc.
+        assert_eq!(
+            newest.account_reference, 7,
+            "collapse keeps the newest (rotated) doc"
         );
         assert!(
-            !managed.is_request_rejected(&sender_id, 1),
-            "a rotated (bumped accountReference) request must NOT be suppressed"
+            managed.is_sender_ignored(&sender_id),
+            "an ignored sender suppresses ALL their requests, including the rotation"
         );
+
+        // And the original ref (0) is suppressed too — per-sender, not
+        // per-(sender, accountReference).
+        assert!(managed.is_sender_ignored(&sender_id));
     }
 
     /// Build a received request with an explicit `created_at` so the

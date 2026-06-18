@@ -2,7 +2,7 @@
 //! the platform-wallet [`IdentityWallet`](platform_wallet::IdentityWallet).
 //!
 //! Replaces the local-state-only
-//! `managed_identity_{send,accept,reject}_contact_request` FFI
+//! `managed_identity_{send,accept}_contact_request` FFI
 //! family with Platform-broadcasting equivalents. Those local
 //! helpers still exist for in-memory manipulation (e.g. tests,
 //! initial bootstrap), but iOS flows should now drive from here so
@@ -22,9 +22,10 @@
 //! - [`platform_wallet_accept_contact_request_with_signer`] —
 //!   reciprocate an incoming request, returning a handle into
 //!   `ESTABLISHED_CONTACT_STORAGE`.
-//! - [`platform_wallet_reject_contact_request`] — drop an incoming
-//!   request locally (on-chain contactInfo tombstone is a future
-//!   follow-up).
+//! - [`platform_wallet_ignore_contact_sender`] /
+//!   [`platform_wallet_unignore_contact_sender`] — ignore (per-sender
+//!   mute, = block, reversible) / un-ignore a sender. Local-only; no
+//!   on-chain artifact.
 //! - [`platform_wallet_fetch_sent_contact_requests`] — query
 //!   Platform for the identity's sent requests.
 //! - [`platform_wallet_send_payment`] — send a Dash payment to an
@@ -301,17 +302,20 @@ pub unsafe extern "C" fn platform_wallet_accept_contact_request_with_signer(
 }
 
 // ---------------------------------------------------------------------------
-// Reject contact request
+// Ignore / un-ignore a contact sender (per-sender mute, local-only)
 // ---------------------------------------------------------------------------
 
-/// Reject an incoming contact request. Drops the request from
-/// `incoming_contact_requests` on the managed identity. A future
-/// follow-up (noted on the Rust side) will also write a
-/// `display_hidden` contactInfo document to Platform so the
-/// rejection persists across devices; today the effect is local
-/// only.
+/// Ignore a contact sender (per-sender mute, = block, reversible).
+///
+/// Drops the sender's pending incoming request and records the sender as
+/// ignored so the recurring sync sweep suppresses ALL of their requests
+/// (including rotated ones) from the main pending list. Ignore is
+/// **local-only** — no on-chain artifact (syncing it would leak who you
+/// ignored); it is persisted through the changeset → SwiftData pipeline so
+/// it survives a relaunch. Reverse with
+/// [`platform_wallet_unignore_contact_sender`].
 #[no_mangle]
-pub unsafe extern "C" fn platform_wallet_reject_contact_request(
+pub unsafe extern "C" fn platform_wallet_ignore_contact_sender(
     wallet_handle: Handle,
     our_identity_id: *const u8,
     contact_identity_id: *const u8,
@@ -321,7 +325,36 @@ pub unsafe extern "C" fn platform_wallet_reject_contact_request(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.reject_contact_request(&our_id, &contact_id).await })
+        block_on_worker(async move {
+            identity.ignore_contact_sender(&our_id, &contact_id).await
+        })
+    });
+    let result = unwrap_option_or_return!(option);
+    unwrap_result_or_return!(result);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Un-ignore a contact sender (reverse
+/// [`platform_wallet_ignore_contact_sender`]).
+///
+/// Removes the sender from the ignore set AND rewinds the received
+/// high-water cursor so the next sweep re-fetches the sender's on-chain
+/// requests (otherwise the cursor has already passed them and they'd never
+/// reappear). A no-op (returns OK) when the sender wasn't ignored.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_unignore_contact_sender(
+    wallet_handle: Handle,
+    our_identity_id: *const u8,
+    contact_identity_id: *const u8,
+) -> PlatformWalletFFIResult {
+    let our_id = unwrap_result_or_return!(unsafe { read_identifier(our_identity_id) });
+    let contact_id = unwrap_result_or_return!(unsafe { read_identifier(contact_identity_id) });
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        block_on_worker(async move {
+            identity.unignore_contact_sender(&our_id, &contact_id).await
+        })
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);

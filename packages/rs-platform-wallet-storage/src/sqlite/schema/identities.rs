@@ -211,13 +211,22 @@ fn managed_identity_from_entry(
         established_contacts: Default::default(),
         sent_contact_requests: Default::default(),
         incoming_contact_requests: Default::default(),
-        rejected_contact_requests: Default::default(),
+        // Scalar-snapshot collections ride the identity `entry_blob` (like
+        // `dashpay_payments` / `dashpay_profile` below), so they restore from
+        // `entry`. The relational request collections above are loaded
+        // separately from the `contacts` table and stay defaulted here.
+        ignored_senders: entry.ignored_senders.clone(),
         status: entry.status,
         dpns_names: entry.dpns_names.clone(),
         contested_dpns_names: entry.contested_dpns_names.clone(),
         wallet_id: entry.wallet_id.or(Some(*wallet_id)),
         dashpay_profile: entry.dashpay_profile.clone(),
         dashpay_payments: entry.dashpay_payments.clone(),
+        contact_profiles: entry.contact_profiles.clone(),
+        // High-water sync cursors are in-memory by design: a cold restore
+        // starts them at `None` so the next sweep does one safe full re-fetch.
+        high_water_received_ms: None,
+        high_water_sent_ms: None,
     }
 }
 
@@ -249,6 +258,8 @@ pub fn ensure_exists(
         wallet_id: None,
         dashpay_profile: None,
         dashpay_payments: Default::default(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
     };
     let payload = blob::encode(&stub)?;
     let wallet_id_param = wallet_id_to_param(wallet_id);

@@ -122,27 +122,25 @@ pub unsafe extern "C" fn managed_identity_accept_contact_request(
     PlatformWalletFFIResult::ok()
 }
 
-/// Reject an incoming contact request
-/// This will remove the request from incoming_contact_requests
+/// Ignore a contact sender (per-sender mute, = block, reversible).
+///
+/// Local in-memory path on a managed-identity handle (no persister) —
+/// drops the sender's pending incoming request and records them in
+/// `ignored_senders`. The durable, persisted path is the wallet-scoped
+/// `platform_wallet_ignore_contact_sender`.
 #[no_mangle]
-pub unsafe extern "C" fn managed_identity_reject_contact_request(
+pub unsafe extern "C" fn managed_identity_ignore_contact_sender(
     identity_handle: Handle,
     sender_id: *const u8,
 ) -> PlatformWalletFFIResult {
     let id = unwrap_result_or_return!(unsafe { read_identifier(sender_id) });
 
     let option = MANAGED_IDENTITY_STORAGE.with_item_mut(identity_handle, |identity| {
-        identity.remove_incoming_contact_request(&id).0.is_some()
+        // Drop the returned changeset — this handle has no persister.
+        let _ = identity.ignore_sender(&id);
     });
-    let removed = unwrap_option_or_return!(option);
-    if removed {
-        PlatformWalletFFIResult::ok()
-    } else {
-        PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorContactNotFound,
-            "Contact request not found",
-        )
-    }
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 #[cfg(test)]

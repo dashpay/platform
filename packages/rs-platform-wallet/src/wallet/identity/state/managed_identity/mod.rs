@@ -67,17 +67,22 @@ pub struct ManagedIdentity {
     /// Map of incoming contact requests (not yet accepted) keyed by sender ID
     pub incoming_contact_requests: BTreeMap<Identifier, ContactRequest>,
 
-    /// Rejected-request tombstones (G5 stage 1) keyed by
-    /// `(sender_id, account_reference)`.
+    /// Senders this identity has chosen to **ignore** (per-sender mute,
+    /// reversible — the local-only equivalent of "block"). Keyed by the
+    /// sender's identity id.
     ///
-    /// A `reject_contact_request` records the `(sender, accountReference)`
-    /// of the dropped incoming request here so the recurring sync ingest
-    /// path won't resurrect the still-on-platform immutable document. The
-    /// key deliberately includes `account_reference`: a once-rejected
-    /// sender CAN re-request via a bumped `accountReference` (DIP-15
-    /// rotation), and that rotated request is NOT suppressed.
-    pub rejected_contact_requests:
-        BTreeMap<(Identifier, u32), crate::changeset::RejectedContactRequest>,
+    /// `ignore_sender` records a sender here so the recurring sync ingest
+    /// path won't resurrect *any* of that sender's still-on-platform
+    /// immutable `contactRequest` documents — including rotated ones with
+    /// a bumped `accountReference`. Suppression is per-sender by design: if
+    /// you ignored the person you ignored them; `unignore_sender` is the
+    /// "changed my mind" affordance, which also rewinds the receive cursor
+    /// so the next sweep re-fetches their requests.
+    ///
+    /// Local-only: there is no on-chain artifact (syncing it would leak who
+    /// you ignored via the public contact-request indices). Cross-device
+    /// sync is deferred to a future encrypted `profile` field.
+    pub ignored_senders: std::collections::BTreeSet<Identifier>,
 
     /// Identity lifecycle status on Platform.
     pub status: IdentityStatus,

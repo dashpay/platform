@@ -230,26 +230,38 @@ pub fn apply(
             ])?;
         }
     }
-    if !cs.rejected.is_empty() {
-        // Rejected-request tombstone (G5 stage 1). Keyed by the rejected
-        // document id OR `(sender, accountReference)` — NEVER bare sender
-        // id — so a rotation request (bumped accountReference) from a
-        // once-rejected sender is NOT silently blocked. The sync ingest
-        // path consults this table before re-ingesting a received request.
+    if !cs.ignored.is_empty() {
+        // Per-sender ignore (= block, reversible — local-only), keyed by bare
+        // `(wallet_id, owner_id, sender_id)`. Suppresses ALL of the sender's
+        // incoming requests (including rotated, bumped-accountReference ones);
+        // the sync ingest path consults this table before surfacing a received
+        // request. Insert is idempotent — re-ignoring an already-ignored sender
+        // is a no-op rather than an error.
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO rejected_contact_requests \
-                (wallet_id, owner_id, sender_id, account_reference, document_id) \
-             VALUES (?1, ?2, ?3, ?4, ?5) \
-             ON CONFLICT(wallet_id, owner_id, sender_id, account_reference) DO UPDATE SET \
-                document_id = excluded.document_id",
+            "INSERT INTO ignored_senders (wallet_id, owner_id, sender_id) \
+             VALUES (?1, ?2, ?3) \
+             ON CONFLICT(wallet_id, owner_id, sender_id) DO NOTHING",
         )?;
-        for entry in cs.rejected.values() {
+        for (owner_id, sender_id) in &cs.ignored {
             stmt.execute(params![
                 wallet_id.as_slice(),
-                entry.owner_id.as_slice(),
-                entry.sender_id.as_slice(),
-                entry.account_reference as i64,
-                entry.document_id.as_ref().map(|d| d.as_slice()),
+                owner_id.as_slice(),
+                sender_id.as_slice(),
+            ])?;
+        }
+    }
+    if !cs.unignored.is_empty() {
+        // Un-ignore tombstone: delete the row so the sender's requests resurface
+        // on the next sweep. Deleting a non-existent row is a harmless no-op.
+        let mut stmt = tx.prepare_cached(
+            "DELETE FROM ignored_senders \
+             WHERE wallet_id = ?1 AND owner_id = ?2 AND sender_id = ?3",
+        )?;
+        for (owner_id, sender_id) in &cs.unignored {
+            stmt.execute(params![
+                wallet_id.as_slice(),
+                owner_id.as_slice(),
+                sender_id.as_slice(),
             ])?;
         }
     }
@@ -410,5 +422,89 @@ mod tests {
             from_writer, from_const,
             "CONTACT_STATE_LABELS ({from_const:?}) drifted from contact_state_db_label codomain ({from_writer:?})"
         );
+    }
+
+    /// Ignoring a sender persists one `ignored_senders` row; un-ignoring the
+    /// same `(owner, sender)` deletes it. This is the local-only suppression
+    /// the sync ingest path relies on — if the write/delete pairing is wrong,
+    /// an ignored sender either never gets muted or stays muted forever.
+    #[test]
+    fn ignore_then_unignore_round_trips() {
+        use crate::sqlite::migrations;
+        use crate::sqlite::schema::wallet_meta;
+        use dpp::prelude::Identifier;
+        use platform_wallet::wallet::platform_wallet::WalletId;
+        use rusqlite::Connection;
+        use std::collections::BTreeSet;
+
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrations::run(&mut conn).unwrap();
+        let wallet_id: WalletId = [7u8; 32];
+        wallet_meta::ensure_exists(&conn, &wallet_id).unwrap();
+
+        let owner = Identifier::from([0xAAu8; 32]);
+        let sender = Identifier::from([0xBBu8; 32]);
+
+        let count = |conn: &Connection| -> i64 {
+            conn.query_row(
+                "SELECT COUNT(*) FROM ignored_senders \
+                 WHERE wallet_id = ?1 AND owner_id = ?2 AND sender_id = ?3",
+                params![wallet_id.as_slice(), owner.as_slice(), sender.as_slice()],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+
+        // Ignore → one row.
+        {
+            let tx = conn.transaction().unwrap();
+            apply(
+                &tx,
+                &wallet_id,
+                &ContactChangeSet {
+                    ignored: BTreeSet::from([(owner, sender)]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            tx.commit().unwrap();
+        }
+        assert_eq!(
+            count(&conn),
+            1,
+            "ignore must persist the (owner, sender) row"
+        );
+
+        // Re-ignore is idempotent (ON CONFLICT DO NOTHING) → still one row.
+        {
+            let tx = conn.transaction().unwrap();
+            apply(
+                &tx,
+                &wallet_id,
+                &ContactChangeSet {
+                    ignored: BTreeSet::from([(owner, sender)]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            tx.commit().unwrap();
+        }
+        assert_eq!(count(&conn), 1, "re-ignoring the same sender is a no-op");
+
+        // Un-ignore → row deleted.
+        {
+            let tx = conn.transaction().unwrap();
+            apply(
+                &tx,
+                &wallet_id,
+                &ContactChangeSet {
+                    unignored: BTreeSet::from([(owner, sender)]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            tx.commit().unwrap();
+        }
+        assert_eq!(count(&conn), 0, "un-ignore must delete the row");
     }
 }

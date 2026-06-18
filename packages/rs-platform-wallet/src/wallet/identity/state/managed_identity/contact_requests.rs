@@ -7,8 +7,7 @@
 
 use super::ManagedIdentity;
 use crate::changeset::{
-    ContactChangeSet, ContactRequestEntry, ReceivedContactRequestKey, RejectedContactRequest,
-    SentContactRequestKey,
+    ContactChangeSet, ContactRequestEntry, ReceivedContactRequestKey, SentContactRequestKey,
 };
 use crate::wallet::identity::crypto::contact_info::ContactInfoPrivateData;
 use crate::wallet::persister::WalletPersister;
@@ -120,60 +119,75 @@ impl ManagedIdentity {
         }
     }
 
-    /// Record a rejected incoming contact request (G5 stage 1).
+    /// Ignore `sender_id` (per-sender mute, = block, reversible).
     ///
-    /// Drops the incoming entry (if present) and records a tombstone keyed
-    /// by `(sender, account_reference)` so the recurring sync ingest path
-    /// won't resurrect the still-on-platform immutable document. Returns
-    /// the [`ContactChangeSet`] carrying the tombstone (the caller is
-    /// responsible for persisting it through the same write guard it holds).
-    ///
-    /// The tombstone is **NOT** keyed by bare sender id: a once-rejected
-    /// sender CAN re-request via a bumped `accountReference` (DIP-15
-    /// rotation), and that rotated request must reach the user.
-    pub fn record_rejected_contact_request(
-        &mut self,
-        sender_id: &Identifier,
-        account_reference: u32,
-        document_id: Option<Identifier>,
-    ) -> ContactChangeSet {
+    /// Drops the sender's pending incoming entry (if present) and records
+    /// the sender in `ignored_senders` so the recurring sync ingest path
+    /// won't resurrect *any* of that sender's still-on-platform immutable
+    /// `contactRequest` documents — including rotated ones with a bumped
+    /// `accountReference`. Suppression is per-sender by design (unlike the
+    /// old per-`(sender, accountReference)` reject). Returns the
+    /// [`ContactChangeSet`] carrying the ignore (the caller is responsible
+    /// for persisting it through the same write guard it holds).
+    pub fn ignore_sender(&mut self, sender_id: &Identifier) -> ContactChangeSet {
         let owner_id = self.id();
         self.incoming_contact_requests.remove(sender_id);
-
-        let tombstone = RejectedContactRequest {
-            owner_id,
-            sender_id: *sender_id,
-            account_reference,
-            document_id,
-        };
-        self.rejected_contact_requests
-            .insert((*sender_id, account_reference), tombstone.clone());
+        self.ignored_senders.insert(*sender_id);
 
         let mut cs = ContactChangeSet::default();
-        // Emit `removed_incoming` too — NOT just the tombstone. The Rust
-        // SQLite contacts writer DELETEs the persisted `state='received'`
-        // row only on a `removed_incoming` entry; its `rejected` branch
-        // upserts solely the tombstone table. Without this the rejected
-        // request's row survives in SQLite and rehydrates as a live incoming
-        // entry on the next load — the user's reject is silently undone on
-        // that backend. (The SwiftData persister already deletes the row via
-        // its `rejected` handler, so this makes the two backends consistent.)
+        // Emit `removed_incoming` too — NOT just the ignore entry. The
+        // Rust SQLite contacts writer DELETEs the persisted
+        // `state='received'` row only on a `removed_incoming` entry; its
+        // `ignored` branch upserts solely the ignored-senders table.
+        // Without this the ignored sender's row survives in SQLite and
+        // rehydrates as a live incoming entry on the next load — the
+        // user's ignore is silently undone on that backend. (The SwiftData
+        // persister already deletes the row via its `ignored` handler, so
+        // this makes the two backends consistent.)
         cs.removed_incoming.insert(ReceivedContactRequestKey {
             owner_id,
             sender_id: *sender_id,
         });
-        cs.rejected
-            .insert((owner_id, *sender_id, account_reference), tombstone);
+        cs.ignored.insert((owner_id, *sender_id));
         cs
     }
 
-    /// Whether an incoming request from `sender_id` with this exact
-    /// `account_reference` has been rejected (G5 stage 1). A request from
-    /// the same sender with a *different* `account_reference` (rotation) is
-    /// NOT suppressed.
-    pub fn is_request_rejected(&self, sender_id: &Identifier, account_reference: u32) -> bool {
-        self.rejected_contact_requests
-            .contains_key(&(*sender_id, account_reference))
+    /// Whether `sender_id` is ignored (per-sender). When `true`, ALL of
+    /// the sender's incoming requests are suppressed from the main pending
+    /// list — including rotated (bumped-`accountReference`) ones.
+    pub fn is_sender_ignored(&self, sender_id: &Identifier) -> bool {
+        self.ignored_senders.contains(sender_id)
+    }
+
+    /// Un-ignore `sender_id` (reverse [`Self::ignore_sender`]).
+    ///
+    /// Removes the sender from `ignored_senders` AND rewinds the received
+    /// high-water cursor to `None`. The rewind is load-bearing: while the
+    /// sender was ignored, the recurring sweep kept advancing the cursor
+    /// past their on-chain requests, so without resetting it the next
+    /// sweep's incremental `$createdAt >` query would never re-fetch them
+    /// and the un-ignored sender's request would never reappear. `None`
+    /// forces one full re-fetch (safe — ingest is a fixpoint).
+    ///
+    /// Returns a [`ContactChangeSet`] carrying the ignore tombstone removal
+    /// (the caller persists it through its write guard). The cursor reset
+    /// is in-memory only (the high-water mark is not itself persisted; it
+    /// resets to `None` on cold restart anyway), so no changeset field is
+    /// needed for it. A no-op (empty changeset) when the sender wasn't
+    /// ignored.
+    pub fn unignore_sender(&mut self, sender_id: &Identifier) -> ContactChangeSet {
+        let owner_id = self.id();
+        let was_ignored = self.ignored_senders.remove(sender_id);
+        if !was_ignored {
+            return ContactChangeSet::default();
+        }
+        // Rewind the receive cursor so the next sweep re-fetches the
+        // now-un-ignored sender's on-chain requests.
+        self.high_water_received_ms = None;
+
+        let mut cs = ContactChangeSet::default();
+        cs.unignored.insert((owner_id, *sender_id));
+        cs
     }
 
     /// Remove a sent contact request.
@@ -539,16 +553,16 @@ mod tests {
         assert_eq!(managed.established_contacts.len(), 0);
     }
 
-    /// **Blocking — reject must DELETE the persisted incoming row, not only
-    /// tombstone it.** The Rust SQLite contacts writer issues `DELETE FROM
-    /// contacts` only on a `removed_incoming` changeset entry; its `rejected`
-    /// branch upserts solely the tombstone table. So if `record_rejected`
-    /// emits only `rejected`, the `state='received'` row survives in SQLite
-    /// and the rejected request rehydrates as live on the next load — the
-    /// user's reject silently undone on that backend. Pin that BOTH are
-    /// emitted.
+    /// **Blocking — ignore must DELETE the persisted incoming row, not only
+    /// record the suppression.** The Rust SQLite contacts writer issues
+    /// `DELETE FROM contacts` only on a `removed_incoming` changeset entry;
+    /// its `ignored` branch upserts solely the ignored-senders table. So if
+    /// `ignore_sender` emits only `ignored`, the `state='received'` row
+    /// survives in SQLite and the ignored request rehydrates as live on the
+    /// next load — the user's ignore silently undone on that backend. Pin
+    /// that BOTH are emitted.
     #[test]
-    fn record_rejected_emits_removed_incoming_so_sqlite_deletes_the_row() {
+    fn ignore_sender_emits_removed_incoming_so_sqlite_deletes_the_row() {
         let mut managed = create_test_identity([1u8; 32]);
         let owner_id = managed.id();
         let sender_id = Identifier::from([2u8; 32]);
@@ -557,12 +571,12 @@ mod tests {
         managed.add_incoming_contact_request(create_contact_request(sender_id, owner_id, 1234), &p);
         assert_eq!(managed.incoming_contact_requests.len(), 1);
 
-        let cs = managed.record_rejected_contact_request(&sender_id, 0, None);
+        let cs = managed.ignore_sender(&sender_id);
 
-        // The suppression tombstone is recorded...
+        // The per-sender ignore is recorded...
         assert!(
-            cs.rejected.contains_key(&(owner_id, sender_id, 0)),
-            "reject must record the suppression tombstone"
+            cs.ignored.contains(&(owner_id, sender_id)),
+            "ignore must record the per-sender suppression"
         );
         // ...AND the incoming-row deletion is emitted, so the SQLite writer
         // actually removes the persisted `state='received'` row.
@@ -571,7 +585,7 @@ mod tests {
                 owner_id,
                 sender_id,
             }),
-            "reject must emit removed_incoming so the persisted contacts row is DELETEd"
+            "ignore must emit removed_incoming so the persisted contacts row is DELETEd"
         );
     }
 
@@ -867,10 +881,12 @@ mod tests {
         );
     }
 
-    /// G5 stage 1: rejecting an incoming request records a tombstone keyed
-    /// by `(sender, accountReference)` and removes the incoming entry.
+    /// Ignoring a sender drops the pending incoming entry and records the
+    /// sender in `ignored_senders` — per-sender, NOT per-accountReference.
+    /// A rotated request (bumped `accountReference`) from the same sender
+    /// is ALSO suppressed (the per-sender semantics).
     #[test]
-    fn test_record_rejected_contact_request_tombstones_by_account_reference() {
+    fn test_ignore_sender_suppresses_sender_per_sender() {
         let mut managed = create_test_identity([1u8; 32]);
         let our_id = Identifier::from([1u8; 32]);
         let sender_id = Identifier::from([2u8; 32]);
@@ -881,17 +897,52 @@ mod tests {
         managed.add_incoming_contact_request(request, &p);
         assert_eq!(managed.incoming_contact_requests.len(), 1);
 
-        let cs = managed.record_rejected_contact_request(&sender_id, 0, None);
+        let cs = managed.ignore_sender(&sender_id);
 
-        // Incoming dropped, tombstone recorded for (sender, 0).
+        // Incoming dropped, sender recorded as ignored.
         assert_eq!(managed.incoming_contact_requests.len(), 0);
-        assert!(managed
-            .rejected_contact_requests
-            .contains_key(&(sender_id, 0)));
-        assert!(cs.rejected.contains_key(&(our_id, sender_id, 0)));
-        // A rotated request (accountReference 1) is NOT suppressed.
-        assert!(!managed.is_request_rejected(&sender_id, 1));
-        assert!(managed.is_request_rejected(&sender_id, 0));
+        assert!(managed.ignored_senders.contains(&sender_id));
+        assert!(cs.ignored.contains(&(our_id, sender_id)));
+        // The sender is ignored regardless of accountReference — both the
+        // original (0) and a rotated (1) request are suppressed.
+        assert!(managed.is_sender_ignored(&sender_id));
+    }
+
+    /// Un-ignoring a sender removes them from `ignored_senders`, rewinds
+    /// the received high-water cursor to `None` (so the next sweep
+    /// re-fetches their requests), and emits the un-ignore changeset.
+    /// Un-ignoring a sender who wasn't ignored is a no-op (empty
+    /// changeset, cursor untouched).
+    #[test]
+    fn test_unignore_sender_clears_cursor_and_removes() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = Identifier::from([1u8; 32]);
+        let sender_id = Identifier::from([2u8; 32]);
+
+        managed.ignore_sender(&sender_id);
+        assert!(managed.is_sender_ignored(&sender_id));
+        // Simulate the sweep having advanced the cursor past the sender's
+        // requests while they were ignored.
+        managed.high_water_received_ms = Some(123_456);
+
+        let cs = managed.unignore_sender(&sender_id);
+
+        assert!(!managed.is_sender_ignored(&sender_id));
+        assert!(cs.unignored.contains(&(our_id, sender_id)));
+        assert_eq!(
+            managed.high_water_received_ms, None,
+            "un-ignore must rewind the receive cursor so the sender's requests re-fetch"
+        );
+
+        // Un-ignoring again (no longer ignored) is a no-op and does NOT
+        // touch the cursor a second time.
+        managed.high_water_received_ms = Some(999);
+        let cs2 = managed.unignore_sender(&sender_id);
+        assert!(
+            <ContactChangeSet as crate::changeset::Merge>::is_empty(&cs2),
+            "un-ignoring a non-ignored sender must be a no-op"
+        );
+        assert_eq!(managed.high_water_received_ms, Some(999));
     }
 
     #[test]

@@ -82,7 +82,7 @@ final class DashPayContactPersistenceTests: XCTestCase {
         upserts: [PlatformWalletPersistenceHandler.ContactRequestSnapshot] = [],
         removedSent: [PlatformWalletPersistenceHandler.ContactRequestRemovalSnapshot] = [],
         removedIncoming: [PlatformWalletPersistenceHandler.ContactRequestRemovalSnapshot] = [],
-        rejected: [PlatformWalletPersistenceHandler.ContactRequestRejectionSnapshot] = []
+        ignored: [PlatformWalletPersistenceHandler.ContactIgnoredSenderSnapshot] = []
     ) {
         handler.beginChangeset(walletId: walletId)
         handler.persistContacts(
@@ -90,7 +90,7 @@ final class DashPayContactPersistenceTests: XCTestCase {
             upserts: upserts,
             removedSent: removedSent,
             removedIncoming: removedIncoming,
-            rejected: rejected
+            ignored: ignored
         )
         handler.endChangeset(walletId: walletId, success: true)
     }
@@ -200,74 +200,81 @@ final class DashPayContactPersistenceTests: XCTestCase {
         XCTAssertEqual(try fetchContactRows().count, 0)
     }
 
-    // MARK: Rejection tombstones (G5 stage 1)
+    // MARK: Ignored senders (per-sender mute, local-only)
 
-    /// The rejection suppression key is `(owner, sender,
-    /// accountReference)` — deliberately NOT bare sender id. A rotated
-    /// (bumped-accountReference) request from the same sender is a
-    /// *different* request and must survive a stale tombstone;
-    /// unrelated senders' rows must never be touched.
-    func testRejectionDeletesExactlyTheMatchingIncomingRow() throws {
+    /// Ignore is **per-sender** — bare sender id, no accountReference. ALL
+    /// of the ignored sender's incoming rows go (including a rotated,
+    /// bumped-accountReference one), while a DIFFERENT sender's rows are
+    /// never touched. (This is the deliberate semantic change from the old
+    /// per-(sender, accountReference) reject.)
+    func testIgnoreDeletesAllIncomingRowsFromTheSender() throws {
         applyContacts(upserts: [
             makeSnapshot(isOutgoing: false, accountReference: 7),
             makeSnapshot(contactId: otherSenderId, isOutgoing: false, accountReference: 9),
         ])
         XCTAssertEqual(try fetchContactRows().count, 2)
 
-        // Stale tombstone (pre-rotation accountReference) — both rows
-        // survive.
-        applyContacts(rejected: [
-            .init(
-                ownerIdentityId: ownerId,
-                senderIdentityId: contactId,
-                accountReference: 6,
-                documentId: nil
-            )
-        ])
-        XCTAssertEqual(
-            try fetchContactRows().count, 2,
-            "a tombstone with a stale accountReference must not delete the rotated row"
-        )
-
-        // Matching tombstone — exactly the (owner, sender, ref 7)
-        // incoming row goes; the other sender's row stays.
-        applyContacts(rejected: [
-            .init(
-                ownerIdentityId: ownerId,
-                senderIdentityId: contactId,
-                accountReference: 7,
-                documentId: nil
-            )
+        // Ignore the sender — its incoming row(s) go regardless of
+        // accountReference; the OTHER sender's row stays. A durable
+        // PersistentDashpayIgnoredSender row is written.
+        applyContacts(ignored: [
+            .init(ownerIdentityId: ownerId, senderIdentityId: contactId, isIgnored: true)
         ])
         let rows = try fetchContactRows()
         XCTAssertEqual(rows.count, 1)
         XCTAssertEqual(try XCTUnwrap(rows.first).contactIdentityId, otherSenderId)
         XCTAssertEqual(try XCTUnwrap(rows.first).accountReference, 9)
+
+        // The durable ignored-sender row exists for the ignored sender only.
+        let ignoredRows = try fetchIgnoredRows()
+        XCTAssertEqual(ignoredRows.count, 1)
+        XCTAssertEqual(try XCTUnwrap(ignoredRows.first).ignoredSenderId, contactId)
     }
 
-    /// Rejection only suppresses the *incoming* direction — an
-    /// outgoing request the owner sent to the same identity (with the
-    /// same accountReference) is unrelated state and must survive.
-    func testRejectionLeavesOutgoingRowIntact() throws {
+    /// Ignore only suppresses the *incoming* direction — an outgoing
+    /// request the owner sent to the same identity is unrelated state and
+    /// must survive.
+    func testIgnoreLeavesOutgoingRowIntact() throws {
         applyContacts(upserts: [
             makeSnapshot(isOutgoing: true, accountReference: 7),
             makeSnapshot(isOutgoing: false, accountReference: 7),
         ])
 
-        applyContacts(rejected: [
-            .init(
-                ownerIdentityId: ownerId,
-                senderIdentityId: contactId,
-                accountReference: 7,
-                documentId: nil
-            )
+        applyContacts(ignored: [
+            .init(ownerIdentityId: ownerId, senderIdentityId: contactId, isIgnored: true)
         ])
 
         let rows = try fetchContactRows()
         XCTAssertEqual(rows.count, 1)
         XCTAssertTrue(
             try XCTUnwrap(rows.first).isOutgoing,
-            "rejection must delete the incoming row only"
+            "ignore must delete the incoming row only"
+        )
+    }
+
+    /// Un-ignore (an `ignored` row with `isIgnored == false`) deletes the
+    /// durable ignored-sender row so the sender resurfaces on the next
+    /// sweep.
+    func testUnignoreDeletesTheIgnoredSenderRow() throws {
+        applyContacts(ignored: [
+            .init(ownerIdentityId: ownerId, senderIdentityId: contactId, isIgnored: true)
+        ])
+        XCTAssertEqual(try fetchIgnoredRows().count, 1)
+
+        applyContacts(ignored: [
+            .init(ownerIdentityId: ownerId, senderIdentityId: contactId, isIgnored: false)
+        ])
+        XCTAssertEqual(
+            try fetchIgnoredRows().count, 0,
+            "un-ignore must delete the durable ignored-sender row"
+        )
+    }
+
+    /// Read every ignored-sender row back through a fresh context.
+    private func fetchIgnoredRows() throws -> [PersistentDashpayIgnoredSender] {
+        let context = ModelContext(container)
+        return try context.fetch(
+            FetchDescriptor<PersistentDashpayIgnoredSender>()
         )
     }
 
@@ -299,7 +306,7 @@ final class DashPayContactPersistenceTests: XCTestCase {
 
     /// Drives the *real* `on_persist_contacts_fn` C trampoline (the
     /// 10-argument callback the Rust persister invokes) with synthetic
-    /// `ContactRequestFFI` / `ContactRequestRejectionFFI` payloads —
+    /// `ContactRequestFFI` / `ContactIgnoredSenderFFI` payloads —
     /// pinning the FFI-struct marshalling layer (32-byte tuple copies,
     /// heap byte-buffer copies, `payment_channel_broken` projection)
     /// on top of the snapshot path the other tests exercise.
@@ -384,36 +391,36 @@ final class DashPayContactPersistenceTests: XCTestCase {
             "null label pointer must map to nil, not empty Data"
         )
 
-        // Rejection leg of the same callback: tombstone the incoming
-        // row through the C signature too.
+        // Ignore leg of the same callback: ignore the sender (drop the
+        // incoming row + write the durable ignored-sender row) through the
+        // C signature too.
         walletId.withUnsafeBytes { (widRaw: UnsafeRawBufferPointer) in
             guard let wid = widRaw.bindMemory(to: UInt8.self).baseAddress else {
                 XCTFail("wallet-id buffer must bind")
                 return
             }
             _ = beginFn(callbacks.context, wid)
-            var rejection = ContactRequestRejectionFFI()
-            rejection.owner_id = Self.tuple32(ownerId)
-            rejection.sender_id = Self.tuple32(contactId)
-            rejection.account_reference = 11
-            rejection.has_document_id = false
-            withUnsafePointer(to: &rejection) { rejPtr in
+            var ignore = ContactIgnoredSenderFFI()
+            ignore.owner_id = Self.tuple32(ownerId)
+            ignore.sender_id = Self.tuple32(contactId)
+            ignore.is_ignored = true
+            withUnsafePointer(to: &ignore) { ignPtr in
                 let rc = contactsFn(
                     callbacks.context,
                     wid,
                     nil, 0,
                     nil, 0,
                     nil, 0,
-                    rejPtr, 1
+                    ignPtr, 1
                 )
                 XCTAssertEqual(rc, 0)
             }
             _ = endFn(callbacks.context, wid, true)
         }
 
-        let afterRejection = try fetchContactRows()
-        XCTAssertEqual(afterRejection.count, 1)
-        XCTAssertTrue(try XCTUnwrap(afterRejection.first).isOutgoing)
+        let afterIgnore = try fetchContactRows()
+        XCTAssertEqual(afterIgnore.count, 1)
+        XCTAssertTrue(try XCTUnwrap(afterIgnore.first).isOutgoing)
     }
 
     // MARK: Changeset atomicity vs app-facing writers
@@ -435,7 +442,7 @@ final class DashPayContactPersistenceTests: XCTestCase {
             upserts: [makeSnapshot(isOutgoing: false)],
             removedSent: [],
             removedIncoming: [],
-            rejected: []
+            ignored: []
         )
 
         // App-facing payment refresh lands mid-round.

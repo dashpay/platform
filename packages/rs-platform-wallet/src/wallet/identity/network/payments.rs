@@ -846,17 +846,17 @@ mod tests {
         }
     }
 
-    /// **C1 (Critical) — reject must PROPAGATE a persist failure.**
-    /// The reject tombstone is local-only (no on-chain rejection), so a
-    /// swallowed store error would resurrect the rejected contact on the
-    /// next launch with no signal. The user-initiated `reject` path must
-    /// return the error instead.
+    /// **C1 (Critical) — ignore must PROPAGATE a persist failure.**
+    /// Ignore is local-only (no on-chain artifact), so a swallowed store
+    /// error would resurface the ignored sender on the next launch with no
+    /// signal. The user-initiated `ignore` path must return the error
+    /// instead.
     ///
-    /// The hazard: if `reject_contact_request` merely logged the store error
-    /// and returned `Ok(())`, the rejection would be lost; it must return
+    /// The hazard: if `ignore_contact_sender` merely logged the store error
+    /// and returned `Ok(())`, the ignore would be lost; it must return
     /// `Err(Persistence)`.
     #[tokio::test]
-    async fn reject_propagates_persist_failure() {
+    async fn ignore_propagates_persist_failure() {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(ToggleFailPersister::default());
         let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
@@ -883,7 +883,7 @@ mod tests {
         let contact = Identifier::from([0xBB; 32]);
 
         // Setup (persister still succeeding): managed owner + an incoming
-        // request to reject.
+        // request to ignore.
         {
             let iw = wallet.identity();
             let mut wm = iw.wallet_manager.write().await;
@@ -909,16 +909,16 @@ mod tests {
                 .add_incoming_contact_request(incoming, &p);
         }
 
-        // Arm the persister to fail, then reject: must return Err, NOT Ok.
+        // Arm the persister to fail, then ignore: must return Err, NOT Ok.
         persister
             .armed
             .store(true, std::sync::atomic::Ordering::SeqCst);
         let iw = wallet.identity();
-        let result = iw.reject_contact_request(&owner, &contact).await;
+        let result = iw.ignore_contact_sender(&owner, &contact).await;
         assert!(
             matches!(result, Err(PlatformWalletError::Persistence(_))),
-            "reject must propagate a persist failure (got {result:?}), \
-             else the tombstone is lost and the contact resurrects"
+            "ignore must propagate a persist failure (got {result:?}), \
+             else the ignore is lost and the sender resurfaces"
         );
     }
 

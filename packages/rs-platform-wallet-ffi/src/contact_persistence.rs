@@ -146,39 +146,32 @@ pub struct ContactRequestRemovalFFI {
     pub contact_id: [u8; 32],
 }
 
-/// Flat C mirror of a [`RejectedContactRequest`] tombstone (G5 stage 1)
-/// for the `rejected` array on [`OnPersistContactsFn`].
+/// Flat C mirror of a per-sender **ignore** delta for the `ignored`
+/// array on [`OnPersistContactsFn`].
 ///
-/// The suppression key is `(owner_id, sender_id, account_reference)` —
-/// deliberately **not** bare sender id, so a rotated (bumped
-/// `accountReference`) request from the same sender is still let
-/// through. The Swift handler persists one row per tombstone keyed on
-/// that triple so a once-rejected request stays suppressed across a
+/// Ignore is a per-sender mute (= block, reversible, local-only); the
+/// suppression key is `(owner_id, sender_id)` — bare sender id, so ALL
+/// of the sender's requests (including rotated, bumped-`accountReference`
+/// ones) are suppressed. The Swift handler persists one row per ignored
+/// sender keyed on that pair so the sender stays suppressed across a
 /// recurring re-sync.
 ///
-/// `document_id` is carried for audit / exact-match purposes only; it
-/// is **not** part of the suppression key. `has_document_id` gates it
-/// (`false` ⇒ the source `Option` was `None` and `document_id` is
-/// zero-filled).
+/// `is_ignored` is the insert/remove bit: `true` ⇒ persist the
+/// ignored-sender row (from `ContactChangeSet::ignored`); `false` ⇒
+/// delete it (an un-ignore, from `ContactChangeSet::unignored`). Carrying
+/// both in one array lets the host process a mixed delta in one callback.
 ///
-/// [`RejectedContactRequest`]: platform_wallet::changeset::RejectedContactRequest
+/// Flat POD (no owned pointers), so the host must copy any row it wants
+/// to retain; nothing is freed on the Rust side.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
-pub struct ContactRequestRejectionFFI {
-    /// The wallet-owned identity that rejected the request (recipient).
+pub struct ContactIgnoredSenderFFI {
+    /// The wallet-owned identity that ignored the sender (recipient).
     pub owner_id: [u8; 32],
-    /// The identity whose request was rejected (the sender).
+    /// The ignored sender's identity.
     pub sender_id: [u8; 32],
-    /// The `accountReference` of the rejected request — part of the
-    /// suppression key. A request from the same sender with a different
-    /// `accountReference` is NOT suppressed.
-    pub account_reference: u32,
-    /// Whether [`Self::document_id`] carries a real id. `false` ⇒ the
-    /// source `Option<Identifier>` was `None`.
-    pub has_document_id: bool,
-    /// The rejected document's id when known, else zero-filled (gated by
-    /// [`Self::has_document_id`]). Not part of the suppression key.
-    pub document_id: [u8; 32],
+    /// `true` ⇒ persist (ignore); `false` ⇒ delete (un-ignore).
+    pub is_ignored: bool,
 }
 
 // Compile-time guards. Pin the expected layouts so any reshape on
@@ -218,36 +211,30 @@ const _: [u8; 8] = [0u8; std::mem::align_of::<ContactRequestFFI>()];
 const _: [u8; 64] = [0u8; std::mem::size_of::<ContactRequestRemovalFFI>()];
 const _: [u8; 1] = [0u8; std::mem::align_of::<ContactRequestRemovalFFI>()];
 
-// Expected `ContactRequestRejectionFFI` layout on all targets:
+// Expected `ContactIgnoredSenderFFI` layout on all targets:
 //
-//   0..=31    owner_id            [u8; 32]
-//   32..=63   sender_id           [u8; 32]
-//   64..=67   account_reference   u32
-//   68        has_document_id     bool
-//   69..=100  document_id         [u8; 32]
-//   101..=103 (tail padding to alignment 4)
+//   0..=31    owner_id    [u8; 32]
+//   32..=63   sender_id   [u8; 32]
+//   64        is_ignored  bool
+//   (no tail padding — alignment 1)
 //
-// Total size = 104, alignment = 4 (from the u32 field).
-const _: [u8; 104] = [0u8; std::mem::size_of::<ContactRequestRejectionFFI>()];
-const _: [u8; 4] = [0u8; std::mem::align_of::<ContactRequestRejectionFFI>()];
+// Total size = 65, alignment = 1 (all-byte fields).
+const _: [u8; 65] = [0u8; std::mem::size_of::<ContactIgnoredSenderFFI>()];
+const _: [u8; 1] = [0u8; std::mem::align_of::<ContactIgnoredSenderFFI>()];
 
-impl ContactRequestRejectionFFI {
-    /// Project a [`RejectedContactRequest`] onto its flat C mirror.
-    /// `document_id` is zero-filled with `has_document_id == false`
-    /// when the source `Option` is `None`.
-    ///
-    /// [`RejectedContactRequest`]: platform_wallet::changeset::RejectedContactRequest
-    pub fn from_rejected(rejected: &platform_wallet::changeset::RejectedContactRequest) -> Self {
-        let (has_document_id, document_id) = match rejected.document_id {
-            Some(id) => (true, id.to_buffer()),
-            None => (false, [0u8; 32]),
-        };
+impl ContactIgnoredSenderFFI {
+    /// Project an `(owner, sender)` ignore key onto its flat C mirror.
+    /// `is_ignored` distinguishes an ignore (persist the row) from an
+    /// un-ignore (delete the row).
+    pub fn new(
+        owner_id: &dpp::prelude::Identifier,
+        sender_id: &dpp::prelude::Identifier,
+        is_ignored: bool,
+    ) -> Self {
         Self {
-            owner_id: rejected.owner_id.to_buffer(),
-            sender_id: rejected.sender_id.to_buffer(),
-            account_reference: rejected.account_reference,
-            has_document_id,
-            document_id,
+            owner_id: owner_id.to_buffer(),
+            sender_id: sender_id.to_buffer(),
+            is_ignored,
         }
     }
 }
@@ -496,12 +483,13 @@ fn free_byte_buffer(slot: &mut *const u8, len_slot: &mut usize) {
 ///   rows (sent requests explicitly removed by the owner).
 /// - `removed_incoming` / `removed_incoming_count`: tombstones for
 ///   incoming rows.
-/// - `rejected` / `rejected_count`: rejected-incoming-request tombstones
-///   (G5 stage 1), keyed `(owner, sender, account_reference)`. The host
-///   persists these so a once-rejected request stays suppressed across
-///   a recurring re-sync, while a rotated (bumped-`accountReference`)
-///   request from the same sender is still let through. Pointer is
-///   valid only for the duration of the callback; rows are POD (no heap
+/// - `ignored` / `ignored_count`: per-sender ignore deltas, keyed
+///   `(owner, sender)`. Each row's `is_ignored` bit says whether to
+///   persist the ignored-sender row (`true`, from an ignore) or delete
+///   it (`false`, from an un-ignore). The host persists/deletes these so
+///   an ignored sender stays suppressed across a recurring re-sync — ALL
+///   of the sender's requests (including rotated ones). Pointer is valid
+///   only for the duration of the callback; rows are POD (no heap
 ///   payloads), so the host must copy any it wants to retain.
 ///
 /// Return code: `0` on success, non-zero to flag the round as failed
@@ -515,8 +503,8 @@ pub type OnPersistContactsFn = unsafe extern "C" fn(
     removed_sent_count: usize,
     removed_incoming: *const ContactRequestRemovalFFI,
     removed_incoming_count: usize,
-    rejected: *const ContactRequestRejectionFFI,
-    rejected_count: usize,
+    ignored: *const ContactIgnoredSenderFFI,
+    ignored_count: usize,
 ) -> i32;
 
 #[cfg(test)]
@@ -653,41 +641,28 @@ mod tests {
         assert!(out.note.is_null());
     }
 
-    /// `ContactRequestRejectionFFI::from_rejected` must carry the full
-    /// `(owner, sender, account_reference)` suppression key plus the
-    /// optional document id. When the source `document_id` is `Some`,
-    /// `has_document_id` is true and the bytes round-trip; when `None`,
-    /// `has_document_id` is false and the buffer is zero-filled. Pins the
-    /// G5 tombstone projection so the Swift handler can persist the exact
-    /// suppression key.
+    /// `ContactIgnoredSenderFFI::new` must carry the `(owner, sender)`
+    /// suppression key and the insert/remove `is_ignored` bit, so the
+    /// Swift handler can persist an ignore (`true`) or delete an
+    /// un-ignore (`false`).
     #[test]
-    fn rejection_ffi_round_trips_key_and_optional_document_id() {
+    fn ignored_sender_ffi_carries_key_and_insert_remove_bit() {
         use dpp::prelude::Identifier;
-        use platform_wallet::changeset::RejectedContactRequest;
 
-        let with_doc = RejectedContactRequest {
-            owner_id: Identifier::from([7u8; 32]),
-            sender_id: Identifier::from([8u8; 32]),
-            account_reference: 42,
-            document_id: Some(Identifier::from([9u8; 32])),
-        };
-        let ffi = ContactRequestRejectionFFI::from_rejected(&with_doc);
-        assert_eq!(ffi.owner_id, [7u8; 32]);
-        assert_eq!(ffi.sender_id, [8u8; 32]);
-        assert_eq!(ffi.account_reference, 42);
-        assert!(ffi.has_document_id);
-        assert_eq!(ffi.document_id, [9u8; 32]);
+        let owner = Identifier::from([7u8; 32]);
+        let sender = Identifier::from([8u8; 32]);
 
-        let without_doc = RejectedContactRequest {
-            owner_id: Identifier::from([1u8; 32]),
-            sender_id: Identifier::from([2u8; 32]),
-            account_reference: 0,
-            document_id: None,
-        };
-        let ffi = ContactRequestRejectionFFI::from_rejected(&without_doc);
-        assert!(!ffi.has_document_id);
-        // Gated off — the buffer is zero-filled, not garbage.
-        assert_eq!(ffi.document_id, [0u8; 32]);
-        assert_eq!(ffi.account_reference, 0);
+        let ignore = ContactIgnoredSenderFFI::new(&owner, &sender, true);
+        assert_eq!(ignore.owner_id, [7u8; 32]);
+        assert_eq!(ignore.sender_id, [8u8; 32]);
+        assert!(ignore.is_ignored, "ignore must set is_ignored = true");
+
+        let unignore = ContactIgnoredSenderFFI::new(&owner, &sender, false);
+        assert_eq!(unignore.owner_id, [7u8; 32]);
+        assert_eq!(unignore.sender_id, [8u8; 32]);
+        assert!(
+            !unignore.is_ignored,
+            "un-ignore must set is_ignored = false so the host deletes the row"
+        );
     }
 }

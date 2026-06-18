@@ -298,28 +298,26 @@ struct DashpayPaymentStorageDetailView: View {
     }
 }
 
-// MARK: - PersistentDashpayRejectedRequest
+// MARK: - PersistentDashpayIgnoredSender
 
-/// Detail view for one DashPay rejected-request tombstone (G5 stage 1).
-/// Read-only dump of every column, mirroring the other storage detail
-/// views.
-struct DashpayRejectedRequestStorageDetailView: View {
-    let record: PersistentDashpayRejectedRequest
+/// Detail view for one DashPay ignored sender (per-sender mute,
+/// local-only). Read-only dump of every column, mirroring the other
+/// storage detail views.
+struct DashpayIgnoredSenderStorageDetailView: View {
+    let record: PersistentDashpayIgnoredSender
 
     var body: some View {
         Form {
             Section("Suppression key") {
                 FieldRow(label: "Owner", value: record.ownerIdentityId.toHexString())
-                FieldRow(label: "Sender", value: record.senderIdentityId.toHexString())
-                FieldRow(label: "Account reference", value: "\(record.accountReference)")
+                FieldRow(label: "Ignored sender", value: record.ignoredSenderId.toHexString())
                 FieldRow(label: "Network", value: record.network.displayName)
             }
             Section("Audit") {
-                FieldRow(label: "Document id", value: record.documentId?.toHexString() ?? "—")
-                FieldRow(label: "Rejected", value: AppDate.formatted(record.rejectedAt, dateStyle: .abbreviated, timeStyle: .standard))
+                FieldRow(label: "Ignored", value: AppDate.formatted(record.ignoredAt, dateStyle: .abbreviated, timeStyle: .standard))
             }
         }
-        .navigationTitle("Rejected Request")
+        .navigationTitle("Ignored Sender")
         .navigationBarTitleDisplayMode(.inline)
     }
 }

@@ -560,31 +560,31 @@ struct DashpayPaymentStorageListView: View {
     }
 }
 
-// MARK: - PersistentDashpayRejectedRequest
+// MARK: - PersistentDashpayIgnoredSender
 
-struct DashpayRejectedRequestStorageListView: View {
+struct DashpayIgnoredSenderStorageListView: View {
     let network: Network
-    @Query(sort: \PersistentDashpayRejectedRequest.rejectedAt, order: .reverse)
-    private var records: [PersistentDashpayRejectedRequest]
+    @Query(sort: \PersistentDashpayIgnoredSender.ignoredAt, order: .reverse)
+    private var records: [PersistentDashpayIgnoredSender]
 
-    private var scoped: [PersistentDashpayRejectedRequest] {
+    private var scoped: [PersistentDashpayIgnoredSender] {
         records.filter { $0.networkRaw == network.rawValue }
     }
 
     var body: some View {
         let visible = scoped
         List(visible) { record in
-            NavigationLink(destination: DashpayRejectedRequestStorageDetailView(record: record)) {
+            NavigationLink(destination: DashpayIgnoredSenderStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("ref \(record.accountReference)")
+                        Text("ignored sender")
                             .font(.body)
                         Spacer()
-                        Text(record.rejectedAt, style: .date)
+                        Text(record.ignoredAt, style: .date)
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
-                    Text(record.senderIdentityId.toHexString())
+                    Text(record.ignoredSenderId.toHexString())
                         .font(.system(.caption2, design: .monospaced))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
@@ -592,7 +592,7 @@ struct DashpayRejectedRequestStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Rejected Requests (\(visible.count))")
+        .navigationTitle("Ignored Senders (\(visible.count))")
         .overlay {
             if visible.isEmpty {
                 ContentUnavailableView(

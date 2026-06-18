@@ -196,21 +196,19 @@ CREATE TABLE contacts (
     FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
 );
 
--- Rejected-request tombstone (G5 stage 1). Keyed by
--- `(wallet_id, owner_id, sender_id, account_reference)` — NOT bare sender
--- id — so a once-rejected sender can still re-request via a bumped
--- accountReference (the DIP-15 rotation mechanism), while a replay of the
--- exact same immutable request stays suppressed. `document_id` is carried
--- for audit / exact-match suppression. The sync ingest path consults this
--- table before re-ingesting a received contactRequest.
-CREATE TABLE rejected_contact_requests (
+-- Ignored senders (per-sender mute = block, reversible — local-only). Keyed by
+-- bare `(wallet_id, owner_id, sender_id)`: ignoring is per-sender, NOT
+-- per-request, so it suppresses ALL of a sender's incoming contactRequests
+-- (including rotated, bumped-`accountReference` ones) and survives a recurring
+-- re-sync. Un-ignore deletes the row so the sender's requests resurface. The
+-- sync ingest path consults this table before surfacing a received
+-- contactRequest in the main pending list.
+CREATE TABLE ignored_senders (
     wallet_id BLOB NOT NULL,
     owner_id BLOB NOT NULL,
     sender_id BLOB NOT NULL,
-    account_reference INTEGER NOT NULL,
-    document_id BLOB,
-    rejected_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    PRIMARY KEY (wallet_id, owner_id, sender_id, account_reference),
+    ignored_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (wallet_id, owner_id, sender_id),
     FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
 );
 

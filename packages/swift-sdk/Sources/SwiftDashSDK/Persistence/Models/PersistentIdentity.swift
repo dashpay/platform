@@ -128,14 +128,14 @@ public final class PersistentIdentity {
     @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayPayment.owner)
     public var dashpayPayments: [PersistentDashpayPayment] = []
 
-    /// DashPay rejected-request tombstones (G5 stage 1) owned by this
-    /// identity. Cascade-deleted from the parent. Persisted from the
-    /// `rejected` changeset array by `persistContacts` and read back at
-    /// load to rebuild the Rust `rejected_contact_requests` suppression
-    /// set — without them a rejected contact resurrects on relaunch.
-    /// Filters use `PersistentDashpayRejectedRequest.predicate(ownerIdentityId:)`.
-    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayRejectedRequest.owner)
-    public var dashpayRejectedRequests: [PersistentDashpayRejectedRequest] = []
+    /// DashPay ignored senders (per-sender mute, = block, reversible,
+    /// local-only) owned by this identity. Cascade-deleted from the parent.
+    /// Persisted from the `ignored` changeset array by `persistContacts`
+    /// and read back at load to rebuild the Rust `ignored_senders` set —
+    /// without them an ignored sender resurfaces on relaunch. Filters use
+    /// `PersistentDashpayIgnoredSender.predicate(ownerIdentityId:)`.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayIgnoredSender.owner)
+    public var dashpayIgnoredSenders: [PersistentDashpayIgnoredSender] = []
 
     /// Cached DashPay **contact** profiles owned by this identity (one
     /// per contact whose public profile has been fetched). Cascade-deleted
@@ -195,7 +195,7 @@ public final class PersistentIdentity {
         self.dashpayProfile = nil
         self.contactRequests = []
         self.dashpayPayments = []
-        self.dashpayRejectedRequests = []
+        self.dashpayIgnoredSenders = []
         self.contactProfiles = []
         self.ownedDataContracts = []
         self.createdAt = Date()

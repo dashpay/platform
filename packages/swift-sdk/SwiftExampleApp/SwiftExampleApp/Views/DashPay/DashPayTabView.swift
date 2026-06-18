@@ -111,6 +111,17 @@ struct DashPayTabView: View {
                         .disabled(activeIdentity == nil)
                         .accessibilityIdentifier("dashpay.addContact")
                     }
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        if let identity = activeIdentity {
+                            NavigationLink {
+                                IgnoredContactsView(identity: identity)
+                                    .environmentObject(walletManager)
+                            } label: {
+                                Image(systemName: "person.crop.circle.badge.xmark")
+                            }
+                            .accessibilityIdentifier("dashpay.openIgnored")
+                        }
+                    }
                 }
                 .sheet(isPresented: $showAddContact) {
                     if let identity = activeIdentity {

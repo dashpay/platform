@@ -313,20 +313,19 @@ pub struct IdentityRestoreEntryFFI {
     /// Rust destructors. `null` / `0` when the identity has no payments.
     pub payments: *const PaymentRestoreEntryFFI,
     pub payments_count: usize,
-    /// DashPay rejected-request tombstones (G5 stage 1) owned by this
-    /// identity, assembled from the persisted rejection rows. Restores
-    /// `ManagedIdentity.rejected_contact_requests` at load — **without
-    /// this the suppression set starts empty on every relaunch, so the
-    /// still-on-platform immutable `contactRequest` document of a
-    /// previously-rejected sender re-ingests on the next sync sweep and
-    /// the rejected contact resurrects** (the relaunch-durability gap that
-    /// mirrors the contacts/payments restore arrays above). Reuses the
-    /// persist-side [`crate::contact_persistence::ContactRequestRejectionFFI`]
-    /// shape; it is a flat POD (no owned pointers), so nothing rides the
-    /// load allocation here. `null` / `0` when the identity has rejected
-    /// no requests.
-    pub rejected: *const crate::contact_persistence::ContactRequestRejectionFFI,
-    pub rejected_count: usize,
+    /// DashPay ignored senders (per-sender mute, local-only) owned by this
+    /// identity, assembled from the persisted ignored-sender rows. Restores
+    /// `ManagedIdentity.ignored_senders` at load — **without this the ignore
+    /// set starts empty on every relaunch, so the still-on-platform
+    /// immutable `contactRequest` documents of a previously-ignored sender
+    /// re-ingest on the next sync sweep and the ignored sender resurfaces**
+    /// (the relaunch-durability gap that mirrors the contacts/payments
+    /// restore arrays above). Each entry is a bare 32-byte sender id (the
+    /// host persists only currently-ignored senders, so an un-ignored one
+    /// simply doesn't appear) — a flat POD array, so nothing rides the load
+    /// allocation here. `null` / `0` when the identity has ignored no one.
+    pub ignored_senders: *const [u8; 32],
+    pub ignored_senders_count: usize,
     /// DashPay cached **contact** profiles owned by this identity,
     /// assembled from the per-identity `PersistentDashpayContactProfile`
     /// SwiftData rows. Restores `ManagedIdentity.contact_profiles`

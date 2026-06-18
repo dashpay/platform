@@ -174,23 +174,19 @@ mod tests {
 
     /// The initial schema (V001) creates the DashPay sync-correctness
     /// objects directly — the `contacts.payment_channel_broken` column and
-    /// the `rejected_contact_requests` tombstone table.
-    ///
-    /// These were briefly split into an append-only V002 (to avoid editing a
-    /// migration that ships in `v4.0.0-beta.4` / `rc.1` / `rc.2`), then
-    /// squashed back into V001: the storage crate has no product consumers
-    /// yet — nothing instantiates `SqlitePersister` or runs these migrations
-    /// — so no real database ever applied V001, and a single clean initial
-    /// schema is preferable for a pre-release crate. This test pins that the
-    /// objects exist after the (only) migration runs.
+    /// the `ignored_senders` table. The storage crate is pre-release with no
+    /// product consumers yet (nothing instantiates `SqlitePersister` or runs
+    /// these migrations), so V001 is edited in place rather than amended by a
+    /// follow-on migration — no real database has ever applied it. This test
+    /// pins that the objects exist after the (only) migration runs.
     #[test]
     fn v001_creates_dashpay_sync_schema() {
         let mut conn = Connection::open_in_memory().unwrap();
         run(&mut conn).unwrap();
 
         assert!(
-            table_exists(&conn, "rejected_contact_requests"),
-            "V001 must create the rejected-tombstone table"
+            table_exists(&conn, "ignored_senders"),
+            "V001 must create the ignored-senders table"
         );
         assert!(
             column_exists(&conn, "contacts", "payment_channel_broken"),

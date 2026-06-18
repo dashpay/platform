@@ -312,6 +312,14 @@ pub struct IdentityEntry {
     /// `dashpay_payments`, every snapshot carries the full map via
     /// `from_managed`, so merge uses last-write-wins per contact id.
     pub contact_profiles: BTreeMap<Identifier, ContactProfileEntry>,
+    /// Senders this identity has chosen to **ignore** (per-sender mute, =
+    /// block, reversible — local-only). Every snapshot carries the full set
+    /// via `from_managed`, so merge takes the **union** (a member appearing
+    /// in either side stays ignored; un-ignore is carried by an explicit
+    /// removal on [`ContactChangeSet::unignored`], not by a shrinking
+    /// snapshot here — same insert-XOR-tombstone discipline the contact
+    /// request fields use).
+    pub ignored_senders: BTreeSet<Identifier>,
 }
 
 impl IdentityEntry {
@@ -336,6 +344,7 @@ impl IdentityEntry {
             dashpay_profile: managed.dashpay_profile.clone(),
             dashpay_payments: managed.dashpay_payments.clone(),
             contact_profiles: managed.contact_profiles.clone(),
+            ignored_senders: managed.ignored_senders.clone(),
         }
     }
 }
@@ -509,6 +518,14 @@ impl Merge for IdentityChangeSet {
                             .contact_profiles
                             .insert(*contact_id, profile.clone());
                     }
+                    // Ignored senders: UNION. A sender ignored in either
+                    // snapshot stays ignored; un-ignore is carried by an
+                    // explicit `ContactChangeSet::unignored` removal, so a
+                    // snapshot that no longer lists a sender must NOT silently
+                    // un-ignore them at merge time.
+                    existing
+                        .ignored_senders
+                        .extend(entry.ignored_senders.iter().copied());
                 })
                 .or_insert(entry);
         }
@@ -555,37 +572,6 @@ pub struct ReceivedContactRequestKey {
     pub owner_id: Identifier,
     /// The identity that sent the request to us.
     pub sender_id: Identifier,
-}
-
-/// A locally-persisted tombstone for a **rejected** incoming contact
-/// request (G5 stage 1).
-///
-/// Keyed by `(owner_id, sender_id, account_reference)` — deliberately
-/// **NOT** bare sender id. Contact-request documents are immutable, so
-/// the only legitimate way a once-rejected sender can re-request is a
-/// **new** document with a bumped `accountReference` (the DIP-15
-/// rotation mechanism). A sender-keyed tombstone would silently block
-/// that rotation forever with no un-reject affordance; keying on
-/// `(sender, accountReference)` suppresses only the exact rejected
-/// relationship while letting a rotated request through.
-///
-/// `document_id` records the rejected document's id when known (for
-/// audit / exact-match suppression); it is not part of the suppression
-/// key, so a re-fetch of the same `(sender, accountReference)` request
-/// is still suppressed even if the document id is absent.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct RejectedContactRequest {
-    /// The wallet-owned identity that rejected the request (the recipient).
-    pub owner_id: Identifier,
-    /// The identity whose request was rejected (the sender).
-    pub sender_id: Identifier,
-    /// The `accountReference` of the rejected request. A request from the
-    /// same sender with a *different* `accountReference` is NOT suppressed.
-    pub account_reference: u32,
-    /// The rejected document's id, when known. Not part of the
-    /// suppression key — `(owner, sender, account_reference)` is.
-    pub document_id: Option<Identifier>,
 }
 
 /// Changes to the DashPay contact store.
@@ -645,12 +631,18 @@ pub struct ContactChangeSet {
     /// [`SentContactRequestKey`] since from the owner's perspective the
     /// contact is the "recipient" of the relationship.
     pub established: BTreeMap<SentContactRequestKey, EstablishedContact>,
-    /// Rejected-request tombstones (G5 stage 1), keyed by
-    /// `(owner, sender, account_reference)` so the suppression survives a
-    /// recurring re-sync but a rotated (bumped-`accountReference`)
-    /// request from the same sender is still let through. Last-write-wins
-    /// per key on merge (a re-reject just refreshes `document_id`).
-    pub rejected: BTreeMap<(Identifier, Identifier, u32), RejectedContactRequest>,
+    /// Ignored senders (per-sender mute, = block, reversible — local-only),
+    /// keyed by `(owner, sender)`. Suppresses ALL of the sender's incoming
+    /// requests (including rotated, bumped-`accountReference` ones) from the
+    /// main pending list, and the suppression survives a recurring re-sync.
+    /// Set union on merge.
+    pub ignored: BTreeSet<(Identifier, Identifier)>,
+    /// Senders **un-ignored** in this delta, keyed by `(owner, sender)`. The
+    /// removal tombstone for [`Self::ignored`] — the persister deletes the
+    /// ignored-sender row so the sender's requests resurface on the next
+    /// sweep. Kept as a separate set (rather than a shrinking `ignored`
+    /// snapshot) so the changeset's insert-XOR-tombstone discipline holds.
+    pub unignored: BTreeSet<(Identifier, Identifier)>,
 }
 
 impl Merge for ContactChangeSet {
@@ -660,7 +652,8 @@ impl Merge for ContactChangeSet {
         self.incoming_requests.extend(other.incoming_requests);
         self.removed_incoming.extend(other.removed_incoming);
         self.established.extend(other.established);
-        self.rejected.extend(other.rejected);
+        self.ignored.extend(other.ignored);
+        self.unignored.extend(other.unignored);
     }
 
     fn is_empty(&self) -> bool {
@@ -669,7 +662,8 @@ impl Merge for ContactChangeSet {
             && self.incoming_requests.is_empty()
             && self.removed_incoming.is_empty()
             && self.established.is_empty()
-            && self.rejected.is_empty()
+            && self.ignored.is_empty()
+            && self.unignored.is_empty()
     }
 }
 

@@ -184,7 +184,8 @@ impl PlatformWalletInfo {
                 incoming_requests,
                 removed_incoming,
                 established,
-                rejected,
+                ignored,
+                unignored,
             } = contact_cs;
 
             for (key, entry) in sent_requests {
@@ -236,21 +237,26 @@ impl PlatformWalletInfo {
                     ),
                 }
             }
-            // Rejected-request tombstones (G5 stage 1). Restore the
-            // in-memory suppression set keyed by `(sender, account_reference)`
-            // so the sync ingest path won't resurrect a rejected request
-            // after a restart. Orphan owners are logged and skipped.
-            for ((owner_id, sender_id, account_reference), entry) in rejected {
+            // Ignored senders (per-sender mute, local-only). Restore the
+            // in-memory suppression set so the sync ingest path won't
+            // resurrect an ignored sender's requests after a restart.
+            // `unignored` is applied AFTER `ignored` so an un-ignore in the
+            // same delta wins (the sender ends up not ignored). Orphan
+            // owners are logged and skipped.
+            for (owner_id, sender_id) in ignored {
                 match self.identity_manager.managed_identity_mut(&owner_id) {
                     Some(managed) => {
-                        managed
-                            .rejected_contact_requests
-                            .insert((sender_id, account_reference), entry);
+                        managed.ignored_senders.insert(sender_id);
                     }
                     None => tracing::warn!(
                         owner = %owner_id,
-                        "skipping rejected contact tombstone during apply: owner identity not in wallet"
+                        "skipping ignored sender during apply: owner identity not in wallet"
                     ),
+                }
+            }
+            for (owner_id, sender_id) in unignored {
+                if let Some(managed) = self.identity_manager.managed_identity_mut(&owner_id) {
+                    managed.ignored_senders.remove(&sender_id);
                 }
             }
         }

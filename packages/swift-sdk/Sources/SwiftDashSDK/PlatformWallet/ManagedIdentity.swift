@@ -377,10 +377,12 @@ public final class ManagedIdentity: @unchecked Sendable {
         try managed_identity_accept_contact_request(handle, request.handle).check()
     }
 
-    /// Reject a contact request from another identity
-    public func rejectContactRequest(senderId: Identifier) throws {
+    /// Ignore a contact sender (per-sender mute, = block, reversible).
+    /// Local in-memory path on this handle (no persister) — the durable
+    /// path is `ManagedPlatformWallet.ignoreContactSender`.
+    public func ignoreContactSender(senderId: Identifier) throws {
         try senderId.withFFIBytes { idPtr in
-            try managed_identity_reject_contact_request(handle, idPtr).check()
+            try managed_identity_ignore_contact_sender(handle, idPtr).check()
         }
     }
 

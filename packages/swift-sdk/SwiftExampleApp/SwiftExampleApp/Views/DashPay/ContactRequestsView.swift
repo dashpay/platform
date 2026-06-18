@@ -124,7 +124,7 @@ struct ContactRequestsView: View {
                                     isInFlight: inFlightIds.contains(row.contactIdentityId),
                                     errorMessage: rowErrors[row.contactIdentityId],
                                     onAccept: { accept(contactId: row.contactIdentityId) },
-                                    onReject: { reject(contactId: row.contactIdentityId) }
+                                    onIgnore: { ignore(contactId: row.contactIdentityId) }
                                 )
                             }
                         } header: {
@@ -230,20 +230,20 @@ struct ContactRequestsView: View {
         }
     }
 
-    private func reject(contactId: Data) {
+    private func ignore(contactId: Data) {
         rowErrors[contactId] = nil
         inFlightIds.insert(contactId)
         Task { @MainActor in
             defer { inFlightIds.remove(contactId) }
             do {
                 let wallet = try requireWallet()
-                try await wallet.rejectContactRequest(
+                try await wallet.ignoreContactSender(
                     ourIdentityId: identity.identityId,
                     contactIdentityId: contactId
                 )
                 removedOverlayIds.insert(contactId)
             } catch {
-                rowErrors[contactId] = "Reject failed: \(error.localizedDescription)"
+                rowErrors[contactId] = "Ignore failed: \(error.localizedDescription)"
             }
         }
     }
@@ -289,7 +289,7 @@ struct IncomingRequestRow: View {
     let isInFlight: Bool
     let errorMessage: String?
     let onAccept: () -> Void
-    let onReject: () -> Void
+    let onIgnore: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -307,7 +307,7 @@ struct IncomingRequestRow: View {
 
             if isInFlight {
                 // §6.4: both buttons replaced by a spinner while the
-                // accept/reject round-trips.
+                // accept/ignore round-trips.
                 HStack {
                     Spacer()
                     ProgressView()
@@ -319,11 +319,11 @@ struct IncomingRequestRow: View {
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .accessibilityIdentifier("dashpay.request.accept")
-                    Button("Reject", action: onReject)
+                    Button("Ignore", action: onIgnore)
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                         .tint(.red)
-                        .accessibilityIdentifier("dashpay.request.reject")
+                        .accessibilityIdentifier("dashpay.request.ignore")
                 }
             }
 

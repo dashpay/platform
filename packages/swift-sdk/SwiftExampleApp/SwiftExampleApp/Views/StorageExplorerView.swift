@@ -56,11 +56,11 @@ struct StorageExplorerView: View {
                 DashpayPaymentStorageListView(network: network)
             }
             modelRow(
-                "Rejected Requests",
+                "Ignored Senders",
                 icon: "person.crop.circle.badge.xmark",
-                type: PersistentDashpayRejectedRequest.self
+                type: PersistentDashpayIgnoredSender.self
             ) {
-                DashpayRejectedRequestStorageListView(network: network)
+                DashpayIgnoredSenderStorageListView(network: network)
             }
             modelRow("Documents", icon: "doc.text", type: PersistentDocument.self) {
                 DocumentStorageListView(network: network)
@@ -254,7 +254,7 @@ struct StorageExplorerView: View {
         directCount(PersistentDashpayProfile.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayContactRequest.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayPayment.self, predicate: #Predicate { $0.networkRaw == raw })
-        directCount(PersistentDashpayRejectedRequest.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentDashpayIgnoredSender.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDocument.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDataContract.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentTokenBalance.self, predicate: #Predicate { $0.networkRaw == raw })

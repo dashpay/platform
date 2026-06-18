@@ -1722,12 +1722,14 @@ extension ManagedPlatformWallet {
         return EstablishedContact(handle: establishedHandle)
     }
 
-    /// Reject an incoming contact request. Today the effect is
-    /// local — drops it from `ManagedIdentity.incoming_contact_requests`.
-    /// A future follow-up (TODO in the Rust `reject_contact_request`)
-    /// will also write a `display_hidden` contactInfo document so
-    /// the rejection persists across devices.
-    public func rejectContactRequest(
+    /// Ignore a contact sender (per-sender mute, = block, reversible).
+    ///
+    /// Drops the sender's pending incoming request and suppresses ALL of
+    /// their requests (including rotated ones) from the main pending list
+    /// on every future sync sweep. Ignore is **local-only** — no on-chain
+    /// artifact; it's persisted through the changeset → SwiftData pipeline
+    /// so it survives a relaunch. Reverse with `unignoreContactSender`.
+    public func ignoreContactSender(
         ourIdentityId: Identifier,
         contactIdentityId: Identifier
     ) async throws {
@@ -1742,7 +1744,39 @@ extension ManagedPlatformWallet {
             let result = ourBytes.withUnsafeBufferPointer {
                 ourBp -> PlatformWalletFFIResult in
                 contactBytes.withUnsafeBufferPointer { contactBp in
-                    platform_wallet_reject_contact_request(
+                    platform_wallet_ignore_contact_sender(
+                        handle,
+                        ourBp.baseAddress!,
+                        contactBp.baseAddress!
+                    )
+                }
+            }
+            try result.check()
+        }.value
+    }
+
+    /// Un-ignore a contact sender (reverse `ignoreContactSender`).
+    ///
+    /// Removes the sender from the ignore set and rewinds the received
+    /// sync cursor so the next sweep re-fetches their on-chain requests
+    /// (otherwise the cursor has already passed them and they'd never
+    /// reappear). A no-op when the sender wasn't ignored.
+    public func unignoreContactSender(
+        ourIdentityId: Identifier,
+        contactIdentityId: Identifier
+    ) async throws {
+        let handle = self.handle
+        let ourBytes: [UInt8] = ourIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contactBytes: [UInt8] = contactIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        try await Task.detached(priority: .userInitiated) {
+            let result = ourBytes.withUnsafeBufferPointer {
+                ourBp -> PlatformWalletFFIResult in
+                contactBytes.withUnsafeBufferPointer { contactBp in
+                    platform_wallet_unignore_contact_sender(
                         handle,
                         ourBp.baseAddress!,
                         contactBp.baseAddress!

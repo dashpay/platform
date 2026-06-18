@@ -1760,15 +1760,15 @@ public class PlatformWalletPersistenceHandler {
     ///   stamped per row), so the upsert path is direction-agnostic.
     /// - Each `removedSent` row drops the matching outgoing row.
     /// - Each `removedIncoming` row drops the matching incoming row.
-    /// - Each `rejected` tombstone (G5 stage 1) drops the matching
-    ///   incoming row **only when its `accountReference` matches** —
-    ///   a rotated (bumped-`accountReference`) request from the same
-    ///   sender must survive. Deletion (rather than a `rejected` flag
-    ///   on the row) is the smallest design consistent with the
-    ///   existing tombstone handling: the Rust-side SQLite pipeline
-    ///   owns rejection suppression across re-syncs, so a rejected
-    ///   request never re-enters `upserts`; SwiftData only has to
-    ///   stop showing it.
+    /// - Each `ignored` entry (`isIgnored == true`) drops **every**
+    ///   incoming row from that sender — ignore is per-sender, so a
+    ///   rotated (bumped-`accountReference`) request is suppressed too
+    ///   (unlike the old per-`accountReference` reject) — and upserts
+    ///   the `PersistentDashpayIgnoredSender` row. An `unignored` entry
+    ///   (`isIgnored == false`) deletes that ignored-sender row. The
+    ///   Rust side owns ignore suppression across re-syncs (an ignored
+    ///   sender never re-enters `upserts`); SwiftData only stops showing
+    ///   them and persists the ignored set for the Ignored screen.
     ///
     /// The owner identity is required to exist in SwiftData before
     /// the row is inserted — the relationship is non-optional and
@@ -1787,7 +1787,7 @@ public class PlatformWalletPersistenceHandler {
         upserts: [ContactRequestSnapshot],
         removedSent: [ContactRequestRemovalSnapshot],
         removedIncoming: [ContactRequestRemovalSnapshot],
-        rejected: [ContactRequestRejectionSnapshot]
+        ignored: [ContactIgnoredSenderSnapshot]
     ) {
         onQueue {
             for entry in upserts {
@@ -1886,18 +1886,29 @@ public class PlatformWalletPersistenceHandler {
                     isOutgoing: false
                 )
             }
-            for tomb in rejected {
-                // Two parts: (1) drop the incoming row so the request
-                // stops showing in the pending UI, and (2) persist a
-                // durable tombstone so the Rust suppression set can be
-                // restored at load — without (2) the rejected contact
-                // resurrects on the next post-relaunch sync sweep.
-                deleteRejectedIncomingRow(
-                    ownerId: tomb.ownerIdentityId,
-                    senderId: tomb.senderIdentityId,
-                    accountReference: tomb.accountReference
-                )
-                upsertRejectedTombstone(tomb)
+            for row in ignored {
+                if row.isIgnored {
+                    // Ignore: (1) drop the sender's incoming row so the
+                    // request stops showing in the pending UI, and (2)
+                    // persist a durable ignored-sender row so the Rust
+                    // `ignored_senders` set can be restored at load —
+                    // without (2) the ignored sender resurfaces on the
+                    // next post-relaunch sweep. Per-sender (no
+                    // accountReference): ALL the sender's incoming rows go.
+                    deleteIgnoredSenderIncomingRows(
+                        ownerId: row.ownerIdentityId,
+                        senderId: row.senderIdentityId
+                    )
+                    upsertIgnoredSender(row)
+                } else {
+                    // Un-ignore: delete the ignored-sender row so the
+                    // sender's requests resurface on the next sweep (the
+                    // Rust side rewinds the cursor to re-fetch them).
+                    deleteIgnoredSender(
+                        ownerId: row.ownerIdentityId,
+                        senderId: row.senderIdentityId
+                    )
+                }
             }
             // No save() — bracketed by changesetBegin/End from the
             // Rust store() round.
@@ -1928,82 +1939,85 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
-    /// Apply one rejection tombstone (G5 stage 1): delete the
-    /// incoming-request row matching `(ownerId, senderId,
-    /// accountReference)` so a rejected request doesn't linger in the
-    /// UI store. The `accountReference` gate mirrors the Rust-side
-    /// suppression key — a rotated (bumped-`accountReference`)
-    /// request from the same sender is a *different* request and its
-    /// row must survive. Silent on miss: tombstones replay across
-    /// rounds, and an already-removed row is the success state.
+    /// Drop every incoming-request row from an ignored sender so their
+    /// requests stop lingering in the UI store. Per-sender (no
+    /// `accountReference` gate): unlike the old reject, ignore suppresses
+    /// ALL of the sender's requests, including rotated ones. Silent on
+    /// miss: an already-removed row is the success state.
     ///
     /// Assumes it's already running on `serialQueue`.
-    private func deleteRejectedIncomingRow(
-        ownerId: Data,
-        senderId: Data,
-        accountReference: UInt32
-    ) {
-        let reference = accountReference
+    private func deleteIgnoredSenderIncomingRows(ownerId: Data, senderId: Data) {
         let descriptor = FetchDescriptor<PersistentDashpayContactRequest>(
             predicate: #Predicate {
                 $0.ownerIdentityId == ownerId
                     && $0.contactIdentityId == senderId
                     && $0.isOutgoing == false
-                    && $0.accountReference == reference
             }
         )
-        if let existing = try? backgroundContext.fetch(descriptor).first {
-            backgroundContext.delete(existing)
+        if let rows = try? backgroundContext.fetch(descriptor) {
+            for row in rows {
+                backgroundContext.delete(row)
+            }
         }
     }
 
-    /// Persist one rejection tombstone (G5 stage 1) as a durable
-    /// `PersistentDashpayRejectedRequest` row so the Rust
-    /// `rejected_contact_requests` suppression set can be rebuilt at load.
-    /// Without this the in-memory set starts empty after relaunch and the
-    /// still-on-platform immutable `contactRequest` re-ingests on the next
-    /// sweep, resurrecting the rejected contact.
+    /// Persist one ignored sender as a durable
+    /// `PersistentDashpayIgnoredSender` row so the Rust `ignored_senders`
+    /// set can be rebuilt at load. Without this the in-memory set starts
+    /// empty after relaunch and the still-on-platform immutable
+    /// `contactRequest`s re-ingest on the next sweep, resurfacing the
+    /// ignored sender.
     ///
-    /// Upsert keyed `(networkRaw, ownerIdentityId, senderIdentityId,
-    /// accountReference)` — the Rust suppression key. Idempotent: a replay
-    /// of the same tombstone refreshes `documentId` in place. Requires the
-    /// owner `PersistentIdentity` to exist (the tombstone hangs off it);
-    /// skipped + logged if it hasn't landed yet — the next sync round
-    /// replays it.
+    /// Upsert keyed `(networkRaw, ownerIdentityId, ignoredSenderId)` — the
+    /// Rust per-sender suppression key. Idempotent: a replay of the same
+    /// ignore is a no-op. Requires the owner `PersistentIdentity` to exist
+    /// (the row hangs off it); skipped + logged if it hasn't landed yet —
+    /// the next sync round replays it.
     ///
     /// Assumes it's already running on `serialQueue`.
-    private func upsertRejectedTombstone(_ tomb: ContactRequestRejectionSnapshot) {
-        let ownerId = tomb.ownerIdentityId
+    private func upsertIgnoredSender(_ row: ContactIgnoredSenderSnapshot) {
+        let ownerId = row.ownerIdentityId
         let ownerDescriptor = FetchDescriptor<PersistentIdentity>(
             predicate: #Predicate { $0.identityId == ownerId }
         )
         guard let owner = try? backgroundContext.fetch(ownerDescriptor).first else {
-            print("⚠️ persistContacts: skipped rejection tombstone — no PersistentIdentity for owner \(tomb.ownerIdentityId.prefix(8).toHexString())…; will retry next sync round")
+            print("⚠️ persistContacts: skipped ignored-sender — no PersistentIdentity for owner \(row.ownerIdentityId.prefix(8).toHexString())…; will retry next sync round")
             return
         }
 
         let networkRaw = owner.networkRaw
-        let senderId = tomb.senderIdentityId
-        let reference = tomb.accountReference
-        let descriptor = FetchDescriptor<PersistentDashpayRejectedRequest>(
+        let senderId = row.senderIdentityId
+        let descriptor = FetchDescriptor<PersistentDashpayIgnoredSender>(
             predicate: #Predicate {
                 $0.networkRaw == networkRaw
                     && $0.ownerIdentityId == ownerId
-                    && $0.senderIdentityId == senderId
-                    && $0.accountReference == reference
+                    && $0.ignoredSenderId == senderId
+            }
+        )
+        if (try? backgroundContext.fetch(descriptor).first) == nil {
+            backgroundContext.insert(
+                PersistentDashpayIgnoredSender(
+                    owner: owner,
+                    ignoredSenderId: row.senderIdentityId
+                )
+            )
+        }
+    }
+
+    /// Delete the ignored-sender row matching `(ownerId, senderId)` — the
+    /// un-ignore path. Silent on miss: an already-removed row is the
+    /// success state.
+    ///
+    /// Assumes it's already running on `serialQueue`.
+    private func deleteIgnoredSender(ownerId: Data, senderId: Data) {
+        let descriptor = FetchDescriptor<PersistentDashpayIgnoredSender>(
+            predicate: #Predicate {
+                $0.ownerIdentityId == ownerId
+                    && $0.ignoredSenderId == senderId
             }
         )
         if let existing = try? backgroundContext.fetch(descriptor).first {
-            existing.documentId = tomb.documentId
-        } else {
-            backgroundContext.insert(
-                PersistentDashpayRejectedRequest(
-                    owner: owner,
-                    senderIdentityId: tomb.senderIdentityId,
-                    accountReference: tomb.accountReference,
-                    documentId: tomb.documentId
-                )
-            )
+            backgroundContext.delete(existing)
         }
     }
 
@@ -2042,16 +2056,15 @@ public class PlatformWalletPersistenceHandler {
         let contactIdentityId: Data
     }
 
-    /// Owned snapshot of a `ContactRequestRejectionFFI` tombstone
-    /// (G5 stage 1). The suppression key is `(owner, sender,
-    /// accountReference)` — the `documentId` is audit-only metadata
-    /// (`nil` mirrors the FFI's `has_document_id == false`) and is
-    /// not used for row matching.
-    struct ContactRequestRejectionSnapshot {
+    /// Owned snapshot of a `ContactIgnoredSenderFFI` row. The per-sender
+    /// suppression key is `(owner, sender)` — no `accountReference`, so an
+    /// ignored sender's requests are ALL suppressed (rotations included).
+    /// `isIgnored` is the insert/remove bit: `true` ⇒ persist the
+    /// ignored-sender row (an ignore); `false` ⇒ delete it (an un-ignore).
+    struct ContactIgnoredSenderSnapshot {
         let ownerIdentityId: Data
         let senderIdentityId: Data
-        let accountReference: UInt32
-        let documentId: Data?
+        let isIgnored: Bool
     }
 
     // MARK: - DashPay payment-history persistence
@@ -3443,17 +3456,17 @@ public class PlatformWalletPersistenceHandler {
                     // PHASE 1: delete every identity's cascade-children
                     // whose inverse to identity is non-optional
                     // (DPNS names, DashPay profile, DashPay contact
-                    // requests, DashPay payments, DashPay rejection
-                    // tombstones). PublicKey, Document, and
+                    // requests, DashPay payments, DashPay ignored
+                    // senders). PublicKey, Document, and
                     // TokenBalance inverses to identity are already
                     // Optional and don't need pre-deletion.
                     //
-                    // Payments AND rejection tombstones BOTH have a
+                    // Payments AND ignored-sender rows BOTH have a
                     // non-optional `owner: PersistentIdentity`, so omitting
                     // either makes PHASE 2's identity delete hit the exact
                     // SwiftData fatal PHASE 1 exists to avoid — aborting the
                     // wipe and leaving plaintext counterparty/memo/amount/txid
-                    // (payments) + privacy-relevant rejection tombstones on
+                    // (payments) + privacy-relevant ignored-sender ids on
                     // disk after a user-initiated wallet wipe.
                     for identity in identitiesToDelete {
                         for name in Array(identity.dpnsNames) {
@@ -3468,8 +3481,8 @@ public class PlatformWalletPersistenceHandler {
                         for payment in Array(identity.dashpayPayments) {
                             backgroundContext.delete(payment)
                         }
-                        for tomb in Array(identity.dashpayRejectedRequests) {
-                            backgroundContext.delete(tomb)
+                        for ignored in Array(identity.dashpayIgnoredSenders) {
+                            backgroundContext.delete(ignored)
                         }
                     }
                     try backgroundContext.save()
@@ -4790,36 +4803,35 @@ public class PlatformWalletPersistenceHandler {
                 allocation.paymentArrays.append((paymentBuf, paymentRows.count))
             }
 
-            // DashPay rejected-request tombstones (G5 stage 1) — restores
-            // the rejected_contact_requests suppression set at load.
-            // Without this the set starts empty on relaunch and a
-            // previously-rejected sender's still-on-platform immutable
-            // contactRequest re-ingests on the next sweep, resurrecting
-            // the rejected contact. Flat POD rows — no owned pointers.
-            let rejectedRows = identity.dashpayRejectedRequests
-            if rejectedRows.isEmpty {
-                entry.rejected = nil
-                entry.rejected_count = 0
+            // DashPay ignored senders (per-sender mute, local-only) —
+            // restores the ignored_senders set at load. Without this the
+            // set starts empty on relaunch and a previously-ignored
+            // sender's still-on-platform immutable contactRequests re-ingest
+            // on the next sweep, resurfacing the ignored sender. Each entry
+            // is a bare 32-byte sender id — a flat `[u8; 32]` array, no
+            // owned pointers; Swift allocates + frees the buffer (via
+            // `allocation.ignoredSenderArrays`), Rust only reads + copies.
+            // Drop any row with a wrong-length id BEFORE allocating (same
+            // abort-on-corrupt convention as the contact-profile array).
+            let ignoredRows = identity.dashpayIgnoredSenders.filter {
+                $0.ignoredSenderId.count == 32
+            }
+            if ignoredRows.isEmpty {
+                entry.ignored_senders = nil
+                entry.ignored_senders_count = 0
             } else {
-                let rejectedBuf = UnsafeMutablePointer<ContactRequestRejectionFFI>.allocate(
-                    capacity: rejectedRows.count
+                let ignoredBuf = UnsafeMutablePointer<FFIByteTuple32>.allocate(
+                    capacity: ignoredRows.count
                 )
-                for (c, tomb) in rejectedRows.enumerated() {
-                    var row = ContactRequestRejectionFFI()
-                    copyBytes(tomb.ownerIdentityId, into: &row.owner_id)
-                    copyBytes(tomb.senderIdentityId, into: &row.sender_id)
-                    row.account_reference = tomb.accountReference
-                    if let documentId = tomb.documentId {
-                        row.has_document_id = true
-                        copyBytes(documentId, into: &row.document_id)
-                    } else {
-                        row.has_document_id = false
-                    }
-                    rejectedBuf[c] = row
+                for (c, row) in ignoredRows.enumerated() {
+                    var idTuple: FFIByteTuple32 =
+                        (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+                    copyBytes(row.ignoredSenderId, into: &idTuple)
+                    ignoredBuf[c] = idTuple
                 }
-                entry.rejected = UnsafePointer(rejectedBuf)
-                entry.rejected_count = UInt(rejectedRows.count)
-                allocation.rejectedArrays.append((rejectedBuf, rejectedRows.count))
+                entry.ignored_senders = UnsafePointer(ignoredBuf)
+                entry.ignored_senders_count = UInt(ignoredRows.count)
+                allocation.ignoredSenderArrays.append((ignoredBuf, ignoredRows.count))
             }
 
             // Cached contact profiles — restores the contact_profiles map
@@ -5161,10 +5173,11 @@ private final class LoadAllocation {
     /// Per-identity `PaymentRestoreEntryFFI` arrays (DashPay payment
     /// restore — H1). The txid/memo strings live in `cStringBuffers`.
     var paymentArrays: [(UnsafeMutablePointer<PaymentRestoreEntryFFI>, Int)] = []
-    /// Per-identity `ContactRequestRejectionFFI` arrays (DashPay
-    /// rejected-tombstone restore — G5 stage 1). Flat POD rows, no owned
-    /// pointers, so nothing extra rides `scalarBuffers`/`cStringBuffers`.
-    var rejectedArrays: [(UnsafeMutablePointer<ContactRequestRejectionFFI>, Int)] = []
+    /// Per-identity ignored-sender arrays (DashPay ignored-sender
+    /// restore). Each row is a bare 32-byte sender id (`FFIByteTuple32`) —
+    /// flat POD, no owned pointers, so nothing extra rides
+    /// `scalarBuffers`/`cStringBuffers`.
+    var ignoredSenderArrays: [(UnsafeMutablePointer<FFIByteTuple32>, Int)] = []
     /// Per-identity `ContactProfileRestoreEntryFFI` arrays (cached
     /// contact-profile restore). The four optional profile strings each
     /// row references live in `cStringBuffers`. NOTE: these rows are
@@ -5239,7 +5252,7 @@ private final class LoadAllocation {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
-        for (ptr, count) in rejectedArrays {
+        for (ptr, count) in ignoredSenderArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
@@ -6044,9 +6057,10 @@ private func persistAssetLocksCallback(
 /// separate through the snapshot too because the handler uses the
 /// arrival bucket to decide which `is_outgoing` row to delete.
 ///
-/// The trailing `rejected` array carries the G5 stage-1 rejection
-/// tombstones — POD rows (no heap payloads), copied into snapshots
-/// like everything else.
+/// The trailing `ignored` array carries the per-sender ignore deltas —
+/// POD rows (no heap payloads), copied into snapshots like everything
+/// else. Each row's `is_ignored` bit says persist (ignore) vs delete
+/// (un-ignore).
 private func persistContactsCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
@@ -6056,8 +6070,8 @@ private func persistContactsCallback(
     removedSentCount: UInt,
     removedIncomingPtr: UnsafePointer<ContactRequestRemovalFFI>?,
     removedIncomingCount: UInt,
-    rejectedPtr: UnsafePointer<ContactRequestRejectionFFI>?,
-    rejectedCount: UInt
+    ignoredPtr: UnsafePointer<ContactIgnoredSenderFFI>?,
+    ignoredCount: UInt
 ) -> Int32 {
     guard let context = context,
           let walletIdPtr = walletIdPtr else {
@@ -6146,16 +6160,15 @@ private func persistContactsCallback(
         }
     }
 
-    var rejected: [PlatformWalletPersistenceHandler.ContactRequestRejectionSnapshot] = []
-    if rejectedCount > 0, let rejectedPtr = rejectedPtr {
-        rejected.reserveCapacity(Int(rejectedCount))
-        for i in 0..<Int(rejectedCount) {
-            let r = rejectedPtr[i]
-            rejected.append(.init(
+    var ignored: [PlatformWalletPersistenceHandler.ContactIgnoredSenderSnapshot] = []
+    if ignoredCount > 0, let ignoredPtr = ignoredPtr {
+        ignored.reserveCapacity(Int(ignoredCount))
+        for i in 0..<Int(ignoredCount) {
+            let r = ignoredPtr[i]
+            ignored.append(.init(
                 ownerIdentityId: dataFromTuple32(r.owner_id),
                 senderIdentityId: dataFromTuple32(r.sender_id),
-                accountReference: r.account_reference,
-                documentId: r.has_document_id ? dataFromTuple32(r.document_id) : nil
+                isIgnored: r.is_ignored
             ))
         }
     }
@@ -6165,7 +6178,7 @@ private func persistContactsCallback(
         upserts: upserts,
         removedSent: removedSent,
         removedIncoming: removedIncoming,
-        rejected: rejected
+        ignored: ignored
     )
     return 0
 }

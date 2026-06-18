@@ -892,6 +892,7 @@ mod tests {
             dashpay_profile: None,
             dashpay_payments: Default::default(),
             contact_profiles: Default::default(),
+            ignored_senders: Default::default(),
         };
         let mut ffi = IdentityEntryFFI::from_entry(&entry);
         assert_eq!(ffi.identity_id, [7u8; 32]);
@@ -934,6 +935,7 @@ mod tests {
             dashpay_profile: None,
             dashpay_payments: Default::default(),
             contact_profiles: Default::default(),
+            ignored_senders: Default::default(),
         };
         let mut ffi = IdentityEntryFFI::from_entry(&entry);
         assert_eq!(ffi.dpns_names_count, 2);
@@ -992,6 +994,7 @@ mod tests {
             }),
             dashpay_payments: Default::default(),
             contact_profiles: Default::default(),
+            ignored_senders: Default::default(),
         };
         let mut ffi = IdentityEntryFFI::from_entry(&entry);
         assert!(ffi.dashpay_profile_present);
@@ -1040,6 +1043,7 @@ mod tests {
             dashpay_profile: None,
             dashpay_payments: Default::default(),
             contact_profiles: Default::default(),
+            ignored_senders: Default::default(),
         };
         let mut ffi = IdentityEntryFFI::from_entry(&entry);
         assert!(!ffi.wallet_id_is_some);
