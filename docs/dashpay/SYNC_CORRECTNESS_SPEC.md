@@ -1,16 +1,23 @@
 # DashPay sync correctness — contact requests **and** profiles (mirror Android `PlatformSyncService`)
 
-Status: **REVIEWED** (5-lens multi-agent review folded in — see §9; ready to implement)
+Status: **IMPLEMENTED (2026-06-18)** — both stages shipped on
+`feat/dashpay-m1-sync-correctness` (PR #3841), 5-lens review (§9) folded in first.
+Stage 1 = paginated retrieve-all + per-identity high-water cursor + 10-min overlap
+at a 15s cadence (`network/contact_requests.rs`); stage 2 = id-keyed
+`contact_profiles` cache for established + pending senders (`network/contact_info.rs`,
+`accessors.rs`). Both are surfaced in the UI and **durably persisted** through the
+changeset pipeline to *both* backends (SQLite persister + SwiftData); the high-water
+cursor stays in-memory by design (a cold restore does one safe full re-fetch).
 Owner: rs-sdk / platform-wallet
 Priority: **FIRST** of the DashPay correctness track (ahead of the contactInfo
 format migration and the ignore feature).
 
 This spec covers **two consecutive stages of the same Android sync loop**:
 
-| Stage | Android (`PlatformSyncService`) | Us today | This spec |
-|-------|--------------------------------|----------|-----------|
-| 1. Contact-request fetch | `updateContactRequests()` — incremental, paginated, high-water | present but **broken** (truncates at 100, no high-water) | fix it |
-| 2. Contact-profile fetch | `updateContactProfiles(userIds)` — batch `whereIn $ownerId` | **absent** (we sync only our *own* profile) | add it |
+| Stage | Android (`PlatformSyncService`) | Us before | Delivered |
+|-------|--------------------------------|-----------|-----------|
+| 1. Contact-request fetch | `updateContactRequests()` — incremental, paginated, high-water | present but **broken** (truncated at 100, no high-water) | **fixed** — retrieve-all + high-water cursor |
+| 2. Contact-profile fetch | `updateContactProfiles(userIds)` — batch `whereIn $ownerId` | **absent** (synced only our *own* profile) | **added** — id-keyed cache, established + pending senders |
 
 Neither is an optimization: stage 1 is a **correctness bug** (real requests are
 permanently buried) and stage 2 is a **missing feature** (contacts have no name

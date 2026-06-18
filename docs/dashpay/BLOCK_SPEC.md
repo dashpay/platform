@@ -1,14 +1,22 @@
 # DashPay "Block sender" — design spec
 
-Status: **PAUSED (2026-06-17)** — superseded in sequence by the cross-device
-rework. This single-device design is 4-lens reviewed (§0 R1–R10) and stays valid,
-but we now do block (and reject) **via `contactInfo`** so they sync across devices.
-New order:
-1. **`docs/dashpay/CONTACTINFO_FORMAT_SPEC.md`** — migrate privateData CBOR→DIP-15
-   + define the reject/block field. *(written, needs review)*
-2. **(TODO) reject → on-chain** via that field — must resolve the R1 non-established
-   privacy question first.
-3. **(this, revisited) block via `contactInfo`** — cross-device.
+Status: **SUPERSEDED (2026-06-18) — replaced by the implemented local-only Ignore.**
+This single-device design is 4-lens reviewed (§0 R1–R10) and stays valid as the
+reference, but the **shipped** feature is the simpler per-sender, reversible
+**Ignore** (= block) in `docs/dashpay/SYNC_CORRECTNESS_SPEC.md` / Spec 2 — see the
+TODO. The intermediate plan to carry block/reject **via `contactInfo`** for
+cross-device sync was **REJECTED**: R1 found that a `contactInfo` about a
+*non-established* sender leaks *who* you ignored (its public `$createdAt`/`$updatedAt`
+correlate with the inbound `contactRequest`'s timestamp via the public indexes), and
+the DIP-15 ≥2-contacts ambiguity gate doesn't cover a fresh non-established sender.
+What actually landed:
+1. **`CONTACTINFO_FORMAT_SPEC.md`** — privateData CBOR→DIP-15 varint. **IMPLEMENTED**
+   (carries alias/note/displayHidden/acceptedAccounts; does NOT carry ignore — R1).
+2. **Ignore = per-sender, reversible, LOCAL-ONLY.** **IMPLEMENTED** across all layers
+   (changeset, FFI, SwiftData, *and* the SQLite persister's `ignored_senders` table).
+3. **Cross-device ignore** — deferred to a future **encrypted field on the `profile`
+   document** (contract / governance track), whose update timing is conflated with
+   normal profile edits so it doesn't leak the per-sender existence/count. Not built.
 
 Owner: platform-wallet / swift-sdk
 Relates to: `docs/dashpay/SPEC.md` (G5 rejection), the existing per-request

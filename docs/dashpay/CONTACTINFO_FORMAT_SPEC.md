@@ -95,9 +95,18 @@ bump locks old readers out. So:
 - decoders MUST be **tolerant**: read the fields the known minor defines, ignore
   trailing bytes; on an unknown **major**, discard.
 
-## 4. The reject/block fields (define here, populate later)
+## 4. The reject/block fields — DEFINED but NOT ADOPTED (R1, resolved 2026-06-18)
 
-Appended after `acceptedAccounts`, present from **minor 1**:
+> **Resolution.** This field was the proposed cross-device carrier for
+> reject/block. It is **not implemented** and is **not part of the shipped DIP-15
+> codec** (which carries only `aliasName` / `note` / `displayHidden` /
+> `acceptedAccounts`). Per R1, a `contactInfo` about a *non-established* sender
+> leaks *who* you ignored (the timing-correlation argument below), so **Ignore is
+> local-only** (Spec 2) and cross-device sync is deferred to a future **encrypted
+> field on the `profile` document** (contract / governance track) — NOT to
+> `contactInfo`. The design below is retained for reference only.
+
+Appended after `acceptedAccounts`, present from **minor 1** (design only — unused):
 
 | # | Field | Type | Meaning |
 |---|-------|------|---------|
@@ -109,19 +118,22 @@ the "both set" ambiguity, and extends cleanly (e.g. 3 = muted). `displayHidden`
 (field 3) stays as-is for backward DIP-15 compat; `relationshipState` is the
 richer superset we read first when present.
 
-**Scope boundary (critical):** this spec only **defines** the field + its
+**Scope boundary (critical):** this spec only **defined** the field + its
 encoding. *Whether and how* a `contactInfo` is created to carry it — especially
-for a **non-established** declined/blocked sender — is the **privacy question
-(R1 from the block review)** deferred to Spec 2/3:
+for a **non-established** declined/blocked sender — was the **privacy question
+(R1 from the block review)**, **RESOLVED (2026-06-18): not via `contactInfo` at
+all.** Ignore is local-only (Spec 2); cross-device goes through an encrypted
+`profile` field later. Kept for context:
 
 > A `contactInfo` *about a non-contact* is a brand-new on-chain document whose
 > existence + `$createdAt` can be timing-correlated with the inbound
 > `contactRequest` (public `userIdCreatedAt` index) to re-identify *who* you
 > blocked — even though `encToUserId` is encrypted, and the ≥2-contacts gate
-> (dip-0015.md:697-699) can't cover a non-contact. **Spec 2 must resolve whether
-> non-established reject/block is carried per-sender (leaky) or in a single
-> owner-scoped self-encrypted list (bounded leak), or only for established
-> contacts (no leak, partial coverage).** This format spec is agnostic to that
+> (dip-0015.md:697-699) can't cover a non-contact. **Spec 2 resolved this: a
+> per-sender `contactInfo` is leaky (above) and even a single owner-scoped list
+> on `contactInfo` still signals "an ignore happened", so ignore is kept
+> local-only and cross-device is deferred to an encrypted `profile` field whose
+> update timing is conflated with ordinary profile edits.** This format spec is agnostic to that
 > choice — it just provides the field.
 
 ## 5. Padding / 48-byte floor

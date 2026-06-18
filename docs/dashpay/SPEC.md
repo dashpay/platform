@@ -11,6 +11,27 @@
 > and lays out the remaining work + test plan. It is *not* a greenfield design —
 > it is a finish-and-polish plan.
 >
+> **Status update (2026-06-18) — the finish-and-polish work is essentially done
+> on `feat/dashpay-m1-sync-correctness` (PR #3841).** Resolution of the Part-0 gap
+> table: **G1, G2, G12, G13, G14, G15** (the P0 sync/wire/key-purpose blockers) and
+> **G3, G6, G7, G8, G9, G10** — all **DONE** (M1–M4). **G5** reworked and shipped as
+> a per-sender, reversible, **local-only Ignore** (Spec 2) across every layer incl.
+> the SQLite persister; cross-device sync deferred to a future encrypted `profile`
+> field (contract track — the `contactInfo` route was rejected for the R1 leak).
+> **G11**: the `network/` layer now has unit coverage; the live cross-client e2e
+> ride PR #3549 and stay blocked on devnet funding. **G4** (watch-only ECDH) is
+> **deferred** with an amended design (needs xpub hooks, not just an ECDH hook).
+> Three follow-on specs were written and **implemented** this pass:
+> **`SYNC_CORRECTNESS_SPEC.md`** (Spec 0 — paginated/high-water sync + contact-profile
+> cache + durable persistence), **`CONTACTINFO_FORMAT_SPEC.md`** (Spec 1 — privateData
+> CBOR→DIP-15 varint), and Spec 2 (Ignore). Also resolved: `accountReference`
+> byte-order (**keep ours** — recipient-ignored one-time pad, no interop break) and
+> the friendship-path `account'` hardcode (fixed upstream in **rust-dashcore#813**,
+> pulled in via the dashcore bump **PR #3936**). Remaining is all blocked on external
+> resources (devnet funding for e2e/UAT; contract governance for cross-device ignore
+> + DoS filter; an upstream rust-dashcore change for multi-account). See
+> [`TODO.md`](./TODO.md) for the authoritative item-by-item status.
+>
 > **How to read.** Part 0 is the TL;DR. Parts 1–2 are reference (protocol +
 > architecture). Part 3 is the current-state inventory. Part 4 is the prioritized
 > gap/bug list. Part 5 is the work plan. Part 6 is the Swift UI design. Part 7 is
