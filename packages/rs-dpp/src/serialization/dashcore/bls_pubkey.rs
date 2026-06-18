@@ -211,3 +211,57 @@ pub mod option {
         deserializer.deserialize_option(OptionVisitor)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::{Deserialize, Serialize};
+    use serde_json::json;
+
+    // A known-valid compressed-G1 BLS public key (deterministic — the
+    // ValidatorSet fixture's seeded StdRng(42) threshold key).
+    const PK_HEX: &str =
+        "969c5d5873f49aa994c5f6a850924ca1840c4ad1791aaaecd90093d4a5c0c3799f2d98540f5366cfa0a33f143fd69263";
+
+    // Newtypes that drive the `with` module(s) through serde.
+    #[derive(Serialize, Deserialize)]
+    struct Wrap(#[serde(with = "super")] BlsPublicKey<Bls12381G2Impl>);
+
+    #[derive(Serialize, Deserialize)]
+    struct OptWrap(#[serde(with = "super::option")] Option<BlsPublicKey<Bls12381G2Impl>>);
+
+    #[test]
+    fn json_hr_round_trip_is_the_hex_string() {
+        // Human-readable (serde_json::Value): hex in, identical hex out (visit_str).
+        let pk: Wrap = serde_json::from_value(json!(PK_HEX)).expect("from hex");
+        assert_eq!(serde_json::to_value(&pk).expect("to json"), json!(PK_HEX));
+    }
+
+    #[test]
+    fn json_borrowed_str_path_works() {
+        // `serde_json::from_str` yields borrowed strings — the path upstream's
+        // `<&str>::deserialize` handled but `from_value`/Content did not. Our
+        // `visit_str` takes `&str`, so both work.
+        let pk: Wrap = serde_json::from_str(&format!("\"{PK_HEX}\"")).expect("from_str");
+        assert_eq!(serde_json::to_value(&pk).expect("to json"), json!(PK_HEX));
+    }
+
+    #[test]
+    fn value_non_hr_byte_seq_round_trip() {
+        // Non-HR `platform_value` serializes the key as a 48-byte sequence; the
+        // `visit_seq` path (the bug the un-ignored ValidatorSet test exposed)
+        // must reconstruct it. Re-serialize to JSON to confirm the same key.
+        let pk: Wrap = serde_json::from_value(json!(PK_HEX)).expect("from hex");
+        let value = platform_value::to_value(&pk).expect("to value");
+        let pk2: Wrap = platform_value::from_value(value).expect("from value seq");
+        assert_eq!(serde_json::to_value(&pk2).expect("to json"), json!(PK_HEX));
+    }
+
+    #[test]
+    fn option_some_and_none_round_trip() {
+        let some: OptWrap = serde_json::from_value(json!(PK_HEX)).expect("some");
+        assert_eq!(serde_json::to_value(&some).expect("to json"), json!(PK_HEX));
+        let none: OptWrap = serde_json::from_value(json!(null)).expect("none");
+        assert_eq!(serde_json::to_value(&none).expect("to json"), json!(null));
+    }
+}

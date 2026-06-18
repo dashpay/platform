@@ -23,11 +23,12 @@ pub struct ValidatorV0 {
     /// The proTxHash
     pub pro_tx_hash: ProTxHash,
     /// The public key share of this validator for this quorum
-    // TODO(blstrs_plus PR pending): drop the `serde(with = ...)` once upstream
-    // accepts owned strings. See `core_types::bls_pubkey_serde` for context.
+    // `BlsPublicKey` is a dashcore type, so its serde wrapper lives in
+    // `serialization::dashcore::bls_pubkey` (now self-sufficient — no upstream
+    // dependency; accepts hex string or byte sequence through any deserializer).
     #[cfg_attr(
         feature = "serde-conversion",
-        serde(with = "crate::core_types::bls_pubkey_serde::option")
+        serde(with = "crate::serialization::dashcore::bls_pubkey::option")
     )]
     pub public_key: Option<BlsPublicKey<Bls12381G2Impl>>,
     /// The node address

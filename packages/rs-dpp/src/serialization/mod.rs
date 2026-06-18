@@ -4,6 +4,8 @@ pub mod json;
 pub mod serde_bytes;
 #[cfg(feature = "serde-conversion")]
 pub mod serde_bytes_var;
+#[cfg(feature = "serde-conversion")]
+pub mod dashcore;
 pub(crate) mod serialization_traits;
 
 pub use dpp_json_convertible_derive::json_safe_fields;

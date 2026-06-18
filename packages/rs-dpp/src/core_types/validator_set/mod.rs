@@ -152,8 +152,8 @@ mod json_convertible_tests {
     /// keys ARE deterministic, but the 96-char hex / 48-byte literal is too
     /// unwieldy to inline as a string constant, so we interpolate the actual
     /// `to_value`/`to_json` of the same pubkey objects we put in the fixture.
-    /// (The dedicated `bls_pubkey_serde` unit tests independently cover the
-    /// pubkey round-trip.)
+    /// (The dedicated `serialization::dashcore::bls_pubkey` unit tests
+    /// independently cover the pubkey round-trip.)
     fn build_fixture() -> (
         ValidatorSet,
         BlsPublicKey<Bls12381G2Impl>,
@@ -221,8 +221,8 @@ mod json_convertible_tests {
         // keyed by ProTxHash hex, hash fields as lowercase hex strings,
         // sized-int fields preserved. The inner Validator's own
         // `$formatVersion` tag (now applied) appears alongside its other
-        // snake_case fields. (`bls_pubkey_serde` additionally has its own
-        // dedicated BLS round-trip tests.)
+        // snake_case fields. (`serialization::dashcore::bls_pubkey` additionally
+        // has its own dedicated BLS round-trip tests.)
         assert_eq!(
             json,
             json!({
