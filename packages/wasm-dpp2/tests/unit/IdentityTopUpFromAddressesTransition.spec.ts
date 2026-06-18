@@ -191,7 +191,7 @@ describe('IdentityTopUpFromAddressesTransition', () => {
       const obj = transition.toObject();
 
       expect(obj.feeStrategy).to.be.an('array');
-      expect(obj.feeStrategy[0].type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(obj.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
       expect(obj.feeStrategy[0].index).to.be.a('number');
     });
 
@@ -202,7 +202,7 @@ describe('IdentityTopUpFromAddressesTransition', () => {
       expect(json.inputs[0].address).to.be.a('string').with.lengthOf(42);
       expect(json.output).to.exist();
       expect(json.output.address).to.be.a('string').with.lengthOf(42);
-      expect(json.feeStrategy[0].type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(json.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
     });
 
     it('fromObject(toObject()) round-trips identically', () => {

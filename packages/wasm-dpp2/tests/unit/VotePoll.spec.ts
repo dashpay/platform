@@ -17,12 +17,12 @@ describe('VotePoll', () => {
 
   describe('toJSON()', () => {
     it('should serialize with type tag and flat fields', () => {
-      // VotePoll is internally tagged (`tag = "type"`) — no `data` wrapper.
+      // VotePoll is internally tagged (`tag = "$type"`) — no `data` wrapper.
       // Plain `type` because the level has no other `$`-prefixed fields.
       const poll = new wasm.VotePoll(votePollOptions);
       const json = poll.toJSON();
 
-      expect(json.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(json.$type).to.equal('contestedDocumentResourceVotePoll');
       expect(json.contractId).to.equal(testContractId);
       expect(json.documentTypeName).to.equal('domain');
       expect(json.indexName).to.equal('parentNameAndLabel');
@@ -35,7 +35,7 @@ describe('VotePoll', () => {
   describe('fromJSON()', () => {
     it('should deserialize from JSON fixture', () => {
       const fixture = {
-        type: 'contestedDocumentResourceVotePoll',
+        $type: 'contestedDocumentResourceVotePoll',
         contractId: testContractId,
         documentTypeName: 'domain',
         indexName: 'parentNameAndLabel',
@@ -70,7 +70,7 @@ describe('VotePoll', () => {
       const poll = new wasm.VotePoll(votePollOptions);
       const obj = poll.toObject();
 
-      expect(obj.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(obj.$type).to.equal('contestedDocumentResourceVotePoll');
       expect(obj.contractId).to.be.instanceOf(Uint8Array);
       expect(obj.documentTypeName).to.equal('domain');
       expect(obj.indexName).to.equal('parentNameAndLabel');

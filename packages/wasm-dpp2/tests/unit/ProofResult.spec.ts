@@ -313,13 +313,13 @@ describe('StateTransitionProofResult types', () => {
           $type: 'resourceVote',
           $formatVersion: '0',
           votePoll: {
-            type: 'contestedDocumentResourceVotePoll',
+            $type: 'contestedDocumentResourceVotePoll',
             contractId: identifier,
             documentTypeName: 'domain',
             indexName: 'parentNameAndLabel',
             indexValues: ['dash', 'test'],
           },
-          resourceVoteChoice: { type: 'abstain' },
+          resourceVoteChoice: { $type: 'abstain' },
         },
       };
       const result = wasm.VerifiedMasternodeVote.fromObject(data);
@@ -338,13 +338,13 @@ describe('StateTransitionProofResult types', () => {
           $type: 'resourceVote',
           $formatVersion: '0',
           votePoll: {
-            type: 'contestedDocumentResourceVotePoll',
+            $type: 'contestedDocumentResourceVotePoll',
             contractId: identifier,
             documentTypeName: 'domain',
             indexName: 'parentNameAndLabel',
             indexValues: ['dash', 'test'],
           },
-          resourceVoteChoice: { type: 'abstain' },
+          resourceVoteChoice: { $type: 'abstain' },
         },
       };
       const result = wasm.VerifiedNextDistribution.fromObject(data);

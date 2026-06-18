@@ -15,7 +15,7 @@ describe('GroupAction', () => {
   //
   // Wire shape after rs-dpp PR #3573 (json-value unification):
   //   - GroupAction:      `tag = "$formatVersion"`, V0 → "0" (unchanged)
-  //   - GroupActionEvent: internally tagged `kind:` (was adjacent `type/data`)
+  //   - GroupActionEvent: internally tagged `$kind:` (was adjacent `type/data`)
   //   - TokenEvent:       custom Serialize emits flat named fields
   //                       (was adjacent `type/data`-with-positional-tuple)
   const jsonFixture = {
@@ -24,8 +24,8 @@ describe('GroupAction', () => {
     proposer_id: proposerIdBase58,
     token_contract_position: 0,
     event: {
-      kind: 'tokenEvent',
-      type: 'mint',
+      $kind: 'tokenEvent',
+      $type: 'mint',
       amount: 1000,
       recipient: recipientIdBase58,
       publicNote: 'test mint note',
@@ -94,18 +94,18 @@ describe('GroupAction', () => {
 describe('GroupActionEvent', () => {
   const recipientIdBase58 = '4fJLR2GYTPFdomuTVvNy3VRrvWgvkKPzqehEBpNf2nk6';
 
-  // GroupActionEvent: internally tagged `kind:` (was adjacent `type/data`).
+  // GroupActionEvent: internally tagged `$kind:` (was adjacent `type/data`).
   // Inner TokenEvent now flat-named — see TokenEvent describe block below.
   const freezeEventFixture = {
-    kind: 'tokenEvent',
-    type: 'freeze',
+    $kind: 'tokenEvent',
+    $type: 'freeze',
     frozenIdentifier: recipientIdBase58,
     publicNote: 'freeze note',
   };
 
   const mintEventFixture = {
-    kind: 'tokenEvent',
-    type: 'mint',
+    $kind: 'tokenEvent',
+    $type: 'mint',
     amount: 500,
     recipient: recipientIdBase58,
     publicNote: null,
@@ -184,24 +184,24 @@ describe('TokenEvent', () => {
 
   // TokenEvent now uses a custom Serialize impl that maps positional tuple
   // fields to named JSON keys (`amount` / `recipient` / `burnFromIdentifier` /
-  // `frozenIdentifier` / `publicNote` / etc.), internally tagged with `type:`,
-  // no `data` wrapper. Old shape was `{ type: 'mint', data: [<positional>] }`.
+  // `frozenIdentifier` / `publicNote` / etc.), internally tagged with `$type:`,
+  // no `data` wrapper. Old shape was `{ $type: 'mint', data: [<positional>] }`.
   const mintFixture = {
-    type: 'mint',
+    $type: 'mint',
     amount: 1000,
     recipient: recipientIdBase58,
     publicNote: 'mint note',
   };
 
   const burnFixture = {
-    type: 'burn',
+    $type: 'burn',
     amount: 500,
     burnFromIdentifier: recipientIdBase58,
     publicNote: null,
   };
 
   const freezeFixture = {
-    type: 'freeze',
+    $type: 'freeze',
     frozenIdentifier: recipientIdBase58,
     publicNote: 'frozen',
   };

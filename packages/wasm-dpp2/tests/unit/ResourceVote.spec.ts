@@ -30,7 +30,7 @@ describe('ResourceVote', () => {
       // level, no `data` wrapper.
       expect(json.$formatVersion).to.equal('0');
       expect(json.votePoll).to.exist();
-      expect(json.votePoll.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(json.votePoll.$type).to.equal('contestedDocumentResourceVotePoll');
       expect(json.votePoll.contractId).to.equal(testContractId);
       expect(json.resourceVoteChoice).to.exist();
 
@@ -44,7 +44,7 @@ describe('ResourceVote', () => {
 
       const json = vote.toJSON();
 
-      expect(json.resourceVoteChoice).to.deep.equal({ type: 'abstain' });
+      expect(json.resourceVoteChoice).to.deep.equal({ $type: 'abstain' });
 
       vote.free();
     });
@@ -77,9 +77,9 @@ describe('ResourceVote', () => {
 
       expect(obj.$formatVersion).to.equal('0');
       expect(obj.votePoll).to.exist();
-      expect(obj.votePoll.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(obj.votePoll.$type).to.equal('contestedDocumentResourceVotePoll');
       expect(obj.votePoll.contractId).to.be.instanceOf(Uint8Array);
-      expect(obj.resourceVoteChoice).to.deep.equal({ type: 'lock' });
+      expect(obj.resourceVoteChoice).to.deep.equal({ $type: 'lock' });
 
       vote.free();
     });

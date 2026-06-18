@@ -32,7 +32,7 @@ describe('Vote', () => {
 
       expect(json.$type).to.equal('resourceVote');
       expect(json.$formatVersion).to.equal('0');
-      expect(json.votePoll.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(json.votePoll.$type).to.equal('contestedDocumentResourceVotePoll');
       expect(json.votePoll.contractId).to.equal(testContractId);
       expect(json.resourceVoteChoice).to.exist();
 
@@ -67,7 +67,7 @@ describe('Vote', () => {
 
       expect(obj.$type).to.equal('resourceVote');
       expect(obj.$formatVersion).to.equal('0');
-      expect(obj.votePoll.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(obj.votePoll.$type).to.equal('contestedDocumentResourceVotePoll');
       expect(obj.votePoll.contractId).to.be.instanceOf(Uint8Array);
 
       vote.free();

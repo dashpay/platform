@@ -236,7 +236,7 @@ describe('AddressCreditWithdrawalTransition', () => {
       const obj = transition.toObject();
 
       expect(obj.feeStrategy).to.be.an('array');
-      expect(obj.feeStrategy[0].type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(obj.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
       expect(obj.feeStrategy[0].index).to.be.a('number');
     });
 
@@ -249,7 +249,7 @@ describe('AddressCreditWithdrawalTransition', () => {
       expect(json.output.address).to.be.a('string').with.lengthOf(42);
       expect(json.output.amount).to.satisfy((v: unknown) => typeof v === 'number' || typeof v === 'string');
       expect(json.outputScript).to.be.a('string');
-      expect(json.feeStrategy[0].type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(json.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
     });
 
     it('fromObject(toObject()) round-trips identically', () => {

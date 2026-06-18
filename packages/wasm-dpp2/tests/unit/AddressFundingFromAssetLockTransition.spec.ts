@@ -231,8 +231,8 @@ describe('AddressFundingFromAssetLockTransition', () => {
 
       expect(obj.feeStrategy).to.be.an('array');
       expect(obj.feeStrategy.length).to.be.greaterThan(0);
-      expect(obj.feeStrategy[0]).to.have.property('type');
-      expect(obj.feeStrategy[0].type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(obj.feeStrategy[0]).to.have.property('$type');
+      expect(obj.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
       expect(obj.feeStrategy[0].index).to.be.a('number');
     });
 
@@ -262,7 +262,7 @@ describe('AddressFundingFromAssetLockTransition', () => {
       const json = transition.toJSON();
 
       expect(json.feeStrategy).to.be.an('array');
-      expect(json.feeStrategy[0].type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
+      expect(json.feeStrategy[0].$type).to.be.oneOf(['deductFromInput', 'reduceOutput']);
       expect(json.feeStrategy[0].index).to.be.a('number');
     });
 
