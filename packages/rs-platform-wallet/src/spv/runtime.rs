@@ -393,10 +393,7 @@ impl SpvRuntime {
     /// [`spawn_run_loop`](Self::spawn_run_loop) instead.
     pub fn spawn_in_background(self: &Arc<Self>, config: ClientConfig) {
         // Cancel any previous run.
-        let mut cancel_guard = self
-            .background_cancel
-            .lock()
-            .expect("bg_cancel poisoned");
+        let mut cancel_guard = self.background_cancel.lock().expect("bg_cancel poisoned");
         if let Some(prev) = cancel_guard.take() {
             prev.cancel();
         }
