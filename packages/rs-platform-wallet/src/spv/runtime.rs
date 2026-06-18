@@ -191,9 +191,9 @@ impl SpvRuntime {
         tx: &Transaction,
     ) -> Result<(), PlatformWalletError> {
         let client_guard = self.client.read().await;
-        let client = client_guard
-            .as_ref()
-            .ok_or(PlatformWalletError::SpvNotRunning)?;
+        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
+            "SPV Client not started".to_string(),
+        ))?;
 
         client
             .broadcast_transaction(tx)
@@ -211,9 +211,9 @@ impl SpvRuntime {
         height: u32,
     ) -> Result<[u8; 48], PlatformWalletError> {
         let client_guard = self.client.read().await;
-        let client = client_guard
-            .as_ref()
-            .ok_or(PlatformWalletError::SpvNotRunning)?;
+        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
+            "SPV Client not started".to_string(),
+        ))?;
 
         let llmq_type = LLMQType::from(quorum_type as u8);
         let qh = QuorumHash::from_byte_array(quorum_hash).reverse();
@@ -226,16 +226,15 @@ impl SpvRuntime {
         Ok(*quorum.quorum_entry.quorum_public_key.as_ref())
     }
 
-    /// Run the SPV sync loop until calling [`stop`]. This blocks the current thread.
-    pub async fn run(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
-        tracing::info!("SpvRuntime::run() starting client...");
-        self.start(config).await?;
-        tracing::info!("SpvRuntime::run() client started, entering sync loop");
-
+    /// Drive the sync loop of an already-[`start`]ed client until [`stop`]
+    /// is called
+    async fn run(&self) -> Result<(), PlatformWalletError> {
         let client_guard = self.client.read().await;
         let client = client_guard
             .as_ref()
-            .ok_or(PlatformWalletError::SpvNotRunning)?
+            .ok_or(PlatformWalletError::SpvError(
+                "SPV Client not started".to_string(),
+            ))?
             .clone();
         drop(client_guard);
 
@@ -379,12 +378,19 @@ impl SpvRuntime {
         stop_result
     }
 
-    /// Spawn `run()` on the current tokio runtime and return immediately.
+    /// Spawn a background task that **starts** the SPV client with
+    /// `config` and then drives its sync loop, returning immediately.
     ///
     /// The cancel token is stashed internally; calling [`stop`] (or
     /// [`cancel_background`]) fires it so the spawned task observes
     /// shutdown. Replacing an already-running background task cancels
     /// the previous one first.
+    ///
+    /// Unlike [`spawn_run_loop`](Self::spawn_run_loop), this folds
+    /// [`start`](Self::start) into the spawned task. Callers that need
+    /// start errors surfaced synchronously should call
+    /// [`start`](Self::start) themselves and use
+    /// [`spawn_run_loop`](Self::spawn_run_loop) instead.
     pub fn spawn_in_background(self: &Arc<Self>, config: ClientConfig) {
         // Cancel any previous run.
         let mut cancel_guard = self
@@ -399,9 +405,13 @@ impl SpvRuntime {
         drop(cancel_guard);
 
         let this = Arc::clone(self);
+        let run_this = Arc::clone(&this);
         let handle = tokio::spawn(async move {
             tokio::select! {
-                res = this.run(config) => {
+                res = async move {
+                    run_this.start(config).await?;
+                    run_this.run().await
+                } => {
                     if let Err(e) = res {
                         tracing::warn!("SpvRuntime background run exited with error: {}", e);
                     }
@@ -412,6 +422,30 @@ impl SpvRuntime {
                         tracing::warn!("SpvRuntime cancel stop error: {}", e);
                     }
                 }
+            }
+        });
+
+        *self.task.lock().expect("spv task mutex poisoned") = Some(handle);
+    }
+
+    /// Spawn the sync loop of an already-[`start`](Self::start)ed client
+    /// on the current tokio runtime and return immediately.
+    ///
+    /// Ignores the call (with a warning) if a task is already running.
+    /// Call [`stop`] to stop it.
+    pub fn spawn_run_loop(self: &Arc<Self>) {
+        {
+            let existing = self.task.lock().expect("spv task mutex poisoned");
+            if existing.is_some() {
+                tracing::warn!("spawn_run_loop called while a task is already running; ignoring");
+                return;
+            }
+        }
+
+        let this = Arc::clone(self);
+        let handle = tokio::spawn(async move {
+            if let Err(e) = this.run().await {
+                tracing::warn!("SpvRuntime background run loop exited with error: {}", e);
             }
         });
 
@@ -456,9 +490,10 @@ impl SpvRuntime {
     /// The SPV client must be running to perform this operation.
     pub async fn clear_storage(&self) -> Result<(), PlatformWalletError> {
         let client_guard = self.client.read().await;
-        let client = client_guard
-            .as_ref()
-            .ok_or(PlatformWalletError::SpvNotRunning)?;
+        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
+            "SPV Client not started".to_string(),
+        ))?;
+
         client
             .clear_storage()
             .await
@@ -470,9 +505,10 @@ impl SpvRuntime {
     /// The network cannot be changed on a running client.
     pub async fn update_config(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
         let client_guard = self.client.read().await;
-        let client = client_guard
-            .as_ref()
-            .ok_or(PlatformWalletError::SpvNotRunning)?;
+        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
+            "SPV Client not started".to_string(),
+        ))?;
+
         client
             .update_config(config)
             .await

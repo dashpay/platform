@@ -1,42 +1,52 @@
-// TransferCreditsView.swift
+// WithdrawCreditsView.swift
 // SwiftExampleApp
 //
-// Credit-to-credit transfer between two Platform identities. The
-// sender is fixed to the `identity` this flow opened from; the
-// recipient is chosen via the shared `RecipientPickerView` (Local /
-// Paste / DPNS). Structurally mirrors `TokenTransferActionView`
-// (recipient picker + submit guard + `managedWallet` derivation) and
-// `TopUpIdentityView` (DASH-amount entry, `creditsPerDash` divisor,
-// NavigationStack + Cancel toolbar, target + success sections).
+// Withdraw Platform credits from an identity to an L1 Dash address.
+// The source is fixed to the `identity` this flow opened from; the
+// destination is a network-aware L1 Dash address the user types in.
+// Structurally mirrors `TransferCreditsView` (DASH-amount entry,
+// `creditsPerDash` divisor, NavigationStack + Cancel toolbar, submit
+// guard + `submitGeneration`, target + success sections) — the only
+// material difference is a destination-address `TextField` in place of
+// the recipient identity picker.
 //
-// All orchestration lives in Rust: this view only parses the amount
-// and validates it against the sender's cached balance, then hands a
-// fresh `KeychainSigner` to `ManagedPlatformWallet.transferCredits`.
-// On success the Rust persister callback deducts the sender's
-// `PersistentIdentity.balance`, so the parent view's `@Query`
-// refreshes the displayed balance automatically — this view returns
-// nothing from the SDK call.
+// All orchestration lives in Rust: this view only parses the amount,
+// validates it against the source's cached balance, lightly sanity-
+// checks the address (non-empty), then hands a fresh `KeychainSigner`
+// to `ManagedPlatformWallet.withdrawCredits`. Authoritative Base58 +
+// network validation happens in the FFI/Rust layer — any rejection is
+// surfaced in the error UI. On success the Rust persister callback
+// deducts this identity's `PersistentIdentity.balance`, so the parent
+// view's `@Query` refreshes the displayed balance automatically — this
+// view returns nothing from the SDK call.
+//
+// On the L1 side there is NO immediate transaction id: Platform
+// withdrawals are pooled and processed asynchronously by the network,
+// and the withdraw FFI path returns only the void / new balance. The
+// success screen therefore shows the destination address + amount plus
+// a note that the L1 payout is processed asynchronously, rather than a
+// (non-existent) txid.
 
 import SwiftUI
 import SwiftDashSDK
 import SwiftData
 
-struct TransferCreditsView: View {
-    /// Identity sending the credits. The owning wallet (and thus the
-    /// signer + the FFI handle) is derived from `identity.wallet`.
+struct WithdrawCreditsView: View {
+    /// Identity the credits are withdrawn from. The owning wallet (and
+    /// thus the signer + the FFI handle) is derived from `identity.wallet`.
     let identity: PersistentIdentity
 
     @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
-    /// Credits per DASH (1e11) — same divisor `TopUpIdentityView` and
+    /// Credits per DASH (1e11) — same divisor `TransferCreditsView` and
     /// `PersistentIdentity.formattedBalance` use for credit amounts.
     private static let creditsPerDash: UInt64 = 100_000_000_000
 
     // MARK: - Selection state
 
-    @State private var recipient: RecipientSelection?
+    @State private var toAddress: String = ""
     @State private var amountDash: String = ""
 
     // MARK: - Submit state
@@ -47,7 +57,7 @@ struct TransferCreditsView: View {
     /// Generation counter so a late `MainActor.run` from a previous
     /// `submit()` Task can't write back to a re-entered view instance
     /// after the user pops + repushes mid-broadcast. Mirrors
-    /// `TokenTransferActionView.submitGeneration`.
+    /// `TransferCreditsView.submitGeneration`.
     @State private var submitGeneration = 0
 
     private struct SubmitError: Identifiable {
@@ -62,12 +72,12 @@ struct TransferCreditsView: View {
                     successSection
                 } else {
                     targetSection
-                    recipientSection
+                    addressSection
                     amountSection
                     submitSection
                 }
             }
-            .navigationTitle("Transfer Credits")
+            .navigationTitle("Withdraw Credits")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -77,12 +87,17 @@ struct TransferCreditsView: View {
             }
             .alert(item: $submitError) { err in
                 Alert(
-                    title: Text("Transfer failed"),
+                    title: Text("Withdrawal failed"),
                     message: Text(err.message),
                     dismissButton: .default(Text("OK"))
                 )
             }
         }
+        // Block swipe-to-dismiss while the withdrawal is in flight — the
+        // Cancel button is already disabled, but interactive dismissal
+        // would otherwise let the user drop the sheet mid-broadcast,
+        // reopen it, and fire a second withdrawal on this write path.
+        .interactiveDismissDisabled(isSubmitting)
     }
 
     // MARK: - Sections
@@ -110,20 +125,28 @@ struct TransferCreditsView: View {
     }
 
     @ViewBuilder
-    private var recipientSection: some View {
-        Section("Recipient") {
-            if let wallet = managedWallet {
-                RecipientPickerView(
-                    selection: $recipient,
-                    wallet: wallet,
-                    network: identity.network,
-                    exclude: identity.identityId
-                )
+    private var addressSection: some View {
+        Section {
+            if managedWallet != nil {
+                TextField("Dash address", text: $toAddress)
+                    .textFieldStyle(.roundedBorder)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    .disabled(isSubmitting)
+                if !trimmedAddress.isEmpty && !isValidDestinationAddress {
+                    Text("Not a valid \(identity.network.displayName) Dash address.")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
             } else {
                 Text("The wallet that owns this identity isn't loaded.")
                     .font(.subheadline)
                     .foregroundColor(.red)
             }
+        } header: {
+            Text("Destination L1 Address")
+        } footer: {
+            Text("Enter a Dash (Layer 1) address to receive the withdrawn funds. The address is validated against this wallet's network when you submit.")
         }
     }
 
@@ -145,7 +168,7 @@ struct TransferCreditsView: View {
         } header: {
             Text("Amount")
         } footer: {
-            Text("Available: \(identity.formattedBalance). The amount entered here is deducted from this identity's credit balance and added to the recipient's.")
+            Text("Available: \(identity.formattedBalance). The amount entered here is deducted from this identity's credit balance and paid out to the destination address on Layer 1.")
         }
     }
 
@@ -159,9 +182,9 @@ struct TransferCreditsView: View {
                         ProgressView()
                             .controlSize(.small)
                             .tint(.white)
-                        Text("Transferring…")
+                        Text("Withdrawing…")
                     } else {
-                        Text("Transfer Credits")
+                        Text("Withdraw Credits")
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -174,27 +197,34 @@ struct TransferCreditsView: View {
     private var successSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Label("Transfer complete", systemImage: "checkmark.seal.fill")
+                Label("Withdrawal submitted", systemImage: "checkmark.seal.fill")
                     .foregroundColor(.green)
                     .font(.headline)
                 if let credits = parsedCredits {
                     HStack {
-                        Text("Transferred:")
+                        Text("Withdrawn:")
                             .foregroundColor(.secondary)
                         Text(Self.formatDash(raw: credits))
                             .fontWeight(.medium)
                             .monospacedDigit()
                     }
                 }
-                if let recipient {
-                    HStack {
-                        Text("To:")
-                            .foregroundColor(.secondary)
-                        Text(recipient.label)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
+                HStack(alignment: .top) {
+                    Text("To:")
+                        .foregroundColor(.secondary)
+                    Text(trimmedAddress)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                        .monospaced()
                 }
+                // Platform withdrawals are pooled and broadcast to L1 by
+                // the network asynchronously, so there is no immediate
+                // L1 transaction id to show here. The credit-balance
+                // decrease reflects automatically via the
+                // persister → SwiftData → @Query path.
+                Text("The Layer 1 payout is processed asynchronously by the network and may take a while to appear on-chain.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 Button {
                     dismiss()
                 } label: {
@@ -214,10 +244,16 @@ struct TransferCreditsView: View {
         return walletManager.wallet(for: walletId)
     }
 
+    /// Destination address with surrounding whitespace removed. The
+    /// authoritative Base58 + network check is performed in Rust.
+    private var trimmedAddress: String {
+        toAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Parse the user's DASH input and scale it to credits. Mirrors
-    /// `TopUpIdentityView.parsedAmountCredits`: require a finite,
-    /// positive value, round to the nearest credit, and reject any
-    /// result below 1 credit or beyond `UInt64.max`.
+    /// `TransferCreditsView.parsedCredits`: require a finite, positive
+    /// value, round to the nearest credit, and reject any result below
+    /// 1 credit or beyond `UInt64.max`.
     private var parsedCredits: UInt64? {
         let trimmed = amountDash.trimmingCharacters(in: .whitespaces)
         guard let dash = Double(trimmed), dash.isFinite, dash > 0 else {
@@ -232,14 +268,28 @@ struct TransferCreditsView: View {
         return UInt64(credits)
     }
 
-    /// Sender's balance in credits. `PersistentIdentity.balance` is an
+    /// Source balance in credits. `PersistentIdentity.balance` is an
     /// `Int64`; clamp any (unexpected) negative value to zero.
     private var senderBalanceCredits: UInt64 {
         identity.balance < 0 ? 0 : UInt64(identity.balance)
     }
 
+    /// Local pre-validation of the destination so the submit button
+    /// doesn't light up for obviously malformed / wrong-network strings.
+    /// Uses the existing `DashAddress.parse` bridge (Base58Check + network
+    /// check in Rust); a `.core` result is a valid L1 address on this
+    /// identity's network. Authoritative validation still happens in Rust
+    /// on submit — this only tightens the UI.
+    private var isValidDestinationAddress: Bool {
+        guard !trimmedAddress.isEmpty else { return false }
+        if case .core = DashAddress.parse(trimmedAddress, network: identity.network).type {
+            return true
+        }
+        return false
+    }
+
     private var canSubmit: Bool {
-        recipient != nil
+        isValidDestinationAddress
             && managedWallet != nil
             && (parsedCredits.map { $0 > 0 && $0 <= senderBalanceCredits } ?? false)
     }
@@ -248,17 +298,18 @@ struct TransferCreditsView: View {
 
     private func submit() {
         // Re-validate at submit time — the balance could have moved
-        // (a concurrent sync) and the recipient/amount could have been
+        // (a concurrent sync) and the address/amount could have been
         // cleared between render and tap. Same shape as
-        // `TokenTransferActionView.submit`.
+        // `TransferCreditsView.submit`.
+        let address = trimmedAddress
         guard
             let wallet = managedWallet,
-            let recipient = recipient,
+            isValidDestinationAddress,
             let credits = parsedCredits,
             credits > 0,
             credits <= senderBalanceCredits
         else {
-            submitError = .init(message: "Amount is invalid or exceeds your balance.")
+            submitError = .init(message: "Amount or address is invalid, or the amount exceeds your balance.")
             return
         }
 
@@ -266,28 +317,27 @@ struct TransferCreditsView: View {
         submitGeneration &+= 1
         let gen = submitGeneration
         // Fresh `KeychainSigner` per submit pass, same as
-        // `TokenTransferActionView` / `RegisterNameView`: the address
-        // signer trampoline derives the identity-state-transition
-        // signing key on demand — no bytes leave Rust.
+        // `TransferCreditsView`: the address signer trampoline derives
+        // the identity-state-transition signing key on demand — no
+        // bytes leave Rust.
         let signer = KeychainSigner(modelContainer: modelContext.container)
         // `Identifier` is a typealias for `Data`, so the 32-byte
-        // `identityId` values pass straight through with no conversion.
+        // `identityId` value passes straight through with no conversion.
         let fromId = identity.identityId
-        let toId = recipient.identityId
 
         Task {
             do {
-                try await wallet.transferCredits(
-                    fromIdentityId: fromId,
-                    toIdentityId: toId,
+                try await wallet.withdrawCredits(
+                    identityId: fromId,
                     amount: credits,
+                    toAddress: address,
                     signer: signer
                 )
                 await MainActor.run {
                     guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
                     // No new balance is returned — the Rust persister
-                    // callback deducts the sender's
+                    // callback deducts this identity's
                     // `PersistentIdentity.balance`, which the parent
                     // view's @Query reflects automatically.
                     self.didComplete = true
@@ -305,7 +355,7 @@ struct TransferCreditsView: View {
     // MARK: - Helpers
 
     /// Format a raw credit amount as a `… DASH` string. Mirrors
-    /// `TopUpIdentityView.formatDash`.
+    /// `TransferCreditsView.formatDash`.
     private static func formatDash(raw: UInt64) -> String {
         let dash = Double(raw) / Double(creditsPerDash)
         let fmt = NumberFormatter()

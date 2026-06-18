@@ -22,6 +22,8 @@
 
 use std::future::Future;
 use std::ops::Deref;
+#[cfg(feature = "tokio-metrics")]
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::runtime::{Builder, Runtime};
 
 /// Stack size for the OS thread that drives blocking FFI calls.
@@ -61,6 +63,20 @@ impl BigStackRuntime {
             .thread_stack_size(WORKER_STACK_SIZE)
             .enable_all()
             .build()?;
+
+        #[cfg(feature = "tokio-metrics")]
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+        #[cfg(feature = "tokio-metrics")]
+        metrics::spawn_sampler(
+            &runtime,
+            format!(
+                "dash-sdk-ffi-shared-runtime-{}",
+                COUNTER.fetch_add(1, Ordering::SeqCst)
+            )
+            .as_str(),
+        );
+
         Ok(BigStackRuntime(runtime))
     }
 
@@ -71,6 +87,20 @@ impl BigStackRuntime {
             .thread_stack_size(WORKER_STACK_SIZE)
             .enable_all()
             .build()?;
+
+        #[cfg(feature = "tokio-metrics")]
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+        #[cfg(feature = "tokio-metrics")]
+        metrics::spawn_sampler(
+            &runtime,
+            format!(
+                "dash-sdk-ffi-isolated-runtime-{}",
+                COUNTER.fetch_add(1, Ordering::SeqCst)
+            )
+            .as_str(),
+        );
+
         Ok(BigStackRuntime(runtime))
     }
 
@@ -86,6 +116,9 @@ impl BigStackRuntime {
     where
         F: Future,
     {
+        #[cfg(feature = "tokio-metrics")]
+        let _block_on_guard = metrics::BlockOnGuard::new();
+
         // `std::thread::Builder::spawn_scoped` is the only API that both (a) lets
         // the worker borrow non-`'static` data — the FFI call's references — and
         // (b) lets us set the stack size. It requires the moved-in closure (and
@@ -141,6 +174,70 @@ impl Deref for BigStackRuntime {
 
     fn deref(&self) -> &Runtime {
         &self.0
+    }
+}
+
+#[cfg(feature = "tokio-metrics")]
+mod metrics {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{Duration, Instant};
+
+    static BLOCK_ON_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+    pub(super) struct BlockOnGuard {
+        start: Instant,
+        in_flight: usize,
+    }
+
+    impl BlockOnGuard {
+        pub(super) fn new() -> Self {
+            let in_flight = BLOCK_ON_IN_FLIGHT.fetch_add(1, Ordering::Relaxed) + 1;
+            Self {
+                start: Instant::now(),
+                in_flight,
+            }
+        }
+    }
+
+    impl Drop for BlockOnGuard {
+        fn drop(&mut self) {
+            let elapsed_us = self.start.elapsed().as_micros() as u64;
+            BLOCK_ON_IN_FLIGHT.fetch_sub(1, Ordering::Relaxed);
+            tracing::info!(
+                target: "rs_sdk_ffi::metrics",
+                kind = "block_on",
+                elapsed_us,
+                in_flight = self.in_flight,
+            );
+        }
+    }
+
+    pub(super) fn spawn_sampler(rt: &tokio::runtime::Runtime, runtime_name: &str) {
+        let runtime_monitor = tokio_metrics::RuntimeMonitor::new(rt.handle());
+        let mut rt_intervals = runtime_monitor.intervals();
+
+        let runtime_name = runtime_name.to_string();
+
+        rt.spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                let Some(r) = rt_intervals.next() else { break };
+
+                tracing::info!(
+                    target: "rs_sdk_ffi::metrics",
+                    runtime = %runtime_name,
+                    workers = r.workers_count,
+                    live_tasks = r.live_tasks_count,
+                    busy_ratio = r.busy_ratio(),
+                    mean_poll_us = r.mean_poll_duration.as_micros() as u64,
+                    mean_polls_per_park = r.mean_polls_per_park(),
+                    steals = r.total_steal_count,
+                    global_queue_depth = r.global_queue_depth,
+                    local_queue_depth = r.total_local_queue_depth,
+                    overflow = r.total_overflow_count,
+                );
+            }
+        });
     }
 }
 
