@@ -2,13 +2,28 @@
 //! for the sum surface — `SELECT SUM(sum_property)` over a where
 //! clause + optional group_by.
 //!
-//! Wraps the rs-sdk [`drive_proof_verifier::DocumentSplitSums::fetch`]
-//! flow so callers can obtain document sums without constructing
-//! `GetDocumentsRequest` v1 payloads directly. The where / order_by /
-//! group_by / limit parameter handling is shared verbatim with the
-//! count surface (see [`super::count`]); the only sum-specific pieces
-//! are the `sum_property` field naming the integer property to
-//! aggregate and the signed (`i64`) result values.
+//! The result shape depends on whether `group_by` is requested, and
+//! the call routes to a *different* rs-sdk type for each:
+//!
+//! - **Ungrouped** (empty / null `group_by_json`): the aggregate
+//!   [`drive_proof_verifier::DocumentSum`] (a single folded `i64`),
+//!   surfaced as a one-entry map with the empty (`""`) key — the
+//!   documented "single total" contract. This holds even when the
+//!   `where` clause carries an `in` / range fork: `DocumentSum` folds
+//!   every verified branch into one total. (The per-group
+//!   `DocumentSplitSums` view returns one entry *per matched group/key*
+//!   and is the wrong type for an ungrouped total.)
+//! - **Grouped** (non-empty `group_by_json`): the per-group
+//!   [`drive_proof_verifier::DocumentSplitSums`] view — one hex-keyed
+//!   entry per matched group, flattened by `try_into_flat_map`.
+//!
+//! Wraps those rs-sdk `Fetch` flows so callers can obtain document
+//! sums without constructing `GetDocumentsRequest` v1 payloads
+//! directly. The where / order_by / group_by / limit parameter
+//! handling is shared verbatim with the count surface (see
+//! [`super::count`]); the only sum-specific pieces are the
+//! `sum_property` field naming the integer property to aggregate and
+//! the signed (`i64`) result values.
 
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
@@ -16,7 +31,7 @@ use std::os::raw::c_char;
 
 use dash_sdk::drive::query::SelectProjection;
 use dash_sdk::platform::Fetch;
-use drive_proof_verifier::DocumentSplitSums;
+use drive_proof_verifier::{DocumentSplitSums, DocumentSum};
 use serde::Serialize;
 
 use super::count::{build_base_query, decode_ffi_limit, parse_group_by_json};
@@ -48,31 +63,49 @@ pub(super) fn validate_aggregation_property(prop: &str) -> Result<(), FFIError> 
 
 #[derive(Debug, Serialize)]
 struct DocumentSumResult {
-    /// Per-key sums. Keys are hex-encoded so iOS callers can match
-    /// them against the corresponding platform-value-encoded property
-    /// bytes. For aggregate-sum requests (empty / null `group_by_json`)
-    /// this is a one-entry map with an empty key. Values are signed
-    /// (`i64`) to match grovedb's `SumValue = i64`.
+    /// Sum results keyed by group.
+    ///
+    /// - **Ungrouped** (empty / null `group_by_json`): exactly one
+    ///   entry under the empty (`""`) key — the aggregate total folded
+    ///   across every matched branch. An absent / `None` aggregate
+    ///   yields `{"": 0}` so the "single empty-key total" contract
+    ///   always holds.
+    /// - **Grouped** (non-empty `group_by_json`): one entry per matched
+    ///   group, hex-encoded so iOS callers can match them against the
+    ///   corresponding platform-value-encoded property bytes.
+    ///
+    /// Values are signed (`i64`) to match grovedb's `SumValue = i64`.
     sums: BTreeMap<String, i64>,
 }
 
 /// `SELECT SUM(<sum_property>)` over a where clause + optional group_by.
 ///
 /// Returns a JSON string of shape
-/// `{"sums": {"<hex-key>": <signed number>, ...}}`. Hex keys correspond
-/// to the platform-value-encoded property values from the underlying
-/// sum-tree path; iOS callers should hex-decode them and decode against
-/// the contract's index-property type if they need a typed key. For
-/// aggregate sums (empty/null `group_by_json`) the result is a one-entry
-/// map with an empty key — `sums[""]` is the total.
+/// `{"sums": {"<key>": <signed number>, ...}}`. The map's shape depends
+/// on whether `group_by_json` is requested:
 ///
-/// Per-key result shapes mirror [`super::count::dash_sdk_document_count`]
-/// exactly (aggregate / per-`in_field` / per-`range_field` /
-/// compound `(in_field, range_field)`). Compound `(in_key, key)` entries
-/// are collapsed into a flat map by summing each In-fork's contribution
-/// at the same terminator key; the fold uses checked `i64` arithmetic and
-/// surfaces overflow as an error rather than wrapping. Callers needing
-/// the unmerged per-branch shape should use a richer binding.
+/// - **Ungrouped** (empty/null `group_by_json`): exactly one entry under
+///   the empty (`""`) key — `sums[""]` is the aggregate total. This
+///   routes to the aggregate [`drive_proof_verifier::DocumentSum`],
+///   which folds every verified branch (including any `in` / range fork
+///   in the `where` clause) into one `i64`. An absent / `None`
+///   aggregate is reported as `{"": 0}` so the single empty-key total
+///   contract always holds.
+/// - **Grouped** (non-empty `group_by_json`): one entry per matched
+///   group, keyed by the hex-encoded platform-value-encoded property
+///   value from the underlying sum-tree path; iOS callers should
+///   hex-decode them and decode against the contract's index-property
+///   type if they need a typed key. This routes to the per-group
+///   [`drive_proof_verifier::DocumentSplitSums`] view. Compound
+///   `(in_key, key)` entries are collapsed into a flat map by summing
+///   each In-fork's contribution at the same terminator key; the fold
+///   uses checked `i64` arithmetic and surfaces overflow as an error
+///   rather than wrapping. Callers needing the unmerged per-branch shape
+///   should use a richer binding.
+///
+/// (The analogous ungrouped-vs-grouped distinction exists for
+/// [`super::count::dash_sdk_document_count`], which routes both modes
+/// through `DocumentSplitCounts`.)
 ///
 /// # Parameters
 /// - `sdk_handle`, `data_contract_handle`: valid non-null pointers.
@@ -136,30 +169,55 @@ pub unsafe extern "C" fn dash_sdk_document_sum(
         // projection carries the field directly — `SelectProjection::sum`
         // is the sum-side analog of count's `count_star`.
         let group_by = parse_group_by_json(group_by_json)?;
-        let sum_query = base_query
-            .with_select(SelectProjection::sum(sum_property_str))
-            .with_group_by_fields(group_by)
-            .with_limit(limit_u32);
 
-        // `DocumentSplitSums::fetch` handles every sum mode — for
-        // aggregate-sum requests the result is a one-entry map with an
-        // empty key (so `result.sums[""]` is the total).
-        // `try_into_flat_map` collapses any compound (in_key + key)
-        // entries by summing over `in_key` with checked `i64`
-        // arithmetic; callers needing the unmerged shape should use a
-        // richer binding.
-        let flat_sums = DocumentSplitSums::fetch(&wrapper.sdk, sum_query)
-            .await
-            .map_err(FFIError::from)?
-            .map(|s| s.try_into_flat_map())
-            .transpose()
-            .map_err(|e| FFIError::InternalError(format!("Failed to flatten sum result: {}", e)))?
-            .unwrap_or_default();
+        // Route on whether grouping was requested. The per-group
+        // `DocumentSplitSums` view yields one entry *per matched
+        // group/key* — so it is the wrong type for an ungrouped total
+        // (it would surface per-key entries for an `in` / range `where`
+        // clause instead of one folded total). The aggregate
+        // `DocumentSum` folds every verified branch into a single `i64`.
+        let sums: BTreeMap<String, i64> = if group_by.is_empty() {
+            // Ungrouped: aggregate total under the empty (`""`) key.
+            // `DocumentSum` is a tuple struct over a single folded `i64`;
+            // a `None` fetch (queried-but-absent) reports the zero total
+            // so the documented single empty-key total always holds.
+            let sum_query = base_query
+                .with_select(SelectProjection::sum(sum_property_str))
+                .with_limit(limit_u32);
 
-        let sums: BTreeMap<String, i64> = flat_sums
-            .into_iter()
-            .map(|(k, v)| (hex::encode(k), v))
-            .collect();
+            let total = DocumentSum::fetch(&wrapper.sdk, sum_query)
+                .await
+                .map_err(FFIError::from)?
+                .map(|s| s.0)
+                .unwrap_or(0);
+
+            BTreeMap::from([(String::new(), total)])
+        } else {
+            // Grouped: one hex-keyed entry per matched group.
+            // `try_into_flat_map` collapses any compound (in_key + key)
+            // entries by summing over `in_key` with checked `i64`
+            // arithmetic; callers needing the unmerged shape should use
+            // a richer binding.
+            let sum_query = base_query
+                .with_select(SelectProjection::sum(sum_property_str))
+                .with_group_by_fields(group_by)
+                .with_limit(limit_u32);
+
+            let flat_sums = DocumentSplitSums::fetch(&wrapper.sdk, sum_query)
+                .await
+                .map_err(FFIError::from)?
+                .map(|s| s.try_into_flat_map())
+                .transpose()
+                .map_err(|e| {
+                    FFIError::InternalError(format!("Failed to flatten sum result: {}", e))
+                })?
+                .unwrap_or_default();
+
+            flat_sums
+                .into_iter()
+                .map(|(k, v)| (hex::encode(k), v))
+                .collect()
+        };
 
         serde_json::to_string(&DocumentSumResult { sums })
             .map_err(|e| FFIError::InternalError(format!("Failed to serialize result: {}", e)))
@@ -216,5 +274,30 @@ mod tests {
         let json = serde_json::to_string(&DocumentSumResult { sums })
             .expect("DocumentSumResult must serialize");
         assert_eq!(json, r#"{"sums":{"":42,"61":-5}}"#);
+    }
+
+    /// The ungrouped (aggregate) branch always emits a single
+    /// empty-string-keyed total. This pins the exact wire shape the
+    /// `group_by.is_empty()` path produces — `{"sums":{"":<total>}}` —
+    /// so a regression that reintroduced per-key entries for an
+    /// ungrouped `in` / range query would change the serialized bytes
+    /// iOS decodes against.
+    #[test]
+    fn document_sum_result_ungrouped_is_single_empty_key_total() {
+        let sums = BTreeMap::from([(String::new(), 42i64)]);
+        let json = serde_json::to_string(&DocumentSumResult { sums })
+            .expect("DocumentSumResult must serialize");
+        assert_eq!(json, r#"{"sums":{"":42}}"#);
+    }
+
+    /// An absent / `None` aggregate (queried-but-empty) is reported as
+    /// the zero total under the empty key, never an empty map, so the
+    /// documented "single empty-key total" contract always holds.
+    #[test]
+    fn document_sum_result_ungrouped_absent_is_zero_total() {
+        let sums = BTreeMap::from([(String::new(), 0i64)]);
+        let json = serde_json::to_string(&DocumentSumResult { sums })
+            .expect("DocumentSumResult must serialize");
+        assert_eq!(json, r#"{"sums":{"":0}}"#);
     }
 }
