@@ -15,9 +15,9 @@ describe('Vote Conversions', () => {
         const choice = sdk.ResourceVoteChoice.TowardsIdentity(testIdentityId);
         const json = choice.toJSON();
 
-        // Custom serde: flat `{type, identity}` shape (no `data` wrapper —
+        // Custom serde: flat `{$type, identity}` shape (no `data` wrapper —
         // see ResourceVoteChoice Serialize impl in rs-dpp).
-        expect(json).to.deep.equal({ type: 'towardsIdentity', identity: testIdentityId });
+        expect(json).to.deep.equal({ $type: 'towardsIdentity', identity: testIdentityId });
 
         choice.free();
       });
@@ -26,7 +26,7 @@ describe('Vote Conversions', () => {
         const choice = sdk.ResourceVoteChoice.TowardsIdentity(testIdentityId);
         const obj = choice.toObject();
 
-        expect(obj.type).to.equal('towardsIdentity');
+        expect(obj.$type).to.equal('towardsIdentity');
         expect(obj.identity).to.be.instanceOf(Uint8Array);
 
         choice.free();
@@ -62,7 +62,7 @@ describe('Vote Conversions', () => {
         const choice = sdk.ResourceVoteChoice.Abstain();
         const json = choice.toJSON();
 
-        expect(json).to.deep.equal({ type: 'abstain' });
+        expect(json).to.deep.equal({ $type: 'abstain' });
 
         choice.free();
       });
@@ -82,7 +82,7 @@ describe('Vote Conversions', () => {
         const choice = sdk.ResourceVoteChoice.Lock();
         const json = choice.toJSON();
 
-        expect(json).to.deep.equal({ type: 'lock' });
+        expect(json).to.deep.equal({ $type: 'lock' });
 
         choice.free();
       });
@@ -111,8 +111,8 @@ describe('Vote Conversions', () => {
         const poll = new sdk.VotePoll(votePollOptions);
         const json = poll.toJSON();
 
-        // Internal serde tagging: `{type, ...fields}` with no `data` wrapper.
-        expect(json.type).to.equal('contestedDocumentResourceVotePoll');
+        // Internal serde tagging: `{$type, ...fields}` with no `data` wrapper.
+        expect(json.$type).to.equal('contestedDocumentResourceVotePoll');
         expect(json.contractId).to.equal(testContractId);
         expect(json.documentTypeName).to.equal('domain');
         expect(json.indexName).to.equal('parentNameAndLabel');
@@ -125,7 +125,7 @@ describe('Vote Conversions', () => {
     describe('fromJSON()', () => {
       it('should deserialize from JSON fixture', () => {
         const fixture = {
-          type: 'contestedDocumentResourceVotePoll',
+          $type: 'contestedDocumentResourceVotePoll',
           contractId: testContractId,
           documentTypeName: 'domain',
           indexName: 'parentNameAndLabel',
@@ -160,7 +160,7 @@ describe('Vote Conversions', () => {
         const poll = new sdk.VotePoll(votePollOptions);
         const obj = poll.toObject();
 
-        expect(obj.type).to.equal('contestedDocumentResourceVotePoll');
+        expect(obj.$type).to.equal('contestedDocumentResourceVotePoll');
         expect(obj.contractId).to.be.instanceOf(Uint8Array);
         expect(obj.documentTypeName).to.equal('domain');
         expect(obj.indexName).to.equal('parentNameAndLabel');
@@ -201,7 +201,7 @@ describe('Vote Conversions', () => {
 
       expect(json.$formatVersion).to.equal('0');
       expect(json.votePoll).to.exist();
-      expect(json.votePoll.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(json.votePoll.$type).to.equal('contestedDocumentResourceVotePoll');
       expect(json.votePoll.contractId).to.equal(testContractId);
       expect(json.resourceVoteChoice).to.exist();
 
@@ -265,7 +265,7 @@ describe('Vote Conversions', () => {
       // Vote uses internal tagging on `$type` (system field convention).
       expect(json.$type).to.equal('resourceVote');
       expect(json.$formatVersion).to.equal('0');
-      expect(json.votePoll.type).to.equal('contestedDocumentResourceVotePoll');
+      expect(json.votePoll.$type).to.equal('contestedDocumentResourceVotePoll');
       expect(json.votePoll.contractId).to.equal(testContractId);
       expect(json.resourceVoteChoice).to.exist();
 
