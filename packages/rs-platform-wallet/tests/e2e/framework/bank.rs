@@ -900,6 +900,12 @@ async fn derive_platform_address_at_index(
         .map_err(|err| FrameworkError::Bank(format!("invalid child index {index}: {err}")))?;
     let leaf_path = account_path.extend([leaf]);
 
+    // TODO(#3549 base-merge): after v3.1-dev's register_wallet now calls
+    // `downgrade_to_external_signable()`, the managed wallet holds no private
+    // key, so this hardened DIP-17 derivation fails with "External signable
+    // wallet has no private key". Derive from the retained seed instead (a
+    // fresh signable `Wallet::from_seed_bytes`), matching the seed-based
+    // signer path the rest of the framework already uses.
     let pubkey = wallet
         .state()
         .await
@@ -947,6 +953,10 @@ async fn derive_core_receive_address_at_index(
         .map_err(|err| FrameworkError::Bank(format!("invalid child index {index}: {err}")))?;
     let leaf_path = account_path.extend([chain, leaf]);
 
+    // TODO(#3549 base-merge): same as `derive_platform_address_at_index` —
+    // v3.1-dev's `register_wallet` downgrade strips the managed wallet's
+    // private key, so this hardened BIP-44 derivation fails. Derive from the
+    // retained seed (fresh signable `Wallet::from_seed_bytes`) instead.
     let pubkey = wallet
         .state()
         .await
