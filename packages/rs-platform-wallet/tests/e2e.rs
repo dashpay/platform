@@ -4,23 +4,30 @@
 //! wallet, SDK, panic-safe registry). `framework/` provides the
 //! harness; `cases/` hosts `#[tokio_shared_rt::test(shared)]` entries.
 //
-// TODO(bilby, 2026-06-18, #3549 base-merge into v3.1-dev): post-merge
-// validation found a REGRESSION — the base-merge is NOT "no worse than the
-// recorded baseline". The compile gate passes, but at runtime v3.1-dev's new
-// `PlatformWalletManager::register_wallet` -> `wallet.downgrade_to_external_signable()`
-// (manager/wallet_lifecycle.rs:244, absent on the pre-merge branch) strips the
-// private key from every registered wallet. The bank's hardened DIP-17 / BIP-44
-// address derivation (framework/bank.rs `derive_platform_address_at_index` /
-// `derive_core_receive_address_at_index`, both via the managed wallet's
-// `derive_public_key`) then fails with "External signable wallet has no private
-// key", killing bank setup and therefore EVERY bank-funded case (cr_001/cr_004/
-// id_001/id_002 were green in the baseline; al_001/dpns_001/id_002b/cr_003 also
-// affected). FIX: derive the bank's primary/core addresses from the retained
-// seed (a fresh signable Wallet::from_seed_bytes) instead of the downgraded
-// managed wallet — the framework already signs everything else via seed-based
-// signers, so the blast radius is just those two bank helpers + print_bank_address_offline.
-// SECONDARY: `--test-threads=14` OOM-killed the run at 24/170 on this 19 GB-RAM
-// box; use fewer threads (~4) for a complete pass once the regression is fixed.
+// NOTE(bilby, 2026-06-18, #3549 base-merge into v3.1-dev): the base-merge
+// introduced a runtime regression (NOT caught by the compile gate) that is now
+// FIXED. v3.1-dev's `PlatformWalletManager::register_wallet` ->
+// `wallet.downgrade_to_external_signable()` (manager/wallet_lifecycle.rs)
+// strips the private key from every registered wallet, so the bank's hardened
+// DIP-17 / BIP-44 address derivation could no longer derive from the managed
+// wallet and failed with "External signable wallet has no private key",
+// breaking every bank-funded case at setup. RESOLVED in `framework/bank.rs`:
+// `derive_platform_address_at_index` / `derive_core_receive_address_at_index`
+// now rebuild a fresh signable `Wallet::from_seed_bytes` from the bank's
+// retained seed (same root key -> identical addresses) and derive from that.
+// Verified: the "External signable" error is gone from every test path and the
+// bank funds asset locks again. (Production also logs a benign WARN — identity
+// discovery during registration is now deferred for external-signable wallets;
+// expected, handled via `PlatformWallet::identity().discover()`.)
+//
+// ENV CAVEAT: bank-funded network cases (cr_001/cr_004/id_001/id_002/id_002b)
+// still fail on the CURRENT degraded testnet — asset-lock "Timed out waiting
+// for finality proof" (ChainLock/InstantSend latency) and bank Core-balance
+// depletion — same environmental class as the baseline's 36 reds, not a code
+// regression. Confirm green on a healthy testnet with a topped-up bank Core
+// balance. Also: `--test-threads=14` OOM-killed a full run at 24/170 on this
+// 19 GB-RAM box; the suite serializes on the SPV slot-lock, so ~4 threads is
+// plenty and avoids the OOM.
 
 #![allow(dead_code, unused_imports)]
 #![allow(clippy::result_large_err)]
