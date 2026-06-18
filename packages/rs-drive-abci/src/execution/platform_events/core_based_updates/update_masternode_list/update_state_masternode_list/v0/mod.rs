@@ -51,12 +51,6 @@ where
     /// * `dmn_state_diff` - The `DMNStateDiff` containing the updated masternode information
     /// * `validator_sets` - A mutable reference to the `IndexMap<QuorumHash, ValidatorSet>`
     ///   representing the validator sets with the quorum hash as the key
-    // A platform-port change can arrive as either a Core 23 nested `addresses` delta
-    // (resolved via the accessor) or a legacy flat-field delta. Unlike `DMNState`'s
-    // accessor, `DMNStateDiff`'s reads ONLY the nested addresses, so we OR it with
-    // the legacy field rather than replacing it — otherwise a Core 22 port change
-    // (carried in the legacy flat field) would be missed.
-    #[allow(deprecated)]
     fn update_masternode_in_validator_sets(
         pro_tx_hash: &ProTxHash,
         dmn_state_diff: &DMNStateDiff,
@@ -74,29 +68,17 @@ where
                         validator.node_ip = address.ip().to_string();
                     }
 
-                    if let Some(p2p_port) = dmn_state_diff
-                        .platform_p2p_address()
-                        .map(|(_host, port)| port)
-                        .or(dmn_state_diff.legacy_platform_p2p_port)
-                    {
+                    if let Some(p2p_port) = diff_platform_p2p_port(dmn_state_diff) {
                         validator.platform_p2p_port = p2p_port as u16;
                     }
 
-                    if let Some(http_port) = dmn_state_diff
-                        .platform_http_address()
-                        .map(|(_host, port)| port)
-                        .or(dmn_state_diff.legacy_platform_http_port)
-                    {
+                    if let Some(http_port) = diff_platform_http_port(dmn_state_diff) {
                         validator.platform_http_port = http_port as u16;
                     }
                 }
             });
     }
 
-    // `update_masternode_in_validator_sets` above still reads the legacy flat port
-    // off the `DMNStateDiff` (as one of two delta sources, alongside the nested-
-    // address accessor), so the deprecation allow carries here too.
-    #[allow(deprecated)]
     pub(crate) fn update_state_masternode_list_v0(
         &self,
         state: &mut PlatformState,
@@ -157,12 +139,19 @@ where
                 if let Some(hpmn_list_item) = state.hpmn_masternode_list_mut().get_mut(pro_tx_hash)
                 {
                     hpmn_list_item.state.apply_diff(state_diff.clone());
-                    // these 3 fields are the only fields that are useful for validators. If they change we need to update
-                    // validator sets
+                    // Refresh the validator entry on any change to the fields it
+                    // carries: ban status, service IP, or either platform port.
+                    // A platform-port change can be a resolvable p2p/http port
+                    // (Core 23 nested addresses OR a legacy flat field) or an
+                    // `addresses` delta that clears/empties a port — `addresses`
+                    // is three-state (None / Some(None) / Some(Some)), so check
+                    // its presence too, otherwise an http-only or address-clearing
+                    // diff would leave a stale port on the cached validator.
                     if state_diff.pose_ban_height.is_some()
                         || state_diff.service.is_some()
-                        || state_diff.platform_p2p_address().is_some()
-                        || state_diff.legacy_platform_p2p_port.is_some()
+                        || diff_platform_p2p_port(state_diff).is_some()
+                        || diff_platform_http_port(state_diff).is_some()
+                        || state_diff.addresses.is_some()
                     {
                         // we updated the ban status the IP or the platform port, we need to update the validator in the validator list
                         Self::update_masternode_in_validator_sets(
@@ -198,5 +187,104 @@ where
                 removed_masternodes,
             },
         )
+    }
+}
+
+/// Resolve a masternode diff's platform **P2P** port change, preferring the Core 23
+/// nested `addresses` (via `DMNStateDiff::platform_p2p_address`, which — unlike
+/// `DMNState`'s accessor — does NOT fall back to the legacy field) and falling back
+/// to the legacy flat field. `None` when the diff carries no resolvable p2p port.
+#[allow(deprecated)]
+fn diff_platform_p2p_port(diff: &DMNStateDiff) -> Option<u32> {
+    diff.platform_p2p_address()
+        .map(|(_host, port)| port)
+        .or(diff.legacy_platform_p2p_port)
+}
+
+/// Resolve a masternode diff's platform **HTTPS** port change — the http analogue of
+/// [`diff_platform_p2p_port`].
+#[allow(deprecated)]
+fn diff_platform_http_port(diff: &DMNStateDiff) -> Option<u32> {
+    diff.platform_http_address()
+        .map(|(_host, port)| port)
+        .or(diff.legacy_platform_http_port)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeAddresses;
+
+    #[allow(deprecated)]
+    fn empty_diff() -> DMNStateDiff {
+        DMNStateDiff {
+            service: None,
+            registered_height: None,
+            last_paid_height: None,
+            consecutive_payments: None,
+            pose_penalty: None,
+            pose_revived_height: None,
+            pose_ban_height: None,
+            revocation_reason: None,
+            owner_address: None,
+            voting_address: None,
+            payout_address: None,
+            pub_key_operator: None,
+            operator_payout_address: None,
+            platform_node_id: None,
+            legacy_platform_p2p_port: None,
+            legacy_platform_http_port: None,
+            addresses: None,
+        }
+    }
+
+    // A Core 23 diff carries the ports in the nested `addresses` (legacy fields
+    // absent); the diff accessor reads them and our resolver returns them.
+    #[test]
+    fn diff_resolves_core23_nested_ports() {
+        let mut diff = empty_diff();
+        diff.addresses = Some(Some(MasternodeAddresses {
+            core_p2p: vec!["192.0.2.2:9999".to_string()],
+            platform_p2p: vec!["192.0.2.2:36656".to_string()],
+            platform_https: vec!["192.0.2.2:443".to_string()],
+        }));
+        assert_eq!(diff_platform_p2p_port(&diff), Some(36656));
+        assert_eq!(diff_platform_http_port(&diff), Some(443));
+    }
+
+    // An http-only Core 23 diff (empty platform_p2p) must still resolve the http
+    // port — the case the refresh-trigger guard previously missed.
+    #[test]
+    fn diff_resolves_http_only_core23() {
+        let mut diff = empty_diff();
+        diff.addresses = Some(Some(MasternodeAddresses {
+            core_p2p: vec![],
+            platform_p2p: vec![],
+            platform_https: vec!["192.0.2.2:443".to_string()],
+        }));
+        assert_eq!(diff_platform_p2p_port(&diff), None);
+        assert_eq!(diff_platform_http_port(&diff), Some(443));
+    }
+
+    // A Core 22 diff carries the deprecated flat ports; the resolver falls back to
+    // them (the diff accessor alone returns None).
+    #[test]
+    #[allow(deprecated)]
+    fn diff_falls_back_to_legacy_ports() {
+        let diff = DMNStateDiff {
+            legacy_platform_p2p_port: Some(26656),
+            legacy_platform_http_port: Some(8443),
+            ..empty_diff()
+        };
+        assert_eq!(diff_platform_p2p_port(&diff), Some(26656));
+        assert_eq!(diff_platform_http_port(&diff), Some(8443));
+    }
+
+    // A diff with no platform-port change resolves to nothing on either axis.
+    #[test]
+    fn diff_without_port_change_is_none() {
+        let diff = empty_diff();
+        assert_eq!(diff_platform_p2p_port(&diff), None);
+        assert_eq!(diff_platform_http_port(&diff), None);
     }
 }
