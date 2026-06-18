@@ -26,6 +26,26 @@ use crate::{
 };
 use dash_sdk::dpp::prelude::DataContract;
 
+/// Reject an empty aggregation-property name.
+///
+/// The sum / average FFI entry points both require a non-empty
+/// `sum_property` naming the integer property to aggregate; an empty
+/// string is malformed input the server would reject. Extracted from
+/// the async call sites so the rejection can be unit-tested without
+/// standing up an SDK / data contract / runtime (mirrors
+/// [`super::count::decode_ffi_limit`]).
+#[allow(clippy::result_large_err)]
+pub(super) fn validate_aggregation_property(prop: &str) -> Result<(), FFIError> {
+    if prop.is_empty() {
+        return Err(FFIError::InvalidParameter(
+            "aggregation property must name the integer property to \
+             aggregate; got an empty string"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize)]
 struct DocumentSumResult {
     /// Per-key sums. Keys are hex-encoded so iOS callers can match
@@ -71,8 +91,6 @@ struct DocumentSumResult {
 ///   [`super::count::dash_sdk_document_count`] for the full contract.
 ///
 /// # Safety
-/// Same contract as [`super::count::dash_sdk_document_count`]. All
-/// pointers must be valid for the duration of the call.
 /// - `sdk_handle` and `data_contract_handle` must be valid, non-null pointers.
 /// - `document_type` and `sum_property` must be NUL-terminated C strings valid for the duration of the call.
 /// - `where_json`, `order_by_json`, and `group_by_json` may be null; if non-null they must be NUL-terminated JSON strings.
@@ -109,12 +127,7 @@ pub unsafe extern "C" fn dash_sdk_document_sum(
         let sum_property_str = CStr::from_ptr(sum_property)
             .to_str()
             .map_err(FFIError::from)?;
-        if sum_property_str.is_empty() {
-            return Err(FFIError::InvalidParameter(
-                "sum_property must name the integer property to sum; got an empty string"
-                    .to_string(),
-            ));
-        }
+        validate_aggregation_property(sum_property_str)?;
 
         let limit_u32 = decode_ffi_limit(limit)?;
 
@@ -137,7 +150,7 @@ pub unsafe extern "C" fn dash_sdk_document_sum(
         // richer binding.
         let flat_sums = DocumentSplitSums::fetch(&wrapper.sdk, sum_query)
             .await
-            .map_err(|e| FFIError::InternalError(format!("Failed to fetch sum: {}", e)))?
+            .map_err(FFIError::from)?
             .map(|s| s.try_into_flat_map())
             .transpose()
             .map_err(|e| FFIError::InternalError(format!("Failed to flatten sum result: {}", e)))?
@@ -161,5 +174,47 @@ pub unsafe extern "C" fn dash_sdk_document_sum(
             )),
         },
         Err(e) => DashSDKResult::error(e.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Unit tests for the sum-side FFI surface that don't need an SDK /
+    //! data contract / runtime: the empty-property rejection (extracted
+    //! into [`validate_aggregation_property`]) and the exact JSON wire
+    //! shape iOS callers decode. Mirrors the `decode_ffi_limit` test
+    //! style at the bottom of [`super::super::count`].
+
+    use super::*;
+
+    /// An empty aggregation property is malformed input and must be
+    /// rejected as [`FFIError::InvalidParameter`] (maps to
+    /// `DashSDKErrorCode::InvalidParameter` at the FFI boundary); a
+    /// non-empty name passes.
+    #[test]
+    fn validate_aggregation_property_rejects_empty_accepts_named() {
+        assert!(
+            matches!(
+                validate_aggregation_property(""),
+                Err(FFIError::InvalidParameter(_))
+            ),
+            "empty property must be rejected as InvalidParameter"
+        );
+        assert!(
+            validate_aggregation_property("amount").is_ok(),
+            "a named property must be accepted"
+        );
+    }
+
+    /// The `DocumentSumResult` wire shape iOS decodes is exactly
+    /// `{"sums": {"<hex-key>": <signed number>, ...}}`. The empty key
+    /// (aggregate total) and a signed value must round-trip verbatim;
+    /// `BTreeMap` ordering keeps the key order deterministic.
+    #[test]
+    fn document_sum_result_serializes_to_expected_shape() {
+        let sums = BTreeMap::from([("".to_string(), 42i64), ("61".to_string(), -5i64)]);
+        let json = serde_json::to_string(&DocumentSumResult { sums })
+            .expect("DocumentSumResult must serialize");
+        assert_eq!(json, r#"{"sums":{"":42,"61":-5}}"#);
     }
 }

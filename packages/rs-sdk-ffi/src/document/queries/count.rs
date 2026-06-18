@@ -394,7 +394,7 @@ pub unsafe extern "C" fn dash_sdk_document_count(
         // unmerged shape should use a richer binding.
         let split_counts = DocumentSplitCounts::fetch(&wrapper.sdk, count_query)
             .await
-            .map_err(|e| FFIError::InternalError(format!("Failed to fetch count: {}", e)))?
+            .map_err(FFIError::from)?
             .map(|s| s.into_flat_map())
             .unwrap_or_default();
 

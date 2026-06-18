@@ -24,6 +24,7 @@ use drive_proof_verifier::DocumentSplitAverages;
 use serde::Serialize;
 
 use super::count::{build_base_query, decode_ffi_limit, parse_group_by_json};
+use super::sum::validate_aggregation_property;
 use crate::sdk::SDKWrapper;
 use crate::{
     DashSDKError, DashSDKErrorCode, DashSDKResult, DataContractHandle, FFIError, SDKHandle,
@@ -88,8 +89,6 @@ struct DocumentAverageResult {
 ///   [`super::count::dash_sdk_document_count`] for the full contract.
 ///
 /// # Safety
-/// Same contract as [`super::sum::dash_sdk_document_sum`]. All
-/// pointers must be valid for the duration of the call.
 /// - `sdk_handle` and `data_contract_handle` must be valid, non-null pointers.
 /// - `document_type` and `sum_property` must be NUL-terminated C strings valid for the duration of the call.
 /// - `where_json`, `order_by_json`, and `group_by_json` may be null; if non-null they must be NUL-terminated JSON strings.
@@ -126,12 +125,7 @@ pub unsafe extern "C" fn dash_sdk_document_average(
         let sum_property_str = CStr::from_ptr(sum_property)
             .to_str()
             .map_err(FFIError::from)?;
-        if sum_property_str.is_empty() {
-            return Err(FFIError::InvalidParameter(
-                "sum_property must name the integer property to average; got an empty string"
-                    .to_string(),
-            ));
-        }
+        validate_aggregation_property(sum_property_str)?;
 
         let limit_u32 = decode_ffi_limit(limit)?;
 
@@ -154,7 +148,7 @@ pub unsafe extern "C" fn dash_sdk_document_average(
         // unmerged shape should use a richer binding.
         let flat_averages = DocumentSplitAverages::fetch(&wrapper.sdk, average_query)
             .await
-            .map_err(|e| FFIError::InternalError(format!("Failed to fetch average: {}", e)))?
+            .map_err(FFIError::from)?
             .map(|s| s.try_into_flat_map())
             .transpose()
             .map_err(|e| {
@@ -180,5 +174,28 @@ pub unsafe extern "C" fn dash_sdk_document_average(
             )),
         },
         Err(e) => DashSDKResult::error(e.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Unit test for the average-side FFI wire shape. The empty-property
+    //! rejection is shared with the sum surface via
+    //! [`super::super::sum::validate_aggregation_property`] and tested
+    //! there; here we pin the `(count, sum)`-pair JSON shape iOS decodes.
+
+    use super::*;
+
+    /// The `DocumentAverageResult` wire shape iOS decodes is exactly
+    /// `{"averages": {"<hex-key>": {"count": <u64>, "sum": <i64>}, ...}}`.
+    /// The raw `(count, sum)` pair is returned un-divided so callers pick
+    /// their own precision; field order (`count` then `sum`) must stay
+    /// stable so the contract iOS decodes against doesn't drift.
+    #[test]
+    fn document_average_result_serializes_to_expected_shape() {
+        let averages = BTreeMap::from([("61".to_string(), AverageEntryJson { count: 3, sum: 30 })]);
+        let json = serde_json::to_string(&DocumentAverageResult { averages })
+            .expect("DocumentAverageResult must serialize");
+        assert_eq!(json, r#"{"averages":{"61":{"count":3,"sum":30}}}"#);
     }
 }
