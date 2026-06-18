@@ -290,7 +290,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SYS-03 | Protocol-version upgrade state / vote status | Platform | Uncommon | ✅ | `PlatformQueriesView` protocol category. |
 | SYS-04 | Run-all-queries / DPNS test harness | Platform | Thorough | ✅ | `PlatformQueriesView` diagnostics (`runAllQueries`, `testDPNSQueries`), `DiagnosticsView`. |
 | SYS-05 | Storage / Keychain / Wallet-memory explorers | — | Thorough | ✅ | `StorageExplorerView`, `KeychainExplorerView`, `WalletMemoryExplorerView` (Settings; debug tooling). |
-| SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🔌 | FFI `dash_sdk_system_get_path_elements`; no UI. |
+| SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🧪 | **Get GroveDB Path Elements** read view (Platform Queries → System & Utility) → Swift wrapper over FFI `dash_sdk_system_get_path_elements` (proof-verified `Element::fetch_many` over `KeysInPath`). Enter a `path` + `keys` JSON array (hex bytes); returns `[{key, element, type}]`. Use a **bounded** path — root-level queries (`path=[]`) fail GroveDB proof verification ("Cannot verify lower bound"). The "DPNS contract example" preset fills `path=["40"]` (DataContractDocuments root) + the DPNS contract id → its subtree `tree` element. |
 
 ### 4.13 Multi-wallet on-device Platform scenarios (same network) — `Domain=MultiWallet`
 
@@ -444,7 +444,7 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 | getPrefundedSpecializedBalance | Thorough | ✅ | catalog |
 | waitForStateTransitionResult | Essential | ✅ | implicit in every write round-trip |
 | broadcastStateTransition | Essential | ✅ | implicit in every write (`@sdk-ignore` RPC) |
-| getPathElements | Uncommon | 🔌 | FFI only (`SYS-06`) |
+| getPathElements | Uncommon | 🧪 | "Get GroveDB Path Elements" read view (`SYS-06`) |
 | getConsensusParams | Uncommon | 🚫 | `@sdk-ignore` (served via Tenderdash RPC) |
 
 ### Address Sync (DIP-17)
@@ -476,7 +476,6 @@ For completeness (the "everything gRPC + Core can do" requirement), these exist 
 **🔌 SDK-only (FFI/wrapper exists, no UI):**
 - `ADDR-05` address balance-change history (recent / compacted / branch / trunk)
 - `SH-11` create identity from shielded pool (Type 20)
-- `SYS-06` raw GroveDB path elements
 
 **🚫 Not implemented anywhere:**
 - `DOC-13` document SUM aggregation — FFI stub returns `NotImplemented` (blocked on grovedb PR 670)
