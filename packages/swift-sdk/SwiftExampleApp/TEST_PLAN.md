@@ -215,8 +215,8 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | DOC-10 | Aggregation — count documents (total) | Platform | Uncommon | 🧪 | **Count Documents** read view → Swift wrapper over FFI `dash_sdk_document_count` (proof-verified). Total count is `counts[""]` in the `{counts:{hexKey:u64}}` result. Requires a contract whose doc type sets `documentsCountable: true` (e.g. the `countable` QA fixture). |
 | DOC-11 | Aggregation — count documents, filtered (`where`) | Platform | Uncommon | 🧪 | Same Count view with a `where` clause → `dash_sdk_document_count(where_json=…)`. The filtered field must be a `countable` index. |
 | DOC-12 | Aggregation — count documents, grouped (`group_by`) | Platform | Uncommon | 🧪 | Same Count view with a `group_by` field → `dash_sdk_document_count(group_by_json=…)`; returns one count per group (hex-encoded group key → `u64`). |
-| DOC-13 | Aggregation — sum of a numeric property | Platform | Uncommon | 🚫 | FFI `dash_sdk_document_sum` returns `NotImplemented` — blocked upstream on grovedb PR 670 (range/sum aggregate). Will need a `summable` index once unblocked. |
-| DOC-14 | Aggregation — average of a numeric property | Platform | Uncommon | 🚫 | FFI `dash_sdk_document_average` returns `NotImplemented` — blocked upstream on grovedb PR 670. Will need a `summable` index once unblocked. |
+| DOC-13 | Aggregation — sum of a numeric property | Platform | Uncommon | 🔌 | FFI `dash_sdk_document_sum` **implemented** (the grovedb PR 670 aggregate-sum capability is present; wraps rs-sdk `DocumentSplitSums::fetch`, proof-verified) → `{sums:{hexKey:i64}}`. No app UI yet; needs a contract doc type with a `summable` index on a numeric property. |
+| DOC-14 | Aggregation — average of a numeric property | Platform | Uncommon | 🔌 | FFI `dash_sdk_document_average` **implemented** (wraps rs-sdk `DocumentSplitAverages::fetch`) → `{averages:{hexKey:{count,sum}}}` (caller divides). No app UI yet; needs a `countable`+`summable` index. |
 
 ### 4.8 Tokens — `Domain=Token`
 
