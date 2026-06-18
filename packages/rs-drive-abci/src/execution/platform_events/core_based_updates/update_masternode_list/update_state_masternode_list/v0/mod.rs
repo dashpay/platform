@@ -51,8 +51,11 @@ where
     /// * `dmn_state_diff` - The `DMNStateDiff` containing the updated masternode information
     /// * `validator_sets` - A mutable reference to the `IndexMap<QuorumHash, ValidatorSet>`
     ///   representing the validator sets with the quorum hash as the key
-    // Reads the legacy flat platform ports (deprecated in favor of Core 23+ nested
-    // `addresses`); platform tracks only the legacy pair — behavior-preserving.
+    // A platform-port change can arrive as either a Core 23 nested `addresses` delta
+    // (resolved via the accessor) or a legacy flat-field delta. Unlike `DMNState`'s
+    // accessor, `DMNStateDiff`'s reads ONLY the nested addresses, so we OR it with
+    // the legacy field rather than replacing it — otherwise a Core 22 port change
+    // (carried in the legacy flat field) would be missed.
     #[allow(deprecated)]
     fn update_masternode_in_validator_sets(
         pro_tx_hash: &ProTxHash,
@@ -71,21 +74,28 @@ where
                         validator.node_ip = address.ip().to_string();
                     }
 
-                    if let Some(p2p_port) = dmn_state_diff.legacy_platform_p2p_port {
+                    if let Some(p2p_port) = dmn_state_diff
+                        .platform_p2p_address()
+                        .map(|(_host, port)| port)
+                        .or(dmn_state_diff.legacy_platform_p2p_port)
+                    {
                         validator.platform_p2p_port = p2p_port as u16;
                     }
 
-                    if let Some(http_port) = dmn_state_diff.legacy_platform_http_port {
+                    if let Some(http_port) = dmn_state_diff
+                        .platform_http_address()
+                        .map(|(_host, port)| port)
+                        .or(dmn_state_diff.legacy_platform_http_port)
+                    {
                         validator.platform_http_port = http_port as u16;
                     }
                 }
             });
     }
 
-    // `update_masternode_in_validator_sets` above reads the legacy flat platform
-    // port off the `DMNStateDiff` (the diff type has no nested-address accessor);
-    // a port change that arrives only via Core 23 `addresses` is reconciled on the
-    // next full-state ingest, which resolves it through the accessors.
+    // `update_masternode_in_validator_sets` above still reads the legacy flat port
+    // off the `DMNStateDiff` (as one of two delta sources, alongside the nested-
+    // address accessor), so the deprecation allow carries here too.
     #[allow(deprecated)]
     pub(crate) fn update_state_masternode_list_v0(
         &self,
@@ -151,6 +161,7 @@ where
                     // validator sets
                     if state_diff.pose_ban_height.is_some()
                         || state_diff.service.is_some()
+                        || state_diff.platform_p2p_address().is_some()
                         || state_diff.legacy_platform_p2p_port.is_some()
                     {
                         // we updated the ban status the IP or the platform port, we need to update the validator in the validator list
