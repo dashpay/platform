@@ -15,59 +15,52 @@ track, and the multi-agent reviews. Prioritized; check off as done.
 - [x] **Sent payments stuck on `Pending` forever.** Fixed (`245d9da0e3`): wired a
   sender-side confirm path — a confirmed `TransactionDetected` re-detection flips
   the `Sent` entry `Pending→Confirmed` in place. `payments.rs`, `core_bridge.rs`.
-- [ ] **Contact-request fetch truncates at 100, no pagination/high-water.**
-  Newest requests buried permanently under a flood; non-incremental re-fetch every
-  sweep. → **`SYNC_CORRECTNESS_SPEC.md` stage 1** (REVIEWED — implement).
-  `contact_request_queries.rs:65,117`.
-- [ ] **Contact-profile sync entirely absent.** We sync our *own* profile but
-  never fetch contacts'/senders' displayName/avatar (`all_identities()` excludes
-  contacts). → folded into **`SYNC_CORRECTNESS_SPEC.md` stage 2** (REVIEWED —
-  id-keyed `contact_profiles` cache, established + pending senders).
-  `accessors.rs:54`.
+- [x] **Contact-request fetch truncation: DONE** (Spec 0 stage 1, `3f2051e8b3`) —
+  paginated retrieve-all + incremental high-water cursor; no burying.
+- [x] **Contact-profile sync: DONE** (Spec 0 stage 2 + UI + durable persistence,
+  `1f53897b63`/`b1936a7312`/`87d6cc733d`) — id-keyed `contact_profiles` cache for
+  established + pending senders, displayed in the UI, survives restart.
 
 ## P1 — interop (cross-client correctness)
 
-- [ ] **`accountReference` ASK28 byte-order interop-break.** We read
-  `be(ASK[28..32])>>4` (iOS dash-shared-core conv., chosen in M3); dashj/Android
-  reads `le(ASK[0..4])>>4` — proven-different values. **Decide canonical** (iOS vs
-  dashj — they disagree; check the G15 on-chain census + the iOS stack), flip
-  `account_secret_key_28` + `unmask_account_reference` symmetrically, add a **dashj
-  known-answer test**. → `dip14.rs:216-258`.
-- [ ] **Friendship path hardcodes `account'` = `0'`.** key-wallet drops the
-  account index from the derivation path; dashj derives under the counterparty's
-  real account → disjoint address spaces if a counterparty uses account ≠ 0.
-  Upstream rust-dashcore/key-wallet change (`account_type.rs:486,509`) + pass the
-  real account on registration (`contacts.rs:474`). *(cross-repo; latent)*
-- [ ] **`encryptedAccountLabel` not padded / omitted when empty.** kotlin always
-  pads to ≥16 chars w/ spaces and always emits (empty → 16 spaces); labels <16
-  chars currently **error** in our code. Fix: pad ≥16, trim on decrypt, always
-  emit. → `contact_request.rs:319-334`.
+- [x] **`accountReference` ASK28 byte-order — RESOLVED: keep ours** (`c47314a90c`).
+  An iOS-stack diff found iOS dash-shared-core and our Rust are *algebraically
+  identical*, and that DIP-15 makes `accountReference` a one-time-pad obfuscation
+  **recipients MUST ignore** — so the 4-way convention split (ours/iOS, Android
+  `le[0..4]>>4`, dash-evo-tool/DIP-literal `be[0..4]>>4`) has **no on-chain interop
+  failure** and no canonical value. Keep ours (matches iOS, the dominant wallet);
+  documented the split + added an ASK28 KAT.
+- [~] **Friendship path hardcodes `account'` = `0'`** — **BLOCKED (cross-repo).**
+  The fix needs an upstream `rust-dashcore`/key-wallet change (`account_type.rs`)
+  to thread the account index through the derivation path; can't be completed from
+  this repo. Latent (only bites a counterparty using account ≠ 0). Tracked upstream.
+- [x] **`encryptedAccountLabel` padded to ≥16 chars: DONE** (`2419159bb3`). Pad with
+  trailing spaces on encrypt (kotlin `padEnd(16)`) so the ciphertext clears the
+  48-byte contract floor; trim on decrypt; always emit. Tests pin it.
 
 ## P2 — parity gaps / hardening
 
-- [ ] **No per-contact tx-history query** (`getContactTransactions` equiv) and **no
-  tx→contact reverse lookup for *sent* txs** (`match_in_collection` searches only
-  receival pools, not external/send). Data exists (`PaymentEntry.counterparty_id`);
-  add the accessors. → `contacts.rs:357`, `dashpay_payment.rs`.
-- [ ] **Key selection narrower than canonical** — no AUTHENTICATION fallback on
-  send (kotlin has one), DECRYPTION-first vs ENCRYPTION-first. *Product decision*
-  (we can't send to an identity with only an AUTH ECDSA key; kotlin can).
-  → `select_recipient_key_index`, `contact_requests.rs:395`.
-- [ ] **ECDH dashj known-answer test** — lock the one byte-level assumption (we
-  relied on dashj's class comment, not bytes) with a fixed-vector cross-impl KAT.
-- [ ] **Multi-account contacts** — we keep one request per direction; a contact on
-  simultaneous multiple accounts can't be represented (`accepted_accounts` exists
-  but is never populated). Widen if multi-account becomes a requirement.
-  → `contact_requests.rs:323-393`.
-- [ ] **rs-sdk-ffi: `DashSDKContactRequestResult` drops `entropy`** — a non-Rust
-  embedder calling `dash_sdk_dashpay_create_contact_request` + a generic
-  document-put can't recover the entropy consensus needs to validate the doc id.
-  Extend the C result struct with `entropy`. *(deferred from PR #3841 review as an
-  rs-sdk-ffi follow-up; the example app uses the platform-wallet path, not this.)*
-  → `packages/rs-sdk-ffi/src/dashpay/contact_request.rs:181`.
-- [ ] Minor: contactInfo fetch is also 100-truncated (same pagination fix); send
-  address-reuse if SPV drops our own broadcast tx (consider `mark_address_used` at
-  broadcast).
+- [x] **Per-contact tx-history accessor — DONE.** `payments_for_contact(contact)`
+  filters `dashpay_payments` by `counterparty_id` (covers BOTH sent and received,
+  since `send_payment` records the counterparty at send time — the "sent reverse
+  lookup" the old SPV `match_in_collection` lacked is already on `PaymentEntry`).
+- [x] ~~Key selection AUTHENTICATION fallback~~ **RESOLVED: deliberately NOT added.**
+  Reusing a signing (AUTH) key for ECDH is poor key separation, and no live client
+  population needs it (research/06 §G15: every observed recipient has a DECRYPTION
+  or ENCRYPTION key). Documented at `select_recipient_key_index`. (We accept not
+  sending to an identity that has *only* an AUTH key; kotlin's fallback is a
+  security smell, not a parity gap worth matching.)
+- [x] **ECDH known-answer test: DONE** (`4ae8504a2b`). KAT recomputes the shared key
+  by hand (`SHA256((y&1|2)‖x)`) for fixed keys + pins symmetry — locks the byte
+  convention.
+- [~] **Multi-account contacts** — **DEFERRED (conditional, not a requirement).** The
+  DIP-15 codec now carries `accepted_accounts` (Spec 1), but nothing populates it;
+  widen only if simultaneous multi-account contacts become a real requirement.
+- [x] **rs-sdk-ffi `DashSDKContactRequestResult` entropy: DONE** (`514b32ebd1`).
+  Added an inline `entropy: [u8;32]` field for generic embedders.
+- [x] **contactInfo fetch pagination: DONE** (`e757d9a528`). `send address-reuse` —
+  **DEFERRED (minor):** only bites if SPV drops our own broadcast; `mark_address_used`
+  at broadcast is a small hardening with no observed incidence — revisit if it occurs.
 
 ## Spec / design track (in order — sync is FIRST)
 
@@ -165,9 +158,11 @@ DIP/maintainer-coordination effort separate from the wallet work.
 
 ## Cross-cutting research
 
-- [ ] **Diff the iOS stack** (`dashwallet-ios` / `dashsync-iOS` / `dash-shared-core`)
-  — the comparison was Android-only; iOS uses the *other* `accountReference`
-  convention, so it's load-bearing for the P1 #1 canonical decision.
+- [x] **Diff the iOS stack — DONE (2026-06-18).** Read dash-shared-core /
+  dashsync-iOS / kotlin-platform / dash-evo-tool / DIP-15. Result: iOS and our
+  Rust `accountReference` are *algebraically identical*; FOUR conventions exist but
+  the field is a recipient-ignored one-time pad, so there's no interop break. Fed
+  the P1 #1 resolution (keep ours). No canonical value exists to chase.
 - [x] ~~Design question: is our reject/block complexity warranted?~~ **RESOLVED
   (2026-06-17)** → collapse to a single minimal per-sender `ignore` (= block,
   reversible); drop the per-request reject tombstone machinery (see the Model

@@ -174,6 +174,21 @@ impl ManagedIdentity {
         persister.store(cs.into())
     }
 
+    /// All DashPay payments to or from `contact_id` (keyed by txid), newest
+    /// first. Both `send_payment` and the receival recorder stamp
+    /// `counterparty_id`, so this is the per-contact tx history without a
+    /// separate tx→contact reverse-lookup table.
+    pub fn payments_for_contact(
+        &self,
+        contact_id: &Identifier,
+    ) -> Vec<(String, crate::wallet::identity::PaymentEntry)> {
+        self.dashpay_payments
+            .iter()
+            .filter(|(_, p)| &p.counterparty_id == contact_id)
+            .map(|(tx_id, p)| (tx_id.clone(), p.clone()))
+            .collect()
+    }
+
     /// Get the identity ID
     pub fn id(&self) -> Identifier {
         self.identity.id()
@@ -305,5 +320,49 @@ impl ManagedIdentity {
         if let Err(e) = persister.store(cs) {
             tracing::error!("Failed to persist changeset: {}", e);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wallet::identity::PaymentEntry;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::Identity;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn payments_for_contact_filters_by_counterparty() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let alice = Identifier::from([0xAA; 32]);
+        let bob = Identifier::from([0xBB; 32]);
+
+        managed
+            .dashpay_payments
+            .insert("t1".into(), PaymentEntry::new_sent(alice, 100, None));
+        managed
+            .dashpay_payments
+            .insert("t2".into(), PaymentEntry::new_received(bob, 200, None));
+        managed
+            .dashpay_payments
+            .insert("t3".into(), PaymentEntry::new_sent(alice, 300, None));
+
+        let for_alice = managed.payments_for_contact(&alice);
+        assert_eq!(for_alice.len(), 2, "both sent payments to alice");
+        assert!(for_alice.iter().all(|(_, p)| p.counterparty_id == alice));
+        assert_eq!(managed.payments_for_contact(&bob).len(), 1);
+        assert_eq!(
+            managed
+                .payments_for_contact(&Identifier::from([0xCC; 32]))
+                .len(),
+            0,
+            "unknown contact has no payments"
+        );
     }
 }
