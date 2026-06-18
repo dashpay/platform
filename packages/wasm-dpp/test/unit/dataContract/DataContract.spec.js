@@ -218,7 +218,7 @@ describe('DataContract', () => {
       const result = dataContract.toJSON();
 
       expect(result).to.deep.equal({
-        $formatVersion: '0',
+        $formatVersion: '1',
         config: {
           $formatVersion: '0',
           canBeDeleted: false,
@@ -235,6 +235,16 @@ describe('DataContract', () => {
         ownerId: bs58.encode(ownerId),
         schemaDefs: null,
         documentSchemas,
+        createdAt: null,
+        updatedAt: null,
+        createdAtBlockHeight: null,
+        updatedAtBlockHeight: null,
+        createdAtEpoch: null,
+        updatedAtEpoch: null,
+        description: null,
+        keywords: [],
+        groups: {},
+        tokens: {},
       });
     });
 
@@ -248,7 +258,7 @@ describe('DataContract', () => {
       const result = dataContract.toJSON();
 
       expect(result).to.deep.equal({
-        $formatVersion: '0',
+        $formatVersion: '1',
         config: {
           $formatVersion: '0',
           canBeDeleted: false,
@@ -265,6 +275,16 @@ describe('DataContract', () => {
         ownerId: bs58.encode(ownerId),
         documentSchemas,
         schemaDefs: $defs,
+        createdAt: null,
+        updatedAt: null,
+        createdAtBlockHeight: null,
+        updatedAtBlockHeight: null,
+        createdAtEpoch: null,
+        updatedAtEpoch: null,
+        description: null,
+        keywords: [],
+        groups: {},
+        tokens: {},
       });
     });
   });
