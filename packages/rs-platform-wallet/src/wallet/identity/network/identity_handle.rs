@@ -539,7 +539,7 @@ mod ecdh_key_derivation_tests {
         })
     }
 
-    /// G15 task (c): the ECDH decrypt-key derivation must follow the key id
+    /// The ECDH decrypt-key derivation must follow the key id
     /// the contact-request document references (its `recipientKeyIndex`),
     /// WHATEVER that key's purpose. The mobile cohort's recipientKeyIndex
     /// points at an ENCRYPTION-purpose key, not a DECRYPTION slot, so the

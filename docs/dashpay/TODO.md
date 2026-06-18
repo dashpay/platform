@@ -193,10 +193,13 @@ DIP/maintainer-coordination effort separate from the wallet work.
   plaintext, sent-payment Pending→Confirmed. Needs a devnet identity rebuild (sim
   store was reset). *NB: the reject→ignore refactor (Spec 2) will replace the
   tombstone path, so verify before or alongside that work.*
-- [ ] **Comment-cleanup pass** — when next touching the DashPay code, strip
-  spec-gate / milestone / dev-time refs from source comments (`G5 stage 1`,
-  `M3 task 13`, `P0`, `RED before fix`) per the timeless-comments convention.
-  Opportunistic, not a mass rewrite.
+- [x] **Comment-cleanup pass — DONE (2026-06-18).** Stripped spec-gate / milestone
+  / dev-time refs (`G1a`..`G15`, `M3 task 13`, `(P2)`, stage labels) from source
+  comments + log strings across 18 DashPay files in `rs-platform-wallet` /
+  `rs-platform-wallet-ffi`; gate IDs replaced with their plain-English meaning
+  where a bare deletion would dangle (e.g. `G4`→"host-side signing hook",
+  `G1c`→"transient/permanent failure policy"). Comment/string-only — verified
+  zero executable lines changed, builds green, zero residual tokens.
 
 ## Done (this session)
 

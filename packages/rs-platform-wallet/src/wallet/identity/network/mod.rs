@@ -62,7 +62,7 @@ pub use identity_handle::{
 // every call site.
 pub(super) use identity_handle::derive_identity_auth_key_hash;
 
-/// Process-wide cached DashPay data contract (G9).
+/// Process-wide cached DashPay data contract.
 ///
 /// The bundled system contract is immutable for a given platform
 /// version, so one parse serves every operation — the previous

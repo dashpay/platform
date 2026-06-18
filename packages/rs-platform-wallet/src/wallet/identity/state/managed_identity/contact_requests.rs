@@ -18,7 +18,7 @@ impl ManagedIdentity {
     /// The masked `accountReference` of the most recent request WE sent
     /// to `recipient`, or `None` if we've never sent one.
     ///
-    /// Load-bearing for G3 rotation: the next request's rotation version
+    /// Load-bearing for rotation: the next request's rotation version
     /// is derived by un-masking this prior reference and bumping it. The
     /// prior request lives in `sent_contact_requests` while pending but is
     /// moved into `established_contacts[..].outgoing_request` once the
@@ -45,7 +45,7 @@ impl ManagedIdentity {
     /// contact is auto-established. Persists the resulting
     /// [`ContactChangeSet`] via `persister` and returns `()`.
     ///
-    /// **Sent-side ingest guard (G13).** A recurring sweep re-ingests the
+    /// **Sent-side ingest guard.** A recurring sweep re-ingests the
     /// identity's own sent requests on every pass; without a guard that
     /// would create a phantom pending-sent row + a changeset write per
     /// contact per sweep, and an `EstablishedContact::new` for an
@@ -271,7 +271,7 @@ impl ManagedIdentity {
     /// Takes the decrypted [`ContactInfoPrivateData`] payload directly —
     /// the same struct the `contactInfo` codec produces — so callers don't
     /// explode it into positional args. This is the local half of
-    /// `contactInfo` (M3 task 13): callers route user edits AND decrypted
+    /// `contactInfo`: callers route user edits AND decrypted
     /// on-platform `contactInfo` payloads through here so SwiftData mirrors
     /// either source. The wire field names (`alias_name` / `display_hidden`)
     /// map onto the domain names (`alias` / `is_hidden`) on the contact.
@@ -312,12 +312,12 @@ impl ManagedIdentity {
         true
     }
 
-    /// Apply a **rotation** contact request (G3 receive side, DIP-15
+    /// Apply a **rotation** contact request (receive side, DIP-15
     /// §"sender rotated their addresses"): a request from a sender we
     /// already track, carrying a *different* `accountReference` than
     /// the tracked one. The new request supersedes the old —
     /// last-write-wins per pair; simultaneous multi-account
-    /// relationships ride `accepted_accounts` later (M3 task 13).
+    /// relationships ride `accepted_accounts` later.
     ///
     /// - **Established contact**: replace `incoming_request` (the new
     ///   encrypted xpub + key indices) and clear
@@ -794,7 +794,7 @@ mod tests {
         assert!(<ContactChangeSet as crate::changeset::Merge>::is_empty(&cs));
     }
 
-    /// G13: re-ingesting one's own already-tracked sent request must be a
+    /// Re-ingesting one's own already-tracked sent request must be a
     /// no-op — no phantom pending-sent row, no second changeset write. The
     /// sent-side guard mirrors the received-side dedup.
     #[test]
@@ -819,7 +819,7 @@ mod tests {
         assert_eq!(managed.established_contacts.len(), 0);
     }
 
-    /// G13: re-ingesting a sent request to an ALREADY-established contact
+    /// Re-ingesting a sent request to an ALREADY-established contact
     /// must be a no-op — it must NOT wipe the existing contact's user
     /// metadata (alias/note/is_hidden/accepted_accounts).
     #[test]
@@ -848,7 +848,7 @@ mod tests {
         assert_eq!(established.is_hidden, true);
     }
 
-    /// G13: when a sent request auto-establishes against a pre-existing
+    /// When a sent request auto-establishes against a pre-existing
     /// incoming, but the pair was previously established and we carry
     /// forward metadata — the re-establish must preserve it. (Covers the
     /// case where the incoming map still holds a request because a sweep

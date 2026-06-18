@@ -35,7 +35,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ///   key on the sender
     /// - **recipient_key_index**: first `ECDSA_SECP256K1` `Purpose::DECRYPTION`
     ///   key on the recipient, falling back to the first ENCRYPTION key when
-    ///   the recipient has no DECRYPTION key (G15 mobile cohort) — see
+    ///   the recipient has no DECRYPTION key (mobile cohort) — see
     ///   [`select_recipient_key_index`]
     /// - **account_index**: defaults to `0`
     /// - **ECDH**: performed SDK-side using the sender's derived
@@ -117,7 +117,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
         let recipient_key_index = select_recipient_key_index(&recipient_identity)?;
 
-        // 3b. G7: gate the selected key pair through the same validator
+        // 3b. Gate the selected key pair through the same validator
         //     the receive/accept paths use, BEFORE any ECDH or
         //     broadcast. The selectors above pick plausible indices;
         //     the validator pins the full contract (key types, not
@@ -172,7 +172,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             // Normal256 child, so `encode()` is the 107-byte DIP-14
             // serialization → 128-byte ciphertext → fails the contract's
             // `maxItems: 96` and both reference clients' hard `len == 69`
-            // receive checks. See G14 / research/06-interop-desk-check.md.
+            // receive checks. See research/06-interop-desk-check.md.
             let contact_xpub = crate::wallet::identity::crypto::dip14::derive_contact_xpub(
                 wallet,
                 self.sdk.network,
@@ -192,7 +192,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             (xpub, ecdh_key)
         };
 
-        // 4b. Mask the accountReference per DIP-15 (G3): the low 28
+        // 4b. Mask the accountReference per DIP-15: the low 28
         //     bits are the account index XOR'd with a PRF of the
         //     compact xpub keyed by our ECDH private key; the top 4
         //     bits carry the rotation version. The version starts at 0
@@ -288,16 +288,16 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
         // 7. Mirror the local-state bookkeeping in `send_contact_request`.
         //
-        // G8: store the REAL 96-byte ciphertext off the broadcast
+        // Store the REAL 96-byte ciphertext off the broadcast
         // document (not a zero placeholder) so the persisted /
         // SwiftData row matches what landed on Platform — a restored
         // device comparing local rows against chain sees identity,
-        // and the sent-side G13 re-ingest doesn't "upgrade" the row.
+        // and the sent-side re-ingest doesn't "upgrade" the row.
         // Hard error rather than a zero-fill fallback: persisting a 96-byte
         // all-zero "valid-looking" ciphertext would poison the local row
         // (a restored device compares it to chain and mismatches; anything
         // treating it as the contact's xpub source decrypts garbage). The
-        // broadcast already landed on-chain, so the sweep (G13) re-ingests
+        // broadcast already landed on-chain, so the sweep re-ingests
         // the real document on the next pass — returning an error here is
         // strictly safer than silently storing poison in release builds.
         let encrypted_public_key = result
@@ -350,7 +350,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 /// later), with account_reference as a deterministic tiebreak for the
 /// degenerate same-timestamp case.
 ///
-/// This is the idempotency keystone of the recurring sync (G3): on-chain
+/// This is the idempotency keystone of the recurring sync: on-chain
 /// `contactRequest` docs are immutable and never deleted, so a sender who
 /// rotated leaves both their old and bumped-reference docs returning on
 /// every sweep. Feeding both into the ingest loop makes the stale one look
@@ -424,9 +424,9 @@ fn newest_received_per_sender(
 }
 
 /// Select the recipient identity's key id to reference in
-/// `recipientKeyIndex` for an outgoing contact request (G15).
+/// `recipientKeyIndex` for an outgoing contact request.
 ///
-/// Verified testnet reality (research/06 §G15): the newest cohort uses a
+/// Verified testnet reality (research/06): the newest cohort uses a
 /// recipient **DECRYPTION** key (our original convention), but the dominant
 /// 126-owner mobile population has **no DECRYPTION key at all** and references
 /// its **ENCRYPTION** key for `recipientKeyIndex`. To send to either cohort:
@@ -474,7 +474,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ///
     /// For every identity in the local manager this method, per sweep:
     /// 1. Fetches both **received** and **own sent** contact-request
-    ///    documents from Platform (G13).
+    ///    documents from Platform.
     /// 2. Ingests received requests via `add_incoming_contact_request` —
     ///    including reciprocal requests from senders we already sent to (so
     ///    contacts establish via sync). Dedup is preserved for requests
@@ -482,14 +482,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ///    an ignored sender is suppressed (per-sender — all of their requests,
     ///    rotations included).
     /// 3. Ingests own sent requests via `add_sent_contact_request`, which
-    ///    carries its own sent-side guard (G13) so a recurring re-ingest
+    ///    carries its own sent-side guard so a recurring re-ingest
     ///    creates no phantom pending rows and preserves contact metadata.
     /// 4. For **every** established contact missing a sending account
     ///    (not only newly-established ones — this also repairs
     ///    restore-from-seed and best-effort-accept gaps), rebuilds both
     ///    the `DashpayReceivingFunds` and `DashpayExternalAccount`
-    ///    accounts (G1b), with the transient/permanent failure policy
-    ///    (G1c).
+    ///    accounts, with the transient/permanent failure policy.
     ///
     /// **Lock ordering (critical).** The account-building registrations
     /// (`register_contact_account`, `register_external_contact_account`)
@@ -530,7 +529,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             //
             // Log-and-continue per identity: a fetch failure for one
             // identity must NOT abort the sweep across the others. This
-            // is load-bearing for the recurring loop (G12) — a single
+            // is load-bearing for the recurring loop — a single
             // identity's transient DAPI error shouldn't stall DashPay
             // sync for every other identity on the wallet.
             let received_docs = match self
@@ -548,7 +547,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     continue;
                 }
             };
-            // G13: also fetch our own sent requests so a restored / second
+            // Also fetch our own sent requests so a restored / second
             // device reconciles established contacts instead of rendering
             // them as bare incoming requests. A failure here is logged but
             // does not skip the received-side ingest already fetched above —
@@ -606,7 +605,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 // (1) Ingest received requests.
                 //
                 // Immutable contactRequest docs are never deleted on-chain,
-                // so a sender who rotated (G3) leaves MULTIPLE docs — the old
+                // so a sender who rotated leaves MULTIPLE docs — the old
                 // reference plus the bumped one — that ALL return on every
                 // sweep. Collapse to the single newest doc per sender BEFORE
                 // ingest (see `newest_received_per_sender`). Without this, a
@@ -638,13 +637,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         );
                         continue;
                     }
-                    // G1a: do NOT skip just because the sender is in
+                    // Do NOT skip just because the sender is in
                     // `sent_contact_requests` — that is the reciprocal we
                     // need to let through to auto-establish. True dedup is
                     // (sender, accountReference): the SAME reference as the
                     // tracked incoming/established state is a re-ingest of a
                     // known doc; a DIFFERENT reference from a known sender
-                    // is a rotation request (G3 receive side) and must get
+                    // is a rotation request (receive side) and must get
                     // through.
                     let tracked_reference = managed
                         .incoming_contact_requests
@@ -679,7 +678,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     all_requests.push(contact_request);
                 }
 
-                // (2) Ingest our own sent requests (G13). `add_sent_contact_request`
+                // (2) Ingest our own sent requests. `add_sent_contact_request`
                 //     guards itself against duplicates / metadata loss.
                 for (_doc_id, maybe_doc) in sent_docs.iter() {
                     let doc = match maybe_doc {
@@ -751,7 +750,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 // (3) Collect account-building candidates: every established
                 //     contact missing a sending (external) account, skipping
                 //     contacts whose payment channel is already marked
-                //     permanently broken (G1c — no unbounded retry).
+                //     permanently broken (no unbounded retry).
                 Self::collect_account_build_candidates(info, &identity_id)
             };
 
@@ -828,7 +827,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Collect every established contact (for `identity_id`) that is
     /// missing its `DashpayExternalAccount` and is NOT already marked
     /// permanently broken — the account-building candidates for this
-    /// sweep (G1b). Runs under the caller's write guard; performs no
+    /// sweep. Runs under the caller's write guard; performs no
     /// awaits and no lock re-acquisition.
     fn collect_account_build_candidates(
         info: &crate::wallet::platform_wallet::PlatformWalletInfo,
@@ -842,7 +841,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
         let mut out = Vec::new();
         for (contact_id, contact) in &managed.established_contacts {
-            // G1c: never retry a permanently-broken channel — wait for a
+            // Never retry a permanently-broken channel — wait for a
             // superseding request (which clears the flag on re-establish).
             if contact.payment_channel_broken {
                 continue;
@@ -873,8 +872,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         out
     }
 
-    /// Build the two DashPay accounts for one established contact (G1b),
-    /// applying the transient/permanent failure policy (G1c).
+    /// Build the two DashPay accounts for one established contact,
+    /// applying the transient/permanent failure policy.
     ///
     /// Order:
     /// 1. Register the `DashpayReceivingFunds` account — derivable from our
@@ -895,7 +894,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ///   skip it until a superseding request arrives.
     ///
     /// Watch-only / seedless wallets (no `identity_index`) are skipped and
-    /// logged — G4 lands the watch-only ECDH path later.
+    /// logged — the watch-only ECDH path (host-side signing hook) lands
+    /// later.
     ///
     /// Called **after** the sync write guard is dropped: the register
     /// functions re-acquire the non-reentrant wallet-manager lock.
@@ -907,7 +907,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let contact_id = candidate.contact_id;
 
         // Seed-awareness: an out-of-wallet / watch-only identity has no HD
-        // slot to derive ECDH from. Skip + log (G4).
+        // slot to derive ECDH from. Skip + log.
         let is_seedless = {
             let wm = self.wallet_manager.read().await;
             match wm
@@ -922,7 +922,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             tracing::info!(
                 identity = %identity_id,
                 contact = %contact_id,
-                "Skipping DashPay account build for watch-only/seedless identity (G4 pending)"
+                "Skipping DashPay account build for watch-only/seedless identity (host-side signing hook pending)"
             );
             return;
         }
@@ -997,7 +997,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             candidate.our_decryption_key_index,
         );
         if !validation.is_valid {
-            // G15: a PURPOSE-only mismatch (e.g. a legacy 2024 doc
+            // A PURPOSE-only mismatch (e.g. a legacy 2024 doc
             // referencing an AUTHENTICATION key) is NOT permanent — the
             // immutable request can't change but our acceptance policy might,
             // and on-chain history contains nonconforming-but-honest docs.
@@ -1031,7 +1031,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         //     does no network I/O: that way a PERMANENT crypto/data fault
         //     (bad encrypted xpub, missing key) breaks the channel, but a
         //     TRANSIENT persistence hiccup is left for the next sweep to
-        //     retry instead of permanently killing payments (G1c).
+        //     retry instead of permanently killing payments.
         match self
             .register_external_contact_account(
                 identity_id,
@@ -1065,7 +1065,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     }
 
     /// Mark an established contact's payment channel as permanently broken
-    /// (G1c) and persist the transition through the changeset pipeline so
+    /// and persist the transition through the changeset pipeline so
     /// it survives restarts and is FFI/UI-visible. Idempotent.
     async fn mark_contact_channel_broken(&self, identity_id: &Identifier, contact_id: &Identifier) {
         let mut wm = self.wallet_manager.write().await;
@@ -1101,7 +1101,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 }
 
 /// One established contact that needs its DashPay accounts (re)built
-/// during a sync sweep (G1b). Collected under the write guard, consumed
+/// during a sync sweep. Collected under the write guard, consumed
 /// after it is dropped.
 struct AccountBuildCandidate {
     /// The counterparty identity.
@@ -1139,7 +1139,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let sender_id = request.sender_id;
 
         // 1. Verify the incoming request is known, and detect whether an
-        //    on-platform reciprocal already exists for this pair (G13).
+        //    on-platform reciprocal already exists for this pair.
         let already_reciprocated = {
             let wm = self.wallet_manager.read().await;
             let info = wm
@@ -1173,7 +1173,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let contact_encryption_key_index = request.sender_key_index;
 
         // 3. Send the reciprocal request — UNLESS one already exists on
-        //    Platform (G13 accept-adopt): re-broadcasting the same
+        //    Platform (accept-adopt): re-broadcasting the same
         //    `(ownerId, toUserId, accountReference)` triple is rejected by
         //    the unique index forever. When adopting, we still perform the
         //    fresh-send local registrations below (receiving account +
@@ -1544,10 +1544,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 }
 
 // ---------------------------------------------------------------------------
-// Network-layer tests for the G1/G13/G5 sync sweep decision logic.
+// Network-layer tests for the sync sweep decision logic.
 //
 // These exercise the *orchestration* helpers that don't require a live
-// network or real ECDH keys: account-build candidate collection (G1b/G1c)
+// network or real ECDH keys: account-build candidate collection
 // and the rejected-tombstone / broken-flag persistence round-trip. The
 // pure state-machine behaviors (guard relaxation, sent-side dedup,
 // metadata-preserving re-establish, tombstone-by-accountReference) are
@@ -1700,8 +1700,9 @@ mod sweep_tests {
     /// **Test 3 (restore-from-seed shape):** an established contact with
     /// zero DashPay accounts must surface as an account-build candidate so
     /// the sweep rebuilds BOTH the receiving and external accounts. Before
-    /// G1b only the fresh-send path created them, so restore-from-seed left
-    /// the contact unpayable and incoming payments invisible.
+    /// the account-building sweep only the fresh-send path created them, so
+    /// restore-from-seed left the contact unpayable and incoming payments
+    /// invisible.
     #[test]
     fn established_contact_missing_external_account_is_a_build_candidate() {
         let our = 1u8;
@@ -1728,7 +1729,7 @@ mod sweep_tests {
     }
 
     /// **Test 4 (permanent failure → no retry):** once a contact's payment
-    /// channel is marked broken (G1c), the sweep must NOT re-list it as a
+    /// channel is marked broken, the sweep must NOT re-list it as a
     /// candidate — no unbounded retry until a superseding request clears
     /// the flag.
     #[test]
@@ -1918,7 +1919,7 @@ mod sweep_tests {
         )
     }
 
-    /// **P0 #2 — sweep idempotency (the multi-doc thrash fix).**
+    /// **Sweep idempotency (the multi-doc thrash fix).**
     /// `contactRequest` docs are immutable and never deleted, so a sender
     /// who rotated leaves BOTH their old (ref=0) and bumped (ref=7) docs
     /// returning on every sweep. `newest_received_per_sender` must collapse
@@ -1963,7 +1964,7 @@ mod sweep_tests {
         assert_eq!(again.get(&sender_id).map(|r| r.account_reference), Some(7));
     }
 
-    /// **P0 #1 — rotation version bump must read established contacts.**
+    /// **Rotation version bump must read established contacts.**
     /// The next request's rotation version is derived by un-masking the
     /// PRIOR sent reference. Once a contact establishes, that prior request
     /// moves out of `sent_contact_requests` into
@@ -2007,7 +2008,7 @@ mod sweep_tests {
         );
     }
 
-    /// **P0 #2 defense-in-depth — `apply_rotated_incoming_request` is
+    /// **Defense-in-depth — `apply_rotated_incoming_request` is
     /// idempotent.** Even if the dedup ever let a duplicate through, a
     /// re-apply of the byte-identical request must be a no-op: no second
     /// changeset, no re-reported re-key (which would re-tear-down the
@@ -2045,9 +2046,9 @@ mod sweep_tests {
 }
 
 // ---------------------------------------------------------------------------
-// G15 send-side recipient key selection (M1 task 9).
+// Send-side recipient key selection.
 //
-// Verified testnet reality (research/06 §G15): the dominant mobile cohort has
+// Verified testnet reality (research/06): the dominant mobile cohort has
 // an ENCRYPTION key but NO DECRYPTION key, and references its ENCRYPTION key
 // for recipientKeyIndex. Sending to such a recipient must succeed by falling
 // back to the ENCRYPTION key — without that fallback the send errors with

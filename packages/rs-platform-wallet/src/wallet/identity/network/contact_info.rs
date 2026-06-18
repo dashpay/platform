@@ -1,4 +1,4 @@
-//! DashPay `contactInfo` document sync + publish (gaps G10 / G5 stage 2).
+//! DashPay `contactInfo` document sync + publish.
 //!
 //! `contactInfo` carries the owner's PRIVATE per-contact metadata
 //! (alias, note, `displayHidden`) self-encrypted per
@@ -57,7 +57,7 @@ pub enum ContactInfoPublishOutcome {
     DeferredUntilTwoContacts,
     /// Local state updated, but publish is not possible for a watch-only /
     /// seedless identity (no HD slot to derive the self-encryption keys;
-    /// the G4 host-side hook lands this later).
+    /// the host-side signing hook lands this later).
     SkippedWatchOnly,
 }
 
@@ -152,7 +152,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
             let Some(identity_index) = managed.identity_index else {
                 // Watch-only / out-of-wallet identity — no HD slot to
-                // derive the self-encryption keys from (see gap G4).
+                // derive the self-encryption keys from (deferred to the
+                // host-side signing hook).
                 return Ok((Vec::new(), std::collections::BTreeMap::new()));
             };
             let wallet = wm
@@ -340,7 +341,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             alias_name: alias,
             note,
             display_hidden,
-            // Multi-account acceptance isn't populated yet (P2); a metadata
+            // Multi-account acceptance isn't populated yet; a metadata
             // update carries an empty `acceptedAccounts`.
             accepted_accounts: Vec::new(),
         };
@@ -410,7 +411,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let Some(identity_index) = identity_index else {
             tracing::info!(
                 identity = %identity_id,
-                "contactInfo publish skipped for watch-only/seedless identity (no host-side signing hook, gap G4); local state updated"
+                "contactInfo publish skipped for watch-only/seedless identity (no host-side signing hook); local state updated"
             );
             return Ok(ContactInfoPublishOutcome::SkippedWatchOnly);
         };

@@ -35,7 +35,7 @@ pub struct EstablishedContact {
 
     /// Whether this contact's payment channel is **permanently** broken.
     ///
-    /// Set by the account-building sweep (G1c) when registering the
+    /// Set by the account-building sweep when registering the
     /// counterparty's external sending account fails for a *permanent*
     /// reason — a decrypt/decode failure of the encrypted xpub, or an
     /// identity-key shape that can never satisfy the ECDH gate. A
@@ -74,7 +74,7 @@ impl EstablishedContact {
     ///
     /// [`EstablishedContact::new`] resets `alias` / `note` / `is_hidden` /
     /// `accepted_accounts` / `payment_channel_broken` to their defaults —
-    /// so a naive re-establish on every recurring sweep (G13's sent-side
+    /// so a naive re-establish on every recurring sweep (the sent-side
     /// reconcile, or a re-ingested reciprocal) would wipe the user's alias,
     /// note, hide flag, and accepted-accounts list each pass. This
     /// constructor refreshes the two underlying [`ContactRequest`]s (the
@@ -195,7 +195,7 @@ mod tests {
     }
 
     /// `reestablish_preserving_metadata` must carry alias/note/is_hidden/
-    /// accepted_accounts forward from the prior contact — the G13 sweep
+    /// accepted_accounts forward from the prior contact — the sweep
     /// re-establishes on every pass, and `EstablishedContact::new` would
     /// wipe the user's metadata each time. This pins that the
     /// metadata-preserving path does NOT reset it.

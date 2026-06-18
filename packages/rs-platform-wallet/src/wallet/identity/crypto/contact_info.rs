@@ -76,7 +76,7 @@ pub struct ContactInfoKeys {
 /// `derivation_index` is the per-document
 /// `derivationEncryptionKeyIndex`. Requires a key-resident wallet;
 /// external-signable wallets have no in-process HD slot and need a
-/// host-side signing hook (gap G4).
+/// host-side signing hook.
 pub fn derive_contact_info_keys(
     wallet: &Wallet,
     network: Network,

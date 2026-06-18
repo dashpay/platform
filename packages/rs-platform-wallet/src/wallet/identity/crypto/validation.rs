@@ -19,8 +19,8 @@ pub struct ContactRequestValidation {
     /// `true` when a key-PURPOSE mismatch was seen (e.g. a legacy 2024 doc
     /// referencing an AUTHENTICATION key).
     ///
-    /// This classification is load-bearing for the sync sweep / accept paths
-    /// (G15): a purpose mismatch must NOT mark the payment channel
+    /// This classification is load-bearing for the sync sweep / accept paths:
+    /// a purpose mismatch must NOT mark the payment channel
     /// **permanently** broken — on-chain history demonstrably contains
     /// nonconforming-but-honest documents, and our acceptance policy (not the
     /// immutable request) is what might change. A purpose-only failure is a
@@ -70,8 +70,8 @@ impl ContactRequestValidation {
 
     /// Add a key-PURPOSE error: sets `is_valid = false` AND flags
     /// `purpose_mismatch` so callers can downgrade a *purpose-only* failure
-    /// to a non-permanent skip rather than a permanent broken-channel mark
-    /// (G15). Does NOT set `hard_error`.
+    /// to a non-permanent skip rather than a permanent broken-channel mark.
+    /// Does NOT set `hard_error`.
     pub fn add_purpose_error(&mut self, error: String) {
         self.errors.push(error);
         self.is_valid = false;
@@ -84,7 +84,7 @@ impl ContactRequestValidation {
     }
 
     /// Whether the *sole* cause of invalidity is a key-purpose mismatch —
-    /// the only case that may be downgraded to a non-permanent skip (G15).
+    /// the only case that may be downgraded to a non-permanent skip.
     /// A purpose mismatch that co-occurs with a hard error (disabled /
     /// missing / wrong-type key) is NOT purpose-only and must stay permanent.
     pub fn is_purpose_only(&self) -> bool {
@@ -107,9 +107,9 @@ impl ContactRequestValidation {
     }
 }
 
-/// Validate a contact request against the verified on-chain envelope (G15).
+/// Validate a contact request against the verified on-chain envelope.
 ///
-/// The empirical testnet census (368 docs, research/06 §G15) shows two live
+/// The empirical testnet census (368 docs, research/06) shows two live
 /// honest cohorts: the dominant mobile population references an **unbound
 /// ENCRYPTION key for BOTH indices** (mobile identities carry no DECRYPTION
 /// key), and the newest cohort uses bound **ENCRYPTION(sender) /
@@ -162,7 +162,7 @@ pub fn validate_contact_request(
 
             // Must have ENCRYPTION purpose (bound or unbound — both live
             // cohorts use ENCRYPTION for the sender). A non-ENCRYPTION
-            // purpose is a non-permanent purpose mismatch (G15).
+            // purpose is a non-permanent purpose mismatch.
             if key.purpose() != Purpose::ENCRYPTION {
                 validation.add_purpose_error(format!(
                     "Sender key {} has purpose {:?}, but ENCRYPTION is required for contact requests",
@@ -213,7 +213,7 @@ pub fn validate_contact_request(
                 }
             }
 
-            // Purpose must be ENCRYPTION or DECRYPTION (G15): the mobile
+            // Purpose must be ENCRYPTION or DECRYPTION: the mobile
             // cohort's recipientKeyIndex points at an ENCRYPTION key, the
             // newest cohort's at a DECRYPTION key — both honest. Anything
             // else (AUTHENTICATION/MASTER/TRANSFER) is a non-permanent purpose
@@ -418,8 +418,8 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // G15 key-purpose alignment. The verified testnet reality
-    // (368 on-chain docs, research/06 §G15): the dominant mobile cohort
+    // Key-purpose alignment. The verified testnet reality
+    // (368 on-chain docs, research/06): the dominant mobile cohort
     // references an UNBOUND ENCRYPTION key for BOTH senderKeyIndex and
     // recipientKeyIndex (mobile identities carry no DECRYPTION key); the
     // newest cohort uses bound ENCRYPTION(sender)/DECRYPTION(recipient).
@@ -570,7 +570,7 @@ mod tests {
         );
     }
 
-    /// A lone purpose mismatch IS purpose-only → skippable (the G15 path).
+    /// A lone purpose mismatch IS purpose-only → skippable.
     #[test]
     fn lone_purpose_mismatch_is_purpose_only() {
         let mut v = ContactRequestValidation::new();

@@ -103,7 +103,7 @@ pub(crate) struct SendContactRequestParams<'a> {
     pub sender_key_index: u32,
     /// Recipient decryption-key id used for ECDH.
     pub recipient_key_index: u32,
-    /// DashPay account reference (currently `0`; see G3).
+    /// DashPay account reference (currently `0`).
     pub account_reference: u32,
     /// Optional unencrypted account label (SDK encrypts it).
     pub account_label: Option<String>,
@@ -114,7 +114,7 @@ pub(crate) struct SendContactRequestParams<'a> {
     /// DashPay receiving-account xpub to share with the recipient, in the
     /// **69-byte DIP-15 compact form** (`parentFingerprint ‖ chainCode ‖
     /// pubKey`) — NOT `ExtendedPubKey::encode()`. The SDK validates len == 69
-    /// before encrypting (see G14 / research/06-interop-desk-check.md).
+    /// before encrypting (see research/06-interop-desk-check.md).
     pub xpub_bytes: Vec<u8>,
     /// HIGH/CRITICAL authentication key the transition is signed with.
     pub signing_public_key: IdentityPublicKey,

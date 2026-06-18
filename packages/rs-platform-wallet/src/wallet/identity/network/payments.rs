@@ -1007,7 +1007,7 @@ mod tests {
     /// **#2 — a transient failure must NOT permanently break the payment
     /// channel.** `register_external_contact_account` returns a typed
     /// `RegisterExternalError` so the unattended sync sweep marks a contact
-    /// `payment_channel_broken` (G1c) only on a *permanent* crypto/data
+    /// `payment_channel_broken` only on a *permanent* crypto/data
     /// fault — not on a transient infra/persistence hiccup. A transient DAPI
     /// fetch *inside* the method would otherwise be indistinguishable from a
     /// malformed request and kill payments to the contact forever.
@@ -1040,7 +1040,7 @@ mod tests {
     /// **#2 (cont.) — a malformed request IS permanent.** When the owner is
     /// managed but carries no encryption key at the validated index, the
     /// request can't produce an ECDH key and re-deriving won't help, so the
-    /// channel is correctly broken (preserving the G1c "no unbounded retry
+    /// channel is correctly broken (preserving the "no unbounded retry
     /// on a poisoned channel" intent). Pins the *other* side of the split
     /// so the transient test above isn't satisfied by classifying
     /// everything transient.

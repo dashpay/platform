@@ -102,7 +102,7 @@ pub struct ContactRequestFFI {
     /// `ContactRequest::created_at` — Unix-millis timestamp.
     pub created_at: u64,
     /// Whether the [`EstablishedContact`] this row was projected from
-    /// has a **permanently broken** payment channel (G1c).
+    /// has a **permanently broken** payment channel.
     ///
     /// Only meaningful for rows projected from the `established` map —
     /// both the outgoing and incoming row of an established pair carry
@@ -115,8 +115,8 @@ pub struct ContactRequestFFI {
     ///
     /// [`EstablishedContact`]: platform_wallet::EstablishedContact
     pub payment_channel_broken: bool,
-    /// Owner-private alias for the contact (`contactInfo`-backed, M3
-    /// task 13). Heap-allocated NUL-terminated UTF-8, or null when
+    /// Owner-private alias for the contact (`contactInfo`-backed).
+    /// Heap-allocated NUL-terminated UTF-8, or null when
     /// unset. Only stamped on rows projected from the `established`
     /// map (pending rows have no metadata); released by
     /// [`free_contact_requests_ffi`].
@@ -580,8 +580,8 @@ mod tests {
 
     /// The `established_*` constructors stamp the relationship's
     /// `payment_channel_broken` flag onto BOTH the outgoing and incoming
-    /// row. This pins the M1 G1c flag survives the persister projection
-    /// (the plain `from_outgoing`/`from_incoming` pending constructors
+    /// row. This pins that the broken-channel flag survives the persister
+    /// projection (the plain `from_outgoing`/`from_incoming` pending constructors
     /// always emit `false` — verified above), so a Swift `@Query`-driven
     /// contact row can render the broken-channel badge without consulting
     /// a live handle getter.

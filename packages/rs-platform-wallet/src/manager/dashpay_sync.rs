@@ -477,7 +477,7 @@ mod tests {
         wallet.wallet_id()
     }
 
-    /// **The load-bearing G12 assertion.** A recurring DashPay sync pass
+    /// **The load-bearing assertion.** A recurring DashPay sync pass
     /// must drive `dashpay_sync()` for **every** registered wallet —
     /// including wallets whose identities watch **zero tokens**.
     ///

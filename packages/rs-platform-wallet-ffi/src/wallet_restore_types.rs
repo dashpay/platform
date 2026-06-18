@@ -298,7 +298,7 @@ pub struct IdentityRestoreEntryFFI {
     /// their owner-private metadata — without this, contacts only
     /// re-derive from chain on the first sync sweep and the
     /// contactInfo metadata is wiped during the deferred-publish
-    /// window (the relaunch-durability gap in M3 task 13 part 3).
+    /// window (the relaunch-durability gap in contact-info persistence).
     /// `null` / `0` when the identity has no persisted contact rows.
     pub contacts: *const crate::contact_persistence::ContactRequestFFI,
     pub contacts_count: usize,

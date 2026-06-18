@@ -44,7 +44,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             return Ok(0);
         }
 
-        // 2. The DashPay contract (G9: process-wide cache — no
+        // 2. The DashPay contract (process-wide cache — no
         //    per-call re-parse, no network round-trip).
         let dashpay_contract = super::dashpay_contract()?;
 
@@ -171,7 +171,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         use dpp::document::Document;
         use dpp::document::DocumentV0;
 
-        // 1. The DashPay data contract (G9: process-wide cache).
+        // 1. The DashPay data contract (process-wide cache).
         let dashpay_contract = super::dashpay_contract()?;
 
         // 2. Compute avatar hashes when raw bytes are provided.
@@ -313,7 +313,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         use dpp::document::DocumentV0;
         use dpp::document::INITIAL_REVISION;
 
-        // 1. The DashPay contract (G9: process-wide cache).
+        // 1. The DashPay contract (process-wide cache).
         let dashpay_contract = super::dashpay_contract()?;
 
         // 2. Fetch existing profile document for ID + revision + its
@@ -539,7 +539,7 @@ fn profile_from_properties(
 }
 
 // ---------------------------------------------------------------------------
-// Contact-profile sync (stage 2)
+// Contact-profile sync
 // ---------------------------------------------------------------------------
 
 /// Max length of a DashPay `avatarUrl` (DIP-15). Longer is rejected.

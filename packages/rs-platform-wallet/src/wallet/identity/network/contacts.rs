@@ -52,7 +52,7 @@ fn dashpay_account_registration_changeset(
 }
 
 /// Why a [`register_external_contact_account`] attempt failed, classified
-/// for the G1c transient/permanent payment-channel policy.
+/// for the transient/permanent payment-channel policy.
 ///
 /// The distinction is load-bearing: a **permanent** failure marks the
 /// contact's payment channel broken (no unbounded retry on a poisoned
@@ -451,14 +451,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ///                                  that must precede ECDH) and passes it in, so this
     ///                                  method performs **no network I/O** — every failure it
     ///                                  returns is therefore a permanent crypto/data fault,
-    ///                                  not a transient DAPI blip (G1c).
+    ///                                  not a transient DAPI blip.
     /// * `contact_encrypted_xpub`     - 96-byte encrypted xpub from the contact's
     ///                                  `contactRequest` document (16-byte IV + 80-byte
     ///                                  AES-256-CBC ciphertext).
     /// * `our_decryption_key_index`   - Key ID of our ENCRYPTION key used for ECDH.
     /// * `contact_encryption_key_index` - Key ID of the contact's ENCRYPTION key used for ECDH.
     ///
-    /// Returns [`RegisterExternalError`] so the caller can apply the G1c
+    /// Returns [`RegisterExternalError`] so the caller can apply the
     /// transient/permanent payment-channel policy: a `Permanent` failure
     /// (malformed encrypted xpub, missing/non-secp key) breaks the channel;
     /// a `Transient` one (persistence/insert hiccup) leaves it for retry.

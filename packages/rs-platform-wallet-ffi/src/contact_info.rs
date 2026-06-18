@@ -1,5 +1,4 @@
-//! FFI bindings for DashPay `contactInfo` (alias / note / hidden —
-//! M3 task 13).
+//! FFI bindings for DashPay `contactInfo` (alias / note / hidden).
 //!
 //! One write entry point: set the metadata locally AND publish the
 //! self-encrypted `contactInfo` document. The local state ALWAYS

@@ -67,7 +67,7 @@ impl ContactXpubData {
     /// version/depth/child-number metadata) and encrypts to 128 bytes, failing
     /// the contract's `maxItems: 96`. Both reference clients (iOS
     /// dash-shared-core, Android dashj `serializeContactPub`) emit exactly this
-    /// 69-byte form. See `docs/dashpay/research/06-interop-desk-check.md` (G14).
+    /// 69-byte form. See `docs/dashpay/research/06-interop-desk-check.md`.
     pub fn compact_xpub(&self) -> [u8; platform_encryption::COMPACT_XPUB_LEN] {
         self.compact.to_bytes()
     }
@@ -655,7 +655,7 @@ mod tests {
 
     #[test]
     fn compact_xpub_is_69_byte_dip15_plaintext_not_107_byte_encode() {
-        // G14 regression. The send path must encrypt the DIP-15 compact
+        // The send path must encrypt the DIP-15 compact
         // plaintext (fingerprint ‖ chaincode ‖ pubkey = 69 bytes), NOT
         // `ExtendedPubKey::encode()`, which for the DashPay receiving path is
         // the 107-byte DIP-14 serialization (ends in a Normal256 child) and
@@ -696,7 +696,7 @@ mod tests {
 
     #[test]
     fn reconstructed_xpub_derives_identical_addresses() {
-        // G14 receive-side correctness. After compacting a contact xpub to 69
+        // Receive-side correctness. After compacting a contact xpub to 69
         // bytes and reconstructing an ExtendedPubKey from
         // (chain_code, public_key) with synthesized depth/child-number, address
         // derivation MUST produce the same addresses as the original xpub —

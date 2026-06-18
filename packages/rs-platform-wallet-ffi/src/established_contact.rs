@@ -217,7 +217,7 @@ pub unsafe extern "C" fn established_contact_is_hidden(
 }
 
 /// Check whether an established contact's DashPay payment channel is
-/// permanently broken (G1c).
+/// permanently broken.
 ///
 /// `true` means the account-building sweep hit a permanent failure
 /// (decrypt/decode of the counterparty xpub, or a key-index validation
