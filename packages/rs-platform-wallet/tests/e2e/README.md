@@ -240,19 +240,26 @@ Tracing output (SPV sync events, balance polls, sweep results) is written to std
 
 Full-suite runs take 30+ minutes and emit substantial tracing output. Two practices keep them manageable:
 
-**Run in parallel.** The harness is built for in-process parallelism (see [Parallelism](#parallelism)): every test gets its own fresh wallet and only the funding broadcast serialises (via `FUNDING_MUTEX`). Do _not_ add `--test-threads=1` — it turns a naturally-parallel suite into a sequential crawl. Use an explicit count or rely on libtest's default (one thread per logical CPU):
-
-> `--test-threads` is a libtest flag controlling how many _test cases_ run concurrently. It is distinct from the `worker_threads = 12` inside each test's `#[tokio_shared_rt::test]` attribute, which governs the async runtime's thread pool _within_ one test. Both operate simultaneously.
-
-**Log to a file.** A full run streams megabytes of tracing to stderr. Pipe both stdout and stderr through `tee` so results survive terminal scrollback loss and remain greppable afterwards:
+**Log to a file (primary).** A full run streams megabytes of tracing to stderr. Pipe both stdout and stderr through `tee` so results survive terminal scrollback loss and remain greppable afterwards:
 
 ```bash
+# Tune --test-threads to available RAM — see the parallelism note below.
 cargo test -p platform-wallet --test e2e --features e2e \
-  -- --nocapture --include-ignored --test-threads=14 \
+  -- --nocapture --include-ignored --test-threads=4 \
   2>&1 | tee /tmp/platform-wallet-e2e.log
 # afterwards:
 grep -E 'test result:|FAILED' /tmp/platform-wallet-e2e.log
 ```
+
+**Run in parallel — but tune to available RAM.** The harness is built for in-process parallelism (see [Parallelism](#parallelism)): every test gets its own fresh wallet and only the funding broadcast serialises (via `FUNDING_MUTEX`). Do _not_ use `--test-threads=1` — it turns a naturally-parallel suite into a sequential crawl. However, each concurrent test can drive its own testnet SPV sync; on a **memory-constrained box (~16–19 GiB) a full run at `--test-threads=14` has been observed to OOM-kill the process** before any result is written. Tune `N` to available RAM:
+
+| Available RAM | Suggested `--test-threads` |
+|---|---|
+| ~16–19 GiB | `4` (safe) |
+| ~32 GiB | `8` |
+| 64 GiB+ | `12–14` |
+
+> **`--test-threads` vs `worker_threads`:** `--test-threads` is a libtest flag controlling how many _test cases_ run concurrently. It is distinct from the `worker_threads = 12` inside each test's `#[tokio_shared_rt::test]` attribute, which governs the async runtime's thread pool _within_ one test. Both operate simultaneously.
 
 ### Logging on a live devnet
 
