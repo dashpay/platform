@@ -138,12 +138,16 @@ pub struct MasternodeStateV0 {
 }
 
 impl From<DMNState> for MasternodeStateV0 {
-    // Core 23+ moved the platform ports into a nested `addresses` structure and
-    // marked the flat ports `legacy_*`. Platform state has only ever tracked the
-    // single legacy port pair, so we keep reading those (behavior-preserving) and
-    // leave the nested addresses for a future, separately-reviewed change.
-    #[allow(deprecated)]
+    // Core 23+ moved the platform ports into a nested `addresses` object and marked
+    // the flat ports `legacy_*`. Resolve each port via DMNState's accessor, which
+    // prefers the nested address and falls back to the legacy flat field: a Core 22
+    // entry maps byte-identically, while a Core 23 entry (legacy = None) still
+    // yields its port instead of being dropped and excluded from validator sets.
+    // Platform state stores only the port; the host pairing is delegated to the
+    // validator path.
     fn from(value: DMNState) -> Self {
+        let platform_p2p_port = value.platform_p2p_address().map(|(_host, port)| port);
+        let platform_http_port = value.platform_http_address().map(|(_host, port)| port);
         let DMNState {
             service,
             registered_height,
@@ -156,9 +160,7 @@ impl From<DMNState> for MasternodeStateV0 {
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
-            legacy_platform_p2p_port,
-            legacy_platform_http_port,
-            addresses: _,
+            ..
         } = value;
 
         Self {
@@ -173,8 +175,8 @@ impl From<DMNState> for MasternodeStateV0 {
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
-            platform_p2p_port: legacy_platform_p2p_port,
-            platform_http_port: legacy_platform_http_port,
+            platform_p2p_port,
+            platform_http_port,
         }
     }
 }
@@ -216,5 +218,66 @@ impl From<MasternodeStateV0> for DMNState {
             legacy_platform_http_port: platform_http_port,
             addresses: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeAddresses};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+    #[allow(deprecated)]
+    fn base_dmn_state() -> DMNState {
+        DMNState {
+            service: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2)), 19999),
+            registered_height: 1,
+            pose_revived_height: None,
+            pose_ban_height: None,
+            revocation_reason: 0,
+            owner_address: [0u8; 20],
+            voting_address: [0u8; 20],
+            payout_address: [0u8; 20],
+            pub_key_operator: vec![1u8; 48],
+            operator_payout_address: None,
+            platform_node_id: Some([7u8; 20]),
+            legacy_platform_p2p_port: None,
+            legacy_platform_http_port: None,
+            addresses: None,
+        }
+    }
+
+    // A Core 23 masternode reports its platform ports in the nested `addresses`
+    // object with the legacy flat fields absent. The DMNState -> MasternodeStateV0
+    // conversion must resolve the port from `addresses`; reading only the empty
+    // legacy field would drop the port and exclude the node from validator sets.
+    #[test]
+    fn from_dmn_state_resolves_core23_nested_platform_ports() {
+        let mut dmn = base_dmn_state();
+        dmn.addresses = Some(MasternodeAddresses {
+            core_p2p: vec!["192.0.2.2:9999".to_string()],
+            platform_p2p: vec!["192.0.2.2:36656".to_string()],
+            platform_https: vec!["192.0.2.2:443".to_string()],
+        });
+
+        let state = MasternodeStateV0::from(dmn);
+        assert_eq!(state.platform_p2p_port, Some(36656));
+        assert_eq!(state.platform_http_port, Some(443));
+    }
+
+    // A Core 22 masternode reports the deprecated flat ports; the conversion stays
+    // byte-identical by falling back to the legacy field.
+    #[test]
+    #[allow(deprecated)]
+    fn from_dmn_state_falls_back_to_legacy_ports() {
+        let dmn = DMNState {
+            legacy_platform_p2p_port: Some(26656),
+            legacy_platform_http_port: Some(8443),
+            ..base_dmn_state()
+        };
+
+        let state = MasternodeStateV0::from(dmn);
+        assert_eq!(state.platform_p2p_port, Some(26656));
+        assert_eq!(state.platform_http_port, Some(8443));
     }
 }

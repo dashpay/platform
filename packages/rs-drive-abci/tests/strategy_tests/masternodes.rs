@@ -537,12 +537,12 @@ pub fn generate_test_masternodes(
                 }
                 if update.p2p_port {
                     if let Some(port) = hpmn_list_item_b.state.legacy_platform_p2p_port.as_mut() {
-                        *port += 1
+                        *port = port.saturating_add(1)
                     }
                 }
                 if update.http_port {
                     if let Some(port) = hpmn_list_item_b.state.legacy_platform_http_port.as_mut() {
-                        *port += 1
+                        *port = port.saturating_add(1)
                     }
                 }
 

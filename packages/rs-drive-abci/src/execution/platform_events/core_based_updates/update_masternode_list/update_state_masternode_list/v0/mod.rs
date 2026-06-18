@@ -82,8 +82,10 @@ where
             });
     }
 
-    // `update_masternode_in_validator_sets` below reads the deprecated legacy
-    // platform port (behavior-preserving; Core 23+ nested addresses deferred).
+    // `update_masternode_in_validator_sets` above reads the legacy flat platform
+    // port off the `DMNStateDiff` (the diff type has no nested-address accessor);
+    // a port change that arrives only via Core 23 `addresses` is reconciled on the
+    // next full-state ingest, which resolves it through the accessors.
     #[allow(deprecated)]
     pub(crate) fn update_state_masternode_list_v0(
         &self,
