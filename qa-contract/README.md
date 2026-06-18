@@ -183,12 +183,14 @@ matches them to the on-chain public keys, and writes `QA_PRIVATE_KEY` +
 
 ### Extending to per-team-member `testRun` submission (v2)
 
-To let any identity submit runs (while keeping `testCase` owner-controlled),
-change **`testRun`** only:
+To let any identity submit runs (while keeping `testCase` owner-controlled), set
+`creationRestrictionMode: 0` (NoRestrictions) on **`testRun`** only.
 
-- set `creationRestrictionMode: 0` (NoRestrictions) on `testRun`, and
-- register the change via a data-contract **update** (or re-register on the next
-  testnet reset).
+⚠️ This must be done in a **fresh contract registration**, *not* a data-contract
+update: DPP rejects any change to a document type's `creationRestrictionMode` on
+update (`DocumentTypeUpdateError`, see `validate_update`). So apply it before the
+first registration, or fold it into the next re-register (e.g. a testnet reset) —
+which mints a new contract id consumers must re-pin.
 
 `testRun` is already immutable + owner-stamped (`$ownerId`/`$createdAt` are
 system fields), so opening creation keeps every run attributable and tamper-proof.
