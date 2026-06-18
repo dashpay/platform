@@ -142,7 +142,8 @@ mod json_convertible_tests {
                 "kind": "tokenEvent",
                 "type": "configUpdate",
                 "configurationChange": {
-                    "conventionsControlGroup": {
+                    "type": "conventionsControlGroup",
+                    "value": {
                         "type": "identity",
                         "identity": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
                     },
@@ -165,7 +166,8 @@ mod json_convertible_tests {
                 "kind": "tokenEvent",
                 "type": "configUpdate",
                 "configurationChange": {
-                    "conventionsControlGroup": {
+                    "type": "conventionsControlGroup",
+                    "value": {
                         "type": "identity",
                         "identity": platform_value::Identifier::from([0x42u8; 32]),
                     },

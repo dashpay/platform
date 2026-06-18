@@ -74,12 +74,11 @@ pub(crate) mod json_convertible_tests {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
-        // Doubly-tagged externally enum: outer `V0` for the variant; inner
-        // `V0` for the flattened token base. The unit variant
-        // `TokenConfigurationNoChange` of `TokenConfigurationChangeItem`
-        // (which uses `rename_all = "camelCase"`) serializes to the bare
-        // string `"tokenConfigurationNoChange"`. `updateTokenConfigurationItem`
-        // and `publicNote` come from the parent struct's camelCase rule.
+        // `TokenConfigurationChangeItem` is now internally tagged, so its unit
+        // variant `TokenConfigurationNoChange` serializes to the object
+        // `{"type":"tokenConfigurationNoChange"}` (not a bare string).
+        // `updateTokenConfigurationItem` and `publicNote` come from the parent
+        // struct's camelCase rule.
         assert_eq!(
             json,
             json!({
@@ -90,7 +89,7 @@ pub(crate) mod json_convertible_tests {
                         "$dataContractId": Identifier::new([0xa1; 32]),
                         "$tokenId": Identifier::new([0xb2; 32]),
 
-                    "updateTokenConfigurationItem": "tokenConfigurationNoChange",
+                    "updateTokenConfigurationItem": { "type": "tokenConfigurationNoChange" },
                     "publicNote": "config update",
             })
         );
@@ -105,8 +104,8 @@ pub(crate) mod json_convertible_tests {
         let value = original.to_object().expect("to_object");
         // `13u64`/`2u16`: identity_contract_nonce is `u64`,
         // token_contract_position is `u16`. The unit-variant
-        // `TokenConfigurationNoChange` is encoded as a `Value::Text` exactly
-        // like its JSON form.
+        // `TokenConfigurationNoChange` is now an internally-tagged map
+        // `{"type":"tokenConfigurationNoChange"}`, matching its JSON form.
         assert_eq!(
             value,
             platform_value!({
@@ -117,7 +116,7 @@ pub(crate) mod json_convertible_tests {
                         "$dataContractId": Identifier::new([0xa1; 32]),
                         "$tokenId": Identifier::new([0xb2; 32]),
 
-                    "updateTokenConfigurationItem": "tokenConfigurationNoChange",
+                    "updateTokenConfigurationItem": { "type": "tokenConfigurationNoChange" },
                     "publicNote": "config update",
             })
         );
