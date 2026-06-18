@@ -23,6 +23,8 @@ use dpp::util::hash::ripemd160_sha256;
 use dpp::version::PlatformVersion;
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::gap_limit::DIP17_GAP_LIMIT;
+use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use key_wallet::wallet::Wallet;
 use key_wallet::{AccountType, ChildNumber, Network};
 use parking_lot::Mutex as SyncMutex;
 use platform_wallet::wallet::persister::NoPlatformPersistence;
@@ -242,13 +244,12 @@ impl BankWallet {
         // run. `next_unused_receive_address` would otherwise advance past
         // index 0 once it gets marked used, accumulating empty addresses.
         let primary_receive_address = derive_platform_address_at_index(
-            &wallet,
+            &seed_bytes,
             network,
             DEFAULT_ACCOUNT_INDEX_PUB,
             DEFAULT_KEY_CLASS_PUB,
             0,
-        )
-        .await?;
+        )?;
 
         let total = wallet.platform().total_credits().await;
         let bank_floor_satisfied = total >= EXPECTED_TOKEN_SUITE_FLOOR;
@@ -732,7 +733,7 @@ impl BankWallet {
     /// reuses it. Surfaced in the harness init log so the operator
     /// knows where to send Layer-1 duffs to fund the bank.
     pub async fn primary_core_receive_address(&self) -> FrameworkResult<dashcore::Address> {
-        derive_core_receive_address_at_index(&self.wallet, self.wallet.sdk().network, 0, 0).await
+        derive_core_receive_address_at_index(&self.seed_bytes, self.wallet.sdk().network, 0, 0)
     }
 
     /// Send `duffs` of Layer-1 Core duffs from the bank's BIP-44
@@ -877,17 +878,34 @@ pub(super) async fn core_send(
     Ok(tx.txid())
 }
 
-/// Derive the DIP-17 platform-payment address at `index` from the
-/// already-loaded `PlatformWallet`, using path
-/// `m/9'/coin_type'/17'/account'/key_class'/index`.
+/// Rebuild a fresh, **signable** [`key_wallet::Wallet`] from the bank's
+/// retained BIP-39 seed.
+///
+/// v3.1-dev's `PlatformWalletManager::register_wallet` downgrades every
+/// managed wallet to external-signable (no private key), so the live
+/// managed wallet can no longer derive hardened paths. A wallet rebuilt
+/// from the same seed reproduces the identical root key — and therefore
+/// the identical addresses — while retaining the private key the hardened
+/// DIP-17 / BIP-44 derivations below need. This is the same derivation
+/// surface `print_bank_address_offline` uses to print the operator's
+/// funding addresses, so the results match the funded ones.
+fn signable_bank_wallet(seed_bytes: &[u8; 64], network: Network) -> FrameworkResult<Wallet> {
+    Wallet::from_seed_bytes(*seed_bytes, network, WalletAccountCreationOptions::Default).map_err(
+        |err| FrameworkError::Bank(format!("rebuild signable bank wallet from seed: {err}")),
+    )
+}
+
+/// Derive the DIP-17 platform-payment address at `index` from the bank's
+/// retained seed, using path `m/9'/coin_type'/17'/account'/key_class'/index`.
 ///
 /// Bank-only helper: lets us pin the bank's sweep target to index 0
 /// without going through the address pool's "next unused" cursor.
-/// Routes through [`key_wallet::Wallet::derive_public_key`] on the live
-/// wallet rather than re-running BIP-32 from raw seed bytes — keeps a
-/// single derivation surface.
-async fn derive_platform_address_at_index(
-    wallet: &Arc<PlatformWallet>,
+/// Routes through [`key_wallet::Wallet::derive_public_key`] on a fresh
+/// signable wallet rebuilt from the seed (see [`signable_bank_wallet`]) —
+/// the managed wallet is external-signable post-merge and can't derive
+/// hardened paths. Same root key, so the address is identical.
+fn derive_platform_address_at_index(
+    seed_bytes: &[u8; 64],
     network: Network,
     account: u32,
     key_class: u32,
@@ -900,16 +918,7 @@ async fn derive_platform_address_at_index(
         .map_err(|err| FrameworkError::Bank(format!("invalid child index {index}: {err}")))?;
     let leaf_path = account_path.extend([leaf]);
 
-    // TODO(#3549 base-merge): after v3.1-dev's register_wallet now calls
-    // `downgrade_to_external_signable()`, the managed wallet holds no private
-    // key, so this hardened DIP-17 derivation fails with "External signable
-    // wallet has no private key". Derive from the retained seed instead (a
-    // fresh signable `Wallet::from_seed_bytes`), matching the seed-based
-    // signer path the rest of the framework already uses.
-    let pubkey = wallet
-        .state()
-        .await
-        .wallet()
+    let pubkey = signable_bank_wallet(seed_bytes, network)?
         .derive_public_key(&leaf_path)
         .map_err(|err| {
             FrameworkError::Bank(format!("derive_public_key at index {index}: {err}"))
@@ -931,12 +940,13 @@ const BIP44_EXTERNAL_CHAIN: u32 = 0;
 /// so the operator funds ONE address and every run reuses it.
 /// `CoreWallet::next_receive_address_for_account` advances the pool's
 /// "next unused" cursor off index 0 as soon as a UTXO lands there, so
-/// the top-up address would otherwise drift run-to-run. Routes
-/// through [`key_wallet::Wallet::derive_public_key`] on the live
-/// wallet and reconstructs the P2PKH address exactly as key-wallet's
-/// own address pool does (compressed ECDSA pubkey → `Address::p2pkh`).
-async fn derive_core_receive_address_at_index(
-    wallet: &Arc<PlatformWallet>,
+/// the top-up address would otherwise drift run-to-run. Routes through
+/// [`key_wallet::Wallet::derive_public_key`] on a fresh signable wallet
+/// rebuilt from the seed (see [`signable_bank_wallet`]) and reconstructs
+/// the P2PKH address exactly as key-wallet's own address pool does
+/// (compressed ECDSA pubkey → `Address::p2pkh`).
+fn derive_core_receive_address_at_index(
+    seed_bytes: &[u8; 64],
     network: Network,
     account: u32,
     index: u32,
@@ -953,14 +963,7 @@ async fn derive_core_receive_address_at_index(
         .map_err(|err| FrameworkError::Bank(format!("invalid child index {index}: {err}")))?;
     let leaf_path = account_path.extend([chain, leaf]);
 
-    // TODO(#3549 base-merge): same as `derive_platform_address_at_index` —
-    // v3.1-dev's `register_wallet` downgrade strips the managed wallet's
-    // private key, so this hardened BIP-44 derivation fails. Derive from the
-    // retained seed (fresh signable `Wallet::from_seed_bytes`) instead.
-    let pubkey = wallet
-        .state()
-        .await
-        .wallet()
+    let pubkey = signable_bank_wallet(seed_bytes, network)?
         .derive_public_key(&leaf_path)
         .map_err(|err| {
             FrameworkError::Bank(format!("derive_public_key at index {index}: {err}"))
