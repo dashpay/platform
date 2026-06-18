@@ -43,10 +43,16 @@ track, and the multi-agent reviews. Prioritized; check off as done.
   `le[0..4]>>4`, dash-evo-tool/DIP-literal `be[0..4]>>4`) has **no on-chain interop
   failure** and no canonical value. Keep ours (matches iOS, the dominant wallet);
   documented the split + added an ASK28 KAT.
-- [~] **Friendship path hardcodes `account'` = `0'`** — **BLOCKED (cross-repo).**
-  The fix needs an upstream `rust-dashcore`/key-wallet change (`account_type.rs`)
-  to thread the account index through the derivation path; can't be completed from
-  this repo. Latent (only bites a counterparty using account ≠ 0). Tracked upstream.
+- [~] **Friendship path hardcodes `account'` = `0'`** — **upstream fix submitted:
+  [rust-dashcore#813](https://github.com/dashpay/rust-dashcore/pull/813).**
+  key-wallet's `AccountType::derivation_path()` discarded the `index` field and pushed
+  a fixed `0'`; #813 honors `*index` (red→green test, backward-compatible for acct 0).
+  **Framing corrected:** this is NOT a counterparty-interop break — the recipient pays
+  from the *shared xpub* and ignores `accountReference` (per DIP-15 + our code), so a
+  multi-account counterparty doesn't affect us. The real limitation is that *we* can't
+  run multiple DashPay accounts → it's the **same item as multi-account (P2)**. Remaining
+  after #813 merges: bump the key-wallet rev + thread the real account through our callers
+  (`register_contact_account(.., account)` etc., currently hardcoded `0`).
 - [x] **`encryptedAccountLabel` padded to ≥16 chars: DONE** (`2419159bb3`). Pad with
   trailing spaces on encrypt (kotlin `padEnd(16)`) so the ciphertext clears the
   48-byte contract floor; trim on decrypt; always emit. Tests pin it.
@@ -68,7 +74,9 @@ track, and the multi-agent reviews. Prioritized; check off as done.
   convention.
 - [~] **Multi-account contacts** — **DEFERRED (conditional, not a requirement).** The
   DIP-15 codec now carries `accepted_accounts` (Spec 1), but nothing populates it;
-  widen only if simultaneous multi-account contacts become a real requirement.
+  widen only if simultaneous multi-account contacts become a real requirement. Shares
+  the upstream derivation-path fix [rust-dashcore#813](https://github.com/dashpay/rust-dashcore/pull/813)
+  (P1 above) — that PR is the enabling prerequisite for any non-zero DashPay account.
 - [x] **rs-sdk-ffi `DashSDKContactRequestResult` entropy: DONE** (`514b32ebd1`).
   Added an inline `entropy: [u8;32]` field for generic embedders.
 - [x] **contactInfo fetch pagination: DONE** (`e757d9a528`). `send address-reuse` —
