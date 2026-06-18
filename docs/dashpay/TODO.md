@@ -4,6 +4,19 @@ Single source of truth for outstanding DashPay work. Sources: the
 kotlin-platform/dashj comparison (`KOTLIN_PLATFORM_COMPARISON.md`), the spec
 track, and the multi-agent reviews. Prioritized; check off as done.
 
+> **STATUS (2026-06-18): the implementable backlog is complete.** Every P0/P1/P2
+> bug, the full sync-correctness spec (Spec 0/1/2 + reject→ignore refactor), the
+> R1 privacy resolution, the per-contact accessor, and the comment-cleanup pass
+> are done, tested, and pushed on `feat/dashpay-m1-sync-correctness`. The five
+> remaining `[ ]` items are **blocked on resources outside this codebase**, not
+> oversights:
+> - **Devnet integration tests** + **on-device UAT** — need a funded devnet
+>   identity / harness (deferred to the end by agreement).
+> - **Encrypted profile ignored-list field** + **query-level DoS filter** — need a
+>   registered `dashpay` data-contract change (DIP / governance), not wallet code.
+> - The struck `[toUserId, $ownerId]` GROUP-BY index is a deliberate **don't-do**
+>   (privacy guardrail R6), kept unchecked as a do-not-reintroduce marker.
+
 ---
 
 ## P0 — bugs (functional / data-loss; fix soon)
