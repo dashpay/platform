@@ -279,7 +279,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | GRP-01 | View group info / members | Platform | Thorough | ✅ | `GroupDetailView` (drill into member identities). |
 | GRP-02 | Group queries (info / infos / actions / signers) | Platform | Thorough | ✅ | `PlatformQueriesView` group category → `dash_sdk_group_get_*`. |
 | GRP-03 | Token group action — propose / co-sign | Platform | Uncommon | ✅ | Same as `TOK-15` / `TOK-16`. |
-| GRP-04 | Standalone group lifecycle management | Platform | Uncommon | 🚫 | Not implemented — groups exist only as a token access-control construct + read queries. There is no group-create/membership transition. |
+| GRP-04 | Standalone group lifecycle management | Platform | — | ➖ | Retired from the catalog — not implemented anywhere and never will be a standalone test: there is no group-create/membership transition; groups exist only as a token access-control construct (read queries `GRP-01`/`GRP-02`; actions `GRP-03` ≡ `TOK-15`/`TOK-16`). Kept here to document the absence; not seeded to the QA catalog. |
 
 ### 4.12 System / Protocol / Diagnostics — `Domain=System`
 
