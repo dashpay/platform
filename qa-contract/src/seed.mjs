@@ -113,22 +113,42 @@ async function main() {
   const planCommit = resolvePlanCommit(planPath);
   let rows = parseTestPlan(planPath, planCommit);
 
-  // Retired (➖) rows are historical markers in the plan, not runnable tests —
-  // skip them so the on-chain catalog (and the dashboard) never carries a
-  // confusing "Unspecified / Unknown, no runs" entry. E.g. DOC-09, whose
-  // local-demo mock was folded into the real broadcast flow (see DOC-02).
-  const retired = rows.filter((r) => (r.implStatus || '').trim() === '➖');
-  if (retired.length) {
-    console.log(`Skipping ${retired.length} retired (➖) row(s): ${retired.map((r) => r.testId).join(', ')}`);
-    rows = rows.filter((r) => (r.implStatus || '').trim() !== '➖');
-  }
-
+  // Apply selection filters first so retired-cleanup and seeding act on the same scope.
   const idFilter = csv(values.ids);
   const tierFilter = csv(values.tier)?.map((s) => s.toLowerCase());
   const catFilter = csv(values.category)?.map((s) => s.toLowerCase());
   if (idFilter) rows = rows.filter((r) => idFilter.includes(r.testId));
   if (tierFilter) rows = rows.filter((r) => tierFilter.includes(r.tier.toLowerCase()));
   if (catFilter) rows = rows.filter((r) => catFilter.includes(r.category.toLowerCase()));
+
+  // Retired (➖) rows are historical markers in the plan, not runnable tests. Drop
+  // them from the upsert AND delete any already-seeded testCase for that
+  // (testId, app), so the on-chain catalog / dashboard never carries a confusing
+  // "Unspecified / Unknown, no runs" entry (e.g. DOC-09, folded into DOC-02).
+  const retired = rows.filter((r) => (r.implStatus || '').trim() === '➖');
+  rows = rows.filter((r) => (r.implStatus || '').trim() !== '➖');
+  let deleted = 0;
+  for (const r of retired) {
+    try {
+      const existing = await findOne(sdk, contractId, 'testCase', [['testId', '==', r.testId], ['app', '==', app]]);
+      if (!existing) continue;
+      await sdk.documents.delete({
+        document: {
+          id: String(existing.toJSON().$id), ownerId, dataContractId: contractId, documentTypeName: 'testCase',
+        },
+        identityKey,
+        signer,
+      });
+      deleted += 1;
+      console.log(`  - retired ${r.testId} (deleted on-chain)`);
+    } catch (e) {
+      console.error(`  ! retired ${r.testId} delete failed: ${e?.message || e}`);
+    }
+  }
+  if (retired.length) {
+    console.log(`Retired (➖): ${retired.length} in scope (${retired.map((r) => r.testId).join(', ')}); ${deleted} deleted on-chain.`);
+  }
+
   if (values.limit !== undefined) {
     const limit = Number(values.limit);
     if (!Number.isInteger(limit) || limit <= 0) {
