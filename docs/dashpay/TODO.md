@@ -84,12 +84,20 @@ track, and the multi-agent reviews. Prioritized; check off as done.
     ContactDetailView, ContactRequestsView, AddContactView, SendDashPayPaymentSheet)
     now read the contact cache (own-profile fallback for self-contacts). Verified by
     a clean `build_ios.sh --target sim` + app build. Stage 2 displays end-to-end.
-  - [ ] **Durable persistence (FFI/Swift — route via swift-rust-ffi-engineer):**
-    `high_water_*_ms` + `contact_profiles` round-trip (IdentityEntry + from_managed
-    + merge + IdentityEntryFFI + IdentityRestoreEntryFFI + `restore_*` + SwiftData
-    `PersistentDashpayProfile` + Swift handler, with under-shoot-clamp cursor
-    restore + reactive `@Query`). Optimization-grade: in-memory degrades gracefully
-    (cursor resets → one safe full re-fetch; profiles repopulate ~15s after relaunch).
+  - [x] **Durable persistence — Rust changeset layer** (`06053bf589`):
+    `contact_profiles` on IdentityEntry + from_managed + merge + apply (LWW per
+    contact id); `sync_contact_profiles` emits one changeset/owner on change.
+    Round-trip test pins survive-snapshot→apply + full-replace overwrite. So
+    contact profiles already round-trip cross-device / replay.
+  - [ ] **Durable persistence — host-FFI layer (route via swift-rust-ffi-engineer):**
+    carry `contact_profiles` to the SwiftData store: a `ContactProfileRowFFI`
+    array on `IdentityEntryFFI` (+`from_entry`/`free`) and `IdentityRestoreEntryFFI`
+    (+`restore_contact_profiles`), a `PersistentDashpayContactProfile` SwiftData
+    model, and the Swift handler store/restore. Delicate `unsafe` nested-array
+    alloc/free both directions — exactly the FFI memory-safety work the agent owns.
+    Optimization-grade: without it the cache repopulates ~15s after a cold restart
+    (the in-memory + cross-device paths already work). The high-water cursor stays
+    in-memory by design (reset → one safe full re-fetch).
   - [ ] **Devnet integration tests** (need a paginated mock/real harness): >100
     no-bury, partial-page-no-advance, equal-`$createdAt` boundary, In-query proof
     binding (Q-c stage-1 testnet check).
