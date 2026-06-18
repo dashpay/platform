@@ -50,7 +50,9 @@ use crate::changeset::merge::Merge;
 use crate::wallet::identity::state::managed_identity::{
     BlockTime, DpnsNameInfo, IdentityStatus, ManagedIdentity,
 };
-use crate::wallet::identity::{ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry};
+use crate::wallet::identity::{
+    ContactProfileEntry, ContactRequest, DashPayProfile, EstablishedContact, PaymentEntry,
+};
 
 // ---------------------------------------------------------------------------
 // Core wallet changeset — projection of upstream `WalletEvent` data
@@ -306,6 +308,10 @@ pub struct IdentityEntry {
     /// map via `from_managed`, so merge can use plain extend semantics
     /// without losing history.
     pub dashpay_payments: BTreeMap<String, PaymentEntry>,
+    /// Cached contact profiles keyed by the contact's identity id. Like
+    /// `dashpay_payments`, every snapshot carries the full map via
+    /// `from_managed`, so merge uses last-write-wins per contact id.
+    pub contact_profiles: BTreeMap<Identifier, ContactProfileEntry>,
 }
 
 impl IdentityEntry {
@@ -329,6 +335,7 @@ impl IdentityEntry {
             wallet_id: managed.wallet_id,
             dashpay_profile: managed.dashpay_profile.clone(),
             dashpay_payments: managed.dashpay_payments.clone(),
+            contact_profiles: managed.contact_profiles.clone(),
         }
     }
 }
@@ -494,6 +501,13 @@ impl Merge for IdentityChangeSet {
                         existing
                             .dashpay_payments
                             .insert(tx_id.clone(), payment.clone());
+                    }
+                    // Merge contact profiles (last-write-wins per contact id),
+                    // same policy as `dashpay_payments`.
+                    for (contact_id, profile) in &entry.contact_profiles {
+                        existing
+                            .contact_profiles
+                            .insert(*contact_id, profile.clone());
                     }
                 })
                 .or_insert(entry);

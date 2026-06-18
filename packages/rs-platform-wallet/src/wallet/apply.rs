@@ -1517,6 +1517,103 @@ mod tests {
         );
     }
 
+    /// A cached contact profile round-trips through the changeset
+    /// (snapshot → apply), and a later update overwrites it (full-replace,
+    /// last-write-wins per contact id) — so contact names/avatars survive
+    /// relaunch instead of vanishing.
+    #[test]
+    fn round_trip_contact_profile_persists_and_overwrites() {
+        use crate::wallet::identity::{ContactProfileEntry, DashPayProfile};
+
+        let wallet_a = build_test_wallet();
+        let mut info_a = empty_info(&wallet_a);
+        let mut wallet_b = build_test_wallet();
+        let mut info_b = empty_info(&wallet_b);
+        let p = noop_persister();
+
+        for info in [&mut info_a, &mut info_b] {
+            info.identity_manager
+                .add_identity(make_test_identity(1, 1), 0, ROUND_TRIP_WALLET_ID, &p)
+                .expect("add");
+        }
+        let owner = Identifier::from([1u8; 32]);
+        let contact = Identifier::from([2u8; 32]);
+
+        // Cache a contact profile on A, snapshot, apply to B.
+        info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a managed")
+            .contact_profiles
+            .insert(
+                contact,
+                ContactProfileEntry {
+                    profile: Some(DashPayProfile {
+                        display_name: Some("Bob".into()),
+                        avatar_url: Some("https://x/b.png".into()),
+                        ..Default::default()
+                    }),
+                    checked_at_ms: 100,
+                },
+            );
+        let managed = info_a.identity_manager.managed_identity(&owner).expect("a");
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs
+            .identities
+            .insert(owner, IdentityEntry::from_managed(managed));
+        info_b
+            .apply_changeset(&mut wallet_b, wrap_id(id_cs))
+            .expect("apply profile");
+
+        let b_managed = info_b.identity_manager.managed_identity(&owner).expect("b");
+        assert_eq!(
+            b_managed
+                .contact_profiles
+                .get(&contact)
+                .and_then(|e| e.profile.as_ref())
+                .and_then(|pr| pr.display_name.as_deref()),
+            Some("Bob"),
+            "contact profile must survive the changeset round-trip"
+        );
+
+        // Contact updated their profile (removed the avatar) → overwrite.
+        info_a
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("a managed")
+            .contact_profiles
+            .insert(
+                contact,
+                ContactProfileEntry {
+                    profile: Some(DashPayProfile {
+                        display_name: Some("Bob".into()),
+                        avatar_url: None,
+                        ..Default::default()
+                    }),
+                    checked_at_ms: 200,
+                },
+            );
+        let managed = info_a.identity_manager.managed_identity(&owner).expect("a");
+        let mut id_cs = IdentityChangeSet::default();
+        id_cs
+            .identities
+            .insert(owner, IdentityEntry::from_managed(managed));
+        info_b
+            .apply_changeset(&mut wallet_b, wrap_id(id_cs))
+            .expect("apply updated profile");
+
+        let b_managed = info_b.identity_manager.managed_identity(&owner).expect("b");
+        assert_eq!(
+            b_managed
+                .contact_profiles
+                .get(&contact)
+                .and_then(|e| e.profile.as_ref())
+                .and_then(|pr| pr.avatar_url.clone()),
+            None,
+            "a removed avatar must be cleared on the apply side (full-replace)"
+        );
+    }
+
     #[test]
     fn round_trip_clear_dashpay_profile() {
         use crate::wallet::identity::DashPayProfile;
