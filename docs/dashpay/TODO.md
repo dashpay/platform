@@ -89,14 +89,12 @@ track, and the multi-agent reviews. Prioritized; check off as done.
     contact id); `sync_contact_profiles` emits one changeset/owner on change.
     Round-trip test pins survive-snapshot→apply + full-replace overwrite. So
     contact profiles already round-trip cross-device / replay.
-  - [ ] **Durable persistence — host-FFI layer (route via swift-rust-ffi-engineer):**
-    carry `contact_profiles` to the SwiftData store: a `ContactProfileRowFFI`
-    array on `IdentityEntryFFI` (+`from_entry`/`free`) and `IdentityRestoreEntryFFI`
-    (+`restore_contact_profiles`), a `PersistentDashpayContactProfile` SwiftData
-    model, and the Swift handler store/restore. Delicate `unsafe` nested-array
-    alloc/free both directions — exactly the FFI memory-safety work the agent owns.
-    Optimization-grade: without it the cache repopulates ~15s after a cold restart
-    (the in-memory + cross-device paths already work). The high-water cursor stays
+  - [x] **Durable persistence — host-FFI layer** (`87d6cc733d`): `contact_profiles`
+    now round-trips to SwiftData — `ContactProfileRowFFI`/`ContactProfileRestoreEntryFFI`
+    arrays on `IdentityEntryFFI`/`IdentityRestoreEntryFFI` (+`restore_contact_profiles`),
+    `PersistentDashpayContactProfile` model + handler store/restore. Memory-safety
+    audited (no double-free/leak/UAF) + contact-id length guard on restore. Verified:
+    110 FFI tests + `build_ios.sh` BUILD SUCCEEDED. The high-water cursor stays
     in-memory by design (reset → one safe full re-fetch).
   - [ ] **Devnet integration tests** (need a paginated mock/real harness): >100
     no-bury, partial-page-no-advance, equal-`$createdAt` boundary, In-query proof
