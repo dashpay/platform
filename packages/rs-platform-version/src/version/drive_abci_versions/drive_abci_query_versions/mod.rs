@@ -120,10 +120,6 @@ pub struct DriveAbciQueryShieldedVersions {
     pub pool_state: FeatureVersionBounds,
     pub notes_count: FeatureVersionBounds,
     pub nullifiers: FeatureVersionBounds,
-    pub nullifiers_trunk_state: FeatureVersionBounds,
-    pub nullifiers_branch_state: FeatureVersionBounds,
-    pub recent_nullifier_changes: FeatureVersionBounds,
-    pub recent_compacted_nullifier_changes: FeatureVersionBounds,
     /// Maximum number of MMR chunks a single `getShieldedEncryptedNotes`
     /// query may span.
     ///

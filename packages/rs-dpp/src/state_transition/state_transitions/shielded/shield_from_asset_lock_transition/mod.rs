@@ -1,3 +1,4 @@
+pub mod accessors;
 pub mod fields;
 pub mod methods;
 mod proved;

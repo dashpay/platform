@@ -583,6 +583,15 @@ mod tests {
         )
         .await;
 
+        // CheckTx root-invariance guard (devnet paloma h788): `check_tx` asserts under
+        // cfg(test) that it never mutates committed grovedb state, so running the canonical
+        // valid fixture through it pins the invariant for this transition type.
+        crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels(
+            &platform,
+            &transfer_bytes,
+            "identity credit transfer",
+        );
+
         let transaction = platform.drive.grove.start_transaction();
 
         let processing_result = platform

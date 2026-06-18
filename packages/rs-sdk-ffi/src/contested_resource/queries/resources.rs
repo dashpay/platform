@@ -13,8 +13,11 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * `contract_id` - Base58-encoded contract identifier
 /// * `document_type_name` - Name of the document type
 /// * `index_name` - Name of the index
-/// * `start_index_values_json` - JSON array of hex-encoded start index values
-/// * `end_index_values_json` - JSON array of hex-encoded end index values
+/// * `start_index_values_json` - JSON array of start index values. A
+///   `"0x"`-prefixed element is hex-decoded to bytes; any other element is
+///   taken verbatim as text (matches the cast-vote write path).
+/// * `end_index_values_json` - JSON array of end index values, parsed with the
+///   same `"0x"`-prefix-means-bytes convention.
 /// * `count` - Maximum number of resources to return
 /// * `order_ascending` - Whether to order results in ascending order
 ///
@@ -115,7 +118,7 @@ fn get_contested_resources(
         return Err("Index name is null".to_string());
     }
 
-    let rt = tokio::runtime::Runtime::new()
+    let rt = crate::runtime::BigStackRuntime::new_isolated()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
     let contract_id_str = unsafe {
@@ -147,7 +150,10 @@ fn get_contested_resources(
 
         let contract_id = dash_sdk::platform::Identifier::new(contract_id);
 
-        // Parse start index values: hex-like -> Bytes, otherwise Text to match vectors
+        // Parse start index values via the shared explicit-tag helper: a
+        // `"0x"`-prefixed value is hex-decoded to `Value::Bytes`, anything else
+        // is verbatim `Value::Text`. Shared with the cast-vote write path so
+        // read and write stay in lockstep.
         let start_index_values = if start_index_values_json.is_null() {
             Vec::new()
         } else {
@@ -161,20 +167,11 @@ fn get_contested_resources(
 
             start_values_array
                 .into_iter()
-                .map(|val| {
-                    if val.chars().all(|c| c.is_ascii_hexdigit()) && val.len() % 2 == 0 {
-                        match hex::decode(&val) {
-                            Ok(bytes) => Ok(Value::Bytes(bytes)),
-                            Err(_) => Ok(Value::Text(val)),
-                        }
-                    } else {
-                        Ok(Value::Text(val))
-                    }
-                })
+                .map(crate::contested_resource::parse_index_value)
                 .collect::<Result<Vec<Value>, String>>()?
         };
 
-        // Parse end index values: hex-like -> Bytes, otherwise Text
+        // Parse end index values via the same shared explicit-tag helper.
         let end_index_values = if end_index_values_json.is_null() {
             Vec::new()
         } else {
@@ -188,16 +185,7 @@ fn get_contested_resources(
 
             end_values_array
                 .into_iter()
-                .map(|val| {
-                    if val.chars().all(|c| c.is_ascii_hexdigit()) && val.len() % 2 == 0 {
-                        match hex::decode(&val) {
-                            Ok(bytes) => Ok(Value::Bytes(bytes)),
-                            Err(_) => Ok(Value::Text(val)),
-                        }
-                    } else {
-                        Ok(Value::Text(val))
-                    }
-                })
+                .map(crate::contested_resource::parse_index_value)
                 .collect::<Result<Vec<Value>, String>>()?
         };
 

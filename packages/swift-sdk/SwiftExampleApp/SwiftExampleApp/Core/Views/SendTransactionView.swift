@@ -11,6 +11,9 @@ struct SendTransactionView: View {
 
     @StateObject private var viewModel: SendViewModel
 
+    /// Drives the camera QR scanner sheet launched from the recipient row.
+    @State private var showQRScanner = false
+
     @Environment(\.modelContext) private var modelContext
 
     /// BLAST-synced platform-address balances for this wallet —
@@ -55,9 +58,23 @@ struct SendTransactionView: View {
             Form {
                 // Recipient
                 Section("Recipient") {
-                    TextField("Recipient Address", text: $viewModel.recipientAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                    HStack(spacing: 8) {
+                        TextField("Recipient Address", text: $viewModel.recipientAddress)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        Button {
+                            showQRScanner = true
+                        } label: {
+                            Image(systemName: "qrcode.viewfinder")
+                                .font(.title3)
+                                .foregroundColor(.accentColor)
+                        }
+                        // `.borderless` is REQUIRED: the default button
+                        // style inside a Form makes the whole row tappable,
+                        // which would swallow taps on the text field.
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Scan recipient address QR code")
+                    }
 
                     if !viewModel.recipientAddress.isEmpty {
                         AddressTypeBadge(type: viewModel.detectedAddressType)
@@ -92,6 +109,39 @@ struct SendTransactionView: View {
                             unit: .credits,
                             color: .blue
                         )
+                    }
+                }
+
+                // Additional recipients (Core → Core only). A standard
+                // L1 tx can pay any number of outputs in one transaction;
+                // the Rust coin-selector builds the multi-output tx, so
+                // this is purely extra address/amount input rows. Hidden
+                // for every other flow — shield / platform / unshield all
+                // remain single-recipient. The primary row above still
+                // drives `detectedFlow`, so this section only appears once
+                // that row resolves to a Core address with a Core source.
+                if viewModel.detectedFlow == .coreToCore {
+                    additionalRecipientsSection
+                }
+
+                // Memo (shielded → shielded only). The on-chain note
+                // carries an optional 32-byte UTF-8 memo. Gate on the
+                // flow, not the recipient type: an Orchard recipient
+                // with a Platform source is the self-shield path, which
+                // has no memo parameter — showing the field there would
+                // silently drop the text. Count UTF-8 bytes (not
+                // characters) so the limit matches Rust.
+                if viewModel.detectedFlow == .shieldedToShielded {
+                    Section("Memo (optional)") {
+                        TextField("Note for the recipient", text: $viewModel.memoText)
+                            .textInputAutocapitalization(.sentences)
+                            .autocorrectionDisabled()
+                        HStack {
+                            Spacer()
+                            Text("\(viewModel.memoByteCount)/\(SendViewModel.memoByteLimit) bytes")
+                                .font(.caption)
+                                .foregroundColor(viewModel.isMemoOverLimit ? .red : .secondary)
+                        }
                     }
                 }
 
@@ -140,11 +190,22 @@ struct SendTransactionView: View {
                             HStack {
                                 Text("Estimated Fee:")
                                 Spacer()
-                                Text("~\(formatBalance(fee, unit: unit(for: viewModel.selectedSource)))")
+                                Text("~\(formatBalance(fee, unit: feeUnit(for: flow)))")
                                     .foregroundColor(.secondary)
                             }
                         }
                     }
+                }
+
+                // Per-output summary (Core → Core, multi-output only).
+                // `coreRecipients` is the same ordered, fully-validated
+                // list `executeSend` marshals, so the summary can't show
+                // a row the send wouldn't include. Only rendered with >1
+                // output — the single-output case is already covered by
+                // the "Transaction Type" / "Estimated Fee" section above.
+                if viewModel.detectedFlow == .coreToCore,
+                   let outputs = viewModel.coreRecipients, outputs.count > 1 {
+                    coreOutputsSummarySection(outputs: outputs)
                 }
 
             }
@@ -236,7 +297,105 @@ struct SendTransactionView: View {
             .onChange(of: viewModel.detectedAddressType) { _, _ in
                 autoSelectSource()
             }
+            .sheet(isPresented: $showQRScanner) {
+                // Same network the view model was built with
+                // (`wallet.network ?? .testnet`) so the scanner validates
+                // against the wallet's chain. Assigning `recipientAddress`
+                // triggers the view model's `didSet` address-type
+                // detection; the amount is only adopted when the user
+                // hasn't already typed one.
+                QRScannerView(network: wallet.network ?? .testnet) { payment in
+                    viewModel.recipientAddress = payment.address
+                    if let amount = payment.amount, viewModel.amountString.isEmpty {
+                        viewModel.amountString = amount
+                    }
+                }
+            }
         }
+    }
+
+    // MARK: - Multi-recipient sections (Core → Core)
+
+    /// The extra-output input rows plus the "Add recipient" button.
+    /// Split out of `body` so the type-checker doesn't have to solve the
+    /// whole Form in one pass — the per-row editor is a separate
+    /// `CoreRecipientRow` subview for the same reason. Iterates over a
+    /// `$`-binding so each row's edits flow straight back into
+    /// `viewModel.additionalCoreRecipients`.
+    @ViewBuilder
+    private var additionalRecipientsSection: some View {
+        Section("Additional Recipients") {
+            ForEach($viewModel.additionalCoreRecipients) { $recipient in
+                CoreRecipientRow(
+                    recipient: $recipient,
+                    network: wallet.network ?? .testnet,
+                    onRemove: { viewModel.removeCoreRecipient(recipient.id) }
+                )
+            }
+
+            Button {
+                viewModel.addCoreRecipient()
+            } label: {
+                Label("Add recipient", systemImage: "plus.circle.fill")
+            }
+            // `.borderless` so only the label is the tap target inside the
+            // Form row, matching the QR button on the primary recipient.
+            .buttonStyle(.borderless)
+        }
+    }
+
+    /// Per-output breakdown + Total + Fee for a multi-output Core send.
+    /// `outputs` is the already-validated `coreRecipients` list, so each
+    /// row's amount is a real duffs value. Total is the sum of outputs;
+    /// the fee reuses `viewModel.estimatedFee` rendered in the
+    /// `.coreToCore` fee unit (duffs per `feeUnit(for:)`).
+    @ViewBuilder
+    private func coreOutputsSummarySection(
+        outputs: [(address: String, amountDuffs: UInt64)]
+    ) -> some View {
+        Section("Outputs") {
+            ForEach(Array(outputs.enumerated()), id: \.offset) { _, output in
+                HStack {
+                    Text(abbreviatedAddress(output.address))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer()
+                    Text(formatBalance(output.amountDuffs, unit: .duffs))
+                        .font(.caption)
+                }
+            }
+
+            HStack {
+                Text("Total:")
+                    .fontWeight(.medium)
+                Spacer()
+                Text(formatBalance(viewModel.coreSendTotalDuffs, unit: .duffs))
+                    .fontWeight(.medium)
+            }
+
+            if let fee = viewModel.estimatedFee {
+                HStack {
+                    Text("Estimated Fee:")
+                    Spacer()
+                    // coreToCore fee is denominated in duffs (see
+                    // feeUnit(for:)); reuse the same formatter as the
+                    // single-output fee row.
+                    Text("~\(formatBalance(fee, unit: .duffs))")
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    /// Middle-truncate a Core address for the compact summary rows so a
+    /// long base58 string doesn't blow out the row width. Short addresses
+    /// (shouldn't happen for valid Core addresses, but be safe) are shown
+    /// whole.
+    private func abbreviatedAddress(_ address: String) -> String {
+        guard address.count > 16 else { return address }
+        return "\(address.prefix(8))…\(address.suffix(6))"
     }
 
     // MARK: - Computed
@@ -303,6 +462,7 @@ struct SendTransactionView: View {
     private func flowColor(for flow: SendFlow) -> Color {
         switch flow {
         case .coreToCore: return .green
+        case .coreToShielded: return .purple
         case .platformToPlatform: return .blue
         case .platformToShielded: return .purple
         case .shieldedToShielded: return .purple
@@ -336,9 +496,92 @@ struct SendTransactionView: View {
         case .platform, .shielded: return .credits
         }
     }
+
+    /// Settlement unit of a flow's *fee*, which can differ from the
+    /// selected source's balance unit. `coreToShielded` spends Core
+    /// duffs but its Type 18 pool fee is denominated in Platform
+    /// credits, so the fee row must use credits even though the Core
+    /// source row uses duffs. Behaviour-preserving for every other
+    /// flow (their fee unit already matches their source unit).
+    private func feeUnit(for flow: SendFlow) -> SendBalanceUnit {
+        switch flow {
+        case .coreToCore: return .duffs
+        case .coreToShielded, .platformToPlatform, .platformToShielded,
+             .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
+            return .credits
+        }
+    }
 }
 
 // MARK: - Subviews
+
+/// One extra Core output editor: an address field + amount field +
+/// remove control, with a per-row Core badge / inline invalid hint that
+/// mirrors the primary recipient's `AddressTypeBadge`. Factored out of
+/// `SendTransactionView.body` to keep the Form's type-check tractable
+/// (the surrounding view already drives the compiler hard). Holds no
+/// state of its own — the `recipient` binding writes straight back into
+/// the view model's `additionalCoreRecipients` array, and validity is
+/// re-parsed here only for the inline hint (the authoritative gate is
+/// the view model's `coreRecipients`).
+private struct CoreRecipientRow: View {
+    @Binding var recipient: CoreRecipient
+    let network: Network
+    let onRemove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                TextField("Recipient Address", text: $recipient.address)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button(role: .destructive, action: onRemove) {
+                    Image(systemName: "minus.circle.fill")
+                        .foregroundColor(.red)
+                }
+                // `.borderless` so the delete control doesn't make the
+                // whole row tappable and swallow text-field taps — same
+                // reason the primary row's QR button uses it.
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Remove recipient")
+            }
+
+            HStack {
+                TextField("0.00000000", text: $recipient.amountString)
+                    .keyboardType(.decimalPad)
+                Text("DASH")
+                    .foregroundColor(.secondary)
+            }
+
+            // Inline validity hint: show the Core badge once the address
+            // resolves on this network, otherwise a red hint so the user
+            // sees *which* extra row is blocking Send. Empty address shows
+            // nothing (the row is simply incomplete, not wrong).
+            if !recipient.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if isCoreAddress {
+                    AddressTypeBadge(type: .core(Data()))
+                } else {
+                    Text("Not a Core address on this network")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            }
+        }
+    }
+
+    /// Whether this row's trimmed address parses as a `.core` address on
+    /// `network` — same `DashAddress.parse` the view model gates on, so
+    /// the hint can't disagree with the Send button.
+    private var isCoreAddress: Bool {
+        let trimmed = recipient.address
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if case .core = DashAddress.parse(trimmed, network: network).type {
+            return true
+        }
+        return false
+    }
+}
 
 private struct AddressTypeBadge: View {
     let type: DashAddressType

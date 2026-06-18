@@ -31,6 +31,57 @@ public struct ShieldedFundFromAssetLockRecipient: Sendable {
     }
 }
 
+/// Live progress for `seedShieldedPoolNotes(...)`, emitted once before and
+/// once after each `ShieldFromAssetLock` batch.
+public struct SeedShieldedPoolProgress: Sendable {
+    /// 0-based index of the batch about to run / just completed.
+    public let batchIndex: UInt64
+    /// Estimated total number of batches to reach `target` from the count
+    /// observed when seeding started. An estimate only.
+    public let batchesTotalEstimate: UInt64
+    /// Pool note count observed at this checkpoint.
+    public let poolNotesNow: UInt64
+    /// The target total note count seeding is driving toward.
+    public let target: UInt64
+}
+
+/// Box that carries the host's progress handler across the C ABI as an
+/// opaque context pointer. Retained for the duration of the FFI call via
+/// `Unmanaged.passRetained` and released in the calling Swift frame.
+///
+/// `@unchecked Sendable`: the only stored value is an `@Sendable` closure,
+/// and the box itself is constructed and consumed entirely inside the
+/// off-actor detached task that drives the FFI call.
+private final class SeedPoolProgressBox: @unchecked Sendable {
+    let handler: @Sendable (SeedShieldedPoolProgress) -> Void
+    init(_ handler: @escaping @Sendable (SeedShieldedPoolProgress) -> Void) {
+        self.handler = handler
+    }
+}
+
+/// C trampoline matching the Rust
+/// `platform_wallet_manager_shielded_seed_pool_notes` progress callback.
+/// Re-materializes the `SeedPoolProgressBox` from the opaque context and
+/// forwards the counters. Called from a background worker thread.
+private func seedPoolProgressTrampoline(
+    context: UnsafeMutableRawPointer?,
+    batchIndex: UInt64,
+    batchesTotalEstimate: UInt64,
+    poolNotesNow: UInt64,
+    target: UInt64
+) {
+    guard let context else { return }
+    let box = Unmanaged<SeedPoolProgressBox>.fromOpaque(context).takeUnretainedValue()
+    box.handler(
+        SeedShieldedPoolProgress(
+            batchIndex: batchIndex,
+            batchesTotalEstimate: batchesTotalEstimate,
+            poolNotesNow: poolNotesNow,
+            target: target
+        )
+    )
+}
+
 extension PlatformWalletManager {
     /// Fund the shielded pool from a Core L1 asset lock, orchestrated
     /// entirely on the Rust side (build asset-lock tx → wait for
@@ -233,6 +284,98 @@ extension PlatformWalletManager {
                         try result.check()
                     }
                 }
+            }
+        }.value
+    }
+
+    /// Seed the shielded pool's anonymity set up to `targetTotalNotes`
+    /// by submitting a series of `ShieldFromAssetLock` (Type 18) batches,
+    /// each adding up to 6 notes (1 real note to the wallet's own default
+    /// shielded address + up to 5 zero-value anonymity-set fillers). 6 is
+    /// `MAX_ACTIONS_PER_BATCH` in rs-platform-wallet's `seed_pool.rs` —
+    /// the most that fits the 20 KiB `max_state_transition_size`, NOT the
+    /// 16-action consensus cap.
+    ///
+    /// **Devnet/testnet only** — the Rust side hard-errors on mainnet
+    /// (`Network.mainnet`). It exists so a freshly-reset devnet can satisfy
+    /// the 250-note outgoing-transition minimum from the example app in one
+    /// action, without a `DRIVE_SHIELDED_SNAPSHOT` genesis ingest.
+    ///
+    /// Batches run serially and each waits for proven execution, so a
+    /// 250-note seed is ~42 batches and can take an hour or more. `progress`
+    /// is invoked before and after each batch with the live counters; it is
+    /// called from a background worker thread, so hop to your own UI executor
+    /// inside the handler if you touch UI state.
+    ///
+    /// - Parameters:
+    ///   - walletId: 32-byte wallet identifier (the same key `bindShielded`
+    ///     uses). Must match the wallet that funds the seeding.
+    ///   - account: shielded BIP44 account whose default address receives
+    ///     each batch's real note (must be bound).
+    ///   - targetTotalNotes: drive the on-chain pool note count up to (at
+    ///     least) this value. A no-op if the pool already has this many.
+    ///   - fundingAccountIndex: Core BIP44 account whose UTXOs fund each
+    ///     per-batch asset lock.
+    ///   - progress: optional live-progress handler (see above).
+    public func seedShieldedPoolNotes(
+        walletId: Data,
+        account: UInt32 = 0,
+        targetTotalNotes: UInt64 = 250,
+        fundingAccountIndex: UInt32 = 0,
+        progress: (@Sendable (SeedShieldedPoolProgress) -> Void)? = nil
+    ) async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes (was \(walletId.count))"
+            )
+        }
+
+        let handle = self.handle
+
+        try await Task.detached(priority: .userInitiated) {
+            // Constructed inside the detached task so nothing crosses back
+            // to the main actor. The `MnemonicResolver` and the progress
+            // box live only for this off-actor frame (same rationale as
+            // `shieldedFundFromAssetLock`'s resolver).
+            let coreSigner = MnemonicResolver()
+            // Box the progress handler (if any) so it crosses the C ABI as
+            // an opaque context. Retained for the FFI call, released after.
+            let progressBox = progress.map { SeedPoolProgressBox($0) }
+
+            return try walletId.withUnsafeBytes { widRaw in
+                guard
+                    let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter(
+                        "walletId baseAddress is nil"
+                    )
+                }
+
+                let ctx: UnsafeMutableRawPointer? = progressBox.map {
+                    Unmanaged.passRetained($0).toOpaque()
+                }
+                defer {
+                    if let ctx { Unmanaged<SeedPoolProgressBox>.fromOpaque(ctx).release() }
+                }
+
+                let result = withExtendedLifetime(coreSigner) {
+                    platform_wallet_manager_shielded_seed_pool_notes(
+                        handle,
+                        widPtr,
+                        account,
+                        targetTotalNotes,
+                        fundingAccountIndex,
+                        coreSigner.handle,
+                        progressBox == nil ? nil : seedPoolProgressTrampoline,
+                        ctx
+                    )
+                }
+                try result.check()
             }
         }.value
     }

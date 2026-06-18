@@ -1,8 +1,9 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
 
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::{QuorumHash, Transaction};
@@ -29,6 +30,7 @@ pub struct SpvRuntime {
     event_manager: Arc<PlatformEventManager>,
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     client: RwLock<Option<SpvClient>>,
+    task: Mutex<Option<JoinHandle<()>>>,
 }
 // TODO: We want it better
 impl SpvRuntime {
@@ -41,6 +43,7 @@ impl SpvRuntime {
             event_manager,
             wallet_manager,
             client: RwLock::new(None),
+            task: Mutex::new(None),
         }
     }
 
@@ -94,9 +97,9 @@ impl SpvRuntime {
         tx: &Transaction,
     ) -> Result<(), PlatformWalletError> {
         let client_guard = self.client.read().await;
-        let client = client_guard
-            .as_ref()
-            .ok_or(PlatformWalletError::SpvNotRunning)?;
+        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
+            "SPV Client not started".to_string(),
+        ))?;
 
         client
             .broadcast_transaction(tx)
@@ -114,9 +117,9 @@ impl SpvRuntime {
         height: u32,
     ) -> Result<[u8; 48], PlatformWalletError> {
         let client_guard = self.client.read().await;
-        let client = client_guard
-            .as_ref()
-            .ok_or(PlatformWalletError::SpvNotRunning)?;
+        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
+            "SPV Client not started".to_string(),
+        ))?;
 
         let llmq_type = LLMQType::from(quorum_type as u8);
         let qh = QuorumHash::from_byte_array(quorum_hash).reverse();
@@ -129,16 +132,15 @@ impl SpvRuntime {
         Ok(*quorum.quorum_entry.quorum_public_key.as_ref())
     }
 
-    /// Run the SPV sync loop until calling [`stop`]. This blocks the current thread.
-    pub async fn run(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
-        tracing::info!("SpvRuntime::run() starting client...");
-        self.start(config).await?;
-        tracing::info!("SpvRuntime::run() client started, entering sync loop");
-
+    /// Drive the sync loop of an already-[`start`]ed client until [`stop`]
+    /// is called
+    async fn run(&self) -> Result<(), PlatformWalletError> {
         let client_guard = self.client.read().await;
         let client = client_guard
             .as_ref()
-            .ok_or(PlatformWalletError::SpvNotRunning)?
+            .ok_or(PlatformWalletError::SpvError(
+                "SPV Client not started".to_string(),
+            ))?
             .clone();
         drop(client_guard);
 
@@ -153,27 +155,63 @@ impl SpvRuntime {
         result
     }
 
-    /// Stop SPV sync gracefully.
+    /// Stop SPV sync gracefully. Unlocks the data dir safely
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
-        let mut client = self.client.write().await;
-        if let Some(c) = client.take() {
-            c.stop()
+        let taken = {
+            let mut client = self.client.write().await;
+            client.take()
+        };
+
+        let stop_result = match taken {
+            Some(c) => c
+                .stop()
                 .await
-                .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+                .map_err(|e| PlatformWalletError::SpvError(e.to_string())),
+            None => Ok(()),
+        };
+
+        let handle = self.task.lock().expect("spv task mutex poisoned").take();
+        if let Some(handle) = handle {
+            let abort = handle.abort_handle();
+            if tokio::time::timeout(std::time::Duration::from_secs(15), handle)
+                .await
+                .is_err()
+            {
+                tracing::warn!(
+                    "SPV stop: background run loop did not unwind within 15s; aborting it"
+                );
+
+                abort.abort();
+            }
         }
-        Ok(())
+
+        stop_result
     }
 
-    /// Spawn `run()` on the current tokio runtime and return immediately.
+    /// Spawn the sync loop of an already-[`start`]ed client on the current
+    /// tokio runtime and return immediately.
     ///
     /// Call [`stop`] to stop it
-    pub fn spawn_in_background(self: &Arc<Self>, config: ClientConfig) {
+    pub fn spawn_run_loop(self: &Arc<Self>) {
+        {
+            let existing = self.task.lock().expect("spv task mutex poisoned");
+            if existing.is_some() {
+                tracing::warn!(
+                    "spawn_in_background called while a task is already running; ignoring"
+                );
+                return;
+            }
+        }
+
         let this = Arc::clone(self);
-        tokio::spawn(async move {
-            if let Err(e) = this.run(config).await {
-                tracing::warn!("SpvRuntime background run exited with error: {}", e);
+
+        let handle = tokio::spawn(async move {
+            if let Err(e) = this.run().await {
+                tracing::warn!("SpvRuntime background run loop exited with error: {}", e);
             }
         });
+
+        *self.task.lock().expect("spv task mutex poisoned") = Some(handle);
     }
 
     /// Get the current sync progress.
@@ -214,9 +252,10 @@ impl SpvRuntime {
     /// The SPV client must be running to perform this operation.
     pub async fn clear_storage(&self) -> Result<(), PlatformWalletError> {
         let client_guard = self.client.read().await;
-        let client = client_guard
-            .as_ref()
-            .ok_or(PlatformWalletError::SpvNotRunning)?;
+        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
+            "SPV Client not started".to_string(),
+        ))?;
+
         client
             .clear_storage()
             .await
@@ -228,9 +267,10 @@ impl SpvRuntime {
     /// The network cannot be changed on a running client.
     pub async fn update_config(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
         let client_guard = self.client.read().await;
-        let client = client_guard
-            .as_ref()
-            .ok_or(PlatformWalletError::SpvNotRunning)?;
+        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
+            "SPV Client not started".to_string(),
+        ))?;
+
         client
             .update_config(config)
             .await

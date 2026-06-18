@@ -11,6 +11,10 @@ struct LocalDataContractsView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showError = false
+    /// Contract whose details sheet is presented. Driven from the row
+    /// tap and presented at this stable `List` level (not per-row) so
+    /// the sheet survives `@Query` re-renders.
+    @State private var selectedContract: PersistentDataContract?
 
     @Environment(\.modelContext) private var modelContext
 
@@ -37,7 +41,9 @@ struct LocalDataContractsView: View {
                 .listRowInsets(EdgeInsets())
             } else {
                 ForEach(dataContracts) { contract in
-                    DataContractRow(contract: contract)
+                    DataContractRow(contract: contract) {
+                        selectedContract = contract
+                    }
                 }
                 .onDelete(perform: deleteContracts)
             }
@@ -51,6 +57,9 @@ struct LocalDataContractsView: View {
                 }
                 .disabled(isLoading)
             }
+        }
+        .sheet(item: $selectedContract) { contract in
+            DataContractDetailsView(contract: contract)
         }
         .sheet(isPresented: $showingLoadContract) {
             LoadDataContractView(isLoading: $isLoading)
@@ -80,7 +89,17 @@ struct LocalDataContractsView: View {
 
 struct DataContractRow: View {
     let contract: PersistentDataContract
-    @State private var showingDetails = false
+    /// Tap handler supplied by the parent list. The details sheet is
+    /// presented from the *stable* list container (see
+    /// `ContractsTabView` / `LocalDataContractsView`), NOT from inside
+    /// this row. A `.sheet` owned by a row lives inside the list's
+    /// `ForEach`; when the `@Query` re-runs (continuous SwiftData
+    /// writes from sync invalidate it) the row struct is recreated /
+    /// reordered, tearing the sheet's content — and any view pushed
+    /// inside it — down. Hoisting the sheet to the stable parent keeps
+    /// the presentation (and a deep drill-down like the document-create
+    /// flow) alive across list re-renders.
+    var onTap: () -> Void = {}
 
     var displayName: String {
         // Check if this is a token-only contract
@@ -102,7 +121,7 @@ struct DataContractRow: View {
     }
 
     var body: some View {
-        Button(action: { showingDetails = true }) {
+        Button(action: onTap) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(displayName)
@@ -127,7 +146,15 @@ struct DataContractRow: View {
 
                     Spacer()
 
-                    Text("Last used: \(contract.lastAccessedAt, style: .relative)")
+                    // Statically-computed relative string. A
+                    // `Text(date, style: .relative)` here re-renders on
+                    // a sub-minute cadence (~1s for "N seconds ago"),
+                    // which churns the whole `@Query` contracts list
+                    // every second — re-creating any pushed
+                    // `DataContractDetailsView` and popping its
+                    // drill-downs (e.g. the document-create flow). A
+                    // plain string does not auto-refresh.
+                    Text("Last used: \(AppDate.relative(contract.lastAccessedAt))")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -135,9 +162,6 @@ struct DataContractRow: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(PlainButtonStyle())
-        .sheet(isPresented: $showingDetails) {
-            DataContractDetailsView(contract: contract)
-        }
     }
 }
 

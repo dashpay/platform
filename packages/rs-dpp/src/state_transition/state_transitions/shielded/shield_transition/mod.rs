@@ -1,3 +1,4 @@
+pub mod accessors;
 pub mod methods;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;

@@ -21,7 +21,7 @@ use crate::ProtocolError;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
-use super::{build_spend_bundle, serialize_authorized_bundle, OrchardProver, SpendableNote};
+use super::{build_spend_bundle_with, serialize_authorized_bundle, OrchardProver, SpendableNote};
 
 /// Output of [`build_identity_create_from_shielded_pool_transition`]: everything the SDK's
 /// `IdentityCreateFromShieldedPool::identity_create_from_shielded_pool` broadcast helper needs.
@@ -62,9 +62,11 @@ pub struct IdentityCreateFromShieldedPoolBuildResult {
 /// 3. a per-key proof-of-possession signature over the transition's `signable_bytes`, proving the
 ///    creator holds every key being registered (mirrors `IdentityCreate`).
 ///
-/// The new identity id is derived from the SORTED spend nullifiers
-/// ([`derive_identity_id_from_actions`]) — fully determined by which notes are spent, so it is
-/// known before the bundle is built and the same value is re-derived and checked at consensus.
+/// The new identity id is derived from the SORTED **published** action nullifiers
+/// ([`derive_identity_id_from_actions`]) — including any padding action's dummy nullifier
+/// (`BundleType::DEFAULT` pads single-spend bundles to a 2-action minimum), so it is only known
+/// once the bundle's action set is fixed. It is derived inside the bundle-build hook, bound into
+/// the Orchard sighash there, and the same value is re-derived and checked at consensus.
 ///
 /// # Parameters
 /// - `public_keys` — the new identity's public keys, each paired with its
@@ -169,29 +171,18 @@ where
         )));
     }
 
-    // The id is derived from the SORTED spend nullifiers, which must be known BEFORE signing
-    // because the id is part of the Orchard sighash. The nullifier of a spend is
-    // `Note::nullifier(fvk)`, independent of bundle randomness, so compute them directly from the
-    // spent notes — the same values the bundle will publish and consensus will re-derive from.
-    let nullifiers: Vec<[u8; 32]> = spends
-        .iter()
-        .map(|s| s.note.nullifier(fvk).to_bytes())
-        .collect();
-    let identity_id = identity_id_from_nullifiers(&nullifiers);
-
-    // Build the in-creation key list (transition order) and bind it — together with the id and the
-    // denomination — into the Orchard sighash.
+    // Build the in-creation key list (transition order) up front — it is bound, together with the
+    // id and the denomination, into the Orchard sighash.
     let in_creation_keys: Vec<IdentityPublicKeyInCreation> =
         public_keys.iter().map(|(_, c)| c.clone()).collect();
-    let extra_sighash_data = crate::shielded::identity_create_from_shielded_extra_sighash_data(
-        &identity_id.to_buffer(),
-        denomination,
-        &send_to_address_on_creation_failure,
-        &in_creation_keys,
-        platform_version,
-    )?;
 
-    let bundle = build_spend_bundle(
+    // The id is `double_sha256(sorted PUBLISHED nullifiers)`. The published set is only known once
+    // the bundle is built: `BundleType::DEFAULT` pads a single-spend bundle with a dummy action
+    // whose random nullifier goes on the wire, and consensus re-derives the id over ALL action
+    // nullifiers (dummies are indistinguishable by design). So derive the id inside the
+    // post-build hook — after the action set is fixed, before the sighash is bound.
+    let mut bound_identity_id: Option<Identifier> = None;
+    let bundle = build_spend_bundle_with(
         spends,
         change_address,
         change_amount,
@@ -200,8 +191,24 @@ where
         ask,
         anchor,
         prover,
-        &extra_sighash_data,
+        |published_nullifiers| {
+            let id = identity_id_from_nullifiers(published_nullifiers);
+            let data = crate::shielded::identity_create_from_shielded_extra_sighash_data(
+                &id.to_buffer(),
+                denomination,
+                &send_to_address_on_creation_failure,
+                &in_creation_keys,
+                platform_version,
+            )?;
+            bound_identity_id = Some(id);
+            Ok(data)
+        },
     )?;
+    let identity_id = bound_identity_id.ok_or_else(|| {
+        ProtocolError::ShieldedBuildError(
+            "identity id was not derived during bundle build".to_string(),
+        )
+    })?;
 
     let sb = serialize_authorized_bundle(&bundle);
 
@@ -268,4 +275,227 @@ where
         identity_id,
         predicted_fee: fee,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::address_funds::AddressWitness;
+    use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use crate::identity::{KeyType, Purpose, SecurityLevel};
+    use crate::shielded::builder::test_helpers::{
+        test_orchard_address, test_spendable_note, TestProver,
+    };
+    use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+    use grovedb_commitment_tree::{
+        ExtractedNoteCommitment, Hashable, MerkleHashOrchard, MerklePath, SpendingKey,
+        NOTE_COMMITMENT_TREE_DEPTH,
+    };
+    use platform_value::BinaryData;
+
+    /// A dummy PoP signer producing a fixed 65-byte signature. The builder fills (and does not
+    /// verify) the proof-of-possession signatures, so a stub is enough to exercise the pipeline.
+    #[derive(Debug)]
+    struct DummySigner;
+
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for DummySigner {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            Ok(BinaryData::new(vec![0u8; 65]))
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            Err(ProtocolError::ShieldedBuildError(
+                "identity PoP signer never creates address witnesses".to_string(),
+            ))
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    /// One AUTHENTICATION/MASTER ECDSA key in both forms the builder takes.
+    fn key_pair(id: u32) -> (IdentityPublicKey, IdentityPublicKeyInCreation) {
+        let public = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0xAB; 33]),
+            disabled_at: None,
+        });
+        let in_creation = IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+            id,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            read_only: false,
+            data: BinaryData::new(vec![0xAB; 33]),
+            signature: BinaryData::new(vec![]),
+        });
+        (public, in_creation)
+    }
+
+    /// 0.1 DASH in credits — the smallest member of the versioned exit-denomination set.
+    const DENOMINATION: u64 = 10_000_000_000;
+
+    /// The padded-bundle regression test for the dummy-nullifier bug: a SINGLE-spend bundle is
+    /// padded by `BundleType::DEFAULT` to the 2-action minimum, and the padding action's random
+    /// dummy nullifier is published on the wire. The identity id MUST be derived from the FULL
+    /// published set (what consensus re-derives), not from the real spends alone — pre-fix this
+    /// build failed its own post-proving id-consistency check on every 1-note spend.
+    #[tokio::test]
+    async fn single_spend_padded_bundle_derives_id_from_published_nullifiers() {
+        let platform_version = PlatformVersion::latest();
+        let sk = SpendingKey::from_bytes([42u8; 32]).expect("valid spending key");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+        let change_address = test_orchard_address();
+
+        // A valid (note, path, anchor) triple: the anchor is the root the witness computes over
+        // the note's commitment — the same trick `extract_spends_and_anchor` uses in production.
+        let spend = test_spendable_note(12_000_000_000);
+        let cmx = ExtractedNoteCommitment::from(spend.note.commitment());
+        let anchor = spend.merkle_path.root(cmx);
+        let real_nullifier = spend.note.nullifier(&fvk).to_bytes();
+
+        let result = build_identity_create_from_shielded_pool_transition(
+            vec![key_pair(0)],
+            DENOMINATION,
+            PlatformAddress::P2pkh([0u8; 20]),
+            vec![spend],
+            &change_address,
+            &fvk,
+            &ask,
+            anchor,
+            &TestProver,
+            &DummySigner,
+            [0u8; 36],
+            platform_version,
+        )
+        .await
+        .expect("a single-spend (padded) build must succeed");
+
+        assert_eq!(
+            result.bundle.actions.len(),
+            2,
+            "a single spend must be padded to the 2-action minimum"
+        );
+        assert!(
+            result
+                .bundle
+                .actions
+                .iter()
+                .any(|action| action.nullifier == real_nullifier),
+            "the real spend's nullifier must be among the published actions"
+        );
+        // The id must equal the consensus re-derivation over ALL published nullifiers…
+        assert_eq!(
+            result.identity_id,
+            derive_identity_id_from_actions(&result.bundle.actions),
+            "identity id must match the consensus derivation over the published actions"
+        );
+        // …and must NOT equal the real-spends-only derivation (the pre-fix behavior): the padding
+        // action's dummy nullifier participates.
+        assert_ne!(
+            result.identity_id,
+            identity_id_from_nullifiers(&[real_nullifier]),
+            "the padding action's dummy nullifier must participate in the id derivation"
+        );
+        assert!(
+            result.predicted_fee < DENOMINATION,
+            "predicted fee must leave the new identity a positive balance"
+        );
+    }
+
+    /// Complement: with two real spends (no padding needed), the published set IS the real set,
+    /// so the id equals the real-nullifiers-only derivation.
+    #[tokio::test]
+    async fn two_spend_unpadded_bundle_id_matches_real_nullifier_derivation() {
+        let platform_version = PlatformVersion::latest();
+        let sk = SpendingKey::from_bytes([42u8; 32]).expect("valid spending key");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+        let change_address = test_orchard_address();
+
+        // Two distinct notes (different values → different commitments/nullifiers) witnessed in
+        // one two-leaf tree: each path's level-0 sibling is the other leaf, upper siblings shared,
+        // so both witnesses compute the SAME root — a consistent shared anchor.
+        let note_a = test_spendable_note(6_000_000_000).note;
+        let note_b = test_spendable_note(7_000_000_000).note;
+        let cmx_a = ExtractedNoteCommitment::from(note_a.commitment());
+        let cmx_b = ExtractedNoteCommitment::from(note_b.commitment());
+
+        let mut auth_path_a = [MerkleHashOrchard::empty_leaf(); NOTE_COMMITMENT_TREE_DEPTH];
+        auth_path_a[0] = MerkleHashOrchard::from_cmx(&cmx_b);
+        let mut auth_path_b = [MerkleHashOrchard::empty_leaf(); NOTE_COMMITMENT_TREE_DEPTH];
+        auth_path_b[0] = MerkleHashOrchard::from_cmx(&cmx_a);
+        let path_a = MerklePath::from_parts(0, auth_path_a);
+        let path_b = MerklePath::from_parts(1, auth_path_b);
+
+        let anchor = path_a.root(cmx_a);
+        assert_eq!(
+            anchor.to_bytes(),
+            path_b.root(cmx_b).to_bytes(),
+            "both witnesses must compute the same anchor"
+        );
+
+        let nf_a = note_a.nullifier(&fvk).to_bytes();
+        let nf_b = note_b.nullifier(&fvk).to_bytes();
+        let spends = vec![
+            SpendableNote {
+                note: note_a,
+                merkle_path: path_a,
+            },
+            SpendableNote {
+                note: note_b,
+                merkle_path: path_b,
+            },
+        ];
+
+        let result = build_identity_create_from_shielded_pool_transition(
+            vec![key_pair(0)],
+            DENOMINATION,
+            PlatformAddress::P2pkh([0u8; 20]),
+            spends,
+            &change_address,
+            &fvk,
+            &ask,
+            anchor,
+            &TestProver,
+            &DummySigner,
+            [0u8; 36],
+            platform_version,
+        )
+        .await
+        .expect("a two-spend build must succeed");
+
+        assert_eq!(
+            result.bundle.actions.len(),
+            2,
+            "two spends + one change output need no padding"
+        );
+        assert_eq!(
+            result.identity_id,
+            derive_identity_id_from_actions(&result.bundle.actions),
+            "identity id must match the consensus derivation over the published actions"
+        );
+        assert_eq!(
+            result.identity_id,
+            identity_id_from_nullifiers(&[nf_a, nf_b]),
+            "with no padding, the published set is exactly the real spends' nullifiers"
+        );
+    }
 }

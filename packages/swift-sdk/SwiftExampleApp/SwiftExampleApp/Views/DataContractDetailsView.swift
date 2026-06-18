@@ -40,7 +40,15 @@ struct DataContractDetailsView: View {
     }
 
     var body: some View {
-        NavigationView {
+        // `NavigationStack` + value-based navigation (rather than the
+        // deprecated `NavigationView` + `NavigationLink(destination:)`).
+        // Destination-based links inside a `ForEach` get torn down and
+        // popped whenever the parent re-renders; a re-render of the
+        // contracts list (or this view) would otherwise pop a pushed
+        // drill-down — and dismiss any sheet presented from it, e.g.
+        // the document-create flow. Value-based routes survive a
+        // parent re-render.
+        NavigationStack {
             List {
                 contractConfigurationSection
                 contractInfoSection
@@ -52,6 +60,26 @@ struct DataContractDetailsView: View {
             }
             .navigationTitle("Contract Details")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: PersistentToken.self) { token in
+                TokenDetailsView(token: token)
+            }
+            .navigationDestination(for: PersistentDocumentType.self) { docType in
+                DocumentTypeDetailsView(documentType: docType)
+            }
+            .navigationDestination(for: PersistentDocument.self) { document in
+                DocumentStorageDetailView(record: document)
+            }
+            .navigationDestination(for: ParsedGroup.self) { group in
+                GroupDetailView(
+                    contractId: contract.id,
+                    position: group.position,
+                    members: group.members,
+                    requiredPower: group.requiredPower
+                )
+            }
+            .navigationDestination(for: OwnerRoute.self) { route in
+                IdentityDetailView(identityId: route.identityId)
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
@@ -166,7 +194,7 @@ struct DataContractDetailsView: View {
         if let tokens = contract.tokens, !tokens.isEmpty {
             Section("Tokens (\(tokens.count))") {
                 ForEach(tokens.sorted(by: { $0.position < $1.position }), id: \.id) { token in
-                    NavigationLink(destination: TokenDetailsView(token: token)) {
+                    NavigationLink(value: token) {
                         TokenRowView(token: token)
                     }
                 }
@@ -179,7 +207,7 @@ struct DataContractDetailsView: View {
         if let documentTypes = contract.documentTypes, !documentTypes.isEmpty {
             Section("Document Types (\(documentTypes.count))") {
                 ForEach(documentTypes.sorted(by: { $0.name < $1.name }), id: \.id) { docType in
-                    NavigationLink(destination: DocumentTypeDetailsView(documentType: docType)) {
+                    NavigationLink(value: docType) {
                         DocumentTypeRowView(docType: docType)
                     }
                 }
@@ -198,7 +226,7 @@ struct DataContractDetailsView: View {
     @ViewBuilder
     private var ownerRow: some View {
         if let owner = contract.ownerIdentity {
-            NavigationLink(destination: IdentityDetailView(identityId: owner.identityId)) {
+            NavigationLink(value: OwnerRoute(identityId: owner.identityId)) {
                 HStack {
                     Text("Owner:")
                         .foregroundColor(.secondary)
@@ -227,7 +255,7 @@ struct DataContractDetailsView: View {
             let sortedDocs = contract.documents.sorted(by: { $0.documentId < $1.documentId })
             Section("Documents (\(contract.documents.count))") {
                 ForEach(sortedDocs, id: \.documentId) { document in
-                    NavigationLink(destination: DocumentStorageDetailView(record: document)) {
+                    NavigationLink(value: document) {
                         DocumentInstanceRowView(document: document)
                     }
                 }
@@ -244,14 +272,7 @@ struct DataContractDetailsView: View {
         if let parsedGroups = parseGroups(), !parsedGroups.isEmpty {
             Section("Groups (\(parsedGroups.count))") {
                 ForEach(parsedGroups, id: \.position) { group in
-                    NavigationLink(
-                        destination: GroupDetailView(
-                            contractId: contract.id,
-                            position: group.position,
-                            members: group.members,
-                            requiredPower: group.requiredPower
-                        )
-                    ) {
+                    NavigationLink(value: group) {
                         GroupRowView(
                             position: group.position,
                             memberCount: group.members.count,
@@ -303,10 +324,20 @@ struct DataContractDetailsView: View {
     /// Flat group entry used by `groupsSection` / `GroupDetailView`.
     /// Decoupled from the on-row `[String: Any]` shape so the
     /// section view doesn't have to re-parse on every row render.
-    private struct ParsedGroup {
+    /// `Hashable` so it can drive value-based `.navigationDestination`
+    /// (synthesized — `GroupMember` is already `Hashable`).
+    private struct ParsedGroup: Hashable {
         let position: Int
         let requiredPower: Int
         let members: [GroupMember]
+    }
+
+    /// Value-based navigation route for the owner-identity drill-down.
+    /// A thin wrapper around the owner's `identityId` so the
+    /// `.navigationDestination(for:)` route type is unambiguous (a bare
+    /// `Data` value could collide with any other `Data`-keyed route).
+    private struct OwnerRoute: Hashable {
+        let identityId: Data
     }
 
     /// Decode `contract.groups` (`[String: Any]?`) into a sorted

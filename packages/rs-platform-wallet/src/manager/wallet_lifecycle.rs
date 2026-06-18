@@ -125,7 +125,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     #[allow(clippy::type_complexity)]
     async fn register_wallet(
         &self,
-        wallet: Wallet,
+        mut wallet: Wallet,
         birth_height_override: Option<u32>,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
         // NOTE: the wallet id is NETWORK-SCOPED by construction.
@@ -240,6 +240,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             identity_manager: crate::wallet::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
         };
+
+        wallet.downgrade_to_external_signable();
 
         // Insert into WalletManager. A duplicate (same network-scoped
         // wallet id already registered) surfaces as the typed

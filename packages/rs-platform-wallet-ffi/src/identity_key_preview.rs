@@ -25,18 +25,57 @@
 //!
 //! The Swift caller knows nothing about any of those — it just reads
 //! the array back out.
+//!
+//! # Key source: chosen by wallet capability
+//!
+//! The derivation source is selected by the in-process wallet's shape,
+//! NOT by whether a resolver handle was supplied — the resolver is a
+//! *capability* the Rust side consults only when it can't derive
+//! locally, not a command that forces the resolver path:
+//!
+//! - **In-process wallet holds resident private keys** (`WalletType::
+//!   Mnemonic` / `Seed` / `ExtendedPrivKey` — NOT external-signable and
+//!   NOT watch-only): derive every row from the resident wallet under a
+//!   single read lock held for the loop's duration (the historical
+//!   path). The resolver handle is never touched, which also skips a
+//!   pointless iOS Keychain read. This keeps `createWallet(seed:)` /
+//!   raw-seed wallets working even when no BIP-39 mnemonic was ever
+//!   persisted to `WalletStorage`.
+//! - **In-process wallet is external-signable / watch-only:** its seed
+//!   lives in iOS Keychain, NOT in process, so the resident derive
+//!   would fail with `External signable wallet has no private key`. In
+//!   that case, if `mnemonic_resolver_handle` is non-null, resolve the
+//!   wallet's mnemonic on demand via the Swift-owned
+//!   [`MnemonicResolverHandle`] (keyed by the wallet handle's own
+//!   `wallet_id`), build the master `ExtendedPrivKey`, and derive each
+//!   row from that master via
+//!   [`derive_ecdsa_identity_auth_keypair_from_master`] — the same
+//!   derive the rescan-via-resolver and the registration paths use.
+//!   The mnemonic / seed / master scalar live in `Zeroizing` buffers
+//!   (the master's `private_key` is explicitly `non_secure_erase`d —
+//!   `ExtendedPrivKey` has no `Drop`) and are scrubbed before this
+//!   function returns. This is the path the iOS app takes. If the
+//!   resolver is null for such a wallet, the call returns an error
+//!   hinting that a mnemonic resolver handle is required for this
+//!   wallet shape.
 
 use std::ffi::CString;
 use std::os::raw::c_char;
 use std::ptr;
 
 use dashcore::PrivateKey as DashPrivateKey;
+use key_wallet::bip32::ExtendedPrivKey;
+use key_wallet::Wallet;
+use platform_wallet::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master;
 use platform_wallet::{derive_identity_auth_keypair, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX};
+use zeroize::Zeroizing;
 
 use crate::error::*;
 use crate::handle::*;
-use crate::identity_keys_from_mnemonic::zeroize_and_free_row;
+use crate::identity_keys_from_mnemonic::{resolve_master_from_resolver, zeroize_and_free_row};
+use crate::types::Network;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
+use rs_sdk_ffi::MnemonicResolverHandle;
 
 /// One identity-registration-key preview row.
 ///
@@ -123,8 +162,26 @@ impl IdentityKeyPreviewsFFI {
 /// keypairs this wallet would probe during a discovery scan,
 /// starting at identity index `start_index`.
 ///
+/// The derivation source is chosen by the in-process wallet's
+/// capability (see the module docs): resident-key wallets derive
+/// locally and never touch the resolver; external-signable / watch-only
+/// wallets consult the resolver. The resolver is only *needed* for the
+/// latter shape.
+///
 /// # Parameters
 /// - `wallet_handle` — platform-wallet handle.
+/// - `mnemonic_resolver_handle` — Swift-owned
+///   [`MnemonicResolverHandle`], consulted **only** when the in-process
+///   wallet lacks resident private keys (external-signable / watch-only
+///   — the iOS Keychain-backed `WalletType::ExternalSignable` shape
+///   whose seed is not in process). For such a wallet, when non-null
+///   the mnemonic is resolved on demand (keyed by the wallet handle's
+///   own `wallet_id`), a master `ExtendedPrivKey` is built, and each row
+///   is derived from that master; when null the call errors with a hint
+///   that a resolver handle is required for this wallet shape. For a
+///   wallet that holds resident private keys this argument is ignored
+///   and the rows are derived from the in-process wallet (the
+///   historical path).
 /// - `start_index` — first identity index to derive.
 /// - `count_or_neg1` — number of consecutive identity indices to
 ///   derive. Pass `< 0` to use the Rust default
@@ -137,10 +194,14 @@ impl IdentityKeyPreviewsFFI {
 ///
 /// # Safety
 /// `wallet_handle` must come from the platform-wallet handle
-/// registry. `out_previews` must be a valid, writable pointer.
+/// registry. `mnemonic_resolver_handle`, when non-null, must come
+/// from [`rs_sdk_ffi::dash_sdk_mnemonic_resolver_create`] and remain
+/// valid for the duration of the call. `out_previews` must be a
+/// valid, writable pointer.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
     wallet_handle: Handle,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     start_index: u32,
     count_or_neg1: i32,
     out_previews: *mut IdentityKeyPreviewsFFI,
@@ -164,77 +225,265 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
     }
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        // Synchronous read of the wallet manager — FFI callers come
-        // in on non-tokio threads.
-        let wm = wallet.wallet_manager().blocking_read();
-        let key_wallet = wm.get_wallet(&wallet.wallet_id()).ok_or_else(|| {
-            PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidHandle,
-                "Wallet not found in wallet manager",
+        // Resolve the network from the wallet handle. `wallet.network()`
+        // returns `dashcore::Network`, the type both `new_master` and the
+        // derive helpers use.
+        let network: Network = wallet.network();
+
+        // Per-row materials: (path string, secp256k1 public key bytes,
+        // 32-byte private scalar). Both key sources funnel through this
+        // so the row-building (WIF, pubkey buffer, zeroize-on-error) is
+        // written exactly once.
+        struct RowMaterial {
+            path: String,
+            public_key: [u8; 33],
+            private_key: Zeroizing<[u8; 32]>,
+        }
+
+        // Build one heap-detached FFI row from already-derived material.
+        // All fallible work runs before any `into_raw` / `mem::forget`
+        // so an early `?` cleans up via Drop.
+        let build_row = |identity_index: u32,
+                         material: RowMaterial|
+         -> Result<IdentityKeyPreviewFFI, PlatformWalletFFIResult> {
+            let path_cstring = CString::new(material.path)?;
+
+            // WIF: network-aware (mainnet → 0xCC, testnet/devnet/
+            // regtest → 0xEF) and compressed. Same construction
+            // `key_wallet::derive_private_key_as_wif` performs.
+            let secret_key = dashcore::secp256k1::SecretKey::from_slice(
+                material.private_key.as_ref(),
             )
-        })?;
-        let network = key_wallet.network;
-
-        // Build a single row. All fallible work runs first; raw-
-        // pointer detachment (`into_raw`, `mem::forget`) happens at
-        // the very end so an early `?` cleans up via Drop.
-        let build_row =
-            |identity_index: u32| -> Result<IdentityKeyPreviewFFI, PlatformWalletFFIResult> {
-                let (path, ext_priv, public_key) = derive_identity_auth_keypair(
-                    key_wallet,
-                    network,
-                    identity_index,
-                    MASTER_KEY_INDEX,
-                )?;
-
-                let path_cstring = CString::new(path.to_string())?;
-
-                // WIF: network-aware (mainnet → 0xCC, testnet/devnet/
-                // regtest → 0xEF) and compressed. Same construction
-                // `key_wallet::derive_private_key_as_wif` performs.
-                let dash_private = DashPrivateKey {
-                    compressed: true,
-                    network,
-                    inner: ext_priv.private_key,
-                };
-                let wif_cstring = CString::new(dash_private.to_wif())?;
-
-                // Compressed secp256k1 pubkey is always 33 bytes.
-                let pub_bytes: [u8; 33] = public_key.serialize();
-                let mut pub_box: Box<[u8]> = pub_bytes.to_vec().into_boxed_slice();
-                let pub_ptr = pub_box.as_mut_ptr();
-                let pub_len = pub_box.len();
-                std::mem::forget(pub_box);
-
-                Ok(IdentityKeyPreviewFFI {
-                    identity_index,
-                    derivation_path: path_cstring.into_raw(),
-                    public_key: pub_ptr,
-                    public_key_len: pub_len,
-                    private_key_wif: wif_cstring.into_raw(),
-                    private_key_bytes: ext_priv.private_key.secret_bytes(),
-                })
+            .map_err(|e| {
+                PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
+                    format!("SecretKey::from_slice failed: {e}"),
+                )
+            })?;
+            let dash_private = DashPrivateKey {
+                compressed: true,
+                network,
+                inner: secret_key,
             };
+            let wif_cstring = CString::new(dash_private.to_wif())?;
 
-        let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(count as usize);
-        for offset in 0..count {
-            // Saturating add: the discovery scan caps identity
-            // indices well below u32::MAX in practice; if a caller
-            // intentionally passes near-max values we simply repeat
-            // the cap rather than wrap.
-            let identity_index = start_index.saturating_add(offset);
-            match build_row(identity_index) {
-                Ok(row) => rows.push(row),
-                Err(e) => {
-                    // Free everything we've successfully appended so
-                    // far — we never hand a partial array back.
-                    // TODO: Implement Drop instead of manually drop so ? op is usable
-                    free_rows(rows);
-                    return Err(e);
+            // Compressed secp256k1 pubkey is always 33 bytes.
+            let mut pub_box: Box<[u8]> = material.public_key.to_vec().into_boxed_slice();
+            let pub_ptr = pub_box.as_mut_ptr();
+            let pub_len = pub_box.len();
+            std::mem::forget(pub_box);
+
+            Ok(IdentityKeyPreviewFFI {
+                identity_index,
+                derivation_path: path_cstring.into_raw(),
+                public_key: pub_ptr,
+                public_key_len: pub_len,
+                private_key_wif: wif_cstring.into_raw(),
+                private_key_bytes: *material.private_key,
+            })
+        };
+
+        // Borrowed per-row key source. The two derivation paths are
+        // symmetric in shape: both hand `derive_material` a borrowed
+        // source and get back `RowMaterial`. The resident-wallet
+        // variant borrows the `&Wallet` looked up under a read guard
+        // re-acquired for the loop's duration (the derive is pure
+        // compute, so holding it across the loop is fine — but the guard
+        // is NEVER held across the Swift resolver callback, see below);
+        // the master variant borrows the resolved master xpriv and needs
+        // no guard at all.
+        enum DeriveSource<'a> {
+            /// In-process wallet holds resident private keys — derive
+            /// each row directly from it (no per-row lock acquisition).
+            Resident(&'a Wallet),
+            /// External-signable / watch-only wallet — derive each row
+            /// from the master xpriv resolved from the wallet's mnemonic.
+            Master(&'a ExtendedPrivKey),
+        }
+
+        // Derive one row's material from the active borrowed key source.
+        let derive_material = |identity_index: u32,
+                               source: &DeriveSource|
+         -> Result<RowMaterial, PlatformWalletFFIResult> {
+            match source {
+                DeriveSource::Master(master) => {
+                    // External-signable / watch-only path: pure derive
+                    // from the resolved master, identical to the
+                    // registration / rescan-via-resolver derive.
+                    let derived = derive_ecdsa_identity_auth_keypair_from_master(
+                        master,
+                        network,
+                        identity_index,
+                        MASTER_KEY_INDEX,
+                    )?;
+                    Ok(RowMaterial {
+                        path: derived.derivation_path.to_string(),
+                        public_key: derived.public_key,
+                        private_key: derived.private_key,
+                    })
+                }
+                DeriveSource::Resident(key_wallet) => {
+                    // Resident-wallet path: derive from the in-process
+                    // wallet. The read guard + `&Wallet` were re-acquired
+                    // once before the loop (see below) so this is a
+                    // pure secp256k1 pass with no per-row locking.
+                    let (path, ext_priv, public_key) = derive_identity_auth_keypair(
+                        key_wallet,
+                        network,
+                        identity_index,
+                        MASTER_KEY_INDEX,
+                    )?;
+                    Ok(RowMaterial {
+                        path: path.to_string(),
+                        public_key: public_key.serialize(),
+                        private_key: Zeroizing::new(ext_priv.private_key.secret_bytes()),
+                    })
                 }
             }
-        }
-        Ok(rows)
+        };
+
+        // Everything from here on can fail with a `PlatformWalletFFIResult`;
+        // run it in a closure returning `Result<Vec<_>, _>`.
+        //
+        // Two-phase locking, mirroring the discovery path
+        // (`platform_wallet_discover_identities`):
+        //   1. A SHORT read-guard block scoped to the capability check
+        //      only — read the wallet's shape, capture
+        //      `wallet_has_resident_keys`, then DROP the guard.
+        //   2. The wallet-manager read guard is NEVER held across the
+        //      Swift resolver callback (`resolve_master_from_resolver`
+        //      synchronously re-enters Swift and reads the iOS Keychain,
+        //      which can stall on biometric unlock) — invariant called
+        //      out in review.
+        //   3. Only the resident branch re-acquires the guard, and only
+        //      for the loop's duration (its `derive_material` borrows
+        //      `&Wallet`). The master branch holds no guard past the
+        //      capability check.
+        let build_result = (|| -> Result<Vec<IdentityKeyPreviewFFI>, PlatformWalletFFIResult> {
+            // Phase 1 — short capability-check guard. Read the wallet's
+            // shape under a read-lock and DROP it before any resolver
+            // interaction. Resident private keys (Mnemonic / Seed /
+            // ExtendedPrivKey) → historical in-process derive; the
+            // resolver is never touched (also skips a pointless iOS
+            // Keychain read). Otherwise the master xpriv resolved from
+            // the wallet's mnemonic is required.
+            let wallet_has_resident_keys = {
+                let wm = wallet.wallet_manager().blocking_read();
+                match wm.get_wallet(&wallet.wallet_id()) {
+                    Some(key_wallet) => {
+                        !key_wallet.is_external_signable() && !key_wallet.is_watch_only()
+                    }
+                    None => {
+                        return Err(PlatformWalletFFIResult::err(
+                            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                            "Wallet not found in wallet manager",
+                        ));
+                    }
+                }
+            };
+
+            // For the resolver path, resolve the mnemonic once and build
+            // the master xpriv up front (NO guard held — see the
+            // two-phase note above); the per-row derive then reuses it.
+            // Self-pin on the wallet handle's own `wallet_id` (same
+            // rationale as `dash_sdk_derive_identity_key_at_slot_with_resolver`).
+            //
+            // `master_opt` outlives `source` below (which borrows it),
+            // and its inner scalar is wiped just before this closure
+            // returns — see the `non_secure_erase` at the bottom.
+            let mut master_opt: Option<ExtendedPrivKey> = None;
+            if !wallet_has_resident_keys {
+                if mnemonic_resolver_handle.is_null() {
+                    return Err(PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorWalletOperation,
+                        "this wallet has no resident private keys (external-signable / \
+                         watch-only); a mnemonic resolver handle is required to preview \
+                         its identity-registration keys",
+                    ));
+                }
+                let wallet_id = wallet.wallet_id();
+                // SAFETY: handle is non-null (checked) and the caller's
+                // safety contract guarantees it came from
+                // `dash_sdk_mnemonic_resolver_create`.
+                master_opt = Some(unsafe {
+                    resolve_master_from_resolver(mnemonic_resolver_handle, &wallet_id, network)?
+                });
+            }
+
+            // Phase 3 — derive + build every row from the borrowed key
+            // source, inside a block so both the borrowed `source` and
+            // the resident-path read guard release at the block's end —
+            // BEFORE we wipe the resolved master's scalar below. The
+            // master branch needs no guard. The resident branch
+            // re-acquires the read guard and re-looks-up the `&Wallet`,
+            // both living through the loop via a guard binding so the
+            // borrow outlives `derive_material`'s calls.
+            //
+            // On any failure we free the rows appended so far and capture
+            // the error — we must still wipe the master's scalar below,
+            // so the loop result is captured rather than `?`-returned.
+            let loop_result = {
+                let mut loop_guard = None;
+                let source = match master_opt.as_ref() {
+                    Some(master) => DeriveSource::Master(master),
+                    None => {
+                        let wm = loop_guard.insert(wallet.wallet_manager().blocking_read());
+                        let key_wallet = wm.get_wallet(&wallet.wallet_id()).ok_or_else(|| {
+                            PlatformWalletFFIResult::err(
+                                PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                                "Wallet not found in wallet manager",
+                            )
+                        })?;
+                        DeriveSource::Resident(key_wallet)
+                    }
+                };
+
+                (|| -> Result<Vec<IdentityKeyPreviewFFI>, PlatformWalletFFIResult> {
+                    let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(count as usize);
+                    for offset in 0..count {
+                        // Saturating add: the discovery scan caps identity
+                        // indices well below u32::MAX in practice; if a caller
+                        // intentionally passes near-max values we simply repeat
+                        // the cap rather than wrap.
+                        let identity_index = start_index.saturating_add(offset);
+                        let material = match derive_material(identity_index, &source) {
+                            Ok(m) => m,
+                            Err(e) => {
+                                free_rows(rows);
+                                return Err(e);
+                            }
+                        };
+                        match build_row(identity_index, material) {
+                            Ok(row) => rows.push(row),
+                            Err(e) => {
+                                // Free everything we've successfully appended
+                                // so far — we never hand a partial array back.
+                                // TODO: Implement Drop instead of manually drop so ? op is usable
+                                free_rows(rows);
+                                return Err(e);
+                            }
+                        }
+                    }
+                    Ok(rows)
+                })()
+                // `source` (and `loop_guard`, the resident-path read
+                // guard) drop at this block's end, releasing the
+                // wallet-manager read lock held across the loop and the
+                // borrow into `master_opt` — so the master wipe below is
+                // free to mutate it.
+            };
+
+            // TODO(upstream): `ExtendedPrivKey` has no `Drop` / `Zeroize`;
+            // wipe the resolved master's inner secp256k1 scalar
+            // explicitly. Same hygiene as the discovery resolver path.
+            // No-op on the resident path (no master was resolved).
+            if let Some(mut master) = master_opt {
+                master.private_key.non_secure_erase();
+            }
+            loop_result
+        })();
+
+        build_result
     });
     let result = unwrap_option_or_return!(option);
     let rows = unwrap_result_or_return!(result);
