@@ -15,6 +15,9 @@ pub(crate) trait NewValidatorIfMasternodeInState {
 
 impl NewValidatorIfMasternodeInState for ValidatorV0 {
     /// Makes a validator if the masternode is in the list and is valid
+    // Reads the legacy flat platform ports (deprecated in favor of Core 23+ nested
+    // `addresses`); platform tracks only the legacy pair — behavior-preserving.
+    #[allow(deprecated)]
     fn new_validator_if_masternode_in_state(
         pro_tx_hash: ProTxHash,
         public_key: Option<BlsPublicKey<Bls12381G2Impl>>,
@@ -26,8 +29,8 @@ impl NewValidatorIfMasternodeInState for ValidatorV0 {
             service,
             platform_node_id,
             pose_ban_height,
-            platform_p2p_port,
-            platform_http_port,
+            legacy_platform_p2p_port: platform_p2p_port,
+            legacy_platform_http_port: platform_http_port,
             ..
         } = state;
         let Some(platform_http_port) = platform_http_port else {

@@ -51,6 +51,9 @@ where
     /// * `dmn_state_diff` - The `DMNStateDiff` containing the updated masternode information
     /// * `validator_sets` - A mutable reference to the `IndexMap<QuorumHash, ValidatorSet>`
     ///   representing the validator sets with the quorum hash as the key
+    // Reads the legacy flat platform ports (deprecated in favor of Core 23+ nested
+    // `addresses`); platform tracks only the legacy pair — behavior-preserving.
+    #[allow(deprecated)]
     fn update_masternode_in_validator_sets(
         pro_tx_hash: &ProTxHash,
         dmn_state_diff: &DMNStateDiff,
@@ -68,17 +71,20 @@ where
                         validator.node_ip = address.ip().to_string();
                     }
 
-                    if let Some(p2p_port) = dmn_state_diff.platform_p2p_port {
+                    if let Some(p2p_port) = dmn_state_diff.legacy_platform_p2p_port {
                         validator.platform_p2p_port = p2p_port as u16;
                     }
 
-                    if let Some(http_port) = dmn_state_diff.platform_http_port {
+                    if let Some(http_port) = dmn_state_diff.legacy_platform_http_port {
                         validator.platform_http_port = http_port as u16;
                     }
                 }
             });
     }
 
+    // `update_masternode_in_validator_sets` below reads the deprecated legacy
+    // platform port (behavior-preserving; Core 23+ nested addresses deferred).
+    #[allow(deprecated)]
     pub(crate) fn update_state_masternode_list_v0(
         &self,
         state: &mut PlatformState,
@@ -143,7 +149,7 @@ where
                     // validator sets
                     if state_diff.pose_ban_height.is_some()
                         || state_diff.service.is_some()
-                        || state_diff.platform_p2p_port.is_some()
+                        || state_diff.legacy_platform_p2p_port.is_some()
                     {
                         // we updated the ban status the IP or the platform port, we need to update the validator in the validator list
                         Self::update_masternode_in_validator_sets(

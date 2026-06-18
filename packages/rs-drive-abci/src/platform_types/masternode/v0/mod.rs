@@ -138,6 +138,11 @@ pub struct MasternodeStateV0 {
 }
 
 impl From<DMNState> for MasternodeStateV0 {
+    // Core 23+ moved the platform ports into a nested `addresses` structure and
+    // marked the flat ports `legacy_*`. Platform state has only ever tracked the
+    // single legacy port pair, so we keep reading those (behavior-preserving) and
+    // leave the nested addresses for a future, separately-reviewed change.
+    #[allow(deprecated)]
     fn from(value: DMNState) -> Self {
         let DMNState {
             service,
@@ -151,8 +156,9 @@ impl From<DMNState> for MasternodeStateV0 {
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
-            platform_p2p_port,
-            platform_http_port,
+            legacy_platform_p2p_port,
+            legacy_platform_http_port,
+            addresses: _,
         } = value;
 
         Self {
@@ -167,13 +173,16 @@ impl From<DMNState> for MasternodeStateV0 {
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
-            platform_p2p_port,
-            platform_http_port,
+            platform_p2p_port: legacy_platform_p2p_port,
+            platform_http_port: legacy_platform_http_port,
         }
     }
 }
 
 impl From<MasternodeStateV0> for DMNState {
+    // Reverse of the conversion above: platform only holds the legacy port pair,
+    // so the Core 23+ nested `addresses` are reconstructed as `None`.
+    #[allow(deprecated)]
     fn from(value: MasternodeStateV0) -> Self {
         let MasternodeStateV0 {
             service,
@@ -203,8 +212,9 @@ impl From<MasternodeStateV0> for DMNState {
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
-            platform_p2p_port,
-            platform_http_port,
+            legacy_platform_p2p_port: platform_p2p_port,
+            legacy_platform_http_port: platform_http_port,
+            addresses: None,
         }
     }
 }

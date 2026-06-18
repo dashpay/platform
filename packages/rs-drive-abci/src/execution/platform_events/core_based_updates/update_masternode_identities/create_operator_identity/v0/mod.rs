@@ -30,6 +30,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // fixtures build mock DMNState via deprecated legacy platform ports
 mod tests {
     use crate::platform_types::platform::Platform;
     use crate::rpc::core::MockCoreRPCLike;
@@ -65,8 +66,9 @@ mod tests {
                 pub_key_operator: vec![1u8; 48],
                 operator_payout_address,
                 platform_node_id,
-                platform_p2p_port: None,
-                platform_http_port: None,
+                legacy_platform_p2p_port: None,
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         }
     }
