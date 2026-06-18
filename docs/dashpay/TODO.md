@@ -107,21 +107,25 @@ track, and the multi-agent reviews. Prioritized; check off as done.
   > Keep **established-contact rotation** (re-keying a friendship) separate and
   > untouched — that's not suppression.
 
-- [ ] **Spec 1 — `CONTACTINFO_FORMAT_SPEC.md`** (written, DRAFT): migrate
-  `contactInfo.privateData` CBOR → DIP-15 varint (`version`/`acceptedAccounts`) AND
-  add a `relationshipState` field with **two** states (`active` / `ignored`) —
-  the single contactInfo field that carries the ignore state for cross-device sync.
-  Review → implement. *(no contract change; free window — no client decodes
-  contactInfo yet)*
+- [x] **Spec 1 — `CONTACTINFO_FORMAT_SPEC.md`: SCRAPPED (keep CBOR).** Reconciled
+  the CBOR-vs-varint conflict against the **deployed schema** (`dashpay.schema.json`
+  → `contactInfo.privateData` = *"…aliasName + note + displayHidden encoded as an
+  array in cbor"*, 48–2048 bytes, NO version/acceptedAccounts). The registered
+  contract is what clients validate against, so CBOR is correct and the current
+  `crypto/contact_info.rs` codec needs no change; the varint migration would
+  diverge from the contract + need a coordinated contract update for no benefit.
+  Matches `research/07 §C`. **This also resolves the research/01-vs-07 reconcile.**
 - [ ] **Spec 2 — Ignore (per-sender mute), synced via contactInfo** (subsumes the
-  old BLOCK_SPEC + reject→on-chain). On Ignore: write `relationshipState = ignored`
-  on the sender's `contactInfo` so every device applies it on sync; on-sync read
-  the field and suppress the ignored sender from the **main incoming list** (all
-  their requests, rotations included). Reversible (un-ignore). **Blocked on the R1
-  privacy investigation** (non-established-sender leak). `BLOCK_SPEC.md` (4-lens
-  reviewed §0 R1–R10) is the starting point — it's already per-sender; rename
-  block→ignore, drop the separate reject path, keep Q1 (un-ignore resyncs / rewind
-  cursor).
+  old BLOCK_SPEC + reject→on-chain). Cross-device ignore signal rides the **existing
+  CBOR array** (no format change — Spec 1 finding): reuse `displayHidden` (field #3,
+  already the hide/suppress flag) or append a 4th CBOR element in place of the
+  padding (decoders read the first three, ignore the rest — the forward-compat
+  seam). On Ignore: write the flag on the sender's `contactInfo` so every device
+  applies it on sync; on-sync suppress the ignored sender from the **main incoming
+  list** (all their requests, rotations included). Reversible (un-ignore). **Blocked
+  on the R1 privacy investigation** (non-established-sender leak). `BLOCK_SPEC.md`
+  (4-lens reviewed §0 R1–R10) is the starting point — per-sender; rename block→ignore,
+  drop the separate reject path, keep Q1 (un-ignore resyncs / rewind cursor).
   - [ ] **Ignored list (UI + state):** a dedicated "Ignored" screen lists the
     ignored senders with an **Un-ignore** action — ignored ≠ invisible, just hidden
     from the main pending list. Requires persisting enough to display each
@@ -163,8 +167,13 @@ DIP/maintainer-coordination effort separate from the wallet work.
   Decision callout in the spec track). Android does nothing here, so we're
   inventing it — keep it deliberately minimal. Remaining build work lives in
   Spec 2 + the collapse-reject refactor.
-- [ ] Reconcile our own research docs: `research/01` wrongly says "CBOR per
-  DIP-0015"; `research/07` is correct (DIP-15 = varint, schema description = CBOR).
+- [x] ~~Reconcile research/01 vs /07 on the contactInfo format~~ **DONE
+  (2026-06-18)** → verified the deployed `dashpay.schema.json`: `contactInfo.privateData`
+  is **CBOR `[aliasName, note, displayHidden]`** (the contract clients validate
+  against), so CBOR is correct and the current codec stays. DIP-15 prose says varint
+  but doesn't match the registered contract. `research/07 §C` was right; `research/01`
+  reached the right answer (CBOR) via the wrong reason. Folded into the Spec 1
+  scrap above.
 
 ## Guardrails (don't do)
 

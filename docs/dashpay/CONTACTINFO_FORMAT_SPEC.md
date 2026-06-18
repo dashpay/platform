@@ -1,16 +1,45 @@
-# contactInfo `privateData` — migrate CBOR → DIP-15 format + introduce reject/block fields
+# contactInfo `privateData` — format reconciliation (CBOR vs DIP-15 varint)
 
-Status: **DRAFT** (awaiting multi-agent spec review before implementation)
+Status: **SCRAPPED — the migration premise was wrong. Keep CBOR.** (2026-06-18)
 Owner: platform-wallet / platform-encryption
-Relates to: `docs/dashpay/BLOCK_SPEC.md` (paused; depends on this), the future
-"reject → on-chain" spec, `research/07-contactinfo-conventions.md`.
 
-This is **Spec 1** of the reordered DashPay-privacy track:
-1. **(this) contactInfo format migration** CBOR → DIP-15, + define `reject`/`block` fields.
-2. migrate **reject → on-chain** (synced via these fields).
-3. revisit **block via contactInfo** (cross-device).
+> ## Resolution (the review step caught this before any code)
+>
+> The premise of this spec — migrate `contactInfo.privateData` from CBOR to the
+> DIP-15 Dash-message **varint** format and add `version` + `acceptedAccounts` —
+> is **wrong**. The **deployed, registered dashpay contract** is the authority a
+> client validates against, and it mandates CBOR:
+>
+> ```json
+> // packages/dashpay-contract/schema/v1/dashpay.schema.json → contactInfo.privateData
+> { "type":"array","byteArray":true,"minItems":48,"maxItems":2048,
+>   "description":
+>     "This is the encrypted values of aliasName + note + displayHidden encoded as an array in cbor" }
+> ```
+>
+> So the schema says **CBOR `[aliasName, note, displayHidden]`** — and explicitly
+> NOT `version`/`acceptedAccounts`. DIP-15's *prose* describes varint + those two
+> fields, but that does not match the registered contract; any schema-reading
+> client codes against the contract, not the DIP prose. Migrating to varint would
+> (a) diverge from what every client expects and (b) require a coordinated
+> **contract update** (Contract track — DIP/governance, deferred), for no benefit.
+>
+> **Decision: the current CBOR codec (`crypto/contact_info.rs`) is correct — keep
+> it.** This matches `research/07 §C` ("the deployed schema description wins").
+> `research/01`'s framing ("CBOR per DIP-0015") reached the right answer (CBOR)
+> for the wrong reason (it's CBOR per the *schema*, the DIP prose says varint).
+>
+> **Consequence for the Ignore feature (Spec 2):** any cross-device ignore signal
+> rides the existing CBOR array, NOT a format change — either reuse `displayHidden`
+> (already field #3, already the hide/suppress flag) or append a 4th CBOR element
+> in place of the current padding (decoders read the first three and ignore the
+> rest — the documented forward-compat seam). No wire-format migration is needed.
+>
+> The original (rejected) migration analysis is preserved below for history.
 
 ---
+
+## ~~Original draft (rejected — varint migration)~~
 
 ## 1. Problem
 
