@@ -6,11 +6,13 @@ import SwiftDashSDK
 ///
 /// Inputs: recipient (via `RecipientPickerView`), amount, optional
 /// public note. The form refuses to submit unless the recipient is
-/// set and the amount is in `(0, balance]`. On success, the view
-/// dismisses; the parent screen relies on the next balance sync to
-/// pick up the change (Wave 1 doesn't push a synchronous local
-/// `PersistentTokenBalance` update — that's a TODO once a token-sync
-/// helper exists in `platform-wallet-ffi`).
+/// set and the amount is in `(0, balance]`. On success it refreshes
+/// the affected local `PersistentTokenBalance` rows — the sender's
+/// (always local) and the recipient's (only when the recipient is a
+/// local on-device identity) — via `SDK.refreshTokenBalances` so the
+/// balance surfaces update immediately, then dismisses. A refresh
+/// failure is logged and swallowed: the on-chain transfer already
+/// succeeded, and the periodic balance sync remains the backstop.
 struct TokenTransferActionView: View {
     let token: PersistentToken
     let identity: PersistentIdentity
@@ -23,6 +25,7 @@ struct TokenTransferActionView: View {
     var initialBalance: UInt64? = nil
 
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
@@ -202,6 +205,16 @@ struct TokenTransferActionView: View {
                     publicNote: publicNoteOrNil,
                     signer: signer
                 )
+                // The transfer landed on chain; refresh the local
+                // balance rows the UI observes so the sender's balance
+                // drops and a local recipient's balance rises without
+                // waiting for the next periodic sync. Resilient: a
+                // refresh failure must not turn a successful transfer
+                // into a user-visible error.
+                await self.refreshBalancesAfterTransfer(
+                    senderId: identityId,
+                    recipientId: recipientId
+                )
                 await MainActor.run {
                     guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
@@ -214,6 +227,52 @@ struct TokenTransferActionView: View {
                     self.isSubmitting = false
                 }
             }
+        }
+    }
+
+    /// Refresh the local `PersistentTokenBalance` rows touched by a
+    /// just-completed transfer. Always refreshes the sender; also
+    /// refreshes the recipient when it's a wallet-owned identity on
+    /// this network (so MW-02's "switch to B, verify the tokens
+    /// arrived" step works). Best-effort — any failure is logged and
+    /// swallowed; the periodic sync is the backstop.
+    ///
+    /// `@MainActor`-isolated: it reads SwiftData `@Model` instances
+    /// (`token`, `identity`) and passes the main-context `modelContext`
+    /// to the SDK's `@MainActor` refresh. The blocking network query
+    /// runs off-main inside that SDK method.
+    @MainActor
+    private func refreshBalancesAfterTransfer(
+        senderId: Data,
+        recipientId: Data
+    ) async {
+        guard let sdk = appState.sdk else { return }
+        guard let position = UInt16(exactly: token.position) else { return }
+
+        // The sender is local by construction; the recipient is
+        // included only when a wallet-owned PersistentIdentity row
+        // exists for it on this network.
+        var identityIds: [Data] = [senderId]
+        if recipientId != senderId,
+           let recipientRow = PersistentIdentity.fetch(
+               in: modelContext,
+               identityId: recipientId
+           ),
+           recipientRow.wallet != nil,
+           recipientRow.network == identity.network {
+            identityIds.append(recipientId)
+        }
+
+        do {
+            try await sdk.refreshTokenBalances(
+                contractId: token.contractId,
+                tokenPosition: position,
+                tokenRelationshipKey: token.id,
+                identityIds: identityIds,
+                in: modelContext
+            )
+        } catch {
+            print("⚠️ Post-transfer balance refresh failed: \(error)")
         }
     }
 }

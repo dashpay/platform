@@ -21,6 +21,7 @@ struct TokenBurnActionView: View {
     var initialBalance: UInt64? = nil
 
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
@@ -239,6 +240,14 @@ struct TokenBurnActionView: View {
                     groupAction: groupAction,
                     signer: signer
                 )
+                // Refresh the acting identity's local balance row so the
+                // burned amount disappears from the UI without waiting
+                // for the next periodic sync. (When the burn was sent as
+                // a group-action proposal nothing is burned until the
+                // group signs, so this is a harmless no-op refresh.)
+                // Best-effort: a refresh failure must not turn a
+                // successful burn into a user-visible error.
+                await self.refreshBalanceAfterBurn(identityId: identityId)
                 await MainActor.run {
                     guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
@@ -251,6 +260,30 @@ struct TokenBurnActionView: View {
                     self.isSubmitting = false
                 }
             }
+        }
+    }
+
+    /// Refresh the acting identity's local `PersistentTokenBalance`
+    /// row after a burn. Best-effort — any failure is logged and
+    /// swallowed; the periodic sync is the backstop.
+    ///
+    /// `@MainActor`-isolated: reads SwiftData `@Model` instances and
+    /// passes the main-context `modelContext` to the SDK's `@MainActor`
+    /// refresh, whose blocking network query runs off-main.
+    @MainActor
+    private func refreshBalanceAfterBurn(identityId: Data) async {
+        guard let sdk = appState.sdk else { return }
+        guard let position = UInt16(exactly: token.position) else { return }
+        do {
+            try await sdk.refreshTokenBalances(
+                contractId: token.contractId,
+                tokenPosition: position,
+                tokenRelationshipKey: token.id,
+                identityIds: [identityId],
+                in: modelContext
+            )
+        } catch {
+            print("⚠️ Post-burn balance refresh failed: \(error)")
         }
     }
 }
