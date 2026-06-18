@@ -231,8 +231,9 @@ Contract id **`Bwr4WHCPz5rFVAD87RqTs3izo4zpzwsEdKPWUT1NS1C7`**
   `$ownerId+toUserId+accountReference`; timelines `toUserId+$createdAt` (received)
   and `$ownerId+$createdAt` (sent). Immutable.
 - **`contactInfo`**: `encToUserId`(32B), `rootEncryptionKeyIndex`,
-  `derivationEncryptionKeyIndex`, `privateData`(48–2048B encrypted CBOR:
-  `aliasName`, `note`, `displayHidden`, `acceptedAccounts`). Unique index
+  `derivationEncryptionKeyIndex`, `privateData`(48–2048B encrypted; **DIP-15
+  varint** `version`/`aliasName`/`note`/`displayHidden`/`acceptedAccounts` —
+  contract enforces length only, see `CONTACTINFO_FORMAT_SPEC.md`). Unique index
   `$ownerId+root+derivation`. Privacy rule: don't publish until ≥2 established
   contacts.
 
@@ -739,10 +740,11 @@ See Part 6 for the screen design. Tasks:
     cross-device reject/hide + alias/note sync.
 
     **DONE (2026-06-12), 4 commits:** crypto core (DIP-15 derivation
-    `root/65536'+65537'/idx'`, AES-256-ECB encToUserId, IV‖CBC privateData,
-    CBOR array per the deployed schema — conventions in `research/07`; no
-    reference client ever implemented contactInfo, so we set the wire
-    format), stateless doc↔contact resolution (decrypt every owned doc's
+    `root/65536'+65537'/idx'`, AES-256-ECB encToUserId, IV‖CBC privateData;
+    the `privateData` plaintext was initially a CBOR array but is being
+    migrated to the **DIP-15 varint** format — the contract enforces length
+    only, so it's a free convention; see `CONTACTINFO_FORMAT_SPEC.md` /
+    Spec 1), stateless doc↔contact resolution (decrypt every owned doc's
     encToUserId), sync step 3 of the recurring pass, publish with the
     DIP-15 ≥2-contacts privacy gate (deferred publishes update local state
     only), FFI `platform_wallet_set_dashpay_contact_info_with_signer`,

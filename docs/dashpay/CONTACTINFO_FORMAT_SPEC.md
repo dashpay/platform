@@ -1,45 +1,34 @@
-# contactInfo `privateData` — format reconciliation (CBOR vs DIP-15 varint)
+# contactInfo `privateData` — DIP-15 varint format (migrate off CBOR)
 
-Status: **SCRAPPED — the migration premise was wrong. Keep CBOR.** (2026-06-18)
+Status: **ACTIVE** — DIP-15 varint is the chosen format; ready to implement.
 Owner: platform-wallet / platform-encryption
+Relates to: Spec 2 (Ignore, adds `relationshipState`), `BLOCK_SPEC.md`,
+`research/07-contactinfo-conventions.md`.
 
-> ## Resolution (the review step caught this before any code)
->
-> The premise of this spec — migrate `contactInfo.privateData` from CBOR to the
-> DIP-15 Dash-message **varint** format and add `version` + `acceptedAccounts` —
-> is **wrong**. The **deployed, registered dashpay contract** is the authority a
-> client validates against, and it mandates CBOR:
->
-> ```json
-> // packages/dashpay-contract/schema/v1/dashpay.schema.json → contactInfo.privateData
-> { "type":"array","byteArray":true,"minItems":48,"maxItems":2048,
->   "description":
->     "This is the encrypted values of aliasName + note + displayHidden encoded as an array in cbor" }
-> ```
->
-> So the schema says **CBOR `[aliasName, note, displayHidden]`** — and explicitly
-> NOT `version`/`acceptedAccounts`. DIP-15's *prose* describes varint + those two
-> fields, but that does not match the registered contract; any schema-reading
-> client codes against the contract, not the DIP prose. Migrating to varint would
-> (a) diverge from what every client expects and (b) require a coordinated
-> **contract update** (Contract track — DIP/governance, deferred), for no benefit.
->
-> **Decision: the current CBOR codec (`crypto/contact_info.rs`) is correct — keep
-> it.** This matches `research/07 §C` ("the deployed schema description wins").
-> `research/01`'s framing ("CBOR per DIP-0015") reached the right answer (CBOR)
-> for the wrong reason (it's CBOR per the *schema*, the DIP prose says varint).
->
-> **Consequence for the Ignore feature (Spec 2):** any cross-device ignore signal
-> rides the existing CBOR array, NOT a format change — either reuse `displayHidden`
-> (already field #3, already the hide/suppress flag) or append a 4th CBOR element
-> in place of the current padding (decoders read the first three and ignore the
-> rest — the documented forward-compat seam). No wire-format migration is needed.
->
-> The original (rejected) migration analysis is preserved below for history.
+## Format decision: DIP-15 varint, NOT CBOR (2026-06-18)
+
+`contactInfo.privateData` is an **opaque encrypted byteArray** — the registered
+contract validates only its **length** (`byteArray:true, minItems:48,
+maxItems:2048` in `dashpay.schema.json`); the field description's "…encoded as an
+array in cbor" is **advisory documentation, not a structural constraint**. The
+plaintext inside the AES-256-CBC ciphertext is therefore a writer/reader
+convention we are free to choose — and we choose **DIP-15**, the authoritative
+protocol spec, so we interop with DIP-15-compliant clients (the reference
+`dash-wallet` / `kotlin-platform` will follow the DIP when it implements
+contactInfo). **No contract change is needed** (length-only validation accepts any
+48..2048-byte ciphertext). No client decodes contactInfo today, so this is a free
+window: we set the de-facto format and it matches the DIP.
+
+> An earlier pass briefly "reconciled" this the other way (keep CBOR, per the
+> schema *description* + `research/07 §C`). That over-weighted an advisory
+> description as binding. Corrected: the contract enforces length only, DIP-15 is
+> authoritative — use varint.
+
+This is **Spec 1** of the DashPay-privacy track. Spec 2 (Ignore) layers a
+minor-version `relationshipState` field on top (§4) — additive, so a DIP-15-v0
+reader ignores it (the forward-compat rule, §3).
 
 ---
-
-## ~~Original draft (rejected — varint migration)~~
 
 ## 1. Problem
 

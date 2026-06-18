@@ -532,7 +532,9 @@ Two tiers, sequenced honestly:
    (read known fields, ignore trailing) so older readers don't break (a *strict*
    decoder would). Replaces our current `encode/decode_private_data` codec.
    Also fixes the internal doc inconsistency (`research/01` wrongly says "CBOR
-   per DIP-0015"; `research/07` is correct: DIP-15 = varint, schema = CBOR).
+   per DIP-0015"; the contract validates `privateData` by **length only** — its
+   "array in cbor" description is advisory, not enforced — so we follow DIP-15
+   varint, the authoritative format).
    **Verified 2026-06 against github.com/dashpay:** no client decodes
    `contactInfo.privateData` today — `android-dashpay` has no `ContactInfo`
    class (the schema is bundled as JSON only; its Kotlin handles `contactRequest`),

@@ -44,18 +44,24 @@ output and the key is never reused for other purposes.
 
 ### privateData
 
+> **CORRECTION (2026-06-18): use DIP-15 varint, not CBOR.** The conclusion
+> below ("the deployed schema description wins → CBOR") over-weighted an
+> advisory note. The contract validates `privateData` by **length only**
+> (`byteArray`, 48–2048); its "array in cbor" text is documentation, NOT an
+> enforced structural constraint. The encrypted plaintext format is a free
+> writer/reader convention, so we follow **DIP-15** (the authoritative protocol
+> spec) with `version`/varstr/`acceptedAccounts`. See `CONTACTINFO_FORMAT_SPEC.md`.
+
 `IV(16) ‖ AES-256-CBC(plaintext)` — IV prepended (INFERRED from the
 `encryptedPublicKey` convention; DIP-15 doesn't state placement for
 this field).
 
-Plaintext: **CBOR array `[aliasName, note, displayHidden]`** per the
-deployed schema's field description — positional, with CBOR `null`
-for absent strings (INFERRED). NOTE: DIP-15 prose instead describes
-Bitcoin-varint "Dash message data" with extra `version` +
-`acceptedAccounts` fields; the deployed schema description wins (it is
-what any schema-reading client will expect). `version` /
-`acceptedAccounts` are NOT included — re-introducing them later means
-a versioned-CBOR convention change.
+Plaintext (~~CBOR~~ → **DIP-15 varint**, per the correction above): the original
+analysis adopted a **CBOR array `[aliasName, note, displayHidden]`** per the
+deployed schema's field description — positional, with CBOR `null` for absent
+strings (INFERRED). DIP-15 prose instead describes Bitcoin-varint "Dash message
+data" with `version` + `acceptedAccounts` — and that is what we now use (the
+schema enforces length only, so there's no conflict and no contract change).
 
 ### Privacy rule (DIP-15, spec-only — no client enforces it today)
 
