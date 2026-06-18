@@ -115,16 +115,17 @@ track, and the multi-agent reviews. Prioritized; check off as done.
   floor. Verified against canonical `dip-0015.md` with a **byte-vector** test +
   round-trip / forward-compat / major-reject / truncation (8 tests). Struct gains
   `accepted_accounts`; dropped the now-dead `ciborium` dep.
-- [ ] **Spec 2 — Ignore (per-sender mute), synced via contactInfo** (subsumes the
-  old BLOCK_SPEC + reject→on-chain). Cross-device ignore signal rides a DIP-15
-  **`relationshipState`** field — a minor-version extension on the Spec-1 varint
-  format (additive, so a v0 reader ignores it). On Ignore: write it on the sender's
-  `contactInfo` so every device applies it on sync; on-sync suppress the ignored
-  sender from the **main incoming list** (all their requests, rotations included).
-  Reversible (un-ignore). **Blocked on the R1 privacy investigation**
-  (non-established-sender leak). `BLOCK_SPEC.md` (4-lens reviewed §0 R1–R10) is the
-  starting point — per-sender; rename block→ignore, drop the separate reject path,
-  keep Q1 (un-ignore resyncs / rewind cursor).
+- [ ] **Spec 2 — Ignore (per-sender mute) — LOCAL-ONLY** (subsumes the old
+  BLOCK_SPEC + reject). **R1 resolved: do NOT sync incoming-request ignores via
+  `contactInfo`** — it leaks who you ignored (timing-correlation on the public
+  `ownerIdAndUpdatedAt` ↔ `userIdCreatedAt` indices; the DIP-15 ≥2-contacts gate
+  doesn't cover a fresh non-established sender). So ignore is **per-device** for
+  now: rename the existing `reject` machinery to `ignore`, suppress ignored senders
+  from the **main incoming list** (all their requests, rotations included),
+  reversible (un-ignore). **No on-chain ignore artifact.** `BLOCK_SPEC.md` (§0
+  R1–R10) is the starting point — per-sender; keep Q1 (un-ignore resyncs / rewind
+  cursor). Cross-device sync is deferred to the encrypted-profile-field contract
+  item (Contract track below).
   - [ ] **Ignored list (UI + state):** a dedicated "Ignored" screen lists the
     ignored senders with an **Un-ignore** action — ignored ≠ invisible, just hidden
     from the main pending list. Requires persisting enough to display each
@@ -136,16 +137,30 @@ track, and the multi-agent reviews. Prioritized; check off as done.
   restore/wipe/persist plumbing built this session. Decide terminology: `ignore`
   (Android term) vs keep `reject`/`block` in code. Established-contact rotation
   (`apply_rotated_incoming_request`) is UNCHANGED.
-- [ ] **R1 privacy investigation** — does a `contactInfo` about a *non-established*
-  sender leak who you blocked (count + `$createdAt`↔contactRequest timing)? Per-
-  sender (leaky) vs single owner-scoped self-encrypted list (bounded) vs
-  established-only. Resolve before Spec 2/3.
+- [x] **R1 privacy investigation — RESOLVED (2026-06-18): non-established ignore is
+  LEAKY → go local-only.** A `contactInfo` about a non-established sender leaks who
+  you ignored: its public `$createdAt`/`$updatedAt` (enumerable via the
+  `ownerIdAndUpdatedAt` index) correlates with the inbound `contactRequest`'s
+  `$createdAt` (public `userIdCreatedAt` index) → re-identifies the encrypted target,
+  plus a count leak. DIP-15's ≥2-established-contacts gate doesn't cover a *fresh*
+  non-established sender (no ambiguity — exactly the "trivial linking" it warns of).
+  **Decision: ignore is local-only; cross-device sync goes through a future encrypted
+  field on the `profile` doc (Contract track), whose update timing is conflated with
+  normal profile edits.**
 
 ## Contract track (DIP / governance — later)
 
 These need a change to the registered `dashpay` data contract, so they're a
 DIP/maintainer-coordination effort separate from the wallet work.
 
+- [ ] **Add an encrypted ignored-contacts field to the `profile` document
+  (cross-device ignore sync, privacy-bounded).** Per R1, syncing ignores via a
+  per-sender `contactInfo` leaks who you ignored (timing-correlation). An encrypted
+  list field on the **profile** — a single doc that already updates for many reasons
+  (display name, avatar), so an update doesn't *specifically* signal an ignore —
+  carries the ignored set cross-device with a bounded leak and no per-sender
+  existence/count leak. Needs a registered `dashpay` contract change (DIP /
+  governance). Until then, ignore stays local-only (Spec 2).
 - [ ] **Real query-level DoS protection — filter blocked/rejected senders out
   *before* fetching.** Incremental fetch (P0 #3) bounds cost but still fetches each
   new request once; truly *not fetching* a known-bad sender needs a server-side

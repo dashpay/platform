@@ -1,7 +1,10 @@
 # contactInfo `privateData` — DIP-15 varint format (migrate off CBOR)
 
 Status: **IMPLEMENTED** (2026-06-18) — DIP-15 varint codec in `crypto/contact_info.rs`,
-byte-vector + compat tests. (Spec 2 layers `relationshipState` on top as minor 1.)
+byte-vector + compat tests. (The tolerant minor-version decode stays available for a
+future additive field, but **ignore state does NOT ride contactInfo** — R1 found
+that leaks who you ignored; ignore is local-only, cross-device via a future encrypted
+profile field. See TODO R1.)
 Owner: platform-wallet / platform-encryption
 Relates to: Spec 2 (Ignore, adds `relationshipState`), `BLOCK_SPEC.md`,
 `research/07-contactinfo-conventions.md`.
@@ -25,9 +28,10 @@ window: we set the de-facto format and it matches the DIP.
 > description as binding. Corrected: the contract enforces length only, DIP-15 is
 > authoritative — use varint.
 
-This is **Spec 1** of the DashPay-privacy track. Spec 2 (Ignore) layers a
-minor-version `relationshipState` field on top (§4) — additive, so a DIP-15-v0
-reader ignores it (the forward-compat rule, §3).
+This is **Spec 1** of the DashPay-privacy track. (The minor-version forward-compat
+seam — §3 — remains for any future additive field. Note: ignore state is **not**
+carried here — R1 found a per-sender `contactInfo` leaks who you ignored, so ignore
+is local-only with cross-device deferred to a future encrypted `profile` field.)
 
 ---
 

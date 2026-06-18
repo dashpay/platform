@@ -5143,7 +5143,6 @@ dependencies = [
  "async-trait",
  "bimap",
  "bs58",
- "ciborium",
  "dash-sdk",
  "dash-spv",
  "dashcore",
