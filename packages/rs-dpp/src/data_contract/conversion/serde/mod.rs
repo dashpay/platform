@@ -151,7 +151,7 @@ mod data_contract_serde_pins_critical_4 {
     ///
     /// - canonical `DataContract::deserialize` REJECTS it (validation runs).
     /// - explicit `from_json(_, false, _)` ACCEPTS it (validation skipped).
-    /// - explicit `from_json_validated` REJECTS it (validation runs).
+    /// - explicit `from_json(_, true, _)` REJECTS it (validation runs).
     ///
     /// If a future refactor flips canonical Deserialize back to not validating,
     /// this test fails loudly. See module-level doc above for the rationale.
@@ -210,10 +210,10 @@ mod data_contract_serde_pins_critical_4 {
         );
 
         // PIN: explicit validated path also rejects.
-        let validated_result = DataContract::from_json_validated(json, LATEST_PLATFORM_VERSION);
+        let validated_result = DataContract::from_json(json, true, LATEST_PLATFORM_VERSION);
         assert!(
             validated_result.is_err(),
-            "DataContract::from_json_validated should reject contracts with \
+            "DataContract::from_json(_, true, _) should reject contracts with \
              invalid indices."
         );
     }

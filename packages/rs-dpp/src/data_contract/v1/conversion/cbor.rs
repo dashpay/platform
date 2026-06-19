@@ -40,7 +40,7 @@ impl DataContractCborConversionMethodsV0 for DataContractV1 {
             Value::try_from(data_contract_cbor_value).map_err(ProtocolError::ValueError)?;
 
         if full_validation {
-            Self::from_value_validated(data_contract_value, platform_version)
+            Self::from_value(data_contract_value, true, platform_version)
         } else {
             platform_value::from_value(data_contract_value).map_err(ProtocolError::ValueError)
         }

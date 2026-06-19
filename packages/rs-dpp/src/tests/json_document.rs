@@ -73,7 +73,7 @@ pub fn json_document_to_contract(
     let value = json_document_to_json_value(path)?;
 
     if full_validation {
-        DataContract::from_json_validated(value, platform_version)
+        DataContract::from_json(value, true, platform_version)
     } else {
         // Non-validating path: deserialize the platform-version-agnostic
         // serialization format (which handles both V0/V1 wire shapes via

@@ -4060,7 +4060,7 @@ mod tests {
 
             // Build a new DataContract from the mutated Value
             let data_contract_with_excessive_keywords =
-                DataContract::from_value_validated(contract_value, platform_version)
+                DataContract::from_value(contract_value, true, platform_version)
                     .expect("failed to create DataContract from Value");
 
             // Create the DataContractCreateTransition
@@ -4144,7 +4144,7 @@ mod tests {
 
             // Build a new DataContract from the mutated Value
             let data_contract_with_duplicates =
-                DataContract::from_value_validated(contract_value, platform_version)
+                DataContract::from_value(contract_value, true, platform_version)
                     .expect("failed to create DataContract from Value");
 
             // Create the DataContractCreateTransition
@@ -4222,7 +4222,7 @@ mod tests {
 
             // Build a new DataContract
             let data_contract_invalid =
-                DataContract::from_value_validated(contract_value, platform_version)
+                DataContract::from_value(contract_value, true, platform_version)
                     .expect("failed to create DataContract");
 
             // Create DataContractCreateTransition
@@ -4294,7 +4294,7 @@ mod tests {
             contract_value["keywords"] = Value::Array(vec![Value::Text(too_long_keyword)]);
 
             let data_contract_invalid =
-                DataContract::from_value_validated(contract_value, platform_version)
+                DataContract::from_value(contract_value, true, platform_version)
                     .expect("failed to create DataContract");
 
             let data_contract_create_transition =
@@ -4373,7 +4373,7 @@ mod tests {
 
             // Build a new DataContract from the mutated Value
             let data_contract_valid =
-                DataContract::from_value_validated(contract_value, platform_version)
+                DataContract::from_value(contract_value, true, platform_version)
                     .expect("failed to create DataContract from Value");
 
             // Create the DataContractCreateTransition
@@ -4528,11 +4528,11 @@ mod tests {
 
             // Inject `keywords` onto the `preorder` document type schema — the
             // wrong place for it. This should be rejected by the v1 meta
-            // schema during `DataContract::from_value_validated` full validation.
+            // schema during `DataContract::from_value` full validation.
             contract_value["documentSchemas"]["preorder"]["keywords"] =
                 Value::Array(vec![Value::Text("invalid".to_string())]);
 
-            let err = DataContract::from_value_validated(contract_value, platform_version)
+            let err = DataContract::from_value(contract_value, true, platform_version)
                 .expect_err("meta schema validation must reject document-type keywords");
 
             // Assert the failure is specifically a JSON schema validation error
@@ -4637,7 +4637,7 @@ mod tests {
             contract_value["description"] = Value::Text("hi".to_string()); // < 3 chars
 
             let data_contract_invalid =
-                DataContract::from_value_validated(contract_value, platform_version)
+                DataContract::from_value(contract_value, true, platform_version)
                     .expect("failed to create DataContract from Value");
 
             let transition = DataContractCreateTransition::new_from_data_contract(
@@ -4695,7 +4695,7 @@ mod tests {
             contract_value["description"] = Value::Text(too_long);
 
             let data_contract_invalid =
-                DataContract::from_value_validated(contract_value, platform_version)
+                DataContract::from_value(contract_value, true, platform_version)
                     .expect("failed to create DataContract");
 
             let transition = DataContractCreateTransition::new_from_data_contract(
@@ -4751,7 +4751,7 @@ mod tests {
                 Value::Text("A perfectly valid description.".to_string());
 
             let data_contract_valid =
-                DataContract::from_value_validated(contract_value, platform_version)
+                DataContract::from_value(contract_value, true, platform_version)
                     .expect("failed to create DataContract");
 
             let transition = DataContractCreateTransition::new_from_data_contract(

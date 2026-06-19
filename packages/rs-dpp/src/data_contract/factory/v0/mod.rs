@@ -115,7 +115,7 @@ impl DataContractFactoryV0 {
         {
             0 => {
                 let v0 = if full_validation {
-                    DataContractV0::from_value_validated(data_contract_object, platform_version)?
+                    DataContractV0::from_value(data_contract_object, true, platform_version)?
                 } else {
                     platform_value::from_value::<DataContractV0>(data_contract_object)
                         .map_err(ProtocolError::ValueError)?
@@ -124,7 +124,7 @@ impl DataContractFactoryV0 {
             }
             1 => {
                 let v1 = if full_validation {
-                    DataContractV1::from_value_validated(data_contract_object, platform_version)?
+                    DataContractV1::from_value(data_contract_object, true, platform_version)?
                 } else {
                     platform_value::from_value::<DataContractV1>(data_contract_object)
                         .map_err(ProtocolError::ValueError)?

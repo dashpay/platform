@@ -10,8 +10,6 @@ use platform_value::Value;
 /// registration) to run full schema validation, and `false` to reconstruct
 /// already-trusted data (e.g. storage reads) without re-validating it.
 ///
-/// `from_value_validated` is a convenience for the `true` case.
-///
 /// For *serialization*, use canonical `ValueConvertible::to_object` /
 /// `platform_value::to_value(&data_contract)` directly — there is no
 /// validation dimension to writing.
@@ -25,16 +23,4 @@ pub trait DataContractValueConversionMethodsV0 {
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
-
-    /// Convenience for `from_value(raw_object, true, platform_version)` — full
-    /// schema validation. Use on trust boundaries.
-    fn from_value_validated(
-        raw_object: Value,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        Self::from_value(raw_object, true, platform_version)
-    }
 }

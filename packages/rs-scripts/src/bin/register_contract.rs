@@ -125,7 +125,7 @@ async fn run() -> Result<(), String> {
     // checked. The on-chain `validate_basic_structure` runs server-
     // side during state-transition validation anyway. Uses the
     // canonical (no-validation) `serde_json::from_value::<DataContract>`
-    // path — the validating opt-in is `DataContract::from_json_validated`.
+    // path — the validating opt-in is `DataContract::from_json`.
     let mut data_contract: DataContract = serde_json::from_value(json_value)
         .map_err(|e| format!("failed to build DataContract from JSON: {e}"))?;
 

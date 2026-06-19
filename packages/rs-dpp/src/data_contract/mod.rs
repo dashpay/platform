@@ -115,12 +115,14 @@ pub enum DataContract {
 // at the *currently active* `PlatformVersion` (see Critical-4 doc there).
 //
 // The two version-aware conversion traits are:
-//   * `DataContractJsonConversionMethodsV0::from_json_validated` — opt-in JSON ingest with
-//     full schema validation (use on trust boundaries; non-validating reads should call
-//     `serde_json::from_value::<DataContract>` directly).
-//   * `DataContractValueConversionMethodsV0::from_value_validated` — same shape for
-//     `platform_value::Value`. Non-validating equivalent is
-//     `platform_value::from_value::<DataContract>`.
+//   * `DataContractJsonConversionMethodsV0::from_json(value, full_validation, pv)` —
+//     deserialize from JSON, running full schema validation when `full_validation` is
+//     `true` (use on trust boundaries). Pass `false` to reconstruct already-trusted data
+//     (e.g. storage reads) without re-validating. The canonical
+//     `serde_json::from_value::<DataContract>` path also validates (it routes through
+//     this with `full_validation = true`) — see the Critical-4 doc.
+//   * `DataContractValueConversionMethodsV0::from_value(value, full_validation, pv)` —
+//     same shape for `platform_value::Value`.
 //   * `DataContractJsonConversionMethodsV0::to_validating_json` — JSON output with binary
 //     fields rendered as arrays (for JSON-Schema validators that don't accept base64).
 //

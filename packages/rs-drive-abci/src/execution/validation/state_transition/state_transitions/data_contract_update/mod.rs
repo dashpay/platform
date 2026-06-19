@@ -2435,8 +2435,8 @@ mod tests {
                     .collect(),
             );
 
-            let contract = DataContract::from_value_validated(val, platform_version)
-                .expect("from_value_validated");
+            let contract = DataContract::from_value(val, true, platform_version)
+                .expect("from_value");
 
             let create = DataContractCreateTransition::new_from_data_contract(
                 contract,
@@ -2526,7 +2526,7 @@ mod tests {
             );
 
             let mut updated_contract =
-                DataContract::from_value_validated(val, platform_version).unwrap();
+                DataContract::from_value(val, true, platform_version).unwrap();
             updated_contract.set_version(2);
 
             let update = DataContractUpdateTransition::new_from_data_contract(
@@ -2822,8 +2822,8 @@ mod tests {
 
             val["description"] = Value::Text(description.to_string());
 
-            let contract = DataContract::from_value_validated(val, platform_version)
-                .expect("from_value_validated");
+            let contract = DataContract::from_value(val, true, platform_version)
+                .expect("from_value");
 
             let create = DataContractCreateTransition::new_from_data_contract(
                 contract,
@@ -2908,7 +2908,7 @@ mod tests {
             val["description"] = Value::Text(new_description.to_string());
 
             let mut updated_contract =
-                DataContract::from_value_validated(val, platform_version).unwrap();
+                DataContract::from_value(val, true, platform_version).unwrap();
             updated_contract.set_version(2);
 
             let update = DataContractUpdateTransition::new_from_data_contract(
