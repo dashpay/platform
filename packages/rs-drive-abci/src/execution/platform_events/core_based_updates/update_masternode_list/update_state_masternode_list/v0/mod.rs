@@ -130,20 +130,7 @@ where
                     // `None` means it no longer is. Computed before the validator-set
                     // borrow so the `hpmn_list_item` borrow ends first.
                     let refresh = validator_refresh_from_state(&hpmn_list_item.state);
-                    // Refresh the validator entry on any change to the fields it
-                    // carries: ban status, service IP, or either platform port.
-                    // A platform-port change can be a resolvable p2p/http port
-                    // (Core 23 nested addresses OR a legacy flat field) or an
-                    // `addresses` delta that clears/empties a port — `addresses`
-                    // is three-state (None / Some(None) / Some(Some)), so check
-                    // its presence too, otherwise an http-only or address-clearing
-                    // diff would leave a stale port on the cached validator.
-                    if state_diff.pose_ban_height.is_some()
-                        || state_diff.service.is_some()
-                        || diff_platform_p2p_port(state_diff).is_some()
-                        || diff_platform_http_port(state_diff).is_some()
-                        || state_diff.addresses.is_some()
-                    {
+                    if diff_triggers_validator_refresh(state_diff) {
                         match &refresh {
                             // Still a valid platform validator → rewrite its fields
                             // from the full state.
@@ -250,6 +237,30 @@ fn validator_refresh_from_state(state: &DMNState) -> Option<ValidatorRefresh> {
         platform_http_port: u16::try_from(platform_http_port).ok()?,
         is_banned: state.pose_ban_height.is_some(),
     })
+}
+
+/// Whether a masternode state diff can change any field a cached validator advertises,
+/// i.e. whether `validator_refresh_from_state` must be re-consulted for it.
+///
+/// This is deliberately a **superset** of that predicate's inputs: a false-positive
+/// trigger merely recomputes the refresh and rewrites identical fields (idempotent),
+/// whereas a false-negative leaves a stale endpoint advertised to Tenderdash. So it must
+/// fire on every field that can flip validity — including the zeroed/out-of-range legacy
+/// ports and `platform_node_id` changes that the `diff_platform_*_port` helpers
+/// intentionally drop (a `legacy_platform_*_port: Some(0)` delta resolves to `None`
+/// through them, and a `platform_node_id` change has no port helper at all). The
+/// `addresses` field is three-state (None / Some(None) / Some(Some)), so its mere
+/// presence is a change. Validator-set state feeds P2P advertisement only — never `app_hash`.
+#[allow(deprecated)]
+fn diff_triggers_validator_refresh(diff: &DMNStateDiff) -> bool {
+    diff.pose_ban_height.is_some()
+        || diff.service.is_some()
+        || diff_platform_p2p_port(diff).is_some()
+        || diff_platform_http_port(diff).is_some()
+        || diff.addresses.is_some()
+        || diff.legacy_platform_p2p_port.is_some()
+        || diff.legacy_platform_http_port.is_some()
+        || diff.platform_node_id.is_some()
 }
 
 #[cfg(test)]
@@ -455,5 +466,47 @@ mod tests {
             ..base_dmn_state()
         };
         assert!(validator_refresh_from_state(&state).is_none());
+    }
+
+    // The refresh trigger must mirror the validity predicate's full input set. A diff that
+    // zeroes only the legacy platform port (no `addresses`, no service/ban change) flips a
+    // node from valid to invalid, but `diff_platform_p2p_port` drops the `0` — so the
+    // previous guard (which relied on those helpers) never fired and the stale validator
+    // stayed advertised. The trigger keys directly on the raw legacy field to catch it.
+    #[test]
+    #[allow(deprecated)]
+    fn refresh_trigger_fires_on_zeroed_legacy_port() {
+        let diff = DMNStateDiff {
+            legacy_platform_p2p_port: Some(0),
+            ..empty_diff()
+        };
+        // The port helper drops the zero — proof the old guard would have missed this.
+        assert_eq!(diff_platform_p2p_port(&diff), None);
+        assert!(diff_triggers_validator_refresh(&diff));
+    }
+
+    // A diff that changes only `platform_node_id` (a node-id rotation) changes the
+    // `node_id@host:port` a validator advertises, but no platform-port helper observes it,
+    // so the previous guard missed it. The trigger keys on the field directly.
+    #[test]
+    #[allow(deprecated)]
+    fn refresh_trigger_fires_on_platform_node_id_change() {
+        let diff = DMNStateDiff {
+            platform_node_id: Some([9u8; 20]),
+            ..empty_diff()
+        };
+        assert_eq!(diff_platform_p2p_port(&diff), None);
+        assert_eq!(diff_platform_http_port(&diff), None);
+        assert!(diff_triggers_validator_refresh(&diff));
+    }
+
+    // A diff that touches none of the validator-relevant fields must not trigger a refresh.
+    #[test]
+    fn refresh_trigger_none_on_unrelated_diff() {
+        let diff = DMNStateDiff {
+            registered_height: Some(42),
+            ..empty_diff()
+        };
+        assert!(!diff_triggers_validator_refresh(&diff));
     }
 }
