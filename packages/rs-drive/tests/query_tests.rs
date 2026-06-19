@@ -62,6 +62,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v0::DataContractV0Setters;
 use dpp::data_contract::config::v0::DataContractConfigSettersV0;
 use dpp::data_contract::config::v1::DataContractConfigSettersV1;
+use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
@@ -7516,7 +7517,7 @@ mod tests {
             },
         });
 
-        let contract = platform_value::from_value::<DataContract>(contract_value)
+        let contract = DataContract::from_value(contract_value, false, platform_version)
             .expect("should create a contract from cbor");
 
         drive
