@@ -11,10 +11,10 @@ track, and the multi-agent reviews. Prioritized; check off as done.
 > remaining `[ ]` items are **blocked on resources outside this codebase**, not
 > oversights — **except one new code bug found during UAT (imported-identity
 > signing — see Verification & hygiene)**:
-> - **On-device UAT** — STARTED on testnet 2026-06-19; the sim harness works
->   end-to-end up to signing, then surfaced the imported-identity signing bug (now
->   tracked). Paused; resume via create-in-app. **Devnet integration tests** still
->   need a funded harness.
+> - **On-device UAT — DONE 2026-06-20 (testnet):** ignore-restore ✅ and wallet-wipe
+>   ✅ PASS; sent-payment Pending→Confirmed 🐛 FAILS. Two code bugs surfaced (both in
+>   Verification & hygiene): imported-identity signing, and sent-payment stuck on
+>   Pending. **Devnet integration tests** still need a funded harness.
 > - **Encrypted profile ignored-list field** + **query-level DoS filter** — need a
 >   registered `dashpay` data-contract change (DIP / governance), not wallet code.
 > - The struck `[toUserId, $ownerId]` GROUP-BY index is a deliberate **don't-do**
@@ -211,23 +211,51 @@ DIP/maintainer-coordination effort separate from the wallet work.
 
 ## Verification & hygiene
 
-- [ ] **On-device UAT of the PR #3841 fixes** (shipped + pushed, but not yet
-  device-verified): ignore-restore (ignore a sender → relaunch → stays gone, both
-  SQLite + SwiftData backends), wallet-wipe leaves no DashPay plaintext,
-  sent-payment Pending→Confirmed. **STARTED 2026-06-19 on testnet, paused — see the
-  signing bug below.**
-  - **UAT harness is up and works end-to-end up to signing:** SwiftExampleApp built
-    from branch HEAD on the iPhone 17 Pro sim, switched to a clean testnet config
-    (had to force `defaults write -g AppleKeyboards "en_US@hw=US;sw=QWERTY"` — the
-    sim's host-inherited Russian hardware-keyboard layout was Cyrillic-izing all idb
-    `text` input). Imported the provided testnet identity by mnemonic → wallet "Test",
-    identity `4tiCYq76wok84QcUymD8f6J8C7L8zzRPhNJdrnm9Kewh` (hex `39d2441aab12…1728`),
-    0.9987 DASH platform credits, 5 keys persisted **exactly matching** the on-chain
-    keys. L1 deposit addr `yZJ16jTHdduz2MZrzAAM6YQmheAzcwuCs3` funded with 1 tDASH.
-  - **Next step when resumed (decision 2026-06-19): create a FRESH identity in-app**
-    (the supported create flow signs correctly) rather than the imported one, then
-    set up profiles/usernames for two identities (A/B) and run the 3 checks. The
-    1 tDASH L1 funds the asset lock(s).
+- [x] **On-device UAT of the PR #3841 fixes — DONE 2026-06-20 (testnet).** Ran the
+  three checks end-to-end on the iPhone 17 Pro sim against testnet, with SwiftData as
+  ground truth. Two passed, one surfaced a bug (below).
+  - **✅ ignore-restore — PASSES.** Bob → contact request → Alice; Alice taps Ignore →
+    `ZPERSISTENTDASHPAYIGNOREDSENDER` row (sender=Bob, owner=Alice). After **relaunch +
+    a DashPay sync** the ignored row persists and Alice's Requests shows "No pending
+    requests" — Bob never reappears; the contact-request count drops (Spec 2
+    `removed_incoming`). Verified on the **SwiftData backend** (the iOS persister; the
+    SQLite/`rs-platform-wallet-storage` backend is the Rust persister, covered by its
+    unit tests, not exercised on-device).
+  - **✅ wallet-wipe — PASSES.** "Delete Wallet" cleared **every** table to 0 — wallet,
+    identities, public keys, and all 5 DashPay tables (profiles/requests/payments/
+    contact-profiles/ignored) + accounts/TXOs/transactions; zero residual plaintext
+    (no "Alice"/"Bob" display names). Seed-zeroize confirmed: relaunch shows **no
+    recovery prompt** = the mnemonic was removed from the keychain. (NB: the dev
+    "Settings → Manage Local Data → Clear All Data" is a platform-cache clear only — it
+    does NOT touch wallet/identity/DashPay data; the real wipe is "Delete Wallet".)
+  - **🐛 sent-payment Pending→Confirmed — FAILS (see bug below).**
+  - Harness notes for re-runs: had to force `defaults write -g AppleKeyboards
+    "en_US@hw=US;sw=QWERTY"` (the sim inherits the host's Russian HW-keyboard layout,
+    Cyrillic-izing idb `text`). Imported identities can't sign (separate bug below), so
+    the run used two **in-app-created** identities A=`uatalice0619.dash` /
+    B=`uatbob0619.dash`. Asset-lock amount field in the create flow APPENDS (no
+    select-all) — clear with N×backspace then type. Min lock 0.0025 → ~36M credits is
+    too little for a DPNS name (needs ~81.7M); fund ≥0.01 DASH.
+
+- [ ] **🐛 BUG (found in UAT 2026-06-20): sent DashPay payment stuck on Pending despite
+  a fully-confirmed tx — PR #3841's "Pending→Confirmed" fix does not fire on-device.**
+  Alice sent 0.001 DASH to contact Bob. The tx reached **9 confirmations + InstantSend
+  lock** on testnet (block 1499050) and the wallet **detected** it
+  (`ZPERSISTENTTRANSACTION` at block 1499050, `ZCONTEXT=2` inBlock), yet
+  `ZPERSISTENTDASHPAYPAYMENT.ZSTATUSRAW` stayed `0` (Pending) for ~20 min across
+  explicit Core/Platform/DashPay syncs. The `confirm_sent_dashpay_payment` path
+  (`payments.rs` / `core_bridge.rs`) and its unit test
+  (`*_flips_sent_payment_pending_to_confirmed`) PASS in isolation — a unit-pass /
+  integration-fail. Candidate causes to investigate:
+  - The wallet tx never advances past `ZCONTEXT=2` (inBlock) to `3` (chainlocked) even
+    9 blocks deep — if the confirm path waits on a chainlocked re-detection, the
+    chainlock-detection is the gap; or the SPV doesn't re-emit `TransactionDetected`
+    for a self-broadcast tx on confirmation.
+  - **txid representation split:** `ZPERSISTENTDASHPAYPAYMENT.ZTXID` is the **display-order
+    ASCII hex string** (`"a3155ddc…aac35f"`) while `ZPERSISTENTTRANSACTION.ZTXID` is the
+    **internal-order raw bytes** (`5fc3aa60…15a3`, the byte-reversal). If the confirm-path
+    link compares txids across that boundary it never matches (same class as the
+    identity-id base58-vs-raw split). Verify the Rust link uses a consistent `Txid`.
 
 - [ ] **🐛 BUG (found in UAT 2026-06-19): an IMPORTED identity cannot sign any state
   transition.** Every signed op — register DPNS name, set DashPay profile, and by
