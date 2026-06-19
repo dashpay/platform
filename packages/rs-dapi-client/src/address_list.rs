@@ -14,6 +14,18 @@ use std::time::Duration;
 
 const DEFAULT_BASE_BAN_PERIOD: Duration = Duration::from_secs(60);
 
+/// Flat cooldown applied to rate-limited nodes (gRPC `ResourceExhausted`).
+///
+/// Unlike the exponential ban used for unhealthy nodes, this is a short,
+/// non-escalating window: the node re-enters the live pool automatically
+/// after `DEFAULT_RATE_LIMIT_COOLDOWN` with its ban history intact.
+///
+/// 5 s is long enough to pace the retry burst without starving the pool:
+/// with 13 nodes and a 5 s window, a momentarily throttled node misses
+/// at most one burst cycle instead of being expelled for 60 s+ and
+/// triggering a cascade.
+const DEFAULT_RATE_LIMIT_COOLDOWN: Duration = Duration::from_secs(5);
+
 /// DAPI address.
 #[derive(Debug, Clone, Eq)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
@@ -108,6 +120,29 @@ impl AddressStatus {
         self.ban_count > 0
     }
 
+    /// Apply a short, flat cooldown for a transient (client-fixable) error.
+    ///
+    /// Unlike [`ban_with_reason`], this method does **not** increment `ban_count`,
+    /// so the exponential backoff counter is unaffected. The address is removed from
+    /// the live pool for `cooldown` and automatically re-enters when the timer expires —
+    /// no explicit unban call is needed.
+    ///
+    /// Used for gRPC conditions that indicate a transient situation rather than node
+    /// health problems: `ResourceExhausted` (rate limit), `DeadlineExceeded` (timeout
+    /// under load), `Aborted` (MVCC tx conflict), `Cancelled` (client-side cancel).
+    ///
+    /// Applying the standard 60 s × exp(ban_count) ban for these conditions would route
+    /// all traffic to fewer nodes, causing them to also hit their limits and cascading
+    /// into `NoAvailableAddressesToRetry`. A short flat cooldown keeps the aggregate
+    /// pool capacity intact and breaks the cascade.
+    pub fn rate_limit_cooldown(&mut self, cooldown: Duration, reason: Option<String>) {
+        self.banned_until = Some(chrono::Utc::now() + cooldown);
+        // ban_count is intentionally NOT incremented — transient conditions are not
+        // node health problems, and escalating the ban counter would give the node a
+        // 60 s × exp(n) ban on its next genuine failure, which is too harsh.
+        self.ban_reason = reason;
+    }
+
     /// Clears ban record.
     pub fn unban(&mut self) {
         self.ban_count = 0;
@@ -178,6 +213,29 @@ impl AddressList {
         };
 
         status.ban_with_reason(&self.base_ban_period, reason);
+
+        true
+    }
+
+    /// Apply a short, flat cooldown to an address for a transient (client-fixable) error.
+    ///
+    /// Unlike [`ban_with_reason`], this does **not** increment the address' `ban_count`,
+    /// so the exponential backoff used for genuinely unhealthy nodes is unaffected.
+    /// After [`DEFAULT_RATE_LIMIT_COOLDOWN`] the node automatically re-enters the live
+    /// pool — no explicit unban call needed.
+    ///
+    /// Used for gRPC codes that signal "slow down" or client-side conditions, not node
+    /// health failures: `ResourceExhausted`, `DeadlineExceeded`, `Aborted`, `Cancelled`.
+    ///
+    /// Returns `false` if the address is not in the list.
+    pub fn rate_limit_cooldown(&self, address: &Address, reason: Option<String>) -> bool {
+        let mut guard = self.addresses.write().unwrap();
+
+        let Some(status) = guard.get_mut(address) else {
+            return false;
+        };
+
+        status.rate_limit_cooldown(DEFAULT_RATE_LIMIT_COOLDOWN, reason);
 
         true
     }
@@ -297,10 +355,19 @@ impl AddressList {
     ///
     /// Clones the current state into an owned `Vec<AddressBanInfo>` so
     /// it can be inspected without holding the internal lock. The
-    /// `banned` flag reflects the *currently effectively banned*
+    /// `banned` flag reflects the *currently effectively excluded*
     /// semantics used by [`AddressList::get_live_address`]: the address
-    /// has been banned at least once (`ban_count > 0`) and its ban
-    /// period has not yet expired (`banned_until` is in the future).
+    /// has a `banned_until` timestamp in the future. This covers both:
+    ///
+    /// - **Full bans** (`ban_count > 0`): genuine node-health failures with
+    ///   exponential backoff, applied by [`ban_with_reason`].
+    /// - **Rate-limit cooldowns** (`ban_count == 0`, but `banned_until` set):
+    ///   transient 5-second cooldowns for `ResourceExhausted` responses,
+    ///   applied by [`rate_limit_cooldown`]. These nodes are healthy; they
+    ///   merely need a brief pause.
+    ///
+    /// Callers can distinguish the two cases via `ban_count`:
+    /// `ban_count == 0 && banned` → rate-limit cooldown, not a health issue.
     pub fn ban_info(&self) -> Vec<AddressBanInfo> {
         let guard = self.addresses.read().unwrap();
 
@@ -309,11 +376,12 @@ impl AddressList {
         guard
             .iter()
             .map(|(addr, status)| {
-                let banned = status.ban_count > 0
-                    && status
-                        .banned_until
-                        .map(|banned_until| banned_until >= now)
-                        .unwrap_or(false);
+                // `banned` = "currently excluded from get_live_address()" —
+                // matches the filter: banned_until >= now (i.e. ban not yet expired).
+                let banned = status
+                    .banned_until
+                    .map(|banned_until| banned_until >= now)
+                    .unwrap_or(false);
                 AddressBanInfo {
                     uri: addr.to_string(),
                     banned,
@@ -754,5 +822,94 @@ mod tests {
     fn test_ban_info_empty_list() {
         let list = AddressList::new();
         assert!(list.ban_info().is_empty());
+    }
+
+    // ── rate_limit_cooldown tests ────────────────────────────────────────────
+
+    /// A cooldown-ed node disappears from `get_live_addresses` while the
+    /// timer is active, but ban_count stays 0.
+    #[test]
+    fn test_rate_limit_cooldown_excludes_node_temporarily() {
+        let mut list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:4000".parse().unwrap();
+        list.add(addr.clone());
+
+        // Initially live.
+        assert_eq!(list.get_live_addresses().len(), 1);
+
+        // Apply cooldown directly via AddressStatus.
+        {
+            let mut guard = list.addresses.write().unwrap();
+            let status = guard.get_mut(&addr).unwrap();
+            status.rate_limit_cooldown(Duration::from_secs(3600), Some("test".into()));
+            // ban_count must NOT be incremented.
+            assert_eq!(status.ban_count, 0);
+            assert!(status.banned_until.is_some());
+        }
+
+        // Node is now excluded from the live pool.
+        assert!(list.get_live_addresses().is_empty());
+    }
+
+    /// `rate_limit_cooldown` (used for ANY transient error — ResourceExhausted,
+    /// DeadlineExceeded, Aborted, Cancelled) does NOT increment ban_count; a
+    /// subsequent genuine failure starts the exponential ladder from ban_count = 0.
+    #[test]
+    fn test_rate_limit_cooldown_does_not_escalate_ban_count() {
+        let mut status = AddressStatus::default();
+        let base = Duration::from_secs(60);
+
+        // Simulate 10 transient errors (any of the 4 client-fixable codes).
+        for _ in 0..10 {
+            status.rate_limit_cooldown(Duration::from_secs(5), None);
+        }
+        assert_eq!(
+            status.ban_count, 0,
+            "10 transient-error cooldowns must not increment ban_count"
+        );
+
+        // First genuine ban starts at exp(0) × 60 s = 60 s.
+        status.ban_with_reason(&base, None);
+        assert_eq!(status.ban_count, 1);
+        let period = status.banned_until.unwrap() - chrono::Utc::now();
+        // Allow a couple of seconds of wall-clock slop.
+        assert!(
+            period.num_seconds() >= 58 && period.num_seconds() <= 62,
+            "first genuine ban must be ~60 s regardless of prior rate-limit cooldowns, got {}s",
+            period.num_seconds()
+        );
+    }
+
+    /// `AddressList::rate_limit_cooldown` returns false for unknown addresses.
+    #[test]
+    fn test_rate_limit_cooldown_unknown_address_returns_false() {
+        let list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:4001".parse().unwrap();
+        assert!(!list.rate_limit_cooldown(&addr, None));
+    }
+
+    /// `ban_info` marks a rate-limited node as `banned` (excluded from pool)
+    /// even though ban_count is 0, distinguishing it from a fully unbanned node.
+    #[test]
+    fn test_ban_info_reflects_rate_limited_node() {
+        let mut list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:4002".parse().unwrap();
+        list.add(addr.clone());
+
+        list.rate_limit_cooldown(&addr, Some("rate limited".into()));
+
+        let info = list.ban_info();
+        assert_eq!(info.len(), 1);
+        let entry = &info[0];
+        assert!(
+            entry.banned,
+            "rate-limited node must appear as banned in ban_info"
+        );
+        assert_eq!(
+            entry.ban_count, 0,
+            "ban_count must stay 0 after rate-limit cooldown"
+        );
+        assert!(entry.banned_until.is_some());
+        assert_eq!(entry.reason.as_deref(), Some("rate limited"));
     }
 }

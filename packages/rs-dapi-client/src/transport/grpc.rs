@@ -146,6 +146,17 @@ impl CanRetry for dapi_grpc::tonic::Status {
                 | Unimplemented
         )
     }
+
+    fn is_transient_error(&self) -> bool {
+        // These codes represent CLIENT-FIXABLE / transient conditions — the node is NOT
+        // unhealthy; applying the 60 s×exp ban would cascade load onto remaining nodes.
+        // See CanRetry::is_transient_error for the full rationale per code.
+        use dapi_grpc::tonic::Code::*;
+        matches!(
+            self.code(),
+            ResourceExhausted | DeadlineExceeded | Aborted | Cancelled
+        )
+    }
 }
 
 /// Macro to implement the `TransportRequest` trait for a given request type, response type, client type, and settings.

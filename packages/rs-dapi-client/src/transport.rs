@@ -106,6 +106,12 @@ impl CanRetry for TransportError {
             TransportError::Grpc(status) => status.can_retry(),
         }
     }
+
+    fn is_transient_error(&self) -> bool {
+        match self {
+            TransportError::Grpc(status) => status.is_transient_error(),
+        }
+    }
 }
 
 /// Serialization of [TransportError].
@@ -231,6 +237,56 @@ mod tests {
         let err = TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("service down"));
         let display = format!("{}", err);
         assert!(display.contains("service down"));
+    }
+
+    /// CLIENT-FIXABLE codes must be retryable AND flagged as transient so the
+    /// caller applies a short flat cooldown rather than the 60 s×exp ban.
+    #[test]
+    fn test_transient_codes_are_flagged() {
+        let transient = [
+            Code::ResourceExhausted, // rate-limit / HTTP 429
+            Code::DeadlineExceeded,  // client timeout under load
+            Code::Aborted,           // MVCC tx conflict
+            Code::Cancelled,         // client-side cancel
+        ];
+        for code in transient {
+            let status = dapi_grpc::tonic::Status::new(code, "transient");
+            assert!(status.can_retry(), "Code {code:?} must be retryable");
+            assert!(
+                status.is_transient_error(),
+                "Code {code:?} must be flagged as is_transient_error"
+            );
+            let te = TransportError::Grpc(status);
+            assert!(
+                te.is_transient_error(),
+                "TransportError({code:?}) must propagate"
+            );
+        }
+    }
+
+    /// Server-side codes that genuinely indicate node health problems must NOT
+    /// be flagged as transient — they still trigger the exponential ban.
+    #[test]
+    fn test_server_side_codes_are_not_transient() {
+        let server_side = [
+            Code::Unavailable,
+            Code::Internal,
+            Code::DataLoss,
+            Code::Unknown,
+            Code::Unimplemented,
+        ];
+        for code in server_side {
+            let status = dapi_grpc::tonic::Status::new(code, "server error");
+            assert!(
+                !status.is_transient_error(),
+                "Code {code:?} must NOT be flagged as transient"
+            );
+            let te = TransportError::Grpc(status);
+            assert!(
+                !te.is_transient_error(),
+                "TransportError({code:?}) must not propagate transient"
+            );
+        }
     }
 
     #[cfg(feature = "mocks")]
