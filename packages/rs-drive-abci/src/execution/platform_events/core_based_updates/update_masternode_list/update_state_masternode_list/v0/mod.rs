@@ -40,43 +40,25 @@ where
             });
     }
 
-    /// Updates a masternode in the validator sets.
-    ///
-    /// This function updates the properties of the masternode that matches the given `pro_tx_hash`.
-    /// The properties are updated based on the provided `dmn_state_diff` information.
-    /// If a matching masternode is found, the function updates its ban status, service address,
-    /// platform P2P port, and platform HTTP port accordingly.
-    ///
-    /// # Arguments
-    ///
-    /// * `pro_tx_hash` - The `ProTxHash` of the masternode to be updated
-    /// * `dmn_state_diff` - The `DMNStateDiff` containing the updated masternode information
-    /// * `validator_sets` - A mutable reference to the `IndexMap<QuorumHash, ValidatorSet>`
-    ///   representing the validator sets with the quorum hash as the key
-    fn update_masternode_in_validator_sets(
+    /// Apply a [`ValidatorRefresh`] (derived from the post-`apply_diff` full state) to
+    /// the matching validator in every validator set. Deriving every field from the
+    /// full state — rather than patching each field from the raw diff — keeps the
+    /// validity decision and the written values consistent: a partial Core 23
+    /// `addresses` diff overwrites the whole nested object, so the diff alone is not a
+    /// reliable source for the unchanged axis.
+    fn apply_validator_refresh(
         pro_tx_hash: &ProTxHash,
-        dmn_state_diff: &DMNStateDiff,
+        refresh: &ValidatorRefresh,
         validator_sets: &mut IndexMap<QuorumHash, ValidatorSet>,
     ) {
         validator_sets
             .iter_mut()
             .for_each(|(_quorum_hash, validator_set)| {
                 if let Some(validator) = validator_set.members_mut().get_mut(pro_tx_hash) {
-                    if let Some(maybe_ban_height) = dmn_state_diff.pose_ban_height {
-                        // the ban_height was changed
-                        validator.is_banned = maybe_ban_height.is_some();
-                    }
-                    if let Some(address) = dmn_state_diff.service {
-                        validator.node_ip = address.ip().to_string();
-                    }
-
-                    if let Some(p2p_port) = diff_platform_p2p_port(dmn_state_diff) {
-                        validator.platform_p2p_port = p2p_port as u16;
-                    }
-
-                    if let Some(http_port) = diff_platform_http_port(dmn_state_diff) {
-                        validator.platform_http_port = http_port as u16;
-                    }
+                    validator.is_banned = refresh.is_banned;
+                    validator.node_ip = refresh.node_ip.clone();
+                    validator.platform_p2p_port = refresh.platform_p2p_port;
+                    validator.platform_http_port = refresh.platform_http_port;
                 }
             });
     }
@@ -141,13 +123,13 @@ where
                 if let Some(hpmn_list_item) = state.hpmn_masternode_list_mut().get_mut(pro_tx_hash)
                 {
                     hpmn_list_item.state.apply_diff(state_diff.clone());
-                    // The updated HPMN state is the source of truth for whether this
-                    // node is still a valid platform validator: both platform ports
-                    // are mandatory (`new_validator_if_masternode_in_state` rejects a
-                    // node missing either). Computed before the validator-set borrow
-                    // so the `hpmn_list_item` borrow ends first.
-                    let resolves_platform_ports =
-                        resolves_platform_validator_ports(&hpmn_list_item.state);
+                    // Derive the validator's fields from the post-`apply_diff` full
+                    // state — the single source of truth (the same accessors as
+                    // `new_validator_if_masternode_in_state`). `Some` means the node is
+                    // still a valid HPMN platform validator (both ports + a node id);
+                    // `None` means it no longer is. Computed before the validator-set
+                    // borrow so the `hpmn_list_item` borrow ends first.
+                    let refresh = validator_refresh_from_state(&hpmn_list_item.state);
                     // Refresh the validator entry on any change to the fields it
                     // carries: ban status, service IP, or either platform port.
                     // A platform-port change can be a resolvable p2p/http port
@@ -162,23 +144,23 @@ where
                         || diff_platform_http_port(state_diff).is_some()
                         || state_diff.addresses.is_some()
                     {
-                        if resolves_platform_ports {
-                            // Update the ban status / IP / platform port on the cached
-                            // validator entry.
-                            Self::update_masternode_in_validator_sets(
+                        match &refresh {
+                            // Still a valid platform validator → rewrite its fields
+                            // from the full state.
+                            Some(refresh) => Self::apply_validator_refresh(
                                 pro_tx_hash,
-                                state_diff,
+                                refresh,
                                 state.validator_sets_mut(),
-                            );
-                        } else {
-                            // Platform ports disappeared (Core 23 `addresses` cleared,
-                            // or a zeroed legacy port with no addresses) → the node is
-                            // no longer a valid HPMN validator. Drop the stale cached
-                            // entry so we stop advertising a dead platform endpoint.
-                            Self::remove_masternode_in_validator_sets(
+                            ),
+                            // Platform endpoint disappeared (Core 23 `addresses`
+                            // cleared, a zeroed legacy port with no addresses, or a
+                            // missing node id) → the node is no longer a valid HPMN
+                            // validator. Drop the stale cached entry so we stop
+                            // advertising a dead platform endpoint.
+                            None => Self::remove_masternode_in_validator_sets(
                                 pro_tx_hash,
                                 state.validator_sets_mut(),
-                            );
+                            ),
                         }
                     }
                 }
@@ -221,29 +203,53 @@ where
 /// drops zero, so surfacing a legacy `0` here would set a validator's platform port to
 /// `0` — the exact failure [rust-dashcore#808] fixed.
 #[allow(deprecated)]
-fn diff_platform_p2p_port(diff: &DMNStateDiff) -> Option<u32> {
+fn diff_platform_p2p_port(diff: &DMNStateDiff) -> Option<u16> {
     diff.platform_p2p_address()
         .map(|(_host, port)| port)
-        .or_else(|| diff.legacy_platform_p2p_port.filter(|&port| port != 0))
+        .or(diff.legacy_platform_p2p_port)
+        .and_then(|port| u16::try_from(port).ok())
+        .filter(|&port| port != 0)
 }
 
 /// Resolve a masternode diff's platform **HTTPS** port change — the http analogue of
 /// [`diff_platform_p2p_port`] (same Core-23-nested-first, non-zero-legacy-fallback rule).
 #[allow(deprecated)]
-fn diff_platform_http_port(diff: &DMNStateDiff) -> Option<u32> {
+fn diff_platform_http_port(diff: &DMNStateDiff) -> Option<u16> {
     diff.platform_http_address()
         .map(|(_host, port)| port)
-        .or_else(|| diff.legacy_platform_http_port.filter(|&port| port != 0))
+        .or(diff.legacy_platform_http_port)
+        .and_then(|port| u16::try_from(port).ok())
+        .filter(|&port| port != 0)
 }
 
-/// Whether a masternode's (post-`apply_diff`) state still resolves **both** platform
-/// ports — the validity condition `new_validator_if_masternode_in_state` enforces (it
-/// rejects a node missing either). Uses the full-state accessors, which prefer the
-/// Core 23 nested addresses and fall back to the non-zero legacy port paired with the
-/// node's service IP. When this is false the node can no longer be a platform
-/// validator, so its cached entry must be dropped rather than left stale.
-fn resolves_platform_validator_ports(state: &DMNState) -> bool {
-    state.platform_p2p_address().is_some() && state.platform_http_address().is_some()
+/// The mutable validator fields a refresh writes, derived **once** from the
+/// post-`apply_diff` full state so the validity decision and the written values can
+/// never disagree.
+struct ValidatorRefresh {
+    node_ip: String,
+    platform_p2p_port: u16,
+    platform_http_port: u16,
+    is_banned: bool,
+}
+
+/// Derive the [`ValidatorRefresh`] for a masternode from its (post-`apply_diff`) full
+/// state, or `None` if it is no longer a valid HPMN platform validator. Mirrors the
+/// exact validity gate of `new_validator_if_masternode_in_state`: both platform ports
+/// must resolve (Core 23 nested addresses preferred, non-zero legacy fallback paired
+/// with the service IP) **and** a `platform_node_id` must be present — a non-HPMN or
+/// de-platformed node has none. The advertised `node_ip` is the platform p2p host (the
+/// service IP for a legacy node, the Core 23 platform host otherwise); ports go through
+/// `u16::try_from` so an out-of-range value drops the node rather than truncating.
+fn validator_refresh_from_state(state: &DMNState) -> Option<ValidatorRefresh> {
+    let (node_ip, platform_p2p_port) = state.platform_p2p_address()?;
+    let (_http_host, platform_http_port) = state.platform_http_address()?;
+    state.platform_node_id?;
+    Some(ValidatorRefresh {
+        node_ip,
+        platform_p2p_port: u16::try_from(platform_p2p_port).ok()?,
+        platform_http_port: u16::try_from(platform_http_port).ok()?,
+        is_banned: state.pose_ban_height.is_some(),
+    })
 }
 
 #[cfg(test)]
@@ -359,41 +365,61 @@ mod tests {
         }
     }
 
-    // A Core 23 node resolves both ports from `addresses` even though the legacy flat
-    // fields are zeroed → still a valid platform validator.
+    // The diff resolver drops an out-of-range legacy port instead of truncating it via
+    // `as u16` (65536 would otherwise become 0 — rust-dashcore#808).
     #[test]
     #[allow(deprecated)]
-    fn resolves_ports_for_core23_addresses() {
+    fn diff_drops_out_of_range_legacy_port() {
+        let diff = DMNStateDiff {
+            legacy_platform_p2p_port: Some(65536),
+            ..empty_diff()
+        };
+        assert_eq!(diff_platform_p2p_port(&diff), None);
+    }
+
+    // A Core 23 node resolves both ports from `addresses` even though the legacy flat
+    // fields are zeroed → still a valid platform validator. The advertised `node_ip` is
+    // the Core 23 platform host from `addresses`, NOT the core service IP.
+    #[test]
+    #[allow(deprecated)]
+    fn refresh_resolves_core23_addresses_with_platform_host() {
         let state = DMNState {
             legacy_platform_p2p_port: Some(0),
             legacy_platform_http_port: Some(0),
             addresses: Some(MasternodeAddresses {
                 core_p2p: vec![],
-                platform_p2p: vec!["192.0.2.2:36656".to_string()],
-                platform_https: vec!["192.0.2.2:443".to_string()],
+                platform_p2p: vec!["203.0.113.7:36656".to_string()],
+                platform_https: vec!["203.0.113.7:443".to_string()],
             }),
-            ..base_dmn_state()
+            ..base_dmn_state() // service IP is 192.0.2.2 — deliberately different
         };
-        assert!(resolves_platform_validator_ports(&state));
+        let refresh = validator_refresh_from_state(&state).expect("valid v3 validator");
+        assert_eq!(refresh.node_ip, "203.0.113.7");
+        assert_eq!(refresh.platform_p2p_port, 36656);
+        assert_eq!(refresh.platform_http_port, 443);
     }
 
-    // A Core 22 node resolves both ports from the non-zero legacy fields.
+    // A Core 22 node resolves both ports from the non-zero legacy fields, paired with
+    // the core service IP.
     #[test]
     #[allow(deprecated)]
-    fn resolves_ports_for_legacy() {
+    fn refresh_resolves_legacy_with_service_ip() {
         let state = DMNState {
             legacy_platform_p2p_port: Some(26656),
             legacy_platform_http_port: Some(8443),
             ..base_dmn_state()
         };
-        assert!(resolves_platform_validator_ports(&state));
+        let refresh = validator_refresh_from_state(&state).expect("valid legacy validator");
+        assert_eq!(refresh.node_ip, "192.0.2.2");
+        assert_eq!(refresh.platform_p2p_port, 26656);
+        assert_eq!(refresh.platform_http_port, 8443);
     }
 
     // Ports gone (zeroed legacy + empty addresses, or only one port present) → no
-    // longer a valid platform validator, so the cached entry must be dropped.
+    // longer a valid platform validator; the cached entry must be dropped.
     #[test]
     #[allow(deprecated)]
-    fn does_not_resolve_when_ports_disappear() {
+    fn refresh_none_when_ports_disappear() {
         let cleared = DMNState {
             legacy_platform_p2p_port: Some(0),
             legacy_platform_http_port: Some(0),
@@ -404,7 +430,7 @@ mod tests {
             }),
             ..base_dmn_state()
         };
-        assert!(!resolves_platform_validator_ports(&cleared));
+        assert!(validator_refresh_from_state(&cleared).is_none());
 
         let http_only = DMNState {
             addresses: Some(MasternodeAddresses {
@@ -414,6 +440,20 @@ mod tests {
             }),
             ..base_dmn_state()
         };
-        assert!(!resolves_platform_validator_ports(&http_only));
+        assert!(validator_refresh_from_state(&http_only).is_none());
+    }
+
+    // An HPMN that resolves both ports but has no `platform_node_id` is not a valid
+    // platform validator (mirrors new_validator_if_masternode_in_state's node-id gate).
+    #[test]
+    #[allow(deprecated)]
+    fn refresh_none_without_platform_node_id() {
+        let state = DMNState {
+            legacy_platform_p2p_port: Some(26656),
+            legacy_platform_http_port: Some(8443),
+            platform_node_id: None,
+            ..base_dmn_state()
+        };
+        assert!(validator_refresh_from_state(&state).is_none());
     }
 }

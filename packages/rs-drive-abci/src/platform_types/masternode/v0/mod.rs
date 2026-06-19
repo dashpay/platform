@@ -2,7 +2,7 @@
 pub mod accessors;
 
 use dpp::bincode::{Decode, Encode};
-use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
+use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeAddresses, MasternodeType};
 use dpp::dashcore_rpc::json::MasternodeListItem;
 use std::fmt::{Debug, Formatter};
 
@@ -182,8 +182,14 @@ impl From<DMNState> for MasternodeStateV0 {
 }
 
 impl From<MasternodeStateV0> for DMNState {
-    // Reverse of the conversion above: platform only holds the legacy port pair,
-    // so the Core 23+ nested `addresses` are reconstructed as `None`.
+    // Reverse of the conversion above (used by the persisted-state round-trip).
+    // Reconstruct the Core 23 nested `addresses` shape rather than the legacy flat
+    // fields: platform deploys on the masternode's core IP, so pair each stored port
+    // with `service.ip()`. Leaving the ports here in `legacy_*` instead would make a
+    // later `addresses: Some(None)` clear diff a no-op — the full-state accessor
+    // would keep falling back to the stale legacy port and wrongly retain a validator
+    // whose platform endpoint Core has removed. `MasternodeStateV0` carries no host,
+    // so `service.ip()` is the faithful (and accessor-consistent) reconstruction.
     #[allow(deprecated)]
     fn from(value: MasternodeStateV0) -> Self {
         let MasternodeStateV0 {
@@ -202,6 +208,21 @@ impl From<MasternodeStateV0> for DMNState {
             platform_http_port,
         } = value;
 
+        let host = service.ip();
+        let addresses = (platform_p2p_port.is_some() || platform_http_port.is_some()).then(|| {
+            MasternodeAddresses {
+                core_p2p: vec![],
+                platform_p2p: platform_p2p_port
+                    .map(|port| format!("{host}:{port}"))
+                    .into_iter()
+                    .collect(),
+                platform_https: platform_http_port
+                    .map(|port| format!("{host}:{port}"))
+                    .into_iter()
+                    .collect(),
+            }
+        });
+
         Self {
             service,
             registered_height,
@@ -214,9 +235,9 @@ impl From<MasternodeStateV0> for DMNState {
             pub_key_operator,
             operator_payout_address,
             platform_node_id,
-            legacy_platform_p2p_port: platform_p2p_port,
-            legacy_platform_http_port: platform_http_port,
-            addresses: None,
+            legacy_platform_p2p_port: None,
+            legacy_platform_http_port: None,
+            addresses,
         }
     }
 }
@@ -279,5 +300,68 @@ mod tests {
         let state = MasternodeStateV0::from(dmn);
         assert_eq!(state.platform_p2p_port, Some(26656));
         assert_eq!(state.platform_http_port, Some(8443));
+    }
+
+    // Persisting a Core 23 masternode collapses its addresses-resolved port into a bare
+    // port in MasternodeStateV0. The reverse conversion must rebuild it in `addresses`
+    // (host = service IP), leaving the legacy fields None — otherwise a later
+    // `addresses: Some(None)` clear diff is masked by a stale legacy port and the
+    // de-platformed validator is wrongly retained after a restart.
+    #[test]
+    #[allow(deprecated)]
+    fn reverse_from_reconstructs_core23_addresses_then_honors_a_clear() {
+        use dpp::dashcore_rpc::dashcore_rpc_json::DMNStateDiff;
+
+        let stored = MasternodeStateV0 {
+            service: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 2)), 19999),
+            registered_height: 1,
+            pose_revived_height: None,
+            pose_ban_height: None,
+            revocation_reason: 0,
+            owner_address: [0u8; 20],
+            voting_address: [0u8; 20],
+            payout_address: [0u8; 20],
+            pub_key_operator: vec![1u8; 48],
+            operator_payout_address: None,
+            platform_node_id: Some([7u8; 20]),
+            platform_p2p_port: Some(36656),
+            platform_http_port: Some(443),
+        };
+
+        let mut dmn: DMNState = stored.into();
+        // Reconstructed as `addresses`, not legacy.
+        assert_eq!(dmn.legacy_platform_p2p_port, None);
+        assert_eq!(dmn.legacy_platform_http_port, None);
+        let addrs = dmn.addresses.clone().expect("addresses reconstructed");
+        assert_eq!(addrs.platform_p2p, vec!["192.0.2.2:36656".to_string()]);
+        assert_eq!(addrs.platform_https, vec!["192.0.2.2:443".to_string()]);
+        // Still resolves after a plain restart.
+        assert!(dmn.platform_p2p_address().is_some());
+
+        // A subsequent Core 23 `addresses: Some(None)` clear (legacy untouched) now
+        // actually drops the platform endpoint. With the old legacy-shaped round-trip
+        // the legacy fallback would keep it resolvable → stale validator retained.
+        let clear = DMNStateDiff {
+            service: None,
+            registered_height: None,
+            last_paid_height: None,
+            consecutive_payments: None,
+            pose_penalty: None,
+            pose_revived_height: None,
+            pose_ban_height: None,
+            revocation_reason: None,
+            owner_address: None,
+            voting_address: None,
+            payout_address: None,
+            pub_key_operator: None,
+            operator_payout_address: None,
+            platform_node_id: None,
+            legacy_platform_p2p_port: None,
+            legacy_platform_http_port: None,
+            addresses: Some(None),
+        };
+        dmn.apply_diff(clear);
+        assert!(dmn.platform_p2p_address().is_none());
+        assert!(dmn.platform_http_address().is_none());
     }
 }

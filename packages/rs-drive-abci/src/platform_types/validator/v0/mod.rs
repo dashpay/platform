@@ -27,17 +27,23 @@ impl NewValidatorIfMasternodeInState for ValidatorV0 {
         // produces a validator instead of being dropped; Core 22 falls back to the
         // legacy flat ports unchanged. A masternode with no resolvable platform
         // port on either form is not a valid HPMN validator.
-        let (_, platform_p2p_port) = state.platform_p2p_address()?;
-        let (_, platform_http_port) = state.platform_http_address()?;
+        // The accessor returns the platform p2p `(host, port)`. Use the host as the
+        // validator's advertised `node_ip`: it equals the core service IP for a
+        // legacy (Core 22) node and is the Core 23 platform host otherwise.
+        // `node_address` is `node_id@node_ip:platform_p2p_port`, so the p2p host is
+        // authoritative. `u16::try_from` (not `as`) rejects an out-of-range port
+        // rather than silently truncating it (e.g. a malformed `0` — the #808 shape).
+        let (platform_p2p_host, platform_p2p_port) = state.platform_p2p_address()?;
+        let (_platform_http_host, platform_http_port) = state.platform_http_address()?;
         let platform_node_id = state.platform_node_id?;
         Some(ValidatorV0 {
             pro_tx_hash,
             public_key,
-            node_ip: state.service.ip().to_string(),
+            node_ip: platform_p2p_host,
             node_id: PubkeyHash::from_byte_array(platform_node_id),
             core_port: state.service.port(),
-            platform_http_port: platform_http_port as u16,
-            platform_p2p_port: platform_p2p_port as u16,
+            platform_http_port: u16::try_from(platform_http_port).ok()?,
+            platform_p2p_port: u16::try_from(platform_p2p_port).ok()?,
             is_banned: state.pose_ban_height.is_some(),
         })
     }
