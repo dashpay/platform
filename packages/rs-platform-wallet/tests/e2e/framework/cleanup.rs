@@ -272,7 +272,14 @@ async fn sweep_one(
     network: Network,
 ) -> FrameworkResult<SweepReport> {
     let seed_bytes: [u8; 64] = parse_seed_hex(&entry.seed_hex)?;
-    let wallet = manager
+    // Create the wallet in the manager. When the SPV runtime restored
+    // its persistent state across a process restart it may have already
+    // re-registered this wallet, producing `WalletAlreadyExists`. That
+    // is fine — retrieve the existing handle and continue sweeping.
+    // Returning an error here would leave the orphan unswept and its
+    // registry entry as `Failed`, causing the next startup to see the
+    // same error in an infinite retry loop. (QA-T11 idempotent-sweep fix)
+    let wallet = match manager
         .create_wallet_from_seed_bytes(
             network,
             seed_bytes,
@@ -280,7 +287,25 @@ async fn sweep_one(
             None,
         )
         .await
-        .map_err(wallet_err)?;
+    {
+        Ok(w) => w,
+        Err(PlatformWalletError::WalletAlreadyExists(_)) => {
+            tracing::debug!(
+                target: "platform_wallet::e2e::cleanup",
+                wallet_id = %hex::encode(hash),
+                "orphan sweep: wallet already registered in manager \
+                 (SPV persistence across restart); retrieving existing handle"
+            );
+            manager.get_wallet(hash).await.ok_or_else(|| {
+                FrameworkError::Cleanup(format!(
+                    "wallet {} reported WalletAlreadyExists but get_wallet \
+                     returned None — manager state inconsistent",
+                    hex::encode(hash)
+                ))
+            })?
+        }
+        Err(err) => return Err(wallet_err(err)),
+    };
     if wallet.wallet_id() != *hash {
         return Err(FrameworkError::Cleanup(format!(
             "registry hash mismatch for sweep: expected {} got {}",
