@@ -17,7 +17,7 @@ use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v8::DRIVE_ABCI_METHOD_VERSIONS_V8;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
-use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
+use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIVE_ABCI_STRUCTURE_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v8::DRIVE_ABCI_VALIDATION_VERSIONS_V8;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
@@ -35,7 +35,9 @@ pub const PLATFORM_V12: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_12,
     drive: DRIVE_VERSION_V7, // changed: shielded pool (commitment tree, nullifiers, anchors, address funds, sinsemilla hashing)
     drive_abci: DriveAbciVersion {
-        structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
+        // V2 == V1 plus masternode struct version 1: persist the Core 23 platform host so a
+        // split platform/core host survives a restart (Masternode::V1).
+        structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         // V8 == V7 plus the four shielded-pool block-processing methods, which
         // are valid only from v12 onward (the `[52, "M"]` subtree exists here).
         methods: DRIVE_ABCI_METHOD_VERSIONS_V8,

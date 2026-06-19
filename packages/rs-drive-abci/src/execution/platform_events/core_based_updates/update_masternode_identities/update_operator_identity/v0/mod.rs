@@ -387,6 +387,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // fixtures build mock DMNState via deprecated legacy platform ports
 mod tests {
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
@@ -542,8 +543,9 @@ mod tests {
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                legacy_platform_p2p_port: None,
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -619,8 +621,9 @@ mod tests {
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                legacy_platform_p2p_port: None,
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -679,8 +682,9 @@ mod tests {
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(new_operator_payout_address),
                 platform_node_id: Some(node_id),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                legacy_platform_p2p_port: None,
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -752,8 +756,9 @@ mod tests {
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                legacy_platform_p2p_port: None,
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -829,8 +834,9 @@ mod tests {
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(original_node_id),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                legacy_platform_p2p_port: None,
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -890,8 +896,9 @@ mod tests {
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(new_platform_node_id),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                legacy_platform_p2p_port: None,
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -978,8 +985,9 @@ mod tests {
                 pub_key_operator: original_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                legacy_platform_p2p_port: None,
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -1108,8 +1116,9 @@ mod tests {
                 pub_key_operator: original_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                legacy_platform_p2p_port: None,
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -1209,8 +1218,9 @@ mod tests {
                 pub_key_operator: original_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                legacy_platform_p2p_port: None,
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -1270,8 +1280,9 @@ mod tests {
                 pub_key_operator: new_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                legacy_platform_p2p_port: None,
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 

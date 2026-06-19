@@ -1,3 +1,7 @@
+// Fixtures build mock masternode states via the legacy flat platform ports,
+// deprecated upstream in favor of Core 23+ nested `addresses` (unused in tests).
+#![allow(deprecated)]
+
 use crate::BlsPrivateKey;
 use dpp::bls_signatures::Bls12381G2Impl;
 use dpp::dashcore_rpc::json::MasternodeListItem;
@@ -15,8 +19,8 @@ impl UpdateMasternodeListItem for MasternodeListItem {
             .filter(|&field_idx| match field_idx {
                 4 => self.state.operator_payout_address.is_some(),
                 5 => self.state.platform_node_id.is_some(),
-                6 => self.state.platform_p2p_port.is_some(),
-                7 => self.state.platform_http_port.is_some(),
+                6 => self.state.legacy_platform_p2p_port.is_some(),
+                7 => self.state.legacy_platform_http_port.is_some(),
                 _ => true,
             })
             .collect();
@@ -56,12 +60,12 @@ impl UpdateMasternodeListItem for MasternodeListItem {
                     }
                 }
                 6 => {
-                    if let Some(ref mut port) = self.state.platform_p2p_port {
+                    if let Some(ref mut port) = self.state.legacy_platform_p2p_port {
                         *port = rng.gen_range(1024..=65535);
                     }
                 }
                 7 => {
-                    if let Some(ref mut port) = self.state.platform_http_port {
+                    if let Some(ref mut port) = self.state.legacy_platform_http_port {
                         *port = rng.gen_range(1024..=65535);
                     }
                 }
@@ -116,8 +120,9 @@ mod tests {
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: None,
-                platform_p2p_port: None,
-                platform_http_port: None,
+                legacy_platform_p2p_port: None,
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
