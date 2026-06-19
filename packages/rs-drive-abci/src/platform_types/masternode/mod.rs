@@ -52,3 +52,31 @@ impl From<Masternode> for MasternodeListItem {
         }
     }
 }
+
+/// Format a platform `host:port` entry for a reconstructed Core 23 `addresses` object,
+/// bracketing an IPv6 host so the upstream nested-address parser accepts it. A bare
+/// `format!("{host}:{port}")` emits an unparsable `2001:db8::1:443` for an IPv6 host, which
+/// would make `DMNState::platform_p2p_address()` return `None` after a save/load round-trip
+/// and drop the HPMN from validator sets. An IPv4 address or a hostname is emitted as-is; an
+/// already-bracketed host is left alone.
+pub(super) fn format_platform_address(host: &str, port: u32) -> String {
+    if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::format_platform_address;
+
+    #[test]
+    fn brackets_only_unbracketed_ipv6() {
+        assert_eq!(format_platform_address("192.0.2.2", 443), "192.0.2.2:443");
+        assert_eq!(format_platform_address("node.example.com", 443), "node.example.com:443");
+        assert_eq!(format_platform_address("2001:db8::1", 36656), "[2001:db8::1]:36656");
+        // Already bracketed → not double-bracketed.
+        assert_eq!(format_platform_address("[2001:db8::1]", 36656), "[2001:db8::1]:36656");
+    }
+}

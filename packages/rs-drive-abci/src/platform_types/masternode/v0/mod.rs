@@ -208,16 +208,16 @@ impl From<MasternodeStateV0> for DMNState {
             platform_http_port,
         } = value;
 
-        let host = service.ip();
+        let host = service.ip().to_string();
         let addresses = (platform_p2p_port.is_some() || platform_http_port.is_some()).then(|| {
             MasternodeAddresses {
                 core_p2p: vec![],
                 platform_p2p: platform_p2p_port
-                    .map(|port| format!("{host}:{port}"))
+                    .map(|port| super::format_platform_address(&host, port))
                     .into_iter()
                     .collect(),
                 platform_https: platform_http_port
-                    .map(|port| format!("{host}:{port}"))
+                    .map(|port| super::format_platform_address(&host, port))
                     .into_iter()
                     .collect(),
             }
@@ -363,5 +363,39 @@ mod tests {
         dmn.apply_diff(clear);
         assert!(dmn.platform_p2p_address().is_none());
         assert!(dmn.platform_http_address().is_none());
+    }
+
+    // An IPv6 service must round-trip: the reverse conversion brackets the host so the
+    // upstream parser re-accepts it. Without bracketing the reconstructed string is
+    // `2001:db8::1:36656`, which `platform_p2p_address()` rejects → the HPMN is dropped.
+    #[test]
+    #[allow(deprecated)]
+    fn reverse_from_brackets_ipv6_host() {
+        use std::net::Ipv6Addr;
+
+        let stored = MasternodeStateV0 {
+            service: SocketAddr::new(
+                IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1)),
+                19999,
+            ),
+            registered_height: 1,
+            pose_revived_height: None,
+            pose_ban_height: None,
+            revocation_reason: 0,
+            owner_address: [0u8; 20],
+            voting_address: [0u8; 20],
+            payout_address: [0u8; 20],
+            pub_key_operator: vec![1u8; 48],
+            operator_payout_address: None,
+            platform_node_id: Some([7u8; 20]),
+            platform_p2p_port: Some(36656),
+            platform_http_port: Some(443),
+        };
+
+        let dmn: DMNState = stored.into();
+        let (host, port) = dmn.platform_p2p_address().expect("ipv6 p2p resolves");
+        assert_eq!(port, 36656);
+        assert!(host.contains("2001:db8::1"), "unexpected host: {host}");
+        assert!(dmn.platform_http_address().is_some());
     }
 }

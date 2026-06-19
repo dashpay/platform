@@ -230,11 +230,11 @@ impl From<MasternodeStateV1> for DMNState {
             MasternodeAddresses {
                 core_p2p: vec![],
                 platform_p2p: platform_p2p_port
-                    .map(|port| format!("{host}:{port}"))
+                    .map(|port| super::format_platform_address(&host, port))
                     .into_iter()
                     .collect(),
                 platform_https: platform_http_port
-                    .map(|port| format!("{host}:{port}"))
+                    .map(|port| super::format_platform_address(&host, port))
                     .into_iter()
                     .collect(),
             }
@@ -368,6 +368,30 @@ mod tests {
         let back: DMNState = state.into();
         // Host preserved (would be 192.0.2.2 without the http fallback).
         assert_eq!(back.platform_http_address().expect("http resolves").0, "203.0.113.7");
+    }
+
+    // An IPv6 platform host must survive the round-trip: the reverse conversion brackets it
+    // so the upstream parser re-accepts it. Without bracketing the reconstructed string is
+    // `2001:db8::1:36656` → `platform_p2p_address()` returns None → validator dropped.
+    #[test]
+    #[allow(deprecated)]
+    fn v1_ipv6_host_round_trips() {
+        use std::net::Ipv6Addr;
+        let dmn = DMNState {
+            service: SocketAddr::new(
+                IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1)),
+                19999,
+            ),
+            legacy_platform_p2p_port: Some(36656),
+            legacy_platform_http_port: Some(443),
+            ..base_dmn_state()
+        };
+
+        let back: DMNState = MasternodeStateV1::from(dmn).into();
+        let (host, port) = back.platform_p2p_address().expect("ipv6 p2p resolves");
+        assert_eq!(port, 36656);
+        assert!(host.contains("2001:db8::1"), "unexpected host: {host}");
+        assert!(back.platform_http_address().is_some());
     }
 
     // The full save/load path goes MasternodeListItem -> MasternodeV1 -> MasternodeListItem;
