@@ -1826,12 +1826,12 @@ mod test {
     ///
     /// The full tampered-*signed*-proof path isn't unit-testable here: it needs a
     /// quorum BLS signature, a context provider, and a `FromProof` verifier round-trip.
-    /// That path's safety rests on `parse_proof_with_metadata_and_proof` running proof
-    /// verification (the `?`) BEFORE `verify_response_metadata` → `maybe_update_protocol_version`
-    /// (see the guard comment at that call site). Here we lock in the ratchet's own gates:
-    /// it must NOT raise the stored version off untrustworthy inputs (unknown / zero / lower),
-    /// so even a metadata value that slipped past verification can't move the SDK to a bogus
-    /// protocol version.
+    /// Both ratchet sites run the `FromProof` verifier (structural + `verify_tenderdash_proof`)
+    /// BEFORE `verify_response_metadata` → `maybe_update_protocol_version`: the query path via
+    /// `parse_proof_with_metadata_and_proof`, the broadcast wait-path in `broadcast.rs` (see the
+    /// guard comments at both call sites). Here we lock in the ratchet's own gates: it must NOT
+    /// raise the stored version off untrustworthy inputs (unknown / zero / lower), so even a
+    /// metadata value that slipped past verification can't move the SDK to a bogus version.
     #[test]
     fn test_ratchet_rejects_unknown_and_non_upward_versions() {
         let sdk = SdkBuilder::new_mock()

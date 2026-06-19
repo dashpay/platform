@@ -153,7 +153,7 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | ID-10 | Withdraw credits → Dash L1 address | Cross | Common | ✅ | `IdentityDetailView` → **Withdraw Credits** (sheet, `WithdrawCreditsView`) → `wallet.withdrawCredits` → `platform_wallet_withdraw_credits_with_signer` (keychain-signed). Destination L1 address typed in + validated against the wallet's network; amount validated against balance. Identity credit balance drops by amount + fee; L1 payout is pooled and processed asynchronously by the network (no immediate txid). Requires the identity to have a TRANSFER/CRITICAL key — newly-derived identities get one (keyId 3); older identities may need one added first via `ID-07`. (Also reachable via the *Settings → Platform State Transitions → Identity Credit Withdrawal* builder → `dash_sdk_identity_withdraw` with a test signer.) |
 | ID-11 | Transfer credits → Platform addresses | Platform | Common | ✅ | `AddressQueriesView` → TransferIdentityToAddresses → `dash_sdk_identity_transfer_credits_to_addresses`. |
 | ID-12 | Update identity — disable key | Platform | Thorough | ✅ | `KeyDetailView` (drill into a key from `KeysListView`) → **Key Status → Disable Key** → confirm (permanent / irreversible) → `wallet.updateIdentity(disablePublicKeyIds:)` → `platform_wallet_update_identity_with_signer` (keychain-signed). The button is gated to match consensus: it's hidden/disabled for master-level keys, the last enabled authentication key, and the last enabled transfer key (each shows an inline reason), and already-disabled keys show a read-only "Disabled" row. On success the identity's keys are re-fetched so the disabled badge appears, then the view pops back. A swipe-to-Disable shortcut on each eligible row in `KeysListView` routes into the same confirm + submit (reaches keys whose row tap opens `PrivateKeyView` instead of the detail). (Also reachable via *Settings → Platform State Transitions → Identity Update* (disable path) → `executeIdentityUpdate` with a test signer.) |
-| ID-13 | Top up identity (builder path) | Cross | — | 🧪 | Builder entry is a stub (`notImplemented`). Use `ID-05`/`ID-06`. Listed so QA doesn't mistake the stub for a defect. |
+| ID-13 | Top up identity (builder path) | Cross | — | ➖ | Retired — builder entry is a stub (`notImplemented`); identity top-up is covered by `ID-05`/`ID-06`. Kept here to document the stub; not seeded to the QA catalog. |
 
 ### 4.3 Platform Addresses (DIP-17 credit addresses) — `Domain=Address`
 
@@ -188,7 +188,7 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | VOTE-04 | Query voters for a contestant identity | Platform | Thorough | ✅ | `PlatformQueriesView` (getContestedResourceVotersForIdentity). |
 | VOTE-05 | Query an identity's votes | Platform | Thorough | ✅ | `PlatformQueriesView` (getContestedResourceIdentityVotes). |
 | VOTE-06 | Query vote polls by end date | Platform | Thorough | ✅ | `PlatformQueriesView` (getVotePollsByEndDate). |
-| VOTE-07 | Masternode vote (generic builder entry) | Platform | — | 🧪 | Builder entry is a stub (`default → notImplemented`). Use `VOTE-01`. |
+| VOTE-07 | Masternode vote (generic builder entry) | Platform | — | ➖ | Retired — builder entry is a stub (`default → notImplemented`); masternode voting is covered by `VOTE-01`. Kept here to document the stub; not seeded to the QA catalog. |
 
 ### 4.6 Data Contracts — `Domain=Contract`
 
@@ -279,7 +279,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | GRP-01 | View group info / members | Platform | Thorough | ✅ | `GroupDetailView` (drill into member identities). |
 | GRP-02 | Group queries (info / infos / actions / signers) | Platform | Thorough | ✅ | `PlatformQueriesView` group category → `dash_sdk_group_get_*`. |
 | GRP-03 | Token group action — propose / co-sign | Platform | Uncommon | ✅ | Same as `TOK-15` / `TOK-16`. |
-| GRP-04 | Standalone group lifecycle management | Platform | Uncommon | 🚫 | Not implemented — groups exist only as a token access-control construct + read queries. There is no group-create/membership transition. |
+| GRP-04 | Standalone group lifecycle management | Platform | — | ➖ | Retired from the catalog — not implemented anywhere and never will be a standalone test: there is no group-create/membership transition; groups exist only as a token access-control construct (read queries `GRP-01`/`GRP-02`; actions `GRP-03` ≡ `TOK-15`/`TOK-16`). Kept here to document the absence; not seeded to the QA catalog. |
 
 ### 4.12 System / Protocol / Diagnostics — `Domain=System`
 
@@ -290,7 +290,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SYS-03 | Protocol-version upgrade state / vote status | Platform | Uncommon | ✅ | `PlatformQueriesView` protocol category. |
 | SYS-04 | Run-all-queries / DPNS test harness | Platform | Thorough | ✅ | `PlatformQueriesView` diagnostics (`runAllQueries`, `testDPNSQueries`), `DiagnosticsView`. |
 | SYS-05 | Storage / Keychain / Wallet-memory explorers | — | Thorough | ✅ | `StorageExplorerView`, `KeychainExplorerView`, `WalletMemoryExplorerView` (Settings; debug tooling). |
-| SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🔌 | FFI `dash_sdk_system_get_path_elements`; no UI. |
+| SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🧪 | **Get GroveDB Path Elements** read view (Platform Queries → System & Utility) → Swift wrapper over FFI `dash_sdk_system_get_path_elements` (proof-verified `Element::fetch_many` over `KeysInPath`). Enter a `path` + `keys` JSON array (hex bytes); returns `[{key, element, type}]`. Use a **bounded** path — root-level queries (`path=[]`) fail GroveDB proof verification ("Cannot verify lower bound"). The "DPNS contract example" preset fills `path=["40"]` (DataContractDocuments root) + the DPNS contract id → its subtree `tree` element. |
 
 ### 4.13 Multi-wallet on-device Platform scenarios (same network) — `Domain=MultiWallet`
 
@@ -444,7 +444,7 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 | getPrefundedSpecializedBalance | Thorough | ✅ | catalog |
 | waitForStateTransitionResult | Essential | ✅ | implicit in every write round-trip |
 | broadcastStateTransition | Essential | ✅ | implicit in every write (`@sdk-ignore` RPC) |
-| getPathElements | Uncommon | 🔌 | FFI only (`SYS-06`) |
+| getPathElements | Uncommon | 🧪 | "Get GroveDB Path Elements" read view (`SYS-06`) |
 | getConsensusParams | Uncommon | 🚫 | `@sdk-ignore` (served via Tenderdash RPC) |
 
 ### Address Sync (DIP-17)
@@ -476,7 +476,6 @@ For completeness (the "everything gRPC + Core can do" requirement), these exist 
 **🔌 SDK-only (FFI/wrapper exists, no UI):**
 - `ADDR-05` address balance-change history (recent / compacted / branch / trunk)
 - `SH-11` create identity from shielded pool (Type 20)
-- `SYS-06` raw GroveDB path elements
 
 **🚫 Not implemented anywhere:**
 - `DOC-13` document SUM aggregation — FFI stub returns `NotImplemented` (blocked on grovedb PR 670)
