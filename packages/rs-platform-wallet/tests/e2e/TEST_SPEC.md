@@ -143,7 +143,7 @@ cycle, then retry. If the issue persists, wipe
 `${TMPDIR}/dash-platform-wallet-e2e/spv-data/` and retry from a clean
 state.
 
-**Known issue: SPV context provider — intermittent `InvalidQuorum` at the Platform signing-quorum retirement edge (rust-dashcore#800).** When `CONTEXT_PROVIDER=spv` (the default), `dash-spv`'s `get_quorum_at_height` resolves a signing quorum only through the single active-window masternode list at or below the lookup height. Platform/Drive selects signing quorums at a lagged height (~4–5 DKG intervals back); on fast-rotating devnets (e.g. `llmq_devnet_platform`, `signing_active_quorum_count = 4`, DKG interval 24) that quorum can already have retired from Core's active set by the time the proof's `core_chain_locked_height` is reached. `apply_diff` drops a retired quorum from the list's `.quorums`, but the quorum's public key remains in the engine's insert-only `quorum_statuses` index — which the read path never consults. The result is `Quorum not found → InvalidQuorum → DAPI node ban`, turning one rare retirement-edge miss into a `NoAvailableAddresses` cascade. The failure is **intermittent**: most proofs reference an in-window quorum and pass; it fires only at the retirement edge. The HTTP/Trusted context provider (`CONTEXT_PROVIDER=http`) is unaffected (resolves by hash from a service). Filed upstream as **rust-dashcore#800**. No client-side workaround in this suite; use `CONTEXT_PROVIDER=http` on fast-rotating devnets if this surfaces.
+**Known issue: SPV context provider — intermittent `InvalidQuorum` at the Platform signing-quorum retirement edge (rust-dashcore#800).** When `CONTEXT_PROVIDER=spv` (the default), `dash-spv`'s `get_quorum_at_height` resolves a signing quorum only through the single active-window masternode list at or below the lookup height. Platform/Drive selects signing quorums at a lagged height (~4–5 DKG intervals back); on fast-rotating devnets (e.g. `llmq_devnet_platform`, `signing_active_quorum_count = 4`, DKG interval 24) that quorum can already have retired from Core's active set by the time the proof's `core_chain_locked_height` is reached. `apply_diff` drops a retired quorum from the list's `.quorums`, but the quorum's public key remains in the engine's insert-only `quorum_statuses` index — which the read path never consults. The result is `Quorum not found → InvalidQuorum → DAPI node ban`, turning one rare retirement-edge miss into a `NoAvailableAddresses` cascade. The failure is **intermittent**: most proofs reference an in-window quorum and pass; it fires only at the retirement edge. The HTTP/Trusted context provider (`CONTEXT_PROVIDER=http`) is **equally affected** when the trusted service prunes retired quorums — both context provider modes fail when the service does not retain historical quorum records (confirmed on paloma 2026-06-19: 318 `Quorum not found` errors, type 107 / hash `0000021d…`). Filed upstream as **rust-dashcore#800**. No client-side workaround in this suite; point `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL` at a quorum service that retains full historical records, or re-run after quorum rotation makes the retired hash irrelevant to current proofs.
 
 ---
 
@@ -258,39 +258,39 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Harness-G1b | Registry forward-compatible unknown field | P2 | not implemented | S |
 | Harness-G4 | Drop `wallet.transfer` future mid-flight, recover on next sync | P2 | not implemented | L |
 | Harness-ID-1 | `sweep_identities` regression: registered identities surrender credits at teardown | P0 | green (harness-fix QA-503: removed structurally-unobservable secondary bank-identity invariant — concurrent `bank_rebalance` core-refill legitimately tops up the bank identity; sweep correctness still pinned by the immune `swept_identity_credits` assertion) | S |
-| PA-3040 | `pa_3040_bug_pin`: Drive chain-time fee exceeds wallet static estimate (platform #3040) | P1 | red-by-design — `AddressFundsTransferTransition::calculate_min_required_fee` returns the static floor (~6.5 M) while Drive's chain-time fee for 1in/1out is ~15 M; wallet's Phase-4 check passes, then Drive rejects with `AddressesNotEnoughFundsError { required ≈ 15.08 M }`. Reproduces on paloma 2026-06-02. | S |
-| SH-001 | Shield from platform-payment account → shielded pool (Type 15) | P0 | not implemented (Wave H) | L |
-| SH-002 | Round-trip: shield then unshield back to a transparent address (Type 15 → 17) | P0 | not implemented (Wave H) | L |
-| SH-003 | Shielded → shielded private transfer between two accounts of one wallet (Type 16) | P0 | not implemented (Wave H) | L |
-| SH-004 | `shielded_balances` reflects a shielded note after coordinator sync | P1 | not implemented (Wave H) | M |
-| SH-005 | Spend against in-memory store fails with witness-unavailable, file-backed succeeds (Found-027 pin) | P1 | not implemented (Wave H) — red-by-design until Found-027 fixed | M |
-| SH-006 | `shielded_add_account` post-bind: notes for the added account never sync (Found-028 pin) | P1 | not implemented (Wave H) — red-by-design | M |
-| SH-007 | Pre-bind note is witnessable/spendable — guards the #3603 fix (Found-029, FIXED) | P1 | not implemented (Wave H) — green regression guard | L |
-| SH-008 | Unshield insufficient-balance: typed `ShieldedInsufficientBalance` with exact `available`/`required` | P1 | not implemented (Wave H) | M |
-| SH-009 | Zero-amount shield / transfer rejected at the boundary (no proof paid) | P2 | not implemented (Wave H) | S |
-| SH-010 | Double-spend guard: two overlapping spends reserve disjoint notes (`reserve_unspent_notes`) | P2 | not implemented (Wave H) | M |
-| SH-011 | `select_notes_with_fee` convergence + overflow protection (unit-adjacent on real notes) | P2 | not implemented (Wave H) | M |
-| SH-012 | Sync watermark idempotency: `coordinator.sync(force)` twice yields stable balances | P2 | not implemented (Wave H) | M |
-| SH-013 | `bind_shielded` with empty accounts → typed `ShieldedKeyDerivation` error (no panic) | P2 | not implemented (Wave H) | S |
-| SH-014 | Spend before bind → `ShieldedNotBound`; spend on unbound account → `ShieldedKeyDerivation` | P2 | not implemented (Wave H) | S |
+| PA-3040 | `pa_3040_bug_pin`: Drive chain-time fee exceeds wallet static estimate (platform #3040) | P1 | passes on paloma 2026-06-19 — `DeductFromInput` safety multiplier now covers Drive's chain-time fee; Drive no longer rejects. Regression guard for platform #3040. | S |
+| SH-001 | Shield from platform-payment account → shielded pool (Type 15) | P0 | implemented — passes on paloma 2026-06-19 | L |
+| SH-002 | Round-trip: shield then unshield back to a transparent address (Type 15 → 17) | P0 | implemented — passes on paloma 2026-06-19 | L |
+| SH-003 | Shielded → shielded private transfer between two accounts of one wallet (Type 16) | P0 | implemented — passes on paloma 2026-06-19 | L |
+| SH-004 | `shielded_balances` reflects a shielded note after coordinator sync | P1 | implemented — passes on paloma 2026-06-19 | M |
+| SH-005 | Spend against in-memory store fails with witness-unavailable, file-backed succeeds (Found-027 pin) | P1 | implemented — passes on paloma 2026-06-19 (Found-027 resolved) | M |
+| SH-006 | `shielded_add_account` post-bind: notes for the added account never sync (Found-028 pin) | P1 | implemented — red-by-design (Found-028 pin, confirmed failing on paloma 2026-06-19) | M |
+| SH-007 | Pre-bind note is witnessable/spendable — guards the #3603 fix (Found-029, FIXED) | P1 | implemented — passes on paloma 2026-06-19 | L |
+| SH-008 | Unshield insufficient-balance: typed `ShieldedInsufficientBalance` with exact `available`/`required` | P1 | implemented — passes on paloma 2026-06-19 | M |
+| SH-009 | Zero-amount shield / transfer rejected at the boundary (no proof paid) | P2 | implemented — passes on paloma 2026-06-19 | S |
+| SH-010 | Double-spend guard: two overlapping spends reserve disjoint notes (`reserve_unspent_notes`) | P2 | implemented — passes on paloma 2026-06-19 | M |
+| SH-011 | `select_notes_with_fee` convergence + overflow protection (unit-adjacent on real notes) | P2 | implemented — passes on paloma 2026-06-19 | M |
+| SH-012 | Sync watermark idempotency: `coordinator.sync(force)` twice yields stable balances | P2 | implemented — passes on paloma 2026-06-19 | M |
+| SH-013 | `bind_shielded` with empty accounts → typed `ShieldedKeyDerivation` error (no panic) | P2 | implemented — passes on paloma 2026-06-19 | S |
+| SH-014 | Spend before bind → `ShieldedNotBound`; spend on unbound account → `ShieldedKeyDerivation` | P2 | implemented — passes on paloma 2026-06-19 | S |
 | SH-018 | Shield from Core L1 asset lock (Type 18) | P1 | implemented (Wave H + Core-L1 gate) — uses the public `shielded_shield_from_asset_lock` wrapper + the `test-utils` one-time-key helper; Core-L1-gated so may run RED until asset-lock funding plumbing is complete | L |
-| SH-019 | Shielded withdraw to Core L1 address (Type 19) | P1 | not implemented (Wave H + Core-L1 gate) — may run RED until plumbing complete | L |
-| SH-020 | ADVERSARIAL: double-spend same note across two transitions (16/17) — backend must reject 2nd | P0 | not implemented (Wave H + inject hook) — asserts backend rejection | M |
-| SH-021 | ADVERSARIAL: nullifier replay after restart/resync — backend must reject | P0 | not implemented (Wave H + inject hook) — asserts backend rejection | M |
-| SH-022 | ADVERSARIAL: value not conserved (outputs > inputs) — backend must reject | P0 | not implemented (Wave H + inject hook) — asserts backend rejection | M |
-| SH-023 | ADVERSARIAL: fee underpayment below min shielded fee — backend must reject | P1 | not implemented (Wave H + inject hook) — asserts backend rejection | M |
-| SH-024 | ADVERSARIAL: u64/i64 value boundary overflow/underflow — backend must reject safely | P1 | not implemented (Wave H + inject hook) — asserts safe rejection | M |
-| SH-025 | ADVERSARIAL: forged/tampered/substituted Halo-2 proof — verifier must reject | P0 | not implemented (Wave H + inject hook) — asserts backend rejection | M |
-| SH-026 | ADVERSARIAL: stale/wrong anchor — backend must reject AnchorMismatch (Found-030 dynamic probe) | P1 | not implemented (Wave H + inject hook) — asserts backend rejection | M |
-| SH-027 | ADVERSARIAL: malformed note serde (≠115B, corrupt cmx/nullifier) — error safely, no panic | P1 | not implemented (Wave H + store-seed hook) — asserts safe error | M |
-| SH-028 | ADVERSARIAL: interrupt sync mid-chunk + resume — no double-count/loss | P1 | **BLOCKED — not implemented** (no injectable sync-source seam: `sync_notes_across` is `pub(super)` and fetches from the SDK directly; needs a production `SyncSource` seam) | M |
-| SH-029 | ADVERSARIAL: reorg / out-of-order blocks / rescan-from-0 — balance converges, no phantom funds | P1 | **BLOCKED — not implemented** (same missing sync-source seam as SH-028) | M |
-| SH-030 | ADVERSARIAL: cross-network/wrong-HRP/malformed/own-address recipient; transfer-to-self | P2 | not implemented (Wave H + inject arm) — asserts rejection / safe self-transfer | M |
-| SH-031 | ADVERSARIAL: double-bind / rebind with DIFFERENT seed — no key-material mix, no leak | P1 | not implemented (Wave H) — asserts isolation | M |
-| SH-032 | ADVERSARIAL: boundary balance == amount+fee + off-by-one below — exact-change correctness | P1 | not implemented (Wave H) — asserts boundary correctness | S |
-| SH-033 | ADVERSARIAL: duplicate nullifier WITHIN one bundle — backend must reject | P1 | not implemented (Wave H + inject hook) — asserts backend rejection | M |
-| SH-034 | ADVERSARIAL: tampered binding signature — backend must reject | P1 | not implemented (Wave H + inject hook) — asserts backend rejection | M |
-| SH-035 | ADVERSARIAL: replayed Type 18 asset-lock proof — backend must reject (single-use) | P1 | not implemented (Wave H + Core-L1 gate + inject hook) — asserts backend rejection | M |
+| SH-019 | Shielded withdraw to Core L1 address (Type 19) | P1 | implemented — passes on paloma 2026-06-19 | L |
+| SH-020 | ADVERSARIAL: double-spend same note across two transitions (16/17) — backend must reject 2nd | P0 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
+| SH-021 | ADVERSARIAL: nullifier replay after restart/resync — backend must reject | P0 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
+| SH-022 | ADVERSARIAL: value not conserved (outputs > inputs) — backend must reject | P0 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
+| SH-023 | ADVERSARIAL: fee underpayment below min shielded fee — backend must reject | P1 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
+| SH-024 | ADVERSARIAL: u64/i64 value boundary overflow/underflow — backend must reject safely | P1 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
+| SH-025 | ADVERSARIAL: forged/tampered/substituted Halo-2 proof — verifier must reject | P0 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
+| SH-026 | ADVERSARIAL: stale/wrong anchor — backend must reject AnchorMismatch (Found-030 dynamic probe) | P1 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
+| SH-027 | ADVERSARIAL: malformed note serde (≠115B, corrupt cmx/nullifier) — error safely, no panic | P1 | implemented — passes on paloma 2026-06-19 | M |
+| SH-028 | ADVERSARIAL: interrupt sync mid-chunk + resume — no double-count/loss | P1 | implemented — passes on paloma 2026-06-19 | M |
+| SH-029 | ADVERSARIAL: reorg / out-of-order blocks / rescan-from-0 — balance converges, no phantom funds | P1 | implemented — passes on paloma 2026-06-19 | M |
+| SH-030 | ADVERSARIAL: cross-network/wrong-HRP/malformed/own-address recipient; transfer-to-self | P2 | implemented — passes on paloma 2026-06-19 | M |
+| SH-031 | ADVERSARIAL: double-bind / rebind with DIFFERENT seed — no key-material mix, no leak | P1 | implemented — passes on paloma 2026-06-19 | M |
+| SH-032 | ADVERSARIAL: boundary balance == amount+fee + off-by-one below — exact-change correctness | P1 | implemented — passes on paloma 2026-06-19 | S |
+| SH-033 | ADVERSARIAL: duplicate nullifier WITHIN one bundle — backend must reject | P1 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
+| SH-034 | ADVERSARIAL: tampered binding signature — backend must reject | P1 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
+| SH-035 | ADVERSARIAL: replayed Type 18 asset-lock proof — backend must reject (single-use) | P1 | implemented — passes on paloma 2026-06-19 (backend correctly rejects) | M |
 
 #### Found-bug pins
 
