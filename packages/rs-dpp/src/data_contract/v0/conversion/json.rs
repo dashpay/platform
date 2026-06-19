@@ -10,11 +10,12 @@ use platform_version::TryFromPlatformVersioned;
 use serde_json::Value as JsonValue;
 
 impl DataContractJsonConversionMethodsV0 for DataContractV0 {
-    fn from_json_validated(
+    fn from_json(
         json_value: JsonValue,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        Self::from_value_validated(json_value.into(), platform_version)
+        Self::from_value(json_value.into(), full_validation, platform_version)
     }
 
     /// Returns Data Contract as a JSON Value that can be used for validation

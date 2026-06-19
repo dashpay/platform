@@ -250,12 +250,8 @@ impl DataContractWasm {
             .set_value("documentSchemas", schema)
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
-        let data_contract = if opts.full_validation {
-            DataContract::from_value_validated(contract_value, &platform_version)?
-        } else {
-            dpp::platform_value::from_value::<DataContract>(contract_value)
-                .map_err(dpp::ProtocolError::ValueError)?
-        };
+        let data_contract =
+            DataContract::from_value(contract_value, opts.full_validation, &platform_version)?;
 
         let data_contract_with_tokens = match data_contract {
             DataContract::V0(v0) => DataContract::from(v0),
@@ -279,12 +275,8 @@ impl DataContractWasm {
 
         let json_value = serialization::js_value_to_json(&value.into())?;
 
-        let contract = if full_validation {
-            DataContract::from_json_validated(json_value, &platform_version.into())?
-        } else {
-            serde_json::from_value::<DataContract>(json_value)
-                .map_err(|e| dpp::ProtocolError::DecodingError(e.to_string()))?
-        };
+        let contract =
+            DataContract::from_json(json_value, full_validation, &platform_version.into())?;
 
         Ok(DataContractWasm(contract))
     }
@@ -300,14 +292,8 @@ impl DataContractWasm {
         let value: JsValue = value.into();
         let platform_value: Value = serialization::platform_value_from_object(&value)?;
 
-        let contract = if full_validation {
-            DataContract::from_value_validated(platform_value, &platform_version.into())
-                .map_err(WasmDppError::from)?
-        } else {
-            dpp::platform_value::from_value::<DataContract>(platform_value)
-                .map_err(dpp::ProtocolError::ValueError)
-                .map_err(WasmDppError::from)?
-        };
+        let contract = DataContract::from_value(platform_value, full_validation, &platform_version.into())
+            .map_err(WasmDppError::from)?;
 
         Ok(DataContractWasm(contract))
     }

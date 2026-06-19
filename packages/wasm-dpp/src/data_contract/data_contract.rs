@@ -103,16 +103,9 @@ impl DataContractWasm {
 
         let value = raw_parameters.with_serde_to_platform_value()?;
         let full_validation = !skip_validation;
-        if full_validation {
-            DataContract::from_value_validated(value, platform_version)
-                .with_js_error()
-                .map(Into::into)
-        } else {
-            dpp::platform_value::from_value::<DataContract>(value)
-                .map_err(ProtocolError::ValueError)
-                .with_js_error()
-                .map(Into::into)
-        }
+        DataContract::from_value(value, full_validation, platform_version)
+            .with_js_error()
+            .map(Into::into)
     }
 
     #[wasm_bindgen(js_name=getId)]

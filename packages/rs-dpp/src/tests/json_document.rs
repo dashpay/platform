@@ -124,12 +124,7 @@ pub fn json_document_to_contract_with_ids(
 ) -> Result<DataContract, ProtocolError> {
     let value = json_document_to_json_value(path)?;
 
-    let mut contract = if full_validation {
-        DataContract::from_json_validated(value, platform_version)?
-    } else {
-        serde_json::from_value::<DataContract>(value)
-            .map_err(|e| ProtocolError::DecodingError(e.to_string()))?
-    };
+    let mut contract = DataContract::from_json(value, full_validation, platform_version)?;
 
     if let Some(id) = id {
         contract.set_id(id);

@@ -10,8 +10,9 @@ pub const DATA_CONTRACT_IDENTIFIER_FIELDS_V0: [&str; 2] =
     [property_names::ID, property_names::OWNER_ID];
 
 impl DataContractValueConversionMethodsV0 for DataContractV0 {
-    fn from_value_validated(
+    fn from_value(
         mut value: Value,
+        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         value.replace_at_paths(
@@ -26,13 +27,13 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
 
                 DataContractV0::try_from_platform_versioned(
                     data_contract_data.into(),
-                    true,
+                    full_validation,
                     &mut vec![], // this is not used in consensus code
                     platform_version,
                 )
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DataContractV0::from_value_validated".to_string(),
+                method: "DataContractV0::from_value".to_string(),
                 known_versions: vec![0],
                 received: version
                     .parse()
