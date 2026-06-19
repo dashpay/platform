@@ -1568,7 +1568,7 @@ mod cursor_tests {
         );
         // Saturates rather than underflowing for a high-water below the window.
         assert_eq!(query_lower_bound(Some(5 * 60_000)), Some(0));
-        assert!(SYNC_OVERLAP_MS > 0, "overlap must be > 0 for correctness");
+        const { assert!(SYNC_OVERLAP_MS > 0, "overlap must be > 0 for correctness") };
     }
 
     /// Advancing never moves the cursor backward (guards out-of-order /
@@ -1986,7 +1986,7 @@ mod sweep_tests {
         let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
         // Precondition: the outgoing request is NOT in the pending map.
         assert!(
-            managed.sent_contact_requests.get(&contact_id).is_none(),
+            !managed.sent_contact_requests.contains_key(&contact_id),
             "an established contact's outgoing request lives in established_contacts, not the pending map"
         );
         // The fix: the lookup still finds the prior reference via the

@@ -184,7 +184,7 @@ impl ManagedIdentity {
     ) -> Vec<(String, crate::wallet::identity::PaymentEntry)> {
         self.dashpay_payments
             .iter()
-            .filter(|(_, p)| &p.counterparty_id == contact_id)
+            .filter(|(_, p)| p.counterparty_id == contact_id)
             .map(|(tx_id, p)| (tx_id.clone(), p.clone()))
             .collect()
     }

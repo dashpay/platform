@@ -23,7 +23,7 @@ fn pad_account_label(label: &str) -> String {
     } else {
         let mut s = String::with_capacity(label.len() + (ACCOUNT_LABEL_MIN_CHARS - chars));
         s.push_str(label);
-        s.extend(std::iter::repeat(' ').take(ACCOUNT_LABEL_MIN_CHARS - chars));
+        s.extend(std::iter::repeat_n(' ', ACCOUNT_LABEL_MIN_CHARS - chars));
         s
     }
 }

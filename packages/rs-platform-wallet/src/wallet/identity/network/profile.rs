@@ -659,9 +659,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         //    still land. An id present in the chunk but absent from the
         //    result is confirmed-absent (cached as `None` — the negative
         //    cache).
-        let mut results: Vec<(Identifier, Vec<(Identifier, Option<DashPayProfile>)>)> = Vec::new();
+        // One owner's fetched contacts: each contact id paired with its profile, or
+        // `None` when confirmed-absent (the negative cache).
+        type OwnerContactProfiles = Vec<(Identifier, Option<DashPayProfile>)>;
+        let mut results: Vec<(Identifier, OwnerContactProfiles)> = Vec::new();
         for (owner_id, to_fetch) in plan {
-            let mut owner_results: Vec<(Identifier, Option<DashPayProfile>)> = Vec::new();
+            let mut owner_results: OwnerContactProfiles = Vec::new();
             for chunk in to_fetch.chunks(CONTACT_PROFILE_IN_CAP) {
                 match self
                     .fetch_contact_profiles_chunk(&dashpay_contract, chunk)
@@ -847,10 +850,10 @@ mod tests {
         // caller didn't set.
         let buggy = merge_profile_properties(BTreeMap::new(), &input, None, None);
         assert!(
-            buggy.get("publicMessage").is_none(),
+            !buggy.contains_key("publicMessage"),
             "regression guard: a fresh/empty seed wipes sibling fields"
         );
-        assert!(buggy.get("avatarUrl").is_none());
+        assert!(!buggy.contains_key("avatarUrl"));
     }
 
     /// Avatar fields are overlaid only when new bytes are supplied;
