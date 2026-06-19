@@ -307,7 +307,10 @@ mod tests {
         // V0 loses the platform host: the reverse conversion pairs the port with the
         // core service IP.
         let v0_back: DMNState = MasternodeStateV0::from(dmn.clone()).into();
-        assert_eq!(v0_back.platform_p2p_address().expect("port resolves").0, "192.0.2.2");
+        assert_eq!(
+            v0_back.platform_p2p_address().expect("port resolves").0,
+            "192.0.2.2"
+        );
 
         // V1 captures and restores the platform host.
         let state = MasternodeStateV1::from(dmn.clone());
@@ -319,7 +322,10 @@ mod tests {
         let (host, port) = v1_back.platform_p2p_address().expect("port resolves");
         assert_eq!(host, "203.0.113.7");
         assert_eq!(port, 36656);
-        assert_eq!(v1_back.platform_http_address().expect("http resolves").0, "203.0.113.7");
+        assert_eq!(
+            v1_back.platform_http_address().expect("http resolves").0,
+            "203.0.113.7"
+        );
     }
 
     // A Core 22 / legacy node has no distinct platform host: the conversion captures
@@ -367,7 +373,10 @@ mod tests {
 
         let back: DMNState = state.into();
         // Host preserved (would be 192.0.2.2 without the http fallback).
-        assert_eq!(back.platform_http_address().expect("http resolves").0, "203.0.113.7");
+        assert_eq!(
+            back.platform_http_address().expect("http resolves").0,
+            "203.0.113.7"
+        );
     }
 
     // An IPv6 platform host must survive the round-trip: the reverse conversion brackets it
@@ -418,11 +427,18 @@ mod tests {
         };
 
         let persisted: MasternodeV1 = item.into();
-        assert_eq!(persisted.state.platform_host.as_deref(), Some("203.0.113.7"));
+        assert_eq!(
+            persisted.state.platform_host.as_deref(),
+            Some("203.0.113.7")
+        );
 
         let restored: MasternodeListItem = persisted.into();
         assert_eq!(
-            restored.state.platform_p2p_address().expect("port resolves").0,
+            restored
+                .state
+                .platform_p2p_address()
+                .expect("port resolves")
+                .0,
             "203.0.113.7"
         );
     }

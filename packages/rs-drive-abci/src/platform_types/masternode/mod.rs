@@ -74,9 +74,18 @@ mod format_tests {
     #[test]
     fn brackets_only_unbracketed_ipv6() {
         assert_eq!(format_platform_address("192.0.2.2", 443), "192.0.2.2:443");
-        assert_eq!(format_platform_address("node.example.com", 443), "node.example.com:443");
-        assert_eq!(format_platform_address("2001:db8::1", 36656), "[2001:db8::1]:36656");
+        assert_eq!(
+            format_platform_address("node.example.com", 443),
+            "node.example.com:443"
+        );
+        assert_eq!(
+            format_platform_address("2001:db8::1", 36656),
+            "[2001:db8::1]:36656"
+        );
         // Already bracketed → not double-bracketed.
-        assert_eq!(format_platform_address("[2001:db8::1]", 36656), "[2001:db8::1]:36656");
+        assert_eq!(
+            format_platform_address("[2001:db8::1]", 36656),
+            "[2001:db8::1]:36656"
+        );
     }
 }
