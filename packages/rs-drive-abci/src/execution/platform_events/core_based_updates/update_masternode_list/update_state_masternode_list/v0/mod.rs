@@ -40,17 +40,25 @@ where
             });
     }
 
-    /// Apply a [`ValidatorRefresh`] (derived from the post-`apply_diff` full state) to
-    /// the matching validator in every validator set. Deriving every field from the
-    /// full state — rather than patching each field from the raw diff — keeps the
-    /// validity decision and the written values consistent: a partial Core 23
-    /// `addresses` diff overwrites the whole nested object, so the diff alone is not a
-    /// reliable source for the unchanged axis.
-    fn apply_validator_refresh(
+    /// Reconcile the cached validator for `pro_tx_hash` in every validator set against a
+    /// masternode's post-`apply_diff` full state: rewrite its advertised fields if the node
+    /// is still a valid HPMN platform validator (`validator_refresh_from_state` resolves),
+    /// or remove it if it no longer is. Deriving everything from the full state — rather
+    /// than patching each field from the raw diff — keeps the validity decision and the
+    /// written values consistent: a partial Core 23 `addresses` diff overwrites the whole
+    /// nested object, so the diff alone is not a reliable source for the unchanged axis.
+    fn refresh_validator_in_sets_from_state(
         pro_tx_hash: &ProTxHash,
-        refresh: &ValidatorRefresh,
+        state: &DMNState,
         validator_sets: &mut IndexMap<QuorumHash, ValidatorSet>,
     ) {
+        let Some(refresh) = validator_refresh_from_state(state) else {
+            // Platform endpoint disappeared (Core 23 `addresses` cleared, a zeroed legacy
+            // port with no addresses, or a missing node id) → no longer a valid HPMN
+            // validator. Drop the stale entry so we stop advertising a dead endpoint.
+            Self::remove_masternode_in_validator_sets(pro_tx_hash, validator_sets);
+            return;
+        };
         validator_sets
             .iter_mut()
             .for_each(|(_quorum_hash, validator_set)| {
@@ -123,32 +131,18 @@ where
                 if let Some(hpmn_list_item) = state.hpmn_masternode_list_mut().get_mut(pro_tx_hash)
                 {
                     hpmn_list_item.state.apply_diff(state_diff.clone());
-                    // Derive the validator's fields from the post-`apply_diff` full
-                    // state — the single source of truth (the same accessors as
-                    // `new_validator_if_masternode_in_state`). `Some` means the node is
-                    // still a valid HPMN platform validator (both ports + a node id);
-                    // `None` means it no longer is. Computed before the validator-set
-                    // borrow so the `hpmn_list_item` borrow ends first.
-                    let refresh = validator_refresh_from_state(&hpmn_list_item.state);
+                    // Only reconcile when a field the validator advertises can have
+                    // changed (see `diff_triggers_validator_refresh`). Clone the updated
+                    // full state so the `hpmn_list_item` borrow ends before the
+                    // validator-set borrow, then refresh (or drop) the cached validator
+                    // from it.
                     if diff_triggers_validator_refresh(state_diff) {
-                        match &refresh {
-                            // Still a valid platform validator → rewrite its fields
-                            // from the full state.
-                            Some(refresh) => Self::apply_validator_refresh(
-                                pro_tx_hash,
-                                refresh,
-                                state.validator_sets_mut(),
-                            ),
-                            // Platform endpoint disappeared (Core 23 `addresses`
-                            // cleared, a zeroed legacy port with no addresses, or a
-                            // missing node id) → the node is no longer a valid HPMN
-                            // validator. Drop the stale cached entry so we stop
-                            // advertising a dead platform endpoint.
-                            None => Self::remove_masternode_in_validator_sets(
-                                pro_tx_hash,
-                                state.validator_sets_mut(),
-                            ),
-                        }
+                        let updated_state = hpmn_list_item.state.clone();
+                        Self::refresh_validator_in_sets_from_state(
+                            pro_tx_hash,
+                            &updated_state,
+                            state.validator_sets_mut(),
+                        );
                     }
                 }
             }
