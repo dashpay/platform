@@ -7,11 +7,14 @@ track, and the multi-agent reviews. Prioritized; check off as done.
 > **STATUS (2026-06-18): the implementable backlog is complete.** Every P0/P1/P2
 > bug, the full sync-correctness spec (Spec 0/1/2 + reject→ignore refactor), the
 > R1 privacy resolution, the per-contact accessor, and the comment-cleanup pass
-> are done, tested, and pushed on `feat/dashpay-m1-sync-correctness`. The five
+> are done, tested, and pushed on `feat/dashpay-m1-sync-correctness`. The
 > remaining `[ ]` items are **blocked on resources outside this codebase**, not
-> oversights:
-> - **Devnet integration tests** + **on-device UAT** — need a funded devnet
->   identity / harness (deferred to the end by agreement).
+> oversights — **except one new code bug found during UAT (imported-identity
+> signing — see Verification & hygiene)**:
+> - **On-device UAT** — STARTED on testnet 2026-06-19; the sim harness works
+>   end-to-end up to signing, then surfaced the imported-identity signing bug (now
+>   tracked). Paused; resume via create-in-app. **Devnet integration tests** still
+>   need a funded harness.
 > - **Encrypted profile ignored-list field** + **query-level DoS filter** — need a
 >   registered `dashpay` data-contract change (DIP / governance), not wallet code.
 > - The struck `[toUserId, $ownerId]` GROUP-BY index is a deliberate **don't-do**
@@ -209,11 +212,41 @@ DIP/maintainer-coordination effort separate from the wallet work.
 ## Verification & hygiene
 
 - [ ] **On-device UAT of the PR #3841 fixes** (shipped + pushed, but not yet
-  device-verified): rejected-tombstone restore (reject a contact → relaunch →
-  stays gone, both SQLite + SwiftData backends), wallet-wipe leaves no DashPay
-  plaintext, sent-payment Pending→Confirmed. Needs a devnet identity rebuild (sim
-  store was reset). *NB: the reject→ignore refactor (Spec 2) will replace the
-  tombstone path, so verify before or alongside that work.*
+  device-verified): ignore-restore (ignore a sender → relaunch → stays gone, both
+  SQLite + SwiftData backends), wallet-wipe leaves no DashPay plaintext,
+  sent-payment Pending→Confirmed. **STARTED 2026-06-19 on testnet, paused — see the
+  signing bug below.**
+  - **UAT harness is up and works end-to-end up to signing:** SwiftExampleApp built
+    from branch HEAD on the iPhone 17 Pro sim, switched to a clean testnet config
+    (had to force `defaults write -g AppleKeyboards "en_US@hw=US;sw=QWERTY"` — the
+    sim's host-inherited Russian hardware-keyboard layout was Cyrillic-izing all idb
+    `text` input). Imported the provided testnet identity by mnemonic → wallet "Test",
+    identity `4tiCYq76wok84QcUymD8f6J8C7L8zzRPhNJdrnm9Kewh` (hex `39d2441aab12…1728`),
+    0.9987 DASH platform credits, 5 keys persisted **exactly matching** the on-chain
+    keys. L1 deposit addr `yZJ16jTHdduz2MZrzAAM6YQmheAzcwuCs3` funded with 1 tDASH.
+  - **Next step when resumed (decision 2026-06-19): create a FRESH identity in-app**
+    (the supported create flow signs correctly) rather than the imported one, then
+    set up profiles/usernames for two identities (A/B) and run the 3 checks. The
+    1 tDASH L1 funds the asset lock(s).
+
+- [ ] **🐛 BUG (found in UAT 2026-06-19): an IMPORTED identity cannot sign any state
+  transition.** Every signed op — register DPNS name, set DashPay profile, and by
+  extension contact requests + payments — fails with
+  `SDK error: Protocol error: Generic Error: No PersistentPublicKey row matches the
+  supplied public-key bytes` (`KeychainSigner.swift:137`). Diagnosis so far:
+  - The 5 keys ARE persisted correctly — `ZPERSISTENTPUBLICKEY.ZPUBLICKEYDATA` exactly
+    matches all 5 of the identity's on-chain public keys (verified by SwiftData query).
+  - `KeychainSigner`'s lookup (`KeychainSigner.swift:308-310`) matches purely by
+    `row.publicKeyData == publicKey` — it is NOT identity-scoped, so the cosmetic
+    `PersistentPublicKey.identityId` base58-String-vs-`PersistentIdentity` raw-Data
+    difference is a red herring.
+  - Therefore the Rust SDK is handing the signer a public key that is **not among the
+    5 derived/persisted keys** — a key-selection / derivation-path issue specific to the
+    import-an-existing-identity path (create-in-app presumably signs fine).
+  - **To pin the exact mismatch:** instrument `KeychainSigner.sign(identityPublicKey:data:)`
+    to log the supplied public-key hex, rebuild, reproduce, diff against the persisted 5.
+  - Blocks the imported-identity UAT path; does not block create-in-app. Likely lives in
+    the identity-import/key-derivation in `platform-wallet` (Swift SDK only persists/loads).
 - [x] **Comment-cleanup pass — DONE (2026-06-18).** Stripped spec-gate / milestone
   / dev-time refs (`G1a`..`G15`, `M3 task 13`, `(P2)`, stage labels) from source
   comments + log strings across 18 DashPay files in `rs-platform-wallet` /
