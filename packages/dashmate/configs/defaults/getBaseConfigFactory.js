@@ -355,7 +355,6 @@ export default function getBaseConfigFactory() {
           tenderdash: {
             mode: 'full',
             docker: {
-              // TODO(2026-06-19): dashpay/tenderdash:1.6.0-dev.2 not yet published on Docker Hub — verify/remove once the image is pushed
               image: 'dashpay/tenderdash:1.6.0-dev.2',
             },
             p2p: {
