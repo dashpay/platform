@@ -348,6 +348,8 @@ fn identity_entry(id: u8, idx: Option<u32>) -> IdentityEntry {
         wallet_id: None,
         dashpay_profile: None,
         dashpay_payments: Default::default(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
     }
 }
 

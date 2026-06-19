@@ -361,6 +361,8 @@ fn identity_entry_id_mismatch_rejected() {
         wallet_id: None,
         dashpay_profile: None,
         dashpay_payments: Default::default(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
     };
     let mut identities = std::collections::BTreeMap::new();
     identities.insert(key_id, entry);
