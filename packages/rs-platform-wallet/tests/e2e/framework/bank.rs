@@ -62,6 +62,21 @@ static FUNDING_MUTEX: AsyncMutex<()> = AsyncMutex::const_new(());
 /// should fail fast with a clear panic rather than hang the suite.
 const FUNDING_TX_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// Number of times to retry the startup balance sync when the harness
+/// wallet cache shows significantly fewer credits than the independent
+/// DAPI `AddressInfo::fetch` (positive drift = lagging replica, #3611).
+///
+/// Each retry calls `sync_and_refresh_floor()`, which issues a fresh
+/// request that the DAPI load-balancer may route to a non-lagging node.
+/// After all retries the harness adopts the proof-verified independent
+/// reading (see [`BankWallet::accept_independent_platform_balance`]).
+pub const BALANCE_SYNC_RETRIES: usize = 3;
+
+/// Sleep between replica-lag retry attempts. Long enough to let the
+/// DAPI load-balancer pick a different node; short enough not to add
+/// meaningful CI latency when the bank is well-funded.
+pub const BALANCE_SYNC_RETRY_SLEEP: Duration = Duration::from_secs(2);
+
 /// Monotonic sequence for [`FUNDING_MUTEX`] entries. Each successful
 /// acquisition of [`FUNDING_MUTEX`] inside [`BankWallet::fund_address`]
 /// increments this counter by `1`; the value at increment time is the
@@ -179,6 +194,20 @@ pub struct BankWallet {
     /// floor (`EXPECTED_TOKEN_SUITE_FLOOR`). Token tests check this at
     /// startup and skip cleanly when `false` (QA-V26-003).
     pub bank_floor_satisfied: bool,
+    /// Proof-verified balance adopted from an independent `AddressInfo::fetch`
+    /// when the wallet cache is known to have returned a stale low value from
+    /// a lagging DAPI replica at startup (#3611).
+    ///
+    /// Used as a floor by [`Self::effective_platform_credits`]: the returned
+    /// balance is `max(wallet_cache, adopted_platform_floor)`.  When the
+    /// wallet cache eventually catches up this field becomes redundant but
+    /// harmless (the max resolves to the wallet cache).
+    ///
+    /// Set to `0` (inactive) by default; overridden by
+    /// [`Self::accept_independent_platform_balance`] only when the harness
+    /// detects a large positive drift between the wallet cache and the
+    /// independent DAPI reading.
+    adopted_platform_floor: Credits,
 }
 
 impl std::fmt::Debug for BankWallet {
@@ -260,7 +289,7 @@ impl BankWallet {
                 balance = total,
                 floor = EXPECTED_TOKEN_SUITE_FLOOR,
                 address = %address_bech32m,
-                "Bank balance is below the token-suite floor (~50B credits); \
+                "Bank balance is below the token-suite floor (~88.8B credits); \
                  token tests may exhaust funds mid-run. \
                  Top up the Platform address to continue token testing."
             );
@@ -299,6 +328,7 @@ impl BankWallet {
             seed_bytes,
             primary_receive_address,
             bank_floor_satisfied,
+            adopted_platform_floor: 0,
         })
     }
 
@@ -362,7 +392,11 @@ impl BankWallet {
         registry_failed: usize,
     ) {
         let network = self.wallet.sdk().network;
-        let total = self.wallet.platform().total_credits().await;
+        // Use effective_platform_credits (max(cache, adopted)) so a
+        // proof-verified independent balance adopted on replica lag (#3611)
+        // also satisfies the floor here — same semantics as
+        // sync_and_refresh_floor() and the fund planner's snapshot.
+        let total = self.effective_platform_credits().await;
         if total >= config.min_bank_credits {
             return;
         }
@@ -623,13 +657,18 @@ impl BankWallet {
     /// Called after [`sweep_orphans`] so the token-suite floor reflects
     /// the post-sweep balance rather than the stale load-time snapshot
     /// (QA-V26-007).
+    ///
+    /// Uses [`Self::effective_platform_credits`] (i.e. `max(cache, adopted)`)
+    /// so that a previously adopted proof-verified balance continues to
+    /// protect the floor gate even when a subsequent sync still hits a lagging
+    /// replica (#3611).
     pub async fn sync_and_refresh_floor(&mut self) -> FrameworkResult<()> {
         self.wallet
             .platform()
             .sync_balances(None)
             .await
             .map_err(wallet_err)?;
-        let total = self.wallet.platform().total_credits().await;
+        let total = self.effective_platform_credits().await;
         self.bank_floor_satisfied = total >= EXPECTED_TOKEN_SUITE_FLOOR;
         Ok(())
     }
@@ -647,8 +686,61 @@ impl BankWallet {
     /// Total credits the bank currently has cached. Reflects the
     /// last sync — call [`Self::sync_balances`] first for a fresh
     /// view.
+    ///
+    /// For funding-gate decisions use [`Self::effective_platform_credits`]
+    /// instead; it accounts for a proof-verified independent balance adopted
+    /// on DAPI replica lag at startup (#3611).
     pub async fn total_credits(&self) -> Credits {
         self.wallet.platform().total_credits().await
+    }
+
+    /// Effective Platform credit balance for funding-gate decisions.
+    ///
+    /// Returns `max(wallet_cache, adopted_platform_floor)`.  Under normal
+    /// operation `adopted_platform_floor` is 0 so this is identical to
+    /// [`Self::total_credits`].  When the harness detects that the startup
+    /// sync landed on a lagging DAPI replica (#3611) and calls
+    /// [`Self::accept_independent_platform_balance`], the adopted value acts
+    /// as a proof-verified floor so the floor gate and fund planner never
+    /// see a false 0 even if the wallet cache is still stale.
+    pub async fn effective_platform_credits(&self) -> Credits {
+        let cached = self.wallet.platform().total_credits().await;
+        cached.max(self.adopted_platform_floor)
+    }
+
+    /// The adopted proof-verified Platform floor, or `0` when not set.
+    /// See [`Self::accept_independent_platform_balance`].
+    pub fn adopted_platform_floor(&self) -> Credits {
+        self.adopted_platform_floor
+    }
+
+    /// Override the balance used by funding gates with a proof-verified
+    /// independent reading from `AddressInfo::fetch`.
+    ///
+    /// Called by the harness init when it detects a large positive drift
+    /// between the wallet cache (stale 0 from a lagging DAPI replica) and
+    /// the independent DAPI fetch (real ~225B), and retrying `sync_balances`
+    /// did not converge (#3611).
+    ///
+    /// After this call:
+    /// - `effective_platform_credits()` returns `max(cache, credits)`.
+    /// - `bank_floor_satisfied` is recomputed from the effective value.
+    /// - `assert_floor()` and `sync_and_refresh_floor()` both use
+    ///   `effective_platform_credits()`, so they also see the correct value.
+    pub fn accept_independent_platform_balance(&mut self, credits: Credits) {
+        let prev_floor = self.bank_floor_satisfied;
+        self.adopted_platform_floor = credits;
+        self.bank_floor_satisfied = credits >= EXPECTED_TOKEN_SUITE_FLOOR;
+        tracing::info!(
+            target: "platform_wallet::e2e::bank",
+            independent_credits = credits,
+            floor = EXPECTED_TOKEN_SUITE_FLOOR,
+            floor_satisfied = self.bank_floor_satisfied,
+            prev_floor_satisfied = prev_floor,
+            "bank floor gate re-evaluated from proof-verified independent \
+             DAPI balance (harness wallet cache lagged replica at startup — \
+             #3611). effective_platform_credits() will use max(cache, adopted)."
+        );
     }
 
     /// Independent balance cross-check via `AddressInfo::fetch` (QA-V26-005).

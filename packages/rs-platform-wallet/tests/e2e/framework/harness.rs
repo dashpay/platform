@@ -311,7 +311,7 @@ impl E2eContext {
     }
 
     /// `true` when the bank's Platform balance met the token-suite floor
-    /// (~50B credits) at init time. Token tests check this at startup and
+    /// (~88.8B credits) at init time. Token tests check this at startup and
     /// skip cleanly when `false` (QA-V26-003).
     pub fn bank_floor_satisfied(&self) -> bool {
         self.bank.bank_floor_satisfied()
@@ -342,11 +342,11 @@ impl E2eContext {
             target: "platform_wallet::e2e::harness",
             case,
             refill_address = %refill,
-            "E2E-SKIP: {case} did NOT run — bank Platform balance below the 50B token-suite floor; \
+            "E2E-SKIP: {case} did NOT run — bank Platform balance below the ~88.8B token-suite floor; \
              this is a SKIP reporting PASS, not a verified pass. Refill {refill} to exercise the token suite."
         );
         eprintln!(
-            "E2E-SKIP: {case} did NOT run (bank Platform balance below 50B floor); refill {refill} to run the token suite"
+            "E2E-SKIP: {case} did NOT run (bank Platform balance below ~88.8B floor); refill {refill} to run the token suite"
         );
         true
     }
@@ -756,6 +756,15 @@ impl E2eContext {
         // agree with DAPI for well-funded banks (no mismatch → OK-only line)
         // making it appear absent when filtered for the MISMATCH keyword
         // (QA-V26-013). Never aborts init — warn is enough.
+        //
+        // #3611 recovery: when the independent reading is significantly
+        // HIGHER than the wallet cache (positive drift), the startup sync
+        // landed on a lagging DAPI replica.  We retry sync BALANCE_SYNC_RETRIES
+        // times and, if still diverged, adopt the proof-verified independent
+        // balance via `bank.accept_independent_platform_balance()` so the
+        // floor gate, fund planner, and assert_floor() all see the real balance
+        // instead of a false 0.  See bank.rs for the `effective_platform_credits`
+        // abstraction that makes the adoption transparent to all call sites.
         let bank_balance_cross_check = {
             let network = bank.network();
             let result = bank.cross_check_balance(&sdk).await;
@@ -765,33 +774,107 @@ impl E2eContext {
                 dpp::address_funds::PlatformAddress::P2sh(hash) => hex::encode(hash),
             };
             let nonce = result.nonce.unwrap_or(0);
-            let drift = (result.harness_credits as i64 - result.independent_credits as i64).abs();
-            if drift <= BANK_CROSS_CHECK_TOLERANCE_CREDITS {
+            let signed_drift = result.independent_credits as i64 - result.harness_credits as i64;
+            let abs_drift = signed_drift.unsigned_abs() as i64;
+            if abs_drift <= BANK_CROSS_CHECK_TOLERANCE_CREDITS {
                 tracing::info!(
                     target: "platform_wallet::e2e::bank",
                     harness_credits = result.harness_credits,
                     independent_credits = result.independent_credits,
-                    drift,
+                    drift = abs_drift,
                     tolerance = BANK_CROSS_CHECK_TOLERANCE_CREDITS,
                     addr_bech32 = %addr_bech32,
                     addr_hash160 = %addr_hex,
                     nonce,
                     "═══ BANK PLATFORM BALANCE CROSS-CHECK OK (QA-V26-005) ═══"
                 );
-            } else {
+            } else if signed_drift > BANK_CROSS_CHECK_TOLERANCE_CREDITS {
+                // Positive drift: independent >> harness — almost certainly a
+                // lagging DAPI replica at startup (#3611).  Retry sync to try
+                // to land on a fresher node before falling back to adoption.
                 tracing::warn!(
                     target: "platform_wallet::e2e::bank",
                     harness_credits = result.harness_credits,
                     independent_credits = result.independent_credits,
-                    drift,
+                    positive_drift = signed_drift,
+                    tolerance = BANK_CROSS_CHECK_TOLERANCE_CREDITS,
+                    retries = super::bank::BALANCE_SYNC_RETRIES,
+                    addr_bech32 = %addr_bech32,
+                    addr_hash160 = %addr_hex,
+                    nonce,
+                    "DAPI replica lag suspected (#3611): independent fetch shows \
+                     more credits than harness wallet cache. Retrying startup sync."
+                );
+                let mut converged = false;
+                for attempt in 1..=super::bank::BALANCE_SYNC_RETRIES {
+                    tokio::time::sleep(super::bank::BALANCE_SYNC_RETRY_SLEEP).await;
+                    match bank.sync_and_refresh_floor().await {
+                        Ok(()) => {
+                            let refreshed = bank.total_credits().await;
+                            let remaining = result.independent_credits as i64 - refreshed as i64;
+                            tracing::info!(
+                                target: "platform_wallet::e2e::bank",
+                                attempt,
+                                refreshed_harness_credits = refreshed,
+                                independent_credits = result.independent_credits,
+                                remaining_drift = remaining,
+                                "replica-lag recovery: sync retry {attempt} complete"
+                            );
+                            if remaining <= BANK_CROSS_CHECK_TOLERANCE_CREDITS {
+                                tracing::info!(
+                                    target: "platform_wallet::e2e::bank",
+                                    attempt,
+                                    refreshed_harness_credits = refreshed,
+                                    "replica-lag recovered after {attempt} retry(ies) \
+                                     — wallet cache now agrees with independent fetch"
+                                );
+                                converged = true;
+                                break;
+                            }
+                        }
+                        Err(err) => {
+                            tracing::warn!(
+                                target: "platform_wallet::e2e::bank",
+                                attempt,
+                                error = %err,
+                                "replica-lag recovery: sync retry {attempt} failed"
+                            );
+                        }
+                    }
+                }
+                if !converged {
+                    // Wallet cache still lags after all retries.  The
+                    // independent `AddressInfo::fetch` is proof-verified, so
+                    // treat it as the ground truth.
+                    tracing::warn!(
+                        target: "platform_wallet::e2e::bank",
+                        harness_credits = result.harness_credits,
+                        independent_credits = result.independent_credits,
+                        positive_drift = signed_drift,
+                        retries = super::bank::BALANCE_SYNC_RETRIES,
+                        "replica-lag (#3611): wallet cache still diverged after \
+                         all retries. Adopting proof-verified independent balance \
+                         for floor gate, fund planner, and assert_floor()."
+                    );
+                    bank.accept_independent_platform_balance(result.independent_credits);
+                }
+            } else {
+                // Negative drift: harness >> independent — possible accounting
+                // bug or a different replica serving the independent fetch.
+                // Log and continue; do NOT adopt (harness overestimates = safe).
+                tracing::warn!(
+                    target: "platform_wallet::e2e::bank",
+                    harness_credits = result.harness_credits,
+                    independent_credits = result.independent_credits,
+                    negative_drift = -signed_drift,
                     tolerance = BANK_CROSS_CHECK_TOLERANCE_CREDITS,
                     addr_bech32 = %addr_bech32,
                     addr_hash160 = %addr_hex,
                     nonce,
-                    "bank Platform balance MISMATCH between harness cache and \
-                     independent DAPI fetch — drift exceeds tolerance; possible \
-                     DAPI replica lag (#3611) or accounting bug. Harness balance \
-                     is the authoritative value for funding gates"
+                    "bank Platform balance MISMATCH: harness cache > independent \
+                     DAPI fetch (negative drift). Possible accounting bug or \
+                     independent fetch hit a different lagging replica. Harness \
+                     balance remains authoritative — investigate if tests fail."
                 );
             }
             Some(result)

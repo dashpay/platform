@@ -436,9 +436,14 @@ pub async fn assert_all_floors(
 /// Build a [`Balances`] snapshot from the live bank. Identity/shielded
 /// reads are best-effort: a failed fetch reads as 0 so the planner errs
 /// toward funding rather than skipping a type it can't measure.
+///
+/// Uses [`BankWallet::effective_platform_credits`] (i.e. `max(cache,
+/// adopted)`) so the planner sees the proof-verified independent balance
+/// when the wallet cache is known to be stale from a lagging DAPI replica
+/// (#3611). Under normal operation this is identical to `total_credits()`.
 pub async fn snapshot_balances(bank: &BankWallet, bank_identity: &BankIdentity) -> Balances {
     Balances {
-        platform: bank.total_credits().await,
+        platform: bank.effective_platform_credits().await,
         identity: fetch_identity_balance(bank, bank_identity).await,
         shielded: fetch_shielded_balance(bank).await,
         core_duff: bank.core_balance_confirmed(),

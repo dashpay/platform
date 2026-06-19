@@ -61,7 +61,7 @@ async fn sh_036_identity_create_from_shielded_pool() {
     let s = setup().await.expect("e2e setup failed");
 
     // SKIP (never silent green) when the live bank can't fund the flow. The
-    // generic token-suite floor (~50B) sits well above DENOMINATION + headroom,
+    // generic token-suite floor (~88.8B) sits well above DENOMINATION + headroom,
     // so it is a safe, central gate for "the devnet bank can't run this".
     if s.ctx.skip_if_bank_floor_unmet("sh_036") {
         return;

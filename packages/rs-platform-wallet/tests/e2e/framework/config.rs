@@ -154,10 +154,12 @@ pub const DEFAULT_BANK_CORE_GATE_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Default minimum bank balance in credits required to start the suite.
 ///
-/// 500M is sufficient for non-token identity tests (ID-*, CR-*, PA-*).
-/// Operators who observe the "Bank under-funded" panic should top up the
-/// Platform address shown in the message to at least this value.
-pub const DEFAULT_MIN_BANK_CREDITS: u64 = 500_000_000;
+/// 200B ensures the bank always meets the `EXPECTED_TOKEN_SUITE_FLOOR`
+/// (88.8B), so TK token tests run instead of silently skipping (the
+/// QA-012 false-green trap). Operators who observe the "Bank under-funded"
+/// panic should top up the Platform address shown in the message to at
+/// least this value.
+pub const DEFAULT_MIN_BANK_CREDITS: u64 = 200_000_000_000;
 
 /// Default minimum bank-identity balance (credits).
 ///
@@ -183,11 +185,13 @@ pub const DEFAULT_MIN_SHIELDED_CREDITS: Credits = 500_000_000;
 
 /// Informational floor for the token test suite.
 ///
-/// Token tests (12+ cases, 1-3 identities each) cost ~35B credits per setup.
-/// When the bank balance is below this value the harness emits a `warn!` so
-/// operators know a token-suite run may exhaust funds mid-way, but this
-/// threshold is NOT enforced as a panic — non-token tests are unaffected.
-pub const EXPECTED_TOKEN_SUITE_FLOOR: Credits = 50_000_000_000;
+/// Empirically measured on paloma devnet (QA-005): the full token suite
+/// (TK-001..TK-014 + SH-036 + associated shielded cases) burns
+/// ~88.8B credits per run. When the bank balance is below this value
+/// the harness emits a `warn!` so operators know a token-suite run may
+/// exhaust funds mid-way, but this threshold is NOT enforced as a
+/// panic — non-token tests are unaffected.
+pub const EXPECTED_TOKEN_SUITE_FLOOR: Credits = 88_800_000_000;
 
 /// E2E framework configuration — fully resolved.
 ///
