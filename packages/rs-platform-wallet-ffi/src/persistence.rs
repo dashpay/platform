@@ -2472,6 +2472,22 @@ fn build_address_pools_for_callback(
 /// Build a single `CoreAddressEntryFFI` from an `AddressInfo`,
 /// pushing the owned (address, path) c-strings into `owned_strings`
 /// so they outlive the callback window.
+///
+/// Recover the network an `Address` renders for. `Address` no longer exposes its network
+/// directly (the prefix is shared across testnet/devnet and legacy-regtest), but for the
+/// bech32m platform-payment addresses rendered here the prefix is decisive, so probing
+/// yields the correct HRP (mainnet `ds`, testnet/devnet `tb`, regtest `dsrt`).
+fn address_display_network(address: &dashcore::Address) -> dashcore::Network {
+    let unchecked = address.as_unchecked();
+    if unchecked.is_valid_for_network(dashcore::Network::Mainnet) {
+        dashcore::Network::Mainnet
+    } else if unchecked.is_valid_for_network(dashcore::Network::Testnet) {
+        dashcore::Network::Testnet
+    } else {
+        dashcore::Network::Regtest
+    }
+}
+
 fn build_core_address_entry_ffi(
     info: &AddressInfo,
     pool_type_tag: u8,
@@ -2483,7 +2499,7 @@ fn build_core_address_entry_ffi(
     // PlatformAddress conversion fails (only P2PKH / P2SH supported)
     // fall back to base58check so the address still surfaces.
     let rendered_address = if is_platform_payment {
-        let network = *info.address.network();
+        let network = address_display_network(&info.address);
         let converted: Result<PlatformAddress, _> = PlatformAddress::try_from(info.address.clone());
         converted
             .map(|p| p.to_bech32m_string(network))
@@ -2696,7 +2712,7 @@ fn build_address_pools_from_derived(
             // bech32m; everything else base58check (matching
             // `build_core_address_entry_ffi`'s logic).
             let rendered_address = if is_platform_payment {
-                let network = *d.address.network();
+                let network = address_display_network(&d.address);
                 let converted: Result<PlatformAddress, _> =
                     PlatformAddress::try_from(d.address.clone());
                 converted
