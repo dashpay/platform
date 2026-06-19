@@ -325,9 +325,7 @@ pub unsafe extern "C" fn platform_wallet_ignore_contact_sender(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
-        block_on_worker(async move {
-            identity.ignore_contact_sender(&our_id, &contact_id).await
-        })
+        block_on_worker(async move { identity.ignore_contact_sender(&our_id, &contact_id).await })
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);
@@ -352,9 +350,7 @@ pub unsafe extern "C" fn platform_wallet_unignore_contact_sender(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
-        block_on_worker(async move {
-            identity.unignore_contact_sender(&our_id, &contact_id).await
-        })
+        block_on_worker(async move { identity.unignore_contact_sender(&our_id, &contact_id).await })
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);

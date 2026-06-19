@@ -575,7 +575,10 @@ mod tests {
         let android = u32::from_le_bytes([ask[0], ask[1], ask[2], ask[3]]) >> 4;
         let dip_literal = u32::from_be_bytes([ask[0], ask[1], ask[2], ask[3]]) >> 4;
         assert_eq!(android, 0x0030_2010, "kotlin-platform: le(ASK[0..4])>>4");
-        assert_eq!(dip_literal, 0x0000_1020, "dash-evo-tool / DIP literal: be(ASK[0..4])>>4");
+        assert_eq!(
+            dip_literal, 0x0000_1020,
+            "dash-evo-tool / DIP literal: be(ASK[0..4])>>4"
+        );
         assert_ne!(extract_ask28(&ask), android);
         assert_ne!(extract_ask28(&ask), dip_literal);
     }

@@ -734,17 +734,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 // Compare-and-advance (see `advance_if_unchanged`): a concurrent
                 // `unignore_sender` may have reset the cursor mid-sweep to force
                 // a re-fetch; this sweep's stale `max` must not clobber that.
-                managed.high_water_received_ms = advance_if_unchanged(
-                    managed.high_water_received_ms,
-                    hw_received,
-                    max_received,
-                );
+                managed.high_water_received_ms =
+                    advance_if_unchanged(managed.high_water_received_ms, hw_received, max_received);
                 if sent_ok {
-                    managed.high_water_sent_ms = advance_if_unchanged(
-                        managed.high_water_sent_ms,
-                        hw_sent,
-                        max_sent,
-                    );
+                    managed.high_water_sent_ms =
+                        advance_if_unchanged(managed.high_water_sent_ms, hw_sent, max_sent);
                 }
 
                 // (3) Collect account-building candidates: every established
@@ -1480,9 +1474,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         // Returning the error surfaces the failure to the UI so the user
         // retries, instead of a silent success that didn't take.
         let cs = managed.ignore_sender(contact_identity_id);
-        self.persister.store(cs.into()).map_err(|e| {
-            PlatformWalletError::Persistence(format!("ignore not persisted: {e}"))
-        })?;
+        self.persister
+            .store(cs.into())
+            .map_err(|e| PlatformWalletError::Persistence(format!("ignore not persisted: {e}")))?;
 
         tracing::info!(
             identity = %identity_id,
@@ -1608,14 +1602,20 @@ mod cursor_tests {
     fn advance_if_unchanged_respects_a_concurrent_reset() {
         use super::advance_if_unchanged;
         // Unchanged since snapshot → normal advance.
-        assert_eq!(advance_if_unchanged(Some(100), Some(100), Some(200)), Some(200));
+        assert_eq!(
+            advance_if_unchanged(Some(100), Some(100), Some(200)),
+            Some(200)
+        );
         assert_eq!(advance_if_unchanged(Some(100), Some(100), None), Some(100));
         // THE RACE: snapshot was Some(100); un-ignore reset it to None
         // mid-sweep; this sweep's max is Some(200) (stale — excluded the sender)
         // → keep the None so the next sweep does a full re-fetch.
         assert_eq!(advance_if_unchanged(None, Some(100), Some(200)), None);
         // Any other concurrent change is likewise respected, not clobbered.
-        assert_eq!(advance_if_unchanged(Some(50), Some(100), Some(200)), Some(50));
+        assert_eq!(
+            advance_if_unchanged(Some(50), Some(100), Some(200)),
+            Some(50)
+        );
     }
 }
 

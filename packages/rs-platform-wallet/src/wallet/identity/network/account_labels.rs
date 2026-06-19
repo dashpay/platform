@@ -88,9 +88,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     CryptoError::InvalidUtf8 => PlatformWalletError::InvalidIdentityData(
                         "Decrypted account label is not valid UTF-8".into(),
                     ),
-                    CryptoError::InvalidCiphertextLength => PlatformWalletError::InvalidIdentityData(
-                        "Invalid encrypted account label length".into(),
-                    ),
+                    CryptoError::InvalidCiphertextLength => {
+                        PlatformWalletError::InvalidIdentityData(
+                            "Invalid encrypted account label length".into(),
+                        )
+                    }
                     // Not reachable from account-label decryption (that path never
                     // parses a compact xpub), but the match must stay exhaustive.
                     CryptoError::InvalidCompactXpubLength(len) => {
@@ -114,7 +116,10 @@ mod tests {
         assert_eq!(pad_account_label("hi"), "hi              "); // 2 + 14 spaces = 16
         assert_eq!(pad_account_label("").len(), 16); // empty → 16 spaces
         assert_eq!(pad_account_label("exactly-16-chars"), "exactly-16-chars"); // ≥16: untouched
-        assert_eq!(pad_account_label("a longer label than sixteen"), "a longer label than sixteen");
+        assert_eq!(
+            pad_account_label("a longer label than sixteen"),
+            "a longer label than sixteen"
+        );
     }
 
     /// A short label encrypts to ≥48 bytes (clearing the contract floor) and
@@ -126,7 +131,8 @@ mod tests {
         let key = [0x42u8; 32];
         let iv = [0x11u8; 16];
         for label in ["", "hi", "lunch fund"] {
-            let blob = platform_encryption::encrypt_account_label(&key, &iv, &pad_account_label(label));
+            let blob =
+                platform_encryption::encrypt_account_label(&key, &iv, &pad_account_label(label));
             assert!(
                 (48..=80).contains(&blob.len()),
                 "label {label:?} blob len {} not in 48..=80",

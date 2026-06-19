@@ -643,9 +643,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     let to_fetch: Vec<Identifier> = targets
                         .into_iter()
                         .filter(|id| !own.contains(id))
-                        .filter(|id| {
-                            should_fetch_profile(managed.contact_profiles.get(id), now_ms)
-                        })
+                        .filter(|id| should_fetch_profile(managed.contact_profiles.get(id), now_ms))
                         .collect();
                     (!to_fetch.is_empty()).then_some((*owner_id, to_fetch))
                 })
@@ -800,8 +798,14 @@ mod tests {
     fn existing_full() -> BTreeMap<String, Value> {
         let mut m = BTreeMap::new();
         m.insert("displayName".to_string(), Value::Text("Alice".into()));
-        m.insert("publicMessage".to_string(), Value::Text("hello world".into()));
-        m.insert("avatarUrl".to_string(), Value::Text("https://x/a.png".into()));
+        m.insert(
+            "publicMessage".to_string(),
+            Value::Text("hello world".into()),
+        );
+        m.insert(
+            "avatarUrl".to_string(),
+            Value::Text("https://x/a.png".into()),
+        );
         m.insert("avatarHash".to_string(), Value::Bytes32([7u8; 32]));
         m.insert(
             "avatarFingerprint".to_string(),
@@ -946,11 +950,21 @@ mod tests {
         };
 
         // First write changes; checked_at recorded.
-        assert!(apply_fetched_profile(&mut cache, id, Some(with_avatar.clone()), 100));
+        assert!(apply_fetched_profile(
+            &mut cache,
+            id,
+            Some(with_avatar.clone()),
+            100
+        ));
         assert_eq!(cache[&id].checked_at_ms, 100);
 
         // Identical profile again: no change, but the timestamp advances.
-        assert!(!apply_fetched_profile(&mut cache, id, Some(with_avatar), 200));
+        assert!(!apply_fetched_profile(
+            &mut cache,
+            id,
+            Some(with_avatar),
+            200
+        ));
         assert_eq!(cache[&id].checked_at_ms, 200);
 
         // Contact removed their avatar: full-replace drops it (a merge would

@@ -198,8 +198,13 @@ pub(crate) async fn confirm_sent_dashpay_payment(
     if !record.is_confirmed() {
         return;
     }
-    confirm_sent_payment_by_txid(wallet_manager, wallet_id, persister, &record.txid.to_string())
-        .await;
+    confirm_sent_payment_by_txid(
+        wallet_manager,
+        wallet_id,
+        persister,
+        &record.txid.to_string(),
+    )
+    .await;
 }
 
 /// Flip the `Pending` `Sent` [`PaymentEntry`] under `txid` (if any) to

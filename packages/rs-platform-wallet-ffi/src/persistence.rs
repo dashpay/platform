@@ -34,8 +34,7 @@ use crate::asset_lock_persistence::{
     build_asset_lock_entries, outpoint_to_bytes, AssetLockEntryFFI,
 };
 use crate::contact_persistence::{
-    free_contact_requests_ffi, ContactIgnoredSenderFFI, ContactRequestFFI,
-    ContactRequestRemovalFFI,
+    free_contact_requests_ffi, ContactIgnoredSenderFFI, ContactRequestFFI, ContactRequestRemovalFFI,
 };
 use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI};
 use crate::core_wallet_types::{free_wallet_changeset_ffi, WalletChangeSetFFI};
@@ -1109,19 +1108,15 @@ impl PlatformWalletPersistence for FFIPersister {
                 // rows with `is_ignored == false` (delete it). Both ride a
                 // single array so the host applies a mixed delta in one
                 // callback.
-                let ignored: Vec<ContactIgnoredSenderFFI> = contacts_cs
-                    .ignored
-                    .iter()
-                    .map(|(owner, sender)| ContactIgnoredSenderFFI::new(owner, sender, true))
-                    .chain(
-                        contacts_cs
-                            .unignored
-                            .iter()
-                            .map(|(owner, sender)| {
-                                ContactIgnoredSenderFFI::new(owner, sender, false)
-                            }),
-                    )
-                    .collect();
+                let ignored: Vec<ContactIgnoredSenderFFI> =
+                    contacts_cs
+                        .ignored
+                        .iter()
+                        .map(|(owner, sender)| ContactIgnoredSenderFFI::new(owner, sender, true))
+                        .chain(contacts_cs.unignored.iter().map(|(owner, sender)| {
+                            ContactIgnoredSenderFFI::new(owner, sender, false)
+                        }))
+                        .collect();
                 if !upserts.is_empty()
                     || !removed_sent.is_empty()
                     || !removed_incoming.is_empty()
