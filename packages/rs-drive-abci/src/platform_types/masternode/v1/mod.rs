@@ -153,8 +153,15 @@ impl From<DMNState> for MasternodeStateV1 {
     // its core service IP keeps advertising the correct endpoint after a restart.
     fn from(value: DMNState) -> Self {
         let platform_p2p = value.platform_p2p_address();
-        let platform_http_port = value.platform_http_address().map(|(_host, port)| port);
-        let platform_host = platform_p2p.as_ref().map(|(host, _port)| host.clone());
+        let platform_http = value.platform_http_address();
+        let platform_http_port = platform_http.as_ref().map(|(_host, port)| *port);
+        // Prefer the p2p host (what the validator advertises); fall back to the http host
+        // so an http-only entry still round-trips its host instead of collapsing to
+        // service.ip() on the reverse conversion.
+        let platform_host = platform_p2p
+            .as_ref()
+            .map(|(host, _port)| host.clone())
+            .or_else(|| platform_http.as_ref().map(|(host, _port)| host.clone()));
         let platform_p2p_port = platform_p2p.map(|(_host, port)| port);
         let DMNState {
             service,
@@ -337,6 +344,30 @@ mod tests {
         let (host, port) = back.platform_p2p_address().expect("port resolves");
         assert_eq!(host, "192.0.2.2");
         assert_eq!(port, 26656);
+    }
+
+    // An http-only entry (empty platform_p2p) still round-trips its host: `platform_host`
+    // falls back to the http host instead of collapsing to service.ip() on reverse.
+    #[test]
+    #[allow(deprecated)]
+    fn v1_http_only_node_preserves_host() {
+        let dmn = DMNState {
+            addresses: Some(MasternodeAddresses {
+                core_p2p: vec![],
+                platform_p2p: vec![],
+                platform_https: vec!["203.0.113.7:443".to_string()],
+            }),
+            ..base_dmn_state() // service IP is 192.0.2.2
+        };
+
+        let state = MasternodeStateV1::from(dmn);
+        assert_eq!(state.platform_host.as_deref(), Some("203.0.113.7"));
+        assert_eq!(state.platform_p2p_port, None);
+        assert_eq!(state.platform_http_port, Some(443));
+
+        let back: DMNState = state.into();
+        // Host preserved (would be 192.0.2.2 without the http fallback).
+        assert_eq!(back.platform_http_address().expect("http resolves").0, "203.0.113.7");
     }
 
     // The full save/load path goes MasternodeListItem -> MasternodeV1 -> MasternodeListItem;
