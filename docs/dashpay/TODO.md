@@ -290,6 +290,27 @@ DIP/maintainer-coordination effort separate from the wallet work.
     Confirmed"). No automated test (UI-only SwiftUI modifier; on-device verified per the
     CLAUDE.md UI exception). Ignore-restore + wallet-wipe are untouched by these changes
     (isolated to `core_bridge.rs` payment routing + `ContactDetailView` payment refresh).
+  - **Multi-agent review (2026-06-20, 5 lenses: correctness / adversarial / Swift-iOS /
+    testing / maintainability):** no blocking issues; all rated ship-able. **Applied:**
+    exhaustive `match` in `dashpay_payment_records` (a new record-bearing `WalletEvent`
+    variant now fails to compile rather than being silently dropped — same bug class);
+    cheap non-allocating `carries_payment_records`; `refreshPayments()` re-entrancy guard;
+    timeless test doc-comment; +idempotency and +`matured`-exclusion assertions in the
+    integration test (281/281 lib green, clippy clean, sim build green). **Open follow-ups
+    (flagged, not yet done):**
+    - **(robustness) No sent-payment reconcile.** Sent-payment confirmation rides a single
+      live `BlockProcessed`; if the wallet-event broadcast lags/drops (`RecvError::Lagged`
+      only logs), the entry stays `Pending` with no recovery — the incoming side self-heals
+      from UTXOs, the sent side has no equivalent. Add a sent-payment reconcile to
+      `dashpay_sync()` (flip `Pending` `Sent` entries whose stored tx `is_confirmed()`).
+    - **(product) InstantSend-locked sent payment shows `Pending`** until a block mines it
+      (`is_confirmed()` excludes `InstantSend`). Decide whether IS-lock should read as
+      confirmed in the DashPay UI.
+    - **(perf) SwiftData write-amplification.** `persistDashpayPayments` re-stamps
+      `lastUpdated` on every row each pass, re-firing the `@Query` ~every sync. Only mutate
+      rows whose fields actually changed.
+    - **(test) Incoming-payment recording via `BlockProcessed`** (block-first sighting) is
+      pinned only at the routing layer, not end-to-end.
 
 - [ ] **🐛 BUG (found in UAT 2026-06-19): an IMPORTED identity cannot sign any state
   transition.** Every signed op — register DPNS name, set DashPay profile, and by
