@@ -237,25 +237,59 @@ DIP/maintainer-coordination effort separate from the wallet work.
     select-all) — clear with N×backspace then type. Min lock 0.0025 → ~36M credits is
     too little for a DPNS name (needs ~81.7M); fund ≥0.01 DASH.
 
-- [ ] **🐛 BUG (found in UAT 2026-06-20): sent DashPay payment stuck on Pending despite
-  a fully-confirmed tx — PR #3841's "Pending→Confirmed" fix does not fire on-device.**
-  Alice sent 0.001 DASH to contact Bob. The tx reached **9 confirmations + InstantSend
-  lock** on testnet (block 1499050) and the wallet **detected** it
-  (`ZPERSISTENTTRANSACTION` at block 1499050, `ZCONTEXT=2` inBlock), yet
-  `ZPERSISTENTDASHPAYPAYMENT.ZSTATUSRAW` stayed `0` (Pending) for ~20 min across
-  explicit Core/Platform/DashPay syncs. The `confirm_sent_dashpay_payment` path
-  (`payments.rs` / `core_bridge.rs`) and its unit test
-  (`*_flips_sent_payment_pending_to_confirmed`) PASS in isolation — a unit-pass /
-  integration-fail. Candidate causes to investigate:
-  - The wallet tx never advances past `ZCONTEXT=2` (inBlock) to `3` (chainlocked) even
-    9 blocks deep — if the confirm path waits on a chainlocked re-detection, the
-    chainlock-detection is the gap; or the SPV doesn't re-emit `TransactionDetected`
-    for a self-broadcast tx on confirmation.
-  - **txid representation split:** `ZPERSISTENTDASHPAYPAYMENT.ZTXID` is the **display-order
-    ASCII hex string** (`"a3155ddc…aac35f"`) while `ZPERSISTENTTRANSACTION.ZTXID` is the
-    **internal-order raw bytes** (`5fc3aa60…15a3`, the byte-reversal). If the confirm-path
-    link compares txids across that boundary it never matches (same class as the
-    identity-id base58-vs-raw split). Verify the Rust link uses a consistent `Txid`.
+- [x] **🐛 BUG (found in UAT 2026-06-20): sent DashPay payment stuck on Pending — FIXED
+  (code + red→green test; pending on-device re-verify).** **Root cause = event-routing
+  gap (candidate (a)), NOT the txid split (candidate (b)).** The bridge ran the DashPay
+  payment hooks only on `WalletEvent::TransactionDetected`, which fires *only* for the
+  first **mempool** sighting (context `Mempool`/`InstantSend` → `is_confirmed()` is
+  false → the confirm hook early-returns). A wallet sees its *own* broadcast in the
+  mempool first, so the tx reaches a confirmed context only when a block mines it —
+  delivered as `WalletEvent::BlockProcessed` (the tx in `updated` = "previously-known
+  records that just confirmed"). The bridge consumed `BlockProcessed` for the core
+  changeset (hence `ZPERSISTENTTRANSACTION` advanced to inBlock) but never ran the
+  payment hooks on those records, so the `Sent` entry stayed `Pending` forever. The
+  txid representation split (candidate (b)) is real in SwiftData but **irrelevant to the
+  Rust match**: both `send_payment` (insert) and the confirm path (lookup) key by
+  `dashcore::Txid::to_string()` (display hex), and the SwiftData payment-row txid is
+  restored as the same display hex — Rust never compares the payment-table txid against
+  the transaction-table (internal-byte) txid. **Fix** (`core_bridge.rs`): route the
+  records carried by `BlockProcessed` (`inserted` ∪ `updated`; `matured` excluded) to
+  the same `record_incoming_dashpay_payments` + `confirm_sent_dashpay_payment` hooks via
+  a new `dashpay_payment_records` / `run_dashpay_payment_hooks` seam. **Tests** (red→green):
+  `block_processed_confirms_sent_payment` (payments.rs, end-to-end through the real
+  dispatch) + `dashpay_payment_records_covers_block_processed_inserted_and_updated`
+  (core_bridge.rs, routing) — both ✖ before the `BlockProcessed` arm, ✔ after. Full
+  `platform-wallet` lib suite 281/281 green; clippy clean.
+  **On-device verified (2026-06-20, testnet, iPhone 17 Pro sim):** re-imported the wallet
+  (rediscovered the on-chain identities + reconstructed the Alice↔Bob established contact
+  from chain — no identity signing needed, since a DashPay payment is a Core tx signed by
+  the wallet's BIP-44 keys, so bug #1 does not block it), sent 0.001 DASH Alice→Bob.
+  `platform_wallet/run.log` shows the confirm hook firing
+  (`Confirming sent DashPay payment owner=D8VCf8Lo… txid=3938e6b7…`) when block 1499379 was
+  processed via `BlockProcessed`, and `ZPERSISTENTDASHPAYPAYMENT.ZSTATUSRAW` reached `1`
+  (Confirmed). **The fix works.**
+  - **Secondary gap surfaced (follow-up, not the primary bug):** the confirm hook flips the
+    *in-memory* map and emits a changeset, but the Swift side never persists DashPay payments
+    from the changeset/store path — `dashpay_payments_overlay` is carried in the Rust
+    changeset yet has **no FFI persister callback**. Payments reach SwiftData only via the
+    pull-based `refreshDashPayPayments` (FFI getter → upsert), triggered solely by
+    `ContactDetailView` (`.task` / `onSent` / manual Refresh) — NOT by the recurring DashPay
+    sync. So the confirmed status shows after re-opening the contact / tapping Refresh, but
+    does **not** auto-update while the user watches the screen. Fix options: (A) call
+    `refreshDashPayPayments` for eligible identities inside the recurring DashPay sync
+    (Swift-only, pull-based, matches the existing pattern); (B) surface
+    `dashpay_payments_overlay` via a new FFI persister callback + Swift handler (push-based,
+    immediate). **FIXED via option A + verified on-device (2026-06-20):** added
+    `ContactDetailView.onChange(of: walletManager.dashPaySyncIsSyncing)` falling-edge →
+    `refreshPayments()` (mirrors the sibling `ContactsView`/`ContactRequestsView` idiom;
+    the 1s poller in `PlatformWalletManager` mirrors the FFI `isDashPaySyncing()` for the
+    recurring Rust loop too, so the falling edge fires on every recurring pass). Verified:
+    sent a 2nd payment, stayed on the contact screen with **no manual Refresh** — the
+    confirm hook fired (`Confirming sent DashPay payment … txid=5fa9e036…`) and the row
+    auto-flipped to **Confirmed** in SwiftData + the UI (`Payments (2)`, both "Sent …
+    Confirmed"). No automated test (UI-only SwiftUI modifier; on-device verified per the
+    CLAUDE.md UI exception). Ignore-restore + wallet-wipe are untouched by these changes
+    (isolated to `core_bridge.rs` payment routing + `ContactDetailView` payment refresh).
 
 - [ ] **🐛 BUG (found in UAT 2026-06-19): an IMPORTED identity cannot sign any state
   transition.** Every signed op — register DPNS name, set DashPay profile, and by
