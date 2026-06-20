@@ -13,6 +13,7 @@
 //! tokio default (~512 KB on iOS). See `data_contract.rs` for the
 //! same precedent applied to contract creation.
 
+mod balances_json;
 pub mod burn;
 pub mod claim;
 pub mod destroy_frozen_funds;

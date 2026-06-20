@@ -24,6 +24,7 @@ struct CoSignProposalView: View {
     let groupContractPosition: UInt16
 
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
@@ -412,7 +413,13 @@ struct CoSignProposalView: View {
             // the signature lines up with the original proposal's
             // burn target on its end, so passing through the
             // co-signer's identity here is correct.
-            try await wallet.tokenBurn(
+            // A co-signature that CLOSES the group burn returns the
+            // caller's proof-verified post-burn balance (empty while the
+            // action is still awaiting signatures). This is the call site
+            // where that balance is most likely non-empty — persist it so
+            // the closing co-signer's local row updates immediately
+            // instead of waiting for the next periodic sync.
+            let balances = try await wallet.tokenBurn(
                 identityId: identityId,
                 contractId: contractId,
                 tokenPosition: tokenPosition,
@@ -420,6 +427,11 @@ struct CoSignProposalView: View {
                 publicNote: note,
                 groupAction: mode,
                 signer: signer
+            )
+            await persistCoSignedBurnBalances(
+                balances: balances,
+                contractId: contractId,
+                tokenPosition: tokenPosition
             )
         case .freeze(let target, let note):
             try await wallet.tokenFreeze(
@@ -485,6 +497,32 @@ struct CoSignProposalView: View {
                 code: -1,
                 userInfo: [NSLocalizedDescriptionKey: "Proposal type not supported by co-sign UI."]
             )
+        }
+    }
+
+    /// Persist the proof-verified post-burn balance a co-signed group
+    /// burn returned into the local `PersistentTokenBalance` row (keyed by
+    /// this view's `token`). Empty when the action is still awaiting
+    /// signatures → no-op. Best-effort: a persist failure is logged and
+    /// swallowed; the periodic sync is the backstop. Mirrors
+    /// `TokenBurnActionView.persistBalanceAfterBurn`.
+    @MainActor
+    private func persistCoSignedBurnBalances(
+        balances: [Data: UInt64],
+        contractId: Data,
+        tokenPosition: UInt16
+    ) async {
+        guard !balances.isEmpty, let sdk = appState.sdk else { return }
+        do {
+            try sdk.persistProvenTokenBalances(
+                contractId: contractId,
+                tokenPosition: tokenPosition,
+                tokenRelationshipKey: token.id,
+                balances: balances,
+                in: modelContext
+            )
+        } catch {
+            print("⚠️ Co-signed burn balance persist failed: \(error)")
         }
     }
 

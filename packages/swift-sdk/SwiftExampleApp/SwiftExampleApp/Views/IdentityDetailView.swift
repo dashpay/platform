@@ -510,15 +510,19 @@ struct IdentityDetailView: View {
                 loadCachedDashPayProfile(for: identity)
                 Task { await refreshDashPayProfilesFromPlatform(for: identity) }
 
-                // First-load gate for the Tokens section. Same pattern
-                // as the DashPay block above — only auto-fetch when
-                // we have nothing yet; subsequent refreshes are an
-                // explicit user action via the section's refresh
-                // button. Avoids a redundant round-trip on every
-                // back-and-forth navigation.
-                if tokenBalances.isEmpty {
-                    reloadTokenBalances()
-                }
+                // Reload the Tokens section on every appear, including
+                // when the user pops back from a token action
+                // (Transfer / Burn). Those flows mutate the on-chain
+                // balance and refresh the local PersistentTokenBalance
+                // rows, but this section reads a transient @State
+                // snapshot — gating the reload on `tokenBalances.isEmpty`
+                // (the old behavior) left a drained sender still showing
+                // its pre-transfer figure until a manual refresh
+                // (MW-02). An unconditional reload keeps the displayed
+                // balance current after returning here; it stays a
+                // single batched round-trip and shows the cached numbers
+                // while it refreshes.
+                reloadTokenBalances()
             }
         }
         } else {
@@ -910,6 +914,15 @@ struct IdentityDetailView: View {
     private func reloadTokenBalances() {
         guard let identity = identity, !identity.isLocal,
               let sdk = appState.sdk else { return }
+
+        // In-flight guard: `onAppear` now reloads unconditionally and this
+        // view can re-appear rapidly (background-sync @Query churn), so bail
+        // if a refresh is already running to avoid stacking redundant
+        // network/FFI round-trips that race `tokenBalances`. Reliable on the
+        // main actor — everything up to `isLoadingTokens = true` runs
+        // synchronously, so a second call sees the flag before the first
+        // call's Task yields.
+        guard !isLoadingTokens else { return }
 
         isLoadingTokens = true
         tokensError = nil
