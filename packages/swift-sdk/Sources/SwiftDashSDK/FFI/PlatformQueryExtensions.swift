@@ -27,6 +27,27 @@ public struct DocumentCountResult: Sendable {
     }
 }
 
+/// One element returned by ``SDK/systemPathElements(path:keys:)``.
+///
+/// Mirrors a single object in the FFI's JSON array payload
+/// (`[{"key":"<hex>","element":"<formatted>","type":"<grovedb-variant>"}]`).
+public struct PathElement: Sendable {
+    /// Hex-encoded GroveDB key.
+    public let key: String
+    /// The formatted element value (e.g. a hex item, `sum_item:<n>`, or
+    /// `tree`), exactly as rendered by the Rust side.
+    public let element: String
+    /// The GroveDB element variant (e.g. `tree`, `item`, `sum_item`,
+    /// `sum_tree`).
+    public let type: String
+
+    public init(key: String, element: String, type: String) {
+        self.key = key
+        self.element = element
+        self.type = type
+    }
+}
+
 // MARK: - Platform Query Extensions for SDK
 @MainActor
 extension SDK {
@@ -1634,5 +1655,74 @@ extension SDK {
 
         let result = dash_sdk_system_get_prefunded_specialized_balance(handle, id)
         return try processUInt64Result(result)
+    }
+
+    /// Fetch the raw GroveDB elements stored under `keys` within `path`.
+    ///
+    /// Thin bridge over `dash_sdk_system_get_path_elements`: it serializes
+    /// the `path` / `keys` string arrays to JSON, passes them to the FFI,
+    /// and marshals the
+    /// `[{"key":"<hex>","element":"<formatted>","type":"<variant>"}]`
+    /// payload out into ``PathElement`` rows. The FFI accepts each string as
+    /// either hex-encoded bytes (preferred) or plain UTF-8 (hex-decode is
+    /// tried first, with a raw-bytes fallback). All of the GroveDB traversal
+    /// + formatting happens on the Rust side; nothing is decided here.
+    ///
+    /// - Parameters:
+    ///   - path: GroveDB path segments. `[]` is the root. Each segment is
+    ///     hex bytes or a plain string (e.g. `["60"]` for the Balances
+    ///     subtree).
+    ///   - keys: Keys to fetch within `path`, same hex-or-plain rule
+    ///     (e.g. `["20","40","10","60"]` for the top-level RootTree subtrees).
+    /// - Returns: The matching ``PathElement`` rows. Empty when the FFI
+    ///   returns no elements (`NoData`).
+    @MainActor
+    public func systemPathElements(path: [String], keys: [String]) async throws -> [PathElement] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+
+        // Serialize the path/keys string arrays to JSON for the FFI.
+        let pathData = try JSONSerialization.data(withJSONObject: path)
+        let keysData = try JSONSerialization.data(withJSONObject: keys)
+        guard let pathJSON = String(data: pathData, encoding: .utf8),
+              let keysJSON = String(data: keysData, encoding: .utf8) else {
+            throw SDKError.serializationError("Failed to encode path/keys JSON")
+        }
+
+        let result = pathJSON.withCString { pathPtr in
+            keysJSON.withCString { keysPtr in
+                dash_sdk_system_get_path_elements(handle, pathPtr, keysPtr)
+            }
+        }
+
+        // Surface FFI errors with their original code (network/timeout/etc.).
+        if let error = result.error {
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
+            dash_sdk_error_free(error)
+            throw sdkError
+        }
+
+        // NoData (null payload, no error) means no elements were found —
+        // treat it as an empty array rather than an error.
+        guard let dataPtr = result.data else {
+            return []
+        }
+
+        let jsonString = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+        dash_sdk_string_free(dataPtr)
+
+        guard let data = jsonString.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            throw SDKError.serializationError("Failed to parse path elements JSON array")
+        }
+
+        return array.map { entry in
+            PathElement(
+                key: entry["key"] as? String ?? "",
+                element: entry["element"] as? String ?? "",
+                type: entry["type"] as? String ?? ""
+            )
+        }
     }
 }

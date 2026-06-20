@@ -27,7 +27,6 @@ use std::sync::Arc;
 use super::common::{mock_data_contract, mock_document_type};
 use dapi_grpc::platform::v0::get_documents_request::Version as ReqVersion;
 use dapi_grpc::platform::v0::GetDocumentsRequest;
-use dash_sdk::sdk::DEFAULT_INITIAL_PROTOCOL_VERSION;
 use dash_sdk::{platform::documents::document_query::DocumentQuery, Error as SdkError, SdkBuilder};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::Value;
@@ -220,14 +219,15 @@ fn encoder_dispatches_v0_via_query_settings_without_sdk() {
 
 #[test]
 fn sdk_builder_default_seeds_atomic_to_floor() {
-    // Auto-detect default: the atomic seeds to
-    // `max(DEFAULT_INITIAL_PROTOCOL_VERSION, network floor)`, which `version()`
-    // returns until the first response ratchets it upward. `new_mock()` builds
-    // on `Network::Mainnet`, whose floor is PROTOCOL_VERSION_11 — so the boot
-    // value is 11 even though `DEFAULT_INITIAL_PROTOCOL_VERSION` is 10.
+    // Auto-detect default uses mainnet, so the atomic seeds to the mainnet
+    // `min_protocol_version` floor, which `version()` returns until the first
+    // response ratchets it upward. Mainnet's floor is PV_11 in
+    // `Sdk::min_protocol_version`.
     let sdk_default = SdkBuilder::new_mock().build().expect("mock sdk");
-    let expected = DEFAULT_INITIAL_PROTOCOL_VERSION.max(dpp::version::v11::PROTOCOL_VERSION_11);
-    assert_eq!(sdk_default.version().protocol_version, expected);
+    assert_eq!(
+        sdk_default.version().protocol_version,
+        dpp::version::v11::PROTOCOL_VERSION_11
+    );
 }
 
 /// PROTOCOL_VERSION_11 corresponds to Dash Platform v3.0 (testnet at the
