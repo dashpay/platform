@@ -161,4 +161,60 @@ final class ProvenTokenBalancePersistTests: XCTestCase {
         )
         XCTAssertEqual(try balanceRow(for: identityId, in: context)?.balance, 0)
     }
+
+    /// When a local `PersistentToken` row exists (its `id` ==
+    /// `tokenRelationshipKey`), the persist links the balance row's
+    /// `token` relationship, and the link survives a later upsert.
+    func testUpsertLinksAndPreservesTokenRelationship() throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+
+        let identityId = Data(repeating: 0x05, count: 32)
+
+        // A local token row exists for this contract+position → the first
+        // persist should stitch in the `token` relationship.
+        let token = PersistentToken(
+            contractId: contractId,
+            position: position,
+            name: "Fixture",
+            baseSupply: "0"
+        )
+        context.insert(token)
+        try context.save()
+        XCTAssertEqual(
+            token.id, tokenRelationshipKey,
+            "fixture token id must equal the relationship key the helper looks up"
+        )
+
+        try SDK.persistTokenBalances(
+            canonicalTokenId: canonicalTokenId,
+            tokenRelationshipKey: tokenRelationshipKey,
+            network: .testnet,
+            balances: [identityId: 42],
+            in: context
+        )
+
+        let firstRow = try XCTUnwrap(try balanceRow(for: identityId, in: context))
+        XCTAssertEqual(firstRow.balance, 42)
+        XCTAssertNotNil(firstRow.token, "first persist should link the local token")
+        XCTAssertEqual(firstRow.token?.id, tokenRelationshipKey)
+
+        // Second persist (a later transfer/burn): the row is updated, not
+        // duplicated, and the token link survives.
+        try SDK.persistTokenBalances(
+            canonicalTokenId: canonicalTokenId,
+            tokenRelationshipKey: tokenRelationshipKey,
+            network: .testnet,
+            balances: [identityId: 7],
+            in: context
+        )
+
+        let all = try context.fetch(FetchDescriptor<PersistentTokenBalance>())
+        XCTAssertEqual(all.count, 1, "upsert must not create a duplicate row")
+
+        let secondRow = try XCTUnwrap(try balanceRow(for: identityId, in: context))
+        XCTAssertEqual(secondRow.balance, 7)
+        XCTAssertNotNil(secondRow.token, "token relationship preserved across upsert")
+        XCTAssertEqual(secondRow.token?.id, tokenRelationshipKey)
+    }
 }

@@ -915,6 +915,15 @@ struct IdentityDetailView: View {
         guard let identity = identity, !identity.isLocal,
               let sdk = appState.sdk else { return }
 
+        // In-flight guard: `onAppear` now reloads unconditionally and this
+        // view can re-appear rapidly (background-sync @Query churn), so bail
+        // if a refresh is already running to avoid stacking redundant
+        // network/FFI round-trips that race `tokenBalances`. Reliable on the
+        // main actor — everything up to `isLoadingTokens = true` runs
+        // synchronously, so a second call sees the flag before the first
+        // call's Task yields.
+        guard !isLoadingTokens else { return }
+
         isLoadingTokens = true
         tokensError = nil
 

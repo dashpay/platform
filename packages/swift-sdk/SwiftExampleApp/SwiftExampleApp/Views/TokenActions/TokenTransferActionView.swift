@@ -196,10 +196,10 @@ struct TokenTransferActionView: View {
         let note = publicNote.trimmingCharacters(in: .whitespacesAndNewlines)
         let publicNoteOrNil: String? = note.isEmpty ? nil : note
 
-        // Capture the values the persist step needs off the @Model
-        // instances now, on the main actor, so the post-transfer
+        // Capture the relationship key the persist step needs off the
+        // @Model instance now, on the main actor, so the post-transfer
         // persist doesn't read SwiftData models from inside the Task.
-        let tokenContractId = token.contractId
+        // (`contractId` above is already `token.contractId`.)
         let tokenRelationshipKey = token.id
 
         Task {
@@ -222,7 +222,7 @@ struct TokenTransferActionView: View {
                 )
                 await self.persistBalancesAfterTransfer(
                     balances: balances,
-                    contractId: tokenContractId,
+                    contractId: contractId,
                     tokenPosition: position,
                     tokenRelationshipKey: tokenRelationshipKey
                 )
