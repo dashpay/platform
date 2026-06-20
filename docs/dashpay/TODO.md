@@ -296,21 +296,28 @@ DIP/maintainer-coordination effort separate from the wallet work.
     variant now fails to compile rather than being silently dropped — same bug class);
     cheap non-allocating `carries_payment_records`; `refreshPayments()` re-entrancy guard;
     timeless test doc-comment; +idempotency and +`matured`-exclusion assertions in the
-    integration test (281/281 lib green, clippy clean, sim build green). **Open follow-ups
-    (flagged, not yet done):**
-    - **(robustness) No sent-payment reconcile.** Sent-payment confirmation rides a single
-      live `BlockProcessed`; if the wallet-event broadcast lags/drops (`RecvError::Lagged`
-      only logs), the entry stays `Pending` with no recovery — the incoming side self-heals
-      from UTXOs, the sent side has no equivalent. Add a sent-payment reconcile to
-      `dashpay_sync()` (flip `Pending` `Sent` entries whose stored tx `is_confirmed()`).
-    - **(product) InstantSend-locked sent payment shows `Pending`** until a block mines it
-      (`is_confirmed()` excludes `InstantSend`). Decide whether IS-lock should read as
-      confirmed in the DashPay UI.
-    - **(perf) SwiftData write-amplification.** `persistDashpayPayments` re-stamps
-      `lastUpdated` on every row each pass, re-firing the `@Query` ~every sync. Only mutate
-      rows whose fields actually changed.
-    - **(test) Incoming-payment recording via `BlockProcessed`** (block-first sighting) is
-      pinned only at the routing layer, not end-to-end.
+    integration test (281/281 lib green, clippy clean, sim build green). **Follow-ups —
+    all three approved + DONE (2026-06-20):**
+    - [x] **(robustness) Sent-payment reconcile.** `IdentityWallet::reconcile_sent_payments`
+      (new local-only `dashpay_sync()` step): for each `Pending` `Sent` entry, consult the
+      persisted core tx record (`get_core_tx_record`) and flip it when the tx is mined or
+      IS-locked. Recovers a sent payment whose live confirm event was missed (lagged
+      broadcast, or relaunch after the tx confirmed) — the sent-side equivalent of the
+      incoming UTXO self-heal. Test `reconcile_sent_payments_confirms_from_persisted_record`
+      (mined→Confirmed, mempool→Pending, idempotent).
+    - [x] **(product) InstantSend = Confirmed.** The confirm gate now accepts `InstantSend`
+      context, and `WalletEvent::TransactionInstantLocked` (txid-only, no record) routes to a
+      new `confirm_sent_dashpay_payment_by_txid` path, so a sent payment shows `Confirmed` on
+      the IS lock (seconds after broadcast) rather than waiting for the block. Tests:
+      `instant_send_lock_confirms_sent_payment`, `instant_send_context_record_confirms_sent_payment`,
+      `instant_locked_drives_payment_hooks_without_a_record`.
+    - [x] **(perf) SwiftData write-amplification fixed.** `persistDashpayPayments` now only
+      mutates a row (and its `lastUpdated`) when a field actually changed, so the recurring
+      sync-edge refresh no longer re-fires the `@Query` on a quiescent channel.
+    - [ ] **(test) Incoming-payment recording via `BlockProcessed`** (block-first sighting)
+      still pinned only at the routing layer, not end-to-end — minor; left as a TODO.
+    - 285/285 platform-wallet lib tests green, clippy clean, full `build_ios.sh` (xcframework
+      + app) green.
 
 - [ ] **🐛 BUG (found in UAT 2026-06-19): an IMPORTED identity cannot sign any state
   transition.** Every signed op — register DPNS name, set DashPay profile, and by
