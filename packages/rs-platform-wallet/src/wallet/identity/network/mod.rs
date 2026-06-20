@@ -38,7 +38,10 @@ mod contact_requests;
 mod contacts;
 mod dashpay_sync;
 mod payments;
-pub(crate) use payments::{confirm_sent_dashpay_payment, record_incoming_dashpay_payments};
+pub(crate) use payments::{
+    confirm_sent_dashpay_payment, confirm_sent_dashpay_payment_by_txid,
+    record_incoming_dashpay_payments,
+};
 mod profile;
 pub(crate) mod sdk_writer;
 

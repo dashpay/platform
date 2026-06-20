@@ -92,6 +92,92 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         }
         Ok(recorded)
     }
+
+    /// Flip `Pending` `Sent` [`PaymentEntry`]s to `Confirmed` when the
+    /// persisted core transaction record reports the transaction final.
+    ///
+    /// Recovery path for sent-payment confirmation. The live confirm path
+    /// ([`confirm_sent_dashpay_payment`](super::confirm_sent_dashpay_payment))
+    /// flips a sent payment the moment its block / InstantSend-lock event
+    /// arrives, but that is a single live event: if it is missed — a lagged
+    /// wallet-event broadcast, or a relaunch after the transaction confirmed
+    /// but before the flip was captured — the entry would otherwise stay
+    /// `Pending` forever (received payments self-heal from receival-account
+    /// UTXOs; sent payments have no such ground truth). This sweep consults
+    /// the persisted core tx record (txid + context) and flips any `Pending`
+    /// `Sent` entry whose transaction is mined or InstantSend-locked.
+    ///
+    /// Runs as a local-only step of `dashpay_sync()` — one persister read
+    /// per pending sent payment, no network round-trips. Idempotent: a
+    /// `Confirmed` entry is left alone, and a transaction not yet final is
+    /// retried on the next sweep.
+    ///
+    /// Returns the number of entries confirmed this pass.
+    pub async fn reconcile_sent_payments(&self) -> Result<usize, PlatformWalletError> {
+        use crate::wallet::identity::types::dashpay::payment::{PaymentDirection, PaymentStatus};
+        use key_wallet::transaction_checking::TransactionContext;
+
+        // Snapshot the pending sent (owner, txid) pairs under a read lock so
+        // the persister reads below don't hold the wallet lock across I/O.
+        let pending: Vec<(Identifier, String)> = {
+            let wm = self.wallet_manager.read().await;
+            let Some(info) = wm.get_wallet_info(&self.wallet_id) else {
+                return Ok(0);
+            };
+            let mut out = Vec::new();
+            for owner in info.identity_manager.identity_ids() {
+                let Some(managed) = info.identity_manager.managed_identity(&owner) else {
+                    continue;
+                };
+                for (txid, entry) in &managed.dashpay_payments {
+                    if entry.direction == PaymentDirection::Sent
+                        && entry.status == PaymentStatus::Pending
+                    {
+                        out.push((owner, txid.clone()));
+                    }
+                }
+            }
+            out
+        };
+
+        let mut confirmed = 0usize;
+        for (_owner, txid_str) in pending {
+            let Ok(txid) = txid_str.parse::<dashcore::Txid>() else {
+                continue;
+            };
+            let record = match self.persister.get_core_tx_record(&txid) {
+                Ok(Some(record)) => record,
+                Ok(None) => continue,
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        txid = %txid_str,
+                        "reconcile_sent_payments: tx-record read failed; will retry next sweep"
+                    );
+                    continue;
+                }
+            };
+            // An InstantSend lock is final for DashPay display, same as a
+            // mined block.
+            let is_final = record.is_confirmed()
+                || matches!(record.context, TransactionContext::InstantSend(_));
+            if !is_final {
+                continue;
+            }
+            // Flip in place via the shared confirm path (re-checks the
+            // entry is still a `Pending` `Sent` under its own write lock,
+            // so it stays correct if a live event raced this sweep).
+            confirm_sent_payment_by_txid(
+                &self.wallet_manager,
+                &self.wallet_id,
+                &self.persister,
+                &txid_str,
+            )
+            .await;
+            confirmed += 1;
+        }
+        Ok(confirmed)
+    }
 }
 
 /// Record `Received` [`PaymentEntry`]s for a freshly detected Core
@@ -177,25 +263,31 @@ pub(crate) async fn record_incoming_dashpay_payments(
 }
 
 /// Advance a sender's `Sent` [`PaymentEntry`] from `Pending` to
-/// `Confirmed` once its broadcast transaction confirms on-chain.
+/// `Confirmed` once its broadcast transaction reaches finality.
 ///
 /// [`IdentityWallet::send_payment`] records the outgoing entry as
 /// `Pending` at broadcast time and nothing else advances it. The wallet
-/// re-emits `TransactionDetected` for the sender's own transaction as it
-/// moves through mempool → in-block → chain-locked, so when a
-/// re-detection reports the transaction confirmed (a block `height` is
-/// set) the matching entry is flipped in place. Idempotent: once
-/// `Confirmed`, later re-detections find nothing to change and skip the
-/// persistence round.
+/// re-emits the sender's own transaction as it moves through mempool →
+/// InstantSend → in-block → chain-locked, so when a re-detection reports
+/// the transaction final the matching entry is flipped in place.
+///
+/// An **InstantSend lock counts as final** for DashPay display: it is
+/// effectively irreversible, so the user sees `Confirmed` without waiting
+/// for the surrounding block. A bare mempool re-detection (no IS lock, not
+/// yet mined) leaves the entry `Pending` — which it genuinely still is.
+/// Idempotent: once `Confirmed`, later re-detections find nothing to
+/// change and skip the persistence round.
 pub(crate) async fn confirm_sent_dashpay_payment(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
     persister: &crate::wallet::persister::WalletPersister,
     record: &key_wallet::managed_account::transaction_record::TransactionRecord,
 ) {
-    // Only a confirmed (mined) transaction advances the entry. A mempool
-    // re-detection leaves it `Pending` — which it genuinely still is.
-    if !record.is_confirmed() {
+    use key_wallet::transaction_checking::TransactionContext;
+    // Mined (InBlock / InChainLockedBlock) OR InstantSend-locked advances
+    // the entry. A plain mempool sighting does not.
+    let is_instant_send = matches!(record.context, TransactionContext::InstantSend(_));
+    if !record.is_confirmed() && !is_instant_send {
         return;
     }
     confirm_sent_payment_by_txid(
@@ -205,6 +297,22 @@ pub(crate) async fn confirm_sent_dashpay_payment(
         &record.txid.to_string(),
     )
     .await;
+}
+
+/// Confirm a sender's `Sent` [`PaymentEntry`] by txid alone, for a
+/// [`WalletEvent::TransactionInstantLocked`](key_wallet_manager::WalletEvent::TransactionInstantLocked)
+/// that applies an InstantSend lock to a previously-seen transaction.
+/// That event carries no [`TransactionRecord`](key_wallet::managed_account::transaction_record::TransactionRecord),
+/// only the txid; an IS lock is treated as final for DashPay display, so
+/// this flips a matching `Pending` `Sent` entry to `Confirmed`. Idempotent
+/// (the underlying flip skips entries already past `Pending`).
+pub(crate) async fn confirm_sent_dashpay_payment_by_txid(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    persister: &crate::wallet::persister::WalletPersister,
+    txid: &dashcore::Txid,
+) {
+    confirm_sent_payment_by_txid(wallet_manager, wallet_id, persister, &txid.to_string()).await;
 }
 
 /// Flip the `Pending` `Sent` [`PaymentEntry`] under `txid` (if any) to
@@ -517,9 +625,78 @@ mod tests {
         }
     }
 
+    /// Persister that answers `get_core_tx_record` from a configurable
+    /// in-memory map, so a test can stage the persisted core transaction
+    /// state the sent-payment reconcile reads. `store`/`flush` are no-ops;
+    /// `load` returns the default state.
+    #[derive(Default)]
+    struct RecordStorePersister {
+        records: Mutex<
+            std::collections::HashMap<
+                dashcore::Txid,
+                key_wallet::managed_account::transaction_record::TransactionRecord,
+            >,
+        >,
+    }
+
+    impl PlatformWalletPersistence for RecordStorePersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+        fn get_core_tx_record(
+            &self,
+            _wallet_id: WalletId,
+            txid: &dashcore::Txid,
+        ) -> Result<
+            Option<key_wallet::managed_account::transaction_record::TransactionRecord>,
+            PersistenceError,
+        > {
+            Ok(self.records.lock().unwrap().get(txid).cloned())
+        }
+    }
+
     struct NoopEventHandler;
     impl EventHandler for NoopEventHandler {}
     impl PlatformEventHandler for NoopEventHandler {}
+
+    /// Build a testnet wallet backed by an arbitrary persister `P`, for
+    /// flows that need a persister beyond [`RecordingPersister`] (e.g. the
+    /// sent-payment reconcile, which reads `get_core_tx_record`).
+    async fn make_wallet_with<P: PlatformWalletPersistence + 'static>(
+        persister: Arc<P>,
+    ) -> (Arc<PlatformWalletManager<P>>, WalletId) {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::clone(&persister),
+            handler,
+        ));
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+        let seed = mnemonic.to_seed("");
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet creation");
+        let wallet_id = wallet.wallet_id();
+        (manager, wallet_id)
+    }
 
     async fn make_wallet() -> (
         Arc<PlatformWalletManager<RecordingPersister>>,
@@ -1240,6 +1417,318 @@ mod tests {
                 .status,
             PaymentStatus::Pending,
             "a confirmed record in the `matured` bucket must not confirm a payment"
+        );
+    }
+
+    /// An InstantSend lock applied to a previously-seen sent payment
+    /// confirms it without waiting for a block. The lock arrives as
+    /// `WalletEvent::TransactionInstantLocked` (no record, just a txid); an
+    /// IS lock is final for DashPay display, so the entry flips
+    /// `Pending → Confirmed`. Drives the real adapter dispatch.
+    #[tokio::test]
+    async fn instant_send_lock_confirms_sent_payment() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use key_wallet::WalletCoreBalance;
+        use key_wallet_manager::WalletEvent;
+
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let txid = dashcore::Txid::from([0x5f; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid.to_string(),
+                    PaymentEntry::new_sent(contact, 50_000, None),
+                    &p,
+                )
+                .expect("record pending sent");
+        }
+
+        let event = WalletEvent::TransactionInstantLocked {
+            wallet_id,
+            txid,
+            instant_lock: InstantLock::default(),
+            balance: WalletCoreBalance::default(),
+            account_balances: std::collections::BTreeMap::new(),
+        };
+        crate::changeset::core_bridge::run_dashpay_payment_hooks(
+            &iw.wallet_manager,
+            &wallet_id,
+            &p,
+            &event,
+        )
+        .await;
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        let entry = info
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("managed")
+            .dashpay_payments
+            .get(&txid.to_string())
+            .cloned()
+            .expect("entry present under the sent txid");
+        assert_eq!(
+            entry.status,
+            PaymentStatus::Confirmed,
+            "an InstantSend lock must confirm a sent payment"
+        );
+    }
+
+    /// A transaction first seen *with* an InstantSend lock arrives as a
+    /// `TransactionDetected` whose record context is `InstantSend`. The
+    /// confirm gate accepts IS context (not just mined), so it flips the
+    /// entry `Pending → Confirmed` — a plain mempool sighting would not.
+    #[tokio::test]
+    async fn instant_send_context_record_confirms_sent_payment() {
+        use dashcore::blockdata::transaction::Transaction;
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use dashcore::TxIn;
+        use key_wallet::account::account_type::StandardAccountType;
+        use key_wallet::account::AccountType;
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::{TransactionContext, TransactionType};
+        use key_wallet::WalletCoreBalance;
+        use key_wallet_manager::WalletEvent;
+
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+
+        let tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: dashcore::OutPoint::new(dashcore::Txid::from([0x5e; 32]), 0),
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        let txid = tx.txid();
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid.to_string(),
+                    PaymentEntry::new_sent(contact, 50_000, None),
+                    &p,
+                )
+                .expect("record pending sent");
+        }
+
+        let record = TransactionRecord::new(
+            tx,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            TransactionContext::InstantSend(InstantLock::default()),
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            Vec::new(),
+            Vec::new(),
+            -50_000,
+        );
+        assert!(
+            !record.is_confirmed(),
+            "precondition: an InstantSend record is not block-confirmed"
+        );
+        let event = WalletEvent::TransactionDetected {
+            wallet_id,
+            record: Box::new(record),
+            balance: WalletCoreBalance::default(),
+            account_balances: std::collections::BTreeMap::new(),
+            addresses_derived: Vec::new(),
+        };
+        crate::changeset::core_bridge::run_dashpay_payment_hooks(
+            &iw.wallet_manager,
+            &wallet_id,
+            &p,
+            &event,
+        )
+        .await;
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        assert_eq!(
+            info.identity_manager
+                .managed_identity(&owner)
+                .expect("managed")
+                .dashpay_payments
+                .get(&txid.to_string())
+                .expect("entry")
+                .status,
+            PaymentStatus::Confirmed,
+            "an InstantSend-context record must confirm a sent payment"
+        );
+    }
+
+    /// `reconcile_sent_payments` recovers a `Pending` `Sent` payment whose
+    /// live confirm event was missed: it flips the entry to `Confirmed` when
+    /// the persisted core tx record reports the transaction final (mined or
+    /// IS-locked), leaves a not-yet-final entry `Pending`, and is idempotent.
+    #[tokio::test]
+    async fn reconcile_sent_payments_confirms_from_persisted_record() {
+        use dashcore::blockdata::transaction::Transaction;
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::account::account_type::StandardAccountType;
+        use key_wallet::account::AccountType;
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
+
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+
+        // A persisted core tx record carrying only `txid` + `context` (the
+        // contract `get_core_tx_record` guarantees).
+        fn tx_record(txid: dashcore::Txid, context: TransactionContext) -> TransactionRecord {
+            let tx = Transaction {
+                version: 2,
+                lock_time: 0,
+                input: Vec::new(),
+                output: Vec::new(),
+                special_transaction_payload: None,
+            };
+            let mut record = TransactionRecord::new(
+                tx,
+                AccountType::Standard {
+                    index: 0,
+                    standard_account_type: StandardAccountType::BIP44Account,
+                },
+                context,
+                TransactionType::Standard,
+                TransactionDirection::Outgoing,
+                Vec::new(),
+                Vec::new(),
+                0,
+            );
+            record.txid = txid;
+            record
+        }
+
+        let persister = Arc::new(RecordStorePersister::default());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+
+        let mined_txid = dashcore::Txid::from([0x21; 32]);
+        let mempool_txid = dashcore::Txid::from([0x22; 32]);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            let managed = info
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed");
+            managed
+                .record_dashpay_payment(
+                    mined_txid.to_string(),
+                    PaymentEntry::new_sent(contact, 1_000, None),
+                    &p,
+                )
+                .expect("record mined-pending");
+            managed
+                .record_dashpay_payment(
+                    mempool_txid.to_string(),
+                    PaymentEntry::new_sent(contact, 2_000, None),
+                    &p,
+                )
+                .expect("record mempool-pending");
+        }
+        {
+            let mut recs = persister.records.lock().unwrap();
+            recs.insert(
+                mined_txid,
+                tx_record(
+                    mined_txid,
+                    TransactionContext::InChainLockedBlock(BlockInfo::new(
+                        100,
+                        BlockHash::all_zeros(),
+                        0,
+                    )),
+                ),
+            );
+            recs.insert(
+                mempool_txid,
+                tx_record(mempool_txid, TransactionContext::Mempool),
+            );
+        }
+
+        let n = iw.reconcile_sent_payments().await.expect("reconcile");
+        assert_eq!(n, 1, "only the mined payment is confirmed this pass");
+
+        {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            let managed = info
+                .identity_manager
+                .managed_identity(&owner)
+                .expect("managed");
+            assert_eq!(
+                managed
+                    .dashpay_payments
+                    .get(&mined_txid.to_string())
+                    .expect("mined entry")
+                    .status,
+                PaymentStatus::Confirmed,
+                "a mined tx record must confirm the sent payment"
+            );
+            assert_eq!(
+                managed
+                    .dashpay_payments
+                    .get(&mempool_txid.to_string())
+                    .expect("mempool entry")
+                    .status,
+                PaymentStatus::Pending,
+                "a not-yet-final tx must leave the sent payment Pending"
+            );
+        }
+
+        // Idempotent: a second pass confirms nothing new (the mined entry
+        // is already Confirmed, the mempool one is still not final).
+        assert_eq!(
+            iw.reconcile_sent_payments().await.expect("second pass"),
+            0,
+            "reconcile must be idempotent"
         );
     }
 

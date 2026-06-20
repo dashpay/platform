@@ -83,6 +83,20 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             );
         }
 
+        // Local-only fourth step: confirm any `Pending` `Sent` payment whose
+        // transaction the persisted core record reports final (mined or
+        // InstantSend-locked). Recovers a sent payment whose live
+        // confirm event was missed (lagged broadcast, or relaunch after the
+        // tx confirmed) — see `reconcile_sent_payments`. Never fails the
+        // pass.
+        if let Err(e) = self.reconcile_sent_payments().await {
+            tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id()),
+                error = %e,
+                "DashPay sent-payment reconcile failed"
+            );
+        }
+
         // Surface the first error (if any) so the recurring sweep records
         // a failed outcome for this wallet; both steps have already run.
         contact_result?;

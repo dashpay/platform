@@ -103,7 +103,7 @@ where
                             // `Pending → Confirmed` once its transaction
                             // confirms. Runs after the core store so the
                             // tx/UTXO rows land first.
-                            if carries_payment_records(&event) {
+                            if drives_payment_hooks(&event) {
                                 let wallet_persister =
                                     crate::wallet::persister::WalletPersister::new(
                                         wallet_id,
@@ -171,26 +171,44 @@ fn dashpay_payment_records(event: &WalletEvent) -> Vec<&TransactionRecord> {
 }
 
 /// Cheap predicate so the adapter skips constructing a `WalletPersister`
-/// for events that carry no transaction records. Mirrors the variants
-/// [`dashpay_payment_records`] handles, without allocating.
-fn carries_payment_records(event: &WalletEvent) -> bool {
+/// for events the DashPay payment hooks ignore. Covers the record-bearing
+/// events ([`dashpay_payment_records`]) plus
+/// [`WalletEvent::TransactionInstantLocked`], which drives the sent-payment
+/// confirm by txid alone (no record). Allocation-free.
+fn drives_payment_hooks(event: &WalletEvent) -> bool {
     matches!(
         event,
-        WalletEvent::TransactionDetected { .. } | WalletEvent::BlockProcessed { .. }
+        WalletEvent::TransactionDetected { .. }
+            | WalletEvent::BlockProcessed { .. }
+            | WalletEvent::TransactionInstantLocked { .. }
     )
 }
 
-/// Run the DashPay payment hooks for every transaction record carried by
-/// `event`: record any incoming DashPay payment, then advance a matching
-/// sent payment from `Pending` to `Confirmed` once its transaction
-/// confirms. Both hooks are idempotent per txid, so re-detections and
-/// repeated block-processing rounds converge without duplicating entries.
+/// Run the DashPay payment hooks for `event`: record any incoming DashPay
+/// payment, then advance a matching sent payment from `Pending` to
+/// `Confirmed` once its transaction reaches finality (mined or
+/// InstantSend-locked). All paths are idempotent per txid, so re-detections
+/// and repeated block-processing rounds converge without duplicating
+/// entries.
 pub(crate) async fn run_dashpay_payment_hooks(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
     persister: &crate::wallet::persister::WalletPersister,
     event: &WalletEvent,
 ) {
+    // An InstantSend lock applied to a previously-seen transaction carries
+    // no record — only a txid — and is final for DashPay display, so
+    // confirm the matching sent payment directly.
+    if let WalletEvent::TransactionInstantLocked { txid, .. } = event {
+        crate::wallet::identity::network::confirm_sent_dashpay_payment_by_txid(
+            wallet_manager,
+            wallet_id,
+            persister,
+            txid,
+        )
+        .await;
+        return;
+    }
     for record in dashpay_payment_records(event) {
         crate::wallet::identity::network::record_incoming_dashpay_payments(
             wallet_manager,
@@ -538,7 +556,8 @@ mod tests {
         assert_eq!(txids, vec![record(0x07).txid]);
     }
 
-    /// Events with no transaction records contribute nothing.
+    /// Events with no transaction records contribute nothing, and a
+    /// record-less, non-IS event does not drive the payment hooks.
     #[test]
     fn dashpay_payment_records_empty_for_non_record_events() {
         let event = WalletEvent::SyncHeightAdvanced {
@@ -546,7 +565,25 @@ mod tests {
             height: 42,
         };
         assert!(dashpay_payment_records(&event).is_empty());
-        assert!(!carries_payment_records(&event));
+        assert!(!drives_payment_hooks(&event));
+    }
+
+    /// `TransactionInstantLocked` carries no record but DOES drive the
+    /// payment hooks — it confirms a sent payment by txid alone (an
+    /// InstantSend lock is final for DashPay display).
+    #[test]
+    fn instant_locked_drives_payment_hooks_without_a_record() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        let event = WalletEvent::TransactionInstantLocked {
+            wallet_id: [0u8; 32],
+            txid: dashcore::Txid::from([0x11; 32]),
+            instant_lock: InstantLock::default(),
+            balance: WalletCoreBalance::default(),
+            account_balances: std::collections::BTreeMap::new(),
+        };
+        // No record to route, but the event must still drive the hooks.
+        assert!(dashpay_payment_records(&event).is_empty());
+        assert!(drives_payment_hooks(&event));
     }
 }
 
