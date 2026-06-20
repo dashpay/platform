@@ -159,6 +159,17 @@ struct ContactDetailView: View {
         .task {
             refreshPayments()
         }
+        .onChange(of: walletManager.dashPaySyncIsSyncing) { _, syncing in
+            // A Sent payment is flipped Pending → Confirmed in the
+            // in-memory model by a Core block event, and that change
+            // reaches SwiftData only through a payment refresh (the
+            // changeset/store path does not persist DashPay payments).
+            // Re-pull on each completed DashPay sync pass so the status
+            // updates live here without a manual Refresh.
+            if !syncing {
+                refreshPayments()
+            }
+        }
     }
 
     // MARK: - Sections
