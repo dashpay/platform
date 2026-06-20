@@ -96,33 +96,25 @@ where
                                     "Persister rejected core changeset; state will be re-emitted on next sync round"
                                 );
                             }
-                            // Live receiver-side DashPay payment recording:
-                            // outputs paying a DashpayReceivingFunds address
-                            // become `Received` PaymentEntries on the owning
-                            // managed identity. After the core store so the
+                            // DashPay payment hooks for every transaction
+                            // record this event carries: record incoming
+                            // payments (outputs paying a DashpayReceivingFunds
+                            // address) and advance a matching sent payment
+                            // `Pending → Confirmed` once its transaction
+                            // confirms. Runs after the core store so the
                             // tx/UTXO rows land first.
-                            if let WalletEvent::TransactionDetected { record, .. } = &event {
+                            if carries_payment_records(&event) {
                                 let wallet_persister =
                                     crate::wallet::persister::WalletPersister::new(
                                         wallet_id,
                                         Arc::clone(&persister)
                                             as Arc<dyn PlatformWalletPersistence>,
                                     );
-                                crate::wallet::identity::network::record_incoming_dashpay_payments(
+                                run_dashpay_payment_hooks(
                                     &wallet_manager,
                                     &wallet_id,
                                     &wallet_persister,
-                                    record,
-                                )
-                                .await;
-                                // Sender side: a confirmed re-detection of our
-                                // own sent transaction advances its `Sent`
-                                // entry `Pending → Confirmed`.
-                                crate::wallet::identity::network::confirm_sent_dashpay_payment(
-                                    &wallet_manager,
-                                    &wallet_id,
-                                    &wallet_persister,
-                                    record,
+                                    &event,
                                 )
                                 .await;
                             }
@@ -145,6 +137,66 @@ where
         }
         tracing::debug!("wallet-event adapter task exiting");
     })
+}
+
+/// Transaction records carried by `event` that should drive the DashPay
+/// payment hooks (live incoming-record recording + sent-payment confirm).
+///
+/// [`WalletEvent::TransactionDetected`] is the first off-chain sighting of
+/// a transaction — mempool, or a direct InstantSend lock — so its
+/// `record.context` is not yet block-confirmed.
+/// [`WalletEvent::BlockProcessed`] carries the records a block changed:
+/// `inserted` (first stored in this block) and `updated`
+/// (previously-known records that this block confirmed). A wallet sees its
+/// *own* broadcast in the mempool first, so that transaction reaches a
+/// confirmed context only via `BlockProcessed.updated` — routing solely
+/// `TransactionDetected` is the gap that left sent payments stuck
+/// `Pending`: the confirm hook early-returns on the unconfirmed mempool
+/// sighting and never sees the confirming block. `matured` is
+/// coinbase-maturity only — never a DashPay payment — so it is excluded.
+fn dashpay_payment_records(event: &WalletEvent) -> Vec<&TransactionRecord> {
+    match event {
+        WalletEvent::TransactionDetected { record, .. } => vec![record.as_ref()],
+        WalletEvent::BlockProcessed {
+            inserted, updated, ..
+        } => inserted.iter().chain(updated.iter()).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Cheap predicate so the adapter skips constructing a `WalletPersister`
+/// for events that carry no transaction records.
+fn carries_payment_records(event: &WalletEvent) -> bool {
+    !dashpay_payment_records(event).is_empty()
+}
+
+/// Run the DashPay payment hooks for every transaction record carried by
+/// `event`: record any incoming DashPay payment, then advance a matching
+/// sent payment from `Pending` to `Confirmed` once its transaction
+/// confirms. Both hooks are idempotent per txid, so re-detections and
+/// repeated block-processing rounds converge without duplicating entries.
+pub(crate) async fn run_dashpay_payment_hooks(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    persister: &crate::wallet::persister::WalletPersister,
+    event: &WalletEvent,
+) {
+    for record in dashpay_payment_records(event) {
+        crate::wallet::identity::network::record_incoming_dashpay_payments(
+            wallet_manager,
+            wallet_id,
+            persister,
+            record,
+        )
+        .await;
+        crate::wallet::identity::network::confirm_sent_dashpay_payment(
+            wallet_manager,
+            wallet_id,
+            persister,
+            record,
+        )
+        .await;
+    }
 }
 
 /// Project an upstream [`WalletEvent`] into a [`CoreChangeSet`] suitable
@@ -368,6 +420,124 @@ fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dashcore::blockdata::transaction::Transaction;
+    use dashcore::TxIn;
+    use key_wallet::account::account_type::StandardAccountType;
+    use key_wallet::account::AccountType;
+    use key_wallet::managed_account::transaction_record::TransactionDirection;
+    use key_wallet::transaction_checking::{TransactionContext, TransactionType};
+    use key_wallet::WalletCoreBalance;
+
+    /// A `TransactionRecord` whose txid is uniquely seeded by `seed` (via a
+    /// distinct input outpoint). Context is irrelevant to the routing under
+    /// test, so it stays `Mempool`.
+    fn record(seed: u8) -> TransactionRecord {
+        let tx = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: dashcore::OutPoint::new(dashcore::Txid::from([seed; 32]), 0),
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        TransactionRecord::new(
+            tx,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+    }
+
+    fn block_processed(
+        inserted: Vec<TransactionRecord>,
+        updated: Vec<TransactionRecord>,
+        matured: Vec<TransactionRecord>,
+    ) -> WalletEvent {
+        WalletEvent::BlockProcessed {
+            wallet_id: [0u8; 32],
+            height: 1,
+            chain_lock: None,
+            inserted,
+            updated,
+            matured,
+            balance: WalletCoreBalance::default(),
+            account_balances: std::collections::BTreeMap::new(),
+            addresses_derived: Vec::new(),
+        }
+    }
+
+    /// `BlockProcessed` is the path by which a wallet's own broadcast
+    /// confirms (`updated`), and the path by which a payment first seen in a
+    /// block lands (`inserted`); both must drive the DashPay payment hooks.
+    /// `matured` is coinbase-maturity only and carries no DashPay payment, so
+    /// it is excluded. A regression that re-narrows routing to
+    /// `TransactionDetected` — the original sent-payment-stuck-`Pending` bug —
+    /// drops the `updated` record and fails this test.
+    #[test]
+    fn dashpay_payment_records_covers_block_processed_inserted_and_updated() {
+        let event = block_processed(vec![record(0x01)], vec![record(0x02)], vec![record(0x03)]);
+        let txids: Vec<_> = dashpay_payment_records(&event)
+            .iter()
+            .map(|r| r.txid)
+            .collect();
+        assert!(
+            txids.contains(&record(0x01).txid),
+            "inserted record must drive the payment hooks"
+        );
+        assert!(
+            txids.contains(&record(0x02).txid),
+            "updated (just-confirmed) record must drive the payment hooks — \
+             this is how a sent payment flips Pending → Confirmed"
+        );
+        assert!(
+            !txids.contains(&record(0x03).txid),
+            "matured coinbase is not a DashPay payment and must be excluded"
+        );
+        assert_eq!(txids.len(), 2, "exactly inserted ∪ updated");
+    }
+
+    /// The first mempool sighting still routes its single record (incoming
+    /// recording + the early-returning confirm probe).
+    #[test]
+    fn dashpay_payment_records_covers_transaction_detected() {
+        let event = WalletEvent::TransactionDetected {
+            wallet_id: [0u8; 32],
+            record: Box::new(record(0x07)),
+            balance: WalletCoreBalance::default(),
+            account_balances: std::collections::BTreeMap::new(),
+            addresses_derived: Vec::new(),
+        };
+        let txids: Vec<_> = dashpay_payment_records(&event)
+            .iter()
+            .map(|r| r.txid)
+            .collect();
+        assert_eq!(txids, vec![record(0x07).txid]);
+    }
+
+    /// Events with no transaction records contribute nothing.
+    #[test]
+    fn dashpay_payment_records_empty_for_non_record_events() {
+        let event = WalletEvent::SyncHeightAdvanced {
+            wallet_id: [0u8; 32],
+            height: 42,
+        };
+        assert!(dashpay_payment_records(&event).is_empty());
+        assert!(!carries_payment_records(&event));
+    }
 }
 
 impl CoreChangeSet {

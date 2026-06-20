@@ -1009,6 +1009,139 @@ mod tests {
         );
     }
 
+    /// **Integration regression (UAT 2026-06-20): a sent payment confirmed
+    /// by a block must flip `Pending → Confirmed`.**
+    ///
+    /// The wallet sees its *own* broadcast in the mempool first
+    /// (`TransactionDetected`, context `Mempool`), where the confirm hook
+    /// early-returns because the transaction is not yet confirmed. The
+    /// transaction reaches a confirmed context only when a block mines it —
+    /// delivered as [`key_wallet_manager::WalletEvent::BlockProcessed`] with
+    /// the record in `updated` (a previously-known record that just
+    /// confirmed). The adapter originally ran the DashPay payment hooks only
+    /// for `TransactionDetected`, so on-device the entry stayed `Pending`
+    /// even at nine confirmations. This drives the real adapter dispatch
+    /// ([`run_dashpay_payment_hooks`](crate::changeset::core_bridge::run_dashpay_payment_hooks))
+    /// with a `BlockProcessed` event and pins the flip end-to-end, so a
+    /// regression that re-narrows the routing to `TransactionDetected` is
+    /// caught here.
+    #[tokio::test]
+    async fn block_processed_confirms_sent_payment() {
+        use dashcore::blockdata::transaction::Transaction;
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, TxIn};
+        use key_wallet::account::account_type::StandardAccountType;
+        use key_wallet::account::AccountType;
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
+        use key_wallet::WalletCoreBalance;
+        use key_wallet_manager::WalletEvent;
+
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+
+        // The sent transaction; `tx.txid()` is the payment-entry key, so the
+        // entry and the confirming record agree on the same display-order
+        // txid string the confirm path looks up.
+        let tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: dashcore::OutPoint::new(
+                    dashcore::Txid::from_byte_array([0x5f; 32]),
+                    0,
+                ),
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        let txid = tx.txid();
+
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid.to_string(),
+                    PaymentEntry::new_sent(contact, 100_000, Some("lunch".into())),
+                    &p,
+                )
+                .expect("record pending sent");
+        }
+
+        // A block confirms the transaction; the wallet already knew it from
+        // the mempool, so it rides `BlockProcessed.updated`.
+        let confirmed = TransactionRecord::new(
+            tx,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            TransactionContext::InBlock(BlockInfo::new(1_499_050, BlockHash::all_zeros(), 0)),
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            Vec::new(),
+            Vec::new(),
+            -100_000,
+        );
+        assert!(
+            confirmed.is_confirmed(),
+            "precondition: an InBlock record reports confirmed"
+        );
+
+        let event = WalletEvent::BlockProcessed {
+            wallet_id,
+            height: 1_499_050,
+            chain_lock: None,
+            inserted: Vec::new(),
+            updated: vec![confirmed],
+            matured: Vec::new(),
+            balance: WalletCoreBalance::default(),
+            account_balances: std::collections::BTreeMap::new(),
+            addresses_derived: Vec::new(),
+        };
+
+        crate::changeset::core_bridge::run_dashpay_payment_hooks(
+            &iw.wallet_manager,
+            &wallet_id,
+            &p,
+            &event,
+        )
+        .await;
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        let entry = info
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("managed")
+            .dashpay_payments
+            .get(&txid.to_string())
+            .cloned()
+            .expect("entry present under the sent txid");
+        assert_eq!(
+            entry.status,
+            PaymentStatus::Confirmed,
+            "a sent payment confirmed via BlockProcessed must flip Pending → Confirmed"
+        );
+        assert_eq!(entry.memo.as_deref(), Some("lunch"), "memo preserved");
+    }
+
     /// **#2 — a transient failure must NOT permanently break the payment
     /// channel.** `register_external_contact_account` returns a typed
     /// `RegisterExternalError` so the unattended sync sweep marks a contact
