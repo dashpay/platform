@@ -2112,19 +2112,31 @@ public class PlatformWalletPersistenceHandler {
                     }
                 )
                 if let existing = try? backgroundContext.fetch(descriptor).first {
-                    // Refresh in place — the FFI snapshot is
-                    // authoritative for the underlying `PaymentEntry`.
-                    // `status` is the field that actually moves
-                    // (Pending → Confirmed / Failed).
-                    existing.counterpartyIdentityId = payment.counterpartyId
-                    existing.amountDuffs = payment.amountDuffs
-                    existing.directionRaw = payment.direction.rawValue
-                    existing.statusRaw = payment.status.rawValue
-                    existing.memo = payment.memo
-                    if existing.owner !== owner {
-                        existing.owner = owner
+                    // Refresh in place only when a field actually changed.
+                    // The FFI snapshot is authoritative, and `status` is the
+                    // field that moves (Pending → Confirmed / Failed). A
+                    // no-op rewrite would still dirty the row and re-fire
+                    // every `@Query` observer on each refresh pass — and the
+                    // recurring DashPay-sync falling edge calls this even on
+                    // a quiescent channel, so skipping unchanged rows keeps
+                    // an open payment list from re-rendering every sync.
+                    let changed = existing.counterpartyIdentityId != payment.counterpartyId
+                        || existing.amountDuffs != payment.amountDuffs
+                        || existing.directionRaw != payment.direction.rawValue
+                        || existing.statusRaw != payment.status.rawValue
+                        || existing.memo != payment.memo
+                        || existing.owner !== owner
+                    if changed {
+                        existing.counterpartyIdentityId = payment.counterpartyId
+                        existing.amountDuffs = payment.amountDuffs
+                        existing.directionRaw = payment.direction.rawValue
+                        existing.statusRaw = payment.status.rawValue
+                        existing.memo = payment.memo
+                        if existing.owner !== owner {
+                            existing.owner = owner
+                        }
+                        existing.lastUpdated = Date()
                     }
-                    existing.lastUpdated = Date()
                 } else {
                     let row = PersistentDashpayPayment(
                         owner: owner,
