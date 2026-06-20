@@ -1009,8 +1009,7 @@ mod tests {
         );
     }
 
-    /// **Integration regression (UAT 2026-06-20): a sent payment confirmed
-    /// by a block must flip `Pending → Confirmed`.**
+    /// A sent payment confirmed by a block must flip `Pending → Confirmed`.
     ///
     /// The wallet sees its *own* broadcast in the mempool first
     /// (`TransactionDetected`, context `Mempool`), where the confirm hook
@@ -1018,13 +1017,15 @@ mod tests {
     /// transaction reaches a confirmed context only when a block mines it —
     /// delivered as [`key_wallet_manager::WalletEvent::BlockProcessed`] with
     /// the record in `updated` (a previously-known record that just
-    /// confirmed). The adapter originally ran the DashPay payment hooks only
-    /// for `TransactionDetected`, so on-device the entry stayed `Pending`
-    /// even at nine confirmations. This drives the real adapter dispatch
+    /// confirmed). Routing the payment hooks only for `TransactionDetected`
+    /// would leave the entry `Pending` forever. This drives the real adapter
+    /// dispatch
     /// ([`run_dashpay_payment_hooks`](crate::changeset::core_bridge::run_dashpay_payment_hooks))
     /// with a `BlockProcessed` event and pins the flip end-to-end, so a
     /// regression that re-narrows the routing to `TransactionDetected` is
-    /// caught here.
+    /// caught here. Also pins idempotency across a repeated block-processing
+    /// round and that the `matured` bucket (coinbase maturity) never
+    /// confirms a payment.
     #[tokio::test]
     async fn block_processed_confirms_sent_payment() {
         use dashcore::blockdata::transaction::Transaction;
@@ -1124,22 +1125,122 @@ mod tests {
         )
         .await;
 
-        let wm = iw.wallet_manager.read().await;
-        let info = wm.get_wallet_info(&wallet_id).expect("info");
-        let entry = info
-            .identity_manager
-            .managed_identity(&owner)
-            .expect("managed")
-            .dashpay_payments
-            .get(&txid.to_string())
-            .cloned()
-            .expect("entry present under the sent txid");
+        // Read the entry under a short-lived read lock so the re-fire below
+        // can take the write lock.
+        async fn read_status(
+            iw: &crate::wallet::identity::IdentityWallet<crate::broadcaster::SpvBroadcaster>,
+            wallet_id: &WalletId,
+            owner: &Identifier,
+            txid: &str,
+        ) -> PaymentEntry {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(wallet_id).expect("info");
+            info.identity_manager
+                .managed_identity(owner)
+                .expect("managed")
+                .dashpay_payments
+                .get(txid)
+                .cloned()
+                .expect("entry present under the sent txid")
+        }
+
+        let entry = read_status(iw, &wallet_id, &owner, &txid.to_string()).await;
         assert_eq!(
             entry.status,
             PaymentStatus::Confirmed,
             "a sent payment confirmed via BlockProcessed must flip Pending → Confirmed"
         );
         assert_eq!(entry.memo.as_deref(), Some("lunch"), "memo preserved");
+
+        // Idempotent: a repeated block-processing round for the same txid
+        // changes nothing (the confirm path skips entries past `Pending`).
+        crate::changeset::core_bridge::run_dashpay_payment_hooks(
+            &iw.wallet_manager,
+            &wallet_id,
+            &p,
+            &event,
+        )
+        .await;
+        assert_eq!(
+            read_status(iw, &wallet_id, &owner, &txid.to_string())
+                .await
+                .status,
+            PaymentStatus::Confirmed,
+            "re-processing the same block must not change a Confirmed entry"
+        );
+
+        // A confirmed record arriving only in the `matured` bucket (coinbase
+        // maturity) must NOT confirm a payment — `matured` is never a DashPay
+        // payment, so it is excluded from the payment hooks.
+        let matured_tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: dashcore::OutPoint::new(
+                    dashcore::Txid::from_byte_array([0xC0; 32]),
+                    0,
+                ),
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        let matured_txid = matured_tx.txid();
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    matured_txid.to_string(),
+                    PaymentEntry::new_sent(contact, 7_000, None),
+                    &p,
+                )
+                .expect("record pending sent");
+        }
+        let matured_record = TransactionRecord::new(
+            matured_tx,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                1_499_060,
+                BlockHash::all_zeros(),
+                0,
+            )),
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            Vec::new(),
+            Vec::new(),
+            -7_000,
+        );
+        let matured_event = WalletEvent::BlockProcessed {
+            wallet_id,
+            height: 1_499_060,
+            chain_lock: None,
+            inserted: Vec::new(),
+            updated: Vec::new(),
+            matured: vec![matured_record],
+            balance: WalletCoreBalance::default(),
+            account_balances: std::collections::BTreeMap::new(),
+            addresses_derived: Vec::new(),
+        };
+        crate::changeset::core_bridge::run_dashpay_payment_hooks(
+            &iw.wallet_manager,
+            &wallet_id,
+            &p,
+            &matured_event,
+        )
+        .await;
+        assert_eq!(
+            read_status(iw, &wallet_id, &owner, &matured_txid.to_string())
+                .await
+                .status,
+            PaymentStatus::Pending,
+            "a confirmed record in the `matured` bucket must not confirm a payment"
+        );
     }
 
     /// **#2 — a transient failure must NOT permanently break the payment

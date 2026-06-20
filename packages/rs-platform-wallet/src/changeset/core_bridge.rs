@@ -155,19 +155,29 @@ where
 /// sighting and never sees the confirming block. `matured` is
 /// coinbase-maturity only — never a DashPay payment — so it is excluded.
 fn dashpay_payment_records(event: &WalletEvent) -> Vec<&TransactionRecord> {
+    // Exhaustive on purpose (no `_` arm): a new upstream `WalletEvent`
+    // variant that carries transaction records must fail to compile here
+    // rather than be silently dropped — routing only `TransactionDetected`
+    // is exactly the gap that left sent payments stuck `Pending`.
     match event {
         WalletEvent::TransactionDetected { record, .. } => vec![record.as_ref()],
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => inserted.iter().chain(updated.iter()).collect(),
-        _ => Vec::new(),
+        WalletEvent::TransactionInstantLocked { .. }
+        | WalletEvent::SyncHeightAdvanced { .. }
+        | WalletEvent::ChainLockProcessed { .. } => Vec::new(),
     }
 }
 
 /// Cheap predicate so the adapter skips constructing a `WalletPersister`
-/// for events that carry no transaction records.
+/// for events that carry no transaction records. Mirrors the variants
+/// [`dashpay_payment_records`] handles, without allocating.
 fn carries_payment_records(event: &WalletEvent) -> bool {
-    !dashpay_payment_records(event).is_empty()
+    matches!(
+        event,
+        WalletEvent::TransactionDetected { .. } | WalletEvent::BlockProcessed { .. }
+    )
 }
 
 /// Run the DashPay payment hooks for every transaction record carried by
