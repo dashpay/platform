@@ -401,6 +401,11 @@ struct ContactDetailView: View {
     /// One FFI read + one persistence pass; the `@Query` above picks
     /// the upserts up reactively.
     private func refreshPayments() {
+        // Collapse overlapping triggers (`.task` on appear, `onSent`, the
+        // sync falling-edge `onChange`, the manual Refresh button) into one
+        // in-flight pass — the FFI read + SwiftData upsert is idempotent, so
+        // a concurrent second pass is wasted work and flickers the spinner.
+        guard !isRefreshingPayments else { return }
         guard let walletId = identity.wallet?.walletId else {
             paymentsError = "Identity has no wallet association"
             return
