@@ -95,19 +95,28 @@ pub unsafe extern "C" fn platform_wallet_token_burn(
     let result = unwrap_option_or_return!(option);
     let burn_result = unwrap_result_or_return!(result);
 
-    // Map the proof-verified outcome to the balances JSON. Only the
-    // standard (non-history, non-group) burn carries the owner's
-    // remaining balance; the document / group-action variants have
-    // none to persist.
+    // Map the proof-verified outcome to the balances JSON. The standard
+    // (non-history, non-group) burn carries the owner's remaining
+    // balance; a group-authorized burn carries the caller's remaining
+    // balance once the action CLOSES (Drive's proof verifier guarantees
+    // `Some` whenever the group action is closed — keyed by `id`, the
+    // burn caller the proof verifies the balance for). The document
+    // variants, and a group action still awaiting co-signatures
+    // (`balance == None`), have nothing to persist.
     match burn_result {
         BurnResult::TokenBalance(owner, remaining) => {
             let c_str =
                 unwrap_result_or_return!(single_token_balance_to_json_cstring(&owner, remaining));
             *out_balances_json = c_str;
         }
+        BurnResult::GroupActionWithBalance(_, _, Some(remaining)) => {
+            let c_str =
+                unwrap_result_or_return!(single_token_balance_to_json_cstring(&id, remaining));
+            *out_balances_json = c_str;
+        }
         BurnResult::HistoricalDocument(_)
         | BurnResult::GroupActionWithDocument(_, _)
-        | BurnResult::GroupActionWithBalance(_, _, _) => {
+        | BurnResult::GroupActionWithBalance(_, _, None) => {
             *out_balances_json = unwrap_result_or_return!(write_empty_balances_json());
         }
     }
