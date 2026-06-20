@@ -220,14 +220,14 @@ fn encoder_dispatches_v0_via_query_settings_without_sdk() {
 
 #[test]
 fn sdk_builder_default_seeds_atomic_to_floor() {
-    // Auto-detect default: the atomic seeds to the floor
-    // `DEFAULT_INITIAL_PROTOCOL_VERSION`, which `version()` returns until the
-    // first response ratchets it upward.
+    // Auto-detect default: the atomic seeds to
+    // `max(DEFAULT_INITIAL_PROTOCOL_VERSION, network floor)`, which `version()`
+    // returns until the first response ratchets it upward. `new_mock()` builds
+    // on `Network::Mainnet`, whose floor is PROTOCOL_VERSION_11 — so the boot
+    // value is 11 even though `DEFAULT_INITIAL_PROTOCOL_VERSION` is 10.
     let sdk_default = SdkBuilder::new_mock().build().expect("mock sdk");
-    assert_eq!(
-        sdk_default.version().protocol_version,
-        DEFAULT_INITIAL_PROTOCOL_VERSION
-    );
+    let expected = DEFAULT_INITIAL_PROTOCOL_VERSION.max(dpp::version::v11::PROTOCOL_VERSION_11);
+    assert_eq!(sdk_default.version().protocol_version, expected);
 }
 
 /// PROTOCOL_VERSION_11 corresponds to Dash Platform v3.0 (testnet at the
