@@ -124,6 +124,74 @@ describe('isMasternodeSafeToStopDuringDkg', () => {
     });
   });
 
+  describe('fail-safe on malformed dkgInfo', () => {
+    it('blocks when dkgInfo is undefined', () => {
+      expect(isMasternodeSafeToStopDuringDkg(undefined, { session: [] }, 1000))
+        .to.equal(false);
+    });
+
+    it('blocks when dkgInfo is null', () => {
+      expect(isMasternodeSafeToStopDuringDkg(null, { session: [] }, 1000))
+        .to.equal(false);
+    });
+
+    it('blocks when next_dkg is missing', () => {
+      const dkgInfo = { active_dkgs: 0 };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, { session: [] }, 1000))
+        .to.equal(false);
+    });
+
+    it('blocks when next_dkg is non-numeric', () => {
+      const dkgInfo = { active_dkgs: 0, next_dkg: '24' };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, { session: [] }, 1000))
+        .to.equal(false);
+    });
+
+    it('blocks when next_dkg is NaN', () => {
+      const dkgInfo = { active_dkgs: 0, next_dkg: NaN };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, { session: [] }, 1000))
+        .to.equal(false);
+    });
+
+    it('blocks when next_dkg is negative', () => {
+      const dkgInfo = { active_dkgs: 0, next_dkg: -1 };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, { session: [] }, 1000))
+        .to.equal(false);
+    });
+
+    it('blocks when active_dkgs is missing', () => {
+      const dkgInfo = { next_dkg: NEXT_DKG_NOT_IMMINENT };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, { session: [] }, 1000))
+        .to.equal(false);
+    });
+
+    it('blocks when active_dkgs is non-numeric', () => {
+      const dkgInfo = { active_dkgs: '1', next_dkg: NEXT_DKG_NOT_IMMINENT };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, { session: [] }, 1000))
+        .to.equal(false);
+    });
+
+    it('blocks when active_dkgs is NaN', () => {
+      const dkgInfo = { active_dkgs: NaN, next_dkg: NEXT_DKG_NOT_IMMINENT };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, { session: [] }, 1000))
+        .to.equal(false);
+    });
+
+    it('blocks when active_dkgs is negative', () => {
+      const dkgInfo = { active_dkgs: -1, next_dkg: NEXT_DKG_NOT_IMMINENT };
+
+      expect(isMasternodeSafeToStopDuringDkg(dkgInfo, { session: [] }, 1000))
+        .to.equal(false);
+    });
+  });
+
   describe('fail-safe on malformed inputs while active_dkgs > 0', () => {
     it('blocks when a session has an unknown llmqType', () => {
       const dkgInfo = { active_dkgs: 1, next_dkg: NEXT_DKG_NOT_IMMINENT };

@@ -27,11 +27,26 @@ export const DKG_MINING_WINDOW_START_BY_LLMQ_TYPE = {
   llmq_25_67: 10,
 };
 
+function isValidDkgCounter(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function hasValidDkgInfoShape(dkgInfo) {
+  return !!dkgInfo
+    && typeof dkgInfo === 'object'
+    && isValidDkgCounter(dkgInfo.active_dkgs)
+    && isValidDkgCounter(dkgInfo.next_dkg);
+}
+
 /**
  * @param {{ active_dkgs: number, next_dkg: number }} dkgInfo
  * @return {boolean}
  */
 export function shouldInspectDkgStatusForSafeStop(dkgInfo) {
+  if (!hasValidDkgInfoShape(dkgInfo)) {
+    return false;
+  }
+
   return dkgInfo.active_dkgs > 0 && dkgInfo.next_dkg > MIN_BLOCKS_BEFORE_DKG;
 }
 
@@ -81,13 +96,17 @@ export default function isMasternodeSafeToStopDuringDkg(
   dkgStatus,
   currentHeight,
 ) {
+  if (!hasValidDkgInfoShape(dkgInfo)) {
+    return false;
+  }
+
   const { active_dkgs: activeDkgs, next_dkg: nextDkg } = dkgInfo;
 
   if (nextDkg <= MIN_BLOCKS_BEFORE_DKG) {
     return false;
   }
 
-  if (!(activeDkgs > 0)) {
+  if (activeDkgs === 0) {
     return true;
   }
 
