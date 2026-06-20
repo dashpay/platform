@@ -1375,11 +1375,16 @@ extension SDK {
         let result = dash_sdk_identities_fetch_token_balances(handle, identityIdsStr, tokenId)
         let json = try processJSONResult(result)
 
-        // Convert the result to [String: UInt64]
+        // Convert the result to [String: UInt64].
+        // JSONSerialization decodes numbers as NSNumber, so read .uint64Value
+        // (matching getIdentityTokenBalances above). The Rust FFI emits `null`
+        // for identities that have never held the token; those decode to NSNull
+        // and are skipped, mirroring how the single-identity query omits
+        // never-held tokens.
         var balances: [String: UInt64] = [:]
         for (key, value) in json {
-            if let balance = value as? UInt64 {
-                balances[key] = balance
+            if let balance = value as? NSNumber {
+                balances[key] = balance.uint64Value
             }
         }
 
