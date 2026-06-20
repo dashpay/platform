@@ -365,6 +365,20 @@ pub struct IdentityKeyDerivationIndices {
     pub key_index: u32,
 }
 
+/// A derivation breadcrumb as the raw `(wallet_id, identity_index,
+/// key_index)` triple passed to `ManagedIdentity::add_key` / `add_keys`.
+/// `Some` lets the client re-derive the private key from the wallet seed;
+/// `None` marks a watch-only key.
+pub type KeyDerivationBreadcrumb = ([u8; 32], u32, u32);
+
+/// One public key paired with its derivation-breadcrumb decision, the unit
+/// `ManagedIdentity::add_keys` consumes and `discovery::breadcrumb_decisions`
+/// produces.
+pub type IdentityKeyWithBreadcrumb = (
+    dpp::identity::IdentityPublicKey,
+    Option<KeyDerivationBreadcrumb>,
+);
+
 /// A single identity-key entry in an [`IdentityKeysChangeSet`].
 ///
 /// Platform-wallet only carries the DPP public-key record and a

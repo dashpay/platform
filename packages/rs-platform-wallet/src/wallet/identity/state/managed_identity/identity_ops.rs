@@ -275,43 +275,64 @@ impl ManagedIdentity {
     pub fn add_key(
         &mut self,
         public_key: dpp::identity::IdentityPublicKey,
-        derivation_breadcrumb: Option<([u8; 32], u32, u32)>,
+        derivation_breadcrumb: Option<crate::changeset::KeyDerivationBreadcrumb>,
+        persister: &WalletPersister,
+    ) {
+        // Single-key form of [`Self::add_keys`] — one canonical
+        // key-layering + changeset path so the two can't drift.
+        self.add_keys(vec![(public_key, derivation_breadcrumb)], persister);
+    }
+
+    /// Layer several `IdentityPublicKey`s onto this identity and emit ONE
+    /// batched [`IdentityKeysChangeSet`] carrying each key's derivation
+    /// breadcrumb (`Some((wallet_id, identity_index, key_index))`) or
+    /// `None` for a watch-only key the wallet can't re-derive.
+    ///
+    /// The single-write batch form of [`Self::add_key`], used by discovery
+    /// to materialize every re-derivable key of a freshly found identity in
+    /// one persist round (rather than one round per key) and to carry the
+    /// authoritative per-key breadcrumb set in a single changeset (no
+    /// order-dependent watch-only-then-override). No-op on an empty list.
+    pub fn add_keys(
+        &mut self,
+        keys: Vec<crate::changeset::IdentityKeyWithBreadcrumb>,
         persister: &WalletPersister,
     ) {
         use dpp::identity::accessors::IdentitySettersV0;
 
-        let key_id = public_key.id();
-        let public_key_hash = pubkey_hash_of(&public_key);
-
-        // Layer onto the DPP `Identity` itself — that's what every
-        // signing / introspection path reads.
-        let mut keys = self.identity.public_keys().clone();
-        keys.insert(key_id, public_key.clone());
-        self.identity.set_public_keys(keys);
-
+        if keys.is_empty() {
+            return;
+        }
         let identity_id = self.id();
-        let (wallet_id, derivation_indices) = match derivation_breadcrumb {
-            Some((wallet_id, identity_index, key_index)) => (
-                Some(wallet_id),
-                Some(crate::changeset::IdentityKeyDerivationIndices {
-                    identity_index,
-                    key_index,
-                }),
-            ),
-            None => (None, None),
-        };
+        let mut current = self.identity.public_keys().clone();
         let mut keys_cs = IdentityKeysChangeSet::default();
-        keys_cs.upserts.insert(
-            (identity_id, key_id),
-            IdentityKeyEntry {
-                identity_id,
-                key_id,
-                public_key,
-                public_key_hash,
-                wallet_id,
-                derivation_indices,
-            },
-        );
+        for (public_key, breadcrumb) in keys {
+            let key_id = public_key.id();
+            let public_key_hash = pubkey_hash_of(&public_key);
+            current.insert(key_id, public_key.clone());
+            let (wallet_id, derivation_indices) = match breadcrumb {
+                Some((wallet_id, identity_index, key_index)) => (
+                    Some(wallet_id),
+                    Some(crate::changeset::IdentityKeyDerivationIndices {
+                        identity_index,
+                        key_index,
+                    }),
+                ),
+                None => (None, None),
+            };
+            keys_cs.upserts.insert(
+                (identity_id, key_id),
+                IdentityKeyEntry {
+                    identity_id,
+                    key_id,
+                    public_key,
+                    public_key_hash,
+                    wallet_id,
+                    derivation_indices,
+                },
+            );
+        }
+        self.identity.set_public_keys(current);
         let cs = crate::changeset::PlatformWalletChangeSet {
             identities: Some(self.snapshot_changeset()),
             identity_keys: Some(keys_cs),
@@ -326,10 +347,119 @@ impl ManagedIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
     use crate::wallet::identity::PaymentEntry;
+    use crate::wallet::platform_wallet::WalletId;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
-    use dpp::identity::Identity;
+    use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
     use std::collections::BTreeMap;
+    use std::sync::Mutex;
+
+    /// Persister that records every store so a test can inspect the exact
+    /// changeset `add_keys` emits.
+    #[derive(Default)]
+    struct CapturingPersister {
+        stores: Mutex<Vec<PlatformWalletChangeSet>>,
+    }
+    impl PlatformWalletPersistence for CapturingPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.stores.lock().unwrap().push(changeset);
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    fn key(id: KeyID) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(vec![0x02; 33]),
+            disabled_at: None,
+        })
+    }
+
+    /// `add_keys` records each key's breadcrumb (or `None` for watch-only)
+    /// in one batched changeset and lands every key in the DPP identity.
+    /// Pins the materialization side of the imported-identity-signing fix.
+    #[test]
+    fn add_keys_emits_breadcrumbs_per_key() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let wallet_id: WalletId = [0xAB; 32];
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new(wallet_id, std::sync::Arc::clone(&persister) as _);
+
+        // Key 0 is re-derivable (breadcrumb), key 1 is watch-only (None).
+        managed.add_keys(vec![(key(0), Some((wallet_id, 7, 0))), (key(1), None)], &p);
+
+        // Both keys landed in the DPP identity.
+        assert_eq!(managed.identity.public_keys().len(), 2);
+
+        let stores = persister.stores.lock().unwrap();
+        let upserts = &stores
+            .last()
+            .expect("a changeset was stored")
+            .identity_keys
+            .as_ref()
+            .expect("identity_keys present")
+            .upserts;
+        let id = managed.id();
+        assert_eq!(
+            upserts[&(id, 0)].derivation_indices,
+            Some(crate::changeset::IdentityKeyDerivationIndices {
+                identity_index: 7,
+                key_index: 0,
+            }),
+            "reproducible key carries its breadcrumb"
+        );
+        assert_eq!(upserts[&(id, 0)].wallet_id, Some(wallet_id));
+        assert_eq!(
+            upserts[&(id, 1)].derivation_indices,
+            None,
+            "watch-only key carries no breadcrumb"
+        );
+        assert_eq!(upserts[&(id, 1)].wallet_id, None);
+    }
+
+    /// An empty `add_keys` is a no-op — no changeset stored.
+    #[test]
+    fn add_keys_empty_is_noop() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new([0xAB; 32], std::sync::Arc::clone(&persister) as _);
+        managed.add_keys(Vec::new(), &p);
+        assert!(
+            persister.stores.lock().unwrap().is_empty(),
+            "empty add_keys stores nothing"
+        );
+    }
 
     #[test]
     fn payments_for_contact_filters_by_counterparty() {
