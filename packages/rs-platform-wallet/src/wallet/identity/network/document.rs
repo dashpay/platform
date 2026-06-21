@@ -437,6 +437,7 @@ impl IdentityWallet {
     /// (AUTHENTICATION + ECDSA), broadcasts via `Sdk::document_replace`
     /// on the platform-wallet 8 MB worker stack, and returns the
     /// confirmed `Document`.
+    #[allow(clippy::too_many_arguments)]
     pub async fn replace_document_with_signer<S>(
         &self,
         owner_identity_id: &Identifier,
@@ -568,6 +569,7 @@ impl IdentityWallet {
     /// via `Sdk::document_transfer` on the platform-wallet 8 MB worker
     /// stack, and returns the confirmed `Document` (now owned by
     /// `recipient_id`).
+    #[allow(clippy::too_many_arguments)]
     pub async fn transfer_document_with_signer<S>(
         &self,
         owner_identity_id: &Identifier,
@@ -624,6 +626,7 @@ impl IdentityWallet {
     /// via `Sdk::document_set_price` on the platform-wallet 8 MB worker
     /// stack, and returns the confirmed `Document` (now carrying
     /// `$price`).
+    #[allow(clippy::too_many_arguments)]
     pub async fn set_document_price_with_signer<S>(
         &self,
         owner_identity_id: &Identifier,
@@ -684,6 +687,7 @@ impl IdentityWallet {
     /// `Document` (now owned by the purchaser). Consensus rejects a
     /// purchase where the buyer is the current owner — the caller's UI
     /// gates against that.
+    #[allow(clippy::too_many_arguments)]
     pub async fn purchase_document_with_signer<S>(
         &self,
         purchaser_identity_id: &Identifier,
