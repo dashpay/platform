@@ -283,6 +283,71 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
 
     // MARK: - Withdraw
 
+    /// Result of `preflightWithdrawal(accountIndex:coreFeePerByte:)`: whether an
+    /// AUTO withdrawal of the account can succeed, and — when it can — the net
+    /// credits paid out and the reserved transition fee.
+    public struct WithdrawalPreflight: Sendable {
+        /// `true` when the account can fund an AUTO withdrawal at the current
+        /// platform version; `false` for any "can't fund" case (dust-only,
+        /// largest input can't cover the fee, or net below the minimum
+        /// withdrawal). The numeric fields are `0` when `false`.
+        public let canWithdraw: Bool
+        /// Net credits the chain would pay out (`Σ withdrawable inputs −
+        /// estimatedFee`). `0` when `canWithdraw == false`.
+        public let netWithdrawable: UInt64
+        /// The address-credit-withdrawal transition fee reserved on the
+        /// fee-source input. `0` when `canWithdraw == false`.
+        public let estimatedFee: UInt64
+    }
+
+    /// Preflight an AUTO withdrawal of a platform-payment account WITHOUT
+    /// signing, broadcasting, or consuming a Core receive address.
+    ///
+    /// This runs the **same** Rust planning phase the real `withdraw(...)` path
+    /// executes (`PlatformAddressWallet::preflight_withdrawal`): it drops
+    /// sub-`min_input_amount` dust, estimates the transition fee from the
+    /// selected input count, reserves it on the largest-balance input, and
+    /// verifies the net clears the minimum withdrawal amount. Gating a UI
+    /// submit button on `canWithdraw` keeps it in lockstep with what the spend
+    /// path will accept — a small-but-non-dust account that can't cover the fee
+    /// reports `canWithdraw == false` here instead of failing after sign.
+    ///
+    /// The fee estimate depends only on the input/output **counts**, not on any
+    /// destination script, so this needs no Core address and touches no receive
+    /// pool. It's a pure in-memory computation over cached balances, so it's
+    /// fast and safe to call on the main actor whenever the selected account or
+    /// fee rate changes.
+    ///
+    /// A genuine "can't fund" is a normal result (`canWithdraw == false`), NOT
+    /// a thrown error. Only a structural failure — a bad handle or a missing
+    /// account at `accountIndex` — throws.
+    ///
+    /// `coreFeePerByte` is accepted for symmetry with `withdraw(...)`; the
+    /// platform-side transition fee the preflight reserves does not depend on
+    /// it (it sizes the eventual L1 payout, not the credit-side fee), but
+    /// threading it keeps the call sites parallel.
+    public func preflightWithdrawal(
+        accountIndex: UInt32,
+        coreFeePerByte: UInt32 = 1
+    ) throws -> WithdrawalPreflight {
+        var out = WithdrawalPreflightFFI(
+            can_withdraw: false,
+            net_withdrawable: 0,
+            estimated_fee: 0
+        )
+        try platform_address_wallet_preflight_withdrawal(
+            handle,
+            accountIndex,
+            coreFeePerByte,
+            &out
+        ).check()
+        return WithdrawalPreflight(
+            canWithdraw: out.can_withdraw,
+            netWithdrawable: out.net_withdrawable,
+            estimatedFee: out.estimated_fee
+        )
+    }
+
     /// Withdraw this platform-payment account's withdrawable credit
     /// balance to a Core L1 address (less the transition fee).
     ///

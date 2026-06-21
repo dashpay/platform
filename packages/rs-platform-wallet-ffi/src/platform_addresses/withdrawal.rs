@@ -6,6 +6,7 @@ use crate::handle::*;
 use crate::platform_address_types::*;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 use dpp::identity::core_script::CoreScript;
+use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 use std::os::raw::c_char;
 use std::str::FromStr;
@@ -176,6 +177,94 @@ pub unsafe extern "C" fn platform_address_wallet_withdraw_to_address(
     let changeset = unwrap_result_or_return!(result);
     *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);
     PlatformWalletFFIResult::ok()
+}
+
+/// Preflight an AUTO withdrawal of a platform-payment account WITHOUT signing,
+/// broadcasting, or consuming a Core receive address.
+///
+/// Runs the same Rust planning phase the real withdraw path executes
+/// (`PlatformAddressWallet::preflight_withdrawal` →
+/// `plan_withdrawal`/`reserve_withdrawal_fee_on_largest_input`): it drops
+/// sub-`min_input_amount` dust, estimates the transition fee from the selected
+/// input count (NOT from any destination script — no Core address is needed or
+/// touched), reserves that fee on the largest-balance input, and verifies the
+/// net clears `system_limits.min_withdrawal_amount`. Gating a UI submit button
+/// on the result keeps it in lockstep with what the spend path will accept.
+///
+/// On success `out` is written with `can_withdraw = true` and the net /
+/// estimated-fee figures, and the call returns [`PlatformWalletFFIResult::ok`].
+///
+/// A genuine **"can't fund"** outcome — the account is all dust
+/// (`OnlyDustInputs`), the largest input can't keep the per-input minimum after
+/// the fee, the net falls below the minimum withdrawal amount, or there are no
+/// funded addresses (`AddressOperation`) — is NOT an FFI error: `out` is
+/// written with `can_withdraw = false` (and zeroed figures) and the call still
+/// returns a **Success-coded** [`PlatformWalletFFIResult`] whose `message`
+/// carries the planner's typed `Display` reason (so a caller that wants a
+/// human-readable explanation can read it without mirroring protocol constants
+/// in Swift). The authoritative signal is `can_withdraw`; the message is
+/// advisory.
+///
+/// Only a **structural** failure — a bad/destroyed handle, or a missing
+/// account at `account_index` (`WalletNotFound` / `AddressSync`) — is reported
+/// as an FFI error code with `out` left untouched.
+///
+/// # Safety
+/// - `out` must be a valid, non-null, writable `*mut WithdrawalPreflightFFI`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal(
+    handle: Handle,
+    account_index: u32,
+    _core_fee_per_byte: u32,
+    out: *mut WithdrawalPreflightFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out);
+
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
+        runtime().block_on(wallet.preflight_withdrawal(account_index))
+    });
+    // `None` → invalid handle (mapped to NotFound by the blanket Option impl).
+    let result = unwrap_option_or_return!(option);
+
+    match result {
+        Ok(plan) => {
+            *out = WithdrawalPreflightFFI {
+                can_withdraw: true,
+                net_withdrawable: plan.net_withdrawable,
+                estimated_fee: plan.estimated_fee,
+            };
+            PlatformWalletFFIResult::ok()
+        }
+        // "Can't fund" is a NORMAL result, not an FFI error: the account simply
+        // has nothing withdrawable at this version. Report it as
+        // `can_withdraw = false` with zeroed figures so the UI can disable
+        // submit and explain why, without treating it as a failure.
+        //
+        // `OnlyDustInputs` (every funded address below `min_input_amount`) and
+        // `AddressOperation` (the fee / per-input / min-withdrawal headroom
+        // failures inside `reserve_withdrawal_fee_on_largest_input`, plus the
+        // "no funded addresses" case in `select_withdrawable_inputs`) are all
+        // genuine can't-fund states.
+        Err(
+            e @ (PlatformWalletError::OnlyDustInputs { .. }
+            | PlatformWalletError::AddressOperation(_)),
+        ) => {
+            *out = WithdrawalPreflightFFI {
+                can_withdraw: false,
+                net_withdrawable: 0,
+                estimated_fee: 0,
+            };
+            // Carry the typed reason as a Success-coded message so callers that
+            // want a human-readable explanation can read it; the `can_withdraw`
+            // flag is the authoritative signal and the Success code keeps this
+            // off the error path (`.check()` on the Swift side only inspects
+            // the code).
+            PlatformWalletFFIResult::success_with_message(e.to_string())
+        }
+        // Structural failures (missing wallet/account) stay FFI errors with
+        // `out` untouched, mapped via the blanket `From<PlatformWalletError>`.
+        Err(other) => other.into(),
+    }
 }
 
 #[cfg(test)]

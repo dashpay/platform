@@ -16,6 +16,46 @@ use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFunds;
 
+/// The fully-planned shape of an AUTO withdrawal, computed by
+/// [`PlatformAddressWallet::plan_withdrawal`] without any signing, broadcast,
+/// or Core-address consumption.
+///
+/// A `WithdrawalPlan` is the single source of truth for *can this account
+/// withdraw, and for how much*: it carries the dust-filtered, fee-reserved
+/// input map and matching fee strategy that the real `withdraw(...)` path
+/// signs and submits, alongside the two figures a UI preflight needs
+/// (`net_withdrawable`, `estimated_fee`). Building the plan and executing it
+/// from the **same** function guarantees the preflight gate and the spend
+/// path can never drift — there is no second, parallel fee/min computation to
+/// fall out of sync with the protocol version.
+///
+/// Constructing a plan is a pure, in-memory computation over the account's
+/// cached balances and the active platform version; it does **not** touch the
+/// Core receive pool (the fee estimate depends only on the input/output
+/// *counts*, not on any destination script), so a preflight can be run on
+/// every input change without burning a receive address.
+#[derive(Debug, Clone)]
+pub struct WithdrawalPlan {
+    /// The adjusted **withdraw-amount** map: each chosen input address mapped
+    /// to the amount to withdraw from it (the fee-source input's amount is
+    /// already reduced by `estimated_fee` so the chain has fee headroom). This
+    /// is what `withdraw(...)` hands to the SDK as the explicit input set.
+    pub inputs: BTreeMap<PlatformAddress, Credits>,
+    /// The fee strategy targeting the fee-source (largest-balance) input by
+    /// its BTreeMap index. The AUTO path owns this because only the planner
+    /// knows the final input ordering.
+    pub fee_strategy: AddressFundsFeeStrategy,
+    /// The net credits that will actually be withdrawn:
+    /// `Σ inputs − estimated_fee`. This is the figure a UI should show as
+    /// "amount to withdraw" and the figure that must clear
+    /// `system_limits.min_withdrawal_amount`.
+    pub net_withdrawable: Credits,
+    /// The estimated address-credit-withdrawal transition fee reserved on the
+    /// fee-source input, sized from the selected input count (no change
+    /// output) and the active platform version's fee schedule.
+    pub estimated_fee: Credits,
+}
+
 impl PlatformAddressWallet {
     /// Withdraw platform credits to a Core L1 address.
     ///
@@ -98,14 +138,19 @@ impl PlatformAddressWallet {
                 // which resolves to the lex-smallest address regardless of
                 // balance) would reserve the fee on an arbitrarily small
                 // input and reject otherwise-fundable withdrawals.
-                let (inputs, auto_fee_strategy) = self
-                    .auto_select_inputs_for_withdrawal(account_index, version)
-                    .await?;
+                //
+                // Selection, fee estimation, fee reservation, and the
+                // minimum-withdrawal check all live in `plan_withdrawal`, the
+                // SAME function the UI preflight calls. Executing the plan it
+                // returns (rather than re-deriving inputs/fee here) guarantees
+                // the preflight gate and this spend path can never disagree
+                // about whether — or for how much — the account can withdraw.
+                let plan = self.plan_withdrawal(account_index, version).await?;
                 self.sdk
                     .withdraw_address_funds(
-                        inputs,
+                        plan.inputs,
                         None,
-                        auto_fee_strategy,
+                        plan.fee_strategy,
                         core_fee_per_byte,
                         Pooling::Never,
                         output_script,
@@ -173,10 +218,10 @@ impl PlatformAddressWallet {
         drop(wm);
 
         // Mirror `transfer.rs` / `sync.rs`: persist post-broadcast balances so a
-        // restart doesn't reseed `auto_select_inputs_for_withdrawal` from stale
-        // rows (which would let a non-Swift caller, or any host where the
-        // SwiftData write side-channel is absent, build invalid follow-up spends
-        // against pre-withdrawal balances). Log-on-error because the on-chain
+        // restart doesn't reseed `plan_withdrawal` from stale rows (which would
+        // let a non-Swift caller, or any host where the SwiftData write
+        // side-channel is absent, build invalid follow-up spends against
+        // pre-withdrawal balances). Log-on-error because the on-chain
         // transition already succeeded.
         if !cs.is_empty() {
             if let Err(e) = self.persister.store(cs.clone().into()) {
@@ -187,7 +232,38 @@ impl PlatformAddressWallet {
         Ok(cs)
     }
 
-    /// Auto-select the withdrawable funded addresses for withdrawal.
+    /// Plan an AUTO withdrawal for `account_index` against the SDK's
+    /// **current** platform version, without signing, broadcasting, or
+    /// touching the Core receive pool.
+    ///
+    /// This is the public preflight entry point: it resolves the version from
+    /// the wallet's SDK (the same network-floored, protocol-version-tracking
+    /// source the real spend runs under) and delegates to
+    /// [`plan_withdrawal`](Self::plan_withdrawal). On success the returned
+    /// [`WithdrawalPlan`] reports `net_withdrawable`/`estimated_fee` for a UI
+    /// summary; the *typed* error variants distinguish a genuine "can't fund"
+    /// (`OnlyDustInputs`, or the `AddressOperation` fee/minimum-withdrawal
+    /// failures) from a hard failure (missing wallet/account), letting the FFI
+    /// surface "can't fund" as a normal disabled-button result rather than an
+    /// error.
+    ///
+    /// Because the plan it returns is the exact same object `withdraw(...)`'s
+    /// AUTO path executes, gating the UI on this can never enable a withdrawal
+    /// the spend path would then reject (or vice versa).
+    pub async fn preflight_withdrawal(
+        &self,
+        account_index: u32,
+    ) -> Result<WithdrawalPlan, PlatformWalletError> {
+        let version = self.sdk.version();
+        self.plan_withdrawal(account_index, version).await
+    }
+
+    /// Build the full [`WithdrawalPlan`] for an AUTO withdrawal: select the
+    /// withdrawable funded addresses, estimate the transition fee, reserve it
+    /// on the largest-balance input, and verify the result clears the minimum
+    /// withdrawal amount — the complete planning phase shared by the UI
+    /// preflight and the real `withdraw(...)` spend path. NO signing,
+    /// broadcast, or receive-address consumption happens here.
     ///
     /// Only addresses whose balance reaches `min_input_amount` are selected:
     /// DPP's `AddressCreditWithdrawalTransition` v0 validator rejects the
@@ -204,8 +280,8 @@ impl PlatformAddressWallet {
     /// [`PlatformWalletError::OnlyDustInputs`], matching the transfer path's
     /// `detect_no_selectable_inputs`.
     ///
-    /// The per-input `Credits` value in the returned map is the amount to
-    /// *withdraw* from that address, not its on-chain balance. The chain
+    /// The per-input `Credits` value in the plan's `inputs` map is the amount
+    /// to *withdraw* from that address, not its on-chain balance. The chain
     /// deducts the transition fee from each input's **remaining** balance
     /// (`on_chain_balance − withdraw_amount`), so a withdraw amount equal to
     /// the full balance leaves zero remaining and is rejected with
@@ -223,17 +299,15 @@ impl PlatformAddressWallet {
     /// entry) avoids rejecting an otherwise-fundable withdrawal when the
     /// lex-smallest input happens to be tiny.
     ///
-    /// Returns the adjusted withdraw-amount map together with the fee
-    /// strategy that targets the fee-source input. The AUTO path owns this
-    /// strategy because only it knows the final BTreeMap ordering of the
-    /// auto-selected inputs (and therefore which `DeductFromInput(index)`
+    /// The plan's `fee_strategy` targets the fee-source input. The AUTO path
+    /// owns this strategy because only it knows the final BTreeMap ordering of
+    /// the auto-selected inputs (and therefore which `DeductFromInput(index)`
     /// resolves to the largest input).
-    async fn auto_select_inputs_for_withdrawal(
+    pub(crate) async fn plan_withdrawal(
         &self,
         account_index: u32,
         platform_version: &PlatformVersion,
-    ) -> Result<(BTreeMap<PlatformAddress, Credits>, AddressFundsFeeStrategy), PlatformWalletError>
-    {
+    ) -> Result<WithdrawalPlan, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(format!(
@@ -356,14 +430,15 @@ where
 /// when a much larger peer trivially could. We therefore locate the largest
 /// input, then emit `DeductFromInput(<its position in BTreeMap order>)`.
 ///
-/// Returns the adjusted withdraw-amount map and the fee strategy targeting the
-/// fee-source input, or a typed [`PlatformWalletError::AddressOperation`] when
-/// no input can absorb the fee while respecting the per-input minimum /
+/// Returns a [`WithdrawalPlan`] carrying the adjusted withdraw-amount map, the
+/// fee strategy targeting the fee-source input, and the `net_withdrawable` /
+/// `estimated_fee` figures; or a typed [`PlatformWalletError::AddressOperation`]
+/// when no input can absorb the fee while respecting the per-input minimum /
 /// minimum withdrawal amount.
 fn reserve_withdrawal_fee_on_largest_input(
     mut selected: BTreeMap<PlatformAddress, Credits>,
     platform_version: &PlatformVersion,
-) -> Result<(BTreeMap<PlatformAddress, Credits>, AddressFundsFeeStrategy), PlatformWalletError> {
+) -> Result<WithdrawalPlan, PlatformWalletError> {
     let accumulated: Credits = selected
         .values()
         .copied()
@@ -440,7 +515,16 @@ fn reserve_withdrawal_fee_on_largest_input(
         fee_source_index_u16,
     )];
 
-    Ok((selected, fee_strategy))
+    Ok(WithdrawalPlan {
+        inputs: selected,
+        fee_strategy,
+        // `withdraw_total = accumulated − estimated_fee` is the net amount the
+        // chain pays out (the fee is booked from the fee-source input's
+        // remaining balance). We computed and validated it above against
+        // `min_withdrawal_amount`, so it is the figure a UI should display.
+        net_withdrawable: withdraw_total,
+        estimated_fee,
+    })
 }
 
 #[cfg(test)]
@@ -473,15 +557,19 @@ mod tests {
         let mut input = BTreeMap::new();
         input.insert(addr(1), balance);
 
-        let (result, strategy) = reserve_withdrawal_fee_on_largest_input(input, pv)
+        let plan = reserve_withdrawal_fee_on_largest_input(input, pv)
             .expect("single funded input above the fee should select");
 
-        assert_eq!(result.get(&addr(1)).copied(), Some(balance - fee));
+        assert_eq!(plan.inputs.get(&addr(1)).copied(), Some(balance - fee));
         assert_eq!(
-            strategy,
+            plan.fee_strategy,
             vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
             "the single input is the fee source at index 0"
         );
+        // The plan's reported figures: the net is the full balance minus the
+        // reserved fee, and `estimated_fee` matches the schedule for 1 input.
+        assert_eq!(plan.estimated_fee, fee);
+        assert_eq!(plan.net_withdrawable, balance - fee);
     }
 
     /// The reviewer's scenario, corrected: input[0] (lex-smallest, BTreeMap
@@ -503,24 +591,28 @@ mod tests {
         inputs.insert(addr(1), small); // lex-smallest → BTreeMap index 0
         inputs.insert(addr(9), large); // larger → BTreeMap index 1
 
-        let (result, strategy) = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+        let plan = reserve_withdrawal_fee_on_largest_input(inputs, pv)
             .expect("the larger peer can absorb the fee");
 
         assert_eq!(
-            result.get(&addr(1)).copied(),
+            plan.inputs.get(&addr(1)).copied(),
             Some(small),
             "the small lex-smallest input is withdrawn in full"
         );
         assert_eq!(
-            result.get(&addr(9)).copied(),
+            plan.inputs.get(&addr(9)).copied(),
             Some(large - fee),
             "the fee is reserved on the largest input"
         );
         assert_eq!(
-            strategy,
+            plan.fee_strategy,
             vec![AddressFundsFeeStrategyStep::DeductFromInput(1)],
             "the emitted DeductFromInput index points at the largest input (BTreeMap index 1)"
         );
+        // The net withdrawable is the aggregate minus the reserved fee, the
+        // figure a UI preflight would display.
+        assert_eq!(plan.estimated_fee, fee);
+        assert_eq!(plan.net_withdrawable, small + large - fee);
     }
 
     /// The emitted `DeductFromInput` index points at the largest input even when
@@ -539,17 +631,19 @@ mod tests {
         inputs.insert(addr(5), small_a); // index 1
         inputs.insert(addr(9), small_b); // index 2
 
-        let (result, strategy) = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+        let plan = reserve_withdrawal_fee_on_largest_input(inputs, pv)
             .expect("the largest input can absorb the fee");
 
         assert_eq!(
-            strategy,
+            plan.fee_strategy,
             vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
             "the largest input is at BTreeMap index 0, so the fee deducts from index 0"
         );
-        assert_eq!(result.get(&addr(1)).copied(), Some(large - fee));
-        assert_eq!(result.get(&addr(5)).copied(), Some(small_a));
-        assert_eq!(result.get(&addr(9)).copied(), Some(small_b));
+        assert_eq!(plan.inputs.get(&addr(1)).copied(), Some(large - fee));
+        assert_eq!(plan.inputs.get(&addr(5)).copied(), Some(small_a));
+        assert_eq!(plan.inputs.get(&addr(9)).copied(), Some(small_b));
+        assert_eq!(plan.estimated_fee, fee);
+        assert_eq!(plan.net_withdrawable, large + small_a + small_b - fee);
     }
 
     /// Genuine insufficiency: even the LARGEST input cannot retain
@@ -602,6 +696,136 @@ mod tests {
         let err = reserve_withdrawal_fee_on_largest_input(inputs, pv)
             .expect_err("balance below the fee must error");
         assert!(matches!(err, PlatformWalletError::AddressOperation(_)));
+    }
+
+    // ---- Planner-shaped tests for the new `WithdrawalPlan` contract ----
+    //
+    // These exercise the planning phase the UI preflight and the real
+    // `withdraw(...)` path share, focusing on the three figures the preflight
+    // surfaces: a fee-covering success returns the expected net, and the two
+    // genuine "can't-fund" cases the FFI must report as `can_withdraw = false`.
+
+    /// Covers-fee success: a single input comfortably above `min_input_amount`
+    /// + the fee yields a plan whose `net_withdrawable` is exactly
+    /// `Σ inputs − estimated_fee` and whose `inputs` reserve that fee on the
+    /// fee-source input. This is the figure a UI preflight displays as "amount
+    /// to withdraw".
+    #[test]
+    fn plan_covers_fee_returns_expected_net() {
+        let pv = PlatformVersion::latest();
+        let fee = estimated_fee(1, pv);
+        let balance = fee + dpp::dash_to_credits!(2.0);
+
+        let mut inputs = BTreeMap::new();
+        inputs.insert(addr(3), balance);
+
+        let plan = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+            .expect("a balance above min_input + fee must plan successfully");
+
+        assert_eq!(plan.estimated_fee, fee);
+        assert_eq!(
+            plan.net_withdrawable,
+            balance - fee,
+            "net withdrawable is the input sum minus the reserved fee"
+        );
+        assert_eq!(
+            plan.inputs.get(&addr(3)).copied(),
+            Some(balance - fee),
+            "the fee-source input keeps fee headroom"
+        );
+    }
+
+    /// Single-input-below-(min_input + fee): the only funded input cannot keep
+    /// `≥ min_input_amount` after reserving the fee, so no input can absorb it.
+    /// The planner must return a typed "can't-fund" error (NOT a panic, NOT a
+    /// success) so the FFI can report `can_withdraw = false`.
+    ///
+    /// The two guards (`accumulated ≤ fee || net < min_withdrawal`) are checked
+    /// before the per-input headroom check, so this test sizes the input to net
+    /// **above** `min_withdrawal_amount` — isolating the per-input headroom
+    /// failure. With more than one input (so the largest is not trivially the
+    /// whole aggregate) the per-input check is the only one left to fire. This
+    /// is the multi-input variant of `errors_when_largest_input_too_small_to_
+    /// absorb_fee`, reframed around the planner's "can't-fund" contract.
+    #[test]
+    fn plan_largest_input_below_min_plus_fee_cant_fund() {
+        let pv = PlatformVersion::latest();
+        let fee = estimated_fee(2, pv);
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+        let min_withdrawal = pv.system_limits.min_withdrawal_amount;
+
+        // Largest input leaves < min_input after the fee is reserved on it.
+        let large = fee + min_input - 1;
+        // A peer (smaller than `large`, so `large` stays the maximum) sized so
+        // the aggregate-after-fee clears the withdrawal minimum, isolating the
+        // per-input headroom failure from the aggregate gate.
+        let peer = min_withdrawal + min_input; // ≥ min_input, < large
+        assert!(
+            peer < large,
+            "test setup: peer must stay below the largest input"
+        );
+
+        let mut inputs = BTreeMap::new();
+        inputs.insert(addr(2), peer);
+        inputs.insert(addr(8), large);
+
+        // Sanity: the aggregate clears the withdrawal minimum after the fee, so
+        // the only remaining failure path is the largest-input headroom check.
+        let accumulated = peer + large;
+        assert!(
+            accumulated.saturating_sub(fee) >= min_withdrawal,
+            "test setup: aggregate-after-fee must clear the withdrawal minimum"
+        );
+
+        let err = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+            .expect_err("the largest input below min_input + fee cannot fund a withdrawal");
+        assert!(
+            matches!(err, PlatformWalletError::AddressOperation(_)),
+            "can't-fund must be a typed error the FFI maps to can_withdraw = false"
+        );
+    }
+
+    /// Aggregate-below-min_withdrawal-after-fee: a single input clears
+    /// `min_input_amount` and is larger than the fee (so it is not rejected by
+    /// the `accumulated ≤ fee` guard), yet its net (`balance − fee`) is still
+    /// below `system_limits.min_withdrawal_amount`. The planner must reject
+    /// this as a typed "can't-fund" error so the FFI reports
+    /// `can_withdraw = false` rather than shipping a transition the chain
+    /// rejects on the minimum.
+    ///
+    /// Constructed only when `min_withdrawal_amount > 0` (always true on the
+    /// real versions). The input is `fee + min_withdrawal − 1`, so it exceeds
+    /// the fee but nets exactly one credit short of the withdrawal floor.
+    #[test]
+    fn plan_aggregate_below_min_withdrawal_cant_fund() {
+        let pv = PlatformVersion::latest();
+        let fee = estimated_fee(1, pv);
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+        let min_withdrawal = pv.system_limits.min_withdrawal_amount;
+
+        // Net = balance − fee = min_withdrawal − 1, i.e. one credit short of
+        // the withdrawal floor while still clearing the fee.
+        let balance = fee + min_withdrawal - 1;
+        // The input itself clears the per-input minimum, so this is genuinely
+        // the aggregate-below-min_withdrawal gate, not the dust filter.
+        assert!(
+            balance >= min_input,
+            "test setup: the input must clear the per-input minimum"
+        );
+        assert!(
+            balance > fee,
+            "test setup: the input must exceed the fee so the accumulated ≤ fee guard doesn't fire"
+        );
+
+        let mut inputs = BTreeMap::new();
+        inputs.insert(addr(4), balance);
+
+        let err = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+            .expect_err("an input that nets below the withdrawal floor cannot fund a withdrawal");
+        assert!(
+            matches!(err, PlatformWalletError::AddressOperation(_)),
+            "can't-fund must be a typed error the FFI maps to can_withdraw = false"
+        );
     }
 
     /// AUTO selection must drop sub-`min_input_amount` dust: the chain rejects

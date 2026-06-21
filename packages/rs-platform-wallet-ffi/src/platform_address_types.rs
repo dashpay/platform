@@ -267,6 +267,44 @@ pub unsafe fn parse_outputs(
 }
 
 // ---------------------------------------------------------------------------
+// Withdrawal preflight result
+// ---------------------------------------------------------------------------
+
+/// Result of `platform_address_wallet_preflight_withdrawal`: whether an AUTO
+/// withdrawal of a platform-payment account can succeed, and — when it can —
+/// the net credits that would be paid out plus the reserved transition fee.
+///
+/// This is a pure, in-memory projection of the Rust planner
+/// ([`platform_wallet::wallet::platform_addresses::WithdrawalPlan`]): the SAME
+/// planning phase the real withdraw path executes, so a UI gating its submit
+/// button on `can_withdraw` can never enable a withdrawal the spend path then
+/// rejects (or vice versa).
+///
+/// A genuine "can't fund" — every address is dust, or the largest input can't
+/// retain the fee while clearing the per-input minimum, or the net falls below
+/// `min_withdrawal_amount` — is reported as `can_withdraw = false` (a normal
+/// result, **not** an FFI error), with `net_withdrawable` and `estimated_fee`
+/// left at `0`. Only a structural failure (bad handle, missing account) is an
+/// FFI error. The closing typed reason is surfaced via the
+/// `PlatformWalletFFIResult` message on the `false` case so the caller can
+/// explain *why* without mirroring protocol constants in Swift.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct WithdrawalPreflightFFI {
+    /// `true` when the account can fund an AUTO withdrawal at the current
+    /// platform version; `false` for any "can't fund" case (the fields below
+    /// are then `0`).
+    pub can_withdraw: bool,
+    /// Net credits the chain would pay out (`Σ withdrawable inputs −
+    /// estimated_fee`). Valid only when `can_withdraw == true`; `0` otherwise.
+    pub net_withdrawable: u64,
+    /// The address-credit-withdrawal transition fee reserved on the fee-source
+    /// input, sized from the selected input count and the active fee schedule.
+    /// Valid only when `can_withdraw == true`; `0` otherwise.
+    pub estimated_fee: u64,
+}
+
+// ---------------------------------------------------------------------------
 // Funding address entry (for top_up)
 // ---------------------------------------------------------------------------
 

@@ -70,6 +70,23 @@ struct WithdrawPlatformAddressView: View {
     /// stays disabled until the version-locked floor loads.
     @State private var minInputAmount: UInt64? = nil
 
+    /// Rust-owned withdrawal preflight for the selected source account at the
+    /// current fee rate. Computed by `ManagedPlatformAddressWallet
+    /// .preflightWithdrawal(...)`, which runs the **same** planning phase the
+    /// real withdraw path executes (dust filter → fee estimate → fee
+    /// reservation → minimum-withdrawal check). This is the authoritative
+    /// submit gate: it inherently accounts for dust + the transition fee + the
+    /// minimum withdrawal amount, so a small-but-non-dust account that can't
+    /// cover the fee reports `canWithdraw == false` here instead of failing
+    /// after sign (the bug this fixes).
+    ///
+    /// `nil` until first computed (or if the computation throws). We treat an
+    /// unresolved/failed preflight as a CLOSED gate — `canSubmit` requires
+    /// `canWithdraw == true` — so the button never enables on a guess, never
+    /// *under*-gating. Recomputed only when the selected account or fee rate
+    /// changes (and on appear), never on a hot per-render path.
+    @State private var preflight: ManagedPlatformAddressWallet.WithdrawalPreflight? = nil
+
     // MARK: - Core readiness
 
     /// nil = not yet checked, true/false = Core wallet usable.
@@ -148,9 +165,22 @@ struct WithdrawPlatformAddressView: View {
                 checkCoreReady()
                 resolveMinInputAmount()
                 autoSelectDefaults()
+                // `autoSelectDefaults()` may have just picked the source
+                // account, so run the preflight after it.
+                recomputePreflight()
             }
             .onChange(of: destinationMode) { _, mode in
                 if mode == .myWallet { resolveMyWalletAddress() }
+            }
+            // Recompute the Rust-owned preflight only when an input it depends
+            // on actually changes — the selected source account or the fee
+            // rate — never on a hot per-render path. The preflight is a local
+            // in-memory computation (no network), so this stays cheap.
+            .onChange(of: sourceAccountIndex) { _, _ in
+                recomputePreflight()
+            }
+            .onChange(of: coreFeePerByte) { _, _ in
+                recomputePreflight()
             }
             // Block swipe-to-dismiss while a withdrawal is in flight —
             // only the (disabled) Cancel button otherwise gates it, so a
@@ -283,18 +313,49 @@ struct WithdrawPlatformAddressView: View {
         }
     }
 
+    @ViewBuilder
     private var summarySection: some View {
         Section {
+            // Account balance (dust-filtered, the spendable rows). Kept as
+            // context, but the authoritative payout figure is the preflight's
+            // net below.
             HStack {
-                Label("Total to Withdraw", systemImage: "dollarsign.circle")
+                Label("Account Balance", systemImage: "creditcard")
                 Spacer()
                 Text(formatCredits(selectedSourceAccountCredits))
                     .foregroundColor(.secondary)
             }
+
+            if let preflight, preflight.canWithdraw {
+                // Rust-owned figures: the net the chain actually pays out and
+                // the transition fee reserved on the fee-source input.
+                HStack {
+                    Label("Estimated Fee", systemImage: "minus.circle")
+                    Spacer()
+                    Text(formatCredits(preflight.estimatedFee))
+                        .foregroundColor(.secondary)
+                }
+                HStack {
+                    Label("You Will Withdraw", systemImage: "dollarsign.circle")
+                    Spacer()
+                    Text(formatCredits(preflight.netWithdrawable))
+                        .fontWeight(.semibold)
+                        .accessibilityIdentifier("withdrawPlatform.netWithdrawable")
+                }
+            } else if sourceAccountIndex != nil, let reason = cantWithdrawReason {
+                // A resolved preflight that can't fund: explain why and keep
+                // submit disabled. (`cantWithdrawReason` is nil while the
+                // preflight is still unresolved, so we don't flash a false
+                // negative before the first computation lands.)
+                Label(reason, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundColor(.orange)
+                    .accessibilityIdentifier("withdrawPlatform.cantWithdrawReason")
+            }
         } header: {
             Text("Summary")
         } footer: {
-            Text("The platform-side fee is deducted from these inputs. The full remaining balance is converted to Core duffs and paid out on L1 (minus the L1 fee).")
+            Text("The platform-side fee is deducted from these inputs. The remaining balance is converted to Core duffs and paid out on L1 (minus the L1 fee).")
         }
     }
 
@@ -424,22 +485,41 @@ struct WithdrawPlatformAddressView: View {
         guard
             !isSubmitting,
             coreReady == true,
-            // The per-input minimum must be known before we can promise the
-            // account has anything withdrawable: `selectedSourceAccountCredits`
-            // sums only balances ≥ this floor, and an unresolved floor makes
-            // that figure 0. The `> 0` check below already closes the gate in
-            // that case; this makes the dependency explicit.
-            minInputAmount != nil,
             sourceAccountIndex != nil,
-            // Require the dust-FILTERED (withdrawable) total > 0, not the raw
-            // total: the Rust selector returns `OnlyDustInputs` when no
-            // address clears `min_input_amount`, so a purely-dust account
-            // (raw balance > 0) must not enable the button.
-            selectedSourceAccountCredits > 0,
+            // The authoritative gate: the Rust-owned preflight must have
+            // resolved AND reported the account can fund the withdrawal. This
+            // supersedes the old raw `selectedSourceAccountCredits > 0` check —
+            // it inherently accounts for dust + the transition fee + the
+            // minimum withdrawal amount, so a small-but-non-dust account that
+            // can't cover the fee (the bug this fixes) never enables submit.
+            // An unresolved or thrown preflight (`nil`) keeps the gate closed,
+            // so we never *under*-gate.
+            preflight?.canWithdraw == true,
             parsedFeePerByte != nil,
             let addr = resolvedCoreAddress, !addr.isEmpty
         else { return false }
         return true
+    }
+
+    /// Human-readable reason the selected account can't fund a withdrawal, or
+    /// `nil` when the preflight is unresolved or the account CAN withdraw. Used
+    /// only for display; the authoritative gate is `preflight?.canWithdraw`.
+    ///
+    /// Distinguishes the two actionable cases so the user knows what to do:
+    /// a purely-dust account (every balance below the per-input minimum) needs
+    /// funds consolidated, while a small non-dust account simply can't cover
+    /// the fee / minimum withdrawal. We classify from the dust-filtered
+    /// `selectedSourceAccountCredits` (0 ⇒ dust-only or empty) rather than
+    /// re-deriving protocol constants in Swift.
+    private var cantWithdrawReason: String? {
+        guard let preflight, !preflight.canWithdraw else { return nil }
+        if selectedSourceAccountCredits == 0 {
+            return "This account has no withdrawable balance — its funds are "
+                + "below the per-input minimum. Consolidate funds onto fewer "
+                + "addresses and try again."
+        }
+        return "This account's balance can't cover the withdrawal fee and the "
+            + "minimum withdrawal amount. Add more funds and try again."
     }
 
     // MARK: - Actions
@@ -504,6 +584,42 @@ struct WithdrawPlatformAddressView: View {
         } catch {
             // Leave nil: gate stays closed until a later appearance resolves it.
             minInputAmount = nil
+        }
+    }
+
+    /// Recompute the Rust-owned withdrawal preflight for the currently selected
+    /// source account at the current fee rate, storing it in `preflight`.
+    ///
+    /// Called on appear and whenever `sourceAccountIndex` / `coreFeePerByte`
+    /// changes — never on a hot per-render path. The preflight is a local
+    /// in-memory computation (`platform_address_wallet_preflight_withdrawal`
+    /// runs the planner over cached balances, no network), so it's cheap enough
+    /// to run synchronously on these input changes.
+    ///
+    /// When no source account is selected we clear the result (`nil`), which
+    /// keeps `canSubmit` closed. A thrown preflight (bad handle / missing
+    /// account — a structural failure, NOT a "can't fund") also clears it,
+    /// resolving gracefully by leaving submit disabled rather than enabling on
+    /// a guess; "can't fund" is a normal non-throwing result with
+    /// `canWithdraw == false`.
+    private func recomputePreflight() {
+        guard let idx = sourceAccountIndex else {
+            preflight = nil
+            return
+        }
+        guard let managedHolder = walletManager.wallet(for: wallet.walletId) else {
+            preflight = nil
+            return
+        }
+        do {
+            let addressWallet = try managedHolder.platformAddressWallet()
+            preflight = try addressWallet.preflightWithdrawal(
+                accountIndex: idx,
+                coreFeePerByte: coreFeePerByte
+            )
+        } catch {
+            // Structural failure: leave submit disabled (don't under-gate).
+            preflight = nil
         }
     }
 
