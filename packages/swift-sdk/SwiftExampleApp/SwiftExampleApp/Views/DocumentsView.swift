@@ -1203,7 +1203,17 @@ struct PurchaseDocumentView: View {
             .alert(item: $actionError) { err in
                 Alert(title: Text("Purchase failed"), message: Text(err.message), dismissButton: .default(Text("OK")))
             }
-            .onAppear { documentIdField = document.documentId }
+            .onAppear {
+                documentIdField = document.documentId
+                // Clear the shared price state on entry so a stale value
+                // from a prior probe (this `transitionState` is app-wide)
+                // can't enable Purchase before the disabled
+                // `DocumentWithPriceView` above republishes *this*
+                // document's price. submit() also re-reads it, so a stale
+                // price could otherwise be broadcast.
+                transitionState.documentPrice = nil
+            }
+            .onDisappear { transitionState.documentPrice = nil }
         }
     }
 
