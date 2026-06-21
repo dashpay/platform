@@ -280,6 +280,27 @@ public final class KeyManager: Sendable {
     return bySecurity
   }
 
+  /// Public ranking entry point. Returns the same purpose/security-ordered
+  /// candidate list `findSigningKey` walks, but WITHOUT any private-material
+  /// availability check — pure key-selection *policy*. Callers that want to
+  /// delegate the availability decision to a specific signer (rather than to
+  /// `KeychainManager.shared`) rank candidates here and then ask that signer
+  /// directly. This is a read-only filter over `identity.publicKeys`; it does
+  /// not touch the Keychain, so it stays out of the `@MainActor` Keychain path.
+  public func rankSigningCandidates(
+    for identity: DPPIdentity,
+    purpose: KeyPurpose? = nil,
+    minimumSecurityLevel: SecurityLevel? = nil,
+    preferCritical: Bool = true
+  ) -> [IdentityPublicKey] {
+    rankKeys(
+      for: identity,
+      purpose: purpose,
+      minimumSecurityLevel: minimumSecurityLevel,
+      preferCritical: preferCritical
+    )
+  }
+
   // MARK: - Signer Creation
 
   /// Create a signer from private key data

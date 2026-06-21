@@ -148,10 +148,6 @@ export class Platform {
 
   client: Client;
 
-  private static readonly networkToProtocolVersion: Map<string, number> = new Map([
-    ['testnet', 1],
-  ]);
-
   protected fetcher: Fetcher;
 
   public nonceManager: NonceManager;
@@ -214,15 +210,11 @@ export class Platform {
       await Platform.initializeDppModule();
 
       if (this.protocolVersion === undefined) {
-        // use mapped protocol version otherwise
-        // fallback to one that set in dpp as the last option
-
-        const mappedProtocolVersion = Platform.networkToProtocolVersion.get(
-          this.client.network,
-        );
-
-        this.protocolVersion = mappedProtocolVersion !== undefined
-          ? mappedProtocolVersion : getLatestProtocolVersion();
+        // Default to the latest protocol version supported by the bundled DPP.
+        // This version also drives how fetched contracts are deserialized; an
+        // older version would downgrade a V1 config (sized_integer_types) to V0
+        // and make contract updates fail network validation.
+        this.protocolVersion = getLatestProtocolVersion();
       }
 
       // eslint-disable-next-line

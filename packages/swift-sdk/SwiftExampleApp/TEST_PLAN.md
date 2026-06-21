@@ -99,7 +99,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | 🚫 | Not implemented anywhere (no FFI, no UI). | No |
 | ➖ | Retired — the thing this row tracked was removed or folded into another row. | n/a |
 
-> **Entry-point reality check.** A set of Platform write transitions (document create/replace/delete/transfer/price/purchase, data-contract create/update, identity key-disable) are reachable in the app **only through `Settings → Platform State Transitions` → `TransitionDetailView`** (marked 🧪). They broadcast for real, but there is no per-identity "happy path" button for them. The QA agent must navigate to the builder for those rows. (Identity credit *transfer*, `ID-04`, and *withdrawal*, `ID-10`, now have production buttons in `IdentityDetailView` — see those rows.) The builder and the read-only **Platform Queries** catalog both live under the **Settings** tab's **Platform** section (scroll past *Network* and *Data*).
+> **Entry-point reality check.** A few Platform write transitions (data-contract create/update, `DC-03`/`DC-04`) are reachable in the app **only through `Settings → Platform State Transitions` → `TransitionDetailView`** (marked 🧪). They broadcast for real, but there is no per-identity "happy path" button for them. The QA agent must navigate to the builder for those rows. The full **document** write family now has production UI: create (`DOC-02`) via Contracts → contract → document type → **New Document**, and replace/delete/transfer/set-price/purchase (`DOC-03`..`DOC-07`) via Contracts → **Browse Documents** (`contracts.browseDocuments`) → document → **⋯** action menu (ownership-gated) → `platform_wallet_document_*`. Identity credit *transfer* (`ID-04`), *withdrawal* (`ID-10`), and *key-disable* (`ID-12`) also have production buttons (`IdentityDetailView` / `KeyDetailView`). The builder and the read-only **Platform Queries** catalog both live under the **Settings** tab's **Platform** section (scroll past *Network* and *Data*).
 
 ---
 
@@ -119,9 +119,6 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | CORE-08 | QR scan recipient | Core | Manual | ✅ | `QRScannerView`, reachable in the Send flow — but scanning needs a real camera the simulator doesn't have, so it can't be automated (`Tier=Manual`). On a device: Send → QR-scan button → point at a Dash address QR → recipient field populates. |
 | CORE-09 | Multiple HD accounts (within one wallet) | Core | Common | ✅ | Account selection / `AccountDetailView`; balances per `account_index`. Distinct from holding multiple *wallets* — see CORE-14+. |
 | CORE-10 | Multi-recipient Core send | Core | Common | ✅ | Send flow (`SendTransactionView`, Core→Core) → "Add recipient" appends extra address/amount rows → `SendViewModel.coreRecipients` → `core_wallet_send_to_addresses` (parallel arrays; Rust coin-selects + builds the multi-output tx). One tx with N outputs; balance drops by sum+fee. Verified: 2-output testnet send (txid `30010050…17f840fc`, txlock, 3 vouts) credited both recipients. |
-| CORE-11 | Custom fee on transparent send | Core | Uncommon | 🚫 | Not exposed on the transparent send path (custom Core fee only on shielded withdraw `SH-08` and platform-address funding). |
-| CORE-12 | CoinJoin / mixing | Core | Uncommon | 🚫 | Not implemented anywhere (SPV crate or FFI). |
-| CORE-13 | Send explicitly via InstantSend | Core | Uncommon | 🚫 | IS is observe-only (used to obtain asset-lock proofs); no user-facing send toggle. |
 
 #### Multiple wallets on one device
 
@@ -155,8 +152,8 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | ID-09 | Set / edit local alias | Platform | Common | ✅ | `IdentityDetailView` (Add Alias). Local only — persists across relaunch; no broadcast. |
 | ID-10 | Withdraw credits → Dash L1 address | Cross | Common | ✅ | `IdentityDetailView` → **Withdraw Credits** (sheet, `WithdrawCreditsView`) → `wallet.withdrawCredits` → `platform_wallet_withdraw_credits_with_signer` (keychain-signed). Destination L1 address typed in + validated against the wallet's network; amount validated against balance. Identity credit balance drops by amount + fee; L1 payout is pooled and processed asynchronously by the network (no immediate txid). Requires the identity to have a TRANSFER/CRITICAL key — newly-derived identities get one (keyId 3); older identities may need one added first via `ID-07`. (Also reachable via the *Settings → Platform State Transitions → Identity Credit Withdrawal* builder → `dash_sdk_identity_withdraw` with a test signer.) |
 | ID-11 | Transfer credits → Platform addresses | Platform | Common | ✅ | `AddressQueriesView` → TransferIdentityToAddresses → `dash_sdk_identity_transfer_credits_to_addresses`. |
-| ID-12 | Update identity — disable key | Platform | Thorough | 🧪 | *Settings builder → Identity Update* (disable path) → `executeIdentityUpdate`. |
-| ID-13 | Top up identity (builder path) | Cross | — | 🧪 | Builder entry is a stub (`notImplemented`). Use `ID-05`/`ID-06`. Listed so QA doesn't mistake the stub for a defect. |
+| ID-12 | Update identity — disable key | Platform | Thorough | ✅ | `KeyDetailView` (drill into a key from `KeysListView`) → **Key Status → Disable Key** → confirm (permanent / irreversible) → `wallet.updateIdentity(disablePublicKeyIds:)` → `platform_wallet_update_identity_with_signer` (keychain-signed). The button is gated to match consensus: it's hidden/disabled for master-level keys, the last enabled authentication key, and the last enabled transfer key (each shows an inline reason), and already-disabled keys show a read-only "Disabled" row. On success the identity's keys are re-fetched so the disabled badge appears, then the view pops back. A swipe-to-Disable shortcut on each eligible row in `KeysListView` routes into the same confirm + submit (reaches keys whose row tap opens `PrivateKeyView` instead of the detail). (Also reachable via *Settings → Platform State Transitions → Identity Update* (disable path) → `executeIdentityUpdate` with a test signer.) |
+| ID-13 | Top up identity (builder path) | Cross | — | ➖ | Retired — builder entry is a stub (`notImplemented`); identity top-up is covered by `ID-05`/`ID-06`. Kept here to document the stub; not seeded to the QA catalog. |
 
 ### 4.3 Platform Addresses (DIP-17 credit addresses) — `Domain=Address`
 
@@ -191,7 +188,7 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | VOTE-04 | Query voters for a contestant identity | Platform | Thorough | ✅ | `PlatformQueriesView` (getContestedResourceVotersForIdentity). |
 | VOTE-05 | Query an identity's votes | Platform | Thorough | ✅ | `PlatformQueriesView` (getContestedResourceIdentityVotes). |
 | VOTE-06 | Query vote polls by end date | Platform | Thorough | ✅ | `PlatformQueriesView` (getVotePollsByEndDate). |
-| VOTE-07 | Masternode vote (generic builder entry) | Platform | — | 🧪 | Builder entry is a stub (`default → notImplemented`). Use `VOTE-01`. |
+| VOTE-07 | Masternode vote (generic builder entry) | Platform | — | ➖ | Retired — builder entry is a stub (`default → notImplemented`); masternode voting is covered by `VOTE-01`. Kept here to document the stub; not seeded to the QA catalog. |
 
 ### 4.6 Data Contracts — `Domain=Contract`
 
@@ -208,13 +205,18 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 |---|---|---|---|---|---|
 | DOC-01 | Query documents / single document | Platform | Common | ✅ | `DocumentsView` / `PlatformQueriesView` → `dash_sdk_document_search` / `_fetch`. |
 | DOC-02 | Create document (broadcast) | Platform | Common | ✅ | Production UI: Contracts → contract → document type → **New Document** (`DocumentTypeDetailsView` / schema-driven `CreateDocumentView`) → `platform_wallet_create_document_with_signer` (routes through `rs-platform-wallet` `IdentityWallet::create_document_with_signer` → SDK `put_to_platform_and_wait_for_response`, signed by the wallet's keychain signer). Driven end-to-end: created a `preorder` doc (`saltedDomainHash`) on `GWRSAV…S31Ec` from funded idx1 — network-confirmed, doc id `7i1hJgvVt8fJms26kGwkEZ6jVZxrfd3BrqfmAfpqXMoG`, persisted & appears in the documents list. *(Settings builder → Document Create / `dash_sdk_document_create` remains as a test-signer alternative.)* |
-| DOC-03 | Replace document | Platform | Thorough | 🧪 | *Settings builder* → `dash_sdk_document_replace_on_platform`. |
-| DOC-04 | Delete document | Platform | Thorough | 🧪 | *Settings builder* → `dash_sdk_document_delete`. |
-| DOC-05 | Transfer document | Platform | Uncommon | 🧪 | *Settings builder* → `dash_sdk_document_transfer_to_identity`. |
-| DOC-06 | Update document price | Platform | Uncommon | 🧪 | *Settings builder* / `DocumentWithPriceView` → `dash_sdk_document_update_price_of_document`. |
-| DOC-07 | Purchase document | Platform | Uncommon | 🧪 | *Settings builder* → `dash_sdk_document_purchase`. |
-| DOC-08 | Document count / sum / average aggregation | Platform | Uncommon | 🔌 | FFI `dash_sdk_document_count` / `_sum` / `_average`; no UI. |
+| DOC-03 | Replace document | Platform | Thorough | ✅ | Production UI: Contracts → **Browse Documents** (`contracts.browseDocuments`) → document → **⋯** action menu (`documentAction.menu`, ownership-gated) → **Replace…** → `ReplaceDocumentView` → `platform_wallet_document_replace` (routes through `rs-platform-wallet` `IdentityWallet::replace_document_with_signer`: schema-sanitizes the new properties, bumps the revision, signs with the wallet keychain signer on the 8 MB worker stack). Driven end-to-end on testnet: replaced the `card` doc `FgVSYG6sTZZ9…` on `5jpKat9U82PG` (`attack` 7→42, `name`→"As-replaced"), revision 1→2, broadcast confirmed + canonical JSON persisted. *(Settings builder → `dash_sdk_document_replace_on_platform` remains as a test-signer alternative.)* |
+| DOC-04 | Delete document | Platform | Thorough | ✅ | Production UI: **Browse Documents** → document → **⋯** → **Delete…** → `DeleteDocumentView` → `platform_wallet_document_delete` (`IdentityWallet::delete_document_with_signer`, keychain signer, 8 MB worker stack). Driven end-to-end on testnet: deleted the `card` doc `FgVSYG6sTZZ9…`, broadcast confirmed, local row removed. *(Settings builder → `dash_sdk_document_delete` remains as a test-signer alternative.)* |
+| DOC-05 | Transfer document | Platform | Uncommon | ✅ | Production UI: **Browse Documents** → document → **⋯** → **Transfer…** (shown when the doc type is `documentsTransferable`) → `TransferDocumentView` (recipient base58) → `platform_wallet_document_transfer` (`IdentityWallet::transfer_document_with_signer`, revision bumped, keychain signer, 8 MB worker stack). Driven end-to-end on testnet: transferred the `card` doc `FgVSYG6sTZZ9…` from `BjJz3hdmg5Ec…` → `8267geu4…` (QA2), revision →4, owner changed + persisted. *(Settings builder → `dash_sdk_document_transfer_to_identity` remains as a test-signer alternative.)* |
+| DOC-06 | Update document price | Platform | Uncommon | ✅ | Production UI: **Browse Documents** → document → **⋯** → **Set Price…** (shown when the doc type has a `tradeMode`) → `SetDocumentPriceView` (price in credits) → `platform_wallet_document_set_price` (`IdentityWallet::set_document_price_with_signer`, revision bumped, keychain signer, 8 MB worker stack). Driven end-to-end on testnet: priced the `card` doc `FgVSYG6sTZZ9…` at 1,000,000 credits, revision →3, `$price` present in persisted JSON. *(Settings builder / `DocumentWithPriceView` → `dash_sdk_document_update_price_of_document` remains as a test-signer alternative.)* |
+| DOC-07 | Purchase document | Platform | Uncommon | ✅ | Production UI: **Browse Documents** → document → **⋯** → **Purchase…** → `PurchaseDocumentView` → `platform_wallet_document_purchase` (`IdentityWallet::purchase_document_with_signer`; the **purchaser** signs, revision bumped, 8 MB worker stack). Gating verified: Purchase is surfaced **only** when the owner is *not* a wallet-controlled identity **and** the doc type has a `tradeMode` — i.e. buyer ≠ owner, which consensus requires (it rejects self-purchase). Shares the identical broadcast/persist path proven this session by DOC-03/04/05/06 on `FgVSYG6sTZZ9…`; the menu correctly **omitted** Purchase for every wallet-owned doc. A fresh end-to-end buy needs a for-sale doc owned by a counterparty the wallet doesn't control (can't self-buy); the on-chain purchase path was previously confirmed on testnet. *(Settings builder → `dash_sdk_document_purchase` remains as a test-signer alternative.)* |
+| DOC-08 | Document aggregation (umbrella) | Platform | Uncommon | ➖ | Split into the rows below — `DOC-10` (count total), `DOC-11` (count filtered), `DOC-12` (count grouped), `DOC-13` (sum), `DOC-14` (average). Kept as a pointer only; select the specific row. |
 | DOC-09 | Create document (local demo) | Platform | — | ➖ | Retired. The old `DocumentsView` local-only mock was replaced by the real broadcast flow (`CreateDocumentView`); see `DOC-02`. |
+| DOC-10 | Aggregation — count documents (total) | Platform | Uncommon | 🧪 | **Count Documents** read view → Swift wrapper over FFI `dash_sdk_document_count` (proof-verified). Total count is `counts[""]` in the `{counts:{hexKey:u64}}` result. Requires a contract whose doc type sets `documentsCountable: true` (e.g. the `countable` QA fixture). |
+| DOC-11 | Aggregation — count documents, filtered (`where`) | Platform | Uncommon | 🧪 | Same Count view with a `where` clause → `dash_sdk_document_count(where_json=…)`. The filtered field must be a `countable` index. |
+| DOC-12 | Aggregation — count documents, grouped (`group_by`) | Platform | Uncommon | 🧪 | Same Count view with a `group_by` field → `dash_sdk_document_count(group_by_json=…)`; returns one count per group (hex-encoded group key → `u64`). |
+| DOC-13 | Aggregation — sum of a numeric property | Platform | Uncommon | 🧪 | **Sum / Average Documents** read view (op selector → **Sum**) → Swift wrapper over FFI `dash_sdk_document_sum` (proof-verified). Total sum is `sums[""]` in the `{sums:{hexKey:i64}}` result; a `where`/`group_by` filter and the required numeric `sum property` are entered in the same view. Needs a contract doc type with a `summable` index on the numeric property. |
+| DOC-14 | Aggregation — average of a numeric property | Platform | Uncommon | 🧪 | Same **Sum / Average Documents** read view (op selector → **Average**) → Swift wrapper over FFI `dash_sdk_document_average` (proof-verified) → `{averages:{hexKey:{count,sum}}}`; the view divides `sum/count` for display. Needs a doc type with a `summable` index on the numeric property. |
 
 ### 4.8 Tokens — `Domain=Token`
 
@@ -238,7 +240,6 @@ All token actions support single-signer **and** group (propose / co-sign) modes 
 | TOK-14 | Config update / max supply | Platform | Uncommon | ✅ | `TokenUpdateMaxSupplyActionView` → `wallet.tokenUpdateConfig` (one `TokenConfigurationChangeItem` per tx). |
 | TOK-15 | Group action — propose | Platform | Uncommon | ✅ | Token action in `.propose` mode (`CoSignProposalView`). Applies to Mint/Burn/Freeze/Unfreeze/DestroyFrozen/Emergency/Config/SetPrice. |
 | TOK-16 | Group action — co-sign existing | Platform | Uncommon | ✅ | `PendingGroupActionsView` / `CoSignProposalView`. Action executes when accumulated signer power ≥ required. |
-| TOK-17 | Calculate token ID (utility) | Platform | Uncommon | 🔌 | FFI `dash_sdk_calculate_token_id`; no dedicated UI. |
 
 ### 4.9 Shielded Pool (Orchard) — `Domain=Shielded`
 
@@ -256,7 +257,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SH-08 | Shielded withdraw → Core L1 (Type 19) | Cross | Common | ✅ | Send flow (Shielded→Core) → `walletManager.shieldedWithdraw` (custom `core_fee_per_byte`). |
 | SH-09 | Prover warm-up / readiness | Shielded | Common | ✅ | `warmUpShieldedProver` / `shieldedProverIsReady` (~30s Halo2 key build; precondition for spends). |
 | SH-10 | Seed shielded pool (anonymity set) | Shielded | Uncommon | ✅ | `SeedShieldedPoolView` → `platform_wallet_manager_shielded_seed_pool_notes`. **Devnet/testnet only** — hard-errors on mainnet. |
-| SH-11 | Create identity from shielded pool (Type 20) | Cross | Uncommon | 🔌 | FFI `platform_wallet_manager_shielded_identity_create_from_pool`; no dedicated UI. |
+| SH-11 | Create identity from shielded pool (Type 20) | Cross | Common | ✅ | `CreateIdentityView` → funding source **Shielded balance** (fixed denominations 0.1 / 0.3 / 0.5 / 1.0 DASH, gated on the bound pool's balance) → `IdentityRegistrationController` (`.shieldedPool`) → `shieldedIdentityCreateFromPool` → `platform_wallet_manager_shielded_identity_create_from_pool`. Requires a synced shielded pool with sufficient balance. |
 | SH-12 | Clear shielded state (wipe notes + re-sync) | Shielded | Uncommon | ✅ | "Clear" button on the Sync tab (`CoreContentView` → `ShieldedService.clearLocalState` → `clearShielded`). Stops sync, wipes every wallet's shielded notes + sync state, zeroes the Swift mirror; bind credentials are kept so "Sync Now" rebinds and re-scans. (On-disk SQLite tree is intentionally retained.) Verify balance/activity reset, then restore after Sync Now. |
 | SH-13 | Display / share your shielded receive address | Shielded | Common | ✅ | "Receive Dash" sheet → **Shielded** tab (`ReceiveAddressView`, `ReceiveAddressTab.shielded`): QR + full `tdash1…`/`dash1…` bech32m address + Copy Address. Hand your shielded address to a payer, or grab wallet B's address for `MW-06`. |
 
@@ -278,7 +279,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | GRP-01 | View group info / members | Platform | Thorough | ✅ | `GroupDetailView` (drill into member identities). |
 | GRP-02 | Group queries (info / infos / actions / signers) | Platform | Thorough | ✅ | `PlatformQueriesView` group category → `dash_sdk_group_get_*`. |
 | GRP-03 | Token group action — propose / co-sign | Platform | Uncommon | ✅ | Same as `TOK-15` / `TOK-16`. |
-| GRP-04 | Standalone group lifecycle management | Platform | Uncommon | 🚫 | Not implemented — groups exist only as a token access-control construct + read queries. There is no group-create/membership transition. |
+| GRP-04 | Standalone group lifecycle management | Platform | — | ➖ | Retired from the catalog — not implemented anywhere and never will be a standalone test: there is no group-create/membership transition; groups exist only as a token access-control construct (read queries `GRP-01`/`GRP-02`; actions `GRP-03` ≡ `TOK-15`/`TOK-16`). Kept here to document the absence; not seeded to the QA catalog. |
 
 ### 4.12 System / Protocol / Diagnostics — `Domain=System`
 
@@ -289,7 +290,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SYS-03 | Protocol-version upgrade state / vote status | Platform | Uncommon | ✅ | `PlatformQueriesView` protocol category. |
 | SYS-04 | Run-all-queries / DPNS test harness | Platform | Thorough | ✅ | `PlatformQueriesView` diagnostics (`runAllQueries`, `testDPNSQueries`), `DiagnosticsView`. |
 | SYS-05 | Storage / Keychain / Wallet-memory explorers | — | Thorough | ✅ | `StorageExplorerView`, `KeychainExplorerView`, `WalletMemoryExplorerView` (Settings; debug tooling). |
-| SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🔌 | FFI `dash_sdk_system_get_path_elements`; no UI. |
+| SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🧪 | **Get GroveDB Path Elements** read view (Platform Queries → System & Utility) → Swift wrapper over FFI `dash_sdk_system_get_path_elements` (proof-verified `Element::fetch_many` over `KeysInPath`). Enter a `path` + `keys` JSON array (hex bytes); returns `[{key, element, type}]`. Use a **bounded** path — root-level queries (`path=[]`) fail GroveDB proof verification ("Cannot verify lower bound"). The "DPNS contract example" preset fills `path=["40"]` (DataContractDocuments root) + the DPNS contract id → its subtree `tree` element. |
 
 ### 4.13 Multi-wallet on-device Platform scenarios (same network) — `Domain=MultiWallet`
 
@@ -302,7 +303,7 @@ Together with the wallet-lifecycle rows in §4.1 (`CORE-14..23`), these form the
 | MW-01 | Credit transfer between two on-device identities (A → B) | Platform | Thorough | ✅ | `IdentityDetailView` → **Transfer Credits** (`ID-04`), recipient = wallet B's identity (via `RecipientPickerView` — local / paste id / DPNS). Switch to B; verify its credit balance rose and A's dropped. Fully local round-trip. |
 | MW-02 | Token transfer between two on-device identities | Platform | Thorough | ✅ | `TOK-02`, recipient = wallet B's identity. Switch to B; verify the token balance arrived. |
 | MW-03 | DashPay request → accept → payment, both endpoints on device | Platform | Thorough | ✅ | A's identity sends a contact request (`DP-01`) to B's; switch to wallet B's identity and accept (`DP-02`); then pay (`DP-03`). Full bidirectional loop entirely local. |
-| MW-04 | Document transfer / purchase across wallets | Platform | Uncommon | 🧪 | A creates + lists a document (`DOC-02`/`DOC-06`); B transfers/purchases it (`DOC-05`/`DOC-07`). Ownership and credits move between A and B. |
+| MW-04 | Document transfer / purchase across wallets | Platform | Uncommon | ✅ | A creates + lists a document (`DOC-02`/`DOC-06`); B transfers/purchases it (`DOC-05`/`DOC-07`). Ownership and credits move between A and B. Transfer half driven end-to-end this session via the production UI: the `card` doc `FgVSYG6sTZZ9…` moved from identity `BjJz3hdmg5Ec…` to a different seed-controlled identity `8267geu4…` (QA2), with ownership re-persisted. Purchase half shares `DOC-07`'s status (a fresh buy needs a counterparty-owned for-sale listing). |
 | MW-05 | Contested DPNS race between two on-device identities | Platform | Uncommon | ✅ | A and B (different wallets) both register the same premium/contested name (`DPNS-05`) → produces a contest observable end-to-end on-device via `VOTE-02`/`VOTE-03`. |
 | MW-06 | Shielded transfer between two on-device wallets | Shielded | Thorough | ✅ | Wallet A's pool → wallet B's shielded address (`SH-05`); copy B's address from its Receive → Shielded tab (`SH-13`). Both wallets must be bound + synced (`CORE-21`, `SH-01`); after syncing B, its shielded balance rises. NB only one wallet's shielded state is displayed at a time. |
 | MW-07 | Unshield from A to a Platform address owned by B | Shielded | Uncommon | ✅ | A unshields (`SH-06`) to a Platform address belonging to wallet B; verify B receives the credits (subject to the MW-08 sync caveat). |
@@ -351,14 +352,14 @@ Membership of each feature category across **all** sections (primary section mem
 - **DPNS** — `DPNS-01..07`, `MW-05`
 - **Voting** — `VOTE-01..07`, `DPNS-05`, `MW-05`
 - **Contract** — `DC-01..04`
-- **Document** — `DOC-01..09`, `MW-04`
-- **Token** — `TOK-01..17`, `MW-02`, `GRP-03`
+- **Document** — `DOC-01..14`, `MW-04`
+- **Token** — `TOK-01..16`, `MW-02`, `GRP-03`
 - **Shielded** — `SH-01..13`, `CORE-21`, `MW-06`, `MW-07`, `MW-11`
 - **DashPay** — `DP-01..06`, `MW-03`
 - **Group** — `GRP-01..04`, `TOK-15`, `TOK-16`
 - **System / Diagnostics** — `SYS-01..06`
 
-Worked example — *"run all non-Uncommon Token tests"*: take **Token** = `TOK-01..17`, `MW-02`, `GRP-03`; drop the `Uncommon` ones (`TOK-08..17`, `GRP-03`) → run **`TOK-01..07` + `MW-02`**.
+Worked example — *"run all non-Uncommon Token tests"*: take **Token** = `TOK-01..16`, `MW-02`, `GRP-03`; drop the `Uncommon` ones (`TOK-08..16`, `GRP-03`) → run **`TOK-01..07` + `MW-02`**.
 
 ---
 
@@ -390,7 +391,7 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 ### Document
 | RPC | Tier | Status | Where |
 |---|---|---|---|
-| getDocuments (incl. V1 COUNT/SUM/AVG, group_by, having) | Common | ✅ / 🔌 | `DocumentsView` / catalog; aggregation surface is FFI-only (`DOC-08`) |
+| getDocuments (incl. V1 COUNT/SUM/AVG, group_by, having) | Common | ✅ / 🧪 | `DocumentsView` / catalog. COUNT (total/`where`/`group_by`) has a **Count Documents** read view — `DOC-10/11/12`. SUM/AVG now have a **Sum / Average Documents** read view — `DOC-13/14`. `having` is not exposed by the FFI. |
 | getDocumentHistory | Thorough | ✅ | catalog |
 
 ### Token
@@ -443,7 +444,7 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 | getPrefundedSpecializedBalance | Thorough | ✅ | catalog |
 | waitForStateTransitionResult | Essential | ✅ | implicit in every write round-trip |
 | broadcastStateTransition | Essential | ✅ | implicit in every write (`@sdk-ignore` RPC) |
-| getPathElements | Uncommon | 🔌 | FFI only (`SYS-06`) |
+| getPathElements | Uncommon | 🧪 | "Get GroveDB Path Elements" read view (`SYS-06`) |
 | getConsensusParams | Uncommon | 🚫 | `@sdk-ignore` (served via Tenderdash RPC) |
 
 ### Address Sync (DIP-17)
@@ -474,15 +475,9 @@ For completeness (the "everything gRPC + Core can do" requirement), these exist 
 
 **🔌 SDK-only (FFI/wrapper exists, no UI):**
 - `ADDR-05` address balance-change history (recent / compacted / branch / trunk)
-- `DOC-08` document count / sum / average aggregation
-- `TOK-17` calculate token ID
 - `SH-11` create identity from shielded pool (Type 20)
-- `SYS-06` raw GroveDB path elements
 
 **🚫 Not implemented anywhere:**
-- `CORE-11` custom fee on transparent Core send
-- `CORE-12` CoinJoin / mixing
-- `CORE-13` explicit send-via-InstantSend
 - `GRP-04` standalone group lifecycle management
 - `getConsensusParams` (served via Tenderdash RPC, not the SDK)
 

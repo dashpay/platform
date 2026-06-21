@@ -488,15 +488,19 @@ struct IdentityDetailView: View {
                 loadCachedDashPayProfile(for: identity)
                 Task { await refreshDashPayProfilesFromPlatform(for: identity) }
 
-                // First-load gate for the Tokens section. Same pattern
-                // as the DashPay block above — only auto-fetch when
-                // we have nothing yet; subsequent refreshes are an
-                // explicit user action via the section's refresh
-                // button. Avoids a redundant round-trip on every
-                // back-and-forth navigation.
-                if tokenBalances.isEmpty {
-                    reloadTokenBalances()
-                }
+                // Reload the Tokens section on every appear, including
+                // when the user pops back from a token action
+                // (Transfer / Burn). Those flows mutate the on-chain
+                // balance and refresh the local PersistentTokenBalance
+                // rows, but this section reads a transient @State
+                // snapshot — gating the reload on `tokenBalances.isEmpty`
+                // (the old behavior) left a drained sender still showing
+                // its pre-transfer figure until a manual refresh
+                // (MW-02). An unconditional reload keeps the displayed
+                // balance current after returning here; it stays a
+                // single batched round-trip and shows the cached numbers
+                // while it refreshes.
+                reloadTokenBalances()
             }
         }
         } else {
@@ -533,89 +537,15 @@ struct IdentityDetailView: View {
                   let identity = identity else { return }
 
             do {
-                // Refresh identity data
-                let fetchedIdentity = try await sdk.identityGet(identityId: identity.identityIdBase58)
-
-                // Update balance
-                if let balanceValue = fetchedIdentity["balance"] {
-                    if let balanceNum = balanceValue as? NSNumber {
-                        PersistentIdentity.updateBalance(
-                            in: modelContext,
-                            identityId: identity.identityId,
-                            balance: balanceNum.uint64Value
-                        )
-                        try? modelContext.save()
-                    } else if let balanceString = balanceValue as? String,
-                              let balanceUInt = UInt64(balanceString) {
-                        PersistentIdentity.updateBalance(
-                            in: modelContext,
-                            identityId: identity.identityId,
-                            balance: balanceUInt
-                        )
-                        try? modelContext.save()
-                    }
-                }
-
-                // Parse and update public keys
-                var parsedPublicKeys: [IdentityPublicKey] = []
-                print("🔵 Checking for public keys in fetched identity...")
-                if let publicKeysArray = fetchedIdentity["publicKeys"] as? [[String: Any]] {
-                    print("🔵 Found \(publicKeysArray.count) public keys")
-                    parsedPublicKeys = publicKeysArray.compactMap { keyData -> IdentityPublicKey? in
-                        print("🔵 Parsing key data: \(keyData)")
-                        guard let id = keyData["id"] as? Int,
-                              let purpose = keyData["purpose"] as? Int,
-                              let securityLevel = keyData["securityLevel"] as? Int,
-                              let keyType = keyData["type"] as? Int,
-                              let dataStr = keyData["data"] as? String,
-                              let data = Data(base64Encoded: dataStr) else {
-                            return nil
-                        }
-
-                        let readOnly = keyData["readOnly"] as? Bool ?? false
-                        let disabledAt = keyData["disabledAt"] as? UInt64
-
-                        return IdentityPublicKey(
-                            id: UInt32(id),
-                            purpose: KeyPurpose(rawValue: UInt8(purpose)) ?? .authentication,
-                            securityLevel: SecurityLevel(rawValue: UInt8(securityLevel)) ?? .high,
-                            contractBounds: nil,
-                            keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
-                            readOnly: readOnly,
-                            data: data,
-                            disabledAt: disabledAt
-                        )
-                    }
-                } else {
-                    print("❌ No public keys found in fetched identity")
-                }
-
-                print("🔵 Parsed \(parsedPublicKeys.count) public keys total")
-
-                // Replace the PersistentIdentity's public key rows
-                // with the freshly-fetched set. Carries over the
-                // keychain identifier for any public key we already
-                // knew about so we don't lose track of the matching
-                // private key after a refresh.
-                let identifierByKeyId: [Int32: String] = Dictionary(
-                    uniqueKeysWithValues: identity.publicKeys.compactMap { key in
-                        guard let identifier = key.privateKeyKeychainIdentifier else { return nil }
-                        return (key.keyId, identifier)
-                    }
+                // Refresh balance + public-key rows from Platform via
+                // the shared persist/load helper (also used by
+                // KeyDetailView's Disable Key action so the disabled
+                // badge appears without a manual refresh).
+                try await IdentityKeyRefresher.refreshBalanceAndKeys(
+                    identity: identity,
+                    sdk: sdk,
+                    modelContext: modelContext
                 )
-                identity.publicKeys.removeAll()
-                let identityHex = identity.identityIdBase58
-                for publicKey in parsedPublicKeys {
-                    guard let persistentKey = PersistentPublicKey.from(publicKey, identityId: identityHex) else {
-                        continue
-                    }
-                    if let identifier = identifierByKeyId[persistentKey.keyId] {
-                        persistentKey.privateKeyKeychainIdentifier = identifier
-                    }
-                    identity.addPublicKey(persistentKey)
-                }
-                try? modelContext.save()
-                print("🔵 Persisted \(parsedPublicKeys.count) public keys for identity")
 
                 // Refresh DPNS names from network
                 await loadDPNSNamesFromNetwork()
@@ -962,6 +892,15 @@ struct IdentityDetailView: View {
     private func reloadTokenBalances() {
         guard let identity = identity, !identity.isLocal,
               let sdk = appState.sdk else { return }
+
+        // In-flight guard: `onAppear` now reloads unconditionally and this
+        // view can re-appear rapidly (background-sync @Query churn), so bail
+        // if a refresh is already running to avoid stacking redundant
+        // network/FFI round-trips that race `tokenBalances`. Reliable on the
+        // main actor — everything up to `isLoadingTokens = true` runs
+        // synchronously, so a second call sees the flag before the first
+        // call's Task yields.
+        guard !isLoadingTokens else { return }
 
         isLoadingTokens = true
         tokensError = nil

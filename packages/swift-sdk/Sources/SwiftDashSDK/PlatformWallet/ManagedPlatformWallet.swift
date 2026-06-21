@@ -2829,6 +2829,380 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Replace + broadcast `documentId`'s properties on `contractId`'s
+    /// `documentType`, owned by `ownerIdentityId`, signed with the
+    /// explicit AUTHENTICATION + ECDSA key `signingKeyId`. Returns the
+    /// 32-byte document id and the confirmed document's canonical
+    /// query-side JSON (now at the bumped revision) once Platform
+    /// confirms the transition.
+    ///
+    /// Sibling to `createDocument`. Routes through
+    /// `IdentityWallet::replace_document_with_signer` (via
+    /// `platform_wallet_document_replace`): the Rust side fetches the
+    /// current document, applies `propertiesJSON` (the full replacement
+    /// property object, same hex/base58 encoding rules as create),
+    /// bumps the revision, validates `signingKeyId` is an
+    /// AUTHENTICATION + ECDSA key on the owner, broadcasts on the
+    /// platform-wallet 8 MB worker stack, and waits for confirmation.
+    /// The signing key never crosses into Swift logic — the
+    /// `KeychainSigner` trampoline services the signature on demand.
+    /// Callers persist the returned JSON verbatim so the local cache
+    /// matches the on-chain document.
+    ///
+    /// Lifetime contract: identical to `createDocument` — the `signer`
+    /// is pinned with `withExtendedLifetime` across the synchronous FFI
+    /// call (Rust holds a `passUnretained` ctx pointer to the
+    /// underlying `KeychainSigner`).
+    public func replaceDocument(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        documentId: Identifier,
+        propertiesJSON: String,
+        signingKeyId: UInt32,
+        signer: KeychainSigner
+    ) async throws -> (Identifier, String) {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+            var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
+
+            // Pin `signer` for the whole FFI call (see `createDocument`
+            // for why a bare `_ = signer` is unreliable under -O).
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            documentBytes.withUnsafeBufferPointer { docBp -> PlatformWalletFFIResult in
+                                propertiesJSON.withCString { propsPtr in
+                                    documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                        platform_wallet_document_replace(
+                                            handle,
+                                            ownerBp.baseAddress!,
+                                            contractBp.baseAddress!,
+                                            typePtr,
+                                            docBp.baseAddress!,
+                                            propsPtr,
+                                            signingKeyId,
+                                            signerHandle,
+                                            outBp.baseAddress!,
+                                            &documentJsonPtr
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
+            guard let jsonPtr = documentJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "document_replace returned no canonical document JSON"
+                )
+            }
+            let canonicalJSON = String(cString: jsonPtr)
+            return (Data(documentIdBytes), canonicalJSON)
+        }.value
+    }
+
+    /// Delete + broadcast `documentId` on `contractId`'s `documentType`,
+    /// owned by `ownerIdentityId`, signed with the explicit
+    /// AUTHENTICATION + ECDSA key `signingKeyId`. Returns the deleted
+    /// document's 32-byte id once Platform confirms the transition.
+    ///
+    /// Sibling to `createDocument`. Routes through
+    /// `IdentityWallet::delete_document_with_signer` (via
+    /// `platform_wallet_document_delete`). Delete returns no document
+    /// body, so there is no canonical JSON — callers remove the local
+    /// `PersistentDocument` row by id.
+    public func deleteDocument(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        documentId: Identifier,
+        signingKeyId: UInt32,
+        signer: KeychainSigner
+    ) async throws -> Identifier {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            documentBytes.withUnsafeBufferPointer { docBp -> PlatformWalletFFIResult in
+                                documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                    platform_wallet_document_delete(
+                                        handle,
+                                        ownerBp.baseAddress!,
+                                        contractBp.baseAddress!,
+                                        typePtr,
+                                        docBp.baseAddress!,
+                                        signingKeyId,
+                                        signerHandle,
+                                        outBp.baseAddress!
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            return Data(documentIdBytes)
+        }.value
+    }
+
+    /// Transfer + broadcast `documentId` on `contractId`'s
+    /// `documentType`, from `ownerIdentityId` to `recipientId`, signed
+    /// with the explicit AUTHENTICATION + ECDSA key `signingKeyId`.
+    /// Returns the 32-byte document id and the confirmed document's
+    /// canonical JSON (now reflecting the new owner) once Platform
+    /// confirms the transition.
+    ///
+    /// Sibling to `createDocument`. Routes through
+    /// `IdentityWallet::transfer_document_with_signer` (via
+    /// `platform_wallet_document_transfer`). Only valid for a document
+    /// type whose schema marks it `transferable`; the caller gates the
+    /// action against that flag.
+    public func transferDocument(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        documentId: Identifier,
+        recipientId: Identifier,
+        signingKeyId: UInt32,
+        signer: KeychainSigner
+    ) async throws -> (Identifier, String) {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let recipientBytes: [UInt8] = recipientId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+            var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
+
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            documentBytes.withUnsafeBufferPointer { docBp -> PlatformWalletFFIResult in
+                                recipientBytes.withUnsafeBufferPointer { recipBp -> PlatformWalletFFIResult in
+                                    documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                        platform_wallet_document_transfer(
+                                            handle,
+                                            ownerBp.baseAddress!,
+                                            contractBp.baseAddress!,
+                                            typePtr,
+                                            docBp.baseAddress!,
+                                            recipBp.baseAddress!,
+                                            signingKeyId,
+                                            signerHandle,
+                                            outBp.baseAddress!,
+                                            &documentJsonPtr
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
+            guard let jsonPtr = documentJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "document_transfer returned no canonical document JSON"
+                )
+            }
+            let canonicalJSON = String(cString: jsonPtr)
+            return (Data(documentIdBytes), canonicalJSON)
+        }.value
+    }
+
+    /// Set (update) the trade price of `documentId` on `contractId`'s
+    /// `documentType` to `price` credits, owned by `ownerIdentityId`,
+    /// signed with the explicit AUTHENTICATION + ECDSA key
+    /// `signingKeyId`. Returns the 32-byte document id and the confirmed
+    /// document's canonical JSON (now carrying `$price`) once Platform
+    /// confirms the transition.
+    ///
+    /// Sibling to `createDocument`. Routes through
+    /// `IdentityWallet::set_document_price_with_signer` (via
+    /// `platform_wallet_document_set_price`). Only valid for a document
+    /// type whose schema enables a trade mode; the caller gates the
+    /// action against that flag.
+    public func setDocumentPrice(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        documentId: Identifier,
+        price: UInt64,
+        signingKeyId: UInt32,
+        signer: KeychainSigner
+    ) async throws -> (Identifier, String) {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+            var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
+
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            documentBytes.withUnsafeBufferPointer { docBp -> PlatformWalletFFIResult in
+                                documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                    platform_wallet_document_set_price(
+                                        handle,
+                                        ownerBp.baseAddress!,
+                                        contractBp.baseAddress!,
+                                        typePtr,
+                                        docBp.baseAddress!,
+                                        price,
+                                        signingKeyId,
+                                        signerHandle,
+                                        outBp.baseAddress!,
+                                        &documentJsonPtr
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
+            guard let jsonPtr = documentJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "document_set_price returned no canonical document JSON"
+                )
+            }
+            let canonicalJSON = String(cString: jsonPtr)
+            return (Data(documentIdBytes), canonicalJSON)
+        }.value
+    }
+
+    /// Purchase + broadcast for-sale `documentId` on `contractId`'s
+    /// `documentType` for `price` credits, with `purchaserId` as the
+    /// buyer (and new owner), signed with the explicit AUTHENTICATION +
+    /// ECDSA key `signingKeyId` resolved on the purchaser. Returns the
+    /// 32-byte document id and the confirmed document's canonical JSON
+    /// (now owned by the purchaser) once Platform confirms the
+    /// transition.
+    ///
+    /// Sibling to `createDocument`. Routes through
+    /// `IdentityWallet::purchase_document_with_signer` (via
+    /// `platform_wallet_document_purchase`). Consensus rejects a
+    /// purchase where the buyer is the current owner — the caller's UI
+    /// gates against that self-buy case.
+    public func purchaseDocument(
+        purchaserId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        documentId: Identifier,
+        price: UInt64,
+        signingKeyId: UInt32,
+        signer: KeychainSigner
+    ) async throws -> (Identifier, String) {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let purchaserBytes: [UInt8] = purchaserId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+            var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
+
+            let result = withExtendedLifetime(signer) {
+                purchaserBytes.withUnsafeBufferPointer { purchaserBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            documentBytes.withUnsafeBufferPointer { docBp -> PlatformWalletFFIResult in
+                                documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                    platform_wallet_document_purchase(
+                                        handle,
+                                        purchaserBp.baseAddress!,
+                                        contractBp.baseAddress!,
+                                        typePtr,
+                                        docBp.baseAddress!,
+                                        price,
+                                        signingKeyId,
+                                        signerHandle,
+                                        outBp.baseAddress!,
+                                        &documentJsonPtr
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
+            guard let jsonPtr = documentJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "document_purchase returned no canonical document JSON"
+                )
+            }
+            let canonicalJSON = String(cString: jsonPtr)
+            return (Data(documentIdBytes), canonicalJSON)
+        }.value
+    }
+
     /// Run `body` with a NUL-terminated C string for `value`, or
     /// `nil` when `value` is nil. Mirrors the `withCString`
     /// pattern but terminates the chain when the optional is

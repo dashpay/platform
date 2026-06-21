@@ -695,6 +695,13 @@ mod tests {
             .await
             .expect("wallet creation");
         let wallet_id = wallet.wallet_id();
+        // Creation downgrades the wallet to external-signable; re-attach the
+        // seed so private-key paths (DashPay contact-xpub derivation) work,
+        // mirroring the app's post-restore keychain unlock.
+        manager
+            .attach_wallet_seed(wallet_id, &seed)
+            .await
+            .expect("attach seed");
         (manager, wallet_id)
     }
 
@@ -724,6 +731,13 @@ mod tests {
             .await
             .expect("wallet creation");
         let wallet_id = wallet.wallet_id();
+        // Creation downgrades the wallet to external-signable; re-attach the
+        // seed so private-key paths (DashPay contact-xpub derivation) work,
+        // mirroring the app's post-restore keychain unlock.
+        manager
+            .attach_wallet_seed(wallet_id, &seed)
+            .await
+            .expect("attach seed");
         (manager, persister, wallet_id)
     }
 

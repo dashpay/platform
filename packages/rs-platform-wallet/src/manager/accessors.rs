@@ -257,7 +257,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 
     /// Clone the `Arc<SpvRuntime>` so callers (e.g. FFI) can invoke
-    /// [`SpvRuntime::spawn_in_background`] which takes `&Arc<Self>`.
+    /// [`SpvRuntime::spawn_run_loop`] which takes `&Arc<Self>`.
     pub fn spv_arc(&self) -> Arc<SpvRuntime> {
         Arc::clone(&self.spv_manager)
     }
