@@ -429,6 +429,43 @@ struct DashpayProfileStorageListView: View {
     }
 }
 
+// MARK: - PersistentDashpayContactProfile
+
+/// Storage-explorer list of every cached contact profile (a counterparty's
+/// DashPay profile). One row per (owner, contact). Newest update first.
+struct DashpayContactProfileStorageListView: View {
+    let network: Network
+    @Query(sort: \PersistentDashpayContactProfile.lastUpdated, order: .reverse)
+    private var records: [PersistentDashpayContactProfile]
+
+    private var filtered: [PersistentDashpayContactProfile] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
+    var body: some View {
+        let visible = filtered
+        List(visible) { record in
+            NavigationLink(destination: DashpayContactProfileStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.displayName ?? "(no display name)")
+                        .font(.body).lineLimit(1)
+                    Text(record.contactIdentityId.toHexString())
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("Contact Profiles (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView("No Records", systemImage: "person.crop.circle")
+            }
+        }
+    }
+}
+
 // MARK: - PersistentDashpayContactRequest
 
 /// Storage-explorer list of every DashPay contact-request row.

@@ -246,6 +246,54 @@ struct DashpayProfileStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentDashpayContactProfile
+
+/// Detail view for one cached contact profile — a counterparty's DashPay
+/// profile as seen by an owner identity. One row per (owner, contact).
+/// Optional fields render as "—" when nil so partial profiles stay visible.
+struct DashpayContactProfileStorageDetailView: View {
+    let record: PersistentDashpayContactProfile
+
+    var body: some View {
+        Form {
+            Section("Core") {
+                FieldRow(label: "Display Name", value: record.displayName ?? "—")
+                FieldRow(label: "Public Message", value: record.publicMessage ?? "—")
+                FieldRow(label: "Bio", value: record.bio ?? "—")
+                FieldRow(label: "Network", value: record.network.displayName)
+            }
+            Section("Avatar") {
+                FieldRow(label: "URL", value: record.avatarUrl ?? "—")
+                FieldRow(
+                    label: "Hash (32 B)",
+                    value: record.avatarHash.map { hexString($0) } ?? "—"
+                )
+                FieldRow(
+                    label: "Fingerprint (8 B)",
+                    value: record.avatarFingerprint.map { hexString($0) } ?? "—"
+                )
+            }
+            Section("Relationships") {
+                NavigationLink(destination: IdentityStorageDetailView(record: record.owner)) {
+                    FieldRow(
+                        label: "Owner Identity",
+                        value: record.owner.identityIdBase58
+                    )
+                }
+                FieldRow(label: "Owner ID (Hex)", value: hexString(record.ownerIdentityId))
+                FieldRow(label: "Contact ID (Hex)", value: hexString(record.contactIdentityId))
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Checked At (ms)", value: String(record.checkedAtMs))
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Contact Profile")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentDashpayPayment
 
 /// Detail view for one DashPay payment-history row. Read-only dump
