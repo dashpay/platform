@@ -196,14 +196,15 @@ pub unsafe extern "C" fn platform_address_wallet_withdraw_to_address(
 ///
 /// A genuine **"can't fund"** outcome — the account is all dust
 /// (`OnlyDustInputs`), the largest input can't keep the per-input minimum after
-/// the fee, the net falls below the minimum withdrawal amount, or there are no
-/// funded addresses (`AddressOperation`) — is NOT an FFI error: `out` is
-/// written with `can_withdraw = false` (and zeroed figures) and the call still
-/// returns a **Success-coded** [`PlatformWalletFFIResult`] whose `message`
-/// carries the planner's typed `Display` reason (so a caller that wants a
-/// human-readable explanation can read it without mirroring protocol constants
-/// in Swift). The authoritative signal is `can_withdraw`; the message is
-/// advisory.
+/// the fee, the net falls below the minimum withdrawal amount, more funded
+/// addresses than the protocol's `max_address_inputs` clear the minimum, the
+/// net exceeds `max_withdrawal_amount`, or there are no funded addresses
+/// (`AddressOperation`) — is NOT an FFI error: `out` is written with
+/// `can_withdraw = false` (and zeroed figures) and the call still returns a
+/// **Success-coded** [`PlatformWalletFFIResult`] whose `message` carries the
+/// planner's typed `Display` reason (so a caller that wants a human-readable
+/// explanation can read it without mirroring protocol constants in Swift). The
+/// authoritative signal is `can_withdraw`; the message is advisory.
 ///
 /// Only a **structural** failure — a bad/destroyed handle, or a missing
 /// account at `account_index` (`WalletNotFound` / `AddressSync`) — is reported
@@ -242,9 +243,10 @@ pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal(
         //
         // `OnlyDustInputs` (every funded address below `min_input_amount`) and
         // `AddressOperation` (the fee / per-input / min-withdrawal headroom
-        // failures inside `reserve_withdrawal_fee_on_largest_input`, plus the
-        // "no funded addresses" case in `select_withdrawable_inputs`) are all
-        // genuine can't-fund states.
+        // failures, the too-many-inputs and above-max-withdrawal gates inside
+        // `reserve_withdrawal_fee_on_largest_input`, plus the "no funded
+        // addresses" case in `select_withdrawable_inputs`) are all genuine
+        // can't-fund states.
         Err(
             e @ (PlatformWalletError::OnlyDustInputs { .. }
             | PlatformWalletError::AddressOperation(_)),

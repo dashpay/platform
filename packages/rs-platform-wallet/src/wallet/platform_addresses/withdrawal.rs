@@ -6,7 +6,6 @@ use dpp::identity::core_script::CoreScript;
 use dpp::identity::signer::Signer;
 use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
 use dpp::version::PlatformVersion;
-use dpp::version::LATEST_PLATFORM_VERSION;
 use dpp::withdrawal::Pooling;
 use key_wallet::PlatformP2PKHAddress;
 
@@ -62,8 +61,11 @@ impl PlatformAddressWallet {
     /// Input addresses can be specified explicitly or selected automatically
     /// from the account via [`InputSelection::Auto`].
     ///
-    /// If `platform_version` is `None`, the latest platform version's fee
-    /// schedule is used for fee estimation during auto-selection.
+    /// If `platform_version` is `None`, the wallet's SDK version
+    /// (`self.sdk.version()`) is used for fee estimation and every
+    /// version-keyed limit during auto-selection — the same source the UI
+    /// preflight reads, so the gate and the spend path never diverge on a
+    /// non-latest-pinned SDK. An explicit `Some(v)` is honored as given.
     ///
     /// `address_signer` produces ECDSA signatures for the input
     /// [`PlatformAddress`]es; the wallet struct carries no key material
@@ -87,7 +89,18 @@ impl PlatformAddressWallet {
             ));
         }
 
-        let version = platform_version.unwrap_or(LATEST_PLATFORM_VERSION);
+        // Single source of truth for the planning version: when the caller
+        // pins an explicit `Some(v)` we honor it, but the default is the
+        // wallet's SDK version (`self.sdk.version()`) — NOT
+        // `LATEST_PLATFORM_VERSION`. This is the same network-floored,
+        // protocol-version-tracking accessor that `preflight_withdrawal`,
+        // `min_input_amount`, and `min_output_amount` read, so the preflight
+        // gate and this spend path size every version-keyed value
+        // (min_input_amount, min_withdrawal_amount, max_address_inputs,
+        // max_withdrawal_amount, and `estimate_min_fee`) against the SAME
+        // version. Defaulting to LATEST here would let the gate and the spend
+        // path diverge on a non-latest-pinned SDK.
+        let version = platform_version.unwrap_or_else(|| self.sdk.version());
 
         let address_infos = match input_selection {
             InputSelection::Explicit(inputs) => {
@@ -430,15 +443,50 @@ where
 /// when a much larger peer trivially could. We therefore locate the largest
 /// input, then emit `DeductFromInput(<its position in BTreeMap order>)`.
 ///
+/// Also enforces the two DPP structure limits the auto path could otherwise
+/// trip after signing, so the preflight gate, this spend path, and the DPP
+/// validator stay in lockstep: the selected input count must not exceed
+/// `platform_version.dpp.state_transitions.max_address_inputs`
+/// (`TransitionOverMaxInputsError`), and the net withdrawal must not exceed
+/// `platform_version.system_limits.max_withdrawal_amount`
+/// (`WithdrawalBelowMinAmountError`, the range error). Both surface as typed
+/// "can't fund" errors with consolidate/split guidance rather than auto-capping
+/// (which would change the "withdraw the full withdrawable balance" semantics).
+///
 /// Returns a [`WithdrawalPlan`] carrying the adjusted withdraw-amount map, the
 /// fee strategy targeting the fee-source input, and the `net_withdrawable` /
 /// `estimated_fee` figures; or a typed [`PlatformWalletError::AddressOperation`]
-/// when no input can absorb the fee while respecting the per-input minimum /
-/// minimum withdrawal amount.
+/// when no input can absorb the fee while respecting the per-input minimum, the
+/// net falls below the minimum withdrawal amount, there are too many inputs, or
+/// the net exceeds the maximum withdrawal amount.
 fn reserve_withdrawal_fee_on_largest_input(
     mut selected: BTreeMap<PlatformAddress, Credits>,
     platform_version: &PlatformVersion,
 ) -> Result<WithdrawalPlan, PlatformWalletError> {
+    // DPP's `AddressCreditWithdrawalTransition` v0 validator rejects the whole
+    // transition when `inputs.len() > max_address_inputs` (16 on v2/v3) with
+    // `TransitionOverMaxInputsError` — see `validate_structure` in
+    // `address_credit_withdrawal_transition/v0/state_transition_validation.rs`.
+    // The auto path uses exactly one input per selected withdrawable address,
+    // so an account with more than `max_address_inputs` funded (≥ min_input)
+    // addresses would otherwise preflight as withdrawable, sign, then
+    // deterministically fail structure validation. Gate it here so the
+    // preflight reports `can_withdraw = false` with an actionable
+    // "too many inputs — consolidate" reason BEFORE signing. We ERROR rather
+    // than silently dropping inputs down to the cap: capping would change the
+    // "withdraw the full withdrawable balance" semantics and is a product
+    // decision out of scope.
+    let max_address_inputs = platform_version.dpp.state_transitions.max_address_inputs as usize;
+    if selected.len() > max_address_inputs {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Too many funded addresses to withdraw at once: {} addresses clear the \
+             per-input minimum but the protocol allows at most {} inputs per \
+             withdrawal. Consolidate funds onto fewer addresses, then withdraw.",
+            selected.len(),
+            max_address_inputs
+        )));
+    }
+
     let accumulated: Credits = selected
         .values()
         .copied()
@@ -474,6 +522,15 @@ fn reserve_withdrawal_fee_on_largest_input(
         .address_funds
         .min_input_amount;
     let min_withdrawal_amount = platform_version.system_limits.min_withdrawal_amount;
+    // DPP rejects `withdrawal_amount > max_withdrawal_amount` (50_000_000_000_000
+    // = 500 DASH on v1/v2 system_limits) with `WithdrawalBelowMinAmountError`
+    // (the range error carries both bounds) — see `validate_structure` in
+    // `address_credit_withdrawal_transition/v0/state_transition_validation.rs`.
+    // The auto path withdraws the full withdrawable balance, so an account whose
+    // aggregate-minus-fee exceeds the maximum would otherwise preflight as
+    // withdrawable, sign, then fail structure validation. Fold the max into the
+    // same range check as the min below.
+    let max_withdrawal_amount = platform_version.system_limits.max_withdrawal_amount;
 
     let withdraw_total = accumulated.saturating_sub(estimated_fee);
     if accumulated <= estimated_fee || withdraw_total < min_withdrawal_amount {
@@ -481,6 +538,18 @@ fn reserve_withdrawal_fee_on_largest_input(
             "Insufficient balance for withdrawal fee: available {} credits, \
              estimated fee {}, leaving {} below the minimum withdrawal amount {}",
             accumulated, estimated_fee, withdraw_total, min_withdrawal_amount
+        )));
+    }
+    if withdraw_total > max_withdrawal_amount {
+        // ERROR rather than auto-cap: capping would change the "withdraw the
+        // full withdrawable balance" semantics and is a product decision out
+        // of scope. A clear "exceeds the maximum — split it up" message
+        // matches the validator and tells the user what to do.
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Withdrawal amount {} exceeds the maximum single withdrawal of {} \
+             credits. Withdraw to fewer addresses at a time, or split the \
+             withdrawal into multiple transactions.",
+            withdraw_total, max_withdrawal_amount
         )));
     }
 
@@ -826,6 +895,78 @@ mod tests {
             matches!(err, PlatformWalletError::AddressOperation(_)),
             "can't-fund must be a typed error the FFI maps to can_withdraw = false"
         );
+    }
+
+    /// More than `max_address_inputs` funded (≥ min_input) addresses must NOT
+    /// preflight as withdrawable: DPP's v0 validator rejects the whole
+    /// transition with `TransitionOverMaxInputsError` once `inputs.len()`
+    /// exceeds the cap. The auto path uses one input per selected address, so
+    /// the planner must surface this as a typed "can't fund — too many inputs"
+    /// error (mapped to `can_withdraw = false` by the FFI) rather than shipping
+    /// a guaranteed-rejected transition. We size each input well above
+    /// `min_input_amount + fee` so neither the per-input headroom nor the
+    /// aggregate gates fire — isolating the input-count cap as the only failure.
+    #[test]
+    fn plan_more_than_max_inputs_cant_fund() {
+        let pv = PlatformVersion::latest();
+        let max_inputs = pv.dpp.state_transitions.max_address_inputs as usize;
+        // One input per address, one more than the cap. Each input is large
+        // enough that the only thing wrong is the count.
+        let per_input = dpp::dash_to_credits!(1.0);
+
+        let mut inputs = BTreeMap::new();
+        for i in 0..=max_inputs {
+            // Distinct addresses via the leading two bytes; max_inputs is 16 on
+            // the real versions, so a u8 first byte is plenty.
+            let mut bytes = [0u8; 20];
+            bytes[0] = i as u8;
+            inputs.insert(PlatformAddress::P2pkh(bytes), per_input);
+        }
+        assert_eq!(
+            inputs.len(),
+            max_inputs + 1,
+            "test setup: must hold one more input than the cap"
+        );
+
+        let err = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+            .expect_err("more than max_address_inputs funded inputs cannot withdraw at once");
+        match err {
+            PlatformWalletError::AddressOperation(msg) => assert!(
+                msg.contains("at most") && msg.contains("inputs"),
+                "expected a too-many-inputs message, got: {msg}"
+            ),
+            other => panic!("expected AddressOperation too-many-inputs, got {other:?}"),
+        }
+    }
+
+    /// A withdrawal whose net (aggregate − fee) exceeds
+    /// `system_limits.max_withdrawal_amount` (500 DASH) must NOT preflight as
+    /// withdrawable: DPP's v0 validator rejects the transition with the
+    /// `WithdrawalBelowMinAmountError` range error once
+    /// `withdrawal_amount > max_withdrawal_amount`. A single input keeps the
+    /// input-count gate trivially satisfied, isolating the max-amount check.
+    #[test]
+    fn plan_aggregate_above_max_withdrawal_cant_fund() {
+        let pv = PlatformVersion::latest();
+        let fee = estimated_fee(1, pv);
+        let max_withdrawal = pv.system_limits.max_withdrawal_amount;
+
+        // Net = balance − fee = max_withdrawal + 1, i.e. one credit over the
+        // maximum while a single input keeps the count gate satisfied.
+        let balance = fee + max_withdrawal + 1;
+
+        let mut inputs = BTreeMap::new();
+        inputs.insert(addr(7), balance);
+
+        let err = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+            .expect_err("a net above the maximum withdrawal cannot be withdrawn in one go");
+        match err {
+            PlatformWalletError::AddressOperation(msg) => assert!(
+                msg.contains("exceeds the maximum"),
+                "expected an exceeds-maximum message, got: {msg}"
+            ),
+            other => panic!("expected AddressOperation exceeds-maximum, got {other:?}"),
+        }
     }
 
     /// AUTO selection must drop sub-`min_input_amount` dust: the chain rejects

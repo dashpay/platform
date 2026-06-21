@@ -289,8 +289,9 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     public struct WithdrawalPreflight: Sendable {
         /// `true` when the account can fund an AUTO withdrawal at the current
         /// platform version; `false` for any "can't fund" case (dust-only,
-        /// largest input can't cover the fee, or net below the minimum
-        /// withdrawal). The numeric fields are `0` when `false`.
+        /// largest input can't cover the fee, net below the minimum
+        /// withdrawal, too many inputs, or net above the maximum withdrawal).
+        /// The numeric fields are `0` when `false`.
         public let canWithdraw: Bool
         /// Net credits the chain would pay out (`Σ withdrawable inputs −
         /// estimatedFee`). `0` when `canWithdraw == false`.
@@ -298,6 +299,14 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         /// The address-credit-withdrawal transition fee reserved on the
         /// fee-source input. `0` when `canWithdraw == false`.
         public let estimatedFee: UInt64
+        /// The Rust planner's user-presentable explanation of *why* the account
+        /// can't fund a withdrawal, surfaced verbatim from the FFI result
+        /// message (`PlatformWalletError`'s `Display`). `nil` when
+        /// `canWithdraw == true`. This is the single source of the can't-fund
+        /// reason — the UI must show it rather than re-deriving a
+        /// classification in Swift (which would mean mirroring protocol
+        /// decisions on the wrong side of the FFI boundary).
+        public let reason: String?
     }
 
     /// Preflight an AUTO withdrawal of a platform-payment account WITHOUT
@@ -335,16 +344,31 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
             net_withdrawable: 0,
             estimated_fee: 0
         )
-        try platform_address_wallet_preflight_withdrawal(
-            handle,
-            accountIndex,
-            coreFeePerByte,
-            &out
-        ).check()
+        // Both the can-withdraw and the can't-fund outcomes return a
+        // Success-coded result; only a structural failure (bad handle / missing
+        // account) is an error code. The can't-fund result carries the Rust
+        // planner's typed reason in its `message`, which we surface verbatim as
+        // `reason`. We construct the result wrapper explicitly (rather than
+        // `.check()`) so we can read `.message` BEFORE the wrapper deinits and
+        // frees the underlying C string; `throwIfError()` still throws on the
+        // structural-failure codes.
+        let result = PlatformWalletResult(
+            platform_address_wallet_preflight_withdrawal(
+                handle,
+                accountIndex,
+                coreFeePerByte,
+                &out
+            )
+        )
+        try result.throwIfError()
+        // Read the message while the wrapper is still alive; only attach it as
+        // the can't-fund reason (a `canWithdraw == true` result has no reason).
+        let reason = out.can_withdraw ? nil : result.message
         return WithdrawalPreflight(
             canWithdraw: out.can_withdraw,
             netWithdrawable: out.net_withdrawable,
-            estimatedFee: out.estimated_fee
+            estimatedFee: out.estimated_fee,
+            reason: reason
         )
     }
 

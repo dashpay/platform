@@ -505,21 +505,17 @@ struct WithdrawPlatformAddressView: View {
     /// `nil` when the preflight is unresolved or the account CAN withdraw. Used
     /// only for display; the authoritative gate is `preflight?.canWithdraw`.
     ///
-    /// Distinguishes the two actionable cases so the user knows what to do:
-    /// a purely-dust account (every balance below the per-input minimum) needs
-    /// funds consolidated, while a small non-dust account simply can't cover
-    /// the fee / minimum withdrawal. We classify from the dust-filtered
-    /// `selectedSourceAccountCredits` (0 ⇒ dust-only or empty) rather than
-    /// re-deriving protocol constants in Swift.
+    /// The reason is the Rust planner's own message, surfaced verbatim through
+    /// `WithdrawalPreflight.reason`. The planner is the single source of the
+    /// can't-fund classification (dust-only, fee/minimum headroom, too many
+    /// inputs, or above the maximum withdrawal); Swift must NOT re-derive it
+    /// from balances, which would mean mirroring protocol decisions on the
+    /// wrong side of the FFI boundary. The generic fallback covers only the
+    /// unexpected case where a `canWithdraw == false` result arrives without a
+    /// message.
     private var cantWithdrawReason: String? {
         guard let preflight, !preflight.canWithdraw else { return nil }
-        if selectedSourceAccountCredits == 0 {
-            return "This account has no withdrawable balance — its funds are "
-                + "below the per-input minimum. Consolidate funds onto fewer "
-                + "addresses and try again."
-        }
-        return "This account's balance can't cover the withdrawal fee and the "
-            + "minimum withdrawal amount. Add more funds and try again."
+        return preflight.reason ?? "This account can't fund a withdrawal right now."
     }
 
     // MARK: - Actions
