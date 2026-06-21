@@ -74,7 +74,7 @@ impl IdentityKeyWire {
             public_key_hash: self.public_key_hash,
             wallet_id: self.wallet_id,
             derivation_indices: self.derivation_indices,
-            // The on-disk wire shape never carries the secret — a row read
+            // The on-disk wire shape never carries key material — a row read
             // back from storage is always watch-only at the changeset level
             // (the materialized scalar lives only in the client keychain).
             private_key: None,
@@ -189,15 +189,15 @@ mod tests {
         );
     }
 
-    /// The on-disk wire shape must never carry the private scalar. An
-    /// `IdentityKeyEntry` that holds a verified secret is transcribed
-    /// field-by-field into `IdentityKeyWire` (which has no secret field by
+    /// The on-disk wire shape must never carry the signing scalar. An
+    /// `IdentityKeyEntry` that holds a live scalar is transcribed
+    /// field-by-field into `IdentityKeyWire` (which has no scalar field by
     /// construction), so a `from_entry` → `into_entry` round-trip drops the
-    /// secret to `None`. Pins the "no secret at rest outside the keychain"
-    /// guarantee so a future "serialize the whole entry straight to the
-    /// blob" refactor can't start persisting it unnoticed.
+    /// scalar to `None`. Pins the "no key material at rest outside the
+    /// keychain" guarantee so a future "serialize the whole entry straight
+    /// to the blob" refactor can't start persisting it unnoticed.
     #[test]
-    fn wire_round_trip_drops_private_key_secret() {
+    fn wire_round_trip_drops_signing_scalar() {
         let pk = IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id: 0,
             purpose: Purpose::AUTHENTICATION,
@@ -218,7 +218,7 @@ mod tests {
                 identity_index: 1,
                 key_index: 2,
             }),
-            // A live secret on the in-memory entry.
+            // A live scalar on the in-memory entry.
             private_key: Some(zeroize::Zeroizing::new([0xC7; 32])),
         };
 
@@ -227,9 +227,9 @@ mod tests {
 
         assert!(
             restored.private_key.is_none(),
-            "the wire round-trip must drop the private scalar"
+            "the wire round-trip must drop the signing scalar"
         );
-        // The non-secret breadcrumb still survives the round-trip.
+        // The breadcrumb metadata still survives the round-trip.
         assert_eq!(restored.wallet_id, entry.wallet_id);
         assert_eq!(restored.derivation_indices, entry.derivation_indices);
     }
