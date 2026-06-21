@@ -138,7 +138,11 @@ impl PlatformAddressWallet {
     ///
     /// Input addresses can be specified explicitly or selected automatically
     /// from the account via [`InputSelection::Auto`]. When `platform_version`
-    /// is `None`, [`LATEST_PLATFORM_VERSION`] drives fee estimation.
+    /// is `None`, the wallet's SDK version (`self.sdk.version()`) drives fee
+    /// estimation and every version-keyed limit (`min_input_amount`,
+    /// `max_address_inputs`) during auto-selection — the same source the UI
+    /// preflight reads, so the submit gate and the spend path never diverge on
+    /// a non-latest-pinned SDK. An explicit `Some(v)` is honored as given.
     ///
     /// `address_signer` produces ECDSA signatures for the input
     /// [`PlatformAddress`]es; the wallet itself holds no key material —
@@ -198,7 +202,17 @@ impl PlatformAddressWallet {
             ));
         }
 
-        let version = platform_version.unwrap_or(LATEST_PLATFORM_VERSION);
+        // Single source of truth for the planning version: when the caller
+        // pins an explicit `Some(v)` we honor it, but the default is the
+        // wallet's SDK version (`self.sdk.version()`) — NOT
+        // `LATEST_PLATFORM_VERSION`. This is the same network-floored,
+        // protocol-version-tracking accessor that the UI preflight and the
+        // `min_input_amount` / `min_output_amount` getters read, so the submit
+        // gate and this spend path size every version-keyed value
+        // (`min_input_amount`, `max_address_inputs`, and `estimate_min_fee`)
+        // against the SAME version. Defaulting to LATEST here would let the
+        // gate and the spend path diverge on a non-latest-pinned SDK.
+        let version = platform_version.unwrap_or_else(|| self.sdk.version());
 
         let address_infos = match input_selection {
             InputSelection::Explicit(inputs) => {
@@ -547,27 +561,38 @@ impl PlatformAddressWallet {
             }
         }
 
-        match fee_strategy {
+        let selected = match fee_strategy {
             [AddressFundsFeeStrategyStep::DeductFromInput(0)] => select_inputs_deduct_from_input(
                 candidates,
                 outputs,
                 total_output,
                 fee_strategy,
                 platform_version,
-            ),
+            )?,
             [AddressFundsFeeStrategyStep::ReduceOutput(0)] => select_inputs_reduce_output(
                 candidates,
                 outputs,
                 total_output,
                 fee_strategy,
                 platform_version,
-            ),
-            _ => Err(PlatformWalletError::AddressOperation(
-                "auto_select_inputs supports fee_strategy = [DeductFromInput(0)] \
-                 or [ReduceOutput(0)]; other shapes must use InputSelection::Explicit"
-                    .to_string(),
-            )),
-        }
+            )?,
+            _ => {
+                return Err(PlatformWalletError::AddressOperation(
+                    "auto_select_inputs supports fee_strategy = [DeductFromInput(0)] \
+                     or [ReduceOutput(0)]; other shapes must use InputSelection::Explicit"
+                        .to_string(),
+                ))
+            }
+        };
+
+        // Gate the FINAL selected set against the DPP per-transition input cap.
+        // This is the single chokepoint reached after BOTH the
+        // `[DeductFromInput(0)]` and `[ReduceOutput(0)]` selectors, where
+        // `selected.len()` equals the input count `transfer` will sign — so the
+        // cap is enforced for every Auto fee-strategy shape.
+        enforce_max_address_inputs(&selected, platform_version)?;
+
+        Ok(selected)
     }
 
     /// Simulate the fee strategy to determine how much additional balance
@@ -679,6 +704,39 @@ where
         .collect();
     candidates.sort_by(|a, b| b.1.cmp(&a.1));
     candidates
+}
+
+/// Enforce DPP's per-transition input cap on the FINAL Auto-selected input set.
+///
+/// DPP's `AddressFundsTransferTransition` v0 validator rejects the whole
+/// transition when `inputs.len() > max_address_inputs` (16 on v2/v3) with
+/// `TransitionOverMaxInputsError` — see `validate_structure` in
+/// `address_funds/address_funds_transfer_transition/v0/state_transition_validation.rs`.
+/// The Auto path produces exactly one input per selected address (the same map
+/// `transfer` then signs), so an account whose covering prefix exceeds
+/// `max_address_inputs` funded (≥ min_input) addresses would otherwise pass the
+/// submit gate, sign, then deterministically fail structure validation.
+///
+/// We ERROR rather than auto-cap: capping would change the "cover the requested
+/// output" contract (it would silently fund less than the caller asked for) and
+/// is a product decision out of scope. The typed `AddressOperation` carries
+/// consolidate/smaller-amount guidance, mirroring the withdrawal planner's
+/// `reserve_withdrawal_fee_on_largest_input` input-count cap.
+fn enforce_max_address_inputs(
+    selected: &BTreeMap<PlatformAddress, Credits>,
+    platform_version: &PlatformVersion,
+) -> Result<(), PlatformWalletError> {
+    let max_address_inputs = platform_version.dpp.state_transitions.max_address_inputs as usize;
+    if selected.len() > max_address_inputs {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Too many funded addresses to cover this transfer at once: {} addresses are \
+             needed but the protocol allows at most {} inputs per transfer. Consolidate \
+             funds onto fewer addresses, or send a smaller amount.",
+            selected.len(),
+            max_address_inputs
+        )));
+    }
+    Ok(())
 }
 
 /// Classify why no candidate survived the filter. Returns `None` when no
@@ -1530,6 +1588,53 @@ mod auto_select_tests {
             select_inputs_deduct_from_input(Vec::new(), &outputs, 1_000_000, &fee_strategy, pv)
                 .expect_err("expected error for empty candidates");
         assert!(matches!(err, PlatformWalletError::AddressOperation(_)));
+    }
+
+    /// A covering input set larger than `max_address_inputs` must NOT be
+    /// shippable: DPP's v0 validator rejects the whole transition with
+    /// `TransitionOverMaxInputsError` once `inputs.len()` exceeds the cap. The
+    /// Auto path uses one input per selected address, so the
+    /// `enforce_max_address_inputs` gate (called in `auto_select_inputs` after
+    /// the selector returns) must surface this as a typed "too many inputs"
+    /// error rather than letting `transfer` sign a guaranteed-rejected
+    /// transition. Mirrors withdrawal's `plan_more_than_max_inputs_cant_fund`.
+    /// We build the final selected map directly (one input per address, one
+    /// more than the cap) since the gate operates on the post-selection set.
+    #[test]
+    fn auto_select_more_than_max_inputs_cant_fund() {
+        let pv = LATEST_PLATFORM_VERSION;
+        let max_inputs = pv.dpp.state_transitions.max_address_inputs as usize;
+
+        // One input per address, one more than the cap. The amounts are
+        // irrelevant to the count cap — only `selected.len()` matters.
+        let mut selected: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+        for i in 0..=max_inputs {
+            selected.insert(p2pkh(i as u8), 1_000_000u64);
+        }
+        assert_eq!(
+            selected.len(),
+            max_inputs + 1,
+            "test setup: must hold one more input than the cap"
+        );
+
+        let err = enforce_max_address_inputs(&selected, pv)
+            .expect_err("more than max_address_inputs selected inputs must not be fundable");
+        match err {
+            PlatformWalletError::AddressOperation(msg) => assert!(
+                msg.contains("at most") && msg.contains("inputs"),
+                "expected a too-many-inputs message, got: {msg}"
+            ),
+            other => panic!("expected AddressOperation too-many-inputs, got {other:?}"),
+        }
+
+        // Exactly at the cap must pass the gate (boundary check).
+        let mut at_cap: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+        for i in 0..max_inputs {
+            at_cap.insert(p2pkh(i as u8), 1_000_000u64);
+        }
+        assert_eq!(at_cap.len(), max_inputs);
+        enforce_max_address_inputs(&at_cap, pv)
+            .expect("an input set exactly at the cap must be allowed");
     }
 
     /// `total_output < min_input_amount` is unsatisfiable. The selector must

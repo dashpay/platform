@@ -406,14 +406,32 @@ struct TransferPlatformAddressView: View {
         return platformAccountOptions.first(where: { $0.accountIndex == idx })?.totalCredits ?? 0
     }
 
-    /// Funded addresses on the selected source account for this wallet.
-    /// The Rust Auto selector picks its inputs from these (balance > 0),
-    /// and the `AddressFundsTransferTransition` protocol forbids any
-    /// output address from also being an input. The selector excludes
-    /// recipient addresses from its input set, so a recipient that
-    /// collides with a funded source input would enable the button here,
-    /// then come up short Rust-side once that input is excluded. Gate on
-    /// this set so the collision is caught up front.
+    /// Funded addresses on the selected source account for this wallet that
+    /// the Rust Auto selector could actually consume as inputs.
+    /// The `AddressFundsTransferTransition` protocol forbids any output
+    /// address from also being an input, and the selector excludes recipient
+    /// addresses from its input set, so a recipient that collides with a real
+    /// source input would enable the button here, then come up short Rust-side
+    /// once that input is excluded. Gate on this set so the collision is caught
+    /// up front.
+    ///
+    /// Floors on `min_input_amount`, NOT `balance > 0`: Rust's Auto selector
+    /// only treats an address as a candidate input when its balance reaches
+    /// `min_input_amount` (`build_auto_select_candidates` drops everything
+    /// below it). A dust source-account address is therefore NOT an input, so
+    /// sending TO it is structurally fine — excluding it on the old `> 0`
+    /// floor wrongly removed legitimate dust recipients from the picker and
+    /// rejected them as pasted externals. We use the same resolved
+    /// `minInputAmount` the spendable-total/submit gate reads so this set
+    /// matches the input set Rust will actually consume.
+    ///
+    /// When `minInputAmount` is unresolved (`nil`) we fall back to the prior
+    /// `balance > 0` floor: with an unknown per-input minimum we cannot tell
+    /// dust from a real input, so we conservatively treat every funded row as
+    /// a possible input rather than risk UNDER-excluding (and offering a real
+    /// input as a recipient). The submit gate is independently closed while
+    /// `minInputAmount == nil`, so this only affects which recipients the
+    /// picker offers.
     ///
     /// Scoped to DIP-17 platform-payment accounts at key class 0
     /// (`account?.accountType == 14 && account?.keyClass == 0`), matching
@@ -427,12 +445,22 @@ struct TransferPlatformAddressView: View {
     /// recipients on multi-account-type / multi-key-class wallets.
     private var sourceInputHashes: Set<Data> {
         guard let acctIdx = sourceAccountIndex else { return [] }
+        // Match Rust's candidate floor: an address is a possible input only
+        // when its balance reaches `min_input_amount`. With the floor
+        // unresolved, fall back to `> 0` so we never UNDER-exclude a real
+        // input (offering it as a recipient would let Rust come up short).
+        let isPossibleInput: (PersistentPlatformAddress) -> Bool = { addr in
+            if let floor = minInputAmount {
+                return addr.balance >= floor
+            }
+            return addr.balance > 0
+        }
         return Set(
             allPlatformAddresses
                 .filter {
                     $0.walletId == wallet.walletId
                         && $0.accountIndex == acctIdx
-                        && $0.balance > 0
+                        && isPossibleInput($0)
                         && $0.account?.accountType == 14
                         && $0.account?.keyClass == 0
                 }
