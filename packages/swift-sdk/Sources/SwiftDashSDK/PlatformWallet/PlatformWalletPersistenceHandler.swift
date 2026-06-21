@@ -3486,26 +3486,31 @@ public class PlatformWalletPersistenceHandler {
                     // saves) — acceptable for a user-initiated wipe.
                     //
                     // PHASE 1: delete every identity's cascade-children
-                    // whose inverse to identity is non-optional
-                    // (DPNS names, DashPay profile, DashPay contact
-                    // requests, DashPay payments, DashPay ignored
-                    // senders). PublicKey, Document, and
+                    // whose inverse to identity is non-optional (DPNS
+                    // names, DashPay profile, DashPay contact profiles,
+                    // DashPay contact requests, DashPay payments, DashPay
+                    // ignored senders). PublicKey, Document, and
                     // TokenBalance inverses to identity are already
                     // Optional and don't need pre-deletion.
                     //
-                    // Payments AND ignored-sender rows BOTH have a
-                    // non-optional `owner: PersistentIdentity`, so omitting
-                    // either makes PHASE 2's identity delete hit the exact
-                    // SwiftData fatal PHASE 1 exists to avoid — aborting the
-                    // wipe and leaving plaintext counterparty/memo/amount/txid
-                    // (payments) + privacy-relevant ignored-sender ids on
-                    // disk after a user-initiated wallet wipe.
+                    // Every one of these rows has a non-optional
+                    // `owner: PersistentIdentity`, so omitting any of them
+                    // makes PHASE 2's identity delete hit the SwiftData
+                    // fatal PHASE 1 exists to avoid — aborting the wipe and
+                    // leaving sender-controlled DashPay strings (contact
+                    // profile display name / public message / avatar URL),
+                    // plaintext counterparty/memo/amount/txid (payments),
+                    // and privacy-relevant ignored-sender ids on disk after
+                    // a user-initiated wallet wipe.
                     for identity in identitiesToDelete {
                         for name in Array(identity.dpnsNames) {
                             backgroundContext.delete(name)
                         }
                         if let profile = identity.dashpayProfile {
                             backgroundContext.delete(profile)
+                        }
+                        for contactProfile in Array(identity.contactProfiles) {
+                            backgroundContext.delete(contactProfile)
                         }
                         for cr in Array(identity.contactRequests) {
                             backgroundContext.delete(cr)
