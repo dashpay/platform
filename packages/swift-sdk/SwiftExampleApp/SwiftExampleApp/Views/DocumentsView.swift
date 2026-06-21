@@ -275,7 +275,10 @@ struct DocumentDetailView: View {
     private var availableActions: [DocumentAction] {
         var actions: [DocumentAction] = []
         let docType = documentTypeRow
-        let tradeable = (docType?.tradeMode ?? 0) > 0
+        // `tradeMode == 1` is DirectPurchase — the only mode that supports
+        // listing/buying — matching the marketplace gating in
+        // TransitionInputView (`$0.tradeMode == 1`).
+        let tradeable = (docType?.tradeMode ?? 0) == 1
 
         if ownerIsControlled {
             actions.append(.replace)
