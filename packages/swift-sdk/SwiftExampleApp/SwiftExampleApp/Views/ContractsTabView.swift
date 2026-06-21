@@ -32,6 +32,12 @@ import SwiftDashSDK
 struct ContractsTabView: View {
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var transitionState: TransitionState
+    /// Needed only to forward into the presented `DocumentsView` sheet
+    /// (which declares it as an `@EnvironmentObject`). Reading it in this
+    /// leaf tab view re-renders only `ContractsTabView`, not the parent
+    /// `TabView`, so it doesn't reintroduce the progress-tick churn the
+    /// `WalletManagerStore` indirection in `ContentView` guards against.
+    @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.modelContext) private var modelContext
 
     /// Active network the parent passed in. Drives both the
@@ -77,6 +83,10 @@ struct ContractsTabView: View {
 
     @State private var showingLoadContract = false
     @State private var showingRegisterContract = false
+    /// Drives the documents-browser sheet. `DocumentsView` wraps its own
+    /// `NavigationView`, so it's presented as a sheet (not pushed) to
+    /// avoid nesting navigation stacks.
+    @State private var showingDocuments = false
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var showError = false
@@ -154,6 +164,15 @@ struct ContractsTabView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingDocuments = true
+                    } label: {
+                        Image(systemName: "doc.text.magnifyingglass")
+                    }
+                    .accessibilityLabel("Browse Documents")
+                    .accessibilityIdentifier("contracts.browseDocuments")
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button {
                             showingLoadContract = true
@@ -180,6 +199,20 @@ struct ContractsTabView: View {
             .sheet(isPresented: $showingRegisterContract) {
                 RegisterContractSourceView()
                     .environmentObject(platformState)
+                    .environmentObject(transitionState)
+                    .environment(\.modelContext, modelContext)
+            }
+            .sheet(isPresented: $showingDocuments) {
+                // `DocumentsView` brings its own `NavigationView`, so it's
+                // presented as a sheet (never pushed). It declares
+                // `AppState`, `PlatformWalletManager`, and `TransitionState`
+                // as `@EnvironmentObject`s — forward all three explicitly
+                // like the sibling sheets above. The SwiftData
+                // `modelContext` is inherited through the sheet, but pin it
+                // explicitly to match the surrounding pattern.
+                DocumentsView()
+                    .environmentObject(platformState)
+                    .environmentObject(walletManager)
                     .environmentObject(transitionState)
                     .environment(\.modelContext, modelContext)
             }
@@ -1040,4 +1073,5 @@ struct TokenListRow: View {
     ContractsTabView(network: .testnet)
         .environmentObject(AppState())
         .environmentObject(TransitionState())
+        .environmentObject(PlatformWalletManager())
 }

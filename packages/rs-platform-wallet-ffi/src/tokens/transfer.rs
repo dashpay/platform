@@ -3,8 +3,10 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
+use dash_sdk::platform::tokens::transitions::TransferResult;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
+use super::balances_json::{token_balances_to_json_cstring, write_empty_balances_json};
 use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
@@ -13,6 +15,18 @@ use crate::types::read_identifier;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 /// Transfer tokens from `identity_id` to `recipient_id`.
+///
+/// On success, `out_balances_json` is written with a heap-allocated C
+/// string holding a JSON object mapping each affected identity's
+/// base58 id to its proof-verified post-transfer balance, encoded as a
+/// decimal **string** (u64 exceeds JSON's safe-integer range). For a
+/// standard transfer this carries both the sender's and the
+/// recipient's balances. History-tracking / group-action tokens carry
+/// no balances in the proof result, so an empty object `{}` is written.
+/// The caller owns the string and must free it via
+/// [`platform_wallet_string_free`](crate::types::platform_wallet_string_free).
+/// On error nothing is written through `out_balances_json` (it is set
+/// to null first) and the failure surfaces via the returned result.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_token_transfer(
@@ -25,8 +39,11 @@ pub unsafe extern "C" fn platform_wallet_token_transfer(
     public_note: *const c_char,
     _signing_key_id: u32,
     signer_handle: *mut SignerHandle,
+    out_balances_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
+    check_ptr!(out_balances_json);
+    *out_balances_json = std::ptr::null_mut();
 
     let from_id = unwrap_result_or_return!(read_identifier(identity_id));
     let contract_id = unwrap_result_or_return!(read_identifier(token_contract_id));
@@ -65,6 +82,20 @@ pub unsafe extern "C" fn platform_wallet_token_transfer(
         })
     });
     let result = unwrap_option_or_return!(option);
-    unwrap_result_or_return!(result);
+    let transfer_result = unwrap_result_or_return!(result);
+
+    // Map the proof-verified outcome to the balances JSON. Only the
+    // standard (non-history, non-group) transfer carries identity
+    // balances; the other variants have none to persist.
+    match transfer_result {
+        TransferResult::IdentitiesBalances(balances) => {
+            let c_str = unwrap_result_or_return!(token_balances_to_json_cstring(&balances));
+            *out_balances_json = c_str;
+        }
+        TransferResult::HistoricalDocument(_) | TransferResult::GroupActionWithDocument(_, _) => {
+            *out_balances_json = unwrap_result_or_return!(write_empty_balances_json());
+        }
+    }
+
     PlatformWalletFFIResult::ok()
 }

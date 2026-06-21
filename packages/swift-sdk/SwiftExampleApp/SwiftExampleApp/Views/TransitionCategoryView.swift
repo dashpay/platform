@@ -168,6 +168,41 @@ struct TransitionCategoryView: View {
                     .padding(.vertical, 4)
                 }
             }
+
+            // Read-only COUNT aggregation query lives alongside the Document
+            // builders so it's discoverable next to the document operations,
+            // but routes to its own query view (it neither signs nor
+            // broadcasts). Drives QA tests DOC-10/11/12.
+            if category == .document {
+                NavigationLink(destination: CountDocumentsView()) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Count Documents")
+                            .font(.headline)
+                        Text("Count documents (total, filtered by where, or grouped by group_by)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 4)
+                }
+                .accessibilityIdentifier("transition.document.countDocuments")
+
+                // Read-only SUM/AVERAGE aggregation query, sibling to the Count
+                // view above. Routes to its own query view (it neither signs
+                // nor broadcasts). Drives QA tests DOC-13/14.
+                NavigationLink(destination: SumAverageDocumentsView()) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Sum / Average Documents")
+                            .font(.headline)
+                        Text("Sum or average a numeric document property (total, filtered, or grouped)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 4)
+                }
+                .accessibilityIdentifier("transition.document.sumAverageDocuments")
+            }
         }
         .navigationTitle(category.rawValue)
         .navigationBarTitleDisplayMode(.inline)

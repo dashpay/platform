@@ -1,13 +1,14 @@
 //! Document query operations
 
-/// Average-side FFI entry. Same gating as `sum` — lights up alongside
-/// grovedb PR 670's `AggregateCountAndSumOnRange`.
+/// Average-side FFI entry (`dash_sdk_document_average`). Wraps the
+/// rs-sdk `DocumentSplitAverages::fetch` flow.
 pub mod average;
 pub mod count;
 pub mod fetch;
 pub mod info;
 pub mod search;
-/// Sum-side FFI entry. Skeleton — lights up alongside grovedb PR 670.
+/// Sum-side FFI entry (`dash_sdk_document_sum`). Wraps the rs-sdk
+/// `DocumentSplitSums::fetch` flow.
 pub mod sum;
 
 pub use count::dash_sdk_document_count;

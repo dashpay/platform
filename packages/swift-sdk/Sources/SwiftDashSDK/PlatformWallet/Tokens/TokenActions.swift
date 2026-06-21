@@ -80,6 +80,15 @@ extension ManagedPlatformWallet {
     ///
     /// Lifetime contract: same as `createDataContract` — the
     /// `signer` instance MUST stay alive for the entire `await`.
+    ///
+    /// - Returns: The proof-verified post-transfer balances the
+    ///   broadcast already carried, keyed by raw 32-byte identity id.
+    ///   For a standard transfer this is both the sender's and the
+    ///   recipient's balance. History-tracking / group-action tokens
+    ///   carry no balance in the proof result, so an empty map is
+    ///   returned. The caller persists these directly — no follow-up
+    ///   balance query is needed.
+    @discardableResult
     public func tokenTransfer(
         identityId: Identifier,
         contractId: Identifier,
@@ -89,30 +98,33 @@ extension ManagedPlatformWallet {
         publicNote: String?,
         signingKeyId: UInt32 = 0,
         signer: KeychainSigner
-    ) async throws {
+    ) async throws -> [Data: UInt64] {
         let handle = self.handle
         let signerHandle = signer.handle
         let identityBytes = identityId.toFFIByteArray()
         let contractBytes = contractId.toFFIByteArray()
         let recipientBytes = recipient.toFFIByteArray()
 
-        try await Task.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             _ = signer
-            try identityBytes.withUnsafeBufferPointer { idBp in
+            return try identityBytes.withUnsafeBufferPointer { idBp in
                 try contractBytes.withUnsafeBufferPointer { contractBp in
                     try recipientBytes.withUnsafeBufferPointer { recipientBp in
                         try ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
-                            try platform_wallet_token_transfer(
-                                handle,
-                                idBp.baseAddress!,
-                                contractBp.baseAddress!,
-                                tokenPosition,
-                                recipientBp.baseAddress!,
-                                amount,
-                                notePtr,
-                                signingKeyId,
-                                signerHandle
-                            ).check()
+                            try ManagedPlatformWallet.tokenReadingBalancesJSON { outJSON in
+                                platform_wallet_token_transfer(
+                                    handle,
+                                    idBp.baseAddress!,
+                                    contractBp.baseAddress!,
+                                    tokenPosition,
+                                    recipientBp.baseAddress!,
+                                    amount,
+                                    notePtr,
+                                    signingKeyId,
+                                    signerHandle,
+                                    outJSON
+                                )
+                            }
                         }
                     }
                 }
@@ -129,6 +141,16 @@ extension ManagedPlatformWallet {
     /// MASTER-or-HIGH / ECDSA_SECP256K1). The `signingKeyId` argument
     /// is reserved for a future "explicit key id" mode and is ignored
     /// by the current FFI.
+    ///
+    /// - Returns: The proof-verified post-burn balance the broadcast
+    ///   already carried, keyed by raw 32-byte identity id — for a
+    ///   standard burn this is the single `{ identityId: remaining }`
+    ///   pair. A group-action proposal (or a history-tracking token)
+    ///   carries no balance in the proof result (nothing is burned
+    ///   until the group signs), so an empty map is returned. The
+    ///   caller persists these directly — no follow-up balance query
+    ///   is needed.
+    @discardableResult
     public func tokenBurn(
         identityId: Identifier,
         contractId: Identifier,
@@ -138,33 +160,36 @@ extension ManagedPlatformWallet {
         groupAction: GroupActionMode = .none,
         signingKeyId: UInt32 = 0,
         signer: KeychainSigner
-    ) async throws {
+    ) async throws -> [Data: UInt64] {
         let handle = self.handle
         let signerHandle = signer.handle
         let identityBytes = identityId.toFFIByteArray()
         let contractBytes = contractId.toFFIByteArray()
         let groupTuple = groupAction.toFFITuple()
 
-        try await Task.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             _ = signer
-            try identityBytes.withUnsafeBufferPointer { idBp in
+            return try identityBytes.withUnsafeBufferPointer { idBp in
                 try contractBytes.withUnsafeBufferPointer { contractBp in
                     try ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
                         try ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
-                            try platform_wallet_token_burn(
-                                handle,
-                                idBp.baseAddress!,
-                                contractBp.baseAddress!,
-                                tokenPosition,
-                                amount,
-                                notePtr,
-                                groupTuple.kind,
-                                groupTuple.position,
-                                actionIdPtr,
-                                groupTuple.actionIsProposer,
-                                signingKeyId,
-                                signerHandle
-                            ).check()
+                            try ManagedPlatformWallet.tokenReadingBalancesJSON { outJSON in
+                                platform_wallet_token_burn(
+                                    handle,
+                                    idBp.baseAddress!,
+                                    contractBp.baseAddress!,
+                                    tokenPosition,
+                                    amount,
+                                    notePtr,
+                                    groupTuple.kind,
+                                    groupTuple.position,
+                                    actionIdPtr,
+                                    groupTuple.actionIsProposer,
+                                    signingKeyId,
+                                    signerHandle,
+                                    outJSON
+                                )
+                            }
                         }
                     }
                 }
@@ -713,6 +738,52 @@ extension ManagedPlatformWallet {
         return try value.withUnsafeBufferPointer { bp in
             try body(bp.baseAddress)
         }
+    }
+
+    /// Invoke a balance-returning token FFI and decode its
+    /// `{"<base58Id>": "<balanceDecimalString>"}` JSON out-parameter
+    /// into `[Data: UInt64]` (raw 32-byte identity id → balance).
+    ///
+    /// `body` receives the `*mut *mut CChar` out-slot and must call the
+    /// FFI that fills it, returning the FFI's `PlatformWalletFFIResult`.
+    /// On a non-success result this rethrows via `.check()` (and the
+    /// Rust side leaves the slot null, so there is nothing to free). On
+    /// success it reads the Rust-owned C string, frees it through
+    /// `platform_wallet_string_free`, and parses the map. The u64
+    /// balances are string-encoded in the JSON to dodge JSON's
+    /// 2^53-integer ceiling, so they're parsed back from `String` here.
+    fileprivate static func tokenReadingBalancesJSON(
+        _ body: (UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>) -> PlatformWalletFFIResult
+    ) throws -> [Data: UInt64] {
+        var outJSON: UnsafeMutablePointer<CChar>? = nil
+        try body(&outJSON).check()
+
+        guard let cStr = outJSON else {
+            // Success with a null payload shouldn't happen (the FFI
+            // always writes at least `{}` on success), but treat it as
+            // "no balances" rather than trapping.
+            return [:]
+        }
+        defer { platform_wallet_string_free(cStr) }
+
+        let jsonString = String(cString: cStr)
+        guard let data = jsonString.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw PlatformWalletError.deserialization(
+                "failed to parse token balances JSON: \(jsonString)"
+            )
+        }
+
+        var balances: [Data: UInt64] = [:]
+        for (base58Id, value) in object {
+            guard let idData = Data.identifier(fromBase58: base58Id) else { continue }
+            // Balances are decimal strings (u64-safe); ignore anything
+            // that doesn't parse rather than coercing it to 0.
+            if let str = value as? String, let amount = UInt64(str) {
+                balances[idData] = amount
+            }
+        }
+        return balances
     }
 }
 
