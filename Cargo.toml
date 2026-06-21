@@ -77,7 +77,7 @@ opt-level = 3
 [profile.dev-ios]
 inherits = "dev"
 panic = "abort"
-lto = "thin"
+debug = "line-tables-only"
 
 # Optimize heavy crypto crates even in dev/test builds so that
 # Halo 2 proof generation and verification run at near-release speed.

@@ -82,6 +82,7 @@ while [[ $# -gt 0 ]]; do
         sim) BUILD_SIM=true ;;
         mac) BUILD_MAC=true ;;
         all) BUILD_IOS=true; BUILD_SIM=true; BUILD_MAC=true ;;
+        tests) BUILD_SIM=true; BUILD_MAC=true ;;
         *) log_error "Unknown target $2"; show_help ;;
       esac
       shift 2
