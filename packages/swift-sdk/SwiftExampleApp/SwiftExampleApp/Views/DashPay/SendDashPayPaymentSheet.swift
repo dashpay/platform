@@ -191,7 +191,7 @@ struct SendDashPayPaymentSheet: View {
                 }
 
                 Section("Amount (DASH)") {
-                    // §6.4 zero-balance state: once the async balance
+                    // Zero-balance state: once the async balance
                     // load resolves to 0, swap the interactive form
                     // for an explanation instead of an
                     // always-disabled field.

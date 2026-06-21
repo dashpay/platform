@@ -5,10 +5,10 @@ import SwiftDashSDK
 /// Device-local, per-contact metadata for the DashPay tab: alias,
 /// note, hidden flag, and a DPNS-label hint captured at add time.
 ///
-/// M2 explicitly scopes these to "This device only" (the spec's §6.2
-/// labels) — Milestone 3 replaces this store with `contactInfo`
-/// documents synced via Platform. Until then UserDefaults is the
-/// honest backing: no sync semantics exist, so none are implied.
+/// These are scoped to "This device only" — a later milestone replaces
+/// this store with `contactInfo` documents synced via Platform. Until
+/// then UserDefaults is the honest backing: no sync semantics exist, so
+/// none are implied.
 ///
 /// Keys are scoped by `(network, owner identity, contact identity)`
 /// so two owner identities (or two networks) never share a contact's
@@ -94,7 +94,7 @@ final class DashPayContactMetaStore: ObservableObject {
 
 // MARK: - Display-name precedence
 
-/// Resolve the §6.3 display precedence for a DashPay contact:
+/// Resolve the display precedence for a DashPay contact:
 /// local alias → DashPay profile `displayName` → DPNS label →
 /// truncated hex id. Every input but the id is optional; empty
 /// strings count as absent.

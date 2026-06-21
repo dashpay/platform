@@ -585,8 +585,8 @@ fn allocate_dpns_arrays(
 /// **Present profiles only.** Confirmed-absent entries
 /// (`ContactProfileEntry::profile == None`, the negative cache) are
 /// skipped: they rebuild harmlessly on the next sync sweep, so
-/// persisting them would only add write churn (the boundary the spec's
-/// §4.7 "persist only on change" discipline draws). The returned `count`
+/// persisting them would only add write churn (the "persist only on
+/// change" discipline). The returned `count`
 /// is therefore the number of *present* profiles, not the map length.
 ///
 /// `rows` is a `Box<[ContactProfileRowFFI]>` (via [`Box::into_raw`]).

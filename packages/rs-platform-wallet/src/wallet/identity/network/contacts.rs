@@ -601,9 +601,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         // `reconstructed_xpub_derives_identical_addresses` in crypto::dip14).
         //
         // Backward-compat: a locally-stored legacy plaintext could be the old
-        // 78/107-byte BIP32/DIP-14 serialization. Desk-check (research/06)
-        // confirms nothing nonconforming reached chain, but we keep one cheap
-        // fallback branch as insurance.
+        // 78/107-byte BIP32/DIP-14 serialization. Nothing nonconforming has
+        // reached chain, but we keep one cheap fallback branch as insurance.
         let contact_xpub = match platform_encryption::parse_compact_xpub(&decrypted_xpub_bytes) {
             Ok(compact) => crate::wallet::identity::crypto::dip14::reconstruct_contact_xpub(
                 compact,

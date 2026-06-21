@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import SwiftDashSDK
 
-/// Incoming + outgoing contact requests (SPEC §6.2). Incoming rows
+/// Incoming + outgoing contact requests. Incoming rows
 /// carry Accept / Reject with per-row in-flight state; the Outgoing
 /// section renders pending sent requests (previously loaded but
 /// never shown anywhere in the app).
@@ -14,7 +14,7 @@ import SwiftDashSDK
 struct ContactRequestsView: View {
     let identity: PersistentIdentity
 
-    /// §6.4 optimistic overlay for *send* — owned by the tab root so
+    /// Optimistic overlay for *send* — owned by the tab root so
     /// AddContactView can insert into it; pruned here when the
     /// `@Query` reflects the new outgoing row or a sync completes.
     @Binding var optimisticSentIds: Set<Data>
@@ -26,11 +26,11 @@ struct ContactRequestsView: View {
     @Query private var requestRows: [PersistentDashpayContactRequest]
 
     /// Contact ids with an Accept/Reject currently in flight — the
-    /// row's buttons are replaced by a `ProgressView` (§6.4, blocks
+    /// row's buttons are replaced by a `ProgressView` (blocks
     /// double-tap → duplicate accepts).
     @State private var inFlightIds: Set<Data> = []
 
-    /// §6.4 optimistic overlay for accept/reject: ids whose incoming
+    /// Optimistic overlay for accept/reject: ids whose incoming
     /// row should stop rendering before the persister catches up.
     /// Pruned in `onChange(of: requestRows)` once the query reflects
     /// the change; fallback-cleared after the next completed sync
@@ -165,7 +165,7 @@ struct ContactRequestsView: View {
             pruneOverlays()
         }
         .onChange(of: walletManager.dashPaySyncIsSyncing) { _, syncing in
-            // §6.4 fallback clearing rule: after the next completed
+            // Fallback clearing rule: after the next completed
             // sync pass, expire whatever the query still doesn't
             // reflect — rows must not stay hidden (or synthetically
             // shown) forever on a missed callback.
@@ -306,7 +306,7 @@ struct IncomingRequestRow: View {
             }
 
             if isInFlight {
-                // §6.4: both buttons replaced by a spinner while the
+                // Both buttons replaced by a spinner while the
                 // accept/ignore round-trips.
                 HStack {
                     Spacer()

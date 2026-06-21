@@ -295,7 +295,7 @@ pub fn decrypt_enc_to_user_id(key: &[u8; 32], ciphertext: &[u8; 32]) -> [u8; 32]
 /// Encrypt a `contactInfo.privateData` plaintext (CBOR bytes) as
 /// `IV(16) ‖ AES-256-CBC(plaintext)` — the same prepended-IV layout
 /// `encryptedPublicKey` uses (DIP-15 doesn't pin the layout for this
-/// field; research/07 adopts the convention).
+/// field; we adopt the same convention).
 pub fn encrypt_private_data(key: &[u8; 32], iv: &[u8; 16], plaintext: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(16 + plaintext.len() + 16);
     out.extend_from_slice(iv);

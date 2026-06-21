@@ -255,7 +255,7 @@ struct SwiftExampleAppApp: App {
                 try walletManager.startShieldedSync()
             }
 
-            // DashPay contact-request + profile sweep (G12 background
+            // DashPay contact-request + profile sweep (background
             // loop). Wallet-driven — every registered wallet is swept
             // each pass — so manager scope is the right place to start
             // it, same as the address / shielded loops above.

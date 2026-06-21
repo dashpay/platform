@@ -2096,7 +2096,7 @@ extension ManagedPlatformWallet {
 
     /// Set the owner-private alias / note / hidden flag for an
     /// established contact and publish the self-encrypted
-    /// `contactInfo` document (M3 task 13). Local state (and hence
+    /// `contactInfo` document. Local state (and hence
     /// the SwiftData contact rows) updates immediately; the network
     /// write is deferred by the Rust side under DIP-15's
     /// ≥2-established-contacts privacy rule.

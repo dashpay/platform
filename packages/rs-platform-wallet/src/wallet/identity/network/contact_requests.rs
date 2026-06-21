@@ -172,7 +172,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             // Normal256 child, so `encode()` is the 107-byte DIP-14
             // serialization → 128-byte ciphertext → fails the contract's
             // `maxItems: 96` and both reference clients' hard `len == 69`
-            // receive checks. See research/06-interop-desk-check.md.
+            // receive checks.
             let contact_xpub = crate::wallet::identity::crypto::dip14::derive_contact_xpub(
                 wallet,
                 self.sdk.network,
@@ -360,8 +360,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 /// High-water rewind window applied to the incremental contact-request query.
 /// Re-fetching the last 10 minutes each sweep covers clock skew **and**
 /// equal-`$createdAt` documents straddling a page boundary, so it is
-/// correctness-load-bearing — NOT a tunable; `0` is invalid. See
-/// `docs/dashpay/SYNC_CORRECTNESS_SPEC.md` §4.1.
+/// correctness-load-bearing — NOT a tunable; `0` is invalid.
 const SYNC_OVERLAP_MS: u64 = 10 * 60_000;
 
 /// Lower bound for the incremental `$createdAt >` query: the high-water minus
@@ -426,7 +425,7 @@ fn newest_received_per_sender(
 /// Select the recipient identity's key id to reference in
 /// `recipientKeyIndex` for an outgoing contact request.
 ///
-/// Verified testnet reality (research/06): the newest cohort uses a
+/// Verified testnet reality: the newest cohort uses a
 /// recipient **DECRYPTION** key (our original convention), but the dominant
 /// 126-owner mobile population has **no DECRYPTION key at all** and references
 /// its **ENCRYPTION** key for `recipientKeyIndex`. To send to either cohort:
@@ -2048,7 +2047,7 @@ mod sweep_tests {
 // ---------------------------------------------------------------------------
 // Send-side recipient key selection.
 //
-// Verified testnet reality (research/06): the dominant mobile cohort has
+// Verified testnet reality: the dominant mobile cohort has
 // an ENCRYPTION key but NO DECRYPTION key, and references its ENCRYPTION key
 // for recipientKeyIndex. Sending to such a recipient must succeed by falling
 // back to the ENCRYPTION key — without that fallback the send errors with

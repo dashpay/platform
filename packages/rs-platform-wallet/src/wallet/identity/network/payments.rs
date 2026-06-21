@@ -562,8 +562,8 @@ mod tests {
     //! Receiver-side payment persistence tests.
     //!
     //! These pin the three pieces that make incoming DashPay payments
-    //! survive across app relaunches (UAT 2026-06-12 found all three
-    //! missing — Alice's received payments showed "Payments (0)"):
+    //! survive across app relaunches (without them, a recipient's received
+    //! payments show "Payments (0)"):
     //!
     //! 1. `register_contact_account` must PERSIST the account
     //!    registration, so the `DashpayReceivingFunds` account is
@@ -804,7 +804,7 @@ mod tests {
     /// 1. Registering a contact receival account must persist an
     /// `AccountRegistrationEntry` — otherwise the account (and every
     /// UTXO routed to it) silently vanishes on the next app launch
-    /// (`load: ... dropped_no_account` observed live on devnet).
+    /// (`load: ... dropped_no_account`).
     #[tokio::test]
     async fn register_contact_account_persists_account_registration() {
         let (manager, persister, wallet_id) = make_wallet().await;
@@ -1107,7 +1107,7 @@ mod tests {
     /// A `Sent` payment must advance `Pending → Confirmed` once its
     /// transaction confirms on-chain. `send_payment` records it `Pending`
     /// and nothing else moved it, so before the confirm path was wired the
-    /// entry was stuck `Pending` forever (UAT: sent payments never showed
+    /// entry was stuck `Pending` forever (sent payments never showed
     /// confirmed). Pins the flip, idempotency on re-detection, and that
     /// amount/memo are preserved.
     #[tokio::test]

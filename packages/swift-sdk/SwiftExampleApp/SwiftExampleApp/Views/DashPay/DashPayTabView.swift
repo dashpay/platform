@@ -2,13 +2,13 @@ import SwiftUI
 import SwiftData
 import SwiftDashSDK
 
-/// Root of the DashPay tab (SPEC §6.1): active-identity picker →
+/// Root of the DashPay tab: active-identity picker →
 /// profile header card → segmented [Contacts | Requests] → toolbar
 /// + (AddContactView) and refresh. Owns its own NavigationStack like
 /// the other tab wrappers in `ContentView`.
 struct DashPayTabView: View {
     let network: Network
-    /// Root tab selection — the §6.4 empty states deep-link to the
+    /// Root tab selection — the empty states deep-link to the
     /// Wallets / Identities tabs.
     @Binding var selectedTab: RootTab
 
@@ -20,7 +20,7 @@ struct DashPayTabView: View {
     /// to wallet-backed, on-network identities in `eligibleIdentities`.
     @Query private var identities: [PersistentIdentity]
 
-    /// §6.4: selection persists across launches. Stores the base58
+    /// Selection persists across launches. Stores the base58
     /// id; a stale id (identity deleted / other network) falls back
     /// to the first eligible identity in `activeIdentity`.
     @AppStorage("dashpay.activeIdentityId") private var storedIdentityId: String = ""
@@ -32,7 +32,7 @@ struct DashPayTabView: View {
     @State private var segment: DashPaySegment = .contacts
     @State private var showAddContact = false
 
-    /// §6.4 optimistic overlay for *send*: contact ids whose request
+    /// Optimistic overlay for *send*: contact ids whose request
     /// was just broadcast but whose outgoing row hasn't landed via
     /// the persister yet. Rendered as synthetic "Pending" rows in the
     /// Outgoing section; pruned there when the query catches up or a
@@ -72,7 +72,7 @@ struct DashPayTabView: View {
         }
     }
 
-    /// §6.4 stale-id fallback: stored selection wins when still
+    /// Stale-id fallback: stored selection wins when still
     /// eligible, else the first eligible identity.
     private var activeIdentity: PersistentIdentity? {
         if let match = eligibleIdentities.first(where: {
@@ -197,7 +197,7 @@ struct DashPayTabView: View {
             // The optimistic pending-sent overlay is per-identity
             // state — without this reset, a send from identity A
             // ghosts as an outgoing row under identity B after a
-            // picker switch (observed live in UAT 2026-06-13).
+            // picker switch.
             optimisticSentIds.removeAll()
         }
     }
@@ -296,7 +296,7 @@ struct DashPayTabView: View {
         .accessibilityIdentifier("dashpay.identityPicker")
     }
 
-    /// §6.1: menu rows show "DPNS name → truncated id".
+    /// Menu rows show "DPNS name → truncated id".
     private func pickerLabel(for identity: PersistentIdentity) -> String {
         if let name = identity.mainDpnsName ?? identity.dpnsName, !name.isEmpty {
             return name
@@ -354,7 +354,7 @@ struct DashPayTabView: View {
             .accessibilityIdentifier("dashpay.profileHeader")
         } else {
             // Empty state → CTA straight into the editor sheet
-            // (same target as "Edit", per §6.2).
+            // (same target as "Edit").
             Button {
                 showProfileEditor = true
             } label: {
@@ -464,7 +464,7 @@ struct DashPayTabView: View {
 
 // MARK: - Empty-state helper
 
-/// Shared empty-state body for the §6.4 picker states: icon, title,
+/// Shared empty-state body for the picker states: icon, title,
 /// message, and a single CTA that deep-links to another tab.
 struct DashPayEmptyStateView: View {
     let icon: String

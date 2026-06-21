@@ -1,19 +1,18 @@
 import XCTest
 
-/// DashPay tab smoke tests (SPEC Part 7.2 / M2 task 11, G11-Swift).
+/// DashPay tab smoke tests.
 ///
-/// Network-free: these assert only the §6.4 identity-picker states the
+/// Network-free: these assert only the identity-picker states the
 /// DashPay tab renders from local state — no wallet, no funded
 /// identity, no testnet round-trips. They are the launch-and-render
 /// gate for the tab, keyed on the `dashpay.*` accessibility ids.
 ///
-/// TODO(G11-Swift, gated on a funded testnet wallet): the full
-/// add → approve → pay XCUITest from SPEC §7.2 — AddContact by DPNS →
+/// TODO (gated on a funded testnet wallet): the full
+/// add → approve → pay XCUITest — AddContact by DPNS →
 /// request appears in Outgoing → (peer accepts) → appears in Contacts
 /// → open contact → Send Dash → confirm txid — needs two funded
 /// testnet identities (one driven out-of-band to accept), so it is
-/// deliberately NOT implemented here. Track it alongside the `dp_003`
-/// e2e case; see docs/dashpay/SPEC.md Part 7.2/7.4.
+/// deliberately NOT implemented here.
 final class DashPayTabUITests: XCTestCase {
 
     private enum Identifier {
@@ -34,7 +33,7 @@ final class DashPayTabUITests: XCTestCase {
     }
 
     /// Launch → open the DashPay tab → the tab must render exactly one
-    /// of the §6.4 picker states:
+    /// of the picker states:
     ///   1. no wallet            → "Open Wallets" CTA
     ///   2. wallet, no identity  → "Open Identities" CTA
     ///   3. ≥1 eligible identity → segmented [Contacts | Requests]
@@ -68,7 +67,7 @@ final class DashPayTabUITests: XCTestCase {
 
         // The toolbar AddContact entry point exists in every state
         // (disabled until an identity is active) — its presence is the
-        // §6.4 contract the add→approve→pay flow will key on.
+        // contract the add→approve→pay flow will key on.
         let addContact = app.buttons
             .matching(identifier: Identifier.addContactButton).firstMatch
         XCTAssertTrue(

@@ -3,7 +3,7 @@ import SwiftData
 import DashSDKFFI
 @testable import SwiftDashSDK
 
-// MARK: - DashPay persister-bridge mapping (SPEC Part 7.2, M2 task 11)
+// MARK: - DashPay persister-bridge mapping
 //
 // These tests feed synthetic persister payloads — the same shapes the
 // Rust `on_persist_contacts_fn` callback delivers — through

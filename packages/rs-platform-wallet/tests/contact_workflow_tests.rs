@@ -431,7 +431,7 @@ fn test_rotation_request_rekeys_established_contact_and_clears_broken_flag() {
     managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister());
     assert_eq!(managed_a.established_contacts.len(), 1);
 
-    // Simulate a broken payment channel (G1c) — e.g. the old request's
+    // Simulate a broken payment channel — e.g. the old request's
     // xpub stopped decrypting after B rotated keys.
     managed_a
         .established_contacts

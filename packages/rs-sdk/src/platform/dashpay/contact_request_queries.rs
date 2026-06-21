@@ -2,8 +2,7 @@
 //!
 //! This module provides helper functions for querying contact requests from the platform.
 //!
-//! The fetch is **incremental and fully paginated** (see
-//! `docs/dashpay/SYNC_CORRECTNESS_SPEC.md`): an optional `after_created_at`
+//! The fetch is **incremental and fully paginated**: an optional `after_created_at`
 //! lower bound restricts the query to documents newer than the caller's
 //! high-water mark, and the helper drains *all* pages via a `StartAfter`
 //! document-id cursor so a flood of requests can never bury (truncate) the

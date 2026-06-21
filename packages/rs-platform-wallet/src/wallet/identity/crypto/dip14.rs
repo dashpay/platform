@@ -67,7 +67,7 @@ impl ContactXpubData {
     /// version/depth/child-number metadata) and encrypts to 128 bytes, failing
     /// the contract's `maxItems: 96`. Both reference clients (iOS
     /// dash-shared-core, Android dashj `serializeContactPub`) emit exactly this
-    /// 69-byte form. See `docs/dashpay/research/06-interop-desk-check.md`.
+    /// 69-byte form.
     pub fn compact_xpub(&self) -> [u8; platform_encryption::COMPACT_XPUB_LEN] {
         self.compact.to_bytes()
     }
@@ -195,8 +195,7 @@ pub fn reconstruct_contact_xpub(
 /// ```
 ///
 /// Two interop-critical conventions, pinned against the reference
-/// clients (research/06 §3 — the desk-check that found our previous
-/// helper diverged on both axes):
+/// clients (our previous helper diverged on both axes):
 ///
 /// - **HMAC input is the 69-byte DIP-15 compact form**
 ///   (`fingerprint ‖ chain_code ‖ pubkey`), the same plaintext that
@@ -497,7 +496,7 @@ mod tests {
         );
     }
 
-    /// Pin the ASK28 extraction convention (research/06 §3): the mask
+    /// Pin the ASK28 extraction convention: the mask
     /// must come from HMAC digest bytes `[28..32]` big-endian `>> 4` —
     /// the iOS dash-shared-core reading — NOT bytes `[0..4]` (our old
     /// helper) or little-endian (Android). The expectation recomputes

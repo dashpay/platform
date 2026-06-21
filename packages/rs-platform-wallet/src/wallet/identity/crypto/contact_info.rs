@@ -6,7 +6,7 @@
 //! with the counterparty via ECDH.
 //!
 //! **No reference client has implemented this document type yet**
-//! (research/07: DashSync-iOS, dashj and dash-shared-core all lack it), so we
+//! (DashSync-iOS, dashj and dash-shared-core all lack it), so we
 //! follow the DIP-15 spec exactly so a future client interops:
 //!
 //! - Key derivation (DIP-15): two hardened children of the identity's
@@ -27,7 +27,7 @@
 //!   LENGTH only (48–2048 bytes; the schema's "array in cbor" description is
 //!   advisory, not enforced), so tiny payloads are padded with trailing zero
 //!   bytes to the 48-byte ciphertext floor — a reader dispatches on `version`
-//!   and ignores them. See `docs/dashpay/CONTACTINFO_FORMAT_SPEC.md`.
+//!   and ignores them.
 
 use key_wallet::bip32::ChildNumber;
 use key_wallet::wallet::Wallet;

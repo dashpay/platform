@@ -2,10 +2,10 @@ import SwiftUI
 import SwiftData
 import SwiftDashSDK
 
-/// Per-contact detail (SPEC §6.2): profile header, Send Dash (via
+/// Per-contact detail: profile header, Send Dash (via
 /// the existing `SendDashPayPaymentSheet`), `@Query`-driven payment
 /// history, and the alias / note / hide controls — `contactInfo`-
-/// backed since M3: edits publish a self-encrypted document so they
+/// backed: edits publish a self-encrypted document so they
 /// sync across devices and survive restore-from-seed.
 struct ContactDetailView: View {
     let identity: PersistentIdentity
@@ -226,7 +226,7 @@ struct ContactDetailView: View {
             .accessibilityIdentifier("dashpay.detail.sendDash")
 
             if channelBroken {
-                // §6.4 broken payment channel (G1c). Re-enables
+                // Broken payment channel. Re-enables
                 // reactively when a new request flips the flag.
                 Label(
                     "Payment channel broken — ask the contact to send a new request",
@@ -242,7 +242,7 @@ struct ContactDetailView: View {
         Section {
             if payments.isEmpty {
                 if isRefreshingPayments {
-                    // §6.4 loading: single inline ProgressView.
+                    // Loading: single inline ProgressView.
                     HStack(spacing: 10) {
                         ProgressView()
                         Text("Loading payments…")
@@ -261,7 +261,7 @@ struct ContactDetailView: View {
             }
 
             if let paymentsError {
-                // §6.4 error: keep the last-known list, caption only.
+                // Error: keep the last-known list, caption only.
                 Text(paymentsError)
                     .font(.caption)
                     .foregroundColor(.red)

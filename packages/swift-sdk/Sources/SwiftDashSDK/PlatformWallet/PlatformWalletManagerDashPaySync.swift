@@ -114,7 +114,7 @@ extension PlatformWalletManager {
     /// and the returned summary is the all-zero "no pass ran"
     /// sentinel (see [`DashPaySyncSummary`]).
     ///
-    /// This is the §6.4 pull-to-refresh entry point: a refresh during
+    /// This is the pull-to-refresh entry point: a refresh during
     /// an in-flight sync attaches to it (skip + sentinel) instead of
     /// double-firing.
     @discardableResult

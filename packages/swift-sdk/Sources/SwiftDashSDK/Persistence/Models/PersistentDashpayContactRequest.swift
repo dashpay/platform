@@ -95,7 +95,7 @@ public final class PersistentDashpayContactRequest {
     public var createdAtMillis: UInt64
 
     /// Whether the established relationship this row belongs to has a
-    /// **permanently broken** payment channel (G1c). Mirrors
+    /// **permanently broken** payment channel. Mirrors
     /// `ContactRequestFFI::payment_channel_broken`: only meaningful
     /// for rows projected from the `established` map — both
     /// directions of an established pair carry the same flag (it's a
@@ -108,8 +108,8 @@ public final class PersistentDashpayContactRequest {
     /// migration (additive column, non-destructive).
     public var paymentChannelBroken: Bool = false
 
-    /// Owner-private alias for the contact — `contactInfo`-backed
-    /// (M3 task 13), synced across devices via Platform. Mirrors
+    /// Owner-private alias for the contact — `contactInfo`-backed,
+    /// synced across devices via Platform. Mirrors
     /// `ContactRequestFFI::alias`; established rows only, replicated
     /// onto both directions like `paymentChannelBroken`. Optional so
     /// existing rows ride the lightweight migration.

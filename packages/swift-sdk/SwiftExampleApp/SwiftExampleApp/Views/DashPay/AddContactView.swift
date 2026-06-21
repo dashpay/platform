@@ -2,18 +2,18 @@ import SwiftUI
 import SwiftData
 import SwiftDashSDK
 
-/// Add-contact sheet (SPEC §6.2, restyled from `AddFriendView`).
+/// Add-contact sheet (restyled from `AddFriendView`).
 ///
 /// Two modes: **Username (DPNS)** with live prefix search, and
 /// **Identity ID** with inline base58 validation. Either way the
 /// resolved target renders as a preview card that gates "Send
-/// Request" (§6.4 — never a dead end: not-found offers
+/// Request" (never a dead end: not-found offers
 /// clear-and-retry instead of a terminal error).
 struct AddContactView: View {
     let identity: PersistentIdentity
     /// Fires after a successful broadcast with the recipient id and
     /// the DPNS name used to find them (nil in ID mode). The tab
-    /// root inserts the id into the §6.4 optimistic-send overlay and
+    /// root inserts the id into the optimistic-send overlay and
     /// records the DPNS hint.
     let onSent: (Identifier, String?) -> Void
 
@@ -25,7 +25,7 @@ struct AddContactView: View {
         case dpns, identityId
     }
 
-    /// §6.4 DPNS resolution states: typing → searching → not-found →
+    /// DPNS resolution states: typing → searching → not-found →
     /// found. `idle` covers "fewer than 2 characters typed".
     private enum SearchState: Equatable {
         case idle
@@ -48,7 +48,7 @@ struct AddContactView: View {
     @State private var isSending = false
     @State private var errorMessage: String?
 
-    /// §6.4 send-collision flow.
+    /// Send-collision flow.
     @State private var showCollisionAlert = false
     @State private var collisionRecipient: Identifier?
 
@@ -185,7 +185,7 @@ struct AddContactView: View {
                         .foregroundColor(.secondary)
                 }
             case .notFound:
-                // §6.4: never a dead end — message + clear-and-retry.
+                // Never a dead end — message + clear-and-retry.
                 VStack(alignment: .leading, spacing: 8) {
                     Text("No usernames match \"\(searchText)\".")
                         .font(.caption)

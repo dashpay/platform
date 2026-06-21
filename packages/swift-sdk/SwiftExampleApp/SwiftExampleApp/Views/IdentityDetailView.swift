@@ -1290,7 +1290,7 @@ struct DashPayProfileEditorView: View {
                         .accessibilityIdentifier("dashpay.profile.cancel")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    // §6.4 save flow: Save replaced by a ProgressView
+                    // Save flow: Save replaced by a ProgressView
                     // while in flight; success dismisses; failure
                     // re-enables with the red caption in the form.
                     if isSaving {

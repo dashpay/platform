@@ -116,8 +116,8 @@ struct ContentView: View {
                     .tag(RootTab.identities)
 
                 // Tab 4: DashPay — first-class contacts / requests /
-                // payments surface (SPEC Part 6). The root-tab
-                // selection binding lets its §6.4 empty states
+                // payments surface. The root-tab
+                // selection binding lets its empty states
                 // deep-link to the Wallets / Identities tabs.
                 DashPayTabView(
                     network: platformState.currentNetwork,

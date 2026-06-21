@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftDashSDK
 
-/// Read-only DashPay profile sheet (SPEC §6.2), promoted out of
+/// Read-only DashPay profile sheet, promoted out of
 /// `IdentityDetailView`'s inline card: large avatar, display name,
 /// DPNS handle, public message, and an Edit button that hands off to
 /// `DashPayProfileEditorView` (the tab root presents the editor

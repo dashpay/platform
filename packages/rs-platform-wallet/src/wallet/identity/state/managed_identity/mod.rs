@@ -129,7 +129,7 @@ pub struct ManagedIdentity {
     /// full re-fetch (safe — ingest is a fixpoint, so under-shoot is free).
     /// Durable cross-relaunch persistence is a follow-up; when added, restore
     /// must tolerate only under-shoot — never a value higher than the contact
-    /// state justifies. See `docs/dashpay/SYNC_CORRECTNESS_SPEC.md` §4.1.
+    /// state justifies.
     pub high_water_received_ms: Option<u64>,
     /// High-water mark for the sent direction (`$ownerId == me`).
     pub high_water_sent_ms: Option<u64>,
@@ -138,7 +138,6 @@ pub struct ManagedIdentity {
     /// established contacts, pending incoming-request senders, and (later)
     /// ignored senders, independent of relationship state. Populated by
     /// `sync_contact_profiles`; public-data only (never `contactInfo`-derived).
-    /// See `docs/dashpay/SYNC_CORRECTNESS_SPEC.md` §4.5.
     pub contact_profiles: BTreeMap<Identifier, ContactProfileEntry>,
 }
 

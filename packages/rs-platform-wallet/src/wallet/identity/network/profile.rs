@@ -549,7 +549,7 @@ const CONTACT_PROFILE_IN_CAP: usize = 100;
 /// Re-fetch / re-check window for a cached contact profile. A present profile
 /// is refreshed and a confirmed-absent one re-checked at most once per window,
 /// bounding sync cost without the (unprovable-as-a-batch) `$updatedAt`
-/// incremental query. See SYNC_CORRECTNESS_SPEC §4.4 / §5 (Q-inc).
+/// incremental query.
 const CONTACT_PROFILE_REFRESH_MS: u64 = 60 * 60_000;
 
 /// Current UNIX time in ms. Used only to rate-limit re-fetches (gates cost,
@@ -564,7 +564,7 @@ fn unix_now_ms() -> u64 {
 /// An `avatarUrl` is cached only if it is a bounded `https://` URL. An
 /// attacker-controlled `http:` / `file:` / `javascript:` / oversized URL is
 /// dropped before it can reach the persistent cache and the UI's image loader
-/// (SSRF / tracking-pixel vector). See SYNC_CORRECTNESS_SPEC §4.7.
+/// (SSRF / tracking-pixel vector).
 fn is_valid_avatar_url(url: &str) -> bool {
     !url.is_empty() && url.len() <= MAX_AVATAR_URL_LEN && url.starts_with("https://")
 }
@@ -606,7 +606,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Fetch and cache **contact** profiles — established contacts + pending
     /// incoming-request senders — so the UI can show their name/avatar.
     ///
-    /// Stage 2 of `SYNC_CORRECTNESS_SPEC.md`. Mirrors Android's
+    /// Mirrors Android's
     /// `updateContactProfiles`: iterate the full contact set every sweep
     /// (so a contact established before this shipped is backfilled, and a
     /// dropped fetch self-heals next sweep), skip recently-checked ids,
@@ -896,7 +896,7 @@ mod tests {
         assert_eq!(prof.avatar_url.as_deref(), Some("https://x/a.png"));
     }
 
-    // --- Stage 2: contact-profile sync helpers ---
+    // --- contact-profile sync helpers ---
 
     /// Only bounded `https://` avatar URLs are cached — `http:`, scheme
     /// tricks, oversized, and empty are rejected (SSRF / tracking-pixel).

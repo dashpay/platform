@@ -30,9 +30,9 @@ impl Sdk {
 
         #[cfg(not(feature = "dashpay-contract"))]
         let dashpay_contract_id = {
-            // The deployed DashPay v1 contract id (G6: this fallback
+            // The deployed DashPay v1 contract id. This fallback
             // previously held the DPNS id — a latent foot-gun for
-            // builds without the `dashpay-contract` feature).
+            // builds without the `dashpay-contract` feature.
             const DASHPAY_CONTRACT_ID: &str = "Bwr4WHCPz5rFVAD87RqTs3izo4zpzwsEdKPWUT1NS1C7";
             Identifier::from_string(
                 DASHPAY_CONTRACT_ID,

@@ -3,7 +3,7 @@ import SwiftData
 import Combine
 import SwiftDashSDK
 
-/// Established-contacts list for the DashPay tab (SPEC §6.2).
+/// Established-contacts list for the DashPay tab.
 ///
 /// `@Query`-driven: a contact is *established* when both direction
 /// rows exist for the same `(owner, contact)` pair — the Rust
@@ -167,9 +167,9 @@ struct ContactsView: View {
     }
 }
 
-// MARK: - Pull-to-refresh sync attach (§6.4)
+// MARK: - Pull-to-refresh sync attach
 
-/// §6.4 single sync-in-progress signal: a pull-to-refresh during an
+/// Single sync-in-progress signal: a pull-to-refresh during an
 /// in-flight sync *attaches* to it (waits for `dashPaySyncIsSyncing`
 /// to clear) instead of double-firing; otherwise it starts one pass.
 /// Shared by ContactsView and ContactRequestsView.
@@ -217,7 +217,7 @@ struct ContactListRow: View {
             }
             Spacer()
             if contact.paymentChannelBroken {
-                // §6.4 broken payment channel — warning badge; the
+                // Broken payment channel — warning badge; the
                 // detail view explains and disables Send Dash.
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundColor(.orange)

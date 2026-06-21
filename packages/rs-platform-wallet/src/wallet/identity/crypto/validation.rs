@@ -109,7 +109,7 @@ impl ContactRequestValidation {
 
 /// Validate a contact request against the verified on-chain envelope.
 ///
-/// The empirical testnet census (368 docs, research/06) shows two live
+/// The empirical testnet census (368 docs) shows two live
 /// honest cohorts: the dominant mobile population references an **unbound
 /// ENCRYPTION key for BOTH indices** (mobile identities carry no DECRYPTION
 /// key), and the newest cohort uses bound **ENCRYPTION(sender) /
@@ -419,7 +419,7 @@ mod tests {
 
     // -----------------------------------------------------------------------
     // Key-purpose alignment. The verified testnet reality
-    // (368 on-chain docs, research/06): the dominant mobile cohort
+    // (368 on-chain docs): the dominant mobile cohort
     // references an UNBOUND ENCRYPTION key for BOTH senderKeyIndex and
     // recipientKeyIndex (mobile identities carry no DECRYPTION key); the
     // newest cohort uses bound ENCRYPTION(sender)/DECRYPTION(recipient).

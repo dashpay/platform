@@ -142,16 +142,16 @@ pub struct SendContactRequestResult {
 }
 
 /// Whether `purpose` is acceptable for the `senderKeyIndex` key of a contact
-/// request. The sender always references its own ENCRYPTION key (G15).
+/// request. The sender always references its own ENCRYPTION key.
 fn sender_key_purpose_is_valid(purpose: Purpose) -> bool {
     purpose == Purpose::ENCRYPTION
 }
 
 /// Whether `purpose` is acceptable for the `recipientKeyIndex` key of a
-/// contact request (G15). The newest cohort references the recipient's
+/// contact request. The newest cohort references the recipient's
 /// DECRYPTION key (our original convention); the dominant mobile cohort has no
 /// DECRYPTION key and references its ENCRYPTION key. Accept either; reject
-/// AUTHENTICATION/MASTER/TRANSFER. See research/06 §G15.
+/// AUTHENTICATION/MASTER/TRANSFER.
 fn recipient_key_purpose_is_valid(purpose: Purpose) -> bool {
     matches!(purpose, Purpose::DECRYPTION | Purpose::ENCRYPTION)
 }
@@ -253,10 +253,10 @@ impl Sdk {
                 ))
             })?;
 
-        // G15: accept either a DECRYPTION key (newest cohort / our original
+        // Accept either a DECRYPTION key (newest cohort / our original
         // convention) OR an ENCRYPTION key (the dominant mobile cohort, whose
         // identities carry no DECRYPTION key and reference their ENCRYPTION
-        // key for recipientKeyIndex). research/06 §G15.
+        // key for recipientKeyIndex).
         if !recipient_key_purpose_is_valid(recipient_key.purpose()) {
             return Err(Error::Generic(format!(
                 "Recipient key at index {} is not a decryption or encryption key",

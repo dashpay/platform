@@ -59,7 +59,7 @@ public class PlatformWalletManager: ObservableObject {
     @Published public private(set) var shieldedSyncIsSyncing: Bool = false
 
     /// Whether the Rust-owned DashPay sync coordinator currently has
-    /// a pass in flight. The §6.4 single sync-in-progress signal: all
+    /// a pass in flight. The single sync-in-progress signal: all
     /// three DashPay sync callers (`.task`, pull-to-refresh, the
     /// background loop) observe this one flag, and a pull-to-refresh
     /// during an in-flight sync attaches to it instead of
