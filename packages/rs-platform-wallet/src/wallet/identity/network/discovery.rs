@@ -63,7 +63,7 @@ fn breadcrumb_decisions(
         dpp::identity::KeyID,
         zeroize::Zeroizing<[u8; 32]>,
     >,
-) -> Vec<crate::changeset::IdentityKeyWithBreadcrumb> {
+) -> Vec<crate::changeset::KeyWithBreadcrumb> {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
     use dpp::identity::KeyType;
@@ -80,8 +80,16 @@ fn breadcrumb_decisions(
                         .unwrap_or(false)
                 })
                 .unwrap_or(false);
-            let breadcrumb = if reproduces {
-                Some((wallet_id, identity_index, *key_id))
+            let (breadcrumb, verified_scalar) = if reproduces {
+                // Carry the already-verified scalar to the client so it
+                // stores the bytes directly instead of re-deriving from a
+                // mnemonic. Only a scalar that reproduced the on-chain key
+                // reaches this branch, so the carried secret is always the
+                // authorized one.
+                (
+                    Some((wallet_id, identity_index, *key_id)),
+                    candidate_scalars.get(key_id).cloned(),
+                )
             } else {
                 if matches!(
                     on_chain_key.key_type(),
@@ -94,9 +102,13 @@ fn breadcrumb_decisions(
                          derivation candidate; left watch-only (cannot sign with this key)"
                     );
                 }
-                None
+                (None, None)
             };
-            (on_chain_key.clone(), breadcrumb)
+            crate::changeset::KeyWithBreadcrumb {
+                key: on_chain_key.clone(),
+                breadcrumb,
+                verified_scalar,
+            }
         })
         .collect()
 }
@@ -225,7 +237,7 @@ impl IdentityWallet {
         identity_index: u32,
         network: key_wallet::Network,
         master: Option<&ExtendedPrivKey>,
-    ) -> Result<Vec<crate::changeset::IdentityKeyWithBreadcrumb>, PlatformWalletError> {
+    ) -> Result<Vec<crate::changeset::KeyWithBreadcrumb>, PlatformWalletError> {
         use super::identity_handle::{
             derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_keypair,
         };
@@ -581,12 +593,20 @@ mod tests {
             &scalars,
         );
         assert_eq!(decisions.len(), 5);
-        for (key, breadcrumb) in &decisions {
+        for decision in &decisions {
             assert_eq!(
-                *breadcrumb,
-                Some((wallet_id, identity_index, key.id())),
+                decision.breadcrumb,
+                Some((wallet_id, identity_index, decision.key.id())),
                 "key {} must be breadcrumbed",
-                key.id()
+                decision.key.id()
+            );
+            // A reproducible key carries its already-verified scalar so the
+            // client stores it without re-deriving from the mnemonic.
+            assert_eq!(
+                decision.verified_scalar.as_deref(),
+                scalars.get(&decision.key.id()).map(|s| &**s),
+                "key {} must carry its verified scalar",
+                decision.key.id()
             );
         }
     }
@@ -619,14 +639,22 @@ mod tests {
             ecdsa_auth_key(1, kp_foreign.public_key.to_vec()),
         ]);
         let decisions = breadcrumb_decisions(&identity, 0, wallet_id, Network::Testnet, &scalars);
-        let by_id: BTreeMap<KeyID, Option<([u8; 32], u32, u32)>> =
-            decisions.iter().map(|(k, bc)| (k.id(), *bc)).collect();
+        let by_id: BTreeMap<KeyID, &crate::changeset::KeyWithBreadcrumb> =
+            decisions.iter().map(|d| (d.key.id(), d)).collect();
         assert_eq!(
-            by_id[&0],
+            by_id[&0].breadcrumb,
             Some((wallet_id, 0, 0)),
             "reproducible key breadcrumbed"
         );
-        assert_eq!(by_id[&1], None, "foreign key left watch-only");
+        assert!(
+            by_id[&0].verified_scalar.is_some(),
+            "reproducible key carries its verified scalar"
+        );
+        assert_eq!(by_id[&1].breadcrumb, None, "foreign key left watch-only");
+        assert!(
+            by_id[&1].verified_scalar.is_none(),
+            "foreign key carries no scalar"
+        );
     }
 
     /// An on-chain key typed `ECDSA_HASH160` (data = the 20-byte hash of
@@ -663,9 +691,13 @@ mod tests {
 
         let decisions = breadcrumb_decisions(&identity, 0, wallet_id, Network::Testnet, &scalars);
         assert_eq!(
-            decisions[0].1,
+            decisions[0].breadcrumb,
             Some((wallet_id, 0, 0)),
             "HASH160 key must verify by hash"
+        );
+        assert!(
+            decisions[0].verified_scalar.is_some(),
+            "HASH160 key carries its verified scalar"
         );
     }
 }

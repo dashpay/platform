@@ -74,6 +74,10 @@ impl IdentityKeyWire {
             public_key_hash: self.public_key_hash,
             wallet_id: self.wallet_id,
             derivation_indices: self.derivation_indices,
+            // The on-disk wire shape never carries the secret — a row read
+            // back from storage is always watch-only at the changeset level
+            // (the materialized scalar lives only in the client keychain).
+            private_key: None,
         })
     }
 }
@@ -183,5 +187,50 @@ mod tests {
             matches!(err, WalletStorageError::BlobDecode { .. }),
             "expected BlobDecode for trailing-byte garbage, got {err:?}"
         );
+    }
+
+    /// The on-disk wire shape must never carry the private scalar. An
+    /// `IdentityKeyEntry` that holds a verified secret is transcribed
+    /// field-by-field into `IdentityKeyWire` (which has no secret field by
+    /// construction), so a `from_entry` → `into_entry` round-trip drops the
+    /// secret to `None`. Pins the "no secret at rest outside the keychain"
+    /// guarantee so a future "serialize the whole entry straight to the
+    /// blob" refactor can't start persisting it unnoticed.
+    #[test]
+    fn wire_round_trip_drops_private_key_secret() {
+        let pk = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![2u8; 33]),
+            disabled_at: None,
+        });
+        let entry = IdentityKeyEntry {
+            identity_id: dpp::prelude::Identifier::from([0xAA; 32]),
+            key_id: 0,
+            public_key: pk,
+            public_key_hash: [0x11; 20],
+            wallet_id: Some([0x9A; 32]),
+            derivation_indices: Some(IdentityKeyDerivationIndices {
+                identity_index: 1,
+                key_index: 2,
+            }),
+            // A live secret on the in-memory entry.
+            private_key: Some(zeroize::Zeroizing::new([0xC7; 32])),
+        };
+
+        let wire = IdentityKeyWire::from_entry(&entry).expect("encode wire");
+        let restored = wire.into_entry().expect("decode wire");
+
+        assert!(
+            restored.private_key.is_none(),
+            "the wire round-trip must drop the private scalar"
+        );
+        // The non-secret breadcrumb still survives the round-trip.
+        assert_eq!(restored.wallet_id, entry.wallet_id);
+        assert_eq!(restored.derivation_indices, entry.derivation_indices);
     }
 }

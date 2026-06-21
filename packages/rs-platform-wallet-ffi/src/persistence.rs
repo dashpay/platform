@@ -1504,6 +1504,20 @@ impl PlatformWalletPersistence for FFIPersister {
         }
 
         // Merge into pending changesets.
+        //
+        // The `pending` accumulator is long-lived and never replayed to the
+        // callbacks (only `flush` consumes it), so it must not hold a second
+        // copy of the verified scalar. The secret was only needed for the
+        // synchronous `on_persist_identity_keys` dispatch above, which has
+        // already run. Strip `private_key` to `None` on every identity-key
+        // upsert before it enters `pending`, keeping the "no secret at rest
+        // outside the keychain" guarantee true.
+        let mut changeset = changeset;
+        if let Some(keys_cs) = changeset.identity_keys.as_mut() {
+            for entry in keys_cs.upserts.values_mut() {
+                entry.private_key = None;
+            }
+        }
         let mut pending = self.pending.write();
         pending
             .entry(wallet_id)

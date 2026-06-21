@@ -371,27 +371,37 @@ pub struct IdentityKeyDerivationIndices {
 /// `None` marks a watch-only key.
 pub type KeyDerivationBreadcrumb = ([u8; 32], u32, u32);
 
-/// One public key paired with its derivation-breadcrumb decision, the unit
-/// `ManagedIdentity::add_keys` consumes and `discovery::breadcrumb_decisions`
-/// produces.
-pub type IdentityKeyWithBreadcrumb = (
-    dpp::identity::IdentityPublicKey,
-    Option<KeyDerivationBreadcrumb>,
-);
+/// One public key paired with its derivation breadcrumb and (when the key
+/// was reproduced from this wallet's seed) the already-verified 32-byte
+/// ECDSA scalar — the unit `ManagedIdentity::add_keys` consumes and
+/// `discovery::breadcrumb_decisions` produces.
+///
+/// `verified_scalar` carries the secret that discovery already derived and
+/// validated against the on-chain key (so the client stores it directly
+/// without re-deriving from a mnemonic). It is `Some` only when `breadcrumb`
+/// is `Some`; both are `None` for a watch-only key.
+pub struct KeyWithBreadcrumb {
+    /// The DPP public-key record.
+    pub key: dpp::identity::IdentityPublicKey,
+    /// Derivation coordinates for re-derivable keys; `None` for watch-only.
+    pub breadcrumb: Option<KeyDerivationBreadcrumb>,
+    /// The verified 32-byte ECDSA scalar for re-derivable keys; `None` for
+    /// watch-only. Never serialized — it only transits in-process to the
+    /// client persister hand-off.
+    pub verified_scalar: Option<zeroize::Zeroizing<[u8; 32]>>,
+}
 
 /// A single identity-key entry in an [`IdentityKeysChangeSet`].
 ///
-/// Platform-wallet only carries the DPP public-key record and a
-/// breadcrumb pointing at the wallet derivation that produced it;
-/// private-key bytes live exclusively on the client side (iOS
-/// Keychain, Android Keystore, etc.), populated by the client
-/// deriving locally from the owning wallet's mnemonic. When
-/// `wallet_id` + `derivation_indices` are both set, the client
-/// should re-derive the 32-byte scalar at
-/// `m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'` and
-/// persist it. When either is `None` the key is watch-only from
-/// this wallet's point of view.
-#[derive(Debug, Clone, PartialEq)]
+/// Carries the DPP public-key record, a breadcrumb pointing at the wallet
+/// derivation that produced it, and — for keys this wallet's seed
+/// reproduced under discovery's verify gate — the already-verified 32-byte
+/// ECDSA scalar in [`Self::private_key`]. The client persister stores the
+/// scalar directly (no mnemonic read, no re-derivation). When
+/// `private_key` is `None` the key is watch-only from this wallet's point
+/// of view; `wallet_id` + `derivation_indices` still describe the DIP-9
+/// coordinates at `m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'`.
+#[derive(Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentityKeyEntry {
     /// Owning identity.
@@ -411,6 +421,38 @@ pub struct IdentityKeyEntry {
     /// re-derive the private key. `None` means "view-only, no
     /// private key recoverable".
     pub derivation_indices: Option<IdentityKeyDerivationIndices>,
+    /// The already-verified 32-byte ECDSA scalar, carried so the client
+    /// persister stores it directly instead of re-deriving it from the
+    /// wallet mnemonic. `None` for watch-only keys.
+    ///
+    /// Never serialized: `Zeroizing` implements neither `Serialize` nor
+    /// `Deserialize`, and a secret must never land in any persisted
+    /// changeset, so this is `#[serde(skip)]`. A serialize/deserialize
+    /// round-trip yields `None` — the secret only transits in-process to
+    /// the same-tick FFI hand-off.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub private_key: Option<zeroize::Zeroizing<[u8; 32]>>,
+}
+
+/// Hand-written so the secret in [`IdentityKeyEntry::private_key`] is never
+/// printed. `IdentityKeyEntry` rides inside `IdentityKeysChangeSet` /
+/// `PlatformWalletChangeSet`, which are logged on persist errors, and
+/// `Zeroizing`'s derived `Debug` would print the inner bytes.
+impl std::fmt::Debug for IdentityKeyEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IdentityKeyEntry")
+            .field("identity_id", &self.identity_id)
+            .field("key_id", &self.key_id)
+            .field("public_key", &self.public_key)
+            .field("public_key_hash", &self.public_key_hash)
+            .field("wallet_id", &self.wallet_id)
+            .field("derivation_indices", &self.derivation_indices)
+            .field(
+                "private_key",
+                &self.private_key.as_ref().map(|_| "[redacted]"),
+            )
+            .finish()
+    }
 }
 
 /// Changes to per-identity key storage.
@@ -1171,6 +1213,59 @@ mod tests {
     fn test_empty_changeset() {
         let cs = PlatformWalletChangeSet::default();
         assert!(cs.is_empty());
+    }
+
+    /// `IdentityKeyEntry`'s hand-written `Debug` must redact the private
+    /// scalar — the entry rides inside changesets that are logged on
+    /// persist errors, and `Zeroizing`'s derived `Debug` would print the
+    /// bytes. A recognizably-patterned secret must not appear in the output.
+    #[test]
+    fn identity_key_entry_debug_redacts_private_key() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{KeyType, Purpose, SecurityLevel};
+
+        let secret = [0xAB_u8; 32];
+        let entry = IdentityKeyEntry {
+            identity_id: Identifier::from([1u8; 32]),
+            key_id: 0,
+            public_key: IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: 0,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: dpp::platform_value::BinaryData::new(vec![0x02; 33]),
+                disabled_at: None,
+            }),
+            public_key_hash: [0x11; 20],
+            wallet_id: Some([0x9A; 32]),
+            derivation_indices: Some(IdentityKeyDerivationIndices {
+                identity_index: 1,
+                key_index: 0,
+            }),
+            private_key: Some(zeroize::Zeroizing::new(secret)),
+        };
+
+        let rendered = format!("{:?}", entry);
+        // The secret never appears, in any common byte rendering.
+        assert!(!rendered.contains("171, 171"), "no decimal byte run");
+        assert!(!rendered.contains("ab, ab"), "no hex byte run");
+        assert!(!rendered.contains("[171"), "no decimal array open");
+        // Presence is still indicated, just redacted.
+        assert!(
+            rendered.contains("[redacted]"),
+            "private_key must render as redacted, got: {rendered}"
+        );
+
+        // A watch-only entry renders the absence as `None` (no redaction
+        // marker), confirming the field is faithfully Optional.
+        let watch_only = IdentityKeyEntry {
+            private_key: None,
+            ..entry
+        };
+        let rendered = format!("{:?}", watch_only);
+        assert!(rendered.contains("private_key: None"));
     }
 
     #[test]

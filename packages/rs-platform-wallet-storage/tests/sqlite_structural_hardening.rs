@@ -314,6 +314,7 @@ fn identity_key_entry_mismatch_rejected() {
         public_key_hash: [3u8; 20],
         wallet_id: Some(w),
         derivation_indices: None,
+        private_key: None,
     };
     let mut keys = IdentityKeysChangeSet::default();
     keys.upserts.insert((key_identity, 0), entry);

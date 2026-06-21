@@ -61,6 +61,8 @@ impl ManagedIdentity {
                     public_key_hash: pubkey_hash_of(pub_key),
                     wallet_id: None,
                     derivation_indices: None,
+                    // Watch-only snapshot — no secret rides this path.
+                    private_key: None,
                 },
             );
         }
@@ -279,8 +281,18 @@ impl ManagedIdentity {
         persister: &WalletPersister,
     ) {
         // Single-key form of [`Self::add_keys`] — one canonical
-        // key-layering + changeset path so the two can't drift.
-        self.add_keys(vec![(public_key, derivation_breadcrumb)], persister);
+        // key-layering + changeset path so the two can't drift. This
+        // entry point carries no secret (callers that have a verified
+        // scalar go through `add_keys` directly), so `verified_scalar`
+        // is `None`.
+        self.add_keys(
+            vec![crate::changeset::KeyWithBreadcrumb {
+                key: public_key,
+                breadcrumb: derivation_breadcrumb,
+                verified_scalar: None,
+            }],
+            persister,
+        );
     }
 
     /// Layer several `IdentityPublicKey`s onto this identity and emit ONE
@@ -295,7 +307,7 @@ impl ManagedIdentity {
     /// order-dependent watch-only-then-override). No-op on an empty list.
     pub fn add_keys(
         &mut self,
-        keys: Vec<crate::changeset::IdentityKeyWithBreadcrumb>,
+        keys: Vec<crate::changeset::KeyWithBreadcrumb>,
         persister: &WalletPersister,
     ) {
         use dpp::identity::accessors::IdentitySettersV0;
@@ -306,19 +318,31 @@ impl ManagedIdentity {
         let identity_id = self.id();
         let mut current = self.identity.public_keys().clone();
         let mut keys_cs = IdentityKeysChangeSet::default();
-        for (public_key, breadcrumb) in keys {
+        for crate::changeset::KeyWithBreadcrumb {
+            key: public_key,
+            breadcrumb,
+            verified_scalar,
+        } in keys
+        {
             let key_id = public_key.id();
             let public_key_hash = pubkey_hash_of(&public_key);
             current.insert(key_id, public_key.clone());
-            let (wallet_id, derivation_indices) = match breadcrumb {
+            // Couple the carried scalar to the breadcrumb: a scalar is only
+            // useful with its `(identity_index, key_index)`, and a client
+            // stores the bytes only when both are present, so dropping a
+            // stray scalar that arrived without a breadcrumb keeps the two
+            // from ever diverging (and stops a verified secret from being
+            // silently discarded downstream).
+            let (wallet_id, derivation_indices, private_key) = match breadcrumb {
                 Some((wallet_id, identity_index, key_index)) => (
                     Some(wallet_id),
                     Some(crate::changeset::IdentityKeyDerivationIndices {
                         identity_index,
                         key_index,
                     }),
+                    verified_scalar,
                 ),
-                None => (None, None),
+                None => (None, None, None),
             };
             keys_cs.upserts.insert(
                 (identity_id, key_id),
@@ -329,6 +353,7 @@ impl ManagedIdentity {
                     public_key_hash,
                     wallet_id,
                     derivation_indices,
+                    private_key,
                 },
             );
         }
@@ -410,8 +435,24 @@ mod tests {
         let persister = std::sync::Arc::new(CapturingPersister::default());
         let p = WalletPersister::new(wallet_id, std::sync::Arc::clone(&persister) as _);
 
-        // Key 0 is re-derivable (breadcrumb), key 1 is watch-only (None).
-        managed.add_keys(vec![(key(0), Some((wallet_id, 7, 0))), (key(1), None)], &p);
+        // Key 0 is re-derivable (breadcrumb + verified scalar), key 1 is
+        // watch-only (None).
+        let scalar = zeroize::Zeroizing::new([0x11u8; 32]);
+        managed.add_keys(
+            vec![
+                crate::changeset::KeyWithBreadcrumb {
+                    key: key(0),
+                    breadcrumb: Some((wallet_id, 7, 0)),
+                    verified_scalar: Some(scalar.clone()),
+                },
+                crate::changeset::KeyWithBreadcrumb {
+                    key: key(1),
+                    breadcrumb: None,
+                    verified_scalar: None,
+                },
+            ],
+            &p,
+        );
 
         // Both keys landed in the DPP identity.
         assert_eq!(managed.identity.public_keys().len(), 2);
@@ -434,12 +475,23 @@ mod tests {
             "reproducible key carries its breadcrumb"
         );
         assert_eq!(upserts[&(id, 0)].wallet_id, Some(wallet_id));
+        // The verified scalar is moved into the changeset entry so the
+        // client persister stores it without re-deriving from a mnemonic.
+        assert_eq!(
+            upserts[&(id, 0)].private_key.as_deref(),
+            Some(&*scalar),
+            "reproducible key carries its verified scalar"
+        );
         assert_eq!(
             upserts[&(id, 1)].derivation_indices,
             None,
             "watch-only key carries no breadcrumb"
         );
         assert_eq!(upserts[&(id, 1)].wallet_id, None);
+        assert!(
+            upserts[&(id, 1)].private_key.is_none(),
+            "watch-only key carries no secret"
+        );
     }
 
     /// An empty `add_keys` is a no-op — no changeset stored.
@@ -458,6 +510,48 @@ mod tests {
         assert!(
             persister.stores.lock().unwrap().is_empty(),
             "empty add_keys stores nothing"
+        );
+    }
+
+    /// A scalar that arrives WITHOUT a breadcrumb is dropped, never carried:
+    /// the entry stays watch-only (no indices, no secret). Pins the
+    /// scalar/breadcrumb coupling so a verified secret can't reach the client
+    /// without the `(identity_index, key_index)` it needs to be stored.
+    #[test]
+    fn add_keys_drops_scalar_without_breadcrumb() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new([0xAB; 32], std::sync::Arc::clone(&persister) as _);
+
+        managed.add_keys(
+            vec![crate::changeset::KeyWithBreadcrumb {
+                key: key(0),
+                breadcrumb: None,
+                verified_scalar: Some(zeroize::Zeroizing::new([0x22u8; 32])),
+            }],
+            &p,
+        );
+
+        let stores = persister.stores.lock().unwrap();
+        let upserts = &stores
+            .last()
+            .expect("a changeset was stored")
+            .identity_keys
+            .as_ref()
+            .expect("identity_keys present")
+            .upserts;
+        let entry = &upserts[&(managed.id(), 0)];
+        assert_eq!(entry.derivation_indices, None);
+        assert_eq!(entry.wallet_id, None);
+        assert!(
+            entry.private_key.is_none(),
+            "a scalar without a breadcrumb must be dropped, not carried"
         );
     }
 

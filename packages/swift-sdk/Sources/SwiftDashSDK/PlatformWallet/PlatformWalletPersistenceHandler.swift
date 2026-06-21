@@ -1472,21 +1472,25 @@ public class PlatformWalletPersistenceHandler {
     ///   same composite the Rust side uses for `BTreeMap` uniqueness.
     /// - Each `removed` pair deletes the matching row.
     ///
-    /// `PrivateKeyKindFFI` encoding:
-    /// - `None` (0): clear any stored `privateKeyKeychainIdentifier`.
-    /// - `Clear` (1): store raw 32-byte key material to the Keychain
-    ///   via `KeychainManager`, record the resulting identifier.
-    /// - `AtWalletDerivationPath` (2): no Keychain write — the seed
-    ///   is stored at wallet level, and `derivationPath` tells the
-    ///   signing path to re-derive. Stored as the identifier so
-    ///   `hasPrivateKey` still reflects presence, but with a
-    ///   `derived:` prefix so consumers can distinguish stored-bytes
-    ///   vs. derived-on-demand.
+    /// Private-key handling:
+    /// - When the entry carries a verified scalar (`privateKey != nil`),
+    ///   it is stored directly to the Keychain via `storeCarriedIdentityKey`
+    ///   and the resulting account string is recorded on
+    ///   `privateKeyKeychainIdentifier`.
+    /// - When the entry carries no scalar, the existing
+    ///   `privateKeyKeychainIdentifier` is PRESERVED — a materialized key
+    ///   stays materialized, and a genuinely watch-only key never had one.
     func persistIdentityKeys(
         walletId: Data,
         upserts: [IdentityKeyEntrySnapshot],
         removed: [(identityId: Data, keyId: UInt32)]
     ) {
+        // Read-only over `upserts`: this function never mutates the array, so
+        // the caller (`persistIdentityKeysCallback`) stays the sole owner of
+        // each snapshot's `privateKey` buffer and can scrub it in place once
+        // this returns. Scrubbing here instead would hit a copy-on-write fork
+        // (the caller's array still references the originals) and leave the
+        // carried secret intact in the buffer handed to the Keychain.
         onQueue {
         for entry in upserts {
             // PersistentPublicKey is keyed on (identity, keyId) via
@@ -1569,31 +1573,54 @@ public class PlatformWalletPersistenceHandler {
 
             // Private-key handling.
             //
-            // No bytes cross the FFI — when the entry carries
-            // derivation indices, Swift re-derives the 32-byte
-            // ECDSA scalar from the owning wallet's mnemonic and
-            // stores it in the keychain under the serialized
-            // derivation path. Wallet id resolves the same way as
-            // for the identity row itself: prefer per-entry
-            // `entry.walletId` (lets Rust route a key to a
-            // foreign wallet in some future cross-wallet-scan
-            // flow), fall back to the scope `walletId` that
-            // parameterised this callback. Keys without
-            // derivation indices are watch-only and clear any
-            // prior stored identifier.
-            if let indices = entry.derivationIndices {
+            // Rust discovery already derived and verified the 32-byte ECDSA
+            // scalar and carries it here in `entry.privateKey` — Swift
+            // stores those bytes directly, no mnemonic read and no
+            // re-derivation (the old re-derive pipeline depended on a
+            // readable keychain mnemonic that is absent during import). Wallet
+            // id resolves the same way as for the identity row itself: prefer
+            // per-entry `entry.walletId` (lets Rust route a key to a foreign
+            // wallet in some future cross-wallet-scan flow), fall back to the
+            // scope `walletId` that parameterised this callback.
+            //
+            // No-secret entries (watch-only keys, and the watch-only snapshot
+            // a flow emits for an already-materialized key) PRESERVE any
+            // existing `privateKeyKeychainIdentifier`: a materialized key
+            // stays materialized (its keychain item is durable), and a
+            // genuinely watch-only key never had an id to preserve. This
+            // makes materialization independent of the order Rust emits the
+            // watch-only snapshot vs. the secret-bearing upsert.
+            if let scalar = entry.privateKey, let indices = entry.derivationIndices {
                 let resolvedWalletId = entry.walletId ?? walletId
-                let keychainId = deriveAndStoreIdentityKey(
+                let keychainId = storeCarriedIdentityKey(
                     entry: entry,
+                    scalar: scalar,
                     walletId: resolvedWalletId,
                     indices: indices,
-                    publicKeyHex: entry.publicKeyData.toHexString(),
-                    publicKeyHashHex: entry.publicKeyHash.toHexString(),
                     identityIdBase58: identityHex
                 )
-                row.privateKeyKeychainIdentifier = keychainId
-            } else {
-                row.privateKeyKeychainIdentifier = nil
+                // Only overwrite the column when the store succeeded. A
+                // failed store (verify mismatch / keychain write failure)
+                // leaves the key watch-only without clobbering a previously
+                // materialized id; the next persister upsert retries.
+                if let keychainId = keychainId {
+                    row.privateKeyKeychainIdentifier = keychainId
+                }
+            } else if entry.derivationIndices != nil,
+                row.privateKeyKeychainIdentifier == nil
+            {
+                // Breadcrumb present but no carried scalar: the key is
+                // wallet-derivable yet its private bytes were materialized by
+                // another path (e.g. identity registration writes its keychain
+                // items directly). Adopt the existing keychain account by a
+                // public-key-hex lookup — no derivation, no secret loaded — so
+                // the fast-path signer lookup and the `hasPrivateKey` marker
+                // work. A genuinely watch-only key finds nothing and stays so.
+                if let account = KeychainManager.shared.identityPrivateKeyAccount(
+                    publicKeyHex: entry.publicKeyData.toHexString()
+                ) {
+                    row.privateKeyKeychainIdentifier = account
+                }
             }
 
             row.lastAccessed = Date()
@@ -1612,10 +1639,9 @@ public class PlatformWalletPersistenceHandler {
             }
         }
 
-        // `walletId` is now consumed as the scope fallback in the
-        // derivation branch above, so it's no longer a dead
-        // parameter. No save() — bracketed by
-        // changesetBegin/End.
+        // `walletId` is consumed as the scope fallback when resolving the
+        // owning wallet for a carried key, so it's not a dead parameter.
+        // No save() — bracketed by changesetBegin/End.
         }  // onQueue
     }
 
@@ -2170,74 +2196,59 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
-    // MARK: - Identity private-key derivation
+    // MARK: - Identity private-key materialization
 
-    /// Derive the 32-byte ECDSA scalar for an identity key from the
-    /// owning wallet's mnemonic and stash it in the keychain at the
-    /// serialized DIP-9 derivation path. Returns the keychain
-    /// account string on success (which `PersistentPublicKey.priv-
-    /// ateKeyKeychainIdentifier` stores) or `nil` if anything in the
-    /// pipeline fails — mnemonic missing, network unresolved, path
-    /// build error, FFI derivation error, or keychain write failure.
+    /// Store the already-verified 32-byte ECDSA scalar carried from Rust
+    /// discovery into the keychain at the serialized DIP-9 derivation path.
+    /// Returns the keychain account string on success (which
+    /// `PersistentPublicKey.privateKeyKeychainIdentifier` stores) or `nil`
+    /// if anything fails — network unresolved, path build error, verify
+    /// mismatch, or keychain write failure.
+    ///
+    /// No mnemonic is read and no key is re-derived: the scalar is the one
+    /// discovery already validated against the on-chain key. Swift only
+    /// formats the keychain account label (a pure string, not key
+    /// derivation) and persists the bytes — the sanctioned Keychain
+    /// exception in `swift-sdk/CLAUDE.md`.
     ///
     /// Idempotent per `(wallet, identity_index, key_index)` triple:
-    /// repeated persister callbacks for the same key overwrite
-    /// cleanly via `storeIdentityPrivateKey`'s delete-then-add.
+    /// repeated persister callbacks for the same key overwrite cleanly via
+    /// `storeIdentityPrivateKey`'s delete-then-add.
     ///
-    /// Runs off the main actor (this whole handler fires from the
-    /// Rust persister thread); every touched API is either
-    /// `nonisolated` or backed by thread-safe primitives.
-    private func deriveAndStoreIdentityKey(
+    /// Runs off the main actor (this whole handler fires from the Rust
+    /// persister thread); every touched API is either `nonisolated` or
+    /// backed by thread-safe primitives.
+    private func storeCarriedIdentityKey(
         entry: IdentityKeyEntrySnapshot,
+        scalar: Data,
         walletId: Data,
         indices: (identityIndex: UInt32, keyIndex: UInt32),
-        publicKeyHex: String,
-        publicKeyHashHex: String,
         identityIdBase58: String
     ) -> String? {
-        // 1. Resolve the wallet's network from SwiftData. We need it
-        //    to feed `KeyDerivation.getIdentityAuthenticationPath`
-        //    so the path chooses the right `coin_type` (mainnet vs
+        let publicKeyHashHex = entry.publicKeyHash.toHexString()
+
+        // 1. Resolve the wallet's network from SwiftData. Needed to feed
+        //    `KeyDerivation.getIdentityAuthenticationPath` so the keychain
+        //    account label carries the right `coin_type` (mainnet vs
         //    testnet). Scope to THIS handler's network via
-        //    `walletRecordPredicate` — the same `walletId` can now have
-        //    a row per network, and a bare walletId-only fetch could
-        //    resolve to a sibling network's row and derive the key on
-        //    the wrong chain (unusable on-chain).
+        //    `walletRecordPredicate` — the same `walletId` can have a row
+        //    per network, and a bare walletId-only fetch could resolve to a
+        //    sibling network's row.
         let walletDescriptor = FetchDescriptor<PersistentWallet>(
             predicate: walletRecordPredicate(walletId: walletId)
         )
         guard
             let persistentWallet = try? backgroundContext.fetch(walletDescriptor).first
         else {
-            print("⚠️ deriveAndStoreIdentityKey: wallet row not found for \(walletId.prefix(4).toHexString())…")
+            print("⚠️ storeCarriedIdentityKey: wallet row not found for \(walletId.prefix(4).toHexString())…")
             return nil
         }
         let network: Network = persistentWallet.network ?? .testnet
 
-        // 2. Fetch the mnemonic UTF-8 bytes for this wallet from the
-        //    keychain. Keep the call site off Swift `String` so the
-        //    plaintext phrase does not live in higher-level heap
-        //    objects longer than necessary.
-        let mnemonicUTF8Bytes: Data
-        do {
-            mnemonicUTF8Bytes = try WalletStorage().retrieveMnemonicUTF8Bytes(for: walletId)
-        } catch {
-            print("⚠️ deriveAndStoreIdentityKey: mnemonic missing for wallet \(walletId.prefix(4).toHexString())…: \(error.localizedDescription)")
-            return nil
-        }
-
-        // 3. Mnemonic UTF-8 bytes → 64-byte BIP39 seed.
-        let seed: Data
-        do {
-            seed = try Mnemonic.toSeed(mnemonicUTF8Bytes: mnemonicUTF8Bytes)
-        } catch {
-            print("⚠️ deriveAndStoreIdentityKey: mnemonic-to-seed failed: \(error.localizedDescription)")
-            return nil
-        }
-
-        // 4. Build the DIP-9 authentication path. The string form
-        //    doubles as the keychain account suffix so the explorer
-        //    can render it.
+        // 2. Build the DIP-9 authentication path string. This is a pure
+        //    string format for the keychain account label (the FFI
+        //    path-formatter takes only the network + indices, no mnemonic);
+        //    it is not key derivation.
         let derivationPath: String
         do {
             derivationPath = try KeyDerivation.getIdentityAuthenticationPath(
@@ -2246,36 +2257,41 @@ public class PlatformWalletPersistenceHandler {
                 keyIndex: indices.keyIndex
             )
         } catch {
-            print("⚠️ deriveAndStoreIdentityKey: path build failed: \(error.localizedDescription)")
+            print("⚠️ storeCarriedIdentityKey: path build failed: \(error.localizedDescription)")
             return nil
         }
 
-        // 5. Derive the 32-byte scalar via the FFI bridge. The
-        //    bridge writes into a caller-provided buffer; we zero
-        //    the scratch `Data` on the way out for hygiene (the
-        //    keychain item is the real home for the bytes).
-        var privateKey = Data(count: 32)
-        let rc: Int32 = privateKey.withUnsafeMutableBytes { pkBytes -> Int32 in
-            guard let pkPtr = pkBytes.bindMemory(to: UInt8.self).baseAddress else { return -1 }
-            return seed.withUnsafeBytes { seedBytes -> Int32 in
-                guard let seedPtr = seedBytes.bindMemory(to: UInt8.self).baseAddress else {
-                    return -1
-                }
-                return derivationPath.withCString { pathCStr in
-                    key_wallet_derive_private_key_from_seed(seedPtr, pathCStr, pkPtr)
+        // 3. Verify-before-store mirror-check (ECDSA_SECP256K1 only).
+        //    For an ECDSA_SECP256K1 key the stored `publicKeyHash` is
+        //    exactly hash160(compressed pubkey), so a single hash160 of the
+        //    carried scalar's pubkey must reproduce it. A corrupted or
+        //    mismatched transfer drops to watch-only rather than storing a
+        //    wrong key. Other key types are NOT re-verified here: an
+        //    ECDSA_HASH160 key's `publicKeyHash` is a double hash
+        //    (hash160 of the already-hashed `data()`), so this single-hash
+        //    check would never match — they rely on the type-correct Rust
+        //    `validate_private_key_bytes` gate that already ran at discovery.
+        //    A future non-ECDSA carry must grow a per-type branch here.
+        if entry.keyType == KeyType.ecdsaSecp256k1.rawValue {
+            var derivedHash = Data(count: 20)
+            let hashRc: Int32 = derivedHash.withUnsafeMutableBytes { outBytes -> Int32 in
+                guard let outPtr = outBytes.bindMemory(to: UInt8.self).baseAddress else { return -1 }
+                return scalar.withUnsafeBytes { pkBytes -> Int32 in
+                    guard let pkPtr = pkBytes.bindMemory(to: UInt8.self).baseAddress else {
+                        return -1
+                    }
+                    return platform_wallet_pubkey_hash_from_private_key(pkPtr, outPtr)
                 }
             }
-        }
-        guard rc == 0 else {
-            print("⚠️ deriveAndStoreIdentityKey: FFI derive failed (rc=\(rc))")
-            // Zero out any partial write before returning.
-            privateKey.resetBytes(in: 0..<privateKey.count)
-            return nil
+            let derivedHashHex = derivedHash.toHexString()
+            guard hashRc == 0, derivedHashHex == publicKeyHashHex else {
+                print("⚠️ storeCarriedIdentityKey: carried key does not reproduce on-chain hash at \(derivationPath) (rc=\(hashRc), derived=\(derivedHashHex.prefix(8))…, expected=\(publicKeyHashHex.prefix(8))…) — leaving watch-only")
+                return nil
+            }
         }
 
-        // 6. Stash in the keychain. `KeychainManager.shared` is the
-        //    single app-wide instance backed by
-        //    `org.dashfoundation.wallet`.
+        // 4. Stash in the keychain. `KeychainManager.shared` is the single
+        //    app-wide instance backed by `org.dashfoundation.wallet`.
         let metadata = KeychainManager.IdentityPrivateKeyMetadata(
             identityId: identityIdBase58,
             keyId: entry.keyId,
@@ -2283,23 +2299,20 @@ public class PlatformWalletPersistenceHandler {
             identityIndex: indices.identityIndex,
             keyIndex: indices.keyIndex,
             derivationPath: derivationPath,
-            publicKey: publicKeyHex,
+            publicKey: entry.publicKeyData.toHexString(),
             publicKeyHash: publicKeyHashHex,
             keyType: entry.keyType,
             purpose: entry.purpose,
             securityLevel: entry.securityLevel
         )
         let account = KeychainManager.shared.storeIdentityPrivateKey(
-            privateKey,
+            scalar,
             derivationPath: derivationPath,
             metadata: metadata
         )
 
-        // 7. Scrub the local copy regardless of outcome.
-        privateKey.resetBytes(in: 0..<privateKey.count)
-
         if account == nil {
-            print("⚠️ deriveAndStoreIdentityKey: keychain write failed for \(derivationPath)")
+            print("⚠️ storeCarriedIdentityKey: keychain write failed for \(derivationPath)")
         }
         return account
     }
@@ -2411,8 +2424,15 @@ public class PlatformWalletPersistenceHandler {
         /// Owning wallet if this key is derivable from one we control.
         let walletId: Data?
         /// DIP-9 `(identity_index, key_index)` pair. Present iff the
-        /// client is expected to re-derive the private key locally.
+        /// client is expected to materialize a private key locally.
         let derivationIndices: (identityIndex: UInt32, keyIndex: UInt32)?
+        /// The already-verified 32-byte ECDSA scalar carried from Rust
+        /// discovery, ready to store in the keychain directly (no mnemonic
+        /// re-derive). `nil` for a watch-only key. `var` so the in-place
+        /// `resetBytes` scrub at the end of `persistIdentityKeys` zeroes the
+        /// snapshot's own backing buffer (a copied `Data` would scrub only
+        /// the copy under copy-on-write, leaving the original intact).
+        var privateKey: Data?
         /// Full ContractBounds projection mirrored from Rust:
         /// `nil` when the key has no bounds; `.singleContract` for
         /// kind=1; `.singleContractDocumentType` for kind=2. Carried
@@ -5877,6 +5897,21 @@ private func persistIdentityKeysCallback(
                     ? (e.identity_index, e.key_index)
                     : nil
 
+            // Copy the verified scalar out of the FFI struct when present.
+            // The intermediate tuple is an un-scrubbed stack copy, so wipe
+            // it immediately after the `Data` copy; the `Data` itself is
+            // scrubbed in `persistIdentityKeys` once it has been stored (or
+            // the entry skipped). The Rust side zeroes its own buffer in
+            // `free_identity_key_entry_ffi` after this callback returns.
+            var privateKey: Data? = nil
+            if e.private_key_is_some {
+                var pkTuple = e.private_key
+                privateKey = Swift.withUnsafeBytes(of: &pkTuple) { Data($0) }
+                Swift.withUnsafeMutableBytes(of: &pkTuple) { raw in
+                    for j in raw.indices { raw[j] = 0 }
+                }
+            }
+
             // Project the contract-bounds trio (kind / id / doc-
             // type C-string) into the Swift enum. Mirrors the Rust
             // `IdentityKeyEntryFFI::from_entry` encoding — kinds:
@@ -5918,6 +5953,7 @@ private func persistIdentityKeysCallback(
                 publicKeyHash: dataFromTuple20(e.public_key_hash),
                 walletId: walletId,
                 derivationIndices: indices,
+                privateKey: privateKey,
                 contractBounds: bounds
             ))
         }
@@ -5933,6 +5969,17 @@ private func persistIdentityKeysCallback(
     }
 
     handler.persistIdentityKeys(walletId: walletId, upserts: upserts, removed: removed)
+
+    // Scrub every carried scalar now that `persistIdentityKeys` has returned.
+    // `persistIdentityKeys` only reads `upserts`, so this array is the sole
+    // owner of each snapshot's `privateKey` buffer here — a subscript mutation
+    // zeroes the actual bytes in place (no copy-on-write fork). Covers every
+    // branch (stored / verify-mismatch / watch-only); the Rust-side FFI buffer
+    // was already volatile-zeroed in `free_identity_key_entry_ffi`.
+    for i in upserts.indices where upserts[i].privateKey != nil {
+        let count = upserts[i].privateKey!.count
+        upserts[i].privateKey!.resetBytes(in: 0..<count)
+    }
     return 0
 }
 

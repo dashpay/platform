@@ -145,6 +145,53 @@ pub unsafe extern "C" fn platform_wallet_hash160(
     0
 }
 
+/// Compute the hash160 of the **compressed** secp256k1 public key for a
+/// 32-byte ECDSA private scalar — i.e. the on-chain `ECDSA_SECP256K1`
+/// public-key hash that scalar would own.
+///
+/// Lets the Swift Keychain layer cheaply re-verify, after re-deriving an
+/// identity key's private scalar, that the scalar actually reproduces the
+/// stored on-chain key's hash before persisting it — a cross-FFI guard
+/// against the Rust-side derivation path and the Swift-side re-derivation
+/// ever drifting (compute it here rather than pull a secp256k1 + RIPEMD-160
+/// stack into Swift). Compression is network-independent, so no network
+/// parameter is needed.
+///
+/// # Parameters
+/// - `private_key`: pointer to the 32-byte ECDSA secret scalar.
+/// - `out_hash`: caller-allocated 20-byte buffer; the hash160 of the
+///   compressed pubkey is written here on success.
+///
+/// Returns 0 on success, -1 on null pointer or an invalid (out-of-range)
+/// secret scalar.
+///
+/// # Safety
+/// - `private_key` must be a valid `[u8; 32]` buffer for the call.
+/// - `out_hash` must be a valid `[u8; 20]` writable buffer.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_pubkey_hash_from_private_key(
+    private_key: *const u8,
+    out_hash: *mut u8,
+) -> i32 {
+    if private_key.is_null() || out_hash.is_null() {
+        return -1;
+    }
+    use dashcore::hashes::Hash;
+    use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+
+    let sk_bytes = std::slice::from_raw_parts(private_key, 32);
+    let secp = Secp256k1::new();
+    let secret_key = match SecretKey::from_slice(sk_bytes) {
+        Ok(sk) => sk,
+        Err(_) => return -1,
+    };
+    let pubkey = PublicKey::from_secret_key(&secp, &secret_key).serialize();
+    let hash = dashcore::hashes::hash160::Hash::hash(&pubkey);
+    let h: [u8; 20] = hash.to_byte_array();
+    std::ptr::copy_nonoverlapping(h.as_ptr(), out_hash, 20);
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,6 +228,57 @@ mod tests {
         let input = [0u8; 33];
         let rc =
             unsafe { platform_wallet_hash160(input.as_ptr(), input.len(), std::ptr::null_mut()) };
+        assert_eq!(rc, -1);
+    }
+
+    #[test]
+    fn test_pubkey_hash_from_private_key_matches_canonical_derivation() {
+        use dashcore::hashes::Hash;
+        use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+
+        // A fixed, in-range scalar.
+        let mut scalar = [0u8; 32];
+        scalar[31] = 1;
+
+        let mut out = [0u8; 20];
+        let rc = unsafe {
+            platform_wallet_pubkey_hash_from_private_key(scalar.as_ptr(), out.as_mut_ptr())
+        };
+        assert_eq!(rc, 0);
+
+        let secp = Secp256k1::new();
+        let sk = SecretKey::from_slice(&scalar).expect("in-range scalar");
+        let pubkey = PublicKey::from_secret_key(&secp, &sk).serialize();
+        let expected: [u8; 20] = dashcore::hashes::hash160::Hash::hash(&pubkey).to_byte_array();
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn test_pubkey_hash_from_private_key_rejects_null() {
+        let mut out = [0u8; 20];
+        let scalar = [1u8; 32];
+        assert_eq!(
+            unsafe {
+                platform_wallet_pubkey_hash_from_private_key(std::ptr::null(), out.as_mut_ptr())
+            },
+            -1
+        );
+        assert_eq!(
+            unsafe {
+                platform_wallet_pubkey_hash_from_private_key(scalar.as_ptr(), std::ptr::null_mut())
+            },
+            -1
+        );
+    }
+
+    #[test]
+    fn test_pubkey_hash_from_private_key_rejects_invalid_scalar() {
+        // All-zero scalar is out of secp256k1's valid range.
+        let scalar = [0u8; 32];
+        let mut out = [0u8; 20];
+        let rc = unsafe {
+            platform_wallet_pubkey_hash_from_private_key(scalar.as_ptr(), out.as_mut_ptr())
+        };
         assert_eq!(rc, -1);
     }
 
