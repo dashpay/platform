@@ -1211,7 +1211,7 @@ mod tests {
     /// confirmed). Routing the payment hooks only for `TransactionDetected`
     /// would leave the entry `Pending` forever. This drives the real adapter
     /// dispatch
-    /// ([`run_dashpay_payment_hooks`](crate::changeset::core_bridge::run_dashpay_payment_hooks))
+    /// ([`run_dashpay_payment_hooks`](crate::wallet::identity::network::run_dashpay_payment_hooks))
     /// with a `BlockProcessed` event and pins the flip end-to-end, so a
     /// regression that re-narrows the routing to `TransactionDetected` is
     /// caught here. Also pins idempotency across a repeated block-processing
@@ -1308,7 +1308,7 @@ mod tests {
             addresses_derived: Vec::new(),
         };
 
-        crate::changeset::core_bridge::run_dashpay_payment_hooks(
+        crate::wallet::identity::network::run_dashpay_payment_hooks(
             &iw.wallet_manager,
             &wallet_id,
             &p,
@@ -1345,7 +1345,7 @@ mod tests {
 
         // Idempotent: a repeated block-processing round for the same txid
         // changes nothing (the confirm path skips entries past `Pending`).
-        crate::changeset::core_bridge::run_dashpay_payment_hooks(
+        crate::wallet::identity::network::run_dashpay_payment_hooks(
             &iw.wallet_manager,
             &wallet_id,
             &p,
@@ -1418,7 +1418,7 @@ mod tests {
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
         };
-        crate::changeset::core_bridge::run_dashpay_payment_hooks(
+        crate::wallet::identity::network::run_dashpay_payment_hooks(
             &iw.wallet_manager,
             &wallet_id,
             &p,
@@ -1479,7 +1479,7 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
         };
-        crate::changeset::core_bridge::run_dashpay_payment_hooks(
+        crate::wallet::identity::network::run_dashpay_payment_hooks(
             &iw.wallet_manager,
             &wallet_id,
             &p,
@@ -1584,7 +1584,7 @@ mod tests {
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
         };
-        crate::changeset::core_bridge::run_dashpay_payment_hooks(
+        crate::wallet::identity::network::run_dashpay_payment_hooks(
             &iw.wallet_manager,
             &wallet_id,
             &p,

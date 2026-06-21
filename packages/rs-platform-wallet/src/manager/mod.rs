@@ -28,6 +28,7 @@ use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
 use crate::wallet::core::BalanceUpdateHandler;
+use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
@@ -133,10 +134,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // with SPV's write lock.
         let lock_handler = Arc::new(LockNotifyHandler::new(Arc::clone(&lock_notify)));
         let balance_handler = Arc::new(BalanceUpdateHandler::new(Arc::clone(&wallets)));
+        // DashPayPaymentHandler records incoming DashPay payments and
+        // confirms sent ones off the wallet-event fan-out, keeping that
+        // domain logic out of the generic core-changeset bridge. It holds
+        // the wallet-manager (for the in-memory payment state it mutates)
+        // and the persister (to write the resulting payment rows).
+        let dashpay_payment_handler = Arc::new(DashPayPaymentHandler::new(
+            Arc::clone(&wallet_manager),
+            Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>,
+        ));
         let event_manager = Arc::new(PlatformEventManager::new(vec![
             app_handler,
             lock_handler,
             balance_handler,
+            dashpay_payment_handler,
         ]));
 
         let spv = Arc::new(SpvRuntime::new(

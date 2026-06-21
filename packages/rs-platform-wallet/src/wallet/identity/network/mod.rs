@@ -37,6 +37,12 @@ mod contact_info;
 mod contact_requests;
 mod contacts;
 mod dashpay_sync;
+mod payment_handler;
+pub(crate) use payment_handler::DashPayPaymentHandler;
+// Re-exported for the payments unit tests, which drive the hooks
+// directly; the handler itself calls it module-locally.
+#[cfg(test)]
+pub(crate) use payment_handler::run_dashpay_payment_hooks;
 mod payments;
 pub(crate) use payments::{
     confirm_sent_dashpay_payment, confirm_sent_dashpay_payment_by_txid,
