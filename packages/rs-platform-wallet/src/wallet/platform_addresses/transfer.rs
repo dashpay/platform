@@ -5,7 +5,6 @@ use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::version::PlatformVersion;
-use dpp::version::LATEST_PLATFORM_VERSION;
 use key_wallet::PlatformP2PKHAddress;
 
 use crate::changeset::Merge;
@@ -419,7 +418,18 @@ impl PlatformAddressWallet {
             }
         };
 
-        let version = platform_version.unwrap_or(LATEST_PLATFORM_VERSION);
+        // Default to the wallet's SDK version (`self.sdk.version()`) — the
+        // same network-floored, protocol-version-tracking accessor that
+        // `transfer()` uses — rather than `LATEST_PLATFORM_VERSION`. This
+        // wrapper rejects `InputSelection::Auto`, so the production Auto UI
+        // never reaches it, but defaulting to LATEST here would still let the
+        // change-augmentation / fee-headroom math size version-keyed values
+        // (`min_output_amount`, `estimate_min_fee`) against a different
+        // version than the submit gate on a non-latest-pinned SDK. Defending
+        // in depth keeps both `transfer` entry points sizing every
+        // version-keyed value against the SAME version. An explicit `Some(v)`
+        // is honored as given.
+        let version = platform_version.unwrap_or_else(|| self.sdk.version());
 
         let final_outputs = match output_change_address {
             Some(change_addr) => {
@@ -1266,6 +1276,7 @@ mod auto_select_tests {
     use dpp::address_funds::AddressWitness;
     use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
     use dpp::state_transition::StateTransitionStructureValidation;
+    use dpp::version::LATEST_PLATFORM_VERSION;
     fn p2pkh(byte: u8) -> PlatformAddress {
         PlatformAddress::P2pkh([byte; 20])
     }

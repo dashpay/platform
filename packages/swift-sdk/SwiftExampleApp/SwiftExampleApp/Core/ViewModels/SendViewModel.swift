@@ -118,6 +118,24 @@ class SendViewModel: ObservableObject {
     @Published var error: String?
     @Published var successMessage: String?
 
+    /// Per-output minimum credit amount (`min_output_amount`) the chain
+    /// enforces for address-funds transitions, resolved on the Rust side from
+    /// the wallet's current platform version and pushed in by the VIEW
+    /// (`SendTransactionView.resolvePlatformLimits()`) on appear — the view
+    /// model has no wallet handle of its own. A `platformToPlatform` transfer
+    /// sends a single output, and DPP rejects any output below this floor, so
+    /// `canSend` requires the requested credits to reach it.
+    ///
+    /// `nil` until the view resolves it (or if resolution fails). An
+    /// unresolved floor keeps the `.platformToPlatform` Send gate CLOSED
+    /// (never *under*-gates) — the same conservative treatment the dedicated
+    /// `TransferPlatformAddressView` gives a nil `minOutputAmount`. Resolved
+    /// via `ManagedPlatformAddressWallet.minOutputAmount()` rather than
+    /// mirroring the protocol constant in Swift, which would drift if the
+    /// version changed it. Only the platform path consults this; the
+    /// core/shielded flows are unaffected.
+    @Published var platformMinOutputAmount: UInt64?
+
     private let network: Network
 
     init(network: Network) {
@@ -335,7 +353,18 @@ class SendViewModel: ObservableObject {
             // the lock floor so a doomed (sub-fee) amount can't kick off
             // the lock-build + proof pipeline.
             return (amountDuffs ?? 0) >= Self.minShieldFromCoreDuffs
-        case .platformToPlatform, .platformToShielded,
+        case .platformToPlatform:
+            // An address-funds transfer sends exactly one output, and DPP
+            // rejects any output below `min_output_amount`. Gate on the
+            // version-locked floor (resolved Rust-side and pushed in by the
+            // view) so the button reflects what DPP will accept, rather than
+            // only `> 0`, which would enable a sub-minimum amount that fails
+            // structure validation after submit — matching the dedicated
+            // `TransferPlatformAddressView`. An unresolved floor (`nil`) keeps
+            // the gate CLOSED (never *under*-gates); it loads on appear.
+            guard let minOutput = platformMinOutputAmount else { return false }
+            return (amountCredits ?? 0) >= minOutput
+        case .platformToShielded,
              .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
             return (amountCredits ?? 0) > 0
         }

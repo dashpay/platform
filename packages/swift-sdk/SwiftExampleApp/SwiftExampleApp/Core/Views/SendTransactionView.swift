@@ -14,6 +14,27 @@ struct SendTransactionView: View {
     /// Drives the camera QR scanner sheet launched from the recipient row.
     @State private var showQRScanner = false
 
+    /// Per-input minimum credit amount (`min_input_amount`) the chain
+    /// enforces for address-funds transitions, resolved from the wallet's
+    /// current platform version via
+    /// `ManagedPlatformAddressWallet.minInputAmount()` once on appear —
+    /// mirroring `TransferPlatformAddressView`. The Rust Auto selector's
+    /// `build_auto_select_candidates` drops any funded address below this
+    /// floor, so the per-account aggregation in
+    /// `resolvePlatformSenderAccountIndex()` must sum only balances `>=` it to
+    /// match the input set Rust will actually consume; counting dust could
+    /// rank a dust-heavy account above a sibling whose spendable (≥ floor)
+    /// balance actually covers amount + fee.
+    ///
+    /// `nil` until resolved (or if resolution fails). Unlike the dedicated
+    /// sheet — which also gates its submit button on this being non-nil — the
+    /// generic Send picker only uses it to score per-account coverage, and the
+    /// account picker falls back to a conservative `balance > 0` floor when
+    /// it's unresolved (see `resolvePlatformSenderAccountIndex()`). The
+    /// separate `platformMinOutputAmount` gate on the view model keeps the
+    /// Send button closed for sub-minimum platform amounts regardless.
+    @State private var minInputAmount: UInt64? = nil
+
     @Environment(\.modelContext) private var modelContext
 
     /// BLAST-synced platform-address balances for this wallet —
@@ -308,6 +329,17 @@ struct SendTransactionView: View {
                     Text(msg)
                 }
             }
+            .onAppear {
+                // Resolve the version-locked address-funds limits once from
+                // the wallet's current platform version (read Rust-side), the
+                // same accessors the dedicated TransferPlatformAddressView
+                // reads on appear. `minInputAmount` floors per-account
+                // coverage scoring in `resolvePlatformSenderAccountIndex()`;
+                // `platformMinOutputAmount` is pushed to the view model so
+                // `canSend` can reject a sub-`min_output_amount` platform
+                // transfer up front instead of after submit.
+                resolvePlatformLimits()
+            }
             .onChange(of: viewModel.detectedAddressType) { _, _ in
                 autoSelectSource()
             }
@@ -444,6 +476,32 @@ struct SendTransactionView: View {
         return wallet.identities.reduce(UInt64(0)) { $0 + UInt64(bitPattern: $1.balance) }
     }
 
+    /// Resolve the chain's per-input (`min_input_amount`) and per-output
+    /// (`min_output_amount`) credit floors once from the wallet's current
+    /// platform version (version-locked, read on the Rust side), mirroring
+    /// `TransferPlatformAddressView.resolveMinInputAmount` /
+    /// `resolveMinOutputAmount`. Both are obtained from the SAME
+    /// `ManagedPlatformAddressWallet` the dedicated sheet uses (looked up by
+    /// this view's `wallet`, not the manager's "active" slot). On any failure
+    /// the corresponding field is left `nil`:
+    ///
+    /// - `minInputAmount == nil` → the account picker falls back to a
+    ///   conservative `balance > 0` floor (see
+    ///   `resolvePlatformSenderAccountIndex()`); it never UNDER-counts.
+    /// - `platformMinOutputAmount == nil` → `canSend`'s `.platformToPlatform`
+    ///   branch stays CLOSED (never *under*-gates), matching how the dedicated
+    ///   sheet treats an unresolved output floor.
+    private func resolvePlatformLimits() {
+        guard let managed = walletManager.wallet(for: wallet.walletId) else { return }
+        guard let addressWallet = try? managed.platformAddressWallet() else { return }
+        if minInputAmount == nil {
+            minInputAmount = try? addressWallet.minInputAmount()
+        }
+        if viewModel.platformMinOutputAmount == nil {
+            viewModel.platformMinOutputAmount = try? addressWallet.minOutputAmount()
+        }
+    }
+
     /// Choose which key-class-0 Platform Payment account funds a
     /// platform → platform transfer, returning `nil` when no single
     /// account can cover the requested amount + fee.
@@ -452,13 +510,29 @@ struct SendTransactionView: View {
     /// the BLAST-synced `addressBalances` rows (scoping by
     /// `accountType == 14 && keyClass == 0`, matching the dedicated
     /// transfer/withdraw sheets and the Rust source resolution) — but
-    /// EXCLUDES the recipient's own row (an own-wallet send to a key-class-0
-    /// address), since the Rust Auto selector can't use the output address as
-    /// an input — then delegates the pick to the pure
+    /// counts only rows whose balance clears the per-input minimum
+    /// (`minInputAmount`) AND EXCLUDES the recipient's own row (an own-wallet
+    /// send to a key-class-0 address), since the Rust Auto selector can't use
+    /// the output address as an input — then delegates the pick to the pure
     /// `PlatformPaymentAccountSelection` helper. The Rust Auto selector
     /// spends inputs WITHIN one account only, so a covering account must hold
     /// the whole amount + fee on its own (minus any recipient-collision row)
     /// — not merely contribute to the aggregate the Send button gates on.
+    ///
+    /// Dust floor: Rust's `build_auto_select_candidates` drops any funded
+    /// address below `min_input_amount`, so a sub-floor "dust" balance is NOT
+    /// spendable as an input. Summing it here would inflate an account's
+    /// coverage and could rank a dust-heavy account above a sibling whose
+    /// spendable (≥ floor) balance actually covers amount + fee — the picker
+    /// would then choose the dust account and Rust would reject the send
+    /// post-submit. We use the same resolved `minInputAmount`
+    /// (`ManagedPlatformAddressWallet.minInputAmount()`) the dedicated
+    /// `TransferPlatformAddressView` reads. When the floor is unresolved
+    /// (`nil`) we fall back to the conservative `balance > 0` floor — the same
+    /// fallback the dedicated sheet's `sourceInputHashes` uses — so we never
+    /// UNDER-count a real input; the separate `platformMinOutputAmount` gate
+    /// on the view model independently keeps the Send button closed for a
+    /// sub-minimum platform amount.
     ///
     /// `viewModel.amountCredits` and `viewModel.estimatedFee` are both
     /// available on this path (`canSend` requires `amountCredits > 0` for
@@ -481,13 +555,32 @@ struct SendTransactionView: View {
         // nothing.
         let recipientHash = viewModel.platformRecipientHash
 
+        // Per-input spendable floor: an address can only be an Auto-selected
+        // input when its balance reaches the chain's `min_input_amount`. With
+        // the floor resolved, require `balance >= minInputAmount`; with it
+        // unresolved (`nil`), fall back to `balance > 0` so we never UNDER-
+        // count a real input (same conservative fallback the dedicated sheet's
+        // `sourceInputHashes` uses). See this function's doc comment.
+        let isSpendableInput: (UInt64) -> Bool = { balance in
+            if let floor = minInputAmount {
+                return balance >= floor
+            }
+            return balance > 0
+        }
+
         // Aggregate balance per key-class-0 PlatformPayment account,
-        // excluding any row that IS the recipient (saturating subtraction).
+        // counting only spendable (≥ floor) rows and excluding any row that IS
+        // the recipient.
         var totals: [UInt32: UInt64] = [:]
         for row in addressBalances {
             guard let account = row.account,
                   account.accountType == 14,
                   account.keyClass == 0 else { continue }
+            // Drop sub-`min_input_amount` dust: Rust's Auto selector won't
+            // spend it, so summing it would inflate this account's coverage
+            // and could outrank a sibling whose spendable balance actually
+            // covers amount + fee.
+            guard isSpendableInput(row.balance) else { continue }
             // Skip the recipient row: it's an output, so the Auto selector
             // won't spend it. Scoped to this same key-class-0 / account-type
             // set (and this wallet via `addressBalances`' query predicate),
