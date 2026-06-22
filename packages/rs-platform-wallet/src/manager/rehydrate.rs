@@ -89,6 +89,17 @@ pub(super) fn build_watch_only_wallet(
 /// Apply the keyless persisted core-state projection onto a
 /// freshly-minted `ManagedWalletInfo` skeleton.
 ///
+/// # Parameters
+///
+/// - `wallet_info`: the skeleton to hydrate in place.
+/// - `manifest`: keyless account manifest (one entry per registered
+///   account). Each entry carries an `account_type` → `account_xpub`
+///   mapping used by [`extend_pools_for_restored_utxos`] to derive
+///   addresses for restored UTXOs. If an account's `account_type` is
+///   absent from the manifest, pool extension is skipped for that
+///   account (no xpub → no derivation possible).
+/// - `core`: the persisted core-state changeset to apply.
+///
 /// # Reconstructed (safety-critical-correct)
 ///
 /// - **Wallet balance** (`wallet_info.balance`, the no-silent-zero
@@ -99,6 +110,10 @@ pub(super) fn build_watch_only_wallet(
 /// - **UTXO set**: every unspent persisted outpoint is restored into a
 ///   funds-bearing account of the wallet (whatever topology it has —
 ///   BIP44, BIP32, CoinJoin, DashPay).
+/// - **Address-pool depth**: each pool is forward-derived to cover
+///   restored UTXOs at deep derivation indices, then the gap window is
+///   refilled beyond the deepest restored index so the per-address view
+///   reconciles with the wallet total.
 /// - **Sync watermarks**: `synced_height` / `last_processed_height`.
 ///
 /// # Deferred to the first post-load `sync` (safe re-warm)
@@ -109,6 +124,13 @@ pub(super) fn build_watch_only_wallet(
 ///   first funds-bearing account and re-attributed on the next scan.
 ///   The *wallet total* is unaffected (it is a sum across all funds
 ///   accounts).
+/// - **Deep-index address visibility**: each chain's pool scan stops
+///   after [`MAX_REHYDRATION_DERIVATION_INDEX`] or after
+///   `gap_limit` consecutive non-matching indices past the deepest
+///   resolved index. UTXO addresses that fall outside that window
+///   (foreign keys, multi-account mismatch) are counted and logged via
+///   `tracing::warn!`; they re-warm on the next full sync. Total
+///   balance is unaffected.
 /// - **`last_applied_chain_lock`**: not a persisted column (V001) and
 ///   never written by the core-state writer; always `None` from disk.
 ///   SPV re-applies a fresh chainlock on the first post-restart sync.
@@ -127,7 +149,7 @@ pub(super) fn build_watch_only_wallet(
 /// than reconstructing a silent zero balance (the no-silent-zero
 /// mandate). An empty UTXO set is always `Ok`.
 ///
-/// This never logs and never touches key material.
+/// This never touches key material.
 pub fn apply_persisted_core_state(
     wallet_info: &mut ManagedWalletInfo,
     manifest: &[AccountRegistrationEntry],
