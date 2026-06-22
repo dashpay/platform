@@ -136,13 +136,31 @@ via a provider closure/seam) BEFORE `attach_wallet_seed` can go:
    seed dependency — when `attach_wallet_seed` goes, only these tests need rework
    (drop them or derive via a test seed directly).
 3. **`derive_identity_auth_keypair`** (`network/identity_handle.rs`) — returns the
-   raw `ExtendedPrivKey`; used by the identity-discovery scan (`discovery.rs`,
-   **signerless**) + the FFI key preview + registration. This is the **documented
-   deep blocker** — memory `dashpay-imported-identity-zero-candidate-discovery`:
-   imported-wallet discovery materializes ZERO signing keys (all watch-only),
-   an upstream design problem. Seedless discovery is a design question (probe via
-   the signer at import/unlock vs. public-derivation only), not a mechanical
-   conversion — resolve that before deleting the resident derive.
+   raw `ExtendedPrivKey`; used by the identity-discovery scan (`discovery.rs`) +
+   the FFI key preview + registration. This is the **documented deep blocker**
+   (memory `dashpay-imported-identity-zero-candidate-discovery`). Root cause,
+   confirmed in `discovery.rs::breadcrumb_decisions`: discovery doesn't just
+   *match* keys — it carries the **verified private scalar** (`KeyWithBreadcrumb.
+   verified_scalar`) to the client so it "stores the bytes directly instead of
+   re-deriving from a mnemonic." **That stored scalar IS the resident-seed
+   posture.** Seedless discovery requires an architectural change:
+   - verify ownership via **public-key** derivation (signer `extended_public_key`
+     at the hardened candidate path, compare to the on-chain compressed pubkey) —
+     no scalar needed for the match;
+   - stop carrying/storing `verified_scalar` (remove the field; changes the
+     changeset + the `identity_keys` persistence + the FFI/Swift that stores it);
+   - route signing through the Keychain signer using only the breadcrumb
+     `(wallet_id, identity_index, key_id)` — the env-blocked Swift signing path.
+   This spans storage + FFI + Swift, not a localized Rust conversion. Resolve the
+   storage/signing model (and wire the Swift Keychain signing) before deleting the
+   resident derive.
+
+**Net:** `attach_wallet_seed` still has live production callers — the contactInfo
+sweep decrypt (network-blocked) and discovery (deep storage/signing change +
+env-blocked Swift). Deleting it now regresses background sync + identity
+discovery, which the spec's own §4.9 ordering forbids ("only after the sweep is
+seedless-safe"). The contact-request flow is fully seedless; the wallet-wide
+posture needs the above before the resident-seed API can go.
 
 Only after those are seedless does `attach_wallet_seed` have no production caller.
 Then §4.9 deletes: `manager/attach_seed.rs` (+ its tests), the
