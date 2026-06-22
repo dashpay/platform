@@ -27,6 +27,83 @@ public struct DocumentCountResult: Sendable {
     }
 }
 
+/// Result of ``SDK/documentSum(dataContractId:documentType:sumProperty:whereJSON:orderByJSON:groupByJSON:limit:)``.
+///
+/// Mirrors the FFI's `{"sums": {"<hexKey>": <i64>}}` payload. Keys are the
+/// hex-encoded group keys; for an ungrouped (aggregate) sum there is a single
+/// entry under the empty-string key, exposed via ``total``. Values are signed
+/// (`Int64`) to match grovedb's `SumValue = i64`.
+public struct DocumentSumResult: Sendable {
+    /// Hex-encoded group key → sum. The empty-string key holds the aggregate
+    /// total for an ungrouped sum.
+    public let sums: [String: Int64]
+
+    public init(sums: [String: Int64]) {
+        self.sums = sums
+    }
+
+    /// The aggregate total for an ungrouped sum: `sums[""]`. `nil` when the
+    /// request was grouped (no empty-string entry).
+    public var total: Int64? {
+        sums[""]
+    }
+
+    /// `true` when the result carries per-group sums (any non-empty key).
+    public var isGrouped: Bool {
+        sums.keys.contains { !$0.isEmpty }
+    }
+}
+
+/// One `(count, sum)` pair returned by the average aggregation FFI for a single
+/// key. Mirrors the FFI's `{"count": <u64>, "sum": <i64>}` object. The FFI
+/// returns the raw pair un-divided so callers pick their own precision; compute
+/// ``average`` (`sum / count`) at the point of display.
+public struct DocumentAverageEntry: Sendable {
+    /// Number of documents folded into this entry. Unsigned (`UInt64`).
+    public let count: UInt64
+    /// Sum of the numeric property over those documents. Signed (`Int64`) to
+    /// match grovedb's `SumValue = i64`.
+    public let sum: Int64
+
+    public init(count: UInt64, sum: Int64) {
+        self.count = count
+        self.sum = sum
+    }
+
+    /// `sum / count` as a `Double`, or `nil` when `count == 0` (no documents
+    /// matched, so the average is undefined).
+    public var average: Double? {
+        count > 0 ? Double(sum) / Double(count) : nil
+    }
+}
+
+/// Result of ``SDK/documentAverage(dataContractId:documentType:sumProperty:whereJSON:orderByJSON:groupByJSON:limit:)``.
+///
+/// Mirrors the FFI's `{"averages": {"<hexKey>": {"count": <u64>, "sum": <i64>}}}`
+/// payload. Keys are the hex-encoded group keys; for an ungrouped (aggregate)
+/// average there is a single entry under the empty-string key, exposed via
+/// ``total``.
+public struct DocumentAverageResult: Sendable {
+    /// Hex-encoded group key → `(count, sum)` pair. The empty-string key holds
+    /// the aggregate total for an ungrouped average.
+    public let averages: [String: DocumentAverageEntry]
+
+    public init(averages: [String: DocumentAverageEntry]) {
+        self.averages = averages
+    }
+
+    /// The aggregate `(count, sum)` for an ungrouped average: `averages[""]`.
+    /// `nil` when the request was grouped (no empty-string entry).
+    public var total: DocumentAverageEntry? {
+        averages[""]
+    }
+
+    /// `true` when the result carries per-group averages (any non-empty key).
+    public var isGrouped: Bool {
+        averages.keys.contains { !$0.isEmpty }
+    }
+}
+
 /// One element returned by ``SDK/systemPathElements(path:keys:)``.
 ///
 /// Mirrors a single object in the FFI's JSON array payload
@@ -693,6 +770,227 @@ extension SDK {
         }
 
         return DocumentCountResult(counts: counts)
+    }
+
+    /// Sum a numeric property of a document type, optionally filtered by
+    /// `where` and grouped by `group_by`.
+    ///
+    /// Thin bridge over `dash_sdk_document_sum`: it fetches the contract handle
+    /// (same precedent as `documentCount`), marshals the document type + the
+    /// required `sumProperty` + optional `where`/`order_by`/`group_by` JSON +
+    /// the `limit` sentinel in, calls the FFI, and marshals the
+    /// `{"sums": {"<hexKey>": <i64>}}` payload out. All aggregation is done on
+    /// the Rust side; nothing is decided here.
+    ///
+    /// - Parameters:
+    ///   - dataContractId: Base58 id of the data contract holding the type.
+    ///   - documentType: The document type name to aggregate.
+    ///   - sumProperty: Name of the integer property to sum. Required and
+    ///     non-empty (the FFI rejects an empty string), so the wrapper rejects
+    ///     it before calling.
+    ///   - whereJSON: Optional `[{field, operator, value}]` filter JSON. Pass
+    ///     `nil` for an unfiltered sum.
+    ///   - orderByJSON: Optional `[{field, direction}]` JSON. Pass `nil` for
+    ///     none.
+    ///   - groupByJSON: Optional `["<field>", ...]` JSON. Pass `nil` for an
+    ///     aggregate (ungrouped) sum.
+    ///   - limit: Sentinel-encoded `int64`. `-1` = server default (the
+    ///     default). `> 0` = explicit cap. `0` is rejected at the FFI boundary,
+    ///     so the wrapper rejects it before calling.
+    /// - Returns: A ``DocumentSumResult`` mapping hex-encoded group key → sum.
+    ///   For an ungrouped sum the total lives under the empty-string key and is
+    ///   surfaced via ``DocumentSumResult/total``.
+    @MainActor
+    public func documentSum(
+        dataContractId: String,
+        documentType: String,
+        sumProperty: String,
+        whereJSON: String? = nil,
+        orderByJSON: String? = nil,
+        groupByJSON: String? = nil,
+        limit: Int64 = -1
+    ) async throws -> DocumentSumResult {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        guard !sumProperty.isEmpty else {
+            // The FFI rejects an empty sum property; fail fast with a clear
+            // message rather than relaying it.
+            throw SDKError.invalidParameter("sumProperty must name the numeric property to sum; it cannot be empty")
+        }
+        guard limit != 0 else {
+            // The FFI rejects limit == 0 (the v1 wire rejects Some(0)); fail
+            // fast with a clear message rather than relaying it.
+            throw SDKError.invalidParameter("limit must be -1 (server default) or a positive value, not 0")
+        }
+
+        // Fetch the contract handle (precedent: documentCount).
+        let contractResult = dash_sdk_data_contract_fetch(handle, dataContractId)
+        if let error = contractResult.error {
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
+            dash_sdk_error_free(error)
+            throw sdkError
+        }
+        guard let contractHandle = contractResult.data else {
+            throw SDKError.notFound("Data contract not found")
+        }
+        defer {
+            dash_sdk_data_contract_destroy(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
+        }
+
+        // Marshal the strings in. sumProperty is required (non-null);
+        // nil where/order/group → null pointer = "none".
+        let result = documentType.withCString { typePtr in
+            sumProperty.withCString { sumPropPtr in
+                withOptionalCString(whereJSON) { wherePtr in
+                    withOptionalCString(orderByJSON) { orderPtr in
+                        withOptionalCString(groupByJSON) { groupPtr in
+                            dash_sdk_document_sum(
+                                handle,
+                                contractHandle.assumingMemoryBound(to: DataContractHandle.self),
+                                typePtr,
+                                sumPropPtr,
+                                wherePtr,
+                                orderPtr,
+                                groupPtr,
+                                limit
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        let json = try processJSONResult(result)
+
+        // Payload shape: {"sums": {"<hexKey>": <i64>}}.
+        guard let sumsObject = json["sums"] as? [String: Any] else {
+            throw SDKError.serializationError("Expected 'sums' object in document sum response")
+        }
+
+        var sums: [String: Int64] = [:]
+        for (key, value) in sumsObject {
+            if let num = value as? NSNumber {
+                sums[key] = num.int64Value
+            }
+        }
+
+        return DocumentSumResult(sums: sums)
+    }
+
+    /// Average a numeric property of a document type, optionally filtered by
+    /// `where` and grouped by `group_by`.
+    ///
+    /// Thin bridge over `dash_sdk_document_average`: it fetches the contract
+    /// handle, marshals the document type + the required `sumProperty` +
+    /// optional `where`/`order_by`/`group_by` JSON + the `limit` sentinel in,
+    /// calls the FFI, and marshals the
+    /// `{"averages": {"<hexKey>": {"count": <u64>, "sum": <i64>}}}` payload
+    /// out. The FFI returns the raw `(count, sum)` pair un-divided so callers
+    /// pick their own precision; the wrapper preserves that pair verbatim and
+    /// leaves the division to the caller. All aggregation is done on the Rust
+    /// side; nothing is decided here.
+    ///
+    /// - Parameters:
+    ///   - dataContractId: Base58 id of the data contract holding the type.
+    ///   - documentType: The document type name to aggregate.
+    ///   - sumProperty: Name of the integer property to average. Required and
+    ///     non-empty (the FFI rejects an empty string), so the wrapper rejects
+    ///     it before calling.
+    ///   - whereJSON: Optional `[{field, operator, value}]` filter JSON. Pass
+    ///     `nil` for an unfiltered average.
+    ///   - orderByJSON: Optional `[{field, direction}]` JSON. Pass `nil` for
+    ///     none.
+    ///   - groupByJSON: Optional `["<field>", ...]` JSON. Pass `nil` for an
+    ///     aggregate (ungrouped) average.
+    ///   - limit: Sentinel-encoded `int64`. `-1` = server default (the
+    ///     default). `> 0` = explicit cap. `0` is rejected at the FFI boundary,
+    ///     so the wrapper rejects it before calling.
+    /// - Returns: A ``DocumentAverageResult`` mapping hex-encoded group key →
+    ///   `(count, sum)`. For an ungrouped average the total lives under the
+    ///   empty-string key and is surfaced via ``DocumentAverageResult/total``.
+    @MainActor
+    public func documentAverage(
+        dataContractId: String,
+        documentType: String,
+        sumProperty: String,
+        whereJSON: String? = nil,
+        orderByJSON: String? = nil,
+        groupByJSON: String? = nil,
+        limit: Int64 = -1
+    ) async throws -> DocumentAverageResult {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        guard !sumProperty.isEmpty else {
+            // The FFI rejects an empty sum property; fail fast with a clear
+            // message rather than relaying it.
+            throw SDKError.invalidParameter("sumProperty must name the numeric property to average; it cannot be empty")
+        }
+        guard limit != 0 else {
+            // The FFI rejects limit == 0 (the v1 wire rejects Some(0)); fail
+            // fast with a clear message rather than relaying it.
+            throw SDKError.invalidParameter("limit must be -1 (server default) or a positive value, not 0")
+        }
+
+        // Fetch the contract handle (precedent: documentCount).
+        let contractResult = dash_sdk_data_contract_fetch(handle, dataContractId)
+        if let error = contractResult.error {
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
+            dash_sdk_error_free(error)
+            throw sdkError
+        }
+        guard let contractHandle = contractResult.data else {
+            throw SDKError.notFound("Data contract not found")
+        }
+        defer {
+            dash_sdk_data_contract_destroy(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
+        }
+
+        // Marshal the strings in. sumProperty is required (non-null);
+        // nil where/order/group → null pointer = "none".
+        let result = documentType.withCString { typePtr in
+            sumProperty.withCString { sumPropPtr in
+                withOptionalCString(whereJSON) { wherePtr in
+                    withOptionalCString(orderByJSON) { orderPtr in
+                        withOptionalCString(groupByJSON) { groupPtr in
+                            dash_sdk_document_average(
+                                handle,
+                                contractHandle.assumingMemoryBound(to: DataContractHandle.self),
+                                typePtr,
+                                sumPropPtr,
+                                wherePtr,
+                                orderPtr,
+                                groupPtr,
+                                limit
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        let json = try processJSONResult(result)
+
+        // Payload shape: {"averages": {"<hexKey>": {"count": <u64>, "sum": <i64>}}}.
+        guard let averagesObject = json["averages"] as? [String: Any] else {
+            throw SDKError.serializationError("Expected 'averages' object in document average response")
+        }
+
+        var averages: [String: DocumentAverageEntry] = [:]
+        for (key, value) in averagesObject {
+            guard let entry = value as? [String: Any],
+                  let countNum = entry["count"] as? NSNumber,
+                  let sumNum = entry["sum"] as? NSNumber else {
+                continue
+            }
+            averages[key] = DocumentAverageEntry(
+                count: countNum.uint64Value,
+                sum: sumNum.int64Value
+            )
+        }
+
+        return DocumentAverageResult(averages: averages)
     }
 
     /// Call `body` with a `const char *` for an optional Swift string,
@@ -1375,11 +1673,16 @@ extension SDK {
         let result = dash_sdk_identities_fetch_token_balances(handle, identityIdsStr, tokenId)
         let json = try processJSONResult(result)
 
-        // Convert the result to [String: UInt64]
+        // Convert the result to [String: UInt64].
+        // JSONSerialization decodes numbers as NSNumber, so read .uint64Value
+        // (matching getIdentityTokenBalances above). The Rust FFI emits `null`
+        // for identities that have never held the token; those decode to NSNull
+        // and are skipped, mirroring how the single-identity query omits
+        // never-held tokens.
         var balances: [String: UInt64] = [:]
         for (key, value) in json {
-            if let balance = value as? UInt64 {
-                balances[key] = balance
+            if let balance = value as? NSNumber {
+                balances[key] = balance.uint64Value
             }
         }
 

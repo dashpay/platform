@@ -163,6 +163,22 @@ struct TransitionCategoryView: View {
                     .padding(.vertical, 4)
                 }
                 .accessibilityIdentifier("transition.document.countDocuments")
+
+                // Read-only SUM/AVERAGE aggregation query, sibling to the Count
+                // view above. Routes to its own query view (it neither signs
+                // nor broadcasts). Drives QA tests DOC-13/14.
+                NavigationLink(destination: SumAverageDocumentsView()) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Sum / Average Documents")
+                            .font(.headline)
+                        Text("Sum or average a numeric document property (total, filtered, or grouped)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 4)
+                }
+                .accessibilityIdentifier("transition.document.sumAverageDocuments")
             }
         }
         .navigationTitle(category.rawValue)
