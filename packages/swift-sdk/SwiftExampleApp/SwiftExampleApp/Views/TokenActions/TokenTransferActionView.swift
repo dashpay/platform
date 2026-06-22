@@ -6,11 +6,15 @@ import SwiftDashSDK
 ///
 /// Inputs: recipient (via `RecipientPickerView`), amount, optional
 /// public note. The form refuses to submit unless the recipient is
-/// set and the amount is in `(0, balance]`. On success, the view
-/// dismisses; the parent screen relies on the next balance sync to
-/// pick up the change (Wave 1 doesn't push a synchronous local
-/// `PersistentTokenBalance` update — that's a TODO once a token-sync
-/// helper exists in `platform-wallet-ffi`).
+/// set and the amount is in `(0, balance]`. On success it persists the
+/// proof-verified post-transfer balances the broadcast already returned
+/// — both the sender's and the recipient's — into the local
+/// `PersistentTokenBalance` rows via `SDK.persistProvenTokenBalances`,
+/// so the balance surfaces update immediately, then dismisses. No
+/// follow-up balance query is issued: the balances are race-free and
+/// already verified. A persist failure is logged and swallowed: the
+/// on-chain transfer already succeeded, and the periodic balance sync
+/// remains the backstop.
 struct TokenTransferActionView: View {
     let token: PersistentToken
     let identity: PersistentIdentity
@@ -23,6 +27,7 @@ struct TokenTransferActionView: View {
     var initialBalance: UInt64? = nil
 
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
@@ -191,9 +196,22 @@ struct TokenTransferActionView: View {
         let note = publicNote.trimmingCharacters(in: .whitespacesAndNewlines)
         let publicNoteOrNil: String? = note.isEmpty ? nil : note
 
+        // Capture the relationship key the persist step needs off the
+        // @Model instance now, on the main actor, so the post-transfer
+        // persist doesn't read SwiftData models from inside the Task.
+        // (`contractId` above is already `token.contractId`.)
+        let tokenRelationshipKey = token.id
+
         Task {
             do {
-                try await wallet.tokenTransfer(
+                // The transfer's broadcast result already carries the
+                // proof-verified post-transfer balances of BOTH the
+                // sender and the recipient — persist them straight into
+                // the local rows the UI observes so the sender's balance
+                // drops and a local recipient's balance rises without
+                // waiting for the next periodic sync, and with no extra
+                // round-trip.
+                let balances = try await wallet.tokenTransfer(
                     identityId: identityId,
                     contractId: contractId,
                     tokenPosition: position,
@@ -201,6 +219,12 @@ struct TokenTransferActionView: View {
                     amount: amount,
                     publicNote: publicNoteOrNil,
                     signer: signer
+                )
+                await self.persistBalancesAfterTransfer(
+                    balances: balances,
+                    contractId: contractId,
+                    tokenPosition: position,
+                    tokenRelationshipKey: tokenRelationshipKey
                 )
                 await MainActor.run {
                     guard self.submitGeneration == gen else { return }
@@ -214,6 +238,36 @@ struct TokenTransferActionView: View {
                     self.isSubmitting = false
                 }
             }
+        }
+    }
+
+    /// Persist the proof-verified post-transfer balances the transfer
+    /// returned into the local `PersistentTokenBalance` rows. Covers the
+    /// sender and the recipient in one go (the FFI returns both), so
+    /// MW-02's "switch to B, verify the tokens arrived" step works
+    /// without a follow-up query. Best-effort — any failure is logged
+    /// and swallowed; the periodic sync is the backstop.
+    ///
+    /// `@MainActor`-isolated: writes the main-context `modelContext` via
+    /// the SDK's `@MainActor` persist helper. No network round-trip.
+    @MainActor
+    private func persistBalancesAfterTransfer(
+        balances: [Data: UInt64],
+        contractId: Data,
+        tokenPosition: UInt16,
+        tokenRelationshipKey: Data
+    ) async {
+        guard let sdk = appState.sdk else { return }
+        do {
+            try sdk.persistProvenTokenBalances(
+                contractId: contractId,
+                tokenPosition: tokenPosition,
+                tokenRelationshipKey: tokenRelationshipKey,
+                balances: balances,
+                in: modelContext
+            )
+        } catch {
+            print("⚠️ Post-transfer balance persist failed: \(error)")
         }
     }
 }

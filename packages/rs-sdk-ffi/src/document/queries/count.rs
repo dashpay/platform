@@ -158,7 +158,9 @@ fn json_to_platform_value(json: serde_json::Value) -> Result<Value, FFIError> {
 /// `GetDocumentsRequestV1` directly — no implicit translation,
 /// no transform, no SDK-internal helper between FFI and wire.
 #[allow(clippy::result_large_err)]
-unsafe fn parse_group_by_json(group_by_json: *const c_char) -> Result<Vec<String>, FFIError> {
+pub(super) unsafe fn parse_group_by_json(
+    group_by_json: *const c_char,
+) -> Result<Vec<String>, FFIError> {
     if group_by_json.is_null() {
         return Ok(Vec::new());
     }
@@ -173,7 +175,7 @@ unsafe fn parse_group_by_json(group_by_json: *const c_char) -> Result<Vec<String
 }
 
 #[allow(clippy::result_large_err)]
-unsafe fn build_base_query(
+pub(super) unsafe fn build_base_query(
     data_contract: &DataContract,
     document_type: *const c_char,
     where_json: *const c_char,
@@ -249,7 +251,7 @@ unsafe fn build_base_query(
 /// Extracted from the call site so the decode can be unit-
 /// tested directly without standing up an SDK / data contract /
 /// runtime — see the bottom-of-module tests.
-fn decode_ffi_limit(limit: i64) -> Result<u32, FFIError> {
+pub(super) fn decode_ffi_limit(limit: i64) -> Result<u32, FFIError> {
     match limit {
         -1 => Ok(0), // SDK-internal "unset" sentinel; maps to `None` on the V1 wire.
         n if n < -1 => Err(FFIError::InternalError(format!(
@@ -392,7 +394,7 @@ pub unsafe extern "C" fn dash_sdk_document_count(
         // unmerged shape should use a richer binding.
         let split_counts = DocumentSplitCounts::fetch(&wrapper.sdk, count_query)
             .await
-            .map_err(|e| FFIError::InternalError(format!("Failed to fetch count: {}", e)))?
+            .map_err(FFIError::from)?
             .map(|s| s.into_flat_map())
             .unwrap_or_default();
 

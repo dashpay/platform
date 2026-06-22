@@ -42,10 +42,15 @@ use crate::DerivedAddress;
 /// Render the BIP32 derivation path for a `DerivedAddress` event
 /// payload. See module-level docs for the path layout rules.
 pub fn derivation_path_for_derived_address(derived: &DerivedAddress) -> Option<DerivationPath> {
-    // `dashcore::Address::network()` returns `&Network` and
-    // `key_wallet::Network` is a re-export of `dashcore::Network`,
-    // so this is a single deref — no conversion needed.
-    let network: Network = *derived.address.network();
+    let network = if derived
+        .address
+        .as_unchecked()
+        .is_valid_for_network(Network::Mainnet)
+    {
+        Network::Mainnet
+    } else {
+        Network::Testnet
+    };
     let mut path: DerivationPath = derived.account_type.derivation_path(network).ok()?;
     let leaf = match derived.pool_type {
         AddressPoolType::External => {

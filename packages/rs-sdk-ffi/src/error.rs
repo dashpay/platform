@@ -118,7 +118,25 @@ impl From<FFIError> for DashSDKError {
                     // emit only the inner Drive message so downstream FFI consumers
                     // don't double-render the "Drive internal error: " prefix.
                     (DashSDKErrorCode::DriveInternalError, inner.clone())
-                } else if error_str.contains("timeout") || error_str.contains("Timeout") {
+                } else if matches!(
+                    sdk_err,
+                    dash_sdk::Error::DapiClientError(_)
+                        | dash_sdk::Error::NoAvailableAddressesToRetry(_)
+                ) {
+                    // Transport / connectivity failure (e.g. all DAPI nodes
+                    // unreachable or serving expired TLS certificates). Match the
+                    // typed variant rather than the Display string: the message
+                    // ("Dapi client error: transport error: ...") matches none of
+                    // the substrings below, so it would otherwise fall through to
+                    // InternalError and surface in the UI as a misleading
+                    // "Internal Error" for what is really a network problem.
+                    (DashSDKErrorCode::NetworkError, error_str)
+                } else if matches!(sdk_err, dash_sdk::Error::TimeoutReached(_, _))
+                    || error_str.contains("timeout")
+                    || error_str.contains("Timeout")
+                {
+                    // Typed SDK timeout, plus a substring fallback for timeouts
+                    // surfaced inside other error types' Display strings.
                     (DashSDKErrorCode::Timeout, error_str)
                 } else if error_str.contains("I/O error") || error_str.contains("connection") {
                     (
@@ -254,6 +272,28 @@ mod tests {
     fn generic_not_found_still_maps_to_not_found() {
         let err = dash_sdk::Error::Generic("identity not found".to_string());
         assert_eq!(classify(err), DashSDKErrorCode::NotFound);
+    }
+
+    #[test]
+    fn dapi_client_error_maps_to_network_error() {
+        // The Display form is "Dapi client error: …", which matches none of the
+        // substring heuristics ("DAPI"/"dapi"/"connection"/…). It must be
+        // classified as NetworkError via the typed variant so a transient
+        // transport failure (e.g. an evonode serving an expired TLS cert) does
+        // not surface in the UI as a misleading "Internal Error".
+        let err = dash_sdk::Error::DapiClientError(
+            dash_sdk::dapi_client::DapiClientError::NoAvailableAddresses,
+        );
+        assert_eq!(classify(err), DashSDKErrorCode::NetworkError);
+    }
+
+    #[test]
+    fn timeout_reached_maps_to_timeout() {
+        let err = dash_sdk::Error::TimeoutReached(
+            std::time::Duration::from_secs(8),
+            "fetch protocol version upgrade state".to_string(),
+        );
+        assert_eq!(classify(err), DashSDKErrorCode::Timeout);
     }
 
     #[test]
