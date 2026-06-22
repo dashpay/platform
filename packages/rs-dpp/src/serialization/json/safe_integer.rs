@@ -123,6 +123,59 @@ pub mod json_safe_u128 {
     }
 }
 
+/// Serde `with` module for a `u128` field that is buffered through serde's
+/// `Content` enum — i.e. a field of an internally-tagged (`#[serde(tag = "…")]`)
+/// enum or struct.
+///
+/// Same JS-safety as [`json_safe_u128`] (values above `Number.MAX_SAFE_INTEGER`
+/// stringify in human-readable JSON), but it **never** emits `serialize_u128`.
+/// serde's `Content` enum cannot hold a 128-bit integer in this serde version, so
+/// `json_safe_u128`'s `serialize_u128` round-trips to an "invalid type: integer …
+/// as u128" error once internal tagging buffers it. This variant instead encodes a
+/// plain number while the value fits in `u64`, and a string once it doesn't (and,
+/// in human-readable JSON, once it exceeds `Number.MAX_SAFE_INTEGER`). The
+/// `Value` / bincode paths keep the value lossless via the same number/string split.
+pub mod json_safe_u128_content {
+    use serde::de::{self, Visitor};
+    use serde::{Deserializer, Serializer};
+
+    use super::JS_MAX_SAFE_INTEGER;
+
+    pub fn serialize<S: Serializer>(value: &u128, serializer: S) -> Result<S::Ok, S::Error> {
+        let stringify_above = if serializer.is_human_readable() {
+            JS_MAX_SAFE_INTEGER as u128
+        } else {
+            u64::MAX as u128
+        };
+        if *value > stringify_above {
+            serializer.serialize_str(&value.to_string())
+        } else {
+            serializer.serialize_u64(*value as u64)
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u128, D::Error> {
+        struct V;
+        impl Visitor<'_> for V {
+            type Value = u128;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a u128 as a number or string")
+            }
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<u128, E> {
+                Ok(v as u128)
+            }
+            fn visit_u128<E: de::Error>(self, v: u128) -> Result<u128, E> {
+                Ok(v)
+            }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<u128, E> {
+                v.parse()
+                    .map_err(|_| de::Error::custom(format!("invalid u128 string: {v}")))
+            }
+        }
+        deserializer.deserialize_any(V)
+    }
+}
+
 /// Serde `with` module for `i64` fields.
 pub mod json_safe_i64 {
     use serde::de::{self, Deserializer, Visitor};

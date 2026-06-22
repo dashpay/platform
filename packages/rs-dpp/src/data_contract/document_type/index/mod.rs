@@ -65,9 +65,9 @@ pub enum ContestedIndexFieldMatch {
 
 // Internal-`$type` serde shape with a uniform `value` payload, via a
 // struct-variant Repr (tuple variants can't auto-internal-tag). `LazyRegex`
-// round-trips as a bare string; `json_safe_u128` keeps the integer JS-safe
-// (string above `MAX_SAFE_INTEGER`) in human-readable JSON — native `u128` in
-// `Value` / bincode.
+// round-trips as a bare string; the `u128` uses `json_safe_u128_content` rather
+// than the plain `json_safe_u128` because internal tagging buffers the map
+// through serde's `Content`, which can't hold a `u128` — see that helper's docs.
 #[cfg(feature = "serde-conversion")]
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "$type", rename_all = "camelCase")]
@@ -76,56 +76,9 @@ enum ContestedIndexFieldMatchRepr {
         value: LazyRegex,
     },
     PositiveIntegerMatch {
-        #[serde(with = "positive_integer_match_value")]
+        #[serde(with = "crate::serialization::json_safe_u128_content")]
         value: u128,
     },
-}
-
-// Internal tagging buffers the map through serde's `Content`, which cannot hold
-// a 128-bit integer (no `serialize_u128`) in this serde version — so the usual
-// `json_safe_u128` (which emits `serialize_u128` in non-HR) breaks on
-// deserialize. Encode Content-safely instead: a plain number while it fits in
-// `u64`, a string once it doesn't (and, in human-readable JSON, once it exceeds
-// `Number.MAX_SAFE_INTEGER`, for JS safety). Never emits `serialize_u128`.
-#[cfg(feature = "serde-conversion")]
-mod positive_integer_match_value {
-    use serde::de::{self, Visitor};
-    use serde::{Deserializer, Serializer};
-
-    const JS_MAX_SAFE_INTEGER: u128 = 9_007_199_254_740_991; // 2^53 - 1
-
-    pub fn serialize<S: Serializer>(value: &u128, serializer: S) -> Result<S::Ok, S::Error> {
-        let stringify_above = if serializer.is_human_readable() {
-            JS_MAX_SAFE_INTEGER
-        } else {
-            u64::MAX as u128
-        };
-        if *value > stringify_above {
-            serializer.serialize_str(&value.to_string())
-        } else {
-            serializer.serialize_u64(*value as u64)
-        }
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u128, D::Error> {
-        struct V;
-        impl Visitor<'_> for V {
-            type Value = u128;
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("a u128 as a number or string")
-            }
-            fn visit_u64<E: de::Error>(self, v: u64) -> Result<u128, E> {
-                Ok(v as u128)
-            }
-            fn visit_u128<E: de::Error>(self, v: u128) -> Result<u128, E> {
-                Ok(v)
-            }
-            fn visit_str<E: de::Error>(self, v: &str) -> Result<u128, E> {
-                v.parse().map_err(|_| de::Error::custom(format!("invalid u128 string: {v}")))
-            }
-        }
-        deserializer.deserialize_any(V)
-    }
 }
 
 #[cfg(feature = "serde-conversion")]
