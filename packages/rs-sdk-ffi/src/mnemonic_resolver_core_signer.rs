@@ -379,6 +379,48 @@ impl MnemonicResolverCoreSigner {
         Ok(Zeroizing::new(shared))
     }
 
+    /// DIP-15 `accountReference` for a contact-request send, computed entirely
+    /// in-process. Derive the sender's ECDH private scalar at `path` and feed it
+    /// (as the HMAC key) to [`platform_encryption::calculate_account_reference`]
+    /// over the 69-byte compact xpub. This is the same scalar
+    /// [`Self::ecdh_shared_secret`] uses; it never leaves the signer (the stack
+    /// copy is `Zeroizing`-scrubbed and the derived key by the `WipingXprv`
+    /// guard), so the masked reference is produced without the resident seed.
+    pub fn account_reference(
+        &self,
+        path: &DerivationPath,
+        compact_xpub: &[u8],
+        account_index: u32,
+        version: u32,
+    ) -> Result<u32, MnemonicResolverSignerError> {
+        let (_master, derived) = self.resolve_derived_xprv(path)?;
+        let secret = Zeroizing::new(derived.key().private_key.secret_bytes());
+        Ok(platform_encryption::calculate_account_reference(
+            &secret,
+            compact_xpub,
+            account_index,
+            version,
+        ))
+    }
+
+    /// Inverse of [`Self::account_reference`]: recover `(version, account_index)`
+    /// from a masked reference using the same in-process scalar. Used on re-send
+    /// to read the previous rotation version without the resident seed.
+    pub fn unmask_account_reference(
+        &self,
+        path: &DerivationPath,
+        compact_xpub: &[u8],
+        account_reference: u32,
+    ) -> Result<(u32, u32), MnemonicResolverSignerError> {
+        let (_master, derived) = self.resolve_derived_xprv(path)?;
+        let secret = Zeroizing::new(derived.key().private_key.secret_bytes());
+        Ok(platform_encryption::unmask_account_reference(
+            account_reference,
+            &secret,
+            compact_xpub,
+        ))
+    }
+
     /// Derive the 32-byte AES key for one DIP-15 contactInfo feature
     /// (`encToUserId` = 65536, `privateData` = 65537) at
     /// `root_path / feature' / derivation_index'`. The scalar is wiped by the
@@ -795,6 +837,72 @@ mod tests {
         assert_eq!(
             actual_bytes, expected,
             "signer-based ECDH must equal the resident-seed ECDH for the same mnemonic and path"
+        );
+
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// Interop guard for the seedless send path: the signer-computed
+    /// `accountReference` must equal the resident-seed route, and round-trip
+    /// back through the signer's unmask.
+    ///
+    /// The send flow masks `(version, account_index)` into the reference keyed
+    /// by the sender's ECDH private scalar. If the signer derived a different
+    /// scalar than the resident seed, a same-seed cross-wallet recovery would
+    /// unmask to the wrong account (silent — there's no on-chain oracle), so
+    /// this pins the signer route equal to `Wallet`'s and confirms the inverse.
+    #[tokio::test]
+    async fn account_reference_matches_wallet_derivation_and_round_trips() {
+        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet::wallet::Wallet;
+
+        let path = test_path();
+        // A stand-in 69-byte compact xpub; the HMAC only consumes the bytes.
+        let compact_xpub: [u8; 69] = std::array::from_fn(|i| i as u8);
+        let account_index = 5u32;
+        let version = 3u32;
+
+        // Old route: resident-seed wallet from the same mnemonic → derive the
+        // scalar at `path` → mask through the single accountReference source.
+        let mnemonic =
+            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let seed = mnemonic.to_seed("");
+        let wallet =
+            Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
+                .expect("seeded wallet");
+        let secret = wallet
+            .derive_extended_private_key(&path)
+            .expect("wallet derives the private key at path")
+            .private_key
+            .secret_bytes();
+        let expected = platform_encryption::calculate_account_reference(
+            &secret,
+            &compact_xpub,
+            account_index,
+            version,
+        );
+
+        // New route: resolver-backed signer fed the same mnemonic.
+        let resolver = make_resolver(english_resolve);
+        let signer =
+            unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+        let actual = signer
+            .account_reference(&path, &compact_xpub, account_index, version)
+            .expect("signer computes the account reference");
+        assert_eq!(
+            actual, expected,
+            "signer accountReference must equal the resident-seed mask for the same mnemonic+path"
+        );
+
+        // And the signer's own inverse recovers the inputs.
+        let (got_version, got_account) = signer
+            .unmask_account_reference(&path, &compact_xpub, actual)
+            .expect("signer unmasks the account reference");
+        assert_eq!(got_version, version, "version round-trips through the signer");
+        assert_eq!(
+            got_account, account_index,
+            "account index round-trips through the signer"
         );
 
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
