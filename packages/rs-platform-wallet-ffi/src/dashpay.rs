@@ -205,12 +205,15 @@ pub unsafe extern "C" fn platform_wallet_sync_contact_requests(
 /// valid, non-destroyed handle produced by
 /// `dash_sdk_signer_create_with_ctx`; caller retains ownership.
 ///
-/// CAVEAT — ECDH derivation: the Rust side still derives the
-/// sender's ECDH private key from the wallet seed for the contact
-/// request encryption step. Watch-only wallets (no seed Rust-side)
-/// will fail at that step. See the docstring on
-/// [`IdentityWallet::send_contact_request_with_external_signer`](platform_wallet::IdentityWallet::send_contact_request_with_external_signer)
-/// for the planned follow-up to push ECDH across the FFI as well.
+/// `core_signer_handle` is the wallet-HD resolver signer (the same handle the
+/// drain takes): the Rust side derives the friendship xpub, the ECDH shared
+/// secret, and the DIP-15 `accountReference` through it, so no resident seed is
+/// needed and watch-only / external-signable wallets work. Caller retains
+/// ownership of both handles for the duration of the call.
+///
+/// # Safety
+/// - `core_signer_handle` must be a valid, non-destroyed
+///   `*mut MnemonicResolverHandle`.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
@@ -221,10 +224,12 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
     auto_accept_proof: *const u8,
     auto_accept_proof_len: usize,
     signer_handle: *mut SignerHandle,
+    core_signer_handle: *mut MnemonicResolverHandle,
     out_request_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_request_handle);
     check_ptr!(signer_handle);
+    check_ptr!(core_signer_handle);
 
     let sender = unwrap_result_or_return!(read_identifier(sender_identity_id));
     let recipient = unwrap_result_or_return!(read_identifier(recipient_identity_id));
@@ -240,14 +245,29 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
     };
 
     let signer_addr = signer_handle as usize;
+    let core_signer_addr = core_signer_handle as usize;
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
+        let wallet_id = wallet.wallet_id();
+        let network = wallet.network();
+        // SAFETY: same lifetime contract as the drain FFI — the caller pins
+        // both handles for the duration of this call.
+        let core_signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        let provider = ResolverContactCryptoProvider {
+            signer: core_signer,
+        };
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
             identity
                 .send_contact_request_with_external_signer(
-                    &sender, &recipient, label, proof, signer,
+                    &sender, &recipient, label, proof, signer, &provider,
                 )
                 .await
         })
@@ -269,29 +289,53 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
 /// `request_handle` must be a live handle from
 /// `CONTACT_REQUEST_STORAGE` (typically obtained via
 /// `managed_identity_get_incoming_contact_request` or
-/// [`platform_wallet_sync_contact_requests`]). Same ECDH caveat
-/// applies as for [`platform_wallet_send_contact_request_with_signer`].
+/// [`platform_wallet_sync_contact_requests`]). `core_signer_handle` is the
+/// wallet-HD resolver signer (as for
+/// [`platform_wallet_send_contact_request_with_signer`]): the reciprocal send
+/// and the external-account registration source all key material through it, so
+/// no resident seed is needed.
+///
+/// # Safety
+/// - `core_signer_handle` must be a valid, non-destroyed
+///   `*mut MnemonicResolverHandle`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_accept_contact_request_with_signer(
     wallet_handle: Handle,
     request_handle: Handle,
     signer_handle: *mut SignerHandle,
+    core_signer_handle: *mut MnemonicResolverHandle,
     out_established_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_established_handle);
     check_ptr!(signer_handle);
+    check_ptr!(core_signer_handle);
 
     let request_option = CONTACT_REQUEST_STORAGE.with_item(request_handle, |req| req.clone());
     let request = unwrap_option_or_return!(request_option);
 
     let signer_addr = signer_handle as usize;
+    let core_signer_addr = core_signer_handle as usize;
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
+        let wallet_id = wallet.wallet_id();
+        let network = wallet.network();
+        // SAFETY: same lifetime contract as the drain FFI — the caller pins
+        // both handles for the duration of this call.
+        let core_signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        let provider = ResolverContactCryptoProvider {
+            signer: core_signer,
+        };
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
             identity
-                .accept_contact_request_with_external_signer(&request, signer)
+                .accept_contact_request_with_external_signer(&request, signer, &provider)
                 .await
         })
     });

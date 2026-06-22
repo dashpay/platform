@@ -94,26 +94,26 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Document signing is routed through `signer` — the
     /// architecturally correct path per `swift-sdk/CLAUDE.md`.
     ///
-    /// CAVEAT — ECDH derivation: this method still derives the
-    /// sender's ECDH private key from the wallet seed via
-    /// `derive_encryption_private_key`. Watch-only wallets (no seed
-    /// Rust-side) WILL fail at this step. A follow-up FFI is needed
-    /// to push ECDH derivation across the FFI (it's a one-shot raw
-    /// scalar derivation, not a `Signer<K>::sign` call, so it
-    /// doesn't fit the existing signer trampoline). For wallets
-    /// where the seed is in-process (the common case during this
-    /// migration sweep) this variant works end-to-end.
+    /// All wallet-HD key material — the friendship receiving xpub, the ECDH
+    /// shared secret, and the DIP-15 `accountReference` — is sourced through
+    /// `crypto` (a [`ContactCryptoProvider`], the Keychain signer in production,
+    /// canned values in tests). No resident seed is touched, so this path works
+    /// for seedless / external-signable wallets: the raw ECDH scalar stays in
+    /// the signer and only the (public) xpub, the shared secret, and the masked
+    /// reference cross back.
     #[allow(clippy::type_complexity)]
-    pub async fn send_contact_request_with_external_signer<S>(
+    pub async fn send_contact_request_with_external_signer<S, C>(
         &self,
         sender_identity_id: &Identifier,
         recipient_identity_id: &Identifier,
         account_label: Option<String>,
         auto_accept_proof: Option<Vec<u8>>,
         signer: &S,
+        crypto: &C,
     ) -> Result<ContactRequest, PlatformWalletError>
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
     {
         // 1. Retrieve the sender identity and its HD index from the
         //    local manager.
@@ -195,52 +195,46 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             );
         }
 
-        // 4. Derive the DashPay receiving xpub + ECDH private key from
-        //    the wallet seed. NOTE: this step still requires the seed
-        //    in-process (see CAVEAT in the docstring).
+        // 4. Derive the DashPay receiving (friendship) xpub via the signer —
+        //    no resident seed. The signer derives at exactly the Rust-built
+        //    path and returns only the (public) xpub.
         //
         // CONSISTENCY INVARIANT (do not break without re-checking
-        // `calculate_account_reference`): the friendship xpub path
-        // (`DashpayReceivingFunds`) is pinned to account 0, but
-        // `calculate_account_reference` masks THIS `account_index` into the
-        // accountReference's low 28 bits. A same-seed cross-wallet recovery
-        // un-masks the reference to learn which of our accounts the xpub
-        // belongs to — so if a future change threads a non-zero index here
-        // while the path stays at account 0, the recipient would look for
-        // the wrong account (silent, no oracle). Make the path account-aware
-        // AND add a round-trip test before relaxing this.
+        // `account_reference`): the friendship xpub path
+        // (`DashpayReceivingFunds`) is pinned to account 0, but the
+        // accountReference masks THIS `account_index` into its low 28 bits. A
+        // same-seed cross-wallet recovery un-masks the reference to learn which
+        // of our accounts the xpub belongs to — so if a future change threads a
+        // non-zero index here while the path stays at account 0, the recipient
+        // would look for the wrong account (silent, no oracle). Make the path
+        // account-aware AND add a round-trip test before relaxing this.
         let account_index: u32 = 0;
-        let (xpub_bytes, ecdh_private_key) = {
-            let wm = self.wallet_manager.read().await;
-            let wallet = wm
-                .get_wallet(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let contact_xpub_ext = self
+            .receiving_xpub_for(sender_identity_id, recipient_identity_id, account_index, crypto)
+            .await?;
+        // DIP-15 *compact* 69-byte plaintext (parentFingerprint ‖ chainCode ‖
+        // pubKey) — NOT `ExtendedPubKey::encode()`. The DashPay receiving path
+        // ends in a Normal256 child, so `encode()` is the 107-byte DIP-14
+        // serialization → 128-byte ciphertext → fails the contract's
+        // `maxItems: 96` and both reference clients' hard `len == 69` checks.
+        let xpub_bytes = platform_encryption::CompactXpub {
+            parent_fingerprint: contact_xpub_ext.parent_fingerprint.to_bytes(),
+            chain_code: contact_xpub_ext.chain_code.to_bytes(),
+            public_key: contact_xpub_ext.public_key.serialize(),
+        }
+        .to_bytes()
+        .to_vec();
 
-            // Build the DIP-15 *compact* 69-byte plaintext
-            // (parentFingerprint ‖ chainCode ‖ pubKey) — NOT
-            // `ExtendedPubKey::encode()`. The DashPay receiving path ends in a
-            // Normal256 child, so `encode()` is the 107-byte DIP-14
-            // serialization → 128-byte ciphertext → fails the contract's
-            // `maxItems: 96` and both reference clients' hard `len == 69`
-            // receive checks.
-            let contact_xpub = crate::wallet::identity::crypto::dip14::derive_contact_xpub(
-                wallet,
-                self.sdk.network,
-                account_index,
-                sender_identity_id,
-                recipient_identity_id,
-            )?;
-            let xpub = contact_xpub.compact_xpub().to_vec();
-
-            let ecdh_key = Self::derive_encryption_private_key(
-                wallet,
-                self.sdk.network,
-                identity_index,
-                &sender_encryption_key,
-            )?;
-
-            (xpub, ecdh_key)
-        };
+        // The sender's encryption-key derivation path. The scalar at this path
+        // keys BOTH the ECDH shared secret (step 6) and the accountReference
+        // mask (step 4b); the signer derives at exactly this path and the raw
+        // scalar never returns here.
+        let sender_enc_path = Self::identity_auth_derivation_path(
+            self.sdk.network,
+            key_wallet::bip32::KeyDerivationType::ECDSA,
+            identity_index,
+            sender_encryption_key.id(),
+        )?;
 
         // 4b. Mask the accountReference per DIP-15: the low 28
         //     bits are the account index XOR'd with a PRF of the
@@ -250,10 +244,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         //     re-sending to the same recipient — the contract's unique
         //     index `($ownerId, toUserId, accountReference)` rejects an
         //     identical resend, so the bump is what makes a superseding
-        //     (rotation) request broadcastable.
+        //     (rotation) request broadcastable. The HMAC+mask runs in the
+        //     signer (keyed by the raw scalar at `sender_enc_path`).
         let account_reference = {
-            let secret = ecdh_private_key.secret_bytes();
-            let previous_version = {
+            let prior_reference = {
                 let wm = self.wallet_manager.read().await;
                 wm.get_wallet_info(&self.wallet_id)
                     .and_then(|info| info.identity_manager.managed_identity(sender_identity_id))
@@ -262,14 +256,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     // why consulting only the pending map breaks rotation
                     // on established contacts.
                     .and_then(|managed| managed.prior_sent_account_reference(recipient_identity_id))
-                    .map(|prior_reference| {
-                        crate::wallet::identity::crypto::dip14::unmask_account_reference(
-                            prior_reference,
-                            &secret,
-                            &xpub_bytes,
-                        )
-                        .0
-                    })
+            };
+            let previous_version = match prior_reference {
+                Some(prior) => Some(
+                    crypto
+                        .unmask_account_reference(&sender_enc_path, &xpub_bytes, prior)
+                        .await?
+                        .0,
+                ),
+                None => None,
             };
             let version = match previous_version {
                 // 4-bit field; saturate rather than wrap so a 16th
@@ -285,12 +280,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 Some(v) => v + 1,
                 None => 0,
             };
-            crate::wallet::identity::crypto::dip14::calculate_account_reference(
-                &secret,
-                &xpub_bytes,
-                account_index,
-                version,
-            )
+            crypto
+                .account_reference(&sender_enc_path, &xpub_bytes, account_index, version)
+                .await?
         };
 
         // 5. Build the signing key reference for document signing.
@@ -313,13 +305,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 )
             })?;
 
-        // 6. Client-side ECDH: derive the shared secret against the
-        //    recipient's encryption key HERE, so the SDK seam receives the
-        //    finished secret (`EcdhProvider::ClientSide`) rather than a
-        //    private key. The recipient key is resolved exactly as the SDK
-        //    would (`recipientKeyIndex` on the recipient identity), so the
-        //    secret is byte-identical to the old SdkSide derivation; the
-        //    seam re-checks the SDK asks for this same key.
+        // 6. Client-side ECDH via the signer: the shared secret is derived in
+        //    the signer (scalar at `sender_enc_path`) against the recipient's
+        //    encryption key, so the SDK seam receives the finished secret
+        //    (`EcdhProvider::ClientSide`) and no private key is ever materialized
+        //    here. The recipient key is resolved exactly as the SDK would
+        //    (`recipientKeyIndex` on the recipient identity); the seam re-checks
+        //    the SDK asks for this same key before using the secret.
         let recipient_enc_pubkey = {
             use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
             let key = recipient_identity
@@ -336,8 +328,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 ))
             })?
         };
-        let shared_secret =
-            platform_encryption::derive_shared_key_ecdh(&ecdh_private_key, &recipient_enc_pubkey);
+        let shared_secret = crypto
+            .ecdh_shared_secret(&sender_enc_path, &recipient_enc_pubkey)
+            .await?;
 
         // 7. Broadcast through the write seam. All inputs are resolved
         //    above; the seam assembles the SDK `EcdhProvider` + xpub
@@ -412,11 +405,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             managed.add_sent_contact_request(contact_request.clone(), &self.persister);
         }
 
+        // Register our receiving (friendship) account from the xpub the signer
+        // already derived above — same friendship key, no second derivation and
+        // no resident seed.
         self.register_contact_account(
             sender_identity_id,
             recipient_identity_id,
             account_index,
-            None,
+            Some(contact_xpub_ext),
         )
         .await?;
 
@@ -1585,13 +1581,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// [`Self::send_contact_request_with_external_signer`] so signing
     /// crosses the FFI via the supplied `&S: Signer<IdentityPublicKey>`.
     /// Same ECDH caveat applies — see that method's docstring.
-    pub async fn accept_contact_request_with_external_signer<S>(
+    pub async fn accept_contact_request_with_external_signer<S, C>(
         &self,
         request: &ContactRequest,
         signer: &S,
+        crypto: &C,
     ) -> Result<EstablishedContact, PlatformWalletError>
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
     {
         let our_identity_id = request.recipient_id;
         let sender_id = request.sender_id;
@@ -1643,18 +1641,31 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 contact = %sender_id,
                 "Accept: reciprocal already on Platform — adopting instead of re-broadcasting"
             );
-            // Adopt: register the receiving account (derivable from seed),
-            // matching what the fresh-send path does.
-            if let Err(e) = self
-                .register_contact_account(&our_identity_id, &sender_id, 0, None)
+            // Adopt: register the receiving (friendship) account, derived via
+            // the signer (no resident seed), matching the fresh-send path.
+            match self
+                .receiving_xpub_for(&our_identity_id, &sender_id, 0, crypto)
                 .await
             {
-                tracing::warn!(
+                Ok(xpub) => {
+                    if let Err(e) = self
+                        .register_contact_account(&our_identity_id, &sender_id, 0, Some(xpub))
+                        .await
+                    {
+                        tracing::warn!(
+                            our_identity = %our_identity_id,
+                            contact = %sender_id,
+                            error = %e,
+                            "Accept-adopt: failed to register receiving account; will retry on next sweep"
+                        );
+                    }
+                }
+                Err(e) => tracing::warn!(
                     our_identity = %our_identity_id,
                     contact = %sender_id,
                     error = %e,
-                    "Accept-adopt: failed to register receiving account; will retry on next sweep"
-                );
+                    "Accept-adopt: failed to derive receiving xpub via signer; will retry on next sweep"
+                ),
             }
         } else {
             self.send_contact_request_with_external_signer(
@@ -1663,6 +1674,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 None,
                 None,
                 signer,
+                crypto,
             )
             .await?;
         }
@@ -1677,6 +1689,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 &contact_encrypted_xpub,
                 our_decryption_key_index,
                 contact_encryption_key_index,
+                crypto,
             )
             .await
         {
@@ -1716,13 +1729,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// it; the channel is not silently registered against an unvalidated
     /// index. On the network/decrypt side this simply forwards to
     /// [`register_external_contact_account`].
-    async fn accept_register_external_validated(
+    async fn accept_register_external_validated<C: ContactCryptoProvider + Sync>(
         &self,
         our_identity_id: &Identifier,
         contact_id: &Identifier,
         contact_encrypted_xpub: &[u8],
         our_decryption_key_index: u32,
         contact_encryption_key_index: u32,
+        crypto: &C,
     ) -> Result<(), PlatformWalletError> {
         use dash_sdk::platform::Fetch;
 
@@ -1736,12 +1750,16 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             })?
             .ok_or(PlatformWalletError::IdentityNotFound(*contact_id))?;
 
-        let our_identity = {
+        let (our_identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
-            wm.get_wallet_info(&self.wallet_id)
+            let managed = wm
+                .get_wallet_info(&self.wallet_id)
                 .and_then(|info| info.identity_manager.managed_identity(our_identity_id))
-                .map(|m| m.identity.clone())
-                .ok_or(PlatformWalletError::IdentityNotFound(*our_identity_id))?
+                .ok_or(PlatformWalletError::IdentityNotFound(*our_identity_id))?;
+            let index = managed
+                .identity_index
+                .ok_or(PlatformWalletError::IdentityIndexNotSet(*our_identity_id))?;
+            (managed.identity.clone(), index)
         };
 
         let validation = crate::wallet::identity::crypto::validation::validate_contact_request(
@@ -1757,6 +1775,34 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             )));
         }
 
+        // Seedless ECDH: our decryption-key scalar (at the Rust-built path)
+        // against the contact's encryption pubkey, computed in the signer. The
+        // resolved shared secret is handed to the register call so its resident
+        // derivation path is never taken.
+        let our_dec_path = Self::identity_auth_derivation_path(
+            self.sdk.network,
+            key_wallet::bip32::KeyDerivationType::ECDSA,
+            identity_index,
+            our_decryption_key_index,
+        )?;
+        let contact_pubkey = {
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+            let key = contact_identity
+                .public_keys()
+                .get(&contact_encryption_key_index)
+                .ok_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Contact identity has no key at index {contact_encryption_key_index}"
+                    ))
+                })?;
+            dashcore::secp256k1::PublicKey::from_slice(key.data().as_slice()).map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Contact encryption public key is invalid: {e}"
+                ))
+            })?
+        };
+        let shared = crypto.ecdh_shared_secret(&our_dec_path, &contact_pubkey).await?;
+
         // Reuse the identity we just fetched for validation (no second
         // network round). The accept path surfaces any failure to the
         // caller as a plain error — the transient/permanent split only
@@ -1767,10 +1813,34 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             contact_encrypted_xpub,
             our_decryption_key_index,
             contact_encryption_key_index,
-            None,
+            Some(shared),
         )
         .await
         .map_err(RegisterExternalError::into_inner)
+    }
+
+    /// Derive our DashPay receiving (friendship) xpub for `(our_identity,
+    /// contact)` at `account_index` via the signer — the seedless equivalent of
+    /// deriving it from the wallet. Path is `AccountType::DashpayReceivingFunds`
+    /// built in Rust; only the public xpub crosses back.
+    async fn receiving_xpub_for<C: ContactCryptoProvider + Sync>(
+        &self,
+        our_identity_id: &Identifier,
+        contact_id: &Identifier,
+        account_index: u32,
+        crypto: &C,
+    ) -> Result<key_wallet::bip32::ExtendedPubKey, PlatformWalletError> {
+        let account_type = key_wallet::account::AccountType::DashpayReceivingFunds {
+            index: account_index,
+            user_identity_id: our_identity_id.to_buffer(),
+            friend_identity_id: contact_id.to_buffer(),
+        };
+        let path = account_type.derivation_path(self.sdk.network).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to build DashPay derivation path: {e}"
+            ))
+        })?;
+        crypto.receiving_xpub(&path).await
     }
 }
 
