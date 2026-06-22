@@ -1,5 +1,10 @@
 //! AL-001 — Concurrent asset-lock builds from same wallet.
 //!
+//! **RED-by-design (Found-031)**: step 3 precondition (`add_identity_topup_account`)
+//! fails because `register_wallet` calls `downgrade_to_external_signable()`
+//! (`wallet_lifecycle.rs:244`) before IdentityTopUp accounts can be provisioned,
+//! stripping the private key required for HD derivation. See TEST_SPEC.md Found-031.
+//!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Asset Lock (AL) → AL-001).
 //! Pinned status: active regression guard — full test body implemented,
 //! gated behind the `e2e` cargo feature, then ONLY runs behind the same `PLATFORM_WALLET_E2E_BANK_CORE_GATE`
@@ -307,7 +312,13 @@ async fn al_001_concurrent_asset_lock_builds() {
     for i in 0..N {
         add_identity_topup_account(s.test_wallet.platform_wallet(), i as u32)
             .await
-            .unwrap_or_else(|e| panic!("add IdentityTopUp HD account for slot {i}: {e}"));
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Found-031 (RED-by-design): register_wallet strips private key before \
+                     IdentityTopUp provisioning — add_account fails for slot {i}. \
+                     See TEST_SPEC.md Found-031. error={e}"
+                )
+            });
     }
 
     let mut handles = Vec::with_capacity(N);

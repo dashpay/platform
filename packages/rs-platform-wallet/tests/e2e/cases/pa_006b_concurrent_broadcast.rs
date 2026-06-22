@@ -1,4 +1,13 @@
 //! PA-006b — Two concurrent broadcasts of identical ST bytes.
+//!
+//! **RED-by-design (Found-032)**: `sync_balances()` does not populate the local
+//! balance map for `addr_src` because the incremental DAPI delta returns 0 new
+//! entries (`query_height >= metadata_height`). Both `addr_src_pre` and
+//! `addr_src_post` resolve to `unwrap_or(0) = 0`, so `src_drain = 0` even though
+//! one of the two concurrent broadcasts applied successfully on-chain.
+//! The on-chain double-debit protection contract holds; this is a local tracking
+//! defect. See TEST_SPEC.md Found-032.
+//!
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 "Platform Addresses (PA)" → PA-006b.
 //! Priority: P2.
 //!
@@ -185,10 +194,12 @@ async fn pa_006b_concurrent_identical_broadcasts() {
     let src_drain = addr_src_pre.saturating_sub(addr_src_post);
     assert!(
         (TRANSFER_CREDITS..2 * TRANSFER_CREDITS).contains(&src_drain),
-        "PA-006b: addr_src drain must reflect exactly ONE transfer (including fee); \
-         expected [{TRANSFER_CREDITS}, {}), got {src_drain}. \
-         A drain >= {} would mean both concurrent broadcasts double-debited the source.",
-        2 * TRANSFER_CREDITS,
+        "Found-032 (RED-by-design): addr_src drain must reflect exactly ONE transfer \
+         (including fee); expected [{TRANSFER_CREDITS}, {}), got {src_drain}. \
+         sync_balances() does not populate the local balance map for addr_src when \
+         the incremental DAPI delta returns 0 new entries — both pre/post balances \
+         resolve to 0. On-chain behaviour is correct; this is a local tracking defect. \
+         See TEST_SPEC.md Found-032.",
         2 * TRANSFER_CREDITS,
     );
     assert!(

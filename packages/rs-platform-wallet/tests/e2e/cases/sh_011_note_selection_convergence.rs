@@ -1,5 +1,13 @@
 //! SH-011 — `select_notes_with_fee` convergence + overflow protection on
 //! a real funded note set.
+//!
+//! **RED-by-design (Found-033)**: the `for _ in 0..NUM_NOTES` shield loop fails on
+//! the third iteration. After two successful shields the shielded nonce cache for
+//! the P2PKH fee-bearing input (`DeductFromInput(0)`) is not invalidated, so the
+//! third call submits stale nonce=1; the server expects nonce=2 and rejects with
+//! `"Invalid address nonce for P2PKH(...): expected 2, got 1"`. The server is
+//! correct. See TEST_SPEC.md Found-033.
+//!
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 "### Shielded (SH)" → SH-011.
 //! Priority: P2. (A unit test covers overflow at `note_selection.rs:187`;
 //! this is the e2e-adjacent variant on a real funded note set.)
@@ -90,7 +98,13 @@ async fn sh_011_note_selection_convergence() {
                 prover,
             )
             .await
-            .expect("shield_from_account");
+            .expect(
+                "Found-033 (RED-by-design): shielded nonce cache not invalidated after \
+                 a successful broadcast — sequential shields on the same P2PKH \
+                 fee-bearing input reuse the pre-broadcast stale nonce; server \
+                 rejects the third call with 'expected 2, got 1'. \
+                 See TEST_SPEC.md Found-033.",
+            );
     }
     wait_for_shielded_balance(
         &s.test_wallet,

@@ -1,4 +1,12 @@
 //! PA-007 — Sync watermark idempotency.
+//!
+//! **RED-by-design (Found-032)**: `sync_balances()` does not advance the watermark
+//! or refresh the local balance map when the incremental DAPI query returns 0 new
+//! entries (`query_height >= metadata_height`). Addresses chain-confirmed via
+//! `wait_for_balance` are populated through a separate DAPI polling path that does
+//! not touch the watermark, so all three `sync_watermark()` reads return `None`.
+//! See TEST_SPEC.md Found-032.
+//!
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 "Platform Addresses (PA)" → PA-007.
 //! Priority: P1.
 //!
@@ -89,15 +97,21 @@ async fn pa_007_sync_watermark_idempotency() {
     // sync silently failed to advance state.
     assert!(
         wm_1.is_some(),
-        "PA-007: sync #1 must produce a watermark; got None"
+        "Found-032 (RED-by-design): sync_balances() does not advance the watermark \
+         when the incremental DAPI delta returns 0 new entries — watermark stays None \
+         even after chain-confirmed funding. See TEST_SPEC.md Found-032."
     );
     assert!(
         wm_2.is_some(),
-        "PA-007: sync #2 must produce a watermark; got None"
+        "Found-032 (RED-by-design): sync_balances() does not advance the watermark \
+         when the incremental DAPI delta returns 0 new entries — watermark stays None \
+         even after chain-confirmed funding. See TEST_SPEC.md Found-032."
     );
     assert!(
         wm_3.is_some(),
-        "PA-007: sync #3 must produce a watermark; got None"
+        "Found-032 (RED-by-design): sync_balances() does not advance the watermark \
+         when the incremental DAPI delta returns 0 new entries — watermark stays None \
+         even after chain-confirmed funding. See TEST_SPEC.md Found-032."
     );
 
     // ---- Property 2: watermark is monotonic non-decreasing. ----

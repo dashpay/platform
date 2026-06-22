@@ -1,5 +1,10 @@
 //! ID-002b — Asset-lock-funded top-up of existing identity.
 //!
+//! **RED-by-design (Found-031)**: step 3 precondition (`add_identity_topup_account`)
+//! fails because `register_wallet` calls `downgrade_to_external_signable()`
+//! (`wallet_lifecycle.rs:244`) before IdentityTopUp accounts can be provisioned,
+//! stripping the private key required for HD derivation. See TEST_SPEC.md Found-031.
+//!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Identity (ID) → ID-002b).
 //! Pinned status: STUB — full test body implemented, gated behind the `e2e` cargo feature
 //! behind the `PLATFORM_WALLET_E2E_BANK_CORE_GATE` env var (same gate
@@ -161,7 +166,11 @@ async fn id_002b_asset_lock_funded_top_up() {
     // `WalletAccountCreationOptions::Default`. Provision it now.
     add_identity_topup_account(s.test_wallet.platform_wallet(), IDENTITY_INDEX)
         .await
-        .expect("add IdentityTopUp HD account for IDENTITY_INDEX");
+        .expect(
+            "Found-031 (RED-by-design): register_wallet strips private key before \
+             IdentityTopUp provisioning — add_account fails for IDENTITY_INDEX. \
+             See TEST_SPEC.md Found-031.",
+        );
 
     // Internally:
     //   1. AssetLockManager::create_funded_asset_lock_proof — builds
