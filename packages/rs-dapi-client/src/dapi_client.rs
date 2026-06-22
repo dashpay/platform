@@ -35,10 +35,14 @@ const RATE_LIMIT_MAX_DELAY_MS: u64 = 500;
 /// jitter is applied on top by [`retry_delay`]. `attempt` is the 0-based retry
 /// index (0 for the first retry).
 fn rate_limit_backoff_window(attempt: u32) -> Duration {
-    // `base << attempt` == `base * 2^attempt`; `checked_shl` guards against a
-    // huge `attempt` (e.g. a caller configuring an enormous retry budget).
+    // `base << attempt` == `base * 2^attempt`. Clamp the shift AMOUNT first:
+    // `checked_shl` only guards against shifting by >= the bit width, not against
+    // the set bits being shifted out — e.g. `10 << 63` wraps to 0, silently
+    // collapsing the window to no backoff at all. The window already saturates
+    // at the cap by attempt 6, so clamping at 16 changes nothing in the valid
+    // range while removing that footgun.
     let window_ms = RETRY_BASE_DELAY_MS
-        .checked_shl(attempt)
+        .checked_shl(attempt.min(16))
         .unwrap_or(u64::MAX)
         .min(RATE_LIMIT_MAX_DELAY_MS);
     Duration::from_millis(window_ms)
@@ -517,6 +521,17 @@ mod tests {
             assert!(w <= Duration::from_millis(RATE_LIMIT_MAX_DELAY_MS));
             prev = w;
         }
+        // Regression: a large `attempt` must NOT collapse the window to 0 via
+        // bit-loss in the shift (`10 << 63` wraps to 0). The shift-amount clamp
+        // keeps the window pinned at the cap across the whole boundary.
+        assert_eq!(
+            rate_limit_backoff_window(63),
+            Duration::from_millis(RATE_LIMIT_MAX_DELAY_MS)
+        );
+        assert_eq!(
+            rate_limit_backoff_window(64),
+            Duration::from_millis(RATE_LIMIT_MAX_DELAY_MS)
+        );
         // A pathologically large attempt must not panic and stays capped.
         assert_eq!(
             rate_limit_backoff_window(u32::MAX),
@@ -1026,6 +1041,15 @@ impl DapiRequestExecutor for DapiClient {
 
                         // Clone error before moving it
                         let cloned_error = transport_error.clone();
+
+                        // Invariant lock (mirror of the transport-error arm
+                        // below): a rate-limited error MUST be retryable, else
+                        // the rotation never fires. See `CanRetry` docs and
+                        // `test_rate_limit_implies_retryable_invariant`.
+                        debug_assert!(
+                            !cloned_error.is_rate_limited() || cloned_error.can_retry(),
+                            "is_rate_limited() must imply can_retry(); rate-limit rotation depends on it"
+                        );
 
                         let execution_error = ExecutionError {
                             inner: DapiClientError::Transport(transport_error),
