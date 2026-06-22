@@ -900,6 +900,13 @@ impl E2eContext {
                              planner, and assert_floor()."
                         );
                         bank.accept_independent_platform_balance(result.independent_credits);
+                        // Fix the spend path: adopted_platform_floor heals the gate/planner
+                        // but `auto_select_inputs` reads address_credit_balance directly from
+                        // the wallet manager map, not from `adopted_floor`. Inject the
+                        // dual-verified balance into the spend cache so fund_address can spend
+                        // these credits (mirrors provider.rs:621 and fund_from_asset_lock.rs:429).
+                        bank.inject_verified_balance_into_spend_cache(result.independent_credits)
+                            .await;
                     } else {
                         // Second fetch does NOT confirm the large balance.
                         // The first independent read was stale (phantom).  Do NOT

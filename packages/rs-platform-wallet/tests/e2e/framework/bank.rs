@@ -743,6 +743,41 @@ impl BankWallet {
         );
     }
 
+    /// Inject the proof-verified on-chain balance into the wallet's spendable
+    /// cache for the bank's primary receive address.
+    ///
+    /// Paired with [`Self::accept_independent_platform_balance`]: that method
+    /// fixes Layer 1 (floor gate / fund planner via `effective_platform_credits`);
+    /// this method fixes Layer 2 (spend path via `auto_select_inputs` which reads
+    /// `account.address_credit_balance` directly, not `adopted_floor`).
+    ///
+    /// Only call after [`Self::accept_independent_platform_balance`] has been
+    /// invoked with a dual-verified balance.
+    pub(crate) async fn inject_verified_balance_into_spend_cache(&self, credits: Credits) {
+        let PlatformAddress::P2pkh(hash) = self.primary_receive_address else {
+            tracing::warn!(
+                target: "platform_wallet::e2e::bank",
+                "inject_verified_balance_into_spend_cache: primary_receive_address \
+                 is not P2PKH — skipping"
+            );
+            return;
+        };
+        let p2pkh = key_wallet::PlatformP2PKHAddress::new(hash);
+        if let Err(e) = self
+            .wallet
+            .platform()
+            .inject_address_balance(DEFAULT_ACCOUNT_INDEX_PUB, p2pkh, credits)
+            .await
+        {
+            tracing::error!(
+                target: "platform_wallet::e2e::bank",
+                error = %e,
+                "inject_verified_balance_into_spend_cache failed — \
+                 fund_address will see 0 available credits and fail"
+            );
+        }
+    }
+
     /// Independent balance cross-check via `AddressInfo::fetch` (QA-V26-005).
     ///
     /// Reads the bank's Platform-side balance through a single proof-verified

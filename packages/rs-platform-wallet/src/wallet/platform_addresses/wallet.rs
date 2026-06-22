@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use key_wallet::PlatformP2PKHAddress;
 use tokio::sync::RwLock;
 
 use crate::broadcaster::SpvBroadcaster;
@@ -415,6 +416,50 @@ impl PlatformAddressWallet {
                 ))
             })?;
         Ok(account.addresses.gap_limit)
+    }
+}
+
+impl PlatformAddressWallet {
+    /// Force-seed the cached credit balance for a platform payment address.
+    ///
+    /// Called by the e2e harness after a dual-verified `AddressInfo::fetch`
+    /// confirms the on-chain balance when the BLAST sync path consistently
+    /// returns the address as NOT FOUND (DAPI replica divergence, issue #3611).
+    ///
+    /// Mirrors what `on_address_found` does during a successful BLAST sync
+    /// (`provider.rs:621`) and what `fund_from_asset_lock` does after on-chain
+    /// confirmation (`fund_from_asset_lock.rs:429`) — both call
+    /// `account.set_address_credit_balance` directly.
+    ///
+    /// Only call this after proof-verified dual confirmation. Nonce is not
+    /// injected because `transfer()` fetches the current nonce from DAPI at
+    /// broadcast time (matching the `apply_changeset` precedent at `apply.rs:272`).
+    pub async fn inject_address_balance(
+        &self,
+        account_index: u32,
+        address: PlatformP2PKHAddress,
+        balance: Credits,
+    ) -> Result<(), PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "wallet {} not in wallet manager",
+                hex::encode(self.wallet_id),
+            ))
+        })?;
+        if let Some(account) = info
+            .core_wallet
+            .platform_payment_managed_account_at_index_mut(account_index)
+        {
+            account.set_address_credit_balance(address, balance, None);
+            tracing::info!(
+                balance,
+                %address,
+                account_index,
+                "inject_address_balance: spend cache seeded with verified balance"
+            );
+        }
+        Ok(())
     }
 }
 
