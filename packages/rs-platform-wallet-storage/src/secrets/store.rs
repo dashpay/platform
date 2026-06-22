@@ -44,6 +44,17 @@ impl SecretStore {
         Ok(Self::File(EncryptedFileStore::open(path, passphrase)?))
     }
 
+    /// Open (or create) a **deliberately keyless** file-backed vault — the
+    /// only door that takes no passphrase. Obfuscation, not confidentiality
+    /// (the key derives from an empty passphrase under the public salt): use
+    /// it where the stored secrets carry their own Tier-2 object password,
+    /// or as a staging step before [`EncryptedFileStore::rekey`] to a real
+    /// passphrase. [`file`](SecretStore::file) rejects a blank passphrase;
+    /// this is the explicit keyless alternative.
+    pub fn file_unprotected(path: impl AsRef<std::path::Path>) -> Result<Self, SecretStoreError> {
+        Ok(Self::File(EncryptedFileStore::open_unprotected(path)?))
+    }
+
     /// Open the platform's default OS keyring, failing closed when none
     /// is reachable (headless / no Secret Service).
     pub fn os() -> Result<Self, SecretStoreError> {

@@ -62,8 +62,22 @@ use platform_wallet_storage::secrets::{SecretBytes, SecretStore, SecretString, W
 
 let store = SecretStore::file("/var/lib/wallet/secrets.pwsvault", SecretString::new("pw"))?;
 let wallet = WalletId::from(wallet_id);
+
+// Tier-1 only (unprotected by an object password). `set`/`get` are
+// `..,None` wrappers over `set_secret`/`get_secret`.
 store.set(&wallet, "mnemonic", &SecretBytes::from_slice(b"abandon ability ..."))?;
 let plaintext: Option<SecretBytes> = store.get(&wallet, "mnemonic")?; // never a bare Vec
+
+// Tier-2: protect a critical object under an extra OBJECT PASSWORD that
+// the backend never sees. Reading it back REQUIRES the password.
+let pw = SecretString::new("a strong object password");
+store.set_secret(&wallet, "seed", &SecretBytes::from_slice(b"<seed>"), Some(&pw))?;
+let seed = store.get_secret(&wallet, "seed", Some(&pw))?; // Some(secret)
+// Reading a protected object WITHOUT the password fails closed:
+assert!(store.get_secret(&wallet, "seed", None).is_err()); // NeedsPassword
+
+// Add / change / remove an object password in one atomic same-slot flow:
+store.reprotect(&wallet, "seed", Some(&pw), None)?; // remove → now unprotected
 store.delete(&wallet, "mnemonic")?; // idempotent
 ```
 
@@ -71,6 +85,167 @@ store.delete(&wallet, "mnemonic")?; // idempotent
 filename); the parent directory is materialized on the first write.
 Use `SecretStore::os()` for the platform OS keyring arm instead of
 `SecretStore::file(..)`.
+
+See **Two-tier secret protection** below for the model, the envelope
+format, which tier defeats which adversary, and the strict fail-closed
+read that is the heart of the opt-in scheme.
+
+### Two-tier secret protection
+
+Secret protection comes in two layers. Tier-1 is always on (it is just
+"which backend you opened"); Tier-2 is opt-in, per critical object, and
+backend-independent.
+
+| Tier | Provided by | Defeats | Mechanism |
+|---|---|---|---|
+| **1 — backend baseline** | the *backend* | another local user, a lost laptop, the vault at rest | OS keychain ACLs **or** Argon2id + XChaCha20-Poly1305 vault under a **real** passphrase |
+| **2 — per-object password** | the *library*, above `SecretStore`, over **both** arms | **backend compromise** — the keychain scraped, or the vault stolen *and* its passphrase cracked | the object's bytes are Argon2id + XChaCha20-Poly1305 **enveloped under a per-object password BEFORE they reach the backend** |
+
+**Why Tier-2 is more than key granularity.** Its value is not a sub-key —
+it is (a) an **independent human password the backend never sees** and (b)
+**envelope-before-backend ordering**, so for a protected object the backend
+only ever stores ciphertext. That is the first and only control that keeps
+a chosen critical object confidential across a *full* backend compromise
+(the A2/A3/A6 gap Tier-1 leaves open).
+
+Tier-2 has two guarantees of different strength:
+
+- **Confidentiality** (an attacker cannot *read* a protected secret) is
+  **unconditional** — the object password never enters any backend, so a
+  full backend dump yields only ciphertext + a per-object salt to
+  offline-Argon2id-crack against the password's entropy.
+- **Integrity / anti-downgrade** is delivered by the **strict fail-closed
+  read** below and is **conditional on the caller's trusted model staying
+  intact** (see the documented residual).
+
+#### The envelope (wire format)
+
+Every value written through `set_secret`/`set` is wrapped in a
+self-describing, authenticated envelope before it reaches the backend. The
+backend (file vault or OS keychain) stores only these opaque bytes.
+
+```text
+magic    b"PWSEV"        (5)
+version  u8 = 1          (envelope version — independent of the vault FORMAT_VERSION)
+scheme   u8              (0 = unprotected passthrough, 1 = password)
+── scheme 0 ──  payload: the raw secret bytes
+── scheme 1 ──  kdf(id u8 ‖ m_kib u32 LE ‖ t u32 LE ‖ p u32 LE)  (13)
+                ‖ salt[32] ‖ nonce[24] ‖ ciphertext+tag
+```
+
+- **AAD (scheme 1)** binds `domain ‖ magic ‖ version ‖ scheme ‖ kdf ‖ salt
+  ‖ wallet_id ‖ label` (length-prefixed), mirroring the vault's own
+  `aad()`/`verify_aad()`. A protected blob relocated to another slot — or
+  any in-place header edit — fails the tag (relocation/header-tamper
+  resistance). On the file arm this AAD is *in addition* to the vault's own
+  per-entry AAD + tag; on the OS arm it is the only authentication layer.
+- **KDF ceiling before derivation (anti-DoS).** The KDF params live in the
+  (attacker-controllable) header, so on a read the Argon2 **ceiling is
+  enforced before** any derivation/allocation — a forged `m_kib`/`t` cannot
+  force a giant allocation or an unbounded stall on the victim's unlock.
+- **No vault format bump.** The envelope lives *inside* the entry bytes,
+  identical over File and Os, so there is no vault-parser or migration
+  change.
+- **Size cap.** The plaintext is capped at `MAX_PLAINTEXT_LEN`
+  (`MAX_SECRET_LEN − MAX_ENVELOPE_OVERHEAD` = 64 KiB − 128 = 65 408 bytes),
+  uniformly for both schemes, so the enveloped bytes always fit the
+  backend's own `MAX_SECRET_LEN` cap and the user-visible limit is stable
+  regardless of scheme. Oversize → `SecretTooLarge { found, max }` with
+  `max = MAX_PLAINTEXT_LEN` (re-exported as `secrets::MAX_PLAINTEXT_LEN`).
+- **Unknown version/scheme** (magic present) → `UnsupportedEnvelopeVersion`
+  — fail closed **regardless of the password**: an unparseable future
+  format can be neither safely unwrapped nor treated as unprotected.
+
+#### The strict, fail-closed read (the L-1 keystone)
+
+The defining risk of any opt-in "some objects are extra-protected" scheme
+is **strip / downgrade**: an attacker who can WRITE the backend replaces a
+protected blob with a fresh, internally-valid *unprotected* (scheme-0) blob
+carrying a chosen seed/xpriv. There is nothing in that blob alone to prove
+an envelope was *expected*, so inferring protection from the stored bytes
+would silently return the attacker's secret — funds redirection, password
+prompt bypassed.
+
+The fix: **the "expected-protected" bit lives in the CALLER's trusted
+model, surfaced solely by whether a password is supplied to `get_secret` —
+NEVER inferred from the blob.** The library does not guess and does not
+persist the expectation. A supplied password *is* the assertion "this
+object must be protected":
+
+| `password` arg | stored blob | result |
+|---|---|---|
+| `Some(pw)` | valid scheme-1 | the secret, or `WrongPassword` on tag fail |
+| **`Some(pw)`** | **scheme-0 / legacy magic-less raw** | **`ExpectedProtectedButUnsealed` — FAIL CLOSED ★** |
+| `Some(pw)` | scheme-1 but truncated/corrupt | `Corruption` |
+| `Some/None` | magic present, unknown version/scheme | `UnsupportedEnvelopeVersion` |
+| `None` | valid scheme-1 | `NeedsPassword` (never ciphertext) |
+| `None` | scheme-0 | the secret |
+| `None` | legacy magic-less raw | the secret (+ a one-time warning; re-wrapped on next write) |
+| any | absent entry | `Ok(None)` (deletion = DoS, never injection) |
+
+The load-bearing row is **`Some(pw)` + non-envelope ⇒
+`ExpectedProtectedButUnsealed`**: with a password in hand, a non-protected
+blob can only mean a strip, so it is refused and **no bytes are returned**.
+A DET (consumer) bug alone — over- or under-supplying a password — fails
+closed in *every* direction.
+
+**Arm asymmetry.** On the file arm the stored bytes are themselves sealed
+under the vault key, so producing a *readable* stripped blob at a slot
+requires the vault key; a cold/backup-swap actor can only corrupt
+(→ DoS), not inject-to-readable. On the OS-keychain arm the stored item is
+the bare envelope with no second seal, so the strip defence there leans
+entirely on the `Some(pw)` strict rule plus the consumer's metadata
+integrity — this is where the residual bites hardest.
+
+**Documented residual (out of the library's reach).** If an attacker ALSO
+rewrites the consumer's trusted DB so the consumer calls `get_secret(X,
+None)` for a stripped object, the `(scheme-0, None)` quadrant returns the
+attacker's bytes. The library only ever sees the blob and the caller's
+`Some/None`; the "should be protected" fact lives entirely in the
+consumer's metadata store. **Anti-downgrade strength therefore equals the
+tamper-resistance of the consumer's protection-status record** — store it
+as integrity-protected, security-critical state (it is one more field
+alongside the addresses/policy the wallet DB must already protect).
+
+**Value rollback is NOT defended.** Restoring an *older valid* scheme-1
+envelope under the *current* password decrypts cleanly. L-1 closes the
+strip/downgrade injection, not value rollback; if backup-swap/restore-old
+is in scope, anchor a monotonic version in integrity-protected consumer
+metadata. Do not mistake L-1 for rollback protection.
+
+#### Add / change / remove an object password
+
+`reprotect(service, label, current, new)` does it in one same-slot
+unwrap→rewrap→overwrite: read under the `current` expectation (so a strip
+is caught before any rewrite), then write under `new` — `None`→`Some` adds,
+`Some`→`Some` changes, `Some`→`None` removes. The write is the atomic
+same-slot overwrite, so a crash between the read and the commit leaves the
+prior value intact and readable under `current`. **After a successful call
+the consumer MUST update its own protection-status record** (the L-1
+expectation lives there). There is **no password recovery** — losing an
+object password bricks that object (an availability trade-off the UX must
+state plainly).
+
+#### Entropy policy is the consumer's
+
+The library enforces only **non-blank** at enrol (and a coarse
+`MIN_PASSPHRASE_LEN` floor, `1` today = merely non-blank) for both the
+vault passphrase and the Tier-2 object password. It ships **no**
+password-strength estimator: real entropy policy (zxcvbn-style strength,
+dictionary checks, UX feedback) is locale- and threat-specific and is the
+**consumer's responsibility**. For a protected object the password's
+entropy is the *whole* guarantee against an offline Argon2id attacker who
+already holds the backend — choose it accordingly.
+
+#### Greenfield / legacy entries
+
+The envelope is net-new, so post-feature reads/writes go through it. A
+decrypted entry that lacks the `PWSEV` magic is treated as a **legacy
+unprotected** value: returned on a `None` read (with a one-time warning,
+and re-wrapped on the next write) and refused (`ExpectedProtectedButUnsealed`)
+on a `Some(pw)` read — so legacy tolerance never weakens L-1. (A pre-feature
+build that persisted vault files is a deployment fact outside this crate;
+the legacy-tolerant read makes the transition seamless either way.)
 
 ### Internal SPI
 
@@ -138,7 +313,20 @@ unwrapped copy is allocated.
   Each secret is capped at `MAX_SECRET_LEN` (64 KiB) at the write
   boundary — generously above any mnemonic/seed/xpriv — so a single
   oversized entry cannot inflate the shared document past the read-side
-  128 MiB ceiling and brick every wallet on the next open.
+  128 MiB ceiling and brick every wallet on the next open. (Through
+  `SecretStore::set_secret`/`set` the user-facing plaintext cap is the
+  slightly lower `MAX_PLAINTEXT_LEN`, leaving room for the envelope
+  overhead; see **Two-tier secret protection**.)
+  **Blank passphrase is rejected.** `open` (and `rekey`) refuse a blank
+  (empty / all-whitespace) passphrase with `SecretStoreError::BlankPassphrase`
+  — a blank passphrase derives a key from a public salt only, i.e.
+  obfuscation, not confidentiality. This is an **intended behavioural
+  break** for any caller that relied on `SecretString::empty()`. A
+  deliberate keyless vault uses the explicit
+  `EncryptedFileStore::open_unprotected(path)` /
+  `SecretStore::file_unprotected(path)` door instead (use it only where the
+  stored secrets carry their own Tier-2 object password, or as a staging
+  step before `rekey` to a real passphrase — the empty→real migration).
 - **OS keyring (`SecretStore::os` / `default_credential_store`)** —
   returns an `Arc<dyn CredentialStoreApi + Send + Sync>` over the
   platform's default credential store. The backend on Linux/FreeBSD is
@@ -184,7 +372,16 @@ automatic fallback between backends.
 is **lossless**: `WrongPassphrase`, `Corruption`, `AlreadyLocked`,
 `KdfFailure`, `VersionUnsupported`, `MalformedVault`, `InsecurePermissions`,
 `InsecureParentDir`, `SecretTooLarge`, `VaultTooLarge`, `Encrypt`, and
-`InvalidLabel` are distinct typed variants. `VaultTooLarge` surfaces when
+`InvalidLabel` are distinct typed variants. The Tier-2 layer adds five more:
+`ExpectedProtectedButUnsealed` (the L-1 fail-closed strip refusal),
+`NeedsPassword` (a protected object read with no password), `WrongPassword`
+(object-password tag fail — distinct from the Tier-1 `WrongPassphrase`),
+`BlankPassphrase` (a blank vault passphrase or object password), and
+`UnsupportedEnvelopeVersion { found }` (a future envelope format, fail
+closed regardless of the password). The four Tier-2 credential/protection
+*state* variants project to a recoverable `NoStorageAccess` (boxed,
+downcast-recoverable, like `WrongPassphrase`); `UnsupportedEnvelopeVersion`
+joins the secret-free `BadStoreFormat` group. `VaultTooLarge` surfaces when
 the on-disk vault exceeds the read-side ceiling; `SecretTooLarge` rejects an
 oversized secret at the write boundary before it can inflate the shared
 vault; `InsecureParentDir` refuses a vault whose parent directory is
