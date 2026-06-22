@@ -54,6 +54,8 @@ pub fn migration() -> String {
         build_check_in(crate::sqlite::schema::asset_locks::ASSET_LOCK_STATUS_LABELS);
     let contact_state_check =
         build_check_in(crate::sqlite::schema::contacts::CONTACT_STATE_LABELS);
+    let pending_contact_crypto_kind_check =
+        build_check_in(crate::sqlite::schema::pending_contact_crypto::KIND_LABELS);
 
     format!(
         "\
@@ -79,6 +81,17 @@ CREATE TABLE account_address_pools (
     pool_type TEXT NOT NULL CHECK (pool_type IN {pool_type_check}),
     snapshot_blob BLOB NOT NULL,
     PRIMARY KEY (wallet_id, account_type, account_index, pool_type),
+    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+);
+
+CREATE TABLE pending_contact_crypto (
+    wallet_id BLOB NOT NULL,
+    owner_identity_id BLOB NOT NULL,
+    contact_id BLOB NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN {pending_contact_crypto_kind_check}),
+    payload BLOB NOT NULL,
+    enqueued_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (wallet_id, owner_identity_id, contact_id, kind),
     FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
 );
 
