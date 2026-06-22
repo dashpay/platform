@@ -353,6 +353,23 @@ impl CanRetry for Error {
                 | Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(_))
         )
     }
+
+    /// Delegate rate-limit classification to the wrapped [`DapiClientError`].
+    ///
+    /// This keeps the rotate-don't-ban semantics introduced in `rs-dapi-client`
+    /// alive at the SDK layer independently of how [`Self::can_retry`] is
+    /// defined: should a future change make a wrapped transport error retryable,
+    /// `update_address_ban_status` will correctly rotate a throttled node rather
+    /// than ban it (today the `can_retry()` guard short-circuits first, so this
+    /// is pure future-proofing with no behavior change).
+    ///
+    /// Note this is the one `CanRetry` method where `is_rate_limited() ⇒
+    /// can_retry()` need NOT hold at the SDK layer: the SDK's outer retry loop
+    /// is intentionally conservative (see `sync::retry`) and the actual
+    /// rate-limit rotation happens in the inner `rs-dapi-client` executor.
+    fn is_rate_limited(&self) -> bool {
+        matches!(self, Error::DapiClientError(inner) if inner.is_rate_limited())
+    }
 }
 
 /// Server returned stale metadata
@@ -565,5 +582,32 @@ mod tests {
             let payload = vec![0xA1u8; 60_000];
             assert!(super::extract_drive_error_message(&payload).is_none());
         }
+    }
+
+    /// Regression: the SDK `Error` must propagate the wrapped
+    /// `DapiClientError`'s rate-limit classification so a throttled node is not
+    /// banned at the SDK layer (rotate-don't-ban). Locks the delegation so a
+    /// future refactor cannot silently drop it.
+    #[test]
+    fn test_is_rate_limited_delegates_to_inner_dapi_client_error() {
+        // A ResourceExhausted transport error wrapped by the SDK is rate-limited.
+        let rate_limited: Error = DapiClientError::Transport(TransportError::Grpc(
+            dapi_grpc::tonic::Status::resource_exhausted("429"),
+        ))
+        .into();
+        assert!(
+            rate_limited.is_rate_limited(),
+            "SDK Error must delegate rate-limit classification to the wrapped DapiClientError"
+        );
+
+        // A non-rate-limited transport error must not be classified as such.
+        let unavailable: Error = DapiClientError::Transport(TransportError::Grpc(
+            dapi_grpc::tonic::Status::unavailable("down"),
+        ))
+        .into();
+        assert!(!unavailable.is_rate_limited());
+
+        // Non-DAPI errors fall back to the trait default (false).
+        assert!(!Error::Config("misconfigured".to_string()).is_rate_limited());
     }
 }

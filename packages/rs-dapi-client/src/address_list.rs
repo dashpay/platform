@@ -253,6 +253,8 @@ impl AddressList {
     ///
     /// Passing an empty slice is equivalent to [`Self::get_live_address`].
     pub fn get_live_address_excluding(&self, exclude: &[Address]) -> Option<Address> {
+        // TODO(low): module-wide `.read()/.write().unwrap()` panics on a poisoned
+        // lock; adopt poison-tolerant locking consistently (known LOW, SEC-003).
         let guard = self.addresses.read().unwrap();
 
         let mut rng = SmallRng::from_entropy();
@@ -828,8 +830,12 @@ mod tests {
         assert_eq!(list.get_live_address_excluding(&[]), Some(addr2));
     }
 
-    /// Mirrors the retry loop's selection algorithm:
-    /// `get_live_address_excluding(&tried).or_else(|| get_live_address())`.
+    /// Mirrors the retry loop's three-tier selection algorithm:
+    ///   1. `get_live_address_excluding(&tried)` — rotate off every tried node;
+    ///   2. else `get_live_address_excluding(&[just_tried])` — at least rotate
+    ///      off the node we *just* failed on (small-pool alternation);
+    ///   3. else `get_live_address()` — reuse (single-node pool).
+    ///
     /// With N healthy (unbanned) nodes, N consecutive selections must visit N
     /// distinct nodes — i.e. each retry rotates off the just-tried node — and
     /// once exclusion empties the pool, the graceful fallback still yields a
@@ -844,12 +850,19 @@ mod tests {
             list.add(a.clone());
         }
 
+        let select = |list: &AddressList, tried: &[Address]| {
+            list.get_live_address_excluding(tried)
+                .or_else(|| {
+                    tried.last().and_then(|last| {
+                        list.get_live_address_excluding(std::slice::from_ref(last))
+                    })
+                })
+                .or_else(|| list.get_live_address())
+        };
+
         let mut tried: Vec<Address> = Vec::new();
         for _ in 0..addrs.len() {
-            let selected = list
-                .get_live_address_excluding(&tried)
-                .or_else(|| list.get_live_address())
-                .expect("address available");
+            let selected = select(&list, &tried).expect("address available");
             assert!(
                 !tried.contains(&selected),
                 "retry must rotate off an already-tried node"
@@ -859,11 +872,15 @@ mod tests {
         assert_eq!(tried.len(), addrs.len(), "every node visited exactly once");
 
         // Pool exhausted by exclusion → graceful fallback keeps it non-empty so
-        // a healthy-but-throttled node can still be retried.
-        let fallback = list
-            .get_live_address_excluding(&tried)
-            .or_else(|| list.get_live_address());
+        // a healthy-but-throttled node can still be retried; the just-tried node
+        // is never the one re-selected while another node is available.
+        let fallback = select(&list, &tried);
         assert!(fallback.is_some(), "fallback must keep the pool non-empty");
+        assert_ne!(
+            fallback.as_ref(),
+            tried.last(),
+            "fallback must rotate off the just-tried node when another exists"
+        );
     }
 
     /// Invariant 1 at the ladder source: the exponential ban window is

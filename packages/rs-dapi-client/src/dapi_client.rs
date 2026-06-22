@@ -4,6 +4,7 @@ use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
 #[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
+use rand::{rngs::SmallRng, Rng, SeedableRng};
 use std::fmt::{Debug, Display};
 use std::time::Duration;
 use tracing::Instrument;
@@ -17,6 +18,59 @@ use crate::{
     AddressList, CanRetry, DapiRequestExecutor, ExecutionError, ExecutionResponse, ExecutionResult,
     RequestSettings,
 };
+
+/// Base delay between retries. Genuine (non-rate-limited) failures keep this
+/// flat delay — unchanged from the pre-existing behavior.
+const RETRY_BASE_DELAY_MS: u64 = 10;
+
+/// Upper bound for the rate-limit backoff window. Caps the capped-exponential
+/// growth so a throttled fleet gets breathing room without stalling the call
+/// for too long.
+const RATE_LIMIT_MAX_DELAY_MS: u64 = 500;
+
+/// Capped-exponential backoff window for a rate-limited retry: `base × 2^attempt`,
+/// saturating at [`RATE_LIMIT_MAX_DELAY_MS`].
+///
+/// Pure (no jitter) so the growth/cap can be reasoned about and tested directly;
+/// jitter is applied on top by [`retry_delay`]. `attempt` is the 0-based retry
+/// index (0 for the first retry).
+fn rate_limit_backoff_window(attempt: u32) -> Duration {
+    // `base << attempt` == `base * 2^attempt`; `checked_shl` guards against a
+    // huge `attempt` (e.g. a caller configuring an enormous retry budget).
+    let window_ms = RETRY_BASE_DELAY_MS
+        .checked_shl(attempt)
+        .unwrap_or(u64::MAX)
+        .min(RATE_LIMIT_MAX_DELAY_MS);
+    Duration::from_millis(window_ms)
+}
+
+/// Delay to wait before the next retry attempt.
+///
+/// * Genuine failures keep the pre-existing flat [`RETRY_BASE_DELAY_MS`] delay.
+/// * Rate-limit (`ResourceExhausted`) retries use **capped exponential backoff
+///   with full jitter**: the window grows as `base × 2^attempt`, saturating at
+///   [`RATE_LIMIT_MAX_DELAY_MS`], and the actual sleep is a uniform-random
+///   fraction of that window. Jitter de-correlates clients so a congested fleet
+///   is not retried in lockstep (a synchronized retry storm); the growth + cap
+///   bound the per-call amplification.
+///
+/// `attempt` is the 0-based retry index (0 for the first retry).
+//
+// TODO(rate-limit): when the server attaches `google.rpc.RetryInfo` to the
+// `ResourceExhausted` status, honor its `retry_delay` as the floor for this
+// sleep. Extracting it needs decoding `grpc-status-details-bin`, so it is left
+// as a follow-up rather than plumbed here.
+fn retry_delay(rate_limited: bool, attempt: u32) -> Duration {
+    if !rate_limited {
+        return Duration::from_millis(RETRY_BASE_DELAY_MS);
+    }
+
+    let window = rate_limit_backoff_window(attempt);
+    // Full jitter: sleep a uniform-random fraction of the window, i.e. a value
+    // in `[0, window)`.
+    let jitter: f64 = SmallRng::from_entropy().gen();
+    window.mul_f64(jitter)
+}
 
 /// General DAPI request error type.
 #[derive(Debug, thiserror::Error, Clone)]
@@ -346,6 +400,152 @@ mod tests {
             address: Some(mock_address()),
         };
         assert!(!err.is_rate_limited());
+    }
+
+    /// Property: the load-bearing `is_rate_limited() ⇒ can_retry()` invariant
+    /// holds for *every* gRPC status code across *every* in-crate `CanRetry`
+    /// implementor (`tonic::Status`, `TransportError`, `DapiClientError`,
+    /// `ExecutionError`).
+    ///
+    /// The rotate-don't-ban behavior depends on this: a rate-limited error that
+    /// is NOT retryable would skip the retry loop, silently killing rotation
+    /// (see the `CanRetry` docs and the `debug_assert!` in `execute`). This test
+    /// pins the invariant so any future widening of `is_rate_limited` (or
+    /// narrowing of `can_retry`) that breaks it fails loudly here.
+    #[test]
+    fn test_rate_limit_implies_retryable_invariant() {
+        use dapi_grpc::tonic::Code::*;
+
+        // The full gRPC code set — keep exhaustive so a newly classified code
+        // can never silently dodge the invariant check.
+        let all_codes = [
+            Ok,
+            Cancelled,
+            Unknown,
+            InvalidArgument,
+            DeadlineExceeded,
+            NotFound,
+            AlreadyExists,
+            PermissionDenied,
+            ResourceExhausted,
+            FailedPrecondition,
+            Aborted,
+            OutOfRange,
+            Unimplemented,
+            Internal,
+            Unavailable,
+            DataLoss,
+            Unauthenticated,
+        ];
+
+        let addr = mock_address();
+
+        for code in all_codes {
+            // `tonic::Status` is not `Clone`, so build a fresh one per layer.
+            let status = dapi_grpc::tonic::Status::new(code, "x");
+            assert!(
+                !status.is_rate_limited() || status.can_retry(),
+                "tonic::Status {code:?}: is_rate_limited() must imply can_retry()"
+            );
+
+            let te = TransportError::Grpc(dapi_grpc::tonic::Status::new(code, "x"));
+            assert!(
+                !te.is_rate_limited() || te.can_retry(),
+                "TransportError {code:?}: is_rate_limited() must imply can_retry()"
+            );
+
+            let dce = DapiClientError::Transport(TransportError::Grpc(
+                dapi_grpc::tonic::Status::new(code, "x"),
+            ));
+            assert!(
+                !dce.is_rate_limited() || dce.can_retry(),
+                "DapiClientError {code:?}: is_rate_limited() must imply can_retry()"
+            );
+
+            let ee: ExecutionError<DapiClientError> = ExecutionError {
+                inner: DapiClientError::Transport(TransportError::Grpc(
+                    dapi_grpc::tonic::Status::new(code, "x"),
+                )),
+                retries: 0,
+                address: Some(addr.clone()),
+            };
+            assert!(
+                !ee.is_rate_limited() || ee.can_retry(),
+                "ExecutionError {code:?}: is_rate_limited() must imply can_retry()"
+            );
+        }
+
+        // Guard the non-vacuous case: ResourceExhausted must actually be BOTH
+        // rate-limited AND retryable, otherwise the invariant could hold only
+        // because nothing is ever rate-limited (the feature would be dead).
+        let re = dapi_grpc::tonic::Status::resource_exhausted("429");
+        assert!(
+            re.is_rate_limited() && re.can_retry(),
+            "ResourceExhausted must be rate-limited AND retryable"
+        );
+    }
+
+    #[test]
+    fn test_retry_delay_non_rate_limited_is_flat() {
+        // Genuine failures keep the pre-existing flat base delay, regardless of
+        // the attempt index — unchanged behavior.
+        let base = Duration::from_millis(RETRY_BASE_DELAY_MS);
+        for attempt in 0..8u32 {
+            assert_eq!(retry_delay(false, attempt), base);
+        }
+    }
+
+    #[test]
+    fn test_rate_limit_backoff_window_grows_and_caps() {
+        // base × 2^attempt up to the cap.
+        assert_eq!(rate_limit_backoff_window(0), Duration::from_millis(10));
+        assert_eq!(rate_limit_backoff_window(1), Duration::from_millis(20));
+        assert_eq!(rate_limit_backoff_window(2), Duration::from_millis(40));
+        assert_eq!(rate_limit_backoff_window(3), Duration::from_millis(80));
+        assert_eq!(rate_limit_backoff_window(4), Duration::from_millis(160));
+        assert_eq!(rate_limit_backoff_window(5), Duration::from_millis(320));
+        // 10 × 2^6 = 640 → capped at 500.
+        assert_eq!(
+            rate_limit_backoff_window(6),
+            Duration::from_millis(RATE_LIMIT_MAX_DELAY_MS)
+        );
+        // Monotonic non-decreasing and never above the cap.
+        let mut prev = Duration::ZERO;
+        for attempt in 0..8u32 {
+            let w = rate_limit_backoff_window(attempt);
+            assert!(w >= prev, "window must be non-decreasing");
+            assert!(w <= Duration::from_millis(RATE_LIMIT_MAX_DELAY_MS));
+            prev = w;
+        }
+        // A pathologically large attempt must not panic and stays capped.
+        assert_eq!(
+            rate_limit_backoff_window(u32::MAX),
+            Duration::from_millis(RATE_LIMIT_MAX_DELAY_MS)
+        );
+    }
+
+    #[test]
+    fn test_retry_delay_rate_limited_is_jittered_within_window() {
+        // Use a wide window (attempt 5 → 320ms) so jitter has room to vary.
+        let attempt = 5u32;
+        let window = rate_limit_backoff_window(attempt);
+
+        let samples: Vec<Duration> = (0..128).map(|_| retry_delay(true, attempt)).collect();
+
+        // Full jitter: every sample is within [0, window).
+        for d in &samples {
+            assert!(
+                *d < window,
+                "jittered delay {d:?} must be strictly below the window {window:?}"
+            );
+        }
+        // Jitter is actually applied: across many samples we see more than one
+        // distinct value (probability of all-equal is astronomically small).
+        let first = samples[0];
+        assert!(
+            samples.iter().any(|d| *d != first),
+            "rate-limit delay must be randomized (jitter), got all equal"
+        );
     }
 
     #[cfg(feature = "mocks")]
@@ -736,7 +936,6 @@ impl DapiRequestExecutor for DapiClient {
         let dump_request = request.clone();
 
         let max_retries = applied_settings.retries;
-        let retry_delay = Duration::from_millis(10);
 
         let mut retries: usize = 0;
         // Track the last transport error for when all addresses get exhausted
@@ -749,15 +948,30 @@ impl DapiRequestExecutor for DapiClient {
 
         let result: ExecutionResult<R::Response, DapiClientError> = async {
             loop {
-                // Try to get an address to initialize transport on, rotating off
-                // the nodes already tried in this execution. If excluding the
-                // tried set empties the live pool (e.g. a single-node pool, or
-                // every live node already tried), fall back to the non-excluding
-                // selection so a healthy-but-throttled node can still be retried
-                // rather than surfacing a spurious NoAvailableAddresses.
+                // Select the next node, rotating off every node already tried in
+                // this execution so a retry goes to a *different* node.
+                // Rate-limited (ResourceExhausted) nodes stay in the pool (never
+                // banned), so without this exclusion a retry could re-pick the
+                // very node that just throttled us.
+                //
+                // Fallback order once every live node has been tried:
+                //   1. exclude only the node we *just* tried, so a small pool
+                //      (e.g. two nodes) keeps alternating instead of re-hitting
+                //      the just-throttled node at random;
+                //   2. if that is still empty (single-node pool, or the
+                //      just-tried node is the only live one), reuse it — there is
+                //      no alternative. The backoff below keeps this from
+                //      hammering the throttled node.
+                let just_tried = tried.last().cloned();
                 let Some(address) = self
                     .address_list
                     .get_live_address_excluding(&tried)
+                    .or_else(|| {
+                        just_tried.as_ref().and_then(|last| {
+                            self.address_list
+                                .get_live_address_excluding(std::slice::from_ref(last))
+                        })
+                    })
                     .or_else(|| self.address_list.get_live_address())
                 else {
                     // No available addresses - wrap with last meaningful error if we have one
@@ -826,19 +1040,21 @@ impl DapiRequestExecutor for DapiClient {
                         );
 
                         if can_retry_error && retries < max_retries {
+                            let rate_limited = cloned_error.is_rate_limited();
                             // Store last transport error
                             last_transport_error = Some(cloned_error);
 
                             // Rotate off this node on the next attempt.
                             tried.push(address.clone());
 
+                            let delay = retry_delay(rate_limited, retries as u32);
                             retries += 1;
                             tracing::warn!(
                                 error = ?execution_error,
-                                "retrying error with sleeping {} secs",
-                                retry_delay.as_secs_f32()
+                                delay_ms = delay.as_millis() as u64,
+                                "retrying error after backoff"
                             );
-                            transport::sleep(retry_delay).await;
+                            transport::sleep(delay).await;
                             continue;
                         }
 
@@ -885,7 +1101,17 @@ impl DapiRequestExecutor for DapiClient {
                 match execution_result {
                     Ok(response) => return Ok(response),
                     Err(error) => {
+                        // Invariant lock (load-bearing): a rate-limited error MUST
+                        // be retryable, otherwise the rotation below never fires
+                        // and the rotate-don't-ban behavior silently dies. See the
+                        // `CanRetry` docs and the `test_rate_limit_implies_retryable_invariant`
+                        // property test.
+                        debug_assert!(
+                            !error.is_rate_limited() || error.can_retry(),
+                            "is_rate_limited() must imply can_retry(); rate-limit rotation depends on it"
+                        );
                         if error.can_retry() && retries < max_retries {
+                            let rate_limited = error.is_rate_limited();
                             // Store last transport error
                             if let DapiClientError::Transport(ref te) = error.inner {
                                 last_transport_error = Some(te.clone());
@@ -894,13 +1120,14 @@ impl DapiRequestExecutor for DapiClient {
                             // Rotate off this node on the next attempt.
                             tried.push(address.clone());
 
+                            let delay = retry_delay(rate_limited, retries as u32);
                             retries += 1;
                             tracing::warn!(
                                 ?error,
-                                "retrying error with sleeping {} secs",
-                                retry_delay.as_secs_f32()
+                                delay_ms = delay.as_millis() as u64,
+                                "retrying error after backoff"
                             );
-                            transport::sleep(retry_delay).await;
+                            transport::sleep(delay).await;
                             continue;
                         }
 
