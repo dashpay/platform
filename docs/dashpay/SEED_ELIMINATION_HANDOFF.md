@@ -155,6 +155,18 @@ via a provider closure/seam) BEFORE `attach_wallet_seed` can go:
    storage/signing model (and wire the Swift Keychain signing) before deleting the
    resident derive.
 
+   **Decisive fact (traced):** `verified_scalar` → `IdentityKeyEntry.private_key`
+   is a **Rust→FFI→Swift hand-off** — NO Rust signing path reads it (Rust signs
+   via the external `VTableSigner`; `git grep` finds no Rust consumer of the stored
+   scalar for signing). Its terminal consumer is the Swift Keychain persister /
+   signer (14 `rs-platform-wallet-ffi` files handle identity-key private material).
+   So the Rust-side change (verify-via-pubkey, drop the scalar) cannot be
+   **validated** here — only the Swift signer that consumes the breadcrumb proves
+   it works, and that's env-blocked. Combined with this being the single most
+   safety-critical path (a wrong key-storage change = users locked out of signing),
+   this is the one conversion that must NOT be rushed headless: do it in an
+   iOS-capable session where the Swift signing can be exercised end-to-end.
+
 **Net:** `attach_wallet_seed` still has live production callers — the contactInfo
 sweep decrypt (network-blocked) and discovery (deep storage/signing change +
 env-blocked Swift). Deleting it now regresses background sync + identity
