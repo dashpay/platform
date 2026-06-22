@@ -170,18 +170,17 @@ pub const DEFAULT_MIN_BANK_CREDITS: u64 = 200_000_000_000;
 /// starve on fees.
 pub const DEFAULT_MIN_IDENTITY_CREDITS: Credits = 30_000_000;
 
-/// Default minimum bank shielded-pool balance (credits) — **non-zero, on
-/// by default** (user decision: shielded is pre-funded unless explicitly
-/// disabled).
+/// Default minimum bank shielded-pool balance (credits).
 ///
-/// 500M ≈ 5 tDASH-equivalent: enough for several shield → unshield /
-/// shielded-transfer cycles plus the per-transition Orchard proof fees a
-/// shielded setup suite needs, while staying a small fraction of the
-/// default Platform working balance. Set
-/// [`vars::MIN_SHIELDED_CREDITS`] to `0` to opt out and skip the
-/// prover warm-up entirely. When the prover/coordinator isn't configured
-/// the planner WARNs and skips rather than hanging on proof generation.
-pub const DEFAULT_MIN_SHIELDED_CREDITS: Credits = 500_000_000;
+/// Set to `0` (opt-out) because `shielded_is_ready()` always returns
+/// `false` in the current harness (the Orchard coordinator is not yet
+/// wired up). When non-zero, the fund planner emits a `ShieldFromPlatform`
+/// move every run and immediately discards it via the `shielded_is_ready`
+/// guard, producing harmless-but-noisy WARNs. Zero silences that noise with
+/// no effect on any test that actually exercises shielded functionality
+/// (those set [`vars::MIN_SHIELDED_CREDITS`] explicitly or gate on the
+/// coordinator being present). Re-enable once the Orchard coordinator lands.
+pub const DEFAULT_MIN_SHIELDED_CREDITS: Credits = 0;
 
 /// Informational floor for the token test suite.
 ///

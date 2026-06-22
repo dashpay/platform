@@ -21,6 +21,8 @@ use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
 use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
 
+use dpp::fee::Credits;
+
 use super::bank::{BankWallet, CrossCheckResult};
 use super::bank_identity::{self, BankIdentity};
 use super::bank_plan;
@@ -58,6 +60,26 @@ const BANK_CORE_GATE_MIN_DUFFS: u64 = 1;
 /// well above observed DAPI replica drift but small enough that any real
 /// accounting bug still trips the MISMATCH branch.
 const BANK_CROSS_CHECK_TOLERANCE_CREDITS: i64 = 100_000_000;
+
+/// Returns `true` when the *second* independent fetch confirms the first —
+/// i.e. both independent readings are well above the harness cache, meaning
+/// a genuine replica-lag (#3611) scenario rather than a stale-node phantom.
+///
+/// The decision rule: `second_independent − harness_credits > tolerance`.
+/// `first_independent` is accepted as a parameter for logging symmetry but is
+/// not part of the decision — only the *confirmation* (second) read matters.
+///
+/// Extracted as a pure, synchronous function so unit tests can cover every
+/// branch without an async runtime or a live DAPI node.
+fn independent_balance_confirmed(
+    _first_independent: Credits,
+    second_independent: Credits,
+    harness_credits: Credits,
+    tolerance: i64,
+) -> bool {
+    let confirm_drift = second_independent as i64 - harness_credits as i64;
+    confirm_drift > tolerance
+}
 
 /// Process-shared singleton populated on first
 /// [`E2eContext::init`].
@@ -843,20 +865,64 @@ impl E2eContext {
                     }
                 }
                 if !converged {
-                    // Wallet cache still lags after all retries.  The
-                    // independent `AddressInfo::fetch` is proof-verified, so
-                    // treat it as the ground truth.
-                    tracing::warn!(
-                        target: "platform_wallet::e2e::bank",
-                        harness_credits = result.harness_credits,
-                        independent_credits = result.independent_credits,
-                        positive_drift = signed_drift,
-                        retries = super::bank::BALANCE_SYNC_RETRIES,
-                        "replica-lag (#3611): wallet cache still diverged after \
-                         all retries. Adopting proof-verified independent balance \
-                         for floor gate, fund planner, and assert_floor()."
-                    );
-                    bank.accept_independent_platform_balance(result.independent_credits);
+                    // Guard against the inverse of #3611: the harness correctly
+                    // reads 0 (bank is genuinely empty), but one DAPI node
+                    // returned stale pre-spend state for the independent fetch.
+                    // A second independent query will likely land on a different
+                    // node; if it doesn't confirm the large balance, reject the
+                    // adoption and let the planner see 0 — it will attempt E5
+                    // Core→Platform if Core is funded, or surface a clear
+                    // InsufficientFunds so the operator gets an actionable error.
+                    tokio::time::sleep(super::bank::BALANCE_SYNC_RETRY_SLEEP).await;
+                    let confirmation = bank.cross_check_balance(&sdk).await;
+                    let confirm_drift = confirmation.independent_credits as i64
+                        - confirmation.harness_credits as i64;
+
+                    if independent_balance_confirmed(
+                        result.independent_credits,
+                        confirmation.independent_credits,
+                        confirmation.harness_credits,
+                        BANK_CROSS_CHECK_TOLERANCE_CREDITS,
+                    ) {
+                        // Second fetch also shows a large balance: two independent
+                        // queries agree → genuine replica lag (#3611).  Adopt as
+                        // before.
+                        tracing::warn!(
+                            target: "platform_wallet::e2e::bank",
+                            harness_credits = result.harness_credits,
+                            independent_credits = result.independent_credits,
+                            positive_drift = signed_drift,
+                            second_independent = confirmation.independent_credits,
+                            retries = super::bank::BALANCE_SYNC_RETRIES,
+                            "replica-lag (#3611): wallet cache still diverged after all retries. \
+                             Second independent fetch confirms the large balance (dual-verified). \
+                             Adopting proof-verified independent balance for floor gate, fund \
+                             planner, and assert_floor()."
+                        );
+                        bank.accept_independent_platform_balance(result.independent_credits);
+                    } else {
+                        // Second fetch does NOT confirm the large balance.
+                        // The first independent read was stale (phantom).  Do NOT
+                        // adopt.  The planner will see platform = wallet-cache = 0
+                        // and attempt E5 (Core→Platform asset-lock) if Core has
+                        // enough duffs, or surface InsufficientFunds so the
+                        // operator gets a clear message.
+                        tracing::warn!(
+                            target: "platform_wallet::e2e::bank",
+                            harness_credits = result.harness_credits,
+                            first_independent = result.independent_credits,
+                            second_independent = confirmation.independent_credits,
+                            confirm_drift,
+                            tolerance = BANK_CROSS_CHECK_TOLERANCE_CREDITS,
+                            "phantom balance REJECTED: second independent fetch (drift={confirm_drift}) \
+                             does not confirm the first read ({first} credits). The first DAPI node \
+                             returned stale pre-spend state. Proceeding with harness balance — the \
+                             fund planner will attempt E5 Core→Platform bootstrap if Core is funded, \
+                             or surface an operator-actionable InsufficientFunds error.",
+                            first = result.independent_credits,
+                        );
+                        // No adopt call — adopted_platform_floor stays at 0.
+                    }
                 }
             } else {
                 // Negative drift: harness >> independent — possible accounting
@@ -979,5 +1045,68 @@ impl E2eContext {
             identity_sync: StdMutex::new(Some(identity_sync)),
             active_guards: AtomicUsize::new(0),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The classic bug scenario: harness reads 0 (bank genuinely empty),
+    /// first independent fetch hits a stale node and returns the pre-spend
+    /// balance (~425B).  A second fetch lands on a fresh node and returns 0.
+    /// `independent_balance_confirmed` must return `false` → NO adoption.
+    #[test]
+    fn phantom_balance_rejected_when_second_fetch_returns_zero() {
+        assert!(!independent_balance_confirmed(
+            425_092_011_601,
+            0,
+            0,
+            100_000_000
+        ));
+    }
+
+    /// Genuine replica-lag (#3611): harness reads 0 (stale), BOTH independent
+    /// fetches see a large balance (~425B).  Confirmation drift = 425B >> 100M
+    /// tolerance → `independent_balance_confirmed` returns `true` → adopt.
+    #[test]
+    fn genuine_lag_accepted_when_second_fetch_confirms() {
+        assert!(independent_balance_confirmed(
+            425_092_011_601,
+            425_000_000_000,
+            0,
+            100_000_000
+        ));
+    }
+
+    /// Second fetch returns a small non-zero value (50M) that is within the
+    /// 100M tolerance.  Still treated as "not confirmed" → reject.
+    #[test]
+    fn near_zero_second_fetch_rejected() {
+        assert!(!independent_balance_confirmed(
+            425_092_011_601,
+            50_000_000,
+            0,
+            100_000_000
+        ));
+    }
+
+    /// Edge: second fetch drift exactly equals tolerance → NOT confirmed
+    /// (the guard uses strictly-greater-than).
+    #[test]
+    fn second_fetch_at_exact_tolerance_not_confirmed() {
+        // confirm_drift = 100M − 0 = 100M; 100M > 100M is false → reject.
+        assert!(!independent_balance_confirmed(
+            425_092_011_601,
+            100_000_000,
+            0,
+            100_000_000
+        ));
+    }
+
+    /// Edge: both reads zero, harness zero → trivially not confirmed (no drift).
+    #[test]
+    fn all_zero_not_confirmed() {
+        assert!(!independent_balance_confirmed(0, 0, 0, 100_000_000));
     }
 }

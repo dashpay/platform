@@ -113,10 +113,15 @@ async fn sh_018_shield_from_asset_lock() {
     // subtracted, never added).
     let lock_credits = ASSET_LOCK_DUFFS.saturating_mul(CREDITS_PER_DUFF);
     let expected_min = lock_credits / 2;
-    let shielded =
-        wait_for_shielded_balance(&s.test_wallet, &handle, SHIELDED_ACCOUNT, expected_min, STEP_TIMEOUT)
-            .await
-            .expect("shielded balance never reached the post-fee floor");
+    let shielded = wait_for_shielded_balance(
+        &s.test_wallet,
+        &handle,
+        SHIELDED_ACCOUNT,
+        expected_min,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("shielded balance never reached the post-fee floor");
     assert!(
         shielded >= expected_min && shielded <= lock_credits,
         "shielded_balances[{SHIELDED_ACCOUNT}] = {shielded} must land in the post-fee range \

@@ -49,14 +49,9 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::{AssetLockProof, Identifier};
 use dpp::shielded::builder::{
-    build_identity_create_from_shielded_pool_transition,
-    build_shield_from_asset_lock_transition,
-    build_shield_transition,
-    build_shielded_transfer_transition,
-    build_shielded_withdrawal_transition,
-    build_unshield_transition,
-    OrchardProver,
-    SpendableNote,
+    build_identity_create_from_shielded_pool_transition, build_shield_from_asset_lock_transition,
+    build_shield_transition, build_shielded_transfer_transition,
+    build_shielded_withdrawal_transition, build_unshield_transition, OrchardProver, SpendableNote,
 };
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -650,7 +645,11 @@ pub async fn shield_from_asset_lock<P: OrchardProver>(
         .await
         .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
 
-    info!(account, credits = amount, "Shield from asset lock broadcast succeeded");
+    info!(
+        account,
+        credits = amount,
+        "Shield from asset lock broadcast succeeded"
+    );
     Ok(())
 }
 
@@ -669,7 +668,11 @@ pub fn build_shield_from_asset_lock_st<P: OrchardProver>(
 ) -> Result<StateTransition, PlatformWalletError> {
     let recipient_addr = default_orchard_address(keys)?;
 
-    info!(account, credits = amount, "Shield from asset lock: building state transition");
+    info!(
+        account,
+        credits = amount,
+        "Shield from asset lock: building state transition"
+    );
 
     build_shield_from_asset_lock_transition(
         &recipient_addr,
