@@ -52,39 +52,62 @@ fn dashpay_account_registration_changeset(
 }
 
 /// Why a [`register_external_contact_account`] attempt failed, classified
-/// for the transient/permanent payment-channel policy.
+/// for the payment-channel policy.
 ///
-/// The distinction is load-bearing: a **permanent** failure marks the
-/// contact's payment channel broken (no unbounded retry on a poisoned
-/// channel), while a **transient** failure leaves the channel intact so
-/// the next sync sweep retries. Misclassifying a transient failure as
-/// permanent silently and permanently kills payments to a contact over a
-/// momentary blip.
+/// The three-way distinction is load-bearing:
+/// - **Permanent** marks the contact's payment channel broken (no unbounded
+///   retry on a poisoned channel).
+/// - **Transient** leaves the channel intact so the next sync sweep retries.
+/// - **Unavailable** means the key material to derive the ECDH scalar isn't
+///   present *right now* (watch-only wallet / signer not unlocked); the build
+///   is DEFERRED until a signer is available — neither broken nor churn-retried.
+///
+/// Misclassifying an `Unavailable` blip (e.g. a locked Keychain) as
+/// `Permanent` silently and irreversibly kills payments to a contact over a
+/// momentary, recoverable condition; misclassifying it as `Transient` churns a
+/// doomed derivation every sweep. Both are wrong — hence the separate arm.
 ///
 /// [`register_external_contact_account`]: IdentityWallet::register_external_contact_account
 #[derive(Debug)]
 pub enum RegisterExternalError {
     /// The request itself is unusable and re-deriving won't help — a
-    /// malformed encrypted xpub, a missing/non-secp recipient key, a
-    /// derivation that can't produce the ECDH key. Mark the channel broken.
+    /// malformed encrypted xpub, a missing/non-secp recipient key. Mark the
+    /// channel broken.
     Permanent(PlatformWalletError),
     /// A local persistence / in-memory-insert hiccup — the account simply
     /// wasn't built this pass. Leave the channel intact; the next sweep
     /// retries.
     Transient(PlatformWalletError),
+    /// The key material needed to derive the ECDH scalar isn't available right
+    /// now — a watch-only wallet with no resident seed, or (in the seedless
+    /// model) a Keychain signer that isn't unlocked. DEFER: leave the channel
+    /// intact and do not churn-retry; the build runs once a signer is
+    /// available. This is neither a malformed request nor a momentary infra
+    /// hiccup.
+    Unavailable(PlatformWalletError),
 }
 
 impl RegisterExternalError {
     /// Whether this failure should permanently break the payment channel.
+    /// True only for a genuinely malformed request — never for `Unavailable`.
     pub fn is_permanent(&self) -> bool {
         matches!(self, RegisterExternalError::Permanent(_))
     }
 
-    /// Unwrap to the underlying error (both arms carry one) for callers
-    /// that don't act on the transient/permanent distinction.
+    /// Whether the failure is "key material not available right now". The
+    /// caller must DEFER (leave the channel intact, retry when a signer is
+    /// available) — not break the channel and not churn-retry immediately.
+    pub fn is_unavailable(&self) -> bool {
+        matches!(self, RegisterExternalError::Unavailable(_))
+    }
+
+    /// Unwrap to the underlying error (all arms carry one) for callers
+    /// that don't act on the classification.
     pub fn into_inner(self) -> PlatformWalletError {
         match self {
-            RegisterExternalError::Permanent(e) | RegisterExternalError::Transient(e) => e,
+            RegisterExternalError::Permanent(e)
+            | RegisterExternalError::Transient(e)
+            | RegisterExternalError::Unavailable(e) => e,
         }
     }
 }
@@ -399,7 +422,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         our_decryption_key_index: u32,
         contact_encryption_key_index: u32,
     ) -> Result<(), RegisterExternalError> {
-        use RegisterExternalError::{Permanent, Transient};
+        use RegisterExternalError::{Permanent, Transient, Unavailable};
         let account_index: u32 = 0;
         let contact_identity_id = contact_identity.id();
 
@@ -449,6 +472,33 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 Transient(PlatformWalletError::IdentityIndexNotSet(*our_identity_id))
             })?;
 
+            let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
+                Transient(PlatformWalletError::WalletNotFound(hex::encode(
+                    self.wallet_id,
+                )))
+            })?;
+
+            // The ECDH scalar can only be derived when the wallet has resident
+            // key material. A watch-only / external-signable wallet (Keychain
+            // signer not yet unlocked) can't derive *now* — classify
+            // `Unavailable` so the build is DEFERRED, never broken: a locked
+            // Keychain is recoverable, and breaking the channel over it would
+            // irreversibly kill payments. Checked before the key-presence test
+            // below so a seedless wallet defers rather than being judged on a
+            // request it currently can't act on (request validity is already
+            // enforced upstream in `build_contact_accounts`). Currently "can
+            // derive" == `has_seed()`; the seedless model extends this to an
+            // available resolver-backed signer.
+            if !wallet.has_seed() {
+                return Err(Unavailable(PlatformWalletError::InvalidIdentityData(
+                    format!(
+                        "Cannot derive ECDH key for identity {}: wallet has no \
+                         resident key material (watch-only / signer unavailable)",
+                        our_identity_id
+                    ),
+                )));
+            }
+
             // Find our decryption key by its key ID. A missing key at the
             // validated index is a malformed-request fault, not transient.
             let our_encryption_key = managed
@@ -462,12 +512,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         our_decryption_key_index, our_identity_id
                     )))
                 })?;
-
-            let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
-                Transient(PlatformWalletError::WalletNotFound(hex::encode(
-                    self.wallet_id,
-                )))
-            })?;
 
             Self::derive_encryption_private_key(
                 wallet,

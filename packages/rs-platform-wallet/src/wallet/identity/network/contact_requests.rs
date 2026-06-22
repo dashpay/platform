@@ -899,25 +899,60 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ) {
         let contact_id = candidate.contact_id;
 
-        // Seed-awareness: an out-of-wallet / watch-only identity has no HD
-        // slot to derive ECDH from. Skip + log.
-        let is_seedless = {
+        // Readiness: can we build accounts for this identity right now?
+        // - Unmanaged or out-of-wallet (no HD slot) → not ours to build; skip.
+        // - Wallet-owned but no resident key material (watch-only / signer not
+        //   unlocked) → DEFER: do NOT churn the receiving account (step 1) or
+        //   break the external channel (step 3); the build runs on a later
+        //   sweep once a signer is available. Gating on `has_seed()` rather
+        //   than `identity_index.is_none()` is the fix: a wallet-owned but
+        //   seedless identity has an index, so the old predicate let it fall
+        //   through to a transient-churn (step 1) and a permanent channel-kill
+        //   (step 3). Currently "can derive" == `has_seed()`; the seedless
+        //   model extends this to an available resolver-backed signer.
+        enum BuildReadiness {
+            NotOurs,
+            KeyMaterialUnavailable,
+            Ready,
+        }
+        let readiness = {
             let wm = self.wallet_manager.read().await;
-            match wm
+            let indexed = wm
                 .get_wallet_info(&self.wallet_id)
-                .and_then(|info| info.identity_manager.managed_identity(identity_id).cloned())
+                .and_then(|info| info.identity_manager.managed_identity(identity_id))
+                .map(|managed| managed.identity_index.is_some())
+                .unwrap_or(false);
+            if !indexed {
+                BuildReadiness::NotOurs
+            } else if wm
+                .get_wallet(&self.wallet_id)
+                .map(|w| w.has_seed())
+                .unwrap_or(false)
             {
-                Some(managed) => managed.identity_index.is_none(),
-                None => true,
+                BuildReadiness::Ready
+            } else {
+                BuildReadiness::KeyMaterialUnavailable
             }
         };
-        if is_seedless {
-            tracing::info!(
-                identity = %identity_id,
-                contact = %contact_id,
-                "Skipping DashPay account build for watch-only/seedless identity (host-side signing hook pending)"
-            );
-            return;
+        match readiness {
+            BuildReadiness::NotOurs => {
+                tracing::info!(
+                    identity = %identity_id,
+                    contact = %contact_id,
+                    "Skipping DashPay account build for unmanaged/out-of-wallet identity"
+                );
+                return;
+            }
+            BuildReadiness::KeyMaterialUnavailable => {
+                tracing::info!(
+                    identity = %identity_id,
+                    contact = %contact_id,
+                    "Deferring DashPay account build: key material unavailable \
+                     (watch-only / signer not unlocked); will retry when a signer is available"
+                );
+                return;
+            }
+            BuildReadiness::Ready => {}
         }
 
         // (1) Receiving account — derivable from our seed, no decryption.
@@ -1036,6 +1071,17 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .await
         {
             Ok(()) => {}
+            Err(e) if e.is_unavailable() => {
+                // Key material became unavailable between the readiness gate
+                // and the derive (e.g. a Keychain lock mid-sweep). DEFER —
+                // never break the channel; a later sweep with a signer retries.
+                tracing::info!(
+                    identity = %identity_id,
+                    contact = %contact_id,
+                    error = %e.into_inner(),
+                    "Deferring DashPay external account: key material unavailable (channel left intact)"
+                );
+            }
             Err(e) if e.is_permanent() => {
                 tracing::warn!(
                     identity = %identity_id,

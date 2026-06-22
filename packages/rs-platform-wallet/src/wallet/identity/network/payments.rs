@@ -750,6 +750,41 @@ mod tests {
         (manager, persister, wallet_id)
     }
 
+    /// Like [`make_wallet`] but WITHOUT re-attaching the seed, so the wallet
+    /// stays external-signable (`has_seed() == false`) — the watch-only /
+    /// seedless state the unattended sync sweep can hit before a Keychain
+    /// unlock.
+    async fn make_watch_only_wallet() -> (
+        Arc<PlatformWalletManager<RecordingPersister>>,
+        Arc<RecordingPersister>,
+        WalletId,
+    ) {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = Arc::new(RecordingPersister::default());
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::clone(&persister),
+            handler,
+        ));
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+        let seed = mnemonic.to_seed("");
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet creation");
+        let wallet_id = wallet.wallet_id();
+        // Intentionally NO attach_wallet_seed: creation downgrades to
+        // external-signable, so the wallet has no resident key material.
+        (manager, persister, wallet_id)
+    }
+
     fn bare_identity(id_bytes: [u8; 32]) -> Identity {
         Identity::V0(IdentityV0 {
             id: Identifier::from(id_bytes),
@@ -1822,6 +1857,52 @@ mod tests {
         assert!(
             err.is_permanent(),
             "a missing validated key is a permanent malformed-request fault, got {err:?}"
+        );
+    }
+
+    /// **#2 (cont.) — a seedless (watch-only) wallet DEFERS; it must NOT break
+    /// the channel.** When the owner is wallet-owned (has an HD index) but the
+    /// wallet has no resident key material (external-signable / Keychain signer
+    /// not unlocked), the ECDH scalar can't be derived *right now*. That must
+    /// classify `Unavailable` (defer, retry when a signer is available), never
+    /// `Permanent` — a locked Keychain is a recoverable condition, and breaking
+    /// the channel over it irreversibly kills payments to the contact. This
+    /// pins the unattended-sweep channel-kill fix: before it, the seedless
+    /// derive failure fell through to `Permanent`.
+    #[tokio::test]
+    async fn register_external_classifies_seedless_wallet_as_unavailable() {
+        let (manager, persister, wallet_id) = make_watch_only_wallet().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        // Owner IS wallet-owned (index 0) — so this is not an infra miss — but
+        // the wallet is watch-only, so no ECDH scalar can be derived now.
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(
+                    bare_identity([0x11; 32]),
+                    0,
+                    wallet_id,
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add owner");
+        }
+
+        let owner_id = Identifier::from([0x11; 32]);
+        let contact = bare_identity([0x22; 32]);
+        let err = iw
+            .register_external_contact_account(&owner_id, &contact, &[7u8; 96], 0, 0)
+            .await
+            .expect_err("a watch-only wallet cannot derive ECDH now");
+        assert!(
+            err.is_unavailable(),
+            "a seedless wallet must DEFER (Unavailable), got {err:?}"
+        );
+        assert!(
+            !err.is_permanent(),
+            "a watch-only wallet must NOT break the channel (would kill payments \
+             over a recoverable state), got {err:?}"
         );
     }
 }
