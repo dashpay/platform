@@ -89,6 +89,99 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     pub(super) event_adapter_join: tokio::sync::Mutex<Option<JoinHandle<()>>>,
 }
 
+/// Terminal status of one background coordinator's OS thread.
+///
+/// The three periodic coordinators run their loops on dedicated OS
+/// threads (the SDK futures are `!Send`, so they ride
+/// [`Handle::block_on`](tokio::runtime::Handle::block_on) rather than
+/// `tokio::spawn`). [`PlatformWalletManager::shutdown`] joins each
+/// thread and reports how it ended so a host can tell a clean wind-down
+/// from a panicked loop instead of silently dropping the thread.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CoordinatorThreadStatus {
+    /// No thread was running to join — the loop was never started, or
+    /// was already stopped and joined.
+    NotRunning,
+    /// The loop exited and its OS thread joined cleanly.
+    Ok,
+    /// The OS thread panicked; carries the best-effort panic message.
+    Panicked(String),
+    /// The join itself could not complete (the blocking join task
+    /// failed). Distinct from the thread panicking.
+    Error(String),
+}
+
+impl CoordinatorThreadStatus {
+    /// `true` for a non-failure outcome (joined cleanly or never ran).
+    pub fn is_clean(&self) -> bool {
+        matches!(self, Self::Ok | Self::NotRunning)
+    }
+}
+
+/// Per-thread terminal status of every background coordinator, returned
+/// by [`PlatformWalletManager::shutdown`].
+///
+/// A host that drops its tokio runtime right after `shutdown()`
+/// (one-shot / headless / stdio) reads this to confirm each `!Send`
+/// coordinator loop fully wound down on its OS thread *before* the
+/// runtime goes away — closing the race where a still-polling loop hits
+/// `tokio::time` on a shutting-down runtime and panics with
+/// `A Tokio 1.x context was found, but it is being shutdown`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoordinatorExitStatus {
+    /// Platform-address (BLAST) balance sync loop.
+    pub platform_address: CoordinatorThreadStatus,
+    /// Per-identity token-state sync loop.
+    pub identity: CoordinatorThreadStatus,
+    /// Shielded (Orchard) note sync loop. Always
+    /// [`CoordinatorThreadStatus::NotRunning`] in builds without the
+    /// `shielded` feature.
+    pub shielded: CoordinatorThreadStatus,
+}
+
+impl CoordinatorExitStatus {
+    /// `true` when every coordinator wound down without a panic or join
+    /// failure (each is [`Ok`](CoordinatorThreadStatus::Ok) or
+    /// [`NotRunning`](CoordinatorThreadStatus::NotRunning)).
+    pub fn all_clean(&self) -> bool {
+        self.platform_address.is_clean() && self.identity.is_clean() && self.shielded.is_clean()
+    }
+}
+
+/// Join a coordinator's background OS thread and classify how it ended.
+///
+/// Awaited by [`quiesce`](IdentitySyncManager::quiesce) *after* the loop
+/// is cancelled and its in-flight pass drained, so the thread is already
+/// on its way out. The blocking [`JoinHandle::join`](std::thread::JoinHandle::join)
+/// runs on the blocking pool (via [`spawn_blocking`](tokio::task::spawn_blocking))
+/// to avoid parking a runtime worker. Joining here — while the runtime
+/// is still alive — is what guarantees the `!Send` loop has stopped
+/// touching `tokio::time` before the host drops the runtime.
+pub(crate) async fn join_coordinator_thread(
+    handle: Option<std::thread::JoinHandle<()>>,
+) -> CoordinatorThreadStatus {
+    let Some(handle) = handle else {
+        return CoordinatorThreadStatus::NotRunning;
+    };
+    match tokio::task::spawn_blocking(move || handle.join()).await {
+        Ok(Ok(())) => CoordinatorThreadStatus::Ok,
+        Ok(Err(payload)) => CoordinatorThreadStatus::Panicked(panic_message(payload)),
+        Err(join_err) => CoordinatorThreadStatus::Error(join_err.to_string()),
+    }
+}
+
+/// Best-effort extraction of a panic message from a joined thread's
+/// payload (`&str` and `String` are the common cases).
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic payload".to_string()
+    }
+}
+
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Create a new PlatformWalletManager.
     ///
@@ -308,11 +401,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// FIRST (so no further persister store or host callback can start),
     /// and only THEN cancel + join the event adapter, which is the sink
     /// those stores feed into.
-    pub async fn shutdown(&self) {
-        self.platform_address_sync_manager.quiesce().await;
-        self.identity_sync_manager.quiesce().await;
+    ///
+    /// Each `quiesce()` now also **joins** its coordinator's OS thread,
+    /// so when this returns every `!Send` loop has fully exited. A host
+    /// that drops the tokio runtime right after `shutdown()` (one-shot /
+    /// headless / stdio) is therefore safe — no coordinator can still be
+    /// polling `tokio::time` on a shutting-down runtime. The returned
+    /// [`CoordinatorExitStatus`] reports per-thread how each loop ended.
+    pub async fn shutdown(&self) -> CoordinatorExitStatus {
+        let platform_address = self.platform_address_sync_manager.quiesce().await;
+        let identity = self.identity_sync_manager.quiesce().await;
         #[cfg(feature = "shielded")]
-        self.shielded_sync_manager.quiesce().await;
+        let shielded = self.shielded_sync_manager.quiesce().await;
+        #[cfg(not(feature = "shielded"))]
+        let shielded = CoordinatorThreadStatus::NotRunning;
 
         self.event_adapter_cancel.cancel();
         if let Some(handle) = self.event_adapter_join.lock().await.take() {
@@ -320,5 +422,172 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 tracing::warn!(error = ?e, "Wallet event adapter task join error");
             }
         }
+
+        CoordinatorExitStatus {
+            platform_address,
+            identity,
+            shielded,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::time::Duration;
+
+    use crate::changeset::{ClientStartState, PersistenceError, PlatformWalletChangeSet};
+
+    /// No-op persister — the lifecycle tests below never exercise the
+    /// real persistence pipeline, they just need a handle that satisfies
+    /// the manager's `P` bound.
+    struct NoopPersister;
+
+    impl PlatformWalletPersistence for NoopPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// No-op event handler standing in for the host's FFI handler.
+    struct NoopHandler;
+    impl dash_spv::EventHandler for NoopHandler {}
+    impl PlatformEventHandler for NoopHandler {}
+
+    /// Build a manager over a mock SDK + no-op persister/handler. Cheap:
+    /// `new` wires the sub-managers and spawns the event adapter but
+    /// starts no coordinator threads.
+    fn make_manager() -> PlatformWalletManager<NoopPersister> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = Arc::new(NoopPersister);
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopHandler);
+        PlatformWalletManager::new(sdk, persister, handler)
+    }
+
+    /// Start every periodic coordinator's background OS-thread loop.
+    fn start_coordinators<P: PlatformWalletPersistence + 'static>(m: &PlatformWalletManager<P>) {
+        Arc::clone(&m.platform_address_sync_manager).start();
+        Arc::clone(&m.identity_sync_manager).start();
+        #[cfg(feature = "shielded")]
+        Arc::clone(&m.shielded_sync_manager).start();
+    }
+
+    /// (a) `shutdown()` joins all coordinator OS threads and reports an
+    /// all-clean status; a second call has nothing left to join.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn shutdown_joins_all_coordinators_and_reports_ok() {
+        let manager = make_manager();
+        start_coordinators(&manager);
+        // Let the loops enter `block_on` so we exercise the live-loop
+        // join path (a thread cancelled before its first poll joins too).
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let status = manager.shutdown().await;
+        assert_eq!(status.platform_address, CoordinatorThreadStatus::Ok);
+        assert_eq!(status.identity, CoordinatorThreadStatus::Ok);
+        #[cfg(feature = "shielded")]
+        assert_eq!(status.shielded, CoordinatorThreadStatus::Ok);
+        #[cfg(not(feature = "shielded"))]
+        assert_eq!(status.shielded, CoordinatorThreadStatus::NotRunning);
+        assert!(status.all_clean());
+
+        // Handles consumed by the join → nothing left to join.
+        let again = manager.shutdown().await;
+        assert_eq!(again.platform_address, CoordinatorThreadStatus::NotRunning);
+        assert_eq!(again.identity, CoordinatorThreadStatus::NotRunning);
+    }
+
+    /// (b) A coordinator thread that panics surfaces in the status rather
+    /// than being silently dropped.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn join_coordinator_thread_surfaces_panic() {
+        let handle = std::thread::spawn(|| panic!("boom in coordinator"));
+        match join_coordinator_thread(Some(handle)).await {
+            CoordinatorThreadStatus::Panicked(msg) => {
+                assert!(msg.contains("boom in coordinator"), "msg was {msg:?}");
+            }
+            other => panic!("expected Panicked, got {other:?}"),
+        }
+    }
+
+    /// A cleanly-returning thread joins as `Ok`; an absent handle is
+    /// `NotRunning`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn join_coordinator_thread_clean_and_absent() {
+        let handle = std::thread::spawn(|| {});
+        assert_eq!(
+            join_coordinator_thread(Some(handle)).await,
+            CoordinatorThreadStatus::Ok
+        );
+        assert_eq!(
+            join_coordinator_thread(None).await,
+            CoordinatorThreadStatus::NotRunning
+        );
+    }
+
+    /// (c) Race regression: model the one-shot / headless path — start
+    /// the coordinators, `shutdown()`, then **drop the runtime**. Because
+    /// `shutdown()` joined every loop while the runtime was still alive
+    /// (asserted via the all-`Ok` status), nothing is left polling
+    /// `tokio::time`, so the drop raises no "Tokio … being shutdown"
+    /// panic. A scoped hook counts only that specific panic so a
+    /// concurrent unrelated panic can't trip the assertion.
+    #[test]
+    fn shutdown_then_drop_runtime_does_not_panic() {
+        use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+
+        static SHUTDOWN_PANICS: AtomicUsize = AtomicUsize::new(0);
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|info| {
+            if info.to_string().contains("being shutdown") {
+                SHUTDOWN_PANICS.fetch_add(1, AtomicOrdering::SeqCst);
+            }
+        }));
+
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .enable_all()
+            .build()
+            .expect("build runtime");
+
+        let status = runtime.block_on(async {
+            let manager = make_manager();
+            start_coordinators(&manager);
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            manager.shutdown().await
+        });
+
+        // The headless drop: with every coordinator already joined, this
+        // cannot race a loop still touching the timer.
+        drop(runtime);
+        std::thread::sleep(Duration::from_millis(100));
+        let racing_panics = SHUTDOWN_PANICS.load(AtomicOrdering::SeqCst);
+
+        // Restore the hook before asserting so a failure prints normally.
+        std::panic::set_hook(prev_hook);
+
+        assert_eq!(status.platform_address, CoordinatorThreadStatus::Ok);
+        assert_eq!(status.identity, CoordinatorThreadStatus::Ok);
+        assert!(
+            status.all_clean(),
+            "coordinators did not wind down: {status:?}"
+        );
+        assert_eq!(
+            racing_panics, 0,
+            "dropping the runtime after shutdown raced a coordinator thread"
+        );
     }
 }

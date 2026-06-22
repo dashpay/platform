@@ -141,6 +141,11 @@ pub struct ShieldedSyncManager {
     coordinator_slot: Arc<RwLock<Option<Arc<NetworkShieldedCoordinator>>>>,
     /// Cancel token for the background loop, if running.
     background_cancel: StdMutex<Option<CancellationToken>>,
+    /// Join handle for the background loop's OS thread, if running.
+    /// Taken and joined by [`quiesce`](Self::quiesce) so shutdown can
+    /// confirm the `!Send` loop fully exited before the host drops the
+    /// runtime.
+    background_join: StdMutex<Option<std::thread::JoinHandle<()>>>,
     /// Monotonically increasing generation counter. Bumped on every
     /// `start()` so the exiting thread can tell whether its
     /// generation is still the active one before clearing
@@ -171,6 +176,7 @@ impl ShieldedSyncManager {
             event_manager,
             coordinator_slot,
             background_cancel: StdMutex::new(None),
+            background_join: StdMutex::new(None),
             background_generation: AtomicU64::new(0),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
@@ -235,8 +241,8 @@ impl ShieldedSyncManager {
         drop(guard);
 
         let handle = tokio::runtime::Handle::current();
-        let this = self;
-        std::thread::Builder::new()
+        let this = Arc::clone(&self);
+        let join = std::thread::Builder::new()
             .name("shielded-sync".into())
             .spawn(move || {
                 handle.block_on(async move {
@@ -275,6 +281,8 @@ impl ShieldedSyncManager {
                 });
             })
             .expect("failed to spawn shielded-sync thread");
+        // Store the handle so `quiesce` can join the OS thread.
+        *self.background_join.lock().expect("bg_join poisoned") = Some(join);
     }
 
     /// Stop the background sync loop. No-op if not running.
@@ -313,13 +321,25 @@ impl ShieldedSyncManager {
     /// including the persister fan-out, so its falling edge (with the
     /// gate up) is a sound "fully drained" signal. The gate is reopened
     /// before returning so a later start/sync works normally.
-    pub async fn quiesce(&self) {
+    ///
+    /// Finally **joins** the loop's OS thread (after the drain, so the
+    /// thread is on its way out) and returns its terminal status. Joining
+    /// while the runtime is still alive is what lets the manager promise
+    /// the `!Send` loop has stopped touching `tokio::time` before a
+    /// one-shot host drops the runtime.
+    pub async fn quiesce(&self) -> super::CoordinatorThreadStatus {
         self.quiescing.store(true, Ordering::Release);
         self.stop();
         while self.is_syncing.load(Ordering::Acquire) {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         self.quiescing.store(false, Ordering::Release);
+        let handle = self
+            .background_join
+            .lock()
+            .expect("bg_join poisoned")
+            .take();
+        super::join_coordinator_thread(handle).await
     }
 
     /// Run one sync pass across every registered wallet.
