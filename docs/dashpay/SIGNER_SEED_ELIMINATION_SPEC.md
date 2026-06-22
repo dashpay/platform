@@ -388,9 +388,10 @@ tick on an unbuilt contact into an irreversible channel-kill.
 - **Partial registration** (persist-ok / in-memory-insert-fail): unchanged
   (store-before-insert; relaunch rebuilds) — but the rebuild must classify a
   locked Keychain as `Unavailable`, not escalate.
-- **Restore-from-Keychain / app-reinstall → zero signing keys:** the open
-  imported-identity bug; seedless makes it worse (it would `Unavailable`/kill
-  every channel). Must be addressed first (§7).
+- **Restore-from-Keychain / app-reinstall → zero signing keys:** the
+  imported-identity bug — **RESOLVED** by carry-scalar (the materialization path no
+  longer re-derives from a not-yet-stored mnemonic). Phase 2 only confirms imported
+  wallets reach the resolver for xpub/ECDH (mnemonic stored by `createWallet`).
 - **Wrong/mis-mapped mnemonic:** §4.8 xpub self-check, fails loud.
 - **Read-path:** converted readers propagate signer errors; never return
   empty/zero/stale addresses.
@@ -430,8 +431,12 @@ tick on an unbuilt contact into an irreversible channel-kill.
 2. **Phase 2 prerequisites (design + fix BEFORE feature code):**
    - §4.7 three-state error classification + `is_seedless` gate fix.
    - §4.6 persisted pending-crypto queue + drain FFI.
-   - Resolve the **imported-identity zero-signing-keys** bug (`TODO.md:334`;
-     `IMPORTED_IDENTITY_KEY_MATERIALIZATION_SPEC.md`) — seedless compounds it.
+   - ~~Resolve the imported-identity zero-signing-keys bug~~ **RESOLVED** by the
+     carry-scalar change (commit `c567981c46`,
+     `IMPORTED_IDENTITY_KEY_MATERIALIZATION_SPEC.md` §10; on-device 23/23 signable,
+     regression tests green). No longer a blocker. Phase 2 need only confirm an
+     imported wallet reaches the resolver for xpub/ECDH (its mnemonic is stored in
+     the Keychain by `createWallet`, so the resolver-backed signer works for it).
 3. **Phase 2 feature code:** `WalletKeyProvider` (ECDH + accountReference +
    contactInfo host primitives) → `EcdhProvider` collapse to `ClientSide` →
    convert #2/#2b/#4–#7 (each xpub bundled with its function's ECDH) → delete
@@ -471,8 +476,11 @@ goes through the **swift-rust-ffi-engineer** agent.
    §4.9 ordering).
 3. **[CRITICAL]** Fix the `is_seedless` gate predicate — key-availability, not
    `identity_index.is_none()` (§4.7).
-4. **[HIGH]** Resolve the imported-identity zero-signing-keys bug before Phase 2
-   (§4.8 self-check does not cover it).
+4. **[RESOLVED]** Imported-identity zero-signing-keys bug — fixed by carry-scalar
+   (commit `c567981c46`), on-device-verified, regression tests green. No longer a
+   Phase-2 blocker; only confirm imported wallets reach the resolver for xpub/ECDH.
+   (Note: §4.8's xpub self-check still does not cover a present-but-zero-keys import,
+   but the carry-scalar fix means imports now materialize keys, so this is moot.)
 5. **[HIGH]** Tighten §1 honest-scope wording (done) + fix the
    `resolve_derived_xprv` error-/unwind-path scalar leak; prefer one RAII
    wipe-guard over five hand-placed `non_secure_erase` calls (§4.2).

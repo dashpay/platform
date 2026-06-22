@@ -331,11 +331,18 @@ DIP/maintainer-coordination effort separate from the wallet work.
     - 285/285 platform-wallet lib tests green, clippy clean, full `build_ios.sh` (xcframework
       + app) green.
 
-- [ ] **🐛 BUG (found in UAT 2026-06-19): an IMPORTED identity cannot sign any state
-  transition.** Every signed op — register DPNS name, set DashPay profile, and by
-  extension contact requests + payments — fails with
+- [x] **🐛 BUG (found in UAT 2026-06-19) — RESOLVED 2026-06-21: an IMPORTED identity
+  could not sign any state transition.** Fixed by the carry-derived-scalar change
+  (`IMPORTED_IDENTITY_KEY_MATERIALIZATION_SPEC.md`, commit `c567981c46`): discovery
+  carries the already-verified 32-byte scalar through changeset→FFI→Swift so the client
+  stores it directly instead of re-deriving from a not-yet-persisted mnemonic. On-device:
+  clean import → 23/23 keys signable, a discovered identity signed a DashPay profile.
+  Regression tests green (`breadcrumb_decisions_*`, `add_keys_*`,
+  `identity_key_entry_debug_redacts_private_key`). Original diagnosis (historical) below.
+  Every signed op — register DPNS name, set DashPay profile, and by
+  extension contact requests + payments — failed with
   `SDK error: Protocol error: Generic Error: No PersistentPublicKey row matches the
-  supplied public-key bytes` (`KeychainSigner.swift:137`). Diagnosis so far:
+  supplied public-key bytes` (`KeychainSigner.swift:137`). Diagnosis at the time:
   - The 5 keys ARE persisted correctly — `ZPERSISTENTPUBLICKEY.ZPUBLICKEYDATA` exactly
     matches all 5 of the identity's on-chain public keys (verified by SwiftData query).
   - `KeychainSigner`'s lookup (`KeychainSigner.swift:308-310`) matches purely by
