@@ -31,6 +31,7 @@ Keep this current as cores land.
 | `7a23fa114e` | §4.5 | signer `account_reference` / `unmask_account_reference` methods on `MnemonicResolverCoreSigner` (Zeroizing scalar, parity+round-trip test) — the in-signer accountReference for seedless send |
 | `9d532c2aba` | §4.6 | send via `EcdhProvider::ClientSide` — SDK no longer receives a private key; `SendContactRequestParams` carries the precomputed `shared_secret` + `expected_recipient_pubkey` guard (still resident-derived; seedless swap next) |
 | `88b7fb7671` | §4.6 | generalize `DrainCryptoProvider` → `ContactCryptoProvider` + `account_reference`/`unmask_account_reference`; glue impl wires the signer methods (serves drain AND send) |
+| `07e1821526` | §4.6 | **seedless send + accept** — xpub/ECDH/accountReference all via the provider; send/accept gain a `crypto` param; both FFI gain `core_signer_handle` + build the resolver provider. Verified host + `aarch64-apple-ios-sim` |
 
 **Locked design decisions**
 - Raw-secret ops are **inherent methods on `MnemonicResolverCoreSigner`** (in
@@ -88,37 +89,33 @@ These compile + cross-compile in this repo (the glue crate is Rust; the
 ClientSide seam + provider already landed). Earlier handoffs wrongly filed these under
 "environment-blocked" by conflating FFI (Rust) with Swift (`.swift`).
 
-**C2 — seedless send + accept (one green commit; ~9 coordinated sites).**
-The provider (`ContactCryptoProvider`) and signer methods are in place; this
-swaps the resident-seed derivations in the send path for provider calls.
-- `send_contact_request_with_external_signer` (`contact_requests.rs`): add a
-  `crypto: &C` param (`C: ContactCryptoProvider + Sync`). Build the contact-xpub
-  path (`AccountType::DashpayReceivingFunds{0, sender, recipient}.derivation_path`)
-  → `crypto.receiving_xpub(&path)` → build `platform_encryption::CompactXpub`.
-  Build the enc path (`Self::identity_auth_derivation_path(net, ECDSA,
-  identity_index, sender_enc_key.id())`) → `crypto.ecdh_shared_secret(&enc_path,
-  &recipient_enc_pubkey)` for the shared secret, and `crypto.account_reference` /
-  `crypto.unmask_account_reference` for step 4b (rewrite the `.map` closure
-  imperatively — they're async). Drop the `wm.get_wallet()` block +
-  `derive_contact_xpub(wallet)` + `derive_encryption_private_key(wallet)`. Pass
-  `Some(contact_xpub_ext)` to the final `register_contact_account` (it's the same
-  friendship xpub — verified).
-- `accept_contact_request_with_external_signer` + `accept_register_external_validated`:
-  add the `crypto: &C` param; thread to the delegated send; for the register-external
-  leg compute `crypto.ecdh_shared_secret(&our_dec_key_path, &contact_pubkey)` and
-  pass `Some(shared)` to `register_external_contact_account` (its
-  `precomputed_shared_key` Option already exists).
-- Glue (`dashpay.rs`): `platform_wallet_send_contact_request_with_signer` +
-  `platform_wallet_accept_contact_request_with_signer` gain a
-  `core_signer_handle: *mut MnemonicResolverHandle` param; build
-  `ResolverContactCryptoProvider` (as the drain FFI does) and pass it. (The new C
-  ABI param breaks the `.swift` callers — expected; that's the Swift task below.)
-- Verify: `cargo test -p platform-wallet --lib`, `cargo build -p platform-wallet-ffi`.
+**C2 — seedless send + accept — DONE** (`07e1821526`). Send + accept source the
+friendship xpub, ECDH secret, and accountReference through `ContactCryptoProvider`;
+both FFI take `core_signer_handle`. (The new C ABI param breaks the `.swift`
+callers — expected; that's the Swift task below.) Verified host + iOS-sim.
 
-**C3 — delete the resident ECDH path.** Once C2 lands, `derive_encryption_private_key`
-has no non-test caller. Delete it + its tests (`identity_handle.rs`); confirm no
-`derive_contact_xpub(wallet)` / `derive_extended_private_key` survive on DashPay
-send/accept paths.
+**C3 — delete the resident ECDH path. BLOCKED on the sweep conversion.**
+`derive_encryption_private_key` is NOT yet dead: the background sync sweep
+(`build_contact_accounts`, the `register_external_contact_account(..., None)`
+caller) still uses the resident-derive path during migration — it has no signer
+in the background, so it either derives now (resident) or enqueues (seedless,
+the §4.7 `BuildReadiness` gate). To eliminate the resident path entirely:
+1. **Convert the sweep to always-enqueue** (`build_contact_accounts`): drop the
+   `Ready`→derive-now branch so the sweep ALWAYS enqueues the `RegisterExternal`
+   op; the drain (on unlock, with a signer) does the crypto. This is the
+   behaviour the acceptance test wants ("background-discover an inbound contact
+   then unlock → it becomes payable"). Careful change — re-read the
+   `BuildReadiness` gate first; do NOT rush.
+2. Then `register_external_contact_account`'s `precomputed_shared_key: Option`
+   has only `Some` callers (drain + accept) → make it non-`Option`
+   `shared_key: [u8; 32]`, delete the `None` resident branch (steps 2–4), drop
+   `Unavailable` from its local `use`, renumber its step comments.
+3. Then `derive_encryption_private_key` (`identity_handle.rs`) has only test
+   callers → delete it + the `ecdh_key_derivation_tests` module (its
+   purpose-agnostic/index-driven property is now structural in
+   `identity_auth_derivation_path`, which takes `key_id` not purpose).
+Confirm no `derive_contact_xpub(wallet)` / `derive_extended_private_key` survive
+on DashPay send/accept paths.
 
 **§4.6 persistence over FFI** — `IdentityKeyEntryFFI`-style carry of the queue
 deltas through the FFI persister + the Swift persister callback (the SQLite
