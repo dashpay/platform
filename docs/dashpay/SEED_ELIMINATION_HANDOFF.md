@@ -28,6 +28,9 @@ Keep this current as cores land.
 | `97a9a99f22` | §4.6 | drain FFI `platform_wallet_drain_pending_contact_crypto` + `ResolverDrainProvider` glue (iOS-cross-compiled, in the regenerated header) |
 | `79ca6a1c2c` | §4.6 | SQLite storage for the queue: migration + writer + reader + store dispatch + round-trip test |
 | `3bce45939b` | §4.5 | move `calculate/unmask_account_reference` (+ `extract_ask28` + 5 tests) into `platform-encryption`; `dip14` re-exports — single-sources the HMAC+masking for the Keychain signer |
+| `7a23fa114e` | §4.5 | signer `account_reference` / `unmask_account_reference` methods on `MnemonicResolverCoreSigner` (Zeroizing scalar, parity+round-trip test) — the in-signer accountReference for seedless send |
+| `9d532c2aba` | §4.6 | send via `EcdhProvider::ClientSide` — SDK no longer receives a private key; `SendContactRequestParams` carries the precomputed `shared_secret` + `expected_recipient_pubkey` guard (still resident-derived; seedless swap next) |
+| `88b7fb7671` | §4.6 | generalize `DrainCryptoProvider` → `ContactCryptoProvider` + `account_reference`/`unmask_account_reference`; glue impl wires the signer methods (serves drain AND send) |
 
 **Locked design decisions**
 - Raw-secret ops are **inherent methods on `MnemonicResolverCoreSigner`** (in
@@ -65,18 +68,13 @@ Keep this current as cores land.
    ClientStartState::wallets`); the reader is `cfg(test)`-gated until then.
    The app's **FFI/Swift persister twin** (carry the deltas through the FFI
    persister + Swift callback) is env-blocked.
-4. **§4.5 accountReference — move DONE; rs-sdk-ffi methods HELD (speculative).**
-   The prerequisite move landed: DIP-15 `calculate_account_reference` /
-   `unmask_account_reference` (+ private `account_secret_key_28` / `extract_ask28`
-   helpers and all 5 account-reference tests) now live in `platform-encryption`
-   alongside the other DIP-15 ECDH/AES crypto; `dip14` re-exports the two public
-   fns so every existing caller (`crypto::mod` → `identity::mod` → `lib`, plus
-   `contact_requests.rs`) is unchanged. This single-sources the HMAC+masking so
-   the Keychain signer in `rs-sdk-ffi` can reuse it. **Still held:** the rs-sdk-ffi
-   `ecdh_shared_secret_and_account_reference` / `unmask_account_reference` inherent
-   methods — their only production consumer is the env-blocked send-flow ECDH
-   collapse, so adding them now would be dead code (Rule 2). Build them alongside
-   that wiring.
+4. ~~**§4.5 accountReference**~~ **DONE.** The move landed (`3bce45939b`) and the
+   signer methods landed (`7a23fa114e`): `MnemonicResolverCoreSigner::account_reference`
+   / `unmask_account_reference` derive the scalar in-signer (Zeroizing) and call
+   `platform-encryption`, so the raw scalar never returns to platform-wallet. The
+   "speculative" hold was wrong — the consumer is the send-flow FFI (Rust, builds
+   here), not Swift. Wired into `ContactCryptoProvider` (`88b7fb7671`); the send
+   path consumes them in C2 below.
 5. ~~§4.5 contactInfo~~ **DONE** (`45f903dc38`). The drain's `ContactInfoDecrypt`
    op (calls `contact_info_open` via an extended `DrainCryptoProvider` +
    re-fetches owned docs — network-dependent) is the remaining drain piece.
@@ -84,23 +82,53 @@ Keep this current as cores land.
    + `WrongSeed`. The glue crate calls it at first use with the wallet's
    persisted account-xpub (env-blocked wiring).
 
-## Remaining — environment-blocked (FFI + Swift + on-device)
+## Remaining — Rust + FFI (verifiable here; do in this order)
 
-Need Xcode + iOS simulator runtime / `aarch64-apple-ios` target (absent here).
-Implement + regenerate the cbindgen header (`build_ios.sh`), then verify in Xcode.
+These compile + cross-compile in this repo (the glue crate is Rust; the
+ClientSide seam + provider already landed). Earlier handoffs wrongly filed these under
+"environment-blocked" by conflating FFI (Rust) with Swift (`.swift`).
 
-- **ECDH FFI + Swift** — entry point wrapping `ecdh_shared_secret` (mirror
-  `dash_sdk_sign_with_mnemonic_resolver_and_path`); Swift exposes it; the glue
-  crate builds the `EcdhProvider::ClientSide { get_shared_secret }` closure.
-- **`EcdhProvider::SdkSide → ClientSide` collapse** end-to-end in `sdk_writer`
-  (send path) + the `register_external` decrypt closure (drain/accept). Delete
-  `derive_encryption_private_key` + `SendContactRequestParams.ecdh_private_key`.
-- **Convert sites 2/2b/4–7** through the FFI: `send_contact_request` /
-  `accept_contact_request` FFI gain the wallet-HD resolver handle (alongside the
-  doc signer); Swift passes the two handles it already holds.
-- **§4.6 persistence over FFI** — `IdentityKeyEntryFFI`-style carry of the queue
-  deltas through the FFI persister + the Swift persister callback (the SQLite
-  path lands in Rust core #3; the FFI/Swift persister is here).
+**C2 — seedless send + accept (one green commit; ~9 coordinated sites).**
+The provider (`ContactCryptoProvider`) and signer methods are in place; this
+swaps the resident-seed derivations in the send path for provider calls.
+- `send_contact_request_with_external_signer` (`contact_requests.rs`): add a
+  `crypto: &C` param (`C: ContactCryptoProvider + Sync`). Build the contact-xpub
+  path (`AccountType::DashpayReceivingFunds{0, sender, recipient}.derivation_path`)
+  → `crypto.receiving_xpub(&path)` → build `platform_encryption::CompactXpub`.
+  Build the enc path (`Self::identity_auth_derivation_path(net, ECDSA,
+  identity_index, sender_enc_key.id())`) → `crypto.ecdh_shared_secret(&enc_path,
+  &recipient_enc_pubkey)` for the shared secret, and `crypto.account_reference` /
+  `crypto.unmask_account_reference` for step 4b (rewrite the `.map` closure
+  imperatively — they're async). Drop the `wm.get_wallet()` block +
+  `derive_contact_xpub(wallet)` + `derive_encryption_private_key(wallet)`. Pass
+  `Some(contact_xpub_ext)` to the final `register_contact_account` (it's the same
+  friendship xpub — verified).
+- `accept_contact_request_with_external_signer` + `accept_register_external_validated`:
+  add the `crypto: &C` param; thread to the delegated send; for the register-external
+  leg compute `crypto.ecdh_shared_secret(&our_dec_key_path, &contact_pubkey)` and
+  pass `Some(shared)` to `register_external_contact_account` (its
+  `precomputed_shared_key` Option already exists).
+- Glue (`dashpay.rs`): `platform_wallet_send_contact_request_with_signer` +
+  `platform_wallet_accept_contact_request_with_signer` gain a
+  `core_signer_handle: *mut MnemonicResolverHandle` param; build
+  `ResolverContactCryptoProvider` (as the drain FFI does) and pass it. (The new C
+  ABI param breaks the `.swift` callers — expected; that's the Swift task below.)
+- Verify: `cargo test -p platform-wallet --lib`, `cargo build -p platform-wallet-ffi`.
+
+**C3 — delete the resident ECDH path.** Once C2 lands, `derive_encryption_private_key`
+has no non-test caller. Delete it + its tests (`identity_handle.rs`); confirm no
+`derive_contact_xpub(wallet)` / `derive_extended_private_key` survive on DashPay
+send/accept paths.
+
+**§4.6 persistence over FFI** — `IdentityKeyEntryFFI`-style carry of the queue
+deltas through the FFI persister + the Swift persister callback (the SQLite
+path landed in `79ca6a1c2c`; the FFI persister twin is Rust-doable, the Swift
+callback is below).
+
+## Remaining — environment-blocked (Swift + on-device)
+
+Need Xcode + iOS simulator runtime (absent here). After the Rust/FFI lands,
+regenerate the cbindgen header (`build_ios.sh`) and update the `.swift` callers.
 - **Drain FFI — Rust side DONE** (`97a9a99f22`, iOS-cross-compiled + in header).
   **Remaining (Swift):** call `platform_wallet_drain_pending_contact_crypto(wallet,
   core_signer)` from the Keychain-unlock path that previously called
