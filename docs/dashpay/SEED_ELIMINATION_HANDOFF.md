@@ -19,6 +19,7 @@ Keep this current as cores land.
 | `508b3edd` | §4.6 | in-memory enqueue on the seedless sweep (`PlatformWalletInfo.pending_contact_crypto`) |
 | `d944245204` | §4.5 | `MnemonicResolverCoreSigner::ecdh_shared_secret` (parity-pinned); design = inherent methods + closures (no trait/crate) |
 | `93fe4eac12` | §4.6 | `register_external_contact_account` takes `precomputed_shared_key: Option<[u8;32]>` (drain's decrypt core) + Some-path test |
+| `6832a52c31` | §4.6 | `register_contact_account` takes `precomputed_account_xpub: Option<ExtendedPubKey>` (drain's RegisterReceiving core) + Some-path test |
 
 **Locked design decisions**
 - Raw-secret ops are **inherent methods on `MnemonicResolverCoreSigner`** (in
@@ -35,12 +36,9 @@ Keep this current as cores land.
 
 ## Remaining — Rust cores (verifiable here; do in this order)
 
-1. **`register_contact_account` precomputed-xpub** — mirror commit `93fe4eac12`.
-   Add `precomputed_account_xpub: Option<ExtendedPubKey>`: `None` = derive at
-   `contacts.rs:186` (resident); `Some` = use it (drain). Ripple: ~7 callers
-   pass `None` (`contact_requests.rs:338/965/1287`, `payments.rs` tests). This
-   is the drain's *RegisterReceiving* core. Test: Some-path builds the receiving
-   account from a supplied xpub.
+1. ~~`register_contact_account` precomputed-xpub~~ **DONE** (`6832a52c31`). Both
+   drain ops now have their seedless core (RegisterExternal=`93fe4eac12`,
+   RegisterReceiving=`6832a52c31`).
 2. **The drain method** (`drain_pending_contact_crypto`) on `IdentityWallet`.
    Generic over two provider closures supplied by the glue crate:
    `xpub_at(path) -> ExtendedPubKey` (→ `register_contact_account(Some(..))`) and
