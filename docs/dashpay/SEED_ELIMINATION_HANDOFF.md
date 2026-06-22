@@ -27,7 +27,7 @@ Keep this current as cores land.
 | `ea6a1ea753` | §4.6 | enqueue persists the `pending_contact_crypto_added` delta (symmetric with the drain's clear-delta) |
 | `97a9a99f22` | §4.6 | drain FFI `platform_wallet_drain_pending_contact_crypto` + `ResolverDrainProvider` glue (iOS-cross-compiled, in the regenerated header) |
 | `79ca6a1c2c` | §4.6 | SQLite storage for the queue: migration + writer + reader + store dispatch + round-trip test |
-| `bfe8390c53` | §4.5 | move `calculate/unmask_account_reference` (+ `extract_ask28` + 5 tests) into `platform-encryption`; `dip14` re-exports — single-sources the HMAC+masking for the Keychain signer |
+| `3bce45939b` | §4.5 | move `calculate/unmask_account_reference` (+ `extract_ask28` + 5 tests) into `platform-encryption`; `dip14` re-exports — single-sources the HMAC+masking for the Keychain signer |
 
 **Locked design decisions**
 - Raw-secret ops are **inherent methods on `MnemonicResolverCoreSigner`** (in
