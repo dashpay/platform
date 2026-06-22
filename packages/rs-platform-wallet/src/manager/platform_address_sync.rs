@@ -97,9 +97,13 @@ pub struct PlatformAddressSyncManager {
     event_manager: Arc<PlatformEventManager>,
     /// Cancel token for the background loop, if running.
     background_cancel: StdMutex<Option<CancellationToken>>,
-    /// Monotonically increasing generation counter. Incremented each
-    /// time `start()` installs a new cancel token so the exiting
-    /// thread can tell whether its token is still current.
+    /// Monotonically increasing generation counter. Bumped on every
+    /// `start()` so the exiting thread can tell whether its
+    /// generation is still the active one before clearing
+    /// `background_cancel`. Without this, a `stop()` → `start()`
+    /// overlap lets the prior thread's cleanup strip the new
+    /// generation's token, leaving the new loop running but
+    /// untrackable via `is_running()`.
     background_generation: AtomicU64,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
@@ -229,8 +233,13 @@ impl PlatformAddressSyncManager {
                         }
                     }
 
-                    // Only clear the slot if no newer start() has
-                    // installed a replacement token since we launched.
+                    // Clear `background_cancel` only if the active
+                    // generation is still ours. Acquire the lock
+                    // FIRST, then check — `start()` bumps the
+                    // generation while holding this same lock, so
+                    // once we hold it the generation is final w.r.t.
+                    // any concurrent token swap (no TOCTOU between
+                    // the check and the clear).
                     if let Ok(mut guard) = this.background_cancel.lock() {
                         if this.background_generation.load(Ordering::Acquire) == my_gen {
                             *guard = None;

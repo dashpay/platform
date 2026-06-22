@@ -626,7 +626,7 @@ before the address exists.
 
 ## Enum-domain CHECK constraints
 
-Seven TEXT columns carry a `CHECK (col IN (...))` across five enum
+Eight TEXT columns carry a `CHECK (col IN (...))` across five enum
 domains — `account_type` is reused in three tables. The IN-list is built
 at migration time from `pub(crate) const *_LABELS` arrays declared next
 to each writer function. Four domains mirror an upstream Rust enum; the
