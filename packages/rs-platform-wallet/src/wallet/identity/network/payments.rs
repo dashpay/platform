@@ -875,7 +875,7 @@ mod tests {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             wallet
                 .identity()
-                .register_contact_account(&owner, &contact, 0)
+                .register_contact_account(&owner, &contact, 0, None)
                 .await
                 .expect("register_contact_account");
         }
@@ -908,7 +908,7 @@ mod tests {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             wallet
                 .identity()
-                .register_contact_account(&owner, &contact, 0)
+                .register_contact_account(&owner, &contact, 0, None)
                 .await
                 .expect("re-register is a no-op");
         }
@@ -933,7 +933,7 @@ mod tests {
         {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             let iw = wallet.identity();
-            iw.register_contact_account(&owner, &contact, 0)
+            iw.register_contact_account(&owner, &contact, 0, None)
                 .await
                 .expect("register_contact_account");
             // The owner identity must be managed for the entry to land.
@@ -999,7 +999,7 @@ mod tests {
         {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             let iw = wallet.identity();
-            iw.register_contact_account(&owner, &contact, 0)
+            iw.register_contact_account(&owner, &contact, 0, None)
                 .await
                 .expect("register_contact_account");
             let mut wm = iw.wallet_manager.write().await;
@@ -1983,6 +1983,56 @@ mod tests {
                 .dashpay_external_accounts
                 .contains_key(&key),
             "the precomputed-shared-key path must build the external account (the drain's path)"
+        );
+    }
+
+    /// The seedless drain's RegisterReceiving path: `register_contact_account`
+    /// with a **precomputed** receiving xpub (the Keychain signer derived our
+    /// friendship key) builds the `DashpayReceivingFunds` account without
+    /// touching the wallet seed. Pins the reuse the drain needs when the
+    /// receiving account was never persisted (restore / first-time edge).
+    #[tokio::test]
+    async fn register_contact_account_with_precomputed_xpub_builds_account() {
+        let (manager, _persister, wallet_id) = make_wallet().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        let owner = Identifier::from([0x11; 32]);
+        let contact = Identifier::from([0x22; 32]);
+
+        // A valid ExtendedPubKey to supply as the signer would.
+        let supplied_xpub = {
+            let wm = iw.wallet_manager.read().await;
+            let w = wm.get_wallet(&wallet_id).expect("wallet");
+            crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+                w,
+                Network::Testnet,
+                0,
+                &owner,
+                &contact,
+            )
+            .expect("derive a valid receiving xpub")
+            .xpub
+        };
+
+        iw.register_contact_account(&owner, &contact, 0, Some(supplied_xpub))
+            .await
+            .expect("register receiving account with a precomputed xpub");
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        use key_wallet::account::account_collection::DashpayAccountKey;
+        let key = DashpayAccountKey {
+            index: 0,
+            user_identity_id: owner.to_buffer(),
+            friend_identity_id: contact.to_buffer(),
+        };
+        assert!(
+            info.core_wallet
+                .accounts
+                .dashpay_receival_accounts
+                .contains_key(&key),
+            "the precomputed-xpub path must build the receiving account (the drain's RegisterReceiving)"
         );
     }
 }

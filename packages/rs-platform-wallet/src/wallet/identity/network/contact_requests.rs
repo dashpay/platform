@@ -335,8 +335,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             managed.add_sent_contact_request(contact_request.clone(), &self.persister);
         }
 
-        self.register_contact_account(sender_identity_id, recipient_identity_id, account_index)
-            .await?;
+        self.register_contact_account(
+            sender_identity_id,
+            recipient_identity_id,
+            account_index,
+            None,
+        )
+        .await?;
 
         Ok(contact_request)
     }
@@ -962,7 +967,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
         // (1) Receiving account — derivable from our seed, no decryption.
         if let Err(e) = self
-            .register_contact_account(identity_id, &contact_id, 0)
+            .register_contact_account(identity_id, &contact_id, 0, None)
             .await
         {
             // Treated as transient: a derivation/insert hiccup here doesn't
@@ -1284,7 +1289,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             // Adopt: register the receiving account (derivable from seed),
             // matching what the fresh-send path does.
             if let Err(e) = self
-                .register_contact_account(&our_identity_id, &sender_id, 0)
+                .register_contact_account(&our_identity_id, &sender_id, 0, None)
                 .await
             {
                 tracing::warn!(
