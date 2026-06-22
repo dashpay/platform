@@ -25,6 +25,8 @@ Keep this current as cores land.
 | `45f903dc38` | §4.5 | contactInfo seal/open host primitive (2 hardened-child AES keys, reuses platform_encryption) + round-trip/parity test |
 | `65f0c5cceb` | §4.8 | wrong-seed self-check `verify_binds_to_xpub` (+ `WrongSeed` error) + accept/reject test |
 | `ea6a1ea753` | §4.6 | enqueue persists the `pending_contact_crypto_added` delta (symmetric with the drain's clear-delta) |
+| `97a9a99f22` | §4.6 | drain FFI `platform_wallet_drain_pending_contact_crypto` + `ResolverDrainProvider` glue (iOS-cross-compiled, in the regenerated header) |
+| `79ca6a1c2c` | §4.6 | SQLite storage for the queue: migration + writer + reader + store dispatch + round-trip test |
 
 **Locked design decisions**
 - Raw-secret ops are **inherent methods on `MnemonicResolverCoreSigner`** (in
@@ -53,17 +55,15 @@ Keep this current as cores land.
    faults, leaves transient/unavailable for next drain. **Remaining:** the
    `ContactInfoDecrypt` op (needs the §4.5 contactInfo primitive). End-to-end
    RegisterExternal success path (real fetch + provider) verifies on-device.
-3. **§4.6 persistence — emit DONE; storage round-trip REMAINING.** Both the
-   enqueue (`ea6a1ea753`, add-delta) and the drain (`ecd288c735`, clear-delta)
-   now emit `pending_contact_crypto_*` through the persister. **Remaining (storage
-   crate, multi-layer):** a new refinery migration (table keyed by
-   `(wallet_id, owner, contact, kind)`), writer (insert added / delete cleared,
-   mirror `schema/accounts.rs::apply_registrations`), bulk reader, persister
-   dispatch (`persister.rs` ~984/1057), and a **new** restore path into
-   `PlatformWalletInfo.pending_contact_crypto` (NB: account registrations restore
-   into the key_wallet `Wallet`, not `PlatformWalletInfo`, so this is a fresh
-   load hook, not a mirror; `load.rs:97` currently inits empty). Round-trip test
-   in the storage crate. The app's FFI/Swift persister is the env-blocked twin.
+3. **§4.6 persistence — emit + SQLite storage DONE; restore BLOCKED upstream.**
+   Enqueue (`ea6a1ea753`) and drain (`ecd288c735`) emit the deltas; the SQLite
+   persister now writes + reads them (`79ca6a1c2c`: migration + writer + reader +
+   dispatch + round-trip test). **Remaining:** the read-back into
+   `PlatformWalletInfo.pending_contact_crypto` is blocked on the upstream
+   per-wallet state restore (`persister.rs` `LOAD_UNIMPLEMENTED:
+   ClientStartState::wallets`); the reader is `cfg(test)`-gated until then.
+   The app's **FFI/Swift persister twin** (carry the deltas through the FFI
+   persister + Swift callback) is env-blocked.
 4. **§4.5 accountReference — HELD (speculative).** Its only Rust callers are the
    `dip14` tests; the production consumer is the env-blocked send-flow ECDH
    collapse, so adding the rs-sdk-ffi `ecdh_shared_secret_and_account_reference`
@@ -95,8 +95,9 @@ Implement + regenerate the cbindgen header (`build_ios.sh`), then verify in Xcod
 - **§4.6 persistence over FFI** — `IdentityKeyEntryFFI`-style carry of the queue
   deltas through the FFI persister + the Swift persister callback (the SQLite
   path lands in Rust core #3; the FFI/Swift persister is here).
-- **Drain FFI + Swift** — `platform_wallet_drain_pending_contact_crypto(wallet,
-  core_signer)` wired into the Keychain-unlock path that previously called
+- **Drain FFI — Rust side DONE** (`97a9a99f22`, iOS-cross-compiled + in header).
+  **Remaining (Swift):** call `platform_wallet_drain_pending_contact_crypto(wallet,
+  core_signer)` from the Keychain-unlock path that previously called
   `unlockWalletFromKeychain` (replacing the deleted re-attach), + opportunistic
   drain on signer-present actions + a UI "needs unlock" marker.
 - **contactInfo FFI + Swift** — seal/open entry points; the sync path enqueues
