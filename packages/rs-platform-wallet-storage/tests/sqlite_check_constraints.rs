@@ -1,12 +1,11 @@
 //! Smoke tests for the enum-domain `CHECK` constraints. The schema has
-//! seven such TEXT columns across five domains (`account_type` is reused
+//! eight such TEXT columns across five domains (`account_type` is reused
 //! by `account_registrations`, `account_address_pools`, and
 //! `core_derived_addresses`; `pool_type` by `account_address_pools` and
 //! `core_derived_addresses`). These tests exercise `wallets.network`,
 //! `account_registrations.account_type`, `account_address_pools.pool_type`,
-//! `asset_locks.status`, and both `core_derived_addresses.pool_type` /
-//! `account_type` directly. The synthetic `contacts.state` domain is not
-//! exercised here.
+//! `asset_locks.status`, both `core_derived_addresses.pool_type` /
+//! `account_type`, and the synthetic `contacts.state` domain directly.
 //!
 //! The per-module parity unit tests in `src/sqlite/schema/*` cover the
 //! Rust↔const-array equality. These tests cover the runtime half: a
@@ -172,5 +171,60 @@ fn check_accepts_every_known_label_network() {
             params![wid_bytes.as_slice(), *label, 0i64],
         )
         .unwrap_or_else(|e| panic!("network={label} should be accepted: {e}"));
+    }
+}
+
+#[test]
+fn check_rejects_bad_contact_state() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let conn = persister.lock_conn_for_test();
+    // Seed a valid parent wallet so the insert trips the state CHECK, not the FK.
+    conn.execute(
+        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, ?2, ?3)",
+        params![wid(7).as_slice(), "testnet", 0i64],
+    )
+    .expect("seed wallets");
+    let res = conn.execute(
+        "INSERT INTO contacts (wallet_id, owner_id, contact_id, state) \
+         VALUES (?1, ?2, ?3, ?4)",
+        params![
+            wid(7).as_slice(),
+            &[0xAAu8; 32][..],
+            &[0xBBu8; 32][..],
+            "not_a_contact_state"
+        ],
+    );
+    assert_constraint_check(res, "contacts.state");
+}
+
+#[test]
+fn check_accepts_every_known_contact_state_label() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, ?2, ?3)",
+        params![wid(8).as_slice(), "testnet", 0i64],
+    )
+    .expect("seed wallets");
+    // Mirrors `sqlite::schema::contacts::CONTACT_STATE_LABELS`; hardcoded
+    // because that const is `pub(crate)` and unreachable from this separate
+    // integration-test crate (same constraint as the network test above).
+    // The per-module `contact_state_labels_match_enum` unit test guards the
+    // const itself against drift, so a label added there without updating
+    // this list surfaces in that test, not as a silent gap here.
+    for (i, label) in ["sent", "received", "established"].iter().enumerate() {
+        // Same wallet+owner, distinct contact_id per label to keep the
+        // composite PK (wallet_id, owner_id, contact_id) unique.
+        conn.execute(
+            "INSERT INTO contacts (wallet_id, owner_id, contact_id, state) \
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                wid(8).as_slice(),
+                &[0xC0u8; 32][..],
+                &[i as u8; 32][..],
+                *label
+            ],
+        )
+        .unwrap_or_else(|e| panic!("contact state={label} should be accepted: {e}"));
     }
 }

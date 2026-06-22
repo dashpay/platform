@@ -476,3 +476,75 @@ impl std::fmt::Debug for ShieldedSyncManager {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::events::PlatformEventHandler;
+
+    /// Build a manager with an empty coordinator slot and a no-handler
+    /// event manager. An empty slot makes `sync_now` return an empty
+    /// summary, but it still drives the full timestamp + completion
+    /// protocol and — crucially for this test — the generation-guarded
+    /// background loop, without needing a live `NetworkShieldedCoordinator`.
+    fn make_manager() -> Arc<ShieldedSyncManager> {
+        let event_manager = Arc::new(PlatformEventManager::new(Vec::<
+            Arc<dyn PlatformEventHandler>,
+        >::new()));
+        let coordinator_slot = Arc::new(RwLock::new(None));
+        Arc::new(ShieldedSyncManager::new(event_manager, coordinator_slot))
+    }
+
+    /// Restart-in-place regression for the generation guard: a tight
+    /// `start()` → `stop()` → `start()` must leave the manager *running*
+    /// on the new generation. The cancelled gen-1 loop races to clear
+    /// `background_cancel` as it exits; the generation guard must stop it
+    /// from stripping gen-2's freshly installed token — otherwise the new
+    /// loop keeps running but becomes invisible to `is_running()` /
+    /// `stop()`.
+    ///
+    /// Determinism: the only wait is a *bounded* poll. With the guard in
+    /// place `is_running()` is true for the whole window, so the test
+    /// never fails spuriously on correct code. A regression flips it false
+    /// within milliseconds once the stale loop clears the slot, which the
+    /// poll catches. Needs the multi-thread flavor because `start()`
+    /// drives its loop via `Handle::current().block_on` on a dedicated OS
+    /// thread, which would deadlock a single-threaded test runtime.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn restart_in_place_keeps_running_after_stale_loop_exits() {
+        let mgr = make_manager();
+
+        // Gen 1. Wait (bounded) for the first pass to land — a real
+        // lifecycle signal that the loop is now parked in its interval
+        // sleep, so its cleanup is still pending when we stop+restart.
+        Arc::clone(&mgr).start();
+        let mut waited = 0;
+        while mgr.last_sync_unix_seconds().is_none() {
+            assert!(waited < 200, "gen-1's first sync pass never completed");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            waited += 1;
+        }
+
+        // Tight stop→start with no await between: the just-cancelled gen-1
+        // loop cannot reach its cleanup before gen 2 is installed, so the
+        // race window the guard protects is reliably open.
+        mgr.stop();
+        Arc::clone(&mgr).start();
+
+        // Give the stale gen-1 loop ample time to run its (guarded)
+        // cleanup. `is_running()` must stay true throughout.
+        for _ in 0..100 {
+            assert!(
+                mgr.is_running(),
+                "stale gen-1 loop cleared gen-2's cancel token — generation guard regressed"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        // The surviving loop is the tracked one: a single `stop()` fully
+        // reflects it, so there is no orphaned unreflectable duplicate.
+        mgr.stop();
+        assert!(!mgr.is_running(), "stop() must reflect the live loop");
+    }
+}
