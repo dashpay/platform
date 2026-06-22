@@ -42,13 +42,6 @@
 //! [`format::aad`]: super::file::format::aad
 //! [`format::verify_aad`]: super::file::format::verify_aad
 
-// The wrap/unwrap primitives are exercised by this module's own tests but
-// are not yet called from non-test code: the strict-read wiring into
-// `SecretStore::get_secret`/`set_secret` lands in the next task, which
-// removes this allow. Without it the not-yet-wired primitives would trip
-// dead-code warnings in the non-test build.
-#![allow(dead_code)]
-
 use std::sync::Once;
 
 use super::error::SecretStoreError;
@@ -103,6 +96,9 @@ pub const MAX_PLAINTEXT_LEN: usize = MAX_SECRET_LEN - MAX_ENVELOPE_OVERHEAD;
 /// `None` → an unprotected (scheme-0) envelope; `Some(pw)` → a scheme-1
 /// envelope sealed under `pw`. A blank password is rejected at enrol
 /// ([`SecretStoreError::BlankPassphrase`]).
+// The write side is wired into `SecretStore::set_secret` in the next task;
+// until then it is exercised only by this module's tests.
+#[allow(dead_code)]
 pub(crate) fn wrap(
     wallet_id: &WalletId,
     label: &str,
@@ -121,6 +117,7 @@ pub(crate) fn wrap(
 /// [`wrap`] with explicit Argon2 `params` (tests use the floor params for
 /// speed; production uses [`KdfParams::default_target`]). `params` is
 /// ignored when `password` is `None`.
+#[allow(dead_code)]
 pub(crate) fn wrap_with_params(
     wallet_id: &WalletId,
     label: &str,
