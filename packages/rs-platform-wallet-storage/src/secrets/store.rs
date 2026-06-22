@@ -20,10 +20,12 @@ use super::{default_credential_store, EncryptedFileStore, SERVICE_PREFIX};
 
 /// A passphrase-or-OS-keyring backed store for wallet secret material.
 ///
-/// The only public read path is [`get`](SecretStore::get), which yields a
-/// zeroizing [`SecretBytes`] — a raw `Vec<u8>` never crosses this
-/// boundary. Backend selection is an explicit operator decision; there is
-/// no silent fallback between the two arms.
+/// Every read path ([`get`](SecretStore::get),
+/// [`get_secret`](SecretStore::get_secret), and the read inside
+/// [`reprotect`](SecretStore::reprotect)) yields a zeroizing
+/// [`SecretBytes`] — a raw `Vec<u8>` never crosses this boundary. Backend
+/// selection is an explicit operator decision; there is no silent fallback
+/// between the two arms.
 pub enum SecretStore {
     /// Self-contained Argon2id + XChaCha20-Poly1305 vault file.
     /// Recommended on headless / server hosts.
@@ -76,17 +78,26 @@ impl SecretStore {
 
     /// Store `secret` under `(service, label)`, overwriting any prior value.
     ///
-    /// `password` selects the Tier-2 protection: `None` writes an
-    /// unprotected scheme-0 envelope; `Some(pw)` writes a scheme-1 envelope
-    /// sealed under the object password `pw` (Argon2id + XChaCha20-Poly1305)
-    /// **before** the bytes reach the backend, so a protected object stays
-    /// confidential even under a full backend compromise. A blank `pw` is
-    /// rejected ([`BlankPassphrase`](SecretStoreError::BlankPassphrase)).
+    /// `password` selects the protection: `None` writes an unprotected
+    /// envelope; `Some(pw)` seals the bytes under the object password `pw`
+    /// (Argon2id + XChaCha20-Poly1305) **before** they reach the backend, so
+    /// a protected object stays confidential even under a full backend
+    /// compromise. A blank `pw` is rejected
+    /// ([`BlankPassphrase`](SecretStoreError::BlankPassphrase)).
     ///
-    /// The write is an atomic same-slot overwrite on both arms (File: the
-    /// vault's atomic replace; Os: the keychain item), so add/change/remove
-    /// password flows — see [`reprotect`](SecretStore::reprotect) — leave
-    /// the prior value intact on a crash.
+    /// **No recovery (availability):** if a protected object's password is
+    /// lost, the object is permanently unrecoverable — there is no reset
+    /// path. The UX must state this plainly.
+    ///
+    /// **Entropy is the caller's:** a protected object's confidentiality
+    /// rests entirely on the password's entropy against an offline Argon2id
+    /// attacker who already holds the backend. This crate enforces only
+    /// non-blank; strength estimation / policy is the caller's job.
+    ///
+    /// The write is a same-slot overwrite that leaves the prior value intact
+    /// on a crash: on the `File` arm via the vault's atomic replace; on the
+    /// `Os` arm via the backend's single-item-replace contract.
+    /// Add/change/remove flows go through [`reprotect`](SecretStore::reprotect).
     pub fn set_secret(
         &self,
         service: &WalletId,
@@ -162,23 +173,22 @@ impl SecretStore {
         }
     }
 
-    /// Retrieve the secret under `(service, label)` applying the Tier-2
-    /// **strict, fail-closed** read (the L-1 keystone), or `Ok(None)` if
-    /// absent.
+    /// Retrieve the secret under `(service, label)` applying the strict,
+    /// fail-closed read, or `Ok(None)` if absent.
     ///
     /// `password` IS the caller's protection assertion — supply `Some(pw)`
     /// for an object the caller's trusted model says is protected, `None`
     /// otherwise. The expectation lives ONLY here, never in the stored
     /// blob (see [`envelope::unwrap`]):
     ///
-    /// - `Some(pw)` + valid scheme-1 → the secret (or
+    /// - `Some(pw)` + a protected blob → the secret (or
     ///   [`WrongPassword`](SecretStoreError::WrongPassword) on tag fail);
-    /// - `Some(pw)` + a non-protected blob (scheme-0 / legacy raw) →
+    /// - `Some(pw)` + a non-protected blob (unprotected / legacy raw) →
     ///   [`ExpectedProtectedButUnsealed`](SecretStoreError::ExpectedProtectedButUnsealed)
-    ///   — a strip/downgrade, refused, no bytes returned ★;
-    /// - `None` + scheme-1 →
+    ///   — a strip/downgrade, refused, no bytes returned;
+    /// - `None` + a protected blob →
     ///   [`NeedsPassword`](SecretStoreError::NeedsPassword) (never ciphertext);
-    /// - `None` + scheme-0 / legacy raw → the secret.
+    /// - `None` + an unprotected / legacy raw blob → the secret.
     ///
     /// **Documented residual:** an attacker who ALSO rewrites the
     /// consumer's trusted DB so the caller passes `None` for a stripped
@@ -200,7 +210,7 @@ impl SecretStore {
     }
 
     /// Add / change / remove an object password in one same-slot
-    /// unwrap→rewrap→overwrite — the canonical Tier-2 re-protection flow.
+    /// unwrap→rewrap→overwrite — the canonical re-protection flow.
     ///
     /// Reads the object under the `current` expectation (so a strip is
     /// caught fail-closed before any rewrap), then re-writes it under
@@ -209,11 +219,19 @@ impl SecretStore {
     /// - **change:** `current = Some(old)`, `new = Some(pw_new)`;
     /// - **remove:** `current = Some(old)`, `new = None`.
     ///
-    /// An absent object is a no-op (`Ok(())`). The rewrite is the atomic
-    /// same-slot overwrite of [`set_secret`], so a crash between the read
-    /// and the commit leaves the prior value intact and readable under
-    /// `current`. After a successful call the consumer MUST update its own
-    /// trusted protection-status record (the L-1 expectation lives there).
+    /// An absent object is a no-op (`Ok(())`). The rewrite is the same-slot
+    /// overwrite of [`set_secret`], so a crash between the read and the
+    /// commit leaves the prior value intact and readable under `current`.
+    /// After a successful call the consumer MUST update its own trusted
+    /// protection-status record (the protection expectation lives there).
+    ///
+    /// **No recovery:** changing or removing requires the `current`
+    /// password; if it is lost the object cannot be re-protected or read,
+    /// and is permanently unrecoverable (availability trade-off).
+    ///
+    /// **Entropy is the caller's:** the `new` password's entropy is the
+    /// whole confidentiality guarantee for the re-protected object; this
+    /// crate enforces only non-blank, not strength.
     pub fn reprotect(
         &self,
         service: &WalletId,
@@ -492,24 +510,24 @@ mod tests {
         }
     }
 
-    // ===== Tier-2 strict fail-closed read — the L-1 keystone =====
+    // ===== Tier-2 strict fail-closed read =====
     //
     // Parameterised over BOTH arms. The "attacker who can write the
     // backend" is modelled per arm by `Backend::place_raw`: on File it
     // re-seals the chosen blob under the resident vault key via `put_bytes`
     // (a cold/backup-swap actor could only corrupt → DoS, so the strip
-    // requires the vault key — §8.3 arm asymmetry); on Os it overwrites the
-    // keychain item directly (the bare envelope, no second AEAD — where the
-    // L-1 residual bites hardest, §8.3). GAP-005's writable Os fixture is
-    // the upstream `keyring_core::mock::Store` (a raw SPI `set_secret`
-    // bypasses the envelope), so no bespoke mock is needed.
+    // requires the vault key — the File-arm asymmetry); on Os it overwrites
+    // the keychain item directly (the bare envelope, no second AEAD — where
+    // the strip residual bites hardest). The writable Os fixture is the
+    // upstream `keyring_core::mock::Store` (a raw SPI `set_secret` bypasses
+    // the envelope), so no bespoke mock is needed.
 
     use keyring_core::mock;
 
     use crate::secrets::file::crypto::{KdfParams, ARGON2_MIN_M_KIB, ARGON2_MIN_T, ARGON2_P};
     use crate::secrets::file::format::KDF_ID_ARGON2ID;
 
-    /// Argon2id floor params — fast enough for the keystone tests.
+    /// Argon2id floor params — fast enough for these tests.
     fn floor() -> KdfParams {
         KdfParams {
             id: KDF_ID_ARGON2ID,
@@ -577,7 +595,7 @@ mod tests {
     }
 
     fn os_backend() -> Backend {
-        // GAP-005: the upstream in-memory mock store. The clone handed to
+        // The upstream in-memory mock store. The clone handed to
         // `SecretStore::Os` and the handle kept for raw attacker writes
         // share the same backing credentials by `Arc`.
         let mock = mock::Store::new().unwrap();
@@ -590,7 +608,7 @@ mod tests {
         }
     }
 
-    /// TS-L1-001: the strict-read QUADRANT.
+    /// The strict-read quadrant.
     fn run_quadrant(b: &Backend) {
         let w = wid(1);
         let pw = SecretString::new("object-pw");
@@ -643,7 +661,7 @@ mod tests {
             b.name
         );
 
-        // ★ scheme-0 + Some(pw) → ExpectedProtectedButUnsealed (fail closed).
+        // scheme-0 + Some(pw) → ExpectedProtectedButUnsealed (fail closed).
         assert!(
             matches!(
                 b.store.get_secret(&w, "u0", Some(&pw)).unwrap_err(),
@@ -666,9 +684,8 @@ mod tests {
             b.name
         );
 
-        // magic-less legacy raw + None → bytes: v5 §4.1 (legacy-tolerant)
-        // supersedes v4 TS-L1-001's Corruption row. + Some → fail closed,
-        // so L-1 is preserved.
+        // magic-less legacy raw + None → returns the bytes (legacy
+        // tolerance); + Some(pw) → fails closed, so the strict rule holds.
         b.place_raw(&w, "legacy", b"raw-legacy-seed-no-magic");
         assert_eq!(
             b.store
@@ -708,7 +725,7 @@ mod tests {
         run_quadrant(&os_backend());
     }
 
-    /// TS-L1-002 ★ — the non-vacuous strip-injection regression. The single
+    /// The non-vacuous strip-injection regression. The single
     /// test the whole feature exists to make pass.
     fn run_strip_injection(b: &Backend) {
         let w = wid(2);
@@ -736,7 +753,7 @@ mod tests {
         let attacker_blob = unprotected(&w, "seed", b"EVIL-SEED-S_evil");
         b.place_raw(&w, "seed", &attacker_blob);
 
-        // ★ A password-supplied read of the stripped slot fails closed;
+        // A password-supplied read of the stripped slot fails closed;
         // S_evil is NEVER returned.
         let err = b.store.get_secret(&w, "seed", Some(&pw)).unwrap_err();
         assert!(
@@ -768,7 +785,7 @@ mod tests {
         run_strip_injection(&os_backend());
     }
 
-    /// TS-L1-003: a DET bug alone fails closed in BOTH directions.
+    /// A consumer bug alone fails closed in BOTH directions.
     fn run_both_det_bug_directions(b: &Backend) {
         let w = wid(3);
         let pw = SecretString::new("pw");
@@ -796,7 +813,7 @@ mod tests {
         run_both_det_bug_directions(&os_backend());
     }
 
-    /// TS-L1-004: the expectation is NEVER inferred from the blob's scheme
+    /// The expectation is NEVER inferred from the blob's scheme
     /// byte — identical scheme-1 blobs diverge solely on the password arg.
     fn run_expectation_not_inferred(b: &Backend) {
         let w = wid(4);
@@ -828,7 +845,7 @@ mod tests {
         run_expectation_not_inferred(&os_backend());
     }
 
-    /// TS-L1-005: unprotected→scheme-1 upgrade confusion is availability-
+    /// Unprotected→protected upgrade confusion is availability-
     /// only, fail-closed (NeedsPassword), no leak / no injection.
     fn run_upgrade_confusion(b: &Backend) {
         let w = wid(5);
@@ -849,10 +866,10 @@ mod tests {
         run_upgrade_confusion(&os_backend());
     }
 
-    /// TS-L1-006: an in-place scheme-byte flip (1→0). Some(pw) is caught by
+    /// An in-place scheme-byte flip (protected→unprotected). Some(pw) is caught by
     /// the strict rule regardless. None reads the body as scheme-0 opaque
-    /// bytes (never the real seed) — the GAP-010 residual, dominated by the
-    /// DET-DB residual; pinned, not "fixed".
+    /// bytes (never the real seed) — a known residual, dominated by the
+    /// consumer-DB residual; pinned, not "fixed".
     fn run_scheme_flip(b: &Backend) {
         let w = wid(6);
         let pw = SecretString::new("pw");
@@ -884,13 +901,13 @@ mod tests {
         run_scheme_flip(&os_backend());
     }
 
-    // ===== Add / change / remove password + arm matrix (TS-PW / TS-ARM) =====
+    // ===== Add / change / remove password + arm matrix =====
     //
     // These exercise the PUBLIC set_secret/get_secret/reprotect API, so the
     // protected writes/reads run the real (default 64 MiB) Argon2 — kept to
     // a small number of derivations per test.
 
-    /// TS-PW-001/002/003: the full enrol → change → remove lifecycle, each
+    /// The full enrol → change → remove lifecycle, each
     /// step verified through the strict read.
     fn run_pw_lifecycle(b: &Backend) {
         let w = wid(10);
@@ -955,7 +972,7 @@ mod tests {
                 b.store.get_secret(&w, "seed", Some(&pw2)).unwrap_err(),
                 SecretStoreError::ExpectedProtectedButUnsealed
             ),
-            "[{}] after remove, a password read fails closed until DET updates its DB",
+            "[{}] after remove, a password read fails closed until the consumer updates its DB",
             b.name
         );
     }
@@ -970,7 +987,7 @@ mod tests {
         run_pw_lifecycle(&os_backend());
     }
 
-    /// TS-PW-005: losing the object password bricks the object — no recovery
+    /// Losing the object password bricks the object — no recovery
     /// path exists, every read fails closed.
     fn run_pw_no_recovery(b: &Backend) {
         let w = wid(11);
@@ -1000,7 +1017,7 @@ mod tests {
         run_pw_no_recovery(&os_backend());
     }
 
-    /// TS-ARM-003: `set`/`get` are additive `..,None` wrappers — `set`
+    /// `set`/`get` are additive `..,None` wrappers — `set`
     /// writes a scheme-0 envelope, `get` reads it byte-exact, and a
     /// password-supplied read of that unprotected object fails closed.
     fn run_set_get_wrappers(b: &Backend) {
@@ -1030,7 +1047,7 @@ mod tests {
         run_set_get_wrappers(&os_backend());
     }
 
-    /// TS-T1-005: the Os arm has no passphrase concept; the Tier-1 blank
+    /// The Os arm has no passphrase concept; the Tier-1 blank
     /// guard never fires and the round-trip is byte-exact.
     #[test]
     fn os_arm_roundtrip_no_blank_guard() {
@@ -1047,7 +1064,7 @@ mod tests {
         assert!(b.store.get(&w, "seed").unwrap().is_none());
     }
 
-    /// TS-PW-004 ★ [File]: a crash (disk-write failure) between the unwrap
+    /// [File]: a crash (disk-write failure) between the unwrap
     /// and the overwrite-commit leaves the OLD protected value intact and
     /// readable — no half-rotated / unprotected state.
     #[cfg(unix)]

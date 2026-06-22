@@ -142,7 +142,7 @@ impl EncryptedFileStore {
         // Tier-1 baseline: reject a blank passphrase (empty / all-whitespace)
         // BEFORE touching the filesystem. A blank passphrase derives a key
         // from a public salt only — obfuscation, not confidentiality
-        // (SEC-A / F-1). This is an INTENDED behavioural break for any caller
+        // (obfuscation, not confidentiality). This is an INTENDED behavioural break for any caller
         // that relied on `SecretString::empty()`; a deliberate keyless vault
         // must use [`open_unprotected`](Self::open_unprotected). No vault
         // file is created or altered for a blank passphrase.
@@ -155,8 +155,9 @@ impl EncryptedFileStore {
     /// passphrase under the public salt, so this is **obfuscation, not
     /// confidentiality**: use it only where the stored secrets carry their
     /// own Tier-2 object password, or as a staging step before
-    /// [`rekey`](Self::rekey) to a real passphrase. AC-2.1 maps HERE, not to
-    /// [`open`](Self::open) (which now rejects a blank passphrase).
+    /// [`rekey`](Self::rekey) to a real passphrase. This is the explicit
+    /// keyless door, distinct from [`open`](Self::open) (which now rejects a
+    /// blank passphrase).
     pub fn open_unprotected(path: impl AsRef<Path>) -> Result<Self, SecretStoreError> {
         Self::open_inner(path.as_ref(), SecretString::empty())
     }
@@ -506,7 +507,7 @@ fn lock_path_for(path: &Path) -> PathBuf {
 /// [`SecretStoreError::BlankPassphrase`]. The floor is the coarse
 /// [`MIN_PASSPHRASE_LEN`] (1 today = merely non-blank); the real entropy
 /// policy is the consumer's (see `SECRETS.md`). A blank check alone closes
-/// SEC-A/F-1; the length term keeps the floor wired for a future bump.
+/// the length term keeps the floor wired for a future bump.
 fn reject_weak_passphrase(passphrase: &SecretString) -> Result<(), SecretStoreError> {
     if passphrase.is_blank() || passphrase.trimmed().len() < MIN_PASSPHRASE_LEN {
         return Err(SecretStoreError::BlankPassphrase);
@@ -1474,7 +1475,7 @@ mod tests {
         );
     }
 
-    /// TS-T1-001: a blank passphrase is rejected at `open` →
+    /// A blank passphrase is rejected at `open` →
     /// `BlankPassphrase`; no vault file (or lock sidecar) is created.
     #[test]
     fn open_rejects_blank_passphrase() {
@@ -1499,7 +1500,7 @@ mod tests {
         }
     }
 
-    /// TS-T1-002: a blank passphrase is rejected at `rekey`; the resident
+    /// A blank passphrase is rejected at `rekey`; the resident
     /// vault, key, and on-disk file are UNCHANGED — the original passphrase
     /// still reads every entry, live and after reopen.
     #[test]
@@ -1523,7 +1524,7 @@ mod tests {
         assert_eq!(entry(&s2, wid(1), "seed").get_secret().unwrap(), b"v1");
     }
 
-    /// TS-T1-003: `open_unprotected` permits a deliberate keyless vault that
+    /// `open_unprotected` permits a deliberate keyless vault that
     /// round-trips; a real-passphrase `open` of that keyless vault then
     /// fails with `WrongPassphrase` (it is keyless, not real-pass).
     #[test]
@@ -1550,7 +1551,7 @@ mod tests {
         );
     }
 
-    /// TS-T1-004: empty→real passphrase migration via `rekey`. After rekey,
+    /// Empty→real passphrase migration via `rekey`. After rekey,
     /// `open(real)` reads every entry; the keyless door no longer opens it;
     /// no `.bak`/`.tmp` residue beside the vault.
     #[test]
@@ -1592,7 +1593,7 @@ mod tests {
         }
     }
 
-    /// TS-T1-004 crash-safety: a disk-write failure mid-rekey leaves the
+    /// Crash-safety: a disk-write failure mid-rekey leaves the
     /// pre-rekey keyless vault intact and readable via `open_unprotected`
     /// (mirrors rekey_does_not_corrupt_on_disk_temp_failure).
     #[cfg(unix)]

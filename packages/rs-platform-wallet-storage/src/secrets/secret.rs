@@ -225,7 +225,7 @@ impl<'de> serde::Deserialize<'de> for SecretString {
 /// Render the JSON schema as a plain `string` carrying **no** length or
 /// value policy: no `minLength`/`maxLength`/`pattern`/`format` (would leak
 /// a length policy) and no `example`/`default` (would embed a value)
-/// (F-7). A short, value-free `description` marks sensitivity.
+/// A short, value-free `description` marks sensitivity.
 ///
 /// Gated behind the default-off `secret-schemars` feature (which implies
 /// `secret-serde`). Pulls in no `Serialize`/`Display` path.
@@ -386,7 +386,7 @@ mod tests {
         assert_eq!(SecretString::default().len(), 0);
     }
 
-    /// TS-SER-001: `is_blank()` truth table. The boundary deliberately
+    /// `is_blank()` truth table. The boundary deliberately
     /// exercises Unicode whitespace — `str::trim` uses the `White_Space`
     /// property, so NBSP (`U+00A0`) trims to blank but ZWSP (`U+200B`,
     /// not `White_Space`) does not.
@@ -410,7 +410,7 @@ mod tests {
         );
     }
 
-    /// TS-SER-002: `is_blank` returns a `bool` and exposes no borrowed
+    /// `is_blank` returns a `bool` and exposes no borrowed
     /// plaintext, callable with only `secrets` (no serde/schemars).
     #[test]
     fn is_blank_signature_returns_bool_no_borrow() {
@@ -419,7 +419,7 @@ mod tests {
         assert!(!f(&SecretString::new("x")));
     }
 
-    /// TS-SER-005 / TS-SER-007: `SecretString` must never implement
+    /// `SecretString` must never implement
     /// `Serialize` or `Display`, even with serde compiled in. This is a
     /// compile-time `!impl` assertion — adding either impl breaks the
     /// build. `serde::Serialize` is nameable here because `secrets` always
@@ -429,7 +429,7 @@ mod tests {
         static_assertions::assert_not_impl_any!(SecretString: serde::Serialize, std::fmt::Display);
     }
 
-    /// TS-SER-008 / GAP-002 regression: the `serde` DEP is on under
+    /// Regression: the `serde` DEP is on under
     /// `secrets`, yet the `Deserialize` IMPL stays ABSENT because it is
     /// gated on the dedicated `secret-serde` feature — proving the
     /// default-off gate is satisfiable even while serde is compiled.
@@ -441,7 +441,7 @@ mod tests {
         );
     }
 
-    /// TS-SER-008: with `secret-serde` on, the `Deserialize` impl is
+    /// With `secret-serde` on, the `Deserialize` impl is
     /// present (and `Serialize` is still absent — see the always-on test).
     #[cfg(feature = "secret-serde")]
     #[test]
@@ -450,7 +450,7 @@ mod tests {
         static_assertions::assert_not_impl_any!(SecretString: serde::Serialize);
     }
 
-    /// TS-SER-003: `Deserialize` round-trips the value through the
+    /// `Deserialize` round-trips the value through the
     /// zeroizing constructor; the result `ct_eq`s a directly-built secret
     /// and has the right length.
     #[cfg(feature = "secret-serde")]
@@ -463,7 +463,7 @@ mod tests {
         assert_eq!(s.len(), 28);
     }
 
-    /// TS-SER-006: `JsonSchema` renders a plain `string` and leaks no
+    /// `JsonSchema` renders a plain `string` and leaks no
     /// length/value policy — no `minLength`/`maxLength`/`pattern`/`format`,
     /// no `example`/`default`/`enum`.
     #[cfg(feature = "secret-schemars")]

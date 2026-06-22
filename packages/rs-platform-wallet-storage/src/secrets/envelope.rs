@@ -29,12 +29,12 @@
 //! ## Reused, never reinvented
 //! - KDF: [`crypto::derive_key`] (Argon2id) with a fresh 32-byte salt; the
 //!   param **ceiling is enforced BEFORE derivation** on the
-//!   attacker-controllable header (L-2, [`KdfParams::enforce_bounds`]).
+//!   attacker-controllable header ([`KdfParams::enforce_bounds`]).
 //! - AEAD: [`crypto::seal`]/[`crypto::open`] (XChaCha20-Poly1305), fresh
 //!   per-wrap nonce; a tag failure maps to
 //!   [`SecretStoreError::WrongPassword`] with no plaintext.
 //! - AAD binds `domain ‖ magic ‖ version ‖ scheme ‖ kdf ‖ salt ‖ wallet_id
-//!   ‖ label` (L-3), mirroring [`format::aad`]/[`format::verify_aad`] so a
+//!   ‖ label`, mirroring [`format::aad`]/[`format::verify_aad`] so a
 //!   relocated/confused blob fails the tag.
 //!
 //! No bespoke crypto.
@@ -86,7 +86,7 @@ pub(crate) const MAX_ENVELOPE_OVERHEAD: usize = 128;
 /// MAX_ENVELOPE_OVERHEAD`. Capping the **plaintext** (uniformly for both
 /// schemes) keeps the user-visible limit stable AND guarantees the
 /// enveloped bytes always fit the backend vault's own `MAX_SECRET_LEN`
-/// `put_bytes` cap (design §4.6 / SEC-F006 / GAP-006). Re-exported at
+/// `put_bytes` cap. Re-exported at
 /// [`crate::secrets`] as the documented, stable user-facing cap.
 pub const MAX_PLAINTEXT_LEN: usize = MAX_SECRET_LEN - MAX_ENVELOPE_OVERHEAD;
 
@@ -147,7 +147,7 @@ pub(crate) fn wrap_with_params(
         return Ok(SecretBytes::new(out));
     };
 
-    // Reject a blank object password BEFORE any derivation (SEC-J).
+    // Reject a blank object password BEFORE any derivation.
     if pw.is_blank() {
         return Err(SecretStoreError::BlankPassphrase);
     }
@@ -174,14 +174,14 @@ pub(crate) fn wrap_with_params(
 }
 
 /// Unwrap `blob` for `(wallet_id, label)`, applying the **strict,
-/// fail-closed** read (the L-1 keystone). The "expected-protected" bit is
+/// fail-closed** read. The "expected-protected" bit is
 /// the caller's assertion, surfaced solely by `password`, and is NEVER
 /// inferred from the blob's scheme byte.
 ///
 /// | `password` | stored blob | result |
 /// |---|---|---|
 /// | `Some(pw)` | valid scheme-1 | secret, or [`WrongPassword`] on tag fail |
-/// | `Some(pw)` | scheme-0 **or** magic-less (legacy raw) | [`ExpectedProtectedButUnsealed`] ★ |
+/// | `Some(pw)` | scheme-0 **or** magic-less (legacy raw) | [`ExpectedProtectedButUnsealed`] |
 /// | `Some(pw)` | scheme-1 but too short | [`Corruption`] (sealed-but-broken) |
 /// | `Some/None` | magic present, unknown version/scheme | [`UnsupportedEnvelopeVersion`] |
 /// | `None` | valid scheme-1 | [`NeedsPassword`] (never ciphertext) |
@@ -205,7 +205,7 @@ pub(crate) fn unwrap(
     blob: &[u8],
 ) -> Result<SecretBytes, SecretStoreError> {
     // Magic-less ⇒ a legacy unprotected raw value (scheme-0-equivalent),
-    // per the adopted §4.1 read-path contingency.
+    // (legacy-tolerant read-path: a None read returns it, a Some(pw) read refuses).
     if !blob.starts_with(MAGIC) {
         return match password {
             None => {
@@ -213,7 +213,7 @@ pub(crate) fn unwrap(
                 Ok(SecretBytes::from_slice(blob))
             }
             // Caller asserted protection but found a magic-less raw value:
-            // a strip/downgrade ⇒ FAIL CLOSED (L-1). Never returns bytes.
+            // a strip/downgrade ⇒ FAIL CLOSED. Never returns bytes.
             Some(_) => Err(SecretStoreError::ExpectedProtectedButUnsealed),
         };
     }
@@ -226,7 +226,7 @@ pub(crate) fn unwrap(
     let version = blob[MAGIC.len()];
     if version != ENVELOPE_VERSION {
         // Fail closed regardless of password — an unparseable future format
-        // can be neither safely unwrapped nor treated as scheme-0 (GAP-009).
+        // can be neither safely unwrapped nor treated as scheme-0.
         return Err(SecretStoreError::UnsupportedEnvelopeVersion { found: version });
     }
 
@@ -235,7 +235,7 @@ pub(crate) fn unwrap(
     match scheme {
         SCHEME_UNPROTECTED => match password {
             None => Ok(SecretBytes::from_slice(body)),
-            // Strip: caller expected protection, blob is unprotected (L-1).
+            // Strip: caller expected protection, blob is unprotected.
             Some(_) => Err(SecretStoreError::ExpectedProtectedButUnsealed),
         },
         SCHEME_PASSWORD => match password {
@@ -250,9 +250,9 @@ pub(crate) fn unwrap(
 
 /// Decrypt a scheme-1 body. The KDF params, salt, and nonce are all read
 /// from the (attacker-controllable) header; the param **ceiling is
-/// enforced before** [`crypto::derive_key`] allocates (L-2), and every
+/// enforced before** [`crypto::derive_key`] allocates, and every
 /// header field that feeds key/AAD is bound into the AAD so any in-place
-/// edit fails the tag (L-3).
+/// edit fails the tag.
 fn unwrap_scheme1(
     wallet_id: &WalletId,
     label: &str,
@@ -265,7 +265,7 @@ fn unwrap_scheme1(
         return Err(SecretStoreError::Corruption);
     }
     let kdf = decode_kdf(&body[..KDF_FIELD_LEN]);
-    // L-2: gate the inflated/unknown header BEFORE any derivation/alloc.
+    // Gate the inflated/unknown header BEFORE any derivation/alloc.
     kdf.enforce_bounds()?;
 
     let mut salt = [0u8; SALT_LEN];
@@ -285,7 +285,7 @@ fn unwrap_scheme1(
     }
 }
 
-/// Build the scheme-1 AAD binding object identity + header (L-3),
+/// Build the scheme-1 AAD binding object identity + header,
 /// length-prefixed for the variable fields, mirroring
 /// [`format::aad`](super::file::format::aad)/`verify_aad`.
 fn scheme1_aad(
@@ -422,7 +422,7 @@ mod tests {
             .to_vec()
     }
 
-    /// TS-ENV-001: scheme-0 passthrough round-trip; the wrapped form leads
+    /// scheme-0 passthrough round-trip; the wrapped form leads
     /// with magic, version=1, scheme=0, then the raw payload.
     #[test]
     fn scheme0_passthrough_round_trip() {
@@ -436,7 +436,7 @@ mod tests {
         assert_eq!(got.expose_secret(), secret);
     }
 
-    /// TS-ENV-002: scheme-1 round-trip; header records the argon2id id, a
+    /// scheme-1 round-trip; header records the argon2id id, a
     /// 32-byte fresh salt and 24-byte nonce, ct != pt, and two wraps of the
     /// same secret/pw differ in salt+nonce (no reuse).
     #[test]
@@ -467,7 +467,7 @@ mod tests {
         );
     }
 
-    /// TS-ENV-003: wrong object password → WrongPassword, no plaintext.
+    /// Wrong object password → WrongPassword, no plaintext.
     #[test]
     fn wrong_password_fails_closed() {
         let blob = wrap_p(&wid(1), "seed", Some(&pw("right")), b"seed", floor());
@@ -478,7 +478,7 @@ mod tests {
         );
     }
 
-    /// TS-ENV-004: identity AAD (L-3) — a protected blob unwrapped at any
+    /// Identity AAD — a protected blob unwrapped at any
     /// other (wallet, label) fails the tag; same-identity still succeeds.
     #[test]
     fn relocation_across_identity_is_rejected() {
@@ -495,7 +495,7 @@ mod tests {
         assert_eq!(ok.expose_secret(), b"seed");
     }
 
-    /// TS-ENV-005: per-field header tamper. Unknown KDF id is rejected by
+    /// Per-field header tamper. Unknown KDF id is rejected by
     /// `enforce_bounds` (KdfFailure) before derive; in-bounds KDF shifts,
     /// salt, and nonce all fail the AEAD tag (WrongPassword) — never the
     /// plaintext.
@@ -545,7 +545,7 @@ mod tests {
         ));
     }
 
-    /// TS-ENV-006 ★ (L-2): an inflated KDF param on a forged header is
+    /// An inflated KDF param on a forged header is
     /// rejected by `enforce_bounds` BEFORE `derive_key` allocates — the
     /// ~4 TiB allocation never happens (the test would OOM if it did). The
     /// exact ceilings remain valid params.
@@ -582,7 +582,7 @@ mod tests {
         .is_ok());
     }
 
-    /// TS-ENV-007: a blank object password is rejected at enrol; nothing
+    /// A blank object password is rejected at enrol; nothing
     /// is sealed.
     #[test]
     fn blank_object_password_rejected_at_enrol() {
@@ -596,11 +596,10 @@ mod tests {
         }
     }
 
-    /// TS-ENV-008 — **v5 §4.6 supersedes the v4 test-spec.** The plaintext
-    /// cap is `MAX_SECRET_LEN − MAX_ENVELOPE_OVERHEAD` (NOT `MAX_SECRET_LEN`
-    /// as TS-ENV-008 literally read); v5 §4.6 / SEC-F006 / GAP-006 fix the
-    /// off-by-overhead so the enveloped bytes always fit the backend cap.
-    /// Accept at the cap, reject at cap+1 with `max = MAX_PLAINTEXT_LEN`.
+    /// The plaintext is capped at `MAX_PLAINTEXT_LEN` (`MAX_SECRET_LEN −
+    /// MAX_ENVELOPE_OVERHEAD`), uniform across schemes, so plaintext +
+    /// overhead always fits the backend's own `MAX_SECRET_LEN` cap. Accept
+    /// at the cap, reject at cap+1 with `max = MAX_PLAINTEXT_LEN`.
     #[test]
     fn plaintext_size_cap_at_envelope_boundary() {
         let at_cap = vec![0x5Au8; MAX_PLAINTEXT_LEN];
@@ -626,12 +625,11 @@ mod tests {
         assert!(enveloped.len() <= MAX_SECRET_LEN);
     }
 
-    /// TS-ENV-010 — **v5 §4.1 (legacy-tolerant contingency) supersedes the
-    /// v4 test-spec.** magic/version discrimination: a magic-less blob is a
-    /// legacy raw value — returned on `None` (TS-ENV-010(a) read `Corruption`;
-    /// v5 §4.1 makes it bytes+warn), refused fail-closed on `Some(pw)` (so
-    /// L-1 is preserved). A magic-present blob with an unknown version fails
-    /// closed both ways; truncated-after-magic is corruption.
+    /// magic/version discrimination: a magic-less blob is a legacy raw
+    /// value — returned on a `None` read (with a one-time warning), refused
+    /// fail-closed on `Some(pw)` so the strict rule holds. A magic-present
+    /// blob with an unknown version fails closed both ways; truncated-
+    /// after-magic is corruption.
     #[test]
     fn magic_and_version_discrimination() {
         let p = pw("pw");
@@ -640,7 +638,7 @@ mod tests {
         // None ⇒ legacy raw bytes (adopted contingency; NOT Corruption).
         let got = unwrap(&wid(1), "seed", None, &legacy).unwrap();
         assert_eq!(got.expose_secret(), &legacy[..]);
-        // Some(pw) ⇒ strip/downgrade ⇒ fail closed (L-1 preserved).
+        // Some(pw) ⇒ strip/downgrade ⇒ fail closed.
         assert!(matches!(
             unwrap(&wid(1), "seed", Some(&p), &legacy).unwrap_err(),
             SecretStoreError::ExpectedProtectedButUnsealed
@@ -655,7 +653,7 @@ mod tests {
         ));
 
         // (c) Magic OK but version = 2 ⇒ UnsupportedEnvelopeVersion{2},
-        // regardless of password (GAP-009).
+        // regardless of password.
         let mut v2 = wrap_bytes(&wid(1), "seed", None, b"x");
         v2[O_VERSION] = 2;
         for arg in [None, Some(&p)] {
@@ -674,7 +672,7 @@ mod tests {
         ));
     }
 
-    /// Non-vacuity helper for the L-1 keystone (used here and by the store
+    /// Non-vacuity helper for the strict read (used here and by the store
     /// tests): a scheme-0 blob carrying `secret` DOES decode under `None`.
     #[test]
     fn scheme0_some_password_fails_closed_strip() {
@@ -686,7 +684,7 @@ mod tests {
                 .expose_secret(),
             b"attacker-seed"
         );
-        // …but Some(pw) ⇒ ExpectedProtectedButUnsealed, no bytes (L-1).
+        // …but Some(pw) ⇒ ExpectedProtectedButUnsealed, no bytes.
         assert!(matches!(
             unwrap(&wid(1), "seed", Some(&pw("pw")), &blob).unwrap_err(),
             SecretStoreError::ExpectedProtectedButUnsealed
@@ -704,7 +702,7 @@ mod tests {
         assert!(bool::from(got.ct_eq(&original)));
     }
 
-    /// TS-ENV-009: deterministic byte-level fuzz. Every mutant unwrap is a
+    /// Deterministic byte-level fuzz. Every mutant unwrap is a
     /// clean `Ok` or a TYPED `SecretStoreError` — never a panic, never
     /// plaintext from a tag-failing branch. The `None` path (no Argon2
     /// derivation) runs the full 2000 mutants + every truncation; the

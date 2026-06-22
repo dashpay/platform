@@ -20,7 +20,7 @@ pub enum SecretStoreError {
     #[error("wrong passphrase")]
     WrongPassphrase,
 
-    /// Tier-2 (L-1 keystone): the caller asserted — by supplying an object
+    /// Tier-2 strip/downgrade guard: the caller asserted — by supplying an object
     /// password — that this object MUST be password-protected, but the
     /// stored value is a well-formed UNPROTECTED envelope (scheme-0) or a
     /// legacy magic-less raw value, i.e. a strip/downgrade. **Fails
@@ -50,7 +50,9 @@ pub enum SecretStoreError {
     /// [`SecretString::is_blank`]. CWE-521.
     ///
     /// [`SecretString::is_blank`]: crate::secrets::SecretString::is_blank
-    #[error("passphrase must not be blank")]
+    #[error(
+        "passphrase must not be blank; for a deliberately keyless file vault use open_unprotected"
+    )]
     BlankPassphrase,
 
     /// AEAD tag failure on a stored entry (or rekey re-encrypt) *after*
@@ -76,7 +78,7 @@ pub enum SecretStoreError {
     /// known version, a `scheme`) this build does not understand. Fails
     /// closed REGARDLESS of the password argument — an unparseable future
     /// format can be neither safely unwrapped nor safely treated as
-    /// unprotected, so it is refused both ways (GAP-009). Mirrors
+    /// unprotected, so it is refused both ways. Mirrors
     /// [`VersionUnsupported`] for the vault format.
     ///
     /// [`VersionUnsupported`]: SecretStoreError::VersionUnsupported
@@ -288,7 +290,7 @@ impl From<std::io::Error> for SecretStoreError {
 ///   `err.source().and_then(|s| s.downcast_ref::<SecretStoreError>())`.
 ///   These are all "the caller must act on a credential/expectation to
 ///   proceed" states, so lossless recovery lets an SPI consumer react
-///   precisely (resolves GAP-004 for these variants).
+///   precisely.
 /// - The format/crypto group — including [`UnsupportedEnvelopeVersion`]
 ///   (a fail-closed forward-format incompatibility, mirroring
 ///   [`VersionUnsupported`]) — collapses into
@@ -454,7 +456,7 @@ mod tests {
         assert!(!format!("{k}").contains("plaintext"));
     }
 
-    /// TS-ERR-001: the five new variants exist, are constructable, render
+    /// The five new variants exist, are constructable, render
     /// distinct non-empty messages, and the Tier-2 `WrongPassword` is NOT
     /// the Tier-1 `WrongPassphrase` (nor is the unseal error `Corruption`).
     #[test]
@@ -477,7 +479,7 @@ mod tests {
         assert_eq!(msgs.len(), 5, "all five messages must be distinct");
     }
 
-    /// TS-ERR-002: Display + Debug render static, secret-free text. The
+    /// Display + Debug render static, secret-free text. The
     /// version variant surfaces the (non-secret) version byte and nothing
     /// more.
     #[test]
@@ -490,7 +492,7 @@ mod tests {
         assert_eq!(E::WrongPassword.to_string(), "wrong object password");
         assert_eq!(
             E::BlankPassphrase.to_string(),
-            "passphrase must not be blank"
+            "passphrase must not be blank; for a deliberately keyless file vault use open_unprotected"
         );
         assert_eq!(
             E::ExpectedProtectedButUnsealed.to_string(),
@@ -513,7 +515,7 @@ mod tests {
         }
     }
 
-    /// TS-ERR-003 (resolving GAP-004): the four Tier-2 credential /
+    /// The four Tier-2 credential /
     /// protection states project to a recoverable `NoStorageAccess` with
     /// the typed error losslessly downcast-able, leaking no secret.
     #[test]
@@ -540,7 +542,7 @@ mod tests {
         }
     }
 
-    /// TS-ERR-003: `UnsupportedEnvelopeVersion` projects to the
+    /// `UnsupportedEnvelopeVersion` projects to the
     /// secret-free `BadStoreFormat` group (forward-format incompat,
     /// mirroring `VersionUnsupported`).
     #[test]

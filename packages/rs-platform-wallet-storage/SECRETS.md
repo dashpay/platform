@@ -156,7 +156,7 @@ scheme   u8              (0 = unprotected passthrough, 1 = password)
   — fail closed **regardless of the password**: an unparseable future
   format can be neither safely unwrapped nor treated as unprotected.
 
-#### The strict, fail-closed read (the L-1 keystone)
+#### The strict, fail-closed read
 
 The defining risk of any opt-in "some objects are extra-protected" scheme
 is **strip / downgrade**: an attacker who can WRITE the backend replaces a
@@ -175,19 +175,20 @@ object must be protected":
 | `password` arg | stored blob | result |
 |---|---|---|
 | `Some(pw)` | valid scheme-1 | the secret, or `WrongPassword` on tag fail |
-| **`Some(pw)`** | **scheme-0 / legacy magic-less raw** | **`ExpectedProtectedButUnsealed` — FAIL CLOSED ★** |
+| **`Some(pw)`** | **scheme-0 / legacy magic-less raw** | **`ExpectedProtectedButUnsealed` — FAIL CLOSED** |
 | `Some(pw)` | scheme-1 but truncated/corrupt | `Corruption` |
 | `Some/None` | magic present, unknown version/scheme | `UnsupportedEnvelopeVersion` |
 | `None` | valid scheme-1 | `NeedsPassword` (never ciphertext) |
 | `None` | scheme-0 | the secret |
 | `None` | legacy magic-less raw | the secret (+ a one-time warning; re-wrapped on next write) |
+| `None` | magic present but truncated header | `Corruption` |
 | any | absent entry | `Ok(None)` (deletion = DoS, never injection) |
 
 The load-bearing row is **`Some(pw)` + non-envelope ⇒
 `ExpectedProtectedButUnsealed`**: with a password in hand, a non-protected
 blob can only mean a strip, so it is refused and **no bytes are returned**.
-A DET (consumer) bug alone — over- or under-supplying a password — fails
-closed in *every* direction.
+A consumer bug alone — over- or under-supplying a password — fails closed
+in *every* direction.
 
 **Arm asymmetry.** On the file arm the stored bytes are themselves sealed
 under the vault key, so producing a *readable* stripped blob at a slot
@@ -208,23 +209,25 @@ as integrity-protected, security-critical state (it is one more field
 alongside the addresses/policy the wallet DB must already protect).
 
 **Value rollback is NOT defended.** Restoring an *older valid* scheme-1
-envelope under the *current* password decrypts cleanly. L-1 closes the
-strip/downgrade injection, not value rollback; if backup-swap/restore-old
-is in scope, anchor a monotonic version in integrity-protected consumer
-metadata. Do not mistake L-1 for rollback protection.
+envelope under the *current* password decrypts cleanly. The strict read
+closes the strip/downgrade injection, not value rollback; if
+backup-swap/restore-old is in scope, anchor a monotonic version in
+integrity-protected consumer metadata. Do not mistake the strict read for
+rollback protection.
 
 #### Add / change / remove an object password
 
 `reprotect(service, label, current, new)` does it in one same-slot
 unwrap→rewrap→overwrite: read under the `current` expectation (so a strip
 is caught before any rewrite), then write under `new` — `None`→`Some` adds,
-`Some`→`Some` changes, `Some`→`None` removes. The write is the atomic
-same-slot overwrite, so a crash between the read and the commit leaves the
-prior value intact and readable under `current`. **After a successful call
-the consumer MUST update its own protection-status record** (the L-1
-expectation lives there). There is **no password recovery** — losing an
-object password bricks that object (an availability trade-off the UX must
-state plainly).
+`Some`→`Some` changes, `Some`→`None` removes. An absent object is a no-op
+(`Ok(())`). The rewrite is a same-slot overwrite — atomic on the file arm,
+and on the OS arm inheriting the backend's single-item-replace contract —
+so a crash between the read and the commit leaves the prior value intact
+and readable under `current`. **After a successful call the consumer MUST
+update its own protection-status record** (the protection expectation lives
+there). There is **no password recovery** — losing an object password
+bricks that object (an availability trade-off the UX must state plainly).
 
 #### Entropy policy is the consumer's
 
@@ -243,9 +246,10 @@ The envelope is net-new, so post-feature reads/writes go through it. A
 decrypted entry that lacks the `PWSEV` magic is treated as a **legacy
 unprotected** value: returned on a `None` read (with a one-time warning,
 and re-wrapped on the next write) and refused (`ExpectedProtectedButUnsealed`)
-on a `Some(pw)` read — so legacy tolerance never weakens L-1. (A pre-feature
-build that persisted vault files is a deployment fact outside this crate;
-the legacy-tolerant read makes the transition seamless either way.)
+on a `Some(pw)` read — so legacy tolerance never weakens the strict read.
+(A pre-feature build that persisted vault files is a deployment fact outside
+this crate; the legacy-tolerant read makes the transition seamless either
+way.)
 
 ### Internal SPI
 
@@ -373,7 +377,7 @@ is **lossless**: `WrongPassphrase`, `Corruption`, `AlreadyLocked`,
 `KdfFailure`, `VersionUnsupported`, `MalformedVault`, `InsecurePermissions`,
 `InsecureParentDir`, `SecretTooLarge`, `VaultTooLarge`, `Encrypt`, and
 `InvalidLabel` are distinct typed variants. The Tier-2 layer adds five more:
-`ExpectedProtectedButUnsealed` (the L-1 fail-closed strip refusal),
+`ExpectedProtectedButUnsealed` (the fail-closed strip refusal),
 `NeedsPassword` (a protected object read with no password), `WrongPassword`
 (object-password tag fail — distinct from the Tier-1 `WrongPassphrase`),
 `BlankPassphrase` (a blank vault passphrase or object password), and
@@ -395,15 +399,25 @@ discriminant — keyring variants carrying raw bytes (`BadEncoding`,
 `BadDataFormat`) are collapsed so their bytes never enter the error
 (CWE-209/CWE-532).
 
+**`WrongPassword` on the OS arm is ambiguous.** A Tier-2 envelope AEAD tag
+failure surfaces as `WrongPassword`, but on the OS-keyring arm the stored
+item is the bare envelope with no second authentication layer, so a tag
+failure can mean EITHER a wrong object password OR a corrupted keychain
+item — one AEAD tag cannot disambiguate the two. Treat `WrongPassword` on
+the OS arm as "wrong password or corrupted item." On the file arm it is
+unambiguous: the vault's own per-entry tag has already authenticated the
+stored bytes before the envelope is parsed.
+
 The internal SPI projection `From<SecretStoreError> for
 keyring_core::Error` keeps the `WrongPassphrase` / `AlreadyLocked` variants
 recoverable: they ride in `NoStorageAccess` with the typed
 `SecretStoreError` boxed as the source, so an SPI-only consumer can recover
 them via `err.source().and_then(|s| s.downcast_ref::<SecretStoreError>())`.
 The `BadStoreFormat` group (`Corruption`, `KdfFailure`,
-`VersionUnsupported`, `MalformedVault`, `InsecurePermissions`,
-`InsecureParentDir`, `SecretTooLarge`, `VaultTooLarge`, `Decrypt`,
-`Encrypt`, `OsKeyring`) has no box slot and carries only a secret-free
+`VersionUnsupported`, `UnsupportedEnvelopeVersion`, `MalformedVault`,
+`InsecurePermissions`, `InsecureParentDir`, `SecretTooLarge`,
+`VaultTooLarge`, `Decrypt`, `Encrypt`, `OsKeyring`) has no box slot and
+carries only a secret-free
 string; those remain fully typed on the `SecretStore` path (so e.g.
 `VaultTooLarge` / `SecretTooLarge` are not losslessly recoverable through
 the SPI downcast).
