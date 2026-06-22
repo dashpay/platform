@@ -1264,13 +1264,160 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         ),
                     }
                 }
-                PendingContactCryptoOp::RegisterExternal { .. }
-                | PendingContactCryptoOp::ContactInfoDecrypt => {
-                    // Needs the contact fetch + ECDH/contactInfo derivation;
-                    // drained in a follow-up. Left queued (safe — re-run later).
+                PendingContactCryptoOp::RegisterExternal {
+                    encrypted_public_key,
+                    our_decryption_key_index,
+                    contact_encryption_key_index,
+                } => {
+                    // Our HD index, for the ECDH derivation path. If the owner
+                    // isn't wallet-owned, this op can't be ours — leave queued.
+                    let identity_index = {
+                        let wm = self.wallet_manager.read().await;
+                        wm.get_wallet_info(&self.wallet_id)
+                            .and_then(|info| {
+                                info.identity_manager
+                                    .managed_identity(&entry.owner_identity_id)
+                            })
+                            .and_then(|m| m.identity_index)
+                    };
+                    let Some(identity_index) = identity_index else {
+                        tracing::warn!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            "drain: owner not wallet-owned; leaving queued"
+                        );
+                        continue;
+                    };
+
+                    // ECDH path, built in Rust (path provenance stays here).
+                    let path = match Self::identity_auth_derivation_path(
+                        self.sdk.network,
+                        key_wallet::bip32::KeyDerivationType::ECDSA,
+                        identity_index,
+                        *our_decryption_key_index,
+                    ) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                error = %e, "drain: ECDH path build failed; leaving queued"
+                            );
+                            continue;
+                        }
+                    };
+
+                    // Fetch the contact identity (transient on failure → leave).
+                    let contact_identity = {
+                        use dash_sdk::platform::Fetch;
+                        match Identity::fetch(&self.sdk, entry.contact_id).await {
+                            Ok(Some(id)) => id,
+                            Ok(None) => {
+                                tracing::warn!(
+                                    owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                    "drain: contact identity not on Platform; leaving queued"
+                                );
+                                continue;
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                    error = %e, "drain: contact fetch failed; leaving queued"
+                                );
+                                continue;
+                            }
+                        }
+                    };
+
+                    // The contact's encryption pubkey (peer). A malformed/missing
+                    // key is a permanent fault — re-deriving won't help.
+                    let peer = match contact_identity
+                        .public_keys()
+                        .get(contact_encryption_key_index)
+                    {
+                        Some(k) => {
+                            match dashcore::secp256k1::PublicKey::from_slice(k.data().as_slice()) {
+                                Ok(pk) => pk,
+                                Err(e) => {
+                                    tracing::warn!(
+                                        owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                        error = %e,
+                                        "drain: contact encryption key invalid; marking channel broken"
+                                    );
+                                    self.mark_contact_channel_broken(
+                                        &entry.owner_identity_id,
+                                        &entry.contact_id,
+                                    )
+                                    .await;
+                                    cleared.push(entry.key());
+                                    continue;
+                                }
+                            }
+                        }
+                        None => {
+                            tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                "drain: contact encryption key missing; marking channel broken"
+                            );
+                            self.mark_contact_channel_broken(
+                                &entry.owner_identity_id,
+                                &entry.contact_id,
+                            )
+                            .await;
+                            cleared.push(entry.key());
+                            continue;
+                        }
+                    };
+
+                    // ECDH via the Keychain-backed provider (scalar stays in the
+                    // signer; we only get the shared secret).
+                    let shared = match provider.ecdh_shared_secret(&path, &peer).await {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                error = %e, "drain: ECDH provider failed; leaving queued"
+                            );
+                            continue;
+                        }
+                    };
+
+                    match self
+                        .register_external_contact_account(
+                            &entry.owner_identity_id,
+                            &contact_identity,
+                            encrypted_public_key,
+                            *our_decryption_key_index,
+                            *contact_encryption_key_index,
+                            Some(shared),
+                        )
+                        .await
+                    {
+                        Ok(()) => cleared.push(entry.key()),
+                        Err(e) if e.is_permanent() => {
+                            tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                error = %e.into_inner(),
+                                "drain: external register permanent fault; marking channel broken"
+                            );
+                            self.mark_contact_channel_broken(
+                                &entry.owner_identity_id,
+                                &entry.contact_id,
+                            )
+                            .await;
+                            cleared.push(entry.key());
+                        }
+                        Err(e) => tracing::warn!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            error = %e.into_inner(),
+                            "drain: external register transient/unavailable; leaving queued"
+                        ),
+                    }
+                }
+                PendingContactCryptoOp::ContactInfoDecrypt => {
+                    // Needs the contactInfo seal/open primitive (follow-up).
+                    // Left queued (safe — re-run later).
                     tracing::debug!(
                         owner = %entry.owner_identity_id, contact = %entry.contact_id,
-                        "drain: op not yet handled; leaving queued"
+                        "drain: ContactInfoDecrypt not yet handled; leaving queued"
                     );
                 }
             }

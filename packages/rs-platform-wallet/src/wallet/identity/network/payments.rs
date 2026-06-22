@@ -2126,4 +2126,72 @@ mod tests {
             "the drain must build the receiving account"
         );
     }
+
+    /// A `RegisterExternal` entry the drain cannot complete (here: the owner
+    /// isn't wallet-owned, so no HD index → it bails before any network fetch)
+    /// must be **left queued**, never dropped or crashed — so a later drain can
+    /// retry. Pins the deferral safety of the external op without needing a
+    /// configured mock fetch.
+    #[tokio::test]
+    async fn drain_leaves_register_external_it_cannot_complete() {
+        use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
+        use crate::wallet::identity::network::contact_requests::DrainCryptoProvider;
+
+        let (manager, _persister, wallet_id) = make_wallet().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        let owner = Identifier::from([0x11; 32]);
+        let contact = Identifier::from([0x22; 32]);
+
+        // Owner is NOT added as a managed identity → identity_index lookup
+        // fails → the drain leaves the entry before reaching the fetch.
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.pending_contact_crypto.push(PendingContactCrypto {
+                owner_identity_id: owner,
+                contact_id: contact,
+                op: PendingContactCryptoOp::RegisterExternal {
+                    encrypted_public_key: vec![7u8; 96],
+                    our_decryption_key_index: 0,
+                    contact_encryption_key_index: 0,
+                },
+                enqueued_at_ms: 0,
+            });
+        }
+
+        struct UnusedProvider;
+        #[async_trait::async_trait]
+        impl DrainCryptoProvider for UnusedProvider {
+            async fn receiving_xpub(
+                &self,
+                _path: &key_wallet::bip32::DerivationPath,
+            ) -> Result<key_wallet::bip32::ExtendedPubKey, crate::error::PlatformWalletError>
+            {
+                Err(crate::error::PlatformWalletError::InvalidIdentityData(
+                    "unused in this test".to_string(),
+                ))
+            }
+            async fn ecdh_shared_secret(
+                &self,
+                _path: &key_wallet::bip32::DerivationPath,
+                _peer: &dashcore::secp256k1::PublicKey,
+            ) -> Result<[u8; 32], crate::error::PlatformWalletError> {
+                Ok([0u8; 32])
+            }
+        }
+
+        let drained = iw.drain_pending_contact_crypto(&UnusedProvider).await;
+        assert_eq!(
+            drained, 0,
+            "an un-completable RegisterExternal entry must not be counted as drained"
+        );
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        assert_eq!(
+            info.pending_contact_crypto.len(),
+            1,
+            "the deferred entry must remain in the queue for a later drain"
+        );
+    }
 }
