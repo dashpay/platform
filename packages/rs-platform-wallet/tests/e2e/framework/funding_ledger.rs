@@ -7,11 +7,115 @@
 //! `Mutex`. Ordering is `Relaxed` throughout — we need atomicity per
 //! counter but no inter-counter ordering guarantees; totals are read
 //! only at end-of-suite after all writers have quiesced.
+//!
+//! # Per-test attribution
+//!
+//! Use [`with_test_label`] to wrap a test body and attribute all
+//! `record_platform_*` calls within that scope to the given test name.
+//! [`CURRENT_TEST_LABEL`] is a `tokio::task_local!` variable: it
+//! follows the async call chain (across `FUNDING_MUTEX.lock().await`
+//! suspensions, etc.) regardless of which worker thread runs the future
+//! at any given instant. Only platform credits are tracked per-test;
+//! Core duffs remain global-only.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use dpp::fee::Credits;
+
+// ── Task-local test label ────────────────────────────────────────────
+
+tokio::task_local! {
+    /// Current test label — set via [`with_test_label`] at test entry so
+    /// per-test `record_*` helpers can attribute funding to the calling
+    /// test. `None` inside the scope means "scope active but intentionally
+    /// unlabeled"; absent scope means "not set" (external calls, harness
+    /// setup, sweep path).
+    pub static CURRENT_TEST_LABEL: Option<String>;
+}
+
+/// Scope the given future under test label `label`, attributing all
+/// [`record_platform_requested`] / [`record_platform_recovered`] calls
+/// within the future (and any `.await`-ed sub-futures on the same task)
+/// to that label.
+///
+/// # Usage
+/// ```ignore
+/// #[tokio_shared_rt::test(shared)]
+/// async fn my_test() {
+///     with_test_label("my_test", async {
+///         let s = setup().await.expect("setup");
+///         // ... test body ...
+///         s.teardown().await.expect("teardown");
+///     })
+///     .await;
+/// }
+/// ```
+pub fn with_test_label<F: std::future::Future>(
+    label: impl Into<String>,
+    f: F,
+) -> impl std::future::Future<Output = F::Output> {
+    CURRENT_TEST_LABEL.scope(Some(label.into()), f)
+}
+
+// ── Per-test counters ────────────────────────────────────────────────
+
+/// Platform-credit metrics for one test run. Values are plain `u64`
+/// (not atomic) because they live behind a `Mutex` in [`PerTestMap`].
+#[derive(Debug, Default, Clone)]
+pub struct PerTestCounters {
+    /// Gross credits requested from the bank for this test.
+    pub requested: u64,
+    /// Gross credits recovered (swept back to bank) for this test.
+    pub recovered: u64,
+    /// Number of outflow (`fund_address`) operations.
+    pub op_count: u64,
+}
+
+impl PerTestCounters {
+    /// Net cost: requested minus recovered, saturating at zero.
+    pub fn net(&self) -> u64 {
+        self.requested.saturating_sub(self.recovered)
+    }
+}
+
+/// Thread-safe per-test funding breakdown. Keyed by test label string.
+///
+/// Lives inside [`FundingLedger`]; can also be instantiated standalone
+/// for unit tests that don't want to interact with the process-global
+/// singleton.
+#[derive(Debug, Default)]
+pub struct PerTestMap {
+    inner: Mutex<HashMap<String, PerTestCounters>>,
+}
+
+impl PerTestMap {
+    /// Record a credit outflow for `label`.
+    pub fn record_requested(&self, label: &str, amount: u64) {
+        let mut map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let entry = map.entry(label.to_string()).or_default();
+        entry.requested = entry.requested.saturating_add(amount);
+        entry.op_count += 1;
+    }
+
+    /// Record a credit recovery for `label`.
+    pub fn record_recovered(&self, label: &str, amount: u64) {
+        let mut map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let entry = map.entry(label.to_string()).or_default();
+        entry.recovered = entry.recovered.saturating_add(amount);
+    }
+
+    /// Snapshot all per-test entries sorted by **NET cost descending**.
+    pub fn snapshot_sorted(&self) -> Vec<(String, PerTestCounters)> {
+        let map = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let mut entries: Vec<_> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        entries.sort_by(|a, b| b.1.net().cmp(&a.1.net()));
+        entries
+    }
+}
+
+// ── Global type counters ─────────────────────────────────────────────
 
 /// Per-type accounting, all values in the type's native unit
 /// (credits for Platform/Identity/Shielded; duffs for Core).
@@ -56,6 +160,8 @@ impl TypeCounters {
 ///     bootstrap (bank-internal, not test-wallet outflow).
 ///   - `dust_abandoned_credits` — credits abandoned because residual
 ///     was below `min_input_amount`.
+///   - `per_test` — per-test platform-credit breakdown; populated only
+///     for tests wrapped in [`with_test_label`].
 #[derive(Debug, Default)]
 pub struct FundingLedger {
     pub platform: TypeCounters,
@@ -66,6 +172,9 @@ pub struct FundingLedger {
     pub e5_core_locked_duff: AtomicU64,
     /// Credits abandoned as dust (below `min_input_amount`).
     pub dust_abandoned_credits: AtomicU64,
+    /// Per-test platform-credit breakdown. Populated when the calling
+    /// test wraps its body in [`with_test_label`].
+    pub per_test: PerTestMap,
 }
 
 static LEDGER: OnceLock<FundingLedger> = OnceLock::new();
@@ -77,8 +186,17 @@ pub fn ledger() -> &'static FundingLedger {
 
 // ── Recording helpers ────────────────────────────────────────────────
 
+/// Record a platform-credit outflow. Also attributes to the current
+/// test label when inside a [`with_test_label`] scope.
 pub fn record_platform_requested(credits: Credits) {
-    ledger().platform.add_requested(credits);
+    let l = ledger();
+    l.platform.add_requested(credits);
+    // Per-test attribution: fires only when a test label is in scope.
+    let _ = CURRENT_TEST_LABEL.try_with(|opt| {
+        if let Some(label) = opt {
+            l.per_test.record_requested(label, credits);
+        }
+    });
 }
 
 pub fn record_core_requested(duffs: u64) {
@@ -99,8 +217,17 @@ pub fn record_e5_lock(duffs: u64) {
         .fetch_add(duffs, Ordering::Relaxed);
 }
 
+/// Record a platform-credit recovery (sweep back to bank). Also
+/// attributes to the current test label when inside a
+/// [`with_test_label`] scope.
 pub fn record_platform_recovered(credits: Credits) {
-    ledger().platform.add_recovered(credits);
+    let l = ledger();
+    l.platform.add_recovered(credits);
+    let _ = CURRENT_TEST_LABEL.try_with(|opt| {
+        if let Some(label) = opt {
+            l.per_test.record_recovered(label, credits);
+        }
+    });
 }
 
 pub fn record_identity_recovered(credits: Credits) {
@@ -118,6 +245,9 @@ pub fn record_dust_abandoned(credits: Credits) {
 }
 
 // ── Unit conversion ──────────────────────────────────────────────────
+
+/// 1 DASH = 1e8 duffs × 1000 credits/duff = 100_000_000_000 credits.
+pub const CREDITS_PER_DASH: u64 = 100_000_000_000;
 
 const CREDITS_PER_DUFF: u64 = 1_000;
 const DUFFS_PER_DASH: u64 = 100_000_000; // 1 DASH = 1e8 duffs
@@ -243,6 +373,55 @@ pub fn print_report() {
     eprintln!("  © = credits   duff = Layer-1 duffs");
     eprintln!("  Recovered amounts are gross (fee not subtracted).");
     eprintln!("  Net = Requested − Recovered per type.");
+
+    // ── Per-test breakdown ───────────────────────────────────────────
+    // Only populated for tests that wrap their body in with_test_label().
+    let per_test = l.per_test.snapshot_sorted();
+    if per_test.is_empty() {
+        eprintln!();
+        eprintln!("  (no per-test attribution — wrap test bodies in with_test_label() to enable)");
+    } else {
+        eprintln!();
+        eprintln!("──────────────────────────────────────────────────────────────");
+        eprintln!("  PER-TEST FUNDING BREAKDOWN (platform credits, net desc.)");
+        eprintln!("  Tests NOT wrapped in with_test_label() are not shown.");
+        eprintln!("──────────────────────────────────────────────────────────────");
+        eprintln!(
+            "  {:<42}  {:>18}  {:>18}  {:>12}  {:>4}",
+            "Test", "Requested(©)", "Net(©)", "Net(DASH)", "Ops"
+        );
+        eprintln!("  {}", "─".repeat(100));
+        for (label, counters) in &per_test {
+            let net = counters.net();
+            let net_dash = credits_to_dash(net);
+            // Truncate long test names gracefully.
+            let display_name = if label.len() > 42 {
+                format!("{}…", &label[..41])
+            } else {
+                label.clone()
+            };
+            eprintln!(
+                "  {:<42}  {:>18}  {:>18}  {:>12.6}  {:>4}",
+                display_name,
+                fmt_credits(counters.requested),
+                fmt_credits(net),
+                net_dash,
+                counters.op_count
+            );
+        }
+        eprintln!("  {}", "─".repeat(100));
+        let total_test_req: u64 = per_test.iter().map(|(_, c)| c.requested).sum();
+        let total_test_net: u64 = per_test.iter().map(|(_, c)| c.net()).sum();
+        eprintln!(
+            "  {:<42}  {:>18}  {:>18}  {:>12.6}  {:>4}",
+            format!("TOTAL ({} tests)", per_test.len()),
+            fmt_credits(total_test_req),
+            fmt_credits(total_test_net),
+            credits_to_dash(total_test_net),
+            per_test.iter().map(|(_, c)| c.op_count).sum::<u64>()
+        );
+        eprintln!("──────────────────────────────────────────────────────────────");
+    }
     eprintln!();
 }
 
@@ -322,5 +501,148 @@ mod tests {
             assert!(!is_truthy(Some(v)), "{v}");
         }
         assert!(!is_truthy(None));
+    }
+
+    // ── Per-test breakdown tests ─────────────────────────────────────
+
+    /// `PerTestMap` accumulates requested / recovered / op_count per label.
+    #[test]
+    fn per_test_map_accumulates_per_label() {
+        let map = PerTestMap::default();
+        map.record_requested("alpha", 100_000);
+        map.record_requested("alpha", 200_000);
+        map.record_recovered("alpha", 50_000);
+        map.record_requested("beta", 400_000);
+
+        let entries = map.snapshot_sorted();
+        assert_eq!(entries.len(), 2, "two distinct labels");
+
+        // beta net = 400_000, alpha net = 250_000 → beta sorts first
+        assert_eq!(entries[0].0, "beta");
+        assert_eq!(entries[0].1.requested, 400_000);
+        assert_eq!(entries[0].1.recovered, 0);
+        assert_eq!(entries[0].1.op_count, 1);
+        assert_eq!(entries[0].1.net(), 400_000);
+
+        assert_eq!(entries[1].0, "alpha");
+        assert_eq!(entries[1].1.requested, 300_000);
+        assert_eq!(entries[1].1.recovered, 50_000);
+        assert_eq!(entries[1].1.op_count, 2);
+        assert_eq!(entries[1].1.net(), 250_000);
+    }
+
+    /// Net saturates at zero when recovered > requested.
+    #[test]
+    fn per_test_map_net_saturates_at_zero() {
+        let map = PerTestMap::default();
+        map.record_requested("t", 100);
+        map.record_recovered("t", 500);
+        let entries = map.snapshot_sorted();
+        assert_eq!(entries[0].1.net(), 0, "net must saturate at 0");
+    }
+
+    /// `snapshot_sorted` returns entries in descending NET order.
+    #[test]
+    fn per_test_map_snapshot_sorted_by_net_descending() {
+        let map = PerTestMap::default();
+        // Intentionally insert in ascending order.
+        map.record_requested("cheap", 10_000_000);
+        map.record_requested("medium", 50_000_000);
+        map.record_requested("expensive", 200_000_000);
+
+        let entries = map.snapshot_sorted();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].0, "expensive");
+        assert_eq!(entries[1].0, "medium");
+        assert_eq!(entries[2].0, "cheap");
+    }
+
+    /// `CURRENT_TEST_LABEL` task-local survives across `yield_now` await
+    /// points (confirms the value is task-scoped, not thread-scoped).
+    #[tokio::test]
+    async fn per_test_task_local_survives_yield() {
+        let map = PerTestMap::default();
+
+        // Helper: read the label from task-local scope and record on `map`.
+        let record = |map: &PerTestMap, credits: u64| {
+            let _ = CURRENT_TEST_LABEL.try_with(|opt| {
+                if let Some(label) = opt {
+                    map.record_requested(label, credits);
+                }
+            });
+        };
+
+        CURRENT_TEST_LABEL
+            .scope(Some("gamma".to_string()), async {
+                record(&map, 70_000);
+                // Yield the current tokio task — the label must survive.
+                tokio::task::yield_now().await;
+                record(&map, 30_000);
+            })
+            .await;
+
+        // Calls outside any scope must not produce entries.
+        record(&map, 99_999);
+
+        let entries = map.snapshot_sorted();
+        assert_eq!(entries.len(), 1, "unlabeled calls must not appear");
+        assert_eq!(entries[0].0, "gamma");
+        assert_eq!(entries[0].1.requested, 100_000);
+        assert_eq!(entries[0].1.op_count, 2);
+    }
+
+    /// Two concurrent tasks each carry their own independent label and
+    /// their accounting does not bleed across task boundaries.
+    #[tokio::test]
+    async fn per_test_task_local_isolated_across_tasks() {
+        use std::sync::Arc;
+
+        let map = Arc::new(PerTestMap::default());
+
+        let map_a = Arc::clone(&map);
+        let task_a = tokio::spawn(CURRENT_TEST_LABEL.scope(
+            Some("task_a".to_string()),
+            async move {
+                tokio::task::yield_now().await;
+                let _ = CURRENT_TEST_LABEL.try_with(|opt| {
+                    if let Some(label) = opt {
+                        map_a.record_requested(label, 111_000);
+                    }
+                });
+            },
+        ));
+
+        let map_b = Arc::clone(&map);
+        let task_b = tokio::spawn(CURRENT_TEST_LABEL.scope(
+            Some("task_b".to_string()),
+            async move {
+                tokio::task::yield_now().await;
+                let _ = CURRENT_TEST_LABEL.try_with(|opt| {
+                    if let Some(label) = opt {
+                        map_b.record_requested(label, 222_000);
+                    }
+                });
+            },
+        ));
+
+        task_a.await.expect("task_a");
+        task_b.await.expect("task_b");
+
+        // task_b net > task_a net → task_b sorts first.
+        let entries = map.snapshot_sorted();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].0, "task_b");
+        assert_eq!(entries[0].1.requested, 222_000);
+        assert_eq!(entries[1].0, "task_a");
+        assert_eq!(entries[1].1.requested, 111_000);
+    }
+
+    /// `PerTestCounters::net` uses `CREDITS_PER_DASH` for DASH conversion.
+    #[test]
+    fn credits_per_dash_constant_is_correct() {
+        // 1 DASH = 100B credits
+        assert_eq!(CREDITS_PER_DASH, 100_000_000_000);
+        // Validate round-trip with credits_to_dash
+        assert!((credits_to_dash(CREDITS_PER_DASH) - 1.0).abs() < 1e-9);
     }
 }
