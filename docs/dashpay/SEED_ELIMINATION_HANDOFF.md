@@ -118,17 +118,31 @@ these paths that still derive from the **resident seed** and have no provider se
 yet. Each needs the same treatment send/accept got (route through a signer method
 via a provider closure/seam) BEFORE `attach_wallet_seed` can go:
 
-1. **contactInfo** (`crypto/contact_info.rs` `derive_contact_info_aes_key`) — the
+1. **contactInfo** (`crypto/contact_info.rs` `derive_contact_info_keys`) — the
    resident twin of the signer's `contact_info_seal`/`contact_info_open` (which
-   already exist in `rs-sdk-ffi`, `45f903dc38`). Thread a provider; the seal/open
-   FFI is the Swift side.
-2. **auto-accept proof** (`crypto/auto_accept.rs`) — derives an auto-accept key
-   from the seed; needs a signer method + provider.
+   exist + are parity-tested, `45f903dc38`). **Not cleanly separable:** the
+   derivation is reached through a shared helper `fetch_decrypted_contact_infos`
+   used by BOTH the signer-present publish (`set_contact_info_with_external_signer`)
+   AND the **signerless sweep** (`sync_contact_infos`). The sweep side can't
+   decrypt without a signer → it needs the `ContactInfoDecrypt` deferred op, which
+   re-fetches the owner's docs (**network-blocked here**). So contactInfo can't go
+   fully seedless until the sweep decrypt is deferred over a live network. (The
+   publish-only encrypt could be threaded through a provider, but it shares the
+   helper, so a clean conversion does both at once.)
+2. **auto-accept proof** (`crypto/auto_accept.rs`) — **production-dead:**
+   `generate_auto_accept_proof` / `derive_auto_accept_private_key` have no
+   production caller (the send flow always passes `auto_accept_proof: None`); only
+   their own `#[cfg(test)]` tests exercise the seed. So this is NOT a production
+   seed dependency — when `attach_wallet_seed` goes, only these tests need rework
+   (drop them or derive via a test seed directly).
 3. **`derive_identity_auth_keypair`** (`network/identity_handle.rs`) — returns the
-   raw `ExtendedPrivKey`; used by the identity-discovery scan + the FFI key
-   preview. Delicate: discovery probes many candidate keys. Decide whether
-   discovery runs only with a signer present (import/unlock) — if so it can call
-   the signer directly; if it must run signerless, it needs public-derivation only.
+   raw `ExtendedPrivKey`; used by the identity-discovery scan (`discovery.rs`,
+   **signerless**) + the FFI key preview + registration. This is the **documented
+   deep blocker** — memory `dashpay-imported-identity-zero-candidate-discovery`:
+   imported-wallet discovery materializes ZERO signing keys (all watch-only),
+   an upstream design problem. Seedless discovery is a design question (probe via
+   the signer at import/unlock vs. public-derivation only), not a mechanical
+   conversion — resolve that before deleting the resident derive.
 
 Only after those are seedless does `attach_wallet_seed` have no production caller.
 Then §4.9 deletes: `manager/attach_seed.rs` (+ its tests), the
