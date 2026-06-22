@@ -27,6 +27,7 @@ Keep this current as cores land.
 | `ea6a1ea753` | §4.6 | enqueue persists the `pending_contact_crypto_added` delta (symmetric with the drain's clear-delta) |
 | `97a9a99f22` | §4.6 | drain FFI `platform_wallet_drain_pending_contact_crypto` + `ResolverDrainProvider` glue (iOS-cross-compiled, in the regenerated header) |
 | `79ca6a1c2c` | §4.6 | SQLite storage for the queue: migration + writer + reader + store dispatch + round-trip test |
+| `bfe8390c53` | §4.5 | move `calculate/unmask_account_reference` (+ `extract_ask28` + 5 tests) into `platform-encryption`; `dip14` re-exports — single-sources the HMAC+masking for the Keychain signer |
 
 **Locked design decisions**
 - Raw-secret ops are **inherent methods on `MnemonicResolverCoreSigner`** (in
@@ -64,13 +65,18 @@ Keep this current as cores land.
    ClientStartState::wallets`); the reader is `cfg(test)`-gated until then.
    The app's **FFI/Swift persister twin** (carry the deltas through the FFI
    persister + Swift callback) is env-blocked.
-4. **§4.5 accountReference — HELD (speculative).** Its only Rust callers are the
-   `dip14` tests; the production consumer is the env-blocked send-flow ECDH
-   collapse, so adding the rs-sdk-ffi `ecdh_shared_secret_and_account_reference`
-   / `unmask_account_reference` methods now would be dead code (Rule 2). Build it
-   alongside that wiring. The move itself (DIP-15 `calculate/unmask_account_reference`
-   → `platform-encryption`, re-exported from `dip14`; the `extract_ask28` test
-   moves too) is the prerequisite.
+4. **§4.5 accountReference — move DONE; rs-sdk-ffi methods HELD (speculative).**
+   The prerequisite move landed: DIP-15 `calculate_account_reference` /
+   `unmask_account_reference` (+ private `account_secret_key_28` / `extract_ask28`
+   helpers and all 5 account-reference tests) now live in `platform-encryption`
+   alongside the other DIP-15 ECDH/AES crypto; `dip14` re-exports the two public
+   fns so every existing caller (`crypto::mod` → `identity::mod` → `lib`, plus
+   `contact_requests.rs`) is unchanged. This single-sources the HMAC+masking so
+   the Keychain signer in `rs-sdk-ffi` can reuse it. **Still held:** the rs-sdk-ffi
+   `ecdh_shared_secret_and_account_reference` / `unmask_account_reference` inherent
+   methods — their only production consumer is the env-blocked send-flow ECDH
+   collapse, so adding them now would be dead code (Rule 2). Build them alongside
+   that wiring.
 5. ~~§4.5 contactInfo~~ **DONE** (`45f903dc38`). The drain's `ContactInfoDecrypt`
    op (calls `contact_info_open` via an extended `DrainCryptoProvider` +
    re-fetches owned docs — network-dependent) is the remaining drain piece.

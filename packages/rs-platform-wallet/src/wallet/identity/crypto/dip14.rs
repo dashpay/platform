@@ -26,8 +26,6 @@
 //! - [DIP-14](https://github.com/dashpay/dips/blob/master/dip-0014.md)
 //! - [DIP-15](https://github.com/dashpay/dips/blob/master/dip-0015.md)
 
-use dashcore::hashes::hmac::{Hmac, HmacEngine};
-use dashcore::hashes::{sha256, Hash, HashEngine};
 use dashcore::secp256k1::Secp256k1;
 use dashcore::{Address, Network, PublicKey};
 use dpp::prelude::Identifier;
@@ -186,108 +184,11 @@ pub fn reconstruct_contact_xpub(
 // Account reference (DIP-15)
 // ---------------------------------------------------------------------------
 
-/// The 28-bit account-secret-key mask shared by
-/// [`calculate_account_reference`] / [`unmask_account_reference`].
-///
-/// ```text
-/// ASK   = HMAC-SHA256(sender_secret_key, compact_xpub_69_bytes)
-/// ASK28 = u32_be(ASK[28..32]) >> 4
-/// ```
-///
-/// Two interop-critical conventions, pinned against the reference
-/// clients (our previous helper diverged on both axes):
-///
-/// - **HMAC input is the 69-byte DIP-15 compact form**
-///   (`fingerprint ‖ chain_code ‖ pubkey`), the same plaintext that
-///   goes inside `encryptedPublicKey`. Both DashWallet iOS
-///   (dash-shared-core `keys.rs`) and Android (dashj
-///   `serializeContactPub`) agree on this; our old helper hashed the
-///   107-byte DIP-14 `encode()`.
-/// - **ASK28 byte order matches iOS dash-shared-core.** DIP-15 leaves the
-///   extraction ambiguous ("28 most significant bits of ASK", no byte order),
-///   and FOUR conventions exist in the wild (verified 2026-06 against the live
-///   sources):
-///     - ours / iOS dash-shared-core: `be(ASK[28..32]) >> 4` — iOS reverses the
-///       digest then reads LE first-4, which is *algebraically identical* to
-///       our BE last-4;
-///     - Android (kotlin-platform): `le(ASK[0..4]) >> 4`;
-///     - dash-evo-tool AND the literal DIP reading (the digest as a 256-bit
-///       big-endian integer): `be(ASK[0..4]) >> 4`.
-///   They give different 28-bit values — but DIP-15 defines `accountReference`
-///   as a one-time-pad obfuscation that **recipients MUST ignore**; only the
-///   original sender ever un-masks it (to read the rotation version on
-///   re-send). So every convention round-trips for its own sender and there is
-///   **no on-chain interop failure** to observe and no canonical value to
-///   match. We match iOS (the most-deployed DashPay wallet) so our sent
-///   requests are bit-identical to the incumbent's — note this is *not*
-///   "matching the DIP literal" (that reading equals dash-evo-tool).
-fn account_secret_key_28(sender_secret_key: &[u8; 32], compact_xpub: &[u8]) -> u32 {
-    let mut engine = HmacEngine::<sha256::Hash>::new(sender_secret_key);
-    engine.input(compact_xpub);
-    let ask = Hmac::<sha256::Hash>::from_engine(engine);
-    extract_ask28(&ask.to_byte_array())
-}
-
-/// Extract `ASK28` from the 32-byte HMAC digest using the iOS dash-shared-core
-/// convention: `be(ASK[28..32]) >> 4`. See [`account_secret_key_28`] for the
-/// four-way convention split and why this choice is interop-neutral.
-fn extract_ask28(ask_bytes: &[u8; 32]) -> u32 {
-    u32::from_be_bytes([ask_bytes[28], ask_bytes[29], ask_bytes[30], ask_bytes[31]]) >> 4
-}
-
-/// Calculate the masked `accountReference` per DIP-15.
-///
-/// ```text
-/// result = (version << 28) | (ASK28 ^ (account_index & 0x0FFF_FFFF))
-/// ```
-///
-/// The top 4 bits carry the rotation `version` (bumped each time the
-/// sender re-keys the friendship after an identity-key rotation); the
-/// low 28 bits are the account index masked by a PRF of the contact
-/// xpub so observers can't correlate accounts across requests. The
-/// contract's unique index `($ownerId, toUserId, accountReference)`
-/// means the version bump is what makes a superseding request
-/// broadcastable at all.
-///
-/// # Arguments
-///
-/// * `sender_secret_key` - 32-byte ECDH private key of the sender (the
-///   same key that encrypts the xpub).
-/// * `compact_xpub`      - The 69-byte DIP-15 compact contact xpub
-///   ([`ContactXpubData::compact_xpub`]).
-/// * `account_index`     - Account index used in the derivation path
-///   (only the low 28 bits are representable).
-/// * `version`           - Rotation version (0..=15), placed in the top
-///   4 bits.
-pub fn calculate_account_reference(
-    sender_secret_key: &[u8; 32],
-    compact_xpub: &[u8],
-    account_index: u32,
-    version: u32,
-) -> u32 {
-    let ask28 = account_secret_key_28(sender_secret_key, compact_xpub);
-    let shortened_account_bits = account_index & 0x0FFF_FFFF;
-    let version_bits = version << 28;
-    version_bits | (ask28 ^ shortened_account_bits)
-}
-
-/// Recover `(version, account_index)` from a masked `accountReference`.
-///
-/// Inverse of [`calculate_account_reference`] for the same
-/// `(sender_secret_key, compact_xpub)` pair — only the original sender
-/// can un-mask (the PRF key is their ECDH private key). Used on
-/// re-send to read the previous rotation version so the superseding
-/// request bumps it.
-pub fn unmask_account_reference(
-    account_reference: u32,
-    sender_secret_key: &[u8; 32],
-    compact_xpub: &[u8],
-) -> (u32, u32) {
-    let ask28 = account_secret_key_28(sender_secret_key, compact_xpub);
-    let version = account_reference >> 28;
-    let account_index = (account_reference & 0x0FFF_FFFF) ^ ask28;
-    (version, account_index)
-}
+// The DIP-15 `accountReference` HMAC + masking moved to `platform-encryption`
+// (alongside the other DIP-15 ECDH/AES crypto) so the Keychain signer in
+// `rs-sdk-ffi` can reuse the single source. Re-exported so existing callers and
+// the crypto-module / lib re-exports are unchanged.
+pub use platform_encryption::{calculate_account_reference, unmask_account_reference};
 
 // ---------------------------------------------------------------------------
 // Contact payment address derivation
@@ -450,136 +351,6 @@ mod tests {
             forward.compact.public_key, reverse.compact.public_key,
             "Swapping sender/recipient should produce different keys"
         );
-    }
-
-    /// Deterministic 69-byte compact xpub fixture for the
-    /// account-reference tests (the helper only HMACs the bytes, so a
-    /// synthetic buffer with the right length is sufficient and keeps
-    /// the vectors stable).
-    fn test_compact_xpub() -> [u8; 69] {
-        let mut buf = [0u8; 69];
-        for (i, b) in buf.iter_mut().enumerate() {
-            *b = i as u8;
-        }
-        buf
-    }
-
-    #[test]
-    fn test_account_reference_version_bits() {
-        let secret_key = [1u8; 32];
-        let compact = test_compact_xpub();
-
-        // Version 0
-        let ref_v0 = calculate_account_reference(&secret_key, &compact, 0, 0);
-        assert_eq!(ref_v0 >> 28, 0, "Version 0 → top 4 bits = 0");
-
-        // Version 1
-        let ref_v1 = calculate_account_reference(&secret_key, &compact, 0, 1);
-        assert_eq!(ref_v1 >> 28, 1, "Version 1 → top 4 bits = 1");
-
-        // Version 15 (maximum)
-        let ref_v15 = calculate_account_reference(&secret_key, &compact, 0, 15);
-        assert_eq!(ref_v15 >> 28, 15, "Version 15 → top 4 bits = 15");
-    }
-
-    #[test]
-    fn test_account_reference_deterministic() {
-        let secret_key = [0xABu8; 32];
-        let compact = test_compact_xpub();
-
-        let ref1 = calculate_account_reference(&secret_key, &compact, 0, 0);
-        let ref2 = calculate_account_reference(&secret_key, &compact, 0, 0);
-
-        assert_eq!(
-            ref1, ref2,
-            "Same inputs should produce same account reference"
-        );
-    }
-
-    /// Pin the ASK28 extraction convention: the mask
-    /// must come from HMAC digest bytes `[28..32]` big-endian `>> 4` —
-    /// the iOS dash-shared-core reading — NOT bytes `[0..4]` (our old
-    /// helper) or little-endian (Android). The expectation recomputes
-    /// the HMAC with the same primitive but extracts the window
-    /// explicitly, so any byte-order regression in the helper flips
-    /// this test.
-    #[test]
-    fn account_reference_ask28_uses_digest_tail_big_endian() {
-        let secret_key = [0x42u8; 32];
-        let compact = test_compact_xpub();
-
-        let mut engine = HmacEngine::<sha256::Hash>::new(&secret_key);
-        engine.input(&compact);
-        let digest = Hmac::<sha256::Hash>::from_engine(engine).to_byte_array();
-        let expected_ask28 =
-            u32::from_be_bytes([digest[28], digest[29], digest[30], digest[31]]) >> 4;
-
-        // account_index = 0 → the low 28 bits ARE the mask.
-        let reference = calculate_account_reference(&secret_key, &compact, 0, 0);
-        assert_eq!(
-            reference & 0x0FFF_FFFF,
-            expected_ask28,
-            "ASK28 must be digest bytes [28..32] big-endian >> 4 (iOS dash-shared-core)"
-        );
-
-        // And the head-of-digest reading (the old bug) must NOT match —
-        // guards against an accidental revert.
-        let old_ask28 = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]) >> 4;
-        assert_ne!(
-            reference & 0x0FFF_FFFF,
-            old_ask28,
-            "head-of-digest extraction is the old bug"
-        );
-    }
-
-    /// Mask → unmask round-trips `(version, account_index)` for the
-    /// sender across the representable ranges.
-    #[test]
-    fn account_reference_round_trips_version_and_account() {
-        let secret_key = [0x07u8; 32];
-        let compact = test_compact_xpub();
-
-        for version in [0u32, 1, 7, 15] {
-            for account in [0u32, 1, 5, 0x0FFF_FFFF] {
-                let reference =
-                    calculate_account_reference(&secret_key, &compact, account, version);
-                let (got_version, got_account) =
-                    unmask_account_reference(reference, &secret_key, &compact);
-                assert_eq!(got_version, version, "version round-trip");
-                assert_eq!(got_account, account, "account round-trip");
-            }
-        }
-
-        // A different secret can't recover the account (PRF property —
-        // sanity, not security proof).
-        let reference = calculate_account_reference(&secret_key, &compact, 5, 0);
-        let (_, wrong) = unmask_account_reference(reference, &[0x08u8; 32], &compact);
-        assert_ne!(wrong, 5, "different PRF key must not unmask the account");
-    }
-
-    /// Known-answer test pinning the ASK28 extraction to the iOS
-    /// dash-shared-core convention (`be(ASK[28..32]) >> 4`), and documenting
-    /// the other deployed conventions' values for the same digest so a future
-    /// reader sees exactly how they diverge. `accountReference` is a one-time
-    /// pad recipients ignore, so this is sender-private — but the byte order
-    /// must stay locked to keep our sent requests bit-identical to iOS.
-    #[test]
-    fn ask28_extraction_matches_ios_and_diverges_from_others() {
-        let ask: [u8; 32] = std::array::from_fn(|i| i as u8); // ask[i] = i
-
-        // Ours == iOS dash-shared-core (reversed digest → be[28..32]>>4).
-        assert_eq!(extract_ask28(&ask), 0x01c1_d1e1);
-
-        // The other live conventions, for the record (all differ):
-        let android = u32::from_le_bytes([ask[0], ask[1], ask[2], ask[3]]) >> 4;
-        let dip_literal = u32::from_be_bytes([ask[0], ask[1], ask[2], ask[3]]) >> 4;
-        assert_eq!(android, 0x0030_2010, "kotlin-platform: le(ASK[0..4])>>4");
-        assert_eq!(
-            dip_literal, 0x0000_1020,
-            "dash-evo-tool / DIP literal: be(ASK[0..4])>>4"
-        );
-        assert_ne!(extract_ask28(&ask), android);
-        assert_ne!(extract_ask28(&ask), dip_literal);
     }
 
     #[test]
