@@ -439,11 +439,27 @@ pub fn permissive_owner_token_contract_json(
 /// deploy a permissive owner-only token contract owned by it.
 /// Returns the [`TokenSetup`] guard so the test body can `setup.
 /// setup_guard.teardown()` at the end.
-pub async fn setup_with_token_contract(
+///
+/// Non-async sync wrapper so `#[track_caller]` captures the test
+/// file before the async state machine is created.
+#[track_caller]
+pub fn setup_with_token_contract(
     ctx: &E2eContext,
     owner_funding: dpp::fee::Credits,
-) -> FrameworkResult<TokenSetup> {
-    setup_with_token_contract_with_step_timeout(ctx, owner_funding, TK_SETUP_WAIT_TIMEOUT).await
+) -> impl std::future::Future<Output = FrameworkResult<TokenSetup>> + '_ {
+    let site_label = super::label_from_file(std::panic::Location::caller().file());
+    async move {
+        let existing = super::funding_ledger::CURRENT_TEST_LABEL
+            .try_with(|o| o.clone())
+            .ok()
+            .flatten();
+        let label = existing.or(site_label);
+        super::funding_ledger::maybe_with_test_label(
+            label,
+            setup_with_token_contract_with_step_timeout(ctx, owner_funding, TK_SETUP_WAIT_TIMEOUT),
+        )
+        .await
+    }
 }
 
 /// Per-test override of [`setup_with_token_contract`]'s propagation budget.
@@ -453,32 +469,54 @@ pub async fn setup_with_token_contract(
 /// TK-005 — the only test that funds 35 B credits in a single hop — uses
 /// this entry point with a 120 s budget; the 60 s default remains in force
 /// for every other token-suite caller.
-pub async fn setup_with_token_contract_with_step_timeout(
+///
+/// Non-async sync wrapper so `#[track_caller]` captures the test
+/// file before the async state machine is created.
+#[track_caller]
+pub fn setup_with_token_contract_with_step_timeout(
     ctx: &E2eContext,
     owner_funding: dpp::fee::Credits,
     step_timeout: Duration,
-) -> FrameworkResult<TokenSetup> {
-    let _ = ctx;
-    let setup_guard =
-        super::setup_with_n_identities_with_step_timeout(1, owner_funding, step_timeout).await?;
-    let owner = setup_guard
-        .identities
-        .first()
-        .ok_or_else(|| {
-            FrameworkError::Wallet("setup_with_n_identities returned empty identities vec".into())
-        })?
-        .clone_for_token_setup();
+) -> impl std::future::Future<Output = FrameworkResult<TokenSetup>> + '_ {
+    let site_label = super::label_from_file(std::panic::Location::caller().file());
+    async move {
+        let _ = ctx; // ctx unused; kept for API compat. Captures the reference so lifetime '_ is respected.
+        let existing = super::funding_ledger::CURRENT_TEST_LABEL
+            .try_with(|o| o.clone())
+            .ok()
+            .flatten();
+        let label = existing.or(site_label);
+        super::funding_ledger::maybe_with_test_label(label, async move {
+            let setup_guard =
+                super::setup_with_n_identities_with_step_timeout(1, owner_funding, step_timeout)
+                    .await?;
+            let owner = setup_guard
+                .identities
+                .first()
+                .ok_or_else(|| {
+                    FrameworkError::Wallet(
+                        "setup_with_n_identities returned empty identities vec".into(),
+                    )
+                })?
+                .clone_for_token_setup();
 
-    let json =
-        permissive_owner_token_contract_json(owner.id, DEFAULT_TOKEN_POSITION, DEFAULT_MAX_SUPPLY);
-    let contract_id = register_token_contract_via_sdk(setup_guard.base.ctx, &owner, json).await?;
+            let json = permissive_owner_token_contract_json(
+                owner.id,
+                DEFAULT_TOKEN_POSITION,
+                DEFAULT_MAX_SUPPLY,
+            );
+            let contract_id =
+                register_token_contract_via_sdk(setup_guard.base.ctx, &owner, json).await?;
 
-    Ok(TokenSetup {
-        setup_guard,
-        owner,
-        contract_id,
-        token_position: DEFAULT_TOKEN_POSITION,
-    })
+            Ok(TokenSetup {
+                setup_guard,
+                owner,
+                contract_id,
+                token_position: DEFAULT_TOKEN_POSITION,
+            })
+        })
+        .await
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -490,18 +528,33 @@ pub async fn setup_with_token_contract_with_step_timeout(
 /// peer are funded independently — typically
 /// [`TK_OWNER_FUNDING_SIMPLE`] + [`TK_PEER_FUNDING`] (or
 /// [`TK_PEER_FUNDING_ACTIVE`] when the peer itself signs transitions).
-pub async fn setup_with_token_and_two_identities(
+///
+/// Non-async sync wrapper so `#[track_caller]` captures the test
+/// file before the async state machine is created.
+#[track_caller]
+pub fn setup_with_token_and_two_identities(
     ctx: &E2eContext,
     owner_funding: dpp::fee::Credits,
     peer_funding: dpp::fee::Credits,
-) -> FrameworkResult<TokenTwoIdentitiesSetup> {
-    setup_with_token_and_two_identities_with_step_timeout(
-        ctx,
-        owner_funding,
-        peer_funding,
-        TK_SETUP_WAIT_TIMEOUT,
-    )
-    .await
+) -> impl std::future::Future<Output = FrameworkResult<TokenTwoIdentitiesSetup>> + '_ {
+    let site_label = super::label_from_file(std::panic::Location::caller().file());
+    async move {
+        let existing = super::funding_ledger::CURRENT_TEST_LABEL
+            .try_with(|o| o.clone())
+            .ok()
+            .flatten();
+        let label = existing.or(site_label);
+        super::funding_ledger::maybe_with_test_label(
+            label,
+            setup_with_token_and_two_identities_with_step_timeout(
+                ctx,
+                owner_funding,
+                peer_funding,
+                TK_SETUP_WAIT_TIMEOUT,
+            ),
+        )
+        .await
+    }
 }
 
 /// Per-test override of [`setup_with_token_and_two_identities`]'s
@@ -511,32 +564,53 @@ pub async fn setup_with_token_and_two_identities(
 /// the round-trip cases that fund 35 B+ credits across two identities
 /// concurrently under `--test-threads=14` — the 60 s default is too
 /// tight when sibling guards compete for the bank lane.
-pub async fn setup_with_token_and_two_identities_with_step_timeout(
+///
+/// Non-async sync wrapper so `#[track_caller]` captures the test
+/// file before the async state machine is created.
+#[track_caller]
+pub fn setup_with_token_and_two_identities_with_step_timeout(
     ctx: &E2eContext,
     owner_funding: dpp::fee::Credits,
     peer_funding: dpp::fee::Credits,
     step_timeout: Duration,
-) -> FrameworkResult<TokenTwoIdentitiesSetup> {
-    let _ = ctx;
-    let setup_guard =
-        super::setup_with_per_identity_funding(&[owner_funding, peer_funding], step_timeout)
+) -> impl std::future::Future<Output = FrameworkResult<TokenTwoIdentitiesSetup>> + '_ {
+    let site_label = super::label_from_file(std::panic::Location::caller().file());
+    async move {
+        let _ = ctx; // ctx unused; kept for API compat.
+        let existing = super::funding_ledger::CURRENT_TEST_LABEL
+            .try_with(|o| o.clone())
+            .ok()
+            .flatten();
+        let label = existing.or(site_label);
+        super::funding_ledger::maybe_with_test_label(label, async move {
+            let setup_guard = super::setup_with_per_identity_funding(
+                &[owner_funding, peer_funding],
+                step_timeout,
+            )
             .await?;
-    let owner = setup_guard.identities[0].clone_for_token_setup();
-    let peer = setup_guard.identities[1].clone_for_token_setup();
+            let owner = setup_guard.identities[0].clone_for_token_setup();
+            let peer = setup_guard.identities[1].clone_for_token_setup();
 
-    let json =
-        permissive_owner_token_contract_json(owner.id, DEFAULT_TOKEN_POSITION, DEFAULT_MAX_SUPPLY);
-    let contract_id = register_token_contract_via_sdk(setup_guard.base.ctx, &owner, json).await?;
+            let json = permissive_owner_token_contract_json(
+                owner.id,
+                DEFAULT_TOKEN_POSITION,
+                DEFAULT_MAX_SUPPLY,
+            );
+            let contract_id =
+                register_token_contract_via_sdk(setup_guard.base.ctx, &owner, json).await?;
 
-    Ok(TokenTwoIdentitiesSetup {
-        setup: TokenSetup {
-            setup_guard,
-            owner,
-            contract_id,
-            token_position: DEFAULT_TOKEN_POSITION,
-        },
-        peer,
-    })
+            Ok(TokenTwoIdentitiesSetup {
+                setup: TokenSetup {
+                    setup_guard,
+                    owner,
+                    contract_id,
+                    token_position: DEFAULT_TOKEN_POSITION,
+                },
+                peer,
+            })
+        })
+        .await
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -548,36 +622,55 @@ pub async fn setup_with_token_and_two_identities_with_step_timeout(
 /// independently — TK-014 has both peers sign group-action
 /// transitions, so [`TK_PEER_FUNDING_ACTIVE`] is the typical peer
 /// amount.
-pub async fn setup_with_token_and_three_identities(
+///
+/// Non-async sync wrapper so `#[track_caller]` captures the test
+/// file before the async state machine is created.
+#[track_caller]
+pub fn setup_with_token_and_three_identities(
     ctx: &E2eContext,
     owner_funding: dpp::fee::Credits,
     peer_funding: dpp::fee::Credits,
-) -> FrameworkResult<TokenThreeIdentitiesSetup> {
-    let _ = ctx;
-    let setup_guard = super::setup_with_per_identity_funding(
-        &[owner_funding, peer_funding, peer_funding],
-        TK_SETUP_WAIT_TIMEOUT,
-    )
-    .await?;
-    let owner = setup_guard.identities[0].clone_for_token_setup();
-    let peers = [
-        setup_guard.identities[1].clone_for_token_setup(),
-        setup_guard.identities[2].clone_for_token_setup(),
-    ];
+) -> impl std::future::Future<Output = FrameworkResult<TokenThreeIdentitiesSetup>> + '_ {
+    let site_label = super::label_from_file(std::panic::Location::caller().file());
+    async move {
+        let _ = ctx; // ctx unused; kept for API compat.
+        let existing = super::funding_ledger::CURRENT_TEST_LABEL
+            .try_with(|o| o.clone())
+            .ok()
+            .flatten();
+        let label = existing.or(site_label);
+        super::funding_ledger::maybe_with_test_label(label, async move {
+            let setup_guard = super::setup_with_per_identity_funding(
+                &[owner_funding, peer_funding, peer_funding],
+                TK_SETUP_WAIT_TIMEOUT,
+            )
+            .await?;
+            let owner = setup_guard.identities[0].clone_for_token_setup();
+            let peers = [
+                setup_guard.identities[1].clone_for_token_setup(),
+                setup_guard.identities[2].clone_for_token_setup(),
+            ];
 
-    let json =
-        permissive_owner_token_contract_json(owner.id, DEFAULT_TOKEN_POSITION, DEFAULT_MAX_SUPPLY);
-    let contract_id = register_token_contract_via_sdk(setup_guard.base.ctx, &owner, json).await?;
+            let json = permissive_owner_token_contract_json(
+                owner.id,
+                DEFAULT_TOKEN_POSITION,
+                DEFAULT_MAX_SUPPLY,
+            );
+            let contract_id =
+                register_token_contract_via_sdk(setup_guard.base.ctx, &owner, json).await?;
 
-    Ok(TokenThreeIdentitiesSetup {
-        setup: TokenSetup {
-            setup_guard,
-            owner,
-            contract_id,
-            token_position: DEFAULT_TOKEN_POSITION,
-        },
-        peers,
-    })
+            Ok(TokenThreeIdentitiesSetup {
+                setup: TokenSetup {
+                    setup_guard,
+                    owner,
+                    contract_id,
+                    token_position: DEFAULT_TOKEN_POSITION,
+                },
+                peers,
+            })
+        })
+        .await
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -592,53 +685,79 @@ pub async fn setup_with_token_and_three_identities(
 /// Tests place a past timestamp here so the first claim becomes
 /// eligible immediately, dodging the live-perpetual wall-clock
 /// wait that gates TK-002.
-pub async fn setup_with_token_pre_programmed_distribution(
+///
+/// Non-async sync wrapper so `#[track_caller]` captures the test
+/// file before the async state machine is created.
+#[track_caller]
+pub fn setup_with_token_pre_programmed_distribution(
     ctx: &E2eContext,
     owner_funding: dpp::fee::Credits,
     distribution: PreProgrammedDistribution,
-) -> FrameworkResult<TokenSetup> {
-    let _ = ctx;
-    let setup_guard =
-        super::setup_with_n_identities_with_step_timeout(1, owner_funding, TK_SETUP_WAIT_TIMEOUT)
+) -> impl std::future::Future<Output = FrameworkResult<TokenSetup>> + '_ {
+    let site_label = super::label_from_file(std::panic::Location::caller().file());
+    async move {
+        let _ = ctx; // ctx unused; kept for API compat.
+        let existing = super::funding_ledger::CURRENT_TEST_LABEL
+            .try_with(|o| o.clone())
+            .ok()
+            .flatten();
+        let label = existing.or(site_label);
+        super::funding_ledger::maybe_with_test_label(label, async move {
+            let setup_guard = super::setup_with_n_identities_with_step_timeout(
+                1,
+                owner_funding,
+                TK_SETUP_WAIT_TIMEOUT,
+            )
             .await?;
-    let owner = setup_guard.identities[0].clone_for_token_setup();
+            let owner = setup_guard.identities[0].clone_for_token_setup();
 
-    let mut json =
-        permissive_owner_token_contract_json(owner.id, DEFAULT_TOKEN_POSITION, DEFAULT_MAX_SUPPLY);
-    let token_slot = json
-        .get_mut(DEFAULT_TOKEN_POSITION.to_string())
-        .and_then(|v| v.as_object_mut())
-        .ok_or_else(|| FrameworkError::Sdk("permissive token JSON missing slot 0".into()))?;
-    let distribution_rules = token_slot
-        .get_mut("distributionRules")
-        .and_then(|v| v.as_object_mut())
-        .ok_or_else(|| FrameworkError::Sdk("token slot missing distributionRules".into()))?;
+            let mut json = permissive_owner_token_contract_json(
+                owner.id,
+                DEFAULT_TOKEN_POSITION,
+                DEFAULT_MAX_SUPPLY,
+            );
+            let token_slot = json
+                .get_mut(DEFAULT_TOKEN_POSITION.to_string())
+                .and_then(|v| v.as_object_mut())
+                .ok_or_else(|| {
+                    FrameworkError::Sdk("permissive token JSON missing slot 0".into())
+                })?;
+            let distribution_rules = token_slot
+                .get_mut("distributionRules")
+                .and_then(|v| v.as_object_mut())
+                .ok_or_else(|| {
+                    FrameworkError::Sdk("token slot missing distributionRules".into())
+                })?;
 
-    let mut distributions_json = serde_json::Map::new();
-    for (ts, recipients) in distribution.distributions {
-        let mut by_recipient = serde_json::Map::new();
-        for (id, amount) in recipients {
-            by_recipient.insert(bs58::encode(id.to_buffer()).into_string(), json!(amount));
-        }
-        distributions_json.insert(ts.to_string(), serde_json::Value::Object(by_recipient));
+            let mut distributions_json = serde_json::Map::new();
+            for (ts, recipients) in distribution.distributions {
+                let mut by_recipient = serde_json::Map::new();
+                for (id, amount) in recipients {
+                    by_recipient.insert(bs58::encode(id.to_buffer()).into_string(), json!(amount));
+                }
+                distributions_json.insert(ts.to_string(), serde_json::Value::Object(by_recipient));
+            }
+
+            distribution_rules.insert(
+                "preProgrammedDistribution".into(),
+                json!({
+                    "$formatVersion": "0",
+                    "distributions": distributions_json,
+                }),
+            );
+
+            let contract_id =
+                register_token_contract_via_sdk(setup_guard.base.ctx, &owner, json).await?;
+
+            Ok(TokenSetup {
+                setup_guard,
+                owner,
+                contract_id,
+                token_position: DEFAULT_TOKEN_POSITION,
+            })
+        })
+        .await
     }
-
-    distribution_rules.insert(
-        "preProgrammedDistribution".into(),
-        json!({
-            "$formatVersion": "0",
-            "distributions": distributions_json,
-        }),
-    );
-
-    let contract_id = register_token_contract_via_sdk(setup_guard.base.ctx, &owner, json).await?;
-
-    Ok(TokenSetup {
-        setup_guard,
-        owner,
-        contract_id,
-        token_position: DEFAULT_TOKEN_POSITION,
-    })
 }
 
 // ---------------------------------------------------------------------------
@@ -659,31 +778,50 @@ pub async fn setup_with_token_pre_programmed_distribution(
 /// Only BlockBasedDistribution is wired up; TimeBased / EpochBased
 /// would need their own per-network minimum interval handling and
 /// aren't on the TK-002 path.
-pub async fn setup_with_token_perpetual_distribution(
+///
+/// Non-async sync wrapper so `#[track_caller]` captures the test
+/// file before the async state machine is created.
+#[track_caller]
+pub fn setup_with_token_perpetual_distribution(
     ctx: &E2eContext,
     owner_funding: dpp::fee::Credits,
     distribution: PerpetualDistribution,
-) -> FrameworkResult<TokenSetup> {
-    let _ = ctx;
-    let setup_guard =
-        super::setup_with_n_identities_with_step_timeout(1, owner_funding, TK_SETUP_WAIT_TIMEOUT)
+) -> impl std::future::Future<Output = FrameworkResult<TokenSetup>> + '_ {
+    let site_label = super::label_from_file(std::panic::Location::caller().file());
+    async move {
+        let _ = ctx; // ctx unused; kept for API compat.
+        let existing = super::funding_ledger::CURRENT_TEST_LABEL
+            .try_with(|o| o.clone())
+            .ok()
+            .flatten();
+        let label = existing.or(site_label);
+        super::funding_ledger::maybe_with_test_label(label, async move {
+            let setup_guard = super::setup_with_n_identities_with_step_timeout(
+                1,
+                owner_funding,
+                TK_SETUP_WAIT_TIMEOUT,
+            )
             .await?;
-    let owner = setup_guard.identities[0].clone_for_token_setup();
+            let owner = setup_guard.identities[0].clone_for_token_setup();
 
-    let json = permissive_owner_token_contract_with_perpetual_distribution_json(
-        owner.id,
-        DEFAULT_TOKEN_POSITION,
-        DEFAULT_MAX_SUPPLY,
-        &distribution,
-    );
-    let contract_id = register_token_contract_via_sdk(setup_guard.base.ctx, &owner, json).await?;
+            let json = permissive_owner_token_contract_with_perpetual_distribution_json(
+                owner.id,
+                DEFAULT_TOKEN_POSITION,
+                DEFAULT_MAX_SUPPLY,
+                &distribution,
+            );
+            let contract_id =
+                register_token_contract_via_sdk(setup_guard.base.ctx, &owner, json).await?;
 
-    Ok(TokenSetup {
-        setup_guard,
-        owner,
-        contract_id,
-        token_position: DEFAULT_TOKEN_POSITION,
-    })
+            Ok(TokenSetup {
+                setup_guard,
+                owner,
+                contract_id,
+                token_position: DEFAULT_TOKEN_POSITION,
+            })
+        })
+        .await
+    }
 }
 
 /// Sibling of [`permissive_owner_token_contract_json`] that injects a

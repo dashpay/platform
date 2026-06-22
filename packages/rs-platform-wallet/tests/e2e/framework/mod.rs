@@ -196,6 +196,26 @@ pub enum FrameworkError {
 /// Convenience alias used across the harness.
 pub type FrameworkResult<T> = Result<T, FrameworkError>;
 
+/// Derive a per-test label from a Rust source file path recorded by
+/// [`std::panic::Location`] or the compile-time [`file!`] macro.
+///
+/// Returns `Some(stem)` when the file lives under the `cases/` subtree
+/// (e.g. `"tests/e2e/cases/pa_001_multi_output.rs"` →
+/// `Some("pa_001_multi_output")`). Returns `None` for framework /
+/// harness files (e.g. `"tests/e2e/framework/mod.rs"`) so internal
+/// helper calls don't pollute the per-test table with spurious
+/// framework entries.
+fn label_from_file(file: &str) -> Option<String> {
+    if !file.contains("cases/") {
+        return None;
+    }
+    std::path::Path::new(file)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+}
+
 /// One-shot setup entry point.
 ///
 /// Lazily initialises the process-shared [`E2eContext`] (bank, SDK,
@@ -209,36 +229,61 @@ pub type FrameworkResult<T> = Result<T, FrameworkError>;
 ///
 /// Errors: any failure during context init, wallet creation, or
 /// registry insert is surfaced as [`FrameworkError`].
-pub async fn setup() -> FrameworkResult<SetupGuard> {
-    let ctx = E2eContext::init().await?;
+///
+/// This is a **non-async wrapper** around [`setup_async`] so that
+/// `#[track_caller]` can capture the calling source file before the
+/// async state machine is created (`#[track_caller]` on `async fn` is
+/// a no-op on stable Rust — see issue #110011). The per-test label
+/// derived here is stored on the returned [`SetupGuard`] and used in
+/// [`SetupGuard::teardown`] to attribute sweep recoveries to the test.
+#[track_caller]
+pub fn setup() -> impl std::future::Future<Output = FrameworkResult<SetupGuard>> {
+    // Capture the call site NOW (sync context) so #[track_caller] works.
+    // When called from inside an outer setup_with_* async block, the
+    // file path is the framework file (no "cases/" segment), so
+    // label_from_file() returns None. The async body below handles that
+    // case by reading the task-local set by the outer scope.
+    let site_label = label_from_file(std::panic::Location::caller().file());
+    async move {
+        // Prefer an existing task-local label (set by an outer setup_with_*
+        // that already entered a maybe_with_test_label scope); fall back to
+        // the site label captured at the synchronous call above.
+        let existing = funding_ledger::CURRENT_TEST_LABEL
+            .try_with(|o| o.clone())
+            .ok()
+            .flatten();
+        let label = existing.or(site_label).unwrap_or_default();
 
-    let (seed_bytes, seed_hex) = wallet_factory::fresh_seed();
+        let ctx = E2eContext::init().await?;
 
-    // Build the wallet first so we can derive the id for the
-    // registry entry; on failure there is nothing to persist.
-    let network = ctx.bank().network();
-    let test_wallet = wallet_factory::TestWallet::create(
-        ctx.manager(),
-        seed_bytes,
-        network,
-        std::sync::Arc::clone(ctx.wait_hub()),
-    )
-    .await?;
+        let (seed_bytes, seed_hex) = wallet_factory::fresh_seed();
 
-    // Persist BEFORE handing the wallet to the test body so a panic
-    // mid-test surfaces to the next process startup's sweep.
-    let entry = registry::RegistryEntry {
-        seed_hex,
-        created_at: std::time::SystemTime::now(),
-        status: registry::EntryStatus::Active,
-        note: None,
-    };
-    ctx.registry().insert(test_wallet.id(), entry)?;
+        // Build the wallet first so we can derive the id for the
+        // registry entry; on failure there is nothing to persist.
+        let network = ctx.bank().network();
+        let test_wallet = wallet_factory::TestWallet::create(
+            ctx.manager(),
+            seed_bytes,
+            network,
+            std::sync::Arc::clone(ctx.wait_hub()),
+        )
+        .await?;
 
-    // Constructor wires up the counter increment AFTER struct
-    // assembly so a pre-construction panic doesn't leak a slot —
-    // see [`SetupGuard::new`] / V27-004.
-    Ok(SetupGuard::new(ctx, test_wallet))
+        // Persist BEFORE handing the wallet to the test body so a panic
+        // mid-test surfaces to the next process startup's sweep.
+        let entry = registry::RegistryEntry {
+            seed_hex,
+            created_at: std::time::SystemTime::now(),
+            status: registry::EntryStatus::Active,
+            note: None,
+        };
+        ctx.registry().insert(test_wallet.id(), entry)?;
+
+        // Constructor wires up the counter increment AFTER struct
+        // assembly so a pre-construction panic doesn't leak a slot —
+        // see [`SetupGuard::new`] / V27-004.
+        Ok(SetupGuard::new(ctx, test_wallet, label))
+    }
 }
 
 /// Multi-identity counterpart of [`setup`]. Builds a fresh test
@@ -257,11 +302,27 @@ pub async fn setup() -> FrameworkResult<SetupGuard> {
 /// `30_000_000` per identity is the reference; the bank's
 /// `min_bank_credits` floor must cover `n * funding_per` plus
 /// per-tx fees.
-pub async fn setup_with_n_identities(
+///
+/// Non-async sync wrapper so `#[track_caller]` captures the test
+/// file before the async state machine is created.
+#[track_caller]
+pub fn setup_with_n_identities(
     n: u32,
     funding_per: dpp::fee::Credits,
-) -> FrameworkResult<MultiIdentitySetupGuard> {
-    setup_with_n_identities_with_step_timeout(n, funding_per, DEFAULT_SETUP_STEP_TIMEOUT).await
+) -> impl std::future::Future<Output = FrameworkResult<MultiIdentitySetupGuard>> {
+    let site_label = label_from_file(std::panic::Location::caller().file());
+    async move {
+        let existing = funding_ledger::CURRENT_TEST_LABEL
+            .try_with(|o| o.clone())
+            .ok()
+            .flatten();
+        let label = existing.or(site_label);
+        funding_ledger::maybe_with_test_label(
+            label,
+            setup_with_n_identities_with_step_timeout(n, funding_per, DEFAULT_SETUP_STEP_TIMEOUT),
+        )
+        .await
+    }
 }
 
 /// Default per-step propagation budget used by [`setup_with_n_identities`]
@@ -301,8 +362,37 @@ pub async fn setup_with_n_identities_with_step_timeout(
 /// contract owner separately from the peer(s) — the owner pays the
 /// 20.2 B / 30.2 B contract-create floor while peers only need
 /// transition-fee headroom. (#348)
-pub async fn setup_with_per_identity_funding(
+///
+/// Non-async sync wrapper so `#[track_caller]` captures the test
+/// file before the async state machine is created. Clones the slice
+/// into a `Vec` to avoid lifetime constraints on the returned future.
+#[track_caller]
+pub fn setup_with_per_identity_funding(
     funding_per_identity: &[dpp::fee::Credits],
+    step_timeout: std::time::Duration,
+) -> impl std::future::Future<Output = FrameworkResult<MultiIdentitySetupGuard>> {
+    let site_label = label_from_file(std::panic::Location::caller().file());
+    // Clone into owned Vec so the returned future is 'static (no lifetime
+    // tied to the caller's stack). The slice is typically 1–3 elements.
+    let funding_owned = funding_per_identity.to_vec();
+    async move {
+        // Inherit an outer scope's label (e.g. from setup_with_n_identities);
+        // fall back to the site label captured synchronously above.
+        let existing = funding_ledger::CURRENT_TEST_LABEL
+            .try_with(|o| o.clone())
+            .ok()
+            .flatten();
+        let label = existing.or(site_label);
+        funding_ledger::maybe_with_test_label(
+            label,
+            setup_with_per_identity_funding_inner(funding_owned, step_timeout),
+        )
+        .await
+    }
+}
+
+async fn setup_with_per_identity_funding_inner(
+    funding_per_identity: Vec<dpp::fee::Credits>,
     step_timeout: std::time::Duration,
 ) -> FrameworkResult<MultiIdentitySetupGuard> {
     use super::framework::wait::{
@@ -443,43 +533,60 @@ pub async fn setup_with_per_identity_funding(
 /// - [`FrameworkError::Cleanup`] (via [`wait::wait_for_core_balance`])
 ///   when the SPV bloom filter doesn't observe the inbound UTXO
 ///   within [`CORE_FUNDING_TIMEOUT`].
-pub async fn setup_with_core_funded_test_wallet(duffs: u64) -> FrameworkResult<SetupGuard> {
-    use std::time::Duration;
+/// Non-async sync wrapper so `#[track_caller]` captures the test
+/// file before the async state machine is created.
+#[track_caller]
+pub fn setup_with_core_funded_test_wallet(
+    duffs: u64,
+) -> impl std::future::Future<Output = FrameworkResult<SetupGuard>> {
+    let site_label = label_from_file(std::panic::Location::caller().file());
+    async move {
+        use super::framework::wait::wait_for_core_balance;
 
-    use super::framework::wait::wait_for_core_balance;
+        let existing = funding_ledger::CURRENT_TEST_LABEL
+            .try_with(|o| o.clone())
+            .ok()
+            .flatten();
+        let label = existing.or(site_label);
 
-    let base = setup().await?;
+        // setup() is also a sync wrapper: when called here (from inside an
+        // async block in a framework file), its #[track_caller] captures
+        // framework/mod.rs (not a cases/ file), so site_label will be None.
+        // The maybe_with_test_label scope below sets CURRENT_TEST_LABEL so
+        // setup()'s async body reads the label from try_with() instead.
+        let base = funding_ledger::maybe_with_test_label(label, setup()).await?;
 
-    let core_recv = base
-        .test_wallet
-        .platform_wallet()
-        .core()
-        .next_receive_address_for_account(0)
-        .await
-        .map_err(|err| {
-            FrameworkError::Wallet(format!(
-                "setup_with_core_funded_test_wallet: derive test-wallet Core receive \
-                 address (account=0): {err}"
-            ))
-        })?;
+        let core_recv = base
+            .test_wallet
+            .platform_wallet()
+            .core()
+            .next_receive_address_for_account(0)
+            .await
+            .map_err(|err| {
+                FrameworkError::Wallet(format!(
+                    "setup_with_core_funded_test_wallet: derive test-wallet Core receive \
+                     address (account=0): {err}"
+                ))
+            })?;
 
-    let txid = base.ctx.bank().send_core_to(&core_recv, duffs).await?;
-    tracing::info!(
-        target: "platform_wallet::e2e::setup",
-        %txid,
-        target_addr = %core_recv,
-        duffs,
-        "setup_with_core_funded_test_wallet: bank.send_core_to broadcast"
-    );
+        let txid = base.ctx.bank().send_core_to(&core_recv, duffs).await?;
+        tracing::info!(
+            target: "platform_wallet::e2e::setup",
+            %txid,
+            target_addr = %core_recv,
+            duffs,
+            "setup_with_core_funded_test_wallet: bank.send_core_to broadcast"
+        );
 
-    // Wait for the SPV bloom filter to observe the inbound UTXO and
-    // raise the test wallet's confirmed Core balance to at least
-    // `duffs`. The bank's send is non-blocking — `send_core_to` does
-    // NOT wait for instant-lock — so `wait_for_core_balance` is what
-    // gives the caller a positive-arrival signal.
-    wait_for_core_balance(&base.test_wallet, duffs, CORE_FUNDING_TIMEOUT).await?;
+        // Wait for the SPV bloom filter to observe the inbound UTXO and
+        // raise the test wallet's confirmed Core balance to at least
+        // `duffs`. The bank's send is non-blocking — `send_core_to` does
+        // NOT wait for instant-lock — so `wait_for_core_balance` is what
+        // gives the caller a positive-arrival signal.
+        wait_for_core_balance(&base.test_wallet, duffs, CORE_FUNDING_TIMEOUT).await?;
 
-    Ok(base)
+        Ok(base)
+    }
 }
 
 /// Default deadline for the test wallet's confirmed Core balance to

@@ -815,21 +815,35 @@ pub struct SetupGuard {
     /// [`Drop`] skips the per-test sweep (the explicit call already
     /// did it). The end-of-suite counter decrement still fires.
     pub(crate) teardown_called: bool,
+    /// Test label derived from the call site's source file at setup
+    /// time (e.g. `"pa_008_concurrent_funding"`). Stored so that
+    /// [`SetupGuard::teardown`] and the [`Drop`] sweep can attribute
+    /// platform-credit recoveries to the originating test in the
+    /// [`super::funding_ledger`] per-test table. Empty string when
+    /// no label could be derived (framework-internal call).
+    pub(crate) label: String,
 }
 
 impl SetupGuard {
     /// Construct a freshly-set-up guard and atomically register it
     /// with [`E2eContext::active_guards`].
     ///
+    /// `label` is the per-test attribution label derived from the
+    /// calling test's source file; pass an empty string when no label
+    /// is available. It is stored for use in [`Self::teardown`] and
+    /// the [`Drop`] sweep so recoveries are attributed to the correct
+    /// test in the [`super::funding_ledger`] per-test table.
+    ///
     /// Increment fires AFTER the struct is fully constructed so a
     /// panic earlier in `setup` (registry insert, wallet build,
     /// etc.) doesn't leak a counter slot — symmetric with the
     /// unconditional decrement in [`Drop`]. (V27-004)
-    pub(crate) fn new(ctx: &'static E2eContext, test_wallet: TestWallet) -> Self {
+    pub(crate) fn new(ctx: &'static E2eContext, test_wallet: TestWallet, label: String) -> Self {
         let guard = Self {
             ctx,
             test_wallet,
             teardown_called: false,
+            label,
         };
         ctx.active_guards
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
@@ -842,13 +856,22 @@ impl SetupGuard {
     /// Best-effort: a transient sync / transfer failure retains the
     /// registry entry, so the next process startup retries via
     /// [`super::cleanup::sweep_orphans`].
+    ///
+    /// The sweep runs inside a [`super::funding_ledger::CURRENT_TEST_LABEL`]
+    /// scope keyed to this guard's label so that recovered credits
+    /// are attributed to the originating test in the per-test funding
+    /// table.
     pub async fn teardown(mut self) -> FrameworkResult<super::cleanup::SweepReport> {
-        let result = super::cleanup::teardown_one(
-            self.ctx.manager(),
-            self.ctx.bank(),
-            self.ctx.bank_identity(),
-            self.ctx.registry(),
-            &self.test_wallet,
+        let label = self.label.clone();
+        let result = super::funding_ledger::maybe_with_test_label(
+            Some(label).filter(|l| !l.is_empty()),
+            super::cleanup::teardown_one(
+                self.ctx.manager(),
+                self.ctx.bank(),
+                self.ctx.bank_identity(),
+                self.ctx.registry(),
+                &self.test_wallet,
+            ),
         )
         .await;
         if result.is_ok() {
@@ -921,8 +944,9 @@ impl Drop for SetupGuard {
             let ctx: &'static E2eContext = self.ctx;
             let test_wallet_ptr: *const TestWallet = &self.test_wallet;
             let test_wallet_addr = test_wallet_ptr as usize;
+            let label = self.label.clone();
             let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                drop_sweep_one(ctx, test_wallet_addr)
+                drop_sweep_one(ctx, test_wallet_addr, label)
             }));
             match unwind {
                 Ok(Ok(())) => tracing::debug!(
@@ -1059,7 +1083,11 @@ fn wallet_err(err: PlatformWalletError) -> FrameworkError {
 /// `std::thread::spawn` `Send + 'static` boundary. Dereferenced
 /// exactly once on the worker thread; the dropping thread is blocked
 /// in `join()` for the duration so the wallet cannot move.
-fn drop_sweep_one(ctx: &'static E2eContext, test_wallet_addr: usize) -> FrameworkResult<()> {
+fn drop_sweep_one(
+    ctx: &'static E2eContext,
+    test_wallet_addr: usize,
+    label: String,
+) -> FrameworkResult<()> {
     let join = std::thread::spawn(move || -> FrameworkResult<()> {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -1072,7 +1100,7 @@ fn drop_sweep_one(ctx: &'static E2eContext, test_wallet_addr: usize) -> Framewor
             // dropping `SetupGuard` on that thread's stack) is alive
             // and stationary throughout.
             let test_wallet: &TestWallet = unsafe { &*(test_wallet_addr as *const TestWallet) };
-            match tokio::time::timeout(
+            let sweep = tokio::time::timeout(
                 DROP_SWEEP_TIMEOUT,
                 super::cleanup::teardown_one(
                     ctx.manager(),
@@ -1081,9 +1109,12 @@ fn drop_sweep_one(ctx: &'static E2eContext, test_wallet_addr: usize) -> Framewor
                     ctx.registry(),
                     test_wallet,
                 ),
-            )
-            .await
-            {
+            );
+            // Attribute the sweep recovery to the originating test so
+            // the per-test funding table captures both sides
+            // (requested on setup, recovered on teardown/drop).
+            let label_opt = Some(label).filter(|l| !l.is_empty());
+            match super::funding_ledger::maybe_with_test_label(label_opt, sweep).await {
                 Ok(result) => result.map(|_| ()),
                 Err(_) => Err(FrameworkError::Cleanup(format!(
                     "drop sweep timed out after {:?}; registry entry retained \

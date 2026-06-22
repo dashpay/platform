@@ -59,6 +59,36 @@ pub fn with_test_label<F: std::future::Future>(
     CURRENT_TEST_LABEL.scope(Some(label.into()), f)
 }
 
+/// Like [`with_test_label`] but only enters a scope when `label` is
+/// `Some` and non-empty; otherwise runs `f` directly in the current
+/// scope, **preserving** any outer [`CURRENT_TEST_LABEL`] value.
+///
+/// This is the preferred entry point inside the e2e setup helpers because
+/// it avoids creating a `None`/blank scope that would shadow an enclosing
+/// `Some` label.  The setup helpers use the "inherit-or-derive" pattern:
+///
+/// ```text
+/// let existing = CURRENT_TEST_LABEL.try_with(|o| o.clone()).ok().flatten();
+/// let label    = existing.or_else(|| label_from_file(location.file()));
+/// maybe_with_test_label(label, async_body).await
+/// ```
+///
+/// When called from inside an already-labeled scope (outer
+/// `setup_with_*` already set the label), `existing` is `Some` and
+/// `label` carries the outer label — the inner helper re-enters the same
+/// scope, which is harmless. When called from a test file directly,
+/// `existing` is `None` and the derived file-stem label is used.
+pub async fn maybe_with_test_label<F: std::future::Future>(
+    label: Option<String>,
+    f: F,
+) -> F::Output {
+    if let Some(l) = label.filter(|l| !l.is_empty()) {
+        CURRENT_TEST_LABEL.scope(Some(l), f).await
+    } else {
+        f.await
+    }
+}
+
 // ── Per-test counters ────────────────────────────────────────────────
 
 /// Platform-credit metrics for one test run. Values are plain `u64`
@@ -644,5 +674,89 @@ mod tests {
         assert_eq!(CREDITS_PER_DASH, 100_000_000_000);
         // Validate round-trip with credits_to_dash
         assert!((credits_to_dash(CREDITS_PER_DASH) - 1.0).abs() < 1e-9);
+    }
+
+    // ── maybe_with_test_label wiring tests ──────────────────────────
+
+    /// `maybe_with_test_label` with a real label attributes both
+    /// setup-side (fund_address) and teardown-side (sweep) credits to
+    /// the same per-test entry — verifying the wiring end-to-end without
+    /// a live DAPI connection.
+    #[tokio::test]
+    async fn maybe_with_test_label_attributes_setup_and_teardown() {
+        use std::sync::Arc;
+        let map = Arc::new(PerTestMap::default());
+
+        // Setup side: fund_address → record_platform_requested reads label
+        let m = Arc::clone(&map);
+        maybe_with_test_label(Some("wired_test".into()), async move {
+            let _ = CURRENT_TEST_LABEL.try_with(|opt| {
+                if let Some(label) = opt {
+                    m.record_requested(label, 300_000_000);
+                }
+            });
+            tokio::task::yield_now().await;
+            let _ = CURRENT_TEST_LABEL.try_with(|opt| {
+                if let Some(label) = opt {
+                    m.record_requested(label, 200_000_000);
+                }
+            });
+        })
+        .await;
+
+        // Teardown side: SetupGuard::teardown() enters same label for sweep
+        let m = Arc::clone(&map);
+        maybe_with_test_label(Some("wired_test".into()), async move {
+            let _ = CURRENT_TEST_LABEL.try_with(|opt| {
+                if let Some(label) = opt {
+                    m.record_recovered(label, 450_000_000);
+                }
+            });
+        })
+        .await;
+
+        let entries = map.snapshot_sorted();
+        assert_eq!(entries.len(), 1, "exactly one entry: 'wired_test'");
+        let (name, c) = &entries[0];
+        assert_eq!(name, "wired_test");
+        assert_eq!(c.requested, 500_000_000, "300M + 200M setup funding");
+        assert_eq!(c.recovered, 450_000_000, "teardown sweep");
+        assert_eq!(c.net(), 50_000_000, "net = 500M − 450M");
+        assert_eq!(c.op_count, 2, "two fund_address ops");
+    }
+
+    /// `maybe_with_test_label(None, f)` runs `f` in the existing scope,
+    /// preserving the outer label — the inner helper must NOT shadow an
+    /// enclosing `Some` with a blank / `None` scope.
+    #[tokio::test]
+    async fn maybe_with_test_label_none_preserves_outer_scope() {
+        use std::sync::Arc;
+        let map = Arc::new(PerTestMap::default());
+
+        // Outer scope has a real label (set by e.g. setup_with_n_identities).
+        let m = Arc::clone(&map);
+        maybe_with_test_label(Some("outer_label".into()), async move {
+            // Inner call with None label (setup_with_per_identity_funding when
+            // caller is a framework file and no outer scope — here we simulate
+            // the framework-file case by passing None explicitly).
+            maybe_with_test_label(None, async move {
+                // fund_address path must still see "outer_label".
+                let _ = CURRENT_TEST_LABEL.try_with(|opt| {
+                    if let Some(label) = opt {
+                        m.record_requested(label, 100_000_000);
+                    }
+                });
+            })
+            .await;
+        })
+        .await;
+
+        let entries = map.snapshot_sorted();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].0, "outer_label",
+            "outer label must survive a None inner call"
+        );
+        assert_eq!(entries[0].1.requested, 100_000_000);
     }
 }
