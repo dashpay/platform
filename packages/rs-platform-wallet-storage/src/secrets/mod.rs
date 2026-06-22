@@ -28,10 +28,6 @@ mod file;
 mod keyring;
 mod secret;
 mod store;
-/// In-memory backend test fixtures (writable `CredentialStoreApi` mock).
-/// Compiled only under `cfg(test)` or the `__test-helpers` feature.
-#[cfg(any(test, feature = "__test-helpers"))]
-pub mod testing;
 mod validate;
 
 pub use envelope::MAX_PLAINTEXT_LEN;

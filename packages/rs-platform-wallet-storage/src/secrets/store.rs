@@ -499,12 +499,15 @@ mod tests {
     // re-seals the chosen blob under the resident vault key via `put_bytes`
     // (a cold/backup-swap actor could only corrupt → DoS, so the strip
     // requires the vault key — §8.3 arm asymmetry); on Os it overwrites the
-    // mock keychain item directly (the bare envelope, no second AEAD — where
-    // the L-1 residual bites hardest, GAP-005 / §8.3).
+    // keychain item directly (the bare envelope, no second AEAD — where the
+    // L-1 residual bites hardest, §8.3). GAP-005's writable Os fixture is
+    // the upstream `keyring_core::mock::Store` (a raw SPI `set_secret`
+    // bypasses the envelope), so no bespoke mock is needed.
+
+    use keyring_core::mock;
 
     use crate::secrets::file::crypto::{KdfParams, ARGON2_MIN_M_KIB, ARGON2_MIN_T, ARGON2_P};
     use crate::secrets::file::format::KDF_ID_ARGON2ID;
-    use crate::secrets::testing::InMemoryCredentialStore;
 
     /// Argon2id floor params — fast enough for the keystone tests.
     fn floor() -> KdfParams {
@@ -535,19 +538,28 @@ mod tests {
     struct Backend {
         store: SecretStore,
         _dir: Option<tempfile::TempDir>,
-        mock: Option<InMemoryCredentialStore>,
+        mock: Option<Arc<mock::Store>>,
         name: &'static str,
     }
 
     impl Backend {
         /// Write `blob` to `(w, label)` as opaque backend bytes (the
-        /// attacker's primitive / the protected-enrol setup).
+        /// attacker's primitive / the protected-enrol setup). On Os this is
+        /// a raw SPI `set_secret` on the shared mock store, bypassing the
+        /// `SecretStore` envelope layer exactly as a breached keychain write
+        /// would.
         fn place_raw(&self, w: &WalletId, label: &str, blob: &[u8]) {
             match (&self.store, &self.mock) {
                 (SecretStore::File(fs), _) => fs
                     .put_bytes(w, label, &SecretBytes::from_slice(blob))
                     .unwrap(),
-                (SecretStore::Os(_), Some(mock)) => mock.raw_overwrite(w, label, blob),
+                (SecretStore::Os(_), Some(mock)) => {
+                    let service = format!("{SERVICE_PREFIX}{}", w.to_hex());
+                    mock.build(&service, label, None)
+                        .unwrap()
+                        .set_secret(blob)
+                        .unwrap();
+                }
                 _ => unreachable!("os backend must carry its mock"),
             }
         }
@@ -565,8 +577,11 @@ mod tests {
     }
 
     fn os_backend() -> Backend {
-        let mock = InMemoryCredentialStore::new();
-        let store = SecretStore::Os(mock.as_dyn());
+        // GAP-005: the upstream in-memory mock store. The clone handed to
+        // `SecretStore::Os` and the handle kept for raw attacker writes
+        // share the same backing credentials by `Arc`.
+        let mock = mock::Store::new().unwrap();
+        let store = SecretStore::Os(mock.clone());
         Backend {
             store,
             _dir: None,
@@ -651,8 +666,9 @@ mod tests {
             b.name
         );
 
-        // magic-less legacy raw + None → bytes (adopted §4.1 contingency;
-        // deviates from v4 TS-L1-001's Corruption row). + Some → fail closed.
+        // magic-less legacy raw + None → bytes: v5 §4.1 (legacy-tolerant)
+        // supersedes v4 TS-L1-001's Corruption row. + Some → fail closed,
+        // so L-1 is preserved.
         b.place_raw(&w, "legacy", b"raw-legacy-seed-no-magic");
         assert_eq!(
             b.store

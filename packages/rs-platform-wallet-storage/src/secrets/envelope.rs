@@ -596,11 +596,11 @@ mod tests {
         }
     }
 
-    /// TS-ENV-008 (SEC-F006 / GAP-006, v5 cap): the plaintext cap is
-    /// `MAX_SECRET_LEN − MAX_ENVELOPE_OVERHEAD` (NOT `MAX_SECRET_LEN` as
-    /// the v4 spec literally read), uniform across schemes, so the
-    /// enveloped bytes always fit the backend vault cap. Accept at the cap,
-    /// reject at cap+1 with `max = MAX_PLAINTEXT_LEN`.
+    /// TS-ENV-008 — **v5 §4.6 supersedes the v4 test-spec.** The plaintext
+    /// cap is `MAX_SECRET_LEN − MAX_ENVELOPE_OVERHEAD` (NOT `MAX_SECRET_LEN`
+    /// as TS-ENV-008 literally read); v5 §4.6 / SEC-F006 / GAP-006 fix the
+    /// off-by-overhead so the enveloped bytes always fit the backend cap.
+    /// Accept at the cap, reject at cap+1 with `max = MAX_PLAINTEXT_LEN`.
     #[test]
     fn plaintext_size_cap_at_envelope_boundary() {
         let at_cap = vec![0x5Au8; MAX_PLAINTEXT_LEN];
@@ -626,11 +626,12 @@ mod tests {
         assert!(enveloped.len() <= MAX_SECRET_LEN);
     }
 
-    /// TS-ENV-010 (adopted §4.1 legacy-tolerant contingency): magic/version
-    /// discrimination. A magic-less blob is a legacy raw value — returned
-    /// on `None`, refused fail-closed on `Some(pw)`. A magic-present blob
-    /// with an unknown version fails closed both ways; truncated-after-magic
-    /// is corruption.
+    /// TS-ENV-010 — **v5 §4.1 (legacy-tolerant contingency) supersedes the
+    /// v4 test-spec.** magic/version discrimination: a magic-less blob is a
+    /// legacy raw value — returned on `None` (TS-ENV-010(a) read `Corruption`;
+    /// v5 §4.1 makes it bytes+warn), refused fail-closed on `Some(pw)` (so
+    /// L-1 is preserved). A magic-present blob with an unknown version fails
+    /// closed both ways; truncated-after-magic is corruption.
     #[test]
     fn magic_and_version_discrimination() {
         let p = pw("pw");
