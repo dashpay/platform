@@ -122,10 +122,41 @@ deltas through the FFI persister + the Swift persister callback (the SQLite
 path landed in `79ca6a1c2c`; the FFI persister twin is Rust-doable, the Swift
 callback is below).
 
+### Ordering: why C3 / §4.9 / sweep-conversion can't land before the Swift wiring
+
+Grounded in the actual sweep code (`build_contact_accounts`):
+- The `BuildReadiness::Ready` (resident `has_seed`) branch is a **deliberate
+  migration fast-path**: a wallet that still holds a resident seed registers
+  contacts immediately during the background sweep; a seedless wallet enqueues
+  for the drain. Deleting this branch makes the sweep *always* defer to the
+  drain — which needs a Keychain signer. A migration wallet that has a seed but
+  no wired signer-drain would then **never** register contacts → regression.
+- The platform-wallet test helpers (`make_wallet` etc. in `payments.rs`) call
+  `attach_wallet_seed` to set up resident-seed wallets. Deleting `attach_wallet_seed`
+  breaks every test that exercises a resident path; they'd first need a **real
+  seedless test `ContactCryptoProvider`** (derive from a test seed via `key_wallet`,
+  which platform-wallet already depends on — the existing `CannedProvider`/
+  `UnusedProvider` only return stubs).
+- The spec's own ordering: delete `attach_wallet_seed` "only after the sweep is
+  seedless-safe AND the drain replaces the Keychain-unlock re-attach" — and that
+  re-attach→drain swap is in `.swift` (env-blocked).
+
+So the correct sequence is: **Swift signer wiring (drain-on-unlock) FIRST**, then
+the wholesale end-state change (seedless test harness → sweep always-enqueue →
+C3 delete resident `register_external` branch + `derive_encryption_private_key`
+→ §4.9 delete `attach_wallet_seed`). Doing the Rust deletions before the Swift
+wiring leaves a Rust-green-but-app-broken intermediate and risks regressing the
+recurring sync (this branch's whole purpose).
+
 ## Remaining — environment-blocked (Swift + on-device)
 
 Need Xcode + iOS simulator runtime (absent here). After the Rust/FFI lands,
-regenerate the cbindgen header (`build_ios.sh`) and update the `.swift` callers.
+regenerate the cbindgen header (`build_ios.sh` — the header lives inside the
+xcframework build artifact, so it can't be hand-regenerated meaningfully without
+the cross-compile + packaging) and update the `.swift` callers. The two contact
+FFI now take an extra `core_signer_handle` the Swift side already holds (the same
+handle it passes to the drain); Swift passes it and, on Keychain unlock, calls
+`platform_wallet_drain_pending_contact_crypto` instead of the deleted re-attach.
 - **Drain FFI — Rust side DONE** (`97a9a99f22`, iOS-cross-compiled + in header).
   **Remaining (Swift):** call `platform_wallet_drain_pending_contact_crypto(wallet,
   core_signer)` from the Keychain-unlock path that previously called
