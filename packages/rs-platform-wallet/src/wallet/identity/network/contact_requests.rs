@@ -1475,6 +1475,59 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         }
                     };
 
+                    // Validate key indices (purpose + type) BEFORE ECDH — the
+                    // same gate the resident sweep path applies, so the deferred
+                    // path enforces the identical contract. A purpose-only
+                    // mismatch (e.g. a legacy doc referencing an AUTH key) is left
+                    // queued for a future acceptance-policy change; a hard failure
+                    // (key type / missing / disabled) marks the channel broken and
+                    // clears the entry.
+                    let our_identity = {
+                        let wm = self.wallet_manager.read().await;
+                        wm.get_wallet_info(&self.wallet_id)
+                            .and_then(|info| {
+                                info.identity_manager
+                                    .managed_identity(&entry.owner_identity_id)
+                            })
+                            .map(|m| m.identity.clone())
+                    };
+                    let Some(our_identity) = our_identity else {
+                        tracing::warn!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            "drain: our identity vanished mid-drain; leaving queued"
+                        );
+                        continue;
+                    };
+                    let validation =
+                        crate::wallet::identity::crypto::validation::validate_contact_request(
+                            &contact_identity,
+                            *contact_encryption_key_index,
+                            &our_identity,
+                            *our_decryption_key_index,
+                        );
+                    if !validation.is_valid {
+                        if validation.is_purpose_only() {
+                            tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                errors = ?validation.errors,
+                                "drain: contact request key-purpose mismatch; leaving queued (not marking broken)"
+                            );
+                            continue;
+                        }
+                        tracing::warn!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            errors = ?validation.errors,
+                            "drain: contact request failed key-index validation; marking channel broken"
+                        );
+                        self.mark_contact_channel_broken(
+                            &entry.owner_identity_id,
+                            &entry.contact_id,
+                        )
+                        .await;
+                        cleared.push(entry.key());
+                        continue;
+                    }
+
                     // The contact's encryption pubkey (peer). A malformed/missing
                     // key is a permanent fault — re-deriving won't help.
                     let peer = match contact_identity
