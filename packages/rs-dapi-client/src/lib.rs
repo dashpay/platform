@@ -87,31 +87,6 @@ pub trait CanRetry {
     /// Returns true if the operation can be retried safely.
     fn can_retry(&self) -> bool;
 
-    /// Returns `true` when the error represents a **transient, client-fixable condition**
-    /// that does NOT indicate a node health problem — i.e. the node should receive a
-    /// short flat cooldown (see [`crate::AddressList::rate_limit_cooldown`]) rather than
-    /// the aggressive `60 s × exp(ban_count)` exponential ban reserved for genuinely
-    /// unhealthy nodes.
-    ///
-    /// ## Covered gRPC codes
-    ///
-    /// | Code | Reason for soft treatment |
-    /// |---|---|
-    /// | `ResourceExhausted` | Per-node rate limit (HTTP 429 / Envoy). The node is healthy — it asks for a pause. Banning it shifts load to remaining nodes → cascade. |
-    /// | `DeadlineExceeded` | Client-side 10 s timeout. A slow node under load ≠ a dead node. Hard-banning compounds load on remaining nodes. |
-    /// | `Aborted` | MVCC transaction conflict. State-machine level, not node-specific; another node wouldn't resolve it faster. |
-    /// | `Cancelled` | Request was cancelled by the client. No node fault. |
-    ///
-    /// Genuine server-side failures (`Unavailable`, `Internal`, `DataLoss`, `Unimplemented`
-    /// in rollout context, SDK-level `StaleNode` / `Proof`) return `false` and are still
-    /// subject to the full exponential ban so those nodes are correctly routed around.
-    ///
-    /// Default implementation returns `false`; types wrapping `tonic::Status`
-    /// override this for the four codes listed above.
-    fn is_transient_error(&self) -> bool {
-        false
-    }
-
     /// Returns true if this error represents a "no available addresses" condition.
     ///
     /// When all addresses have been banned due to errors, the client returns this error.

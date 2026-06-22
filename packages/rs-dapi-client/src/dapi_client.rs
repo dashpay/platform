@@ -61,13 +61,6 @@ impl CanRetry for DapiClientError {
         }
     }
 
-    fn is_transient_error(&self) -> bool {
-        match self {
-            DapiClientError::Transport(te) => te.is_transient_error(),
-            _ => false,
-        }
-    }
-
     fn is_no_available_addresses(&self) -> bool {
         matches!(
             self,
@@ -194,31 +187,7 @@ pub fn update_address_ban_status<R, E>(
             if error.can_retry() {
                 if let Some(address) = error.address.as_ref() {
                     if applied_settings.ban_failed_address {
-                        if error.is_transient_error() {
-                            // Transient, client-fixable error (ResourceExhausted, DeadlineExceeded,
-                            // Aborted, Cancelled) — the node is NOT unhealthy, it was rate-limited,
-                            // slow under load, or hit an MVCC conflict. Apply a short flat cooldown
-                            // without incrementing ban_count so the exponential escalation ladder is
-                            // not triggered. The node re-enters the live pool automatically after 5 s,
-                            // preserving aggregate pool capacity and preventing the ban-cascade that
-                            // collapses into NoAvailableAddressesToRetry.
-                            //
-                            // Genuine server-side failures (Unavailable, Internal, DataLoss, …) fall
-                            // through to ban_with_reason below and receive the full exponential ban.
-                            if address_list.rate_limit_cooldown(address, Some(error.to_string())) {
-                                tracing::debug!(
-                                    ?address,
-                                    ?error,
-                                    "transient-error cooldown for address {address} (5 s, ban_count unchanged): {error}"
-                                );
-                            } else {
-                                tracing::debug!(
-                                    ?address,
-                                    ?error,
-                                    "unable to apply transient-error cooldown to {address} — not in list"
-                                );
-                            }
-                        } else if address_list.ban_with_reason(address, Some(error.to_string())) {
+                        if address_list.ban_with_reason(address, Some(error.to_string())) {
                             tracing::warn!(
                                 ?address,
                                 ?error,
