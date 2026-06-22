@@ -627,6 +627,7 @@ impl BankWallet {
                         elapsed_ms = confirm_started.elapsed().as_millis() as u64,
                         "bank.fund_address: chain confirmation observed"
                     );
+                    super::funding_ledger::record_platform_requested(credits);
                     return Ok(cs);
                 }
                 Err(err) => {
@@ -923,6 +924,7 @@ impl BankWallet {
             duffs,
             "bank.send_core_to broadcast"
         );
+        super::funding_ledger::record_core_requested(duffs);
         Ok(txid)
     }
 }

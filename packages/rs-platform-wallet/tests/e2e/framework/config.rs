@@ -138,6 +138,11 @@ pub mod vars {
     /// reach when triggered. Unset uses
     /// [`super::bank_rebalance::DEFAULT_CORE_REFILL_TARGET_DUFF`].
     pub const CORE_REFILL_TARGET_DUFF: &str = "PLATFORM_WALLET_E2E_CORE_REFILL_TARGET_DUFF";
+    /// Verbose funding-metrics report at suite end.
+    /// When truthy (`1`/`true`/`yes`/`on`), the full tabular table is
+    /// written to stderr. When unset/falsy, only a compact `tracing::info!`
+    /// fires. Set when calibrating the bank funding floor.
+    pub const FUNDING_REPORT: &str = "PLATFORM_WALLET_E2E_FUNDING_REPORT";
 }
 
 /// Default cadence for the harness's identity-state auto-sync (see

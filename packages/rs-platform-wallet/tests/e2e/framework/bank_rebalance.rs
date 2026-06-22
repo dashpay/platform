@@ -679,6 +679,7 @@ pub async fn asset_lock_core_to_platform(
             ))
         })?;
 
+    super::funding_ledger::record_e5_lock(amount_duff);
     tracing::info!(
         target: "platform_wallet::e2e::bank_rebalance",
         amount_duff,
@@ -712,7 +713,9 @@ pub async fn top_up_identity_from_platform(
         .identity()
         .top_up_from_addresses(&bank_identity.id, inputs, bank.address_signer(), None)
         .await
-        .map(|_new_balance| ())
+        .map(|_new_balance| {
+            super::funding_ledger::record_identity_requested(credits);
+        })
         .map_err(|e| FrameworkError::Bank(format!("E3 top-up: top_up_from_addresses failed: {e}")))
 }
 

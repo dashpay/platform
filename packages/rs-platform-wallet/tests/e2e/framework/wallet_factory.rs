@@ -984,6 +984,19 @@ impl Drop for SetupGuard {
                 ),
             }
 
+            // End-of-suite funding ledger report. Best-effort:
+            // a panic inside print_report must not re-panic an
+            // already-unwinding Drop.
+            let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                super::funding_ledger::print_report,
+            ));
+            if let Err(_) = unwind {
+                tracing::error!(
+                    target: "platform_wallet::e2e::wallet_factory",
+                    "funding ledger report panicked; suppressed via catch_unwind"
+                );
+            }
+
             // Now that the final sweep has landed, stop the
             // identity-state auto-sync gracefully so the run-loop's
             // cancellation branch fires and the "loop exiting" debug

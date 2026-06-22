@@ -71,6 +71,7 @@ pub mod bank_rebalance;
 pub mod cleanup;
 pub mod config;
 pub mod context_provider;
+pub mod funding_ledger;
 pub mod gap_limit;
 pub mod harness;
 pub mod identities;

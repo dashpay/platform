@@ -349,6 +349,7 @@ async fn sweep_one(
             "orphan platform residual below sweep-fee minimum; abandoning dust"
         );
         report.dust_abandoned = report.dust_abandoned.saturating_add(total);
+        super::funding_ledger::record_dust_abandoned(total);
     } else {
         tracing::debug!(
             wallet_id = %hex::encode(hash),
@@ -445,6 +446,7 @@ pub async fn teardown_one(
             "test wallet residual below sweep-fee minimum; abandoning dust"
         );
         report.dust_abandoned = report.dust_abandoned.saturating_add(total);
+        super::funding_ledger::record_dust_abandoned(total);
     } else {
         tracing::debug!(
             wallet_id = %hex::encode(test_wallet.id()),
@@ -643,6 +645,7 @@ where
         .await
     {
         Ok(_) => {
+            super::funding_ledger::record_platform_recovered(total);
             report.broadcasts_succeeded = report.broadcasts_succeeded.saturating_add(1);
         }
         Err(err) => {
@@ -909,6 +912,7 @@ async fn sweep_identities_with_seed(
                 report.broadcasts_succeeded = report.broadcasts_succeeded.saturating_add(1);
                 report.swept_identity_credits =
                     report.swept_identity_credits.saturating_add(amount);
+                super::funding_ledger::record_identity_recovered(amount);
             }
             Err(err) => {
                 tracing::warn!(
@@ -1025,6 +1029,7 @@ async fn sweep_core_addresses(
                 "core sweep: drained Core duffs to bank"
             );
             report.broadcasts_succeeded = report.broadcasts_succeeded.saturating_add(1);
+            super::funding_ledger::record_core_recovered(amount);
             Ok(())
         }
         // Drain-class errors fire when a prior sweep step (or a sibling
