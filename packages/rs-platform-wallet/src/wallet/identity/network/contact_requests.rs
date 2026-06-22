@@ -21,6 +21,34 @@ use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 
 // ---------------------------------------------------------------------------
+// Deferred-crypto drain provider
+// ---------------------------------------------------------------------------
+
+/// Supplies the wallet-HD key material the seedless drain needs, without
+/// platform-wallet naming the concrete Keychain signer (`MnemonicResolverCoreSigner`
+/// lives in `rs-sdk-ffi`, which platform-wallet does not depend on). The glue
+/// crate implements this over the resolver-backed signer; tests implement it
+/// with canned values. All methods take a **Rust-built** derivation path —
+/// path provenance stays in Rust (the host derives at exactly the path it is
+/// handed).
+#[async_trait::async_trait]
+pub trait DrainCryptoProvider {
+    /// Extended public key at `path` — our DashPay receiving (friendship) xpub.
+    async fn receiving_xpub(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<key_wallet::bip32::ExtendedPubKey, PlatformWalletError>;
+
+    /// ECDH shared secret between our key at `path` and the contact's `peer`
+    /// pubkey. Used by the RegisterExternal drain op (follow-up).
+    async fn ecdh_shared_secret(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        peer: &dashcore::secp256k1::PublicKey,
+    ) -> Result<[u8; 32], PlatformWalletError>;
+}
+
+// ---------------------------------------------------------------------------
 // Send contact request
 // ---------------------------------------------------------------------------
 
@@ -1163,6 +1191,116 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 enqueued_at_ms,
             },
         );
+    }
+
+    /// Drain the persisted deferred-crypto queue using `provider` for the
+    /// Keychain-derived key material. Call when a signer is available (Keychain
+    /// unlock, or any signer-present DashPay action). Returns the number of
+    /// entries completed (removed from the queue).
+    ///
+    /// Per entry: run the op; on success remove it and persist the removal; on
+    /// unavailable/transient failure leave it for the next drain. The
+    /// `RegisterExternal` + `ContactInfoDecrypt` ops (which need a contact
+    /// fetch + ECDH/contactInfo derivation) drain in a follow-up and are left
+    /// queued here — so calling this is always safe, it just completes what it
+    /// can.
+    pub async fn drain_pending_contact_crypto<P: DrainCryptoProvider + Sync>(
+        &self,
+        provider: &P,
+    ) -> usize {
+        use crate::changeset::{PendingContactCryptoKey, PendingContactCryptoOp};
+
+        // Snapshot the queue, then run the async ops without holding the lock.
+        let entries: Vec<crate::changeset::PendingContactCrypto> = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .map(|info| info.pending_contact_crypto.clone())
+                .unwrap_or_default()
+        };
+        if entries.is_empty() {
+            return 0;
+        }
+
+        let mut cleared: Vec<PendingContactCryptoKey> = Vec::new();
+        for entry in &entries {
+            match &entry.op {
+                PendingContactCryptoOp::RegisterReceiving => {
+                    // Build the friendship path in Rust; the provider derives
+                    // our receiving xpub at it via the Keychain signer.
+                    let account_type = key_wallet::account::AccountType::DashpayReceivingFunds {
+                        index: 0,
+                        user_identity_id: entry.owner_identity_id.to_buffer(),
+                        friend_identity_id: entry.contact_id.to_buffer(),
+                    };
+                    let path = match account_type.derivation_path(self.sdk.network) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                error = %e, "drain: receiving path build failed; leaving queued"
+                            );
+                            continue;
+                        }
+                    };
+                    match provider.receiving_xpub(&path).await {
+                        Ok(xpub) => match self
+                            .register_contact_account(
+                                &entry.owner_identity_id,
+                                &entry.contact_id,
+                                0,
+                                Some(xpub),
+                            )
+                            .await
+                        {
+                            Ok(()) => cleared.push(entry.key()),
+                            Err(e) => tracing::warn!(
+                                owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                                error = %e, "drain: register receiving account failed; leaving queued"
+                            ),
+                        },
+                        Err(e) => tracing::warn!(
+                            owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                            error = %e, "drain: receiving-xpub provider failed; leaving queued"
+                        ),
+                    }
+                }
+                PendingContactCryptoOp::RegisterExternal { .. }
+                | PendingContactCryptoOp::ContactInfoDecrypt => {
+                    // Needs the contact fetch + ECDH/contactInfo derivation;
+                    // drained in a follow-up. Left queued (safe — re-run later).
+                    tracing::debug!(
+                        owner = %entry.owner_identity_id, contact = %entry.contact_id,
+                        "drain: op not yet handled; leaving queued"
+                    );
+                }
+            }
+        }
+
+        if cleared.is_empty() {
+            return 0;
+        }
+
+        // Remove the completed entries from the in-memory queue + persist the
+        // removal so they don't replay after a restart.
+        {
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                info.pending_contact_crypto
+                    .retain(|e| !cleared.iter().any(|k| *k == e.key()));
+            }
+        }
+        let changeset = crate::changeset::PlatformWalletChangeSet {
+            pending_contact_crypto_cleared: cleared.clone(),
+            ..Default::default()
+        };
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::warn!(
+                error = %e,
+                "drain: failed to persist cleared queue entries (in-memory already updated)"
+            );
+        }
+
+        cleared.len()
     }
 
     /// Mark an established contact's payment channel as permanently broken

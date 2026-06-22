@@ -2035,4 +2035,95 @@ mod tests {
             "the precomputed-xpub path must build the receiving account (the drain's RegisterReceiving)"
         );
     }
+
+    /// End-to-end drain of a `RegisterReceiving` queue entry: a canned provider
+    /// supplies the receiving xpub (as the Keychain signer would), the drain
+    /// builds the receiving account and removes the entry from the queue.
+    #[tokio::test]
+    async fn drain_completes_register_receiving_and_clears_queue() {
+        use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
+        use crate::wallet::identity::network::contact_requests::DrainCryptoProvider;
+
+        let (manager, _persister, wallet_id) = make_wallet().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        let owner = Identifier::from([0x11; 32]);
+        let contact = Identifier::from([0x22; 32]);
+
+        // A valid receiving xpub the provider will hand back.
+        let supplied_xpub = {
+            let wm = iw.wallet_manager.read().await;
+            let w = wm.get_wallet(&wallet_id).expect("wallet");
+            crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+                w,
+                Network::Testnet,
+                0,
+                &owner,
+                &contact,
+            )
+            .expect("derive a valid receiving xpub")
+            .xpub
+        };
+
+        // Enqueue a RegisterReceiving op (as the seedless sweep would).
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.pending_contact_crypto.push(PendingContactCrypto {
+                owner_identity_id: owner,
+                contact_id: contact,
+                op: PendingContactCryptoOp::RegisterReceiving,
+                enqueued_at_ms: 0,
+            });
+        }
+
+        struct CannedProvider {
+            xpub: key_wallet::bip32::ExtendedPubKey,
+        }
+        #[async_trait::async_trait]
+        impl DrainCryptoProvider for CannedProvider {
+            async fn receiving_xpub(
+                &self,
+                _path: &key_wallet::bip32::DerivationPath,
+            ) -> Result<key_wallet::bip32::ExtendedPubKey, crate::error::PlatformWalletError>
+            {
+                Ok(self.xpub)
+            }
+            async fn ecdh_shared_secret(
+                &self,
+                _path: &key_wallet::bip32::DerivationPath,
+                _peer: &dashcore::secp256k1::PublicKey,
+            ) -> Result<[u8; 32], crate::error::PlatformWalletError> {
+                Ok([0u8; 32])
+            }
+        }
+
+        let drained = iw
+            .drain_pending_contact_crypto(&CannedProvider {
+                xpub: supplied_xpub,
+            })
+            .await;
+        assert_eq!(drained, 1, "the RegisterReceiving entry must be drained");
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        assert!(
+            info.pending_contact_crypto.is_empty(),
+            "the queue must be cleared after a successful drain"
+        );
+        use key_wallet::account::account_collection::DashpayAccountKey;
+        let key = DashpayAccountKey {
+            index: 0,
+            user_identity_id: owner.to_buffer(),
+            friend_identity_id: contact.to_buffer(),
+        };
+        assert!(
+            info.core_wallet
+                .accounts
+                .dashpay_receival_accounts
+                .contains_key(&key),
+            "the drain must build the receiving account"
+        );
+    }
 }
