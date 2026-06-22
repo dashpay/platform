@@ -1431,11 +1431,16 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     }
                 }
                 PendingContactCryptoOp::ContactInfoDecrypt => {
-                    // Needs the contactInfo seal/open primitive (follow-up).
-                    // Left queued (safe — re-run later).
+                    // The seal/open AES primitive exists; what's still missing is
+                    // the network re-fetch of this owner's contactInfo documents
+                    // (the op carries no ciphertext on purpose, so it always
+                    // decrypts the latest published version). Until the fetch
+                    // surface is wired in, leave the op queued (safe — re-run
+                    // later). Decrypting a stubbed/empty fetch would be a false
+                    // no-op, so this stays an honest deferral.
                     tracing::debug!(
                         owner = %entry.owner_identity_id, contact = %entry.contact_id,
-                        "drain: ContactInfoDecrypt not yet handled; leaving queued"
+                        "drain: ContactInfoDecrypt awaiting contactInfo fetch surface; leaving queued"
                     );
                 }
             }
