@@ -22,6 +22,7 @@ Keep this current as cores land.
 | `6832a52c31` | §4.6 | `register_contact_account` takes `precomputed_account_xpub: Option<ExtendedPubKey>` (drain's RegisterReceiving core) + Some-path test |
 | `4b6a6f7934` | §4.6 | deferred-crypto drain framework + `DrainCryptoProvider` trait + RegisterReceiving op + test |
 | `ecd288c735` | §4.6 | drain RegisterExternal op (ECDH path + contact fetch + provider + register) + deferral-safety test |
+| `45f903dc38` | §4.5 | contactInfo seal/open host primitive (2 hardened-child AES keys, reuses platform_encryption) + round-trip/parity test |
 
 **Locked design decisions**
 - Raw-secret ops are **inherent methods on `MnemonicResolverCoreSigner`** (in
@@ -62,10 +63,10 @@ Keep this current as cores land.
    callers), then add `ecdh_shared_secret_and_account_reference` /
    `unmask_account_reference` inherent methods on `MnemonicResolverCoreSigner`.
    Parity tests vs the resident path.
-5. **§4.5 contactInfo** — `contact_info_seal` / `contact_info_open` inherent
-   methods (2 hardened-child keys via key_wallet + AES via platform-encryption;
-   `root_path` passed in). Parity tests; the DIP-15 wire codec stays in
-   `crypto/contact_info.rs` (plaintext-only).
+5. ~~§4.5 contactInfo~~ **DONE** (`45f903dc38`): `contact_info_seal` /
+   `contact_info_open` inherent methods + round-trip/parity test. The drain's
+   `ContactInfoDecrypt` op (calls `contact_info_open` via an extended provider +
+   re-fetches owned docs) is the remaining drain piece.
 6. **§4.8 wrong-seed self-check** — `MnemonicResolverCoreSigner` derives BIP44
    account-0 xpub; the glue crate compares to the wallet's persisted account-0
    xpub at first use; mismatch fails loud. (Replaces the dual gate removed with
