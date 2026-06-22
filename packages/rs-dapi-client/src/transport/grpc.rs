@@ -146,6 +146,14 @@ impl CanRetry for dapi_grpc::tonic::Status {
                 | Unimplemented
         )
     }
+
+    fn is_rate_limited(&self) -> bool {
+        // ResourceExhausted is the gRPC mapping of an upstream rate-limit /
+        // backpressure (e.g. Envoy per-IP 429). It is retryable but the node
+        // is healthy, so it must rotate rather than ban (see
+        // `update_address_ban_status`). Exactly one code — do NOT widen this.
+        self.code() == dapi_grpc::tonic::Code::ResourceExhausted
+    }
 }
 
 /// Macro to implement the `TransportRequest` trait for a given request type, response type, client type, and settings.

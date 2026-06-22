@@ -95,6 +95,19 @@ pub trait CanRetry {
         false
     }
 
+    /// Returns true if this error is a rate-limit / congestion signal
+    /// (gRPC `ResourceExhausted`).
+    ///
+    /// Rate-limit errors are retryable (see [`CanRetry::can_retry`]) but,
+    /// unlike genuine node ill-health, the node must NOT be banned: it is
+    /// healthy, just throttled. Banning it would shift its load onto the
+    /// remaining nodes and cascade into `NoAvailableAddressesToRetry`.
+    /// Instead the retry should rotate to a *different* node and leave the
+    /// throttled one in the pool. See `update_address_ban_status`.
+    fn is_rate_limited(&self) -> bool {
+        false
+    }
+
     /// Get boolean flag that indicates if the error is retryable.
     ///
     /// Deprecated in favor of [CanRetry::can_retry].

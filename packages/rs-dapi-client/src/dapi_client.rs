@@ -67,6 +67,18 @@ impl CanRetry for DapiClientError {
             DapiClientError::NoAvailableAddresses | DapiClientError::NoAvailableAddressesToRetry(_)
         )
     }
+
+    fn is_rate_limited(&self) -> bool {
+        use DapiClientError::*;
+        match self {
+            NoAvailableAddresses => false,
+            NoAvailableAddressesToRetry(_) => false,
+            Transport(transport_error) => transport_error.is_rate_limited(),
+            AddressList(_) => false,
+            #[cfg(feature = "mocks")]
+            Mock(_) => false,
+        }
+    }
 }
 
 /// Serialization of [DapiClientError].
@@ -185,7 +197,19 @@ pub fn update_address_ban_status<R, E>(
         }
         Err(error) => {
             if error.can_retry() {
-                if let Some(address) = error.address.as_ref() {
+                if error.is_rate_limited() {
+                    // ResourceExhausted is congestion/backpressure, not endpoint
+                    // ill-health. Banning a healthy-but-throttled node shifts its
+                    // load onto the survivors and cascades into
+                    // NoAvailableAddressesToRetry. Keep it in the pool; the retry
+                    // loop rotates to a different node via explicit exclusion. The
+                    // bounded retry count bounds an over-limit client.
+                    tracing::debug!(
+                        ?error,
+                        address = ?error.address,
+                        "not banning rate-limited (ResourceExhausted) address; will rotate to another node"
+                    );
+                } else if let Some(address) = error.address.as_ref() {
                     if applied_settings.ban_failed_address {
                         if address_list.ban_with_reason(address, Some(error.to_string())) {
                             tracing::warn!(
@@ -276,6 +300,54 @@ mod tests {
         assert!(!err.can_retry());
     }
 
+    #[test]
+    fn test_dapi_client_error_is_rate_limited() {
+        // Transport ResourceExhausted → rate-limited (but still retryable).
+        let rate_limited = DapiClientError::Transport(TransportError::Grpc(
+            dapi_grpc::tonic::Status::resource_exhausted("429"),
+        ));
+        assert!(rate_limited.is_rate_limited());
+        assert!(rate_limited.can_retry());
+
+        // Other transport codes are not rate-limited.
+        let unavailable = DapiClientError::Transport(TransportError::Grpc(
+            dapi_grpc::tonic::Status::unavailable("down"),
+        ));
+        assert!(!unavailable.is_rate_limited());
+
+        // Non-transport variants are never rate-limited.
+        assert!(!DapiClientError::NoAvailableAddresses.is_rate_limited());
+        let to_retry = DapiClientError::NoAvailableAddressesToRetry(Box::new(
+            TransportError::Grpc(dapi_grpc::tonic::Status::resource_exhausted("429")),
+        ));
+        assert!(!to_retry.is_rate_limited());
+        assert!(
+            !DapiClientError::AddressList(AddressListError::InvalidAddressUri("bad".to_string()))
+                .is_rate_limited()
+        );
+    }
+
+    #[test]
+    fn test_execution_error_is_rate_limited_delegates() {
+        let err: ExecutionError<DapiClientError> = ExecutionError {
+            inner: DapiClientError::Transport(TransportError::Grpc(
+                dapi_grpc::tonic::Status::resource_exhausted("429"),
+            )),
+            retries: 0,
+            address: Some(mock_address()),
+        };
+        assert!(err.is_rate_limited());
+
+        let err: ExecutionError<DapiClientError> = ExecutionError {
+            inner: DapiClientError::Transport(TransportError::Grpc(
+                dapi_grpc::tonic::Status::internal("boom"),
+            )),
+            retries: 0,
+            address: Some(mock_address()),
+        };
+        assert!(!err.is_rate_limited());
+    }
+
     #[cfg(feature = "mocks")]
     #[test]
     fn test_can_retry_mock_error() {
@@ -362,6 +434,114 @@ mod tests {
             reason.contains("temporary"),
             "ban reason should carry the underlying error, got: {reason}"
         );
+    }
+
+    /// Invariant 1: the genuine-failure health-ban ladder is unchanged.
+    ///
+    /// A genuine failure (Unavailable / Internal) must still ban the node with
+    /// the `60s × e^ban_count` exponential window, `ban_count` incrementing on
+    /// each ban — byte-for-byte the pre-existing behavior.
+    #[test]
+    fn test_invariant_genuine_failure_still_bans_with_unchanged_ladder() {
+        let mut address_list = AddressList::new(); // base ban period = 60s
+        let addr = mock_address();
+        address_list.add(addr.clone());
+
+        let base_secs = 60.0_f64; // DEFAULT_BASE_BAN_PERIOD
+
+        for expected_count in 1..=3usize {
+            // Alternate genuine-failure codes to prove the ladder is not
+            // code-specific (both are non-rate-limited, retryable failures).
+            let status = if expected_count % 2 == 1 {
+                dapi_grpc::tonic::Status::unavailable("node down")
+            } else {
+                dapi_grpc::tonic::Status::internal("boom")
+            };
+
+            let before = chrono::Utc::now();
+            let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+                inner: DapiClientError::Transport(TransportError::Grpc(status)),
+                retries: 0,
+                address: Some(addr.clone()),
+            });
+            update_address_ban_status(&address_list, &result, &make_applied_settings(true));
+            let after = chrono::Utc::now();
+
+            let info = address_list.ban_info();
+            let entry = info
+                .iter()
+                .find(|i| i.uri.contains("3000"))
+                .expect("address present in ban info");
+
+            assert!(entry.banned, "genuine failure must ban the node");
+            assert_eq!(
+                entry.ban_count, expected_count,
+                "ban_count must increment on each genuine failure"
+            );
+
+            // Window must equal base × e^(ban_count - 1). Since
+            // banned_until = t_call + period with before <= t_call <= after:
+            //   (banned_until - before) >= period   and
+            //   (banned_until - after)  <= period.
+            let period = base_secs * ((expected_count - 1) as f64).exp();
+            let banned_until = entry.banned_until.expect("banned_until is set");
+            let lower = (banned_until - before).num_milliseconds() as f64 / 1000.0;
+            let upper = (banned_until - after).num_milliseconds() as f64 / 1000.0;
+            assert!(
+                lower >= period - 0.05,
+                "ban #{expected_count} window lower bound {lower}s < expected {period}s",
+            );
+            assert!(
+                upper <= period + 0.05,
+                "ban #{expected_count} window upper bound {upper}s > expected {period}s",
+            );
+        }
+    }
+
+    /// Invariant 2: congestion can never empty the live pool.
+    ///
+    /// Repeated `ResourceExhausted` across *every* address must never ban any of
+    /// them — `banned_until` stays `None`, `ban_count` stays 0 — and
+    /// `get_live_address` keeps returning `Some`.
+    #[test]
+    fn test_invariant_rate_limit_never_bans_and_pool_stays_live() {
+        let mut address_list = AddressList::new();
+        let addresses: Vec<crate::Address> = (3000..3003)
+            .map(|p| {
+                format!("http://127.0.0.1:{p}")
+                    .parse()
+                    .expect("valid address")
+            })
+            .collect();
+        for addr in &addresses {
+            address_list.add(addr.clone());
+        }
+
+        // Hammer every address with ResourceExhausted across many rounds.
+        for _ in 0..10 {
+            for addr in &addresses {
+                let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+                    inner: DapiClientError::Transport(TransportError::Grpc(
+                        dapi_grpc::tonic::Status::resource_exhausted("429"),
+                    )),
+                    retries: 0,
+                    address: Some(addr.clone()),
+                });
+                update_address_ban_status(&address_list, &result, &make_applied_settings(true));
+            }
+        }
+
+        for info in address_list.ban_info() {
+            assert!(!info.banned, "address {} must not be banned", info.uri);
+            assert_eq!(info.ban_count, 0, "ban_count must stay 0 for {}", info.uri);
+            assert!(
+                info.banned_until.is_none(),
+                "banned_until must stay None for {}",
+                info.uri
+            );
+        }
+        // The pool is never emptied by congestion.
+        assert!(address_list.get_live_address().is_some());
     }
 
     #[test]
@@ -561,11 +741,25 @@ impl DapiRequestExecutor for DapiClient {
         let mut retries: usize = 0;
         // Track the last transport error for when all addresses get exhausted
         let mut last_transport_error: Option<TransportError> = None;
+        // Addresses already tried in this execution. We exclude them when
+        // selecting the next node so a retry rotates to a *different* node —
+        // crucial for rate-limited (ResourceExhausted) nodes, which stay in
+        // the pool (not banned) and would otherwise be picked again.
+        let mut tried: Vec<crate::Address> = Vec::new();
 
         let result: ExecutionResult<R::Response, DapiClientError> = async {
             loop {
-                // Try to get an address to initialize transport on:
-                let Some(address) = self.address_list.get_live_address() else {
+                // Try to get an address to initialize transport on, rotating off
+                // the nodes already tried in this execution. If excluding the
+                // tried set empties the live pool (e.g. a single-node pool, or
+                // every live node already tried), fall back to the non-excluding
+                // selection so a healthy-but-throttled node can still be retried
+                // rather than surfacing a spurious NoAvailableAddresses.
+                let Some(address) = self
+                    .address_list
+                    .get_live_address_excluding(&tried)
+                    .or_else(|| self.address_list.get_live_address())
+                else {
                     // No available addresses - wrap with last meaningful error if we have one
                     let error = if let Some(transport_error) = last_transport_error.take() {
                         tracing::debug!(
@@ -635,6 +829,9 @@ impl DapiRequestExecutor for DapiClient {
                             // Store last transport error
                             last_transport_error = Some(cloned_error);
 
+                            // Rotate off this node on the next attempt.
+                            tried.push(address.clone());
+
                             retries += 1;
                             tracing::warn!(
                                 error = ?execution_error,
@@ -693,6 +890,9 @@ impl DapiRequestExecutor for DapiClient {
                             if let DapiClientError::Transport(ref te) = error.inner {
                                 last_transport_error = Some(te.clone());
                             }
+
+                            // Rotate off this node on the next attempt.
+                            tried.push(address.clone());
 
                             retries += 1;
                             tracing::warn!(

@@ -83,6 +83,10 @@ impl<E: CanRetry> CanRetry for ExecutionError<E> {
     fn is_no_available_addresses(&self) -> bool {
         self.inner.is_no_available_addresses()
     }
+
+    fn is_rate_limited(&self) -> bool {
+        self.inner.is_rate_limited()
+    }
 }
 
 /// Request execution response.

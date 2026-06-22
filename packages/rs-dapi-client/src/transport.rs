@@ -106,6 +106,12 @@ impl CanRetry for TransportError {
             TransportError::Grpc(status) => status.can_retry(),
         }
     }
+
+    fn is_rate_limited(&self) -> bool {
+        match self {
+            TransportError::Grpc(status) => status.is_rate_limited(),
+        }
+    }
 }
 
 /// Serialization of [TransportError].
@@ -210,6 +216,56 @@ mod tests {
 
         let non_retryable = TransportError::Grpc(dapi_grpc::tonic::Status::not_found("permanent"));
         assert!(!non_retryable.can_retry());
+    }
+
+    #[test]
+    fn test_tonic_status_is_rate_limited_only_resource_exhausted() {
+        // Exactly one code is a rate-limit signal.
+        assert!(dapi_grpc::tonic::Status::new(Code::ResourceExhausted, "429").is_rate_limited());
+
+        // Every other code — including the *other* retryable ones and
+        // DeadlineExceeded — must stay false. Widening this set would
+        // reintroduce the reverted multi-code classifier.
+        let not_rate_limited = [
+            Code::Ok,
+            Code::Cancelled,
+            Code::Unknown,
+            Code::InvalidArgument,
+            Code::DeadlineExceeded,
+            Code::NotFound,
+            Code::AlreadyExists,
+            Code::PermissionDenied,
+            Code::FailedPrecondition,
+            Code::Aborted,
+            Code::OutOfRange,
+            Code::Unimplemented,
+            Code::Internal,
+            Code::Unavailable,
+            Code::DataLoss,
+            Code::Unauthenticated,
+        ];
+        for code in not_rate_limited {
+            assert!(
+                !dapi_grpc::tonic::Status::new(code, "x").is_rate_limited(),
+                "code {:?} must NOT be classified as rate-limited",
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn test_transport_error_is_rate_limited_delegates() {
+        let rate_limited = TransportError::Grpc(dapi_grpc::tonic::Status::new(
+            Code::ResourceExhausted,
+            "429",
+        ));
+        assert!(rate_limited.is_rate_limited());
+        // Rate-limited is still retryable; only the ban decision differs.
+        assert!(rate_limited.can_retry());
+
+        let unavailable = TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("down"));
+        assert!(!unavailable.is_rate_limited());
+        assert!(unavailable.can_retry());
     }
 
     #[test]
