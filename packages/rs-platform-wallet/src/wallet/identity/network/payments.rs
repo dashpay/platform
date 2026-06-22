@@ -2042,7 +2042,7 @@ mod tests {
     #[tokio::test]
     async fn drain_completes_register_receiving_and_clears_queue() {
         use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
-        use crate::wallet::identity::network::contact_requests::DrainCryptoProvider;
+        use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
 
         let (manager, _persister, wallet_id) = make_wallet().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -2082,7 +2082,7 @@ mod tests {
             xpub: key_wallet::bip32::ExtendedPubKey,
         }
         #[async_trait::async_trait]
-        impl DrainCryptoProvider for CannedProvider {
+        impl ContactCryptoProvider for CannedProvider {
             async fn receiving_xpub(
                 &self,
                 _path: &key_wallet::bip32::DerivationPath,
@@ -2096,6 +2096,23 @@ mod tests {
                 _peer: &dashcore::secp256k1::PublicKey,
             ) -> Result<[u8; 32], crate::error::PlatformWalletError> {
                 Ok([0u8; 32])
+            }
+            async fn account_reference(
+                &self,
+                _path: &key_wallet::bip32::DerivationPath,
+                _compact_xpub: &[u8],
+                _account_index: u32,
+                _version: u32,
+            ) -> Result<u32, crate::error::PlatformWalletError> {
+                unimplemented!("accountReference is a send-path method, not exercised by the drain")
+            }
+            async fn unmask_account_reference(
+                &self,
+                _path: &key_wallet::bip32::DerivationPath,
+                _compact_xpub: &[u8],
+                _account_reference: u32,
+            ) -> Result<(u32, u32), crate::error::PlatformWalletError> {
+                unimplemented!("accountReference is a send-path method, not exercised by the drain")
             }
         }
 
@@ -2135,7 +2152,7 @@ mod tests {
     #[tokio::test]
     async fn drain_leaves_register_external_it_cannot_complete() {
         use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
-        use crate::wallet::identity::network::contact_requests::DrainCryptoProvider;
+        use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
 
         let (manager, _persister, wallet_id) = make_wallet().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -2162,7 +2179,7 @@ mod tests {
 
         struct UnusedProvider;
         #[async_trait::async_trait]
-        impl DrainCryptoProvider for UnusedProvider {
+        impl ContactCryptoProvider for UnusedProvider {
             async fn receiving_xpub(
                 &self,
                 _path: &key_wallet::bip32::DerivationPath,
@@ -2178,6 +2195,23 @@ mod tests {
                 _peer: &dashcore::secp256k1::PublicKey,
             ) -> Result<[u8; 32], crate::error::PlatformWalletError> {
                 Ok([0u8; 32])
+            }
+            async fn account_reference(
+                &self,
+                _path: &key_wallet::bip32::DerivationPath,
+                _compact_xpub: &[u8],
+                _account_index: u32,
+                _version: u32,
+            ) -> Result<u32, crate::error::PlatformWalletError> {
+                unimplemented!("accountReference is a send-path method, not exercised by the drain")
+            }
+            async fn unmask_account_reference(
+                &self,
+                _path: &key_wallet::bip32::DerivationPath,
+                _compact_xpub: &[u8],
+                _account_reference: u32,
+            ) -> Result<(u32, u32), crate::error::PlatformWalletError> {
+                unimplemented!("accountReference is a send-path method, not exercised by the drain")
             }
         }
 

@@ -24,15 +24,16 @@ use crate::wallet::identity::types::dashpay::established_contact::EstablishedCon
 // Deferred-crypto drain provider
 // ---------------------------------------------------------------------------
 
-/// Supplies the wallet-HD key material the seedless drain needs, without
+/// Supplies the wallet-HD key material the seedless contact-crypto paths need
+/// (the deferred-crypto drain AND the live send/accept flow), without
 /// platform-wallet naming the concrete Keychain signer (`MnemonicResolverCoreSigner`
 /// lives in `rs-sdk-ffi`, which platform-wallet does not depend on). The glue
 /// crate implements this over the resolver-backed signer; tests implement it
 /// with canned values. All methods take a **Rust-built** derivation path —
 /// path provenance stays in Rust (the host derives at exactly the path it is
-/// handed).
+/// handed), and no private scalar ever crosses back into platform-wallet.
 #[async_trait::async_trait]
-pub trait DrainCryptoProvider {
+pub trait ContactCryptoProvider {
     /// Extended public key at `path` — our DashPay receiving (friendship) xpub.
     async fn receiving_xpub(
         &self,
@@ -40,12 +41,33 @@ pub trait DrainCryptoProvider {
     ) -> Result<key_wallet::bip32::ExtendedPubKey, PlatformWalletError>;
 
     /// ECDH shared secret between our key at `path` and the contact's `peer`
-    /// pubkey. Used by the RegisterExternal drain op (follow-up).
+    /// pubkey.
     async fn ecdh_shared_secret(
         &self,
         path: &key_wallet::bip32::DerivationPath,
         peer: &dashcore::secp256k1::PublicKey,
     ) -> Result<[u8; 32], PlatformWalletError>;
+
+    /// DIP-15 `accountReference` for a send: the scalar at `path` (the sender's
+    /// encryption key) keys the HMAC+mask over `compact_xpub`. Computed in the
+    /// signer so the raw scalar never returns to platform-wallet.
+    async fn account_reference(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        compact_xpub: &[u8],
+        account_index: u32,
+        version: u32,
+    ) -> Result<u32, PlatformWalletError>;
+
+    /// Inverse of [`Self::account_reference`] — recover `(version, account_index)`
+    /// from a masked reference using the same in-signer scalar at `path`. Used
+    /// on re-send to read the previous rotation version.
+    async fn unmask_account_reference(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        compact_xpub: &[u8],
+        account_reference: u32,
+    ) -> Result<(u32, u32), PlatformWalletError>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1249,7 +1271,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// fetch + ECDH/contactInfo derivation) drain in a follow-up and are left
     /// queued here — so calling this is always safe, it just completes what it
     /// can.
-    pub async fn drain_pending_contact_crypto<P: DrainCryptoProvider + Sync>(
+    pub async fn drain_pending_contact_crypto<P: ContactCryptoProvider + Sync>(
         &self,
         provider: &P,
     ) -> usize {

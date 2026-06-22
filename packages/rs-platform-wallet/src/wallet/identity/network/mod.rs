@@ -57,7 +57,7 @@ pub(crate) mod sdk_writer;
 mod tokens;
 
 pub use contact_info::ContactInfoPublishOutcome;
-pub use contact_requests::DrainCryptoProvider;
+pub use contact_requests::ContactCryptoProvider;
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use identity_handle::{

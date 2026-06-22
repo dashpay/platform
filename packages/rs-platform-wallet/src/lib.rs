@@ -59,7 +59,7 @@ pub use wallet::core::WalletBalance;
 // domain (they live under `identity::types::dashpay::*` and
 // `identity::crypto::*` internally).
 pub use wallet::identity::network::{
-    derive_identity_auth_keypair, ContactInfoPublishOutcome, DrainCryptoProvider,
+    derive_identity_auth_keypair, ContactInfoPublishOutcome, ContactCryptoProvider,
     IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
 pub use wallet::identity::{

@@ -454,16 +454,17 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
     PlatformWalletFFIResult::ok()
 }
 
-/// Glue adapter implementing platform-wallet's [`DrainCryptoProvider`] over the
-/// resolver-backed [`MnemonicResolverCoreSigner`]. The orphan rule needs the
-/// impl's type local to this crate, so the signer is wrapped here rather than
-/// implemented directly on it in `rs-sdk-ffi`.
-struct ResolverDrainProvider {
+/// Glue adapter implementing platform-wallet's [`ContactCryptoProvider`] over
+/// the resolver-backed [`MnemonicResolverCoreSigner`]. The orphan rule needs
+/// the impl's type local to this crate, so the signer is wrapped here rather
+/// than implemented directly on it in `rs-sdk-ffi`. Serves both the
+/// deferred-crypto drain and the live send/accept flow.
+struct ResolverContactCryptoProvider {
     signer: MnemonicResolverCoreSigner,
 }
 
 #[async_trait::async_trait]
-impl platform_wallet::DrainCryptoProvider for ResolverDrainProvider {
+impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
     async fn receiving_xpub(
         &self,
         path: &key_wallet::bip32::DerivationPath,
@@ -483,6 +484,29 @@ impl platform_wallet::DrainCryptoProvider for ResolverDrainProvider {
         self.signer
             .ecdh_shared_secret(path, peer)
             .map(|z| *z)
+            .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
+    }
+
+    async fn account_reference(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        compact_xpub: &[u8],
+        account_index: u32,
+        version: u32,
+    ) -> Result<u32, platform_wallet::PlatformWalletError> {
+        self.signer
+            .account_reference(path, compact_xpub, account_index, version)
+            .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
+    }
+
+    async fn unmask_account_reference(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        compact_xpub: &[u8],
+        account_reference: u32,
+    ) -> Result<(u32, u32), platform_wallet::PlatformWalletError> {
+        self.signer
+            .unmask_account_reference(path, compact_xpub, account_reference)
             .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
     }
 }
@@ -520,7 +544,7 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
                 network,
             )
         };
-        let provider = ResolverDrainProvider { signer };
+        let provider = ResolverContactCryptoProvider { signer };
         block_on_worker(async move { identity.drain_pending_contact_crypto(&provider).await })
     });
     let drained = unwrap_option_or_return!(option);
