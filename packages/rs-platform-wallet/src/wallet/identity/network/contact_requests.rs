@@ -1157,29 +1157,22 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ) {
         use crate::changeset::{
             upsert_pending_contact_crypto, PendingContactCrypto, PendingContactCryptoOp,
+            PlatformWalletChangeSet,
         };
         let enqueued_at_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
-        let mut wm = self.wallet_manager.write().await;
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
-            return;
-        };
-        // (1) Our receiving xpub (no payload — derived from the identity ids).
-        upsert_pending_contact_crypto(
-            &mut info.pending_contact_crypto,
+        let entries = vec![
+            // (1) Our receiving xpub (no payload — derived from the identity ids).
             PendingContactCrypto {
                 owner_identity_id: *identity_id,
                 contact_id: candidate.contact_id,
                 op: PendingContactCryptoOp::RegisterReceiving,
                 enqueued_at_ms,
             },
-        );
-        // (2) The external account — ECDH decrypt of the contact's xpub.
-        upsert_pending_contact_crypto(
-            &mut info.pending_contact_crypto,
+            // (2) The external account — ECDH decrypt of the contact's xpub.
             PendingContactCrypto {
                 owner_identity_id: *identity_id,
                 contact_id: candidate.contact_id,
@@ -1190,7 +1183,32 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 },
                 enqueued_at_ms,
             },
-        );
+        ];
+
+        // In-memory upsert under the write lock (released before persisting).
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+                return;
+            };
+            for entry in &entries {
+                upsert_pending_contact_crypto(&mut info.pending_contact_crypto, entry.clone());
+            }
+        }
+
+        // Persist the add-delta so the queue survives a restart. Best-effort:
+        // the recurring sweep re-discovers + re-enqueues if this fails (the
+        // in-memory queue above already covers the current session).
+        let changeset = PlatformWalletChangeSet {
+            pending_contact_crypto_added: entries,
+            ..Default::default()
+        };
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::warn!(
+                identity = %identity_id, contact = %candidate.contact_id, error = %e,
+                "failed to persist deferred contact-crypto enqueue; will re-enqueue next sweep"
+            );
+        }
     }
 
     /// Drain the persisted deferred-crypto queue using `provider` for the
