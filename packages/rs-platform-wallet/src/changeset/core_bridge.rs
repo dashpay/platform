@@ -41,30 +41,25 @@ use crate::changeset::changeset::{CoreChangeSet, PlatformWalletChangeSet};
 use crate::changeset::traits::PlatformWalletPersistence;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
-/// Error from projecting a [`WalletEvent`] into a [`CoreChangeSet`].
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum CoreBridgeError {
-    /// A UTXO-bearing record belongs to a non-default funds account. The
-    /// storage layer hardcodes `core_utxos.account_index = 0` (the product
-    /// uses only the default account), so a non-zero index would be silently
-    /// mis-grouped. Caught here — the only site with `record.account_type`.
-    #[error(
-        "non-default account index {index}: the storage layer assumes the default \
-         account (index 0); refusing to persist mis-attributed UTXOs"
-    )]
-    NonDefaultAccount { index: u32 },
-}
-
-/// Single-account guard: every UTXO-bearing record must belong to the
-/// default account (index 0). The storage writer hardcodes
-/// `core_utxos.account_index = 0`, so a non-default funds account would be
-/// silently mis-grouped — fail loud here instead. Identity/provider account
-/// types carry no funds index (`AccountType::index() == None`) and never
-/// emit `Received`/`Change` UTXOs, so they pass.
-fn ensure_default_account(record: &TransactionRecord) -> Result<(), CoreBridgeError> {
-    match record.account_type.index() {
-        None | Some(0) => Ok(()),
-        Some(index) => Err(CoreBridgeError::NonDefaultAccount { index }),
+/// Single-account observation. The storage writer hardcodes
+/// `core_utxos.account_index = 0` (the product uses only the default
+/// account, and that column drives only cosmetic per-account grouping). A
+/// UTXO-bearing record owned by a non-default funds account is STILL
+/// persisted under index 0 — never skipped, because skipping it would
+/// undercount the wallet balance and lose funds. We only `warn!` so the
+/// approximate grouping is visible. Identity/provider account types carry
+/// no funds index (`AccountType::index() == None`) and never emit
+/// `Received`/`Change` UTXOs, so they never warn.
+fn warn_if_non_default_account(record: &TransactionRecord) {
+    if let Some(index) = record.account_type.index() {
+        if index != 0 {
+            tracing::warn!(
+                account_index = index,
+                txid = %record.txid,
+                "non-default account UTXO persisted under account_index 0; \
+                 per-account grouping is approximate"
+            );
+        }
     }
 }
 
@@ -105,22 +100,7 @@ where
                             // state (today only `TransactionInstantLocked`,
                             // which checks finality before recording the IS
                             // lock), grab a brief read lock on the manager.
-                            let core = match build_core_changeset(&wallet_manager, &event).await {
-                                Ok(core) => core,
-                                Err(e) => {
-                                    // Single-account guard tripped: a UTXO's
-                                    // owning account isn't the default (index
-                                    // 0). Fail loud and skip — never persist
-                                    // mis-attributed UTXOs, and don't corrupt
-                                    // the buffer by storing a partial set.
-                                    tracing::error!(
-                                        wallet_id = %hex::encode(wallet_id),
-                                        error = %e,
-                                        "core-bridge single-account guard rejected event; not persisting"
-                                    );
-                                    continue;
-                                }
-                            };
+                            let core = build_core_changeset(&wallet_manager, &event).await;
                             if core.is_empty_no_records() {
                                 // SyncHeightAdvanced for an unknown wallet,
                                 // empty BlockProcessed, etc. — nothing to
@@ -164,18 +144,18 @@ where
 async fn build_core_changeset(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     event: &WalletEvent,
-) -> Result<CoreChangeSet, CoreBridgeError> {
+) -> CoreChangeSet {
     match event {
         WalletEvent::TransactionDetected {
             record,
             addresses_derived,
             ..
         } => {
-            // Refuse a non-default funds account before projecting UTXOs.
-            ensure_default_account(record)?;
+            // Persist regardless of account; warn on a non-default account.
+            warn_if_non_default_account(record);
             // Derive UTXO deltas before moving the record into `records`
             // so the per-record borrows are still live.
-            Ok(CoreChangeSet {
+            CoreChangeSet {
                 new_utxos: derive_new_utxos(record),
                 spent_utxos: derive_spent_utxos(record),
                 records: vec![(**record).clone()],
@@ -184,7 +164,7 @@ async fn build_core_changeset(
                 // from this delta. See `CoreChangeSet.addresses_derived`.
                 addresses_derived: addresses_derived.clone(),
                 ..CoreChangeSet::default()
-            })
+            }
         }
         WalletEvent::TransactionInstantLocked {
             wallet_id,
@@ -196,12 +176,12 @@ async fn build_core_changeset(
             // wallet has already chain-locked this txid, drop the lock —
             // chain-lock supersedes IS finality.
             if is_chain_locked(wallet_manager, wallet_id, txid).await {
-                return Ok(CoreChangeSet::default());
+                return CoreChangeSet::default();
             }
             let mut cs = CoreChangeSet::default();
             cs.instant_locks_for_non_final_records
                 .insert(*txid, instant_lock.clone());
-            Ok(cs)
+            cs
         }
         WalletEvent::BlockProcessed {
             height,
@@ -213,9 +193,9 @@ async fn build_core_changeset(
         } => {
             let mut cs = CoreChangeSet::default();
             // Inserted records bring fresh UTXOs and may consume previous
-            // ones — guard each before projecting.
+            // ones — warn on a non-default account, but always project.
             for r in inserted {
-                ensure_default_account(r)?;
+                warn_if_non_default_account(r);
                 cs.new_utxos.extend(derive_new_utxos(r));
                 cs.spent_utxos.extend(derive_spent_utxos(r));
             }
@@ -232,12 +212,12 @@ async fn build_core_changeset(
             // Already deduped upstream by `project_derived_addresses`;
             // `Merge` re-dedupes if multiple events fold together.
             cs.addresses_derived = addresses_derived.clone();
-            Ok(cs)
+            cs
         }
-        WalletEvent::SyncHeightAdvanced { height, .. } => Ok(CoreChangeSet {
+        WalletEvent::SyncHeightAdvanced { height, .. } => CoreChangeSet {
             synced_height: Some(*height),
             ..CoreChangeSet::default()
-        }),
+        },
         WalletEvent::ChainLockProcessed { chain_lock, .. } => {
             // The wallet has already promoted the matching records from
             // `InBlock` to `InChainLockedBlock` by the time this event
@@ -263,10 +243,10 @@ async fn build_core_changeset(
             // The earlier `TransactionsChainlocked`-only signal had a
             // gap on the "metadata advanced but per-account empty"
             // path; the new event closes it deterministically.
-            Ok(CoreChangeSet {
+            CoreChangeSet {
                 last_applied_chain_lock: Some(chain_lock.clone()),
                 ..CoreChangeSet::default()
-            })
+            }
         }
     }
 }
@@ -403,25 +383,52 @@ impl CoreChangeSet {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use dashcore::blockdata::transaction::Transaction;
     use dashcore::hashes::Hash;
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::managed_account::transaction_record::{
-        TransactionDirection, TransactionRecord,
+        OutputDetail, TransactionDirection, TransactionRecord,
     };
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
+    use key_wallet::WalletCoreBalance;
 
     use super::*;
 
-    /// Minimal confirmed `TransactionRecord` owned by `account_type`. The
-    /// single-account guard reads only `record.account_type`, so the tx body
-    /// and the input/output details are intentionally empty.
-    fn record_for_account(account_type: AccountType) -> TransactionRecord {
+    fn standard(index: u32) -> AccountType {
+        AccountType::Standard {
+            index,
+            standard_account_type: StandardAccountType::BIP44Account,
+        }
+    }
+
+    /// A throwaway testnet P2PKH address keyed off `seed`.
+    fn p2pkh(seed: u8) -> dashcore::Address {
+        use dashcore::address::Payload;
+        use dashcore::PubkeyHash;
+        dashcore::Address::new(
+            dashcore::Network::Testnet,
+            Payload::PubkeyHash(PubkeyHash::from_byte_array([seed; 20])),
+        )
+    }
+
+    /// A confirmed `TransactionRecord` owned by `account_type` carrying a
+    /// single `Received` output worth `value` at `addr`, so
+    /// `derive_new_utxos` yields exactly one UTXO.
+    fn record_with_received_output(
+        account_type: AccountType,
+        addr: &dashcore::Address,
+        value: u64,
+    ) -> TransactionRecord {
         let tx = Transaction {
             version: 3,
             lock_time: 0,
             input: vec![],
-            output: vec![],
+            output: vec![dashcore::TxOut {
+                value,
+                script_pubkey: addr.script_pubkey(),
+            }],
             special_transaction_payload: None,
         };
         TransactionRecord::new(
@@ -435,35 +442,58 @@ mod tests {
             TransactionType::Standard,
             TransactionDirection::Incoming,
             Vec::new(),
-            Vec::new(),
-            100,
+            vec![OutputDetail {
+                index: 0,
+                role: OutputRole::Received,
+                address: Some(addr.clone()),
+                value,
+            }],
+            value as i64,
         )
     }
 
-    fn standard(index: u32) -> AccountType {
-        AccountType::Standard {
-            index,
-            standard_account_type: StandardAccountType::BIP44Account,
-        }
+    /// Project a `TransactionDetected` for `record` through the real bridge
+    /// path. `balance`/`account_balances` are unused by the projection.
+    async fn changeset_for(record: TransactionRecord) -> CoreChangeSet {
+        let wm = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            key_wallet::Network::Testnet,
+        )));
+        let event = WalletEvent::TransactionDetected {
+            wallet_id: [0u8; 32],
+            record: Box::new(record),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: Vec::new(),
+        };
+        build_core_changeset(&wm, &event).await
     }
 
-    /// The default funds account (index 0) passes the single-account guard.
-    #[test]
-    fn default_account_passes_guard() {
-        assert!(ensure_default_account(&record_for_account(standard(0))).is_ok());
-    }
-
-    /// A non-default funds account fails loud: the storage layer hardcodes
-    /// `core_utxos.account_index = 0`, so a non-zero index would otherwise be
-    /// silently mis-grouped. The error names the offending index.
-    #[test]
-    fn non_default_account_fails_guard() {
-        let err = ensure_default_account(&record_for_account(standard(7)))
-            .expect_err("a non-default account must be rejected");
-        let CoreBridgeError::NonDefaultAccount { index } = err;
+    /// A default-account (index 0) UTXO is projected into the changeset.
+    #[tokio::test]
+    async fn default_account_utxo_persists() {
+        let addr = p2pkh(0x11);
+        let cs = changeset_for(record_with_received_output(standard(0), &addr, 500_000)).await;
         assert_eq!(
-            index, 7,
-            "the violation must name the offending account index"
+            cs.new_utxos.len(),
+            1,
+            "the default-account UTXO must be projected"
         );
+        assert_eq!(cs.new_utxos[0].value(), 500_000);
+    }
+
+    /// REGRESSION (fund-loss): a non-default-account (index != 0) UTXO is
+    /// STILL projected — never dropped. Storage persists it under
+    /// `account_index 0`; the only cost is approximate per-account grouping
+    /// (a `warn!` is logged). Dropping it would undercount the balance.
+    #[tokio::test]
+    async fn non_default_account_utxo_persists_under_zero() {
+        let addr = p2pkh(0x22);
+        let cs = changeset_for(record_with_received_output(standard(7), &addr, 900_000)).await;
+        assert_eq!(
+            cs.new_utxos.len(),
+            1,
+            "a non-default-account UTXO must NOT be dropped"
+        );
+        assert_eq!(cs.new_utxos[0].value(), 900_000, "funds preserved");
     }
 }
