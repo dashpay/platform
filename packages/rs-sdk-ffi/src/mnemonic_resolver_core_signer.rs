@@ -45,17 +45,20 @@
 //! - **`Zeroizing` wrappers** scrub on `Drop` for the byte-buffer
 //!   intermediates: the resolver mnemonic buffer, the BIP-39 seed,
 //!   and the final derived 32-byte scalar.
-//! - **Explicit `non_secure_erase` calls** scrub the
+//! - **The `WipingXprv` RAII guard** scrubs the
 //!   [`secp256k1::SecretKey`] scalars inside the two intermediate
-//!   [`ExtendedPrivKey`] values (master + derived). `ExtendedPrivKey`
-//!   has no `Drop` / `Zeroize` impl in `key-wallet`, so falling out
-//!   of scope alone would leave those scalars resident; the explicit
-//!   wipe at the bottom of `derive_priv` closes the gap. Same
-//!   defense is applied at the sign-site for the `SecretKey` copy
-//!   `from_slice` creates. A proper fix is a `Zeroize` /
-//!   `ZeroizeOnDrop` impl in `dashpay/rust-dashcore`'s
-//!   `key-wallet/src/bip32.rs`; until that ships, the local wipes
-//!   keep the no-residue invariant true.
+//!   [`ExtendedPrivKey`] values (master + derived) on `Drop`.
+//!   `ExtendedPrivKey` has no `Drop` / `Zeroize` impl in `key-wallet`,
+//!   so falling out of scope alone would leave those scalars resident;
+//!   wrapping them in the guard wipes on **every** exit path — normal
+//!   return, `?` error propagation, and panic unwind — so the shared
+//!   `resolve_derived_xprv` helper and every consumer (`derive_priv`,
+//!   `extended_public_key`, `ecdh_shared_secret`) inherit the wipe
+//!   without hand-placed calls. Same defense is applied at the sign-site
+//!   for the `SecretKey` copy `from_slice` creates. A proper fix is a
+//!   `Zeroize` / `ZeroizeOnDrop` impl in `dashpay/rust-dashcore`'s
+//!   `key-wallet/src/bip32.rs`; until that ships, the guard keeps the
+//!   no-residue invariant true.
 //!
 //! Combined, no private key bytes survive past the trait-method
 //! boundary.
@@ -309,12 +312,10 @@ impl MnemonicResolverCoreSigner {
                 MnemonicResolverSignerError::DerivationFailed(format!("master: {e}"))
             })?,
         );
-        let derived = WipingXprv(
-            master
-                .key()
-                .derive_priv(&secp, path)
-                .map_err(|e| MnemonicResolverSignerError::DerivationFailed(format!("path: {e}")))?,
-        );
+        let derived =
+            WipingXprv(master.key().derive_priv(&secp, path).map_err(|e| {
+                MnemonicResolverSignerError::DerivationFailed(format!("path: {e}"))
+            })?);
 
         Ok((master, derived))
     }
@@ -340,6 +341,33 @@ impl MnemonicResolverCoreSigner {
         let bytes = Zeroizing::new(derived.key().private_key.secret_bytes());
 
         Ok(bytes)
+    }
+
+    /// Compute the DIP-15 ECDH shared secret between our identity-encryption
+    /// key (derived at `path`) and the contact's `peer_pubkey`, entirely
+    /// in-process. The derived private scalar never leaves this function —
+    /// only the ECDH *product* is returned (safe to use as the symmetric key
+    /// for the caller's AES step; it is not the raw scalar).
+    ///
+    /// Reuses [`platform_encryption::derive_shared_key_ecdh`] — the single
+    /// ECDH source (`SHA256((y&1|2) ‖ x)`) — so the result is byte-identical
+    /// to the resident-seed path it replaces (pinned by a parity test). The
+    /// scalar is scrubbed by the [`WipingXprv`] guard before returning.
+    ///
+    /// Sync (the derivation is CPU-bound + the resolver call is synchronous);
+    /// the [`EcdhProvider::ClientSide`] closure that consumes it wraps it in a
+    /// future at the FFI seam.
+    pub fn ecdh_shared_secret(
+        &self,
+        path: &DerivationPath,
+        peer_pubkey: &secp256k1::PublicKey,
+    ) -> Result<Zeroizing<[u8; 32]>, MnemonicResolverSignerError> {
+        let (_master, derived) = self.resolve_derived_xprv(path)?;
+        // Read the scalar by reference; the `WipingXprv` guards scrub both
+        // scalars on drop.
+        let shared =
+            platform_encryption::derive_shared_key_ecdh(&derived.key().private_key, peer_pubkey);
+        Ok(Zeroizing::new(shared))
     }
 }
 
@@ -598,6 +626,60 @@ mod tests {
             via_signer, expected,
             "signer-based DashPay xpub must equal Wallet::derive_extended_public_key \
              for the same mnemonic and path"
+        );
+
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// Interop guard: the signer-based ECDH shared secret must be
+    /// byte-identical to the resident-seed route it replaces.
+    ///
+    /// The signer derives our scalar at `path` from the Keychain mnemonic and
+    /// ECDHs with a peer pubkey; a `Wallet` built from the SAME mnemonic
+    /// derives the scalar the old way and ECDHs through the SAME single crypto
+    /// source. If they diverged, every contact-request encrypt/decrypt the
+    /// signer path produces would be unreadable by the reference clients, so
+    /// this pins them equal.
+    #[tokio::test]
+    async fn ecdh_shared_secret_matches_wallet_derivation() {
+        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet::wallet::Wallet;
+
+        let path = test_path();
+
+        // A fixed peer keypair (the contact's encryption key).
+        let secp = Secp256k1::new();
+        let peer_sk = secp256k1::SecretKey::from_slice(&[0x42u8; 32]).expect("peer secret key");
+        let peer_pk = secp256k1::PublicKey::from_secret_key(&secp, &peer_sk);
+
+        // Old route: resident-seed wallet from the same mnemonic → derive the
+        // scalar at `path` → ECDH through the single crypto source.
+        let mnemonic =
+            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let seed = mnemonic.to_seed("");
+        let wallet =
+            Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
+                .expect("seeded wallet");
+        let xprv = wallet
+            .derive_extended_private_key(&path)
+            .expect("wallet derives the private key at path");
+        let expected = platform_encryption::derive_shared_key_ecdh(&xprv.private_key, &peer_pk);
+
+        // New route: resolver-backed signer fed the same mnemonic.
+        let resolver = make_resolver(english_resolve);
+        let signer =
+            unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+        let actual = signer
+            .ecdh_shared_secret(&path, &peer_pk)
+            .expect("signer computes the ECDH shared secret");
+
+        // Deref to a concrete `[u8; 32]` on both sides — `Zeroizing::as_ref`
+        // is ambiguous here (dashcore adds an `AsRef<PushBytes>` for `[u8; 32]`).
+        let actual_bytes: [u8; 32] = *actual;
+        assert_eq!(
+            actual_bytes, expected,
+            "signer-based ECDH must equal the resident-seed ECDH for the same mnemonic and path"
         );
 
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };

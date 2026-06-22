@@ -6340,6 +6340,7 @@ dependencies = [
  "libc",
  "log",
  "once_cell",
+ "platform-encryption",
  "reqwest 0.12.28",
  "rs-sdk-trusted-context-provider",
  "serde",

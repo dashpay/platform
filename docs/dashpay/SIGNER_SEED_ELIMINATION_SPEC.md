@@ -102,7 +102,7 @@ Reclassification vs v2 (from the review):
   #5 in the `register_external` path that the sweep drives). Converting their
   xpub piecemeal in Phase 1 would double-touch the same functions. Bundle each
   xpub conversion with the ECDH conversion of its host function (one
-  `WalletKeyProvider` threading per function). Phase 1 stays exactly the
+  wallet-HD closure threading per function). Phase 1 stays exactly the
   already-shipped, green slice (#1 + the `extended_public_key` foundation +
   dead-API deletion).
 - **2b is a steady-state no-op.** `register_contact_account` has an early-exit
@@ -155,9 +155,10 @@ Wallet-HD capabilities:
 4. **ECDH** `(path, peer_pubkey) -> shared_secret` — NEW host primitive (§4.5).
 5. **contactInfo seal/open** — NEW host primitive (§4.5).
 
-Capabilities 4–5 are added as the `WalletKeyProvider` extension trait (§4.4)
-so the wallet side is a **single object** exposing everything, while the
-doc-signer stays a separate object.
+Capabilities 4–5 are added as **inherent methods on `MnemonicResolverCoreSigner`**
+(in `rs-sdk-ffi`, where it already lives) and consumed by platform-wallet via
+**closures** (the existing `EcdhProvider::ClientSide` seam) — no new trait, no
+new crate (§4.4).
 
 ## 4. Design
 
@@ -204,37 +205,47 @@ FFI; Swift never assembles a path.
 
 #### 4.4 Signer & host-primitive model (no duplicate logic)
 
-**Decision: split across the seed boundary, unify within the wallet side.**
+**Decision: two FFI handles; raw-secret ops as inherent methods on the
+existing wallet signer, consumed via closures — NO new trait, NO new crate.**
 
 - Keep `VTableSigner` (doc-signer) and `MnemonicResolverHandle` (wallet-HD) as
   **two** FFI handles. Merging them would either regress the doc-signer (seed
   currently never enters Rust) or force DIP-15 crypto into Swift — both
   rejected.
-- Collapse all wallet/raw-secret capabilities onto **one** Rust extension
-  trait, implemented by `MnemonicResolverCoreSigner`:
+- `MnemonicResolverCoreSigner` (in `rs-sdk-ffi`) already **is** the wallet-HD
+  binding (impls `key_wallet::signer::Signer`) and is constructed only by the
+  `rs-platform-wallet-ffi` glue crate. `rs-sdk-ffi` and `platform-wallet` do not
+  depend on each other, so a shared `WalletKeyProvider` *trait* would need a new
+  crate or a layering inversion (the external `key-wallet` is ruled out — keep
+  the cross-repo PR to one method, and ECDH must not become a `Signer` method).
+  Avoid all of that: add the raw-secret capabilities as **inherent methods** on
+  `MnemonicResolverCoreSigner` (it gains a `platform-encryption` dep — a leaf
+  crypto crate, no cycle), and let platform-wallet consume them via **closures**
+  — the `EcdhProvider::ClientSide { get_shared_secret }` seam it already uses,
+  plus a closure param on the decrypt/drain path. The glue crate wires the
+  closures from the signer's methods (it already owns the signer's construction
+  + lifetime). *(An earlier draft proposed a `WalletKeyProvider: Signer`
+  extension trait; dropped — no shared home given the crate graph, and the
+  closure seam already exists.)*
 
-```rust
-#[async_trait]
-pub trait WalletKeyProvider: key_wallet::signer::Signer {
-    async fn ecdh_shared_secret(&self, path: &DerivationPath,
-        peer_pubkey: &secp256k1::PublicKey) -> Result<Zeroizing<[u8;32]>, Self::Error>;
-    async fn ecdh_shared_secret_and_account_reference(&self, path: &DerivationPath,
-        peer_pubkey: &secp256k1::PublicKey, compact_xpub: &[u8],
-        account_index: u32, version: u32) -> Result<(Zeroizing<[u8;32]>, u32), Self::Error>;
-    async fn unmask_account_reference(&self, path: &DerivationPath,
-        prior_reference: u32, compact_xpub: &[u8]) -> Result<(u32, u32), Self::Error>;
-    async fn contact_info_seal(&self, root_path: &DerivationPath, derivation_index: u32,
-        contact_id: &[u8;32], private_data_plaintext: &[u8],
-        private_data_iv: &[u8;16]) -> Result<ContactInfoSealed, Self::Error>;
-    async fn contact_info_open(&self, root_path: &DerivationPath, derivation_index: u32,
-        enc_to_user_id: &[u8;32], private_data_blob: &[u8]) -> Result<ContactInfoOpened, Self::Error>;
-}
+Inherent methods on `MnemonicResolverCoreSigner` (sync — derivation is
+CPU-bound + the resolver call is synchronous; the consuming `ClientSide` closure
+wraps each in a future at the FFI seam):
+
+```text
+ecdh_shared_secret(path, peer_pubkey) -> Zeroizing<[u8;32]>                       // #4/#5  DONE
+ecdh_shared_secret_and_account_reference(path, peer, compact_xpub, account_index, version)
+                                        -> (Zeroizing<[u8;32]>, u32)              // #6
+unmask_account_reference(path, prior_reference, compact_xpub) -> (u32, u32)       // #6
+contact_info_seal(root_path, derivation_index, contact_id, plaintext, iv) -> ContactInfoSealed  // #7
+contact_info_open(root_path, derivation_index, enc_to_user_id, blob) -> ContactInfoOpened        // #7
 ```
 
-- The three DashPay-document ops take **both** signers as separate params
-  (`doc_signer: &DocS`, `wallet_signer: &WalletS: WalletKeyProvider`);
-  `send_payment` takes only the wallet signer. Swift passes the two handles it
-  already holds — **no new Swift class, no new Swift crypto**.
+- Document-ops conversion: send/accept contact-request already thread a
+  `doc_signer` for the state transition; for the xpub/ECDH they additionally
+  receive the wallet-HD closure(s) the glue crate builds from the signer.
+  `send_payment` keeps only its `key_wallet::Signer`. Swift passes the two
+  handles it already holds — **no new Swift class, no new Swift crypto**.
 - **Delete the dead `dash_sdk_dashpay_*` ClientSide FFI surface**
   (`rs-sdk-ffi/src/dashpay/contact_request.rs`: the two entry points,
   params/results, `DashSDKEcdhMode`, the four `*_with_{shared_secret,private_key}`
@@ -243,13 +254,13 @@ pub trait WalletKeyProvider: key_wallet::signer::Signer {
   `SdkSide` raw-scalar ABI contradicts the new posture. The `rs-sdk`
   contact-request core + `EcdhProvider` stay (single source).
 
-**No-duplicate-logic trace:** every `WalletKeyProvider` method body is
-"derive scalar at a Rust-built path (existing `resolve_derived_xprv`) → call
-the existing `platform_encryption` / `dip14` fn → return result, wipe scalar."
-Zero new crypto. Single sources stay: DIP-15 ECDH/AES → `rs-platform-encryption`;
-accountReference HMAC + masking → `dip14`; contact-request orchestration →
-`rs-sdk platform::dashpay::contact_request`; contactInfo wire codec →
-`crypto/contact_info.rs` (plaintext-only, runs outside the primitive).
+**No-duplicate-logic trace:** every host method body is "derive scalar at a
+Rust-built path (the shared `resolve_derived_xprv`, scrubbed by the `WipingXprv`
+guard on every exit path) → call the existing `platform_encryption` / `dip14`
+fn → return the result." Zero new crypto. Single sources stay: DIP-15 ECDH/AES →
+`platform-encryption`; accountReference HMAC + masking → `dip14`; contact-request
+orchestration → `rs-sdk platform::dashpay::contact_request`; contactInfo wire
+codec → `crypto/contact_info.rs` (plaintext-only, runs outside the primitive).
 
 #### 4.5 raw-secret host primitives (option iii) + EcdhProvider collapse
 
@@ -259,7 +270,8 @@ FFI-crate Rust**, returning only the result; the raw scalar never reaches
 
 - **ECDH (#4/#5):** switch `sdk_writer.rs:240` from
   `EcdhProvider::SdkSide { get_private_key }` to
-  `ClientSide { get_shared_secret }` backed by `WalletKeyProvider::ecdh_shared_secret`.
+  `ClientSide { get_shared_secret }` backed by a closure calling
+  `MnemonicResolverCoreSigner::ecdh_shared_secret` (DONE; parity-pinned).
   For all DashPay paths the model **collapses to `ClientSide` only**; delete
   `derive_encryption_private_key` (`identity_handle.rs:476`) and
   `SendContactRequestParams.ecdh_private_key` — the two places that
@@ -411,7 +423,7 @@ tick on an unbuilt contact into an irreversible channel-kill.
   enqueue (not kill); drain on unlock → contact payable. A `Permanent` error
   clears the entry AND sets `payment_channel_broken`. A locked-Keychain
   (transient) does **not** mark broken.
-- **Per-primitive no-residue:** each `WalletKeyProvider` method wipes scalars
+- **Per-primitive no-residue:** each inherent host-primitive method wipes scalars
   on Ok **and error/unwind** paths.
 - **FFI:** input-validation (null/oversize/bad-path) incl. contactInfo depth-6
   paths (hardened 65536/65537).
@@ -437,8 +449,9 @@ tick on an unbuilt contact into an irreversible channel-kill.
      regression tests green). No longer a blocker. Phase 2 need only confirm an
      imported wallet reaches the resolver for xpub/ECDH (its mnemonic is stored in
      the Keychain by `createWallet`, so the resolver-backed signer works for it).
-3. **Phase 2 feature code:** `WalletKeyProvider` (ECDH + accountReference +
-   contactInfo host primitives) → `EcdhProvider` collapse to `ClientSide` →
+3. **Phase 2 feature code:** inherent host primitives on
+   `MnemonicResolverCoreSigner` (ECDH + accountReference + contactInfo) →
+   `EcdhProvider` collapse to `ClientSide` →
    convert #2/#2b/#4–#7 (each xpub bundled with its function's ECDH) → delete
    the dead `dash_sdk_dashpay_*` surface → §4.8 self-check.
 4. **Only then §4.9:** delete `attach_wallet_seed` + re-attach + legacy
@@ -459,7 +472,8 @@ goes through the **swift-rust-ffi-engineer** agent.
 - **Keep the workaround:** rejected by product decision.
 - **Unified single signer handle (doc + wallet + ECDH):** rejected — regresses
   the doc-signer (seed never in Rust today) or pushes DIP-15 crypto into Swift.
-  Unify *within* the wallet side via `WalletKeyProvider` instead (§4.4).
+  Add the wallet-side raw-secret ops as inherent methods on the existing
+  signer, consumed via closures, instead (§4.4).
 - **§4.5 option (i) (return raw scalar):** rejected for option (iii) — exposes
   the ECDH key raw, defeating the hashing; the carry-scalar precedent
   (write-once Rust→Swift) does not sanction the read-many reverse flow.
@@ -491,8 +505,10 @@ goes through the **swift-rust-ffi-engineer** agent.
 ## 10. Resolved review questions
 
 - **key-wallet method:** provided-default-that-errors — §4.1.
-- **raw-secret:** option (iii) via `WalletKeyProvider` host primitives — §4.4/§4.5.
-- **signer surface:** two FFI handles, unified wallet-side trait — §4.4.
+- **raw-secret:** option (iii) via inherent host primitives on the wallet
+  signer, consumed by closures — §4.4/§4.5.
+- **signer surface:** two FFI handles; raw-secret ops as inherent methods +
+  `EcdhProvider::ClientSide` closures (no new trait/crate) — §4.4.
 - **dead `dash_sdk_dashpay_*` surface:** delete — §4.4.
 - **read-API ripple:** dead → deleted — §2.
 - **dual-gate deletion:** safe for grafting; wrong-seed detection preserved via
