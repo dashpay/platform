@@ -89,11 +89,19 @@ where
 ///
 /// Every field is resolved by `IdentityWallet` before the seam is
 /// called: key indices come from the sender / recipient identities,
-/// `ecdh_private_key` is derived from the wallet seed, `xpub_bytes` is
-/// the DashPay receiving-account xpub to share, and
-/// `signing_public_key` is the HIGH/CRITICAL authentication key the
-/// document state transition is signed with. The seam only assembles
-/// the SDK `EcdhProvider` + xpub closure and dispatches.
+/// `shared_secret` is the ECDH secret already derived against the
+/// recipient's encryption key, `xpub_bytes` is the DashPay
+/// receiving-account xpub to share, and `signing_public_key` is the
+/// HIGH/CRITICAL authentication key the document state transition is
+/// signed with. The seam only assembles the SDK `EcdhProvider` + xpub
+/// closure and dispatches.
+///
+/// The ECDH is performed by the caller (client-side), so the seam hands
+/// the SDK the finished shared secret via [`EcdhProvider::ClientSide`] —
+/// no private key crosses into the SDK. Carrying the precomputed secret
+/// (rather than a derivation closure) keeps the params object-safe and
+/// lets the caller source it from either the resident seed or the
+/// Keychain signer without the seam knowing which.
 pub(crate) struct SendContactRequestParams<'a> {
     /// Sender (owner) identity — already loaded from local state.
     pub sender_identity: Identity,
@@ -109,8 +117,18 @@ pub(crate) struct SendContactRequestParams<'a> {
     pub account_label: Option<String>,
     /// Optional unencrypted auto-accept proof.
     pub auto_accept_proof: Option<Vec<u8>>,
-    /// Sender ECDH private key derived from the wallet seed.
-    pub ecdh_private_key: dashcore::secp256k1::SecretKey,
+    /// ECDH shared secret, already derived by the caller against the
+    /// recipient's encryption key (client-side ECDH). The SDK encrypts
+    /// the shared xpub with this directly; no private key crosses the
+    /// seam.
+    pub shared_secret: [u8; 32],
+    /// The recipient encryption public key the `shared_secret` was
+    /// derived against. The seam's `ClientSide` closure asserts the SDK
+    /// asks for ECDH against this exact key before handing back the
+    /// secret — the client-side equivalent of the old SdkSide key-id
+    /// guard, so a recipient-key mismatch fails loudly instead of
+    /// silently encrypting with the wrong secret.
+    pub expected_recipient_pubkey: dashcore::secp256k1::PublicKey,
     /// DashPay receiving-account xpub to share with the recipient, in the
     /// **69-byte DIP-15 compact form** (`parentFingerprint ‖ chainCode ‖
     /// pubKey`) — NOT `ExtendedPubKey::encode()`. The SDK validates len == 69
@@ -205,7 +223,8 @@ impl DashPaySdkWriter for SdkWriter {
             account_reference,
             account_label,
             auto_accept_proof,
-            ecdh_private_key,
+            shared_secret,
+            expected_recipient_pubkey,
             xpub_bytes,
             signing_public_key,
             signer,
@@ -227,29 +246,35 @@ impl DashPaySdkWriter for SdkWriter {
             signer: SignerRef(signer),
         };
 
-        // SDK-side ECDH: hand back the pre-derived sender private key,
-        // guarding that the SDK asks for the encryption key we resolved.
-        let expected_key_id = sender_key_index;
+        // Client-side ECDH: the caller already derived the shared secret
+        // against `expected_recipient_pubkey`; hand it back, guarding that
+        // the SDK asks for ECDH against that exact recipient key (the
+        // client-side equivalent of the old SdkSide key-id guard). The
+        // `F`/`Fut` (SdkSide) type params are unused here, so a never-called
+        // `fn` placeholder satisfies their bounds.
         let ecdh_provider: EcdhProvider<
-            _,
-            _,
             fn(
-                &dashcore::secp256k1::PublicKey,
-            ) -> std::future::Ready<Result<[u8; 32], dash_sdk::Error>>,
+                &IdentityPublicKey,
+                u32,
+            ) -> std::future::Ready<
+                Result<dashcore::secp256k1::SecretKey, dash_sdk::Error>,
+            >,
             _,
-        > = EcdhProvider::SdkSide {
-            get_private_key: move |key: &IdentityPublicKey, _index: u32| {
-                use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-                let pk = ecdh_private_key;
-                let actual_key_id = key.id();
+            _,
+            _,
+        > = EcdhProvider::ClientSide {
+            get_shared_secret: move |peer: &dashcore::secp256k1::PublicKey| {
+                let peer_matches = *peer == expected_recipient_pubkey;
                 async move {
-                    if actual_key_id != expected_key_id {
-                        return Err(dash_sdk::Error::Generic(format!(
-                            "ECDH key mismatch: expected key {}, got {}",
-                            expected_key_id, actual_key_id
-                        )));
+                    if !peer_matches {
+                        return Err(dash_sdk::Error::Generic(
+                            "ECDH recipient-key mismatch: the SDK resolved a recipient \
+                             encryption key different from the one the shared secret was \
+                             derived against"
+                                .to_string(),
+                        ));
                     }
-                    Ok(pk)
+                    Ok(shared_secret)
                 }
             },
         };

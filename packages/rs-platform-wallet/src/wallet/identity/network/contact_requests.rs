@@ -291,7 +291,33 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 )
             })?;
 
-        // 6. Broadcast through the write seam. All inputs are resolved
+        // 6. Client-side ECDH: derive the shared secret against the
+        //    recipient's encryption key HERE, so the SDK seam receives the
+        //    finished secret (`EcdhProvider::ClientSide`) rather than a
+        //    private key. The recipient key is resolved exactly as the SDK
+        //    would (`recipientKeyIndex` on the recipient identity), so the
+        //    secret is byte-identical to the old SdkSide derivation; the
+        //    seam re-checks the SDK asks for this same key.
+        let recipient_enc_pubkey = {
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+            let key = recipient_identity
+                .public_keys()
+                .get(&recipient_key_index)
+                .ok_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Recipient identity has no key at index {recipient_key_index}"
+                    ))
+                })?;
+            dashcore::secp256k1::PublicKey::from_slice(key.data().as_slice()).map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Recipient encryption public key is invalid: {e}"
+                ))
+            })?
+        };
+        let shared_secret =
+            platform_encryption::derive_shared_key_ecdh(&ecdh_private_key, &recipient_enc_pubkey);
+
+        // 7. Broadcast through the write seam. All inputs are resolved
         //    above; the seam assembles the SDK `EcdhProvider` + xpub
         //    closure and dispatches `Sdk::send_contact_request`. Routing
         //    the broadcast through `sdk_writer` (rather than calling the
@@ -307,14 +333,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 account_reference,
                 account_label,
                 auto_accept_proof,
-                ecdh_private_key,
+                shared_secret,
+                expected_recipient_pubkey: recipient_enc_pubkey,
                 xpub_bytes,
                 signing_public_key: identity_public_key,
                 signer: signer as &(dyn Signer<IdentityPublicKey> + Send + Sync),
             })
             .await?;
 
-        // 7. Mirror the local-state bookkeeping in `send_contact_request`.
+        // 8. Mirror the local-state bookkeeping in `send_contact_request`.
         //
         // Store the REAL 96-byte ciphertext off the broadcast
         // document (not a zero placeholder) so the persisted /
