@@ -5230,6 +5230,7 @@ dependencies = [
  "refinery",
  "region",
  "rusqlite",
+ "schemars 1.2.1",
  "serde",
  "serde_json",
  "serial_test",

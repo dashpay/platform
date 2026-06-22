@@ -15,6 +15,18 @@ use zeroize::{Zeroize, Zeroizing};
 /// buffer behind — virtually impossible for any human-entered secret.
 const DEFAULT_CAPACITY: usize = 4096;
 
+/// Minimal post-trim length floor for a vault passphrase or a Tier-2
+/// object password, in bytes. A **coarse** guard only: `1` means "merely
+/// non-blank" (the same outcome [`SecretString::is_blank`] enforces).
+///
+/// The library deliberately ships **no** password-strength estimator. The
+/// real entropy policy — zxcvbn-style strength, dictionary checks, UX
+/// feedback — is locale- and threat-specific and therefore the
+/// **consumer's** responsibility (documented in `SECRETS.md`). Baking a
+/// fixed estimator into a storage crate would be both too weak for some
+/// callers and too rigid for others.
+pub const MIN_PASSPHRASE_LEN: usize = 1;
+
 /// Zeroize-on-drop wrapper for secret UTF-8 strings (BIP-39 mnemonic,
 /// `EncryptedFileStore` passphrase).
 ///
@@ -87,6 +99,18 @@ impl SecretString {
     pub fn trimmed(&self) -> Self {
         Self::new(self.inner.trim().to_string())
     }
+
+    /// Whether the secret is empty or all Unicode-whitespace.
+    ///
+    /// Returns only blank-ness — never a borrowed view of the plaintext —
+    /// and uses [`str::trim`] (the Unicode `White_Space` property), so a
+    /// NBSP (`U+00A0`) trims to blank but a ZWSP (`U+200B`, not
+    /// `White_Space`) does not. This is the enforcement primitive behind
+    /// the Tier-1 blank-passphrase guard and the Tier-2 blank-object-
+    /// password reject. Always available — **not** feature-gated.
+    pub fn is_blank(&self) -> bool {
+        self.inner.trim().is_empty()
+    }
 }
 
 impl Default for SecretString {
@@ -140,6 +164,86 @@ impl From<String> for SecretString {
 impl From<&str> for SecretString {
     fn from(s: &str) -> Self {
         Self::new(s.to_string())
+    }
+}
+
+/// Deserialize a UTF-8 secret (a vault passphrase or a Tier-2 object
+/// password arriving via config), routing the owned `String` through
+/// [`SecretString::new`] — which zeroizes its source — so no
+/// intermediate plaintext buffer **we own** lingers (CWE-316).
+///
+/// Gated behind the dedicated, default-off `secret-serde` feature, NOT the
+/// crate's internal `serde` dep (which `secrets` already pulls): the gate
+/// is on the IMPL, so the impl is absent unless explicitly opted in, even
+/// though `serde` itself is compiled. There is deliberately **no**
+/// `Serialize` companion (a secret is read-from-config, never written
+/// back / round-tripped / logged), so this type cannot leak out through
+/// serde under any feature combination.
+///
+/// **Residual (documented, not closeable here):** the deserializer's own
+/// input buffer holds the cleartext before this visitor runs and is
+/// outside `SecretString`'s ownership, so it cannot be wiped here — feed
+/// secrets from a zeroizing source. Mirrors the Argon2 `Block` residual
+/// noted at `crypto::derive_key`.
+#[cfg(feature = "secret-serde")]
+impl<'de> serde::Deserialize<'de> for SecretString {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct SecretStringVisitor;
+
+        impl<'v> serde::de::Visitor<'v> for SecretStringVisitor {
+            type Value = SecretString;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a secret string")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                // Take ownership of the borrowed bytes, then hand the owned
+                // `String` to the zeroizing constructor below.
+                self.visit_string(v.to_owned())
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                // `SecretString::new` zeroizes the moved-in `String`.
+                Ok(SecretString::new(v))
+            }
+        }
+
+        deserializer.deserialize_string(SecretStringVisitor)
+    }
+}
+
+/// Render the JSON schema as a plain `string` carrying **no** length or
+/// value policy: no `minLength`/`maxLength`/`pattern`/`format` (would leak
+/// a length policy) and no `example`/`default` (would embed a value)
+/// (F-7). A short, value-free `description` marks sensitivity.
+///
+/// Gated behind the default-off `secret-schemars` feature (which implies
+/// `secret-serde`). Pulls in no `Serialize`/`Display` path.
+#[cfg(feature = "secret-schemars")]
+impl schemars::JsonSchema for SecretString {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("SecretString")
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("platform_wallet_storage::secrets::SecretString")
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "description": "A secret string. Write-only: never serialized, never echoed."
+        })
     }
 }
 
@@ -280,6 +384,112 @@ mod tests {
     fn secret_string_empty_default() {
         assert!(SecretString::empty().is_empty());
         assert_eq!(SecretString::default().len(), 0);
+    }
+
+    /// TS-SER-001: `is_blank()` truth table. The boundary deliberately
+    /// exercises Unicode whitespace — `str::trim` uses the `White_Space`
+    /// property, so NBSP (`U+00A0`) trims to blank but ZWSP (`U+200B`,
+    /// not `White_Space`) does not.
+    #[test]
+    fn is_blank_truth_table() {
+        // Blank inputs.
+        assert!(SecretString::empty().is_blank());
+        assert!(SecretString::new("").is_blank());
+        assert!(SecretString::new("   ").is_blank());
+        assert!(SecretString::new("\t\r\n ").is_blank());
+        assert!(
+            SecretString::new("\u{00A0}").is_blank(),
+            "NBSP is White_Space"
+        );
+        // Non-blank inputs.
+        assert!(!SecretString::new("pw").is_blank());
+        assert!(!SecretString::new("  pw  ").is_blank());
+        assert!(
+            !SecretString::new("\u{200B}").is_blank(),
+            "ZWSP is NOT White_Space"
+        );
+    }
+
+    /// TS-SER-002: `is_blank` returns a `bool` and exposes no borrowed
+    /// plaintext, callable with only `secrets` (no serde/schemars).
+    #[test]
+    fn is_blank_signature_returns_bool_no_borrow() {
+        let f: fn(&SecretString) -> bool = SecretString::is_blank;
+        assert!(f(&SecretString::new("")));
+        assert!(!f(&SecretString::new("x")));
+    }
+
+    /// TS-SER-005 / TS-SER-007: `SecretString` must never implement
+    /// `Serialize` or `Display`, even with serde compiled in. This is a
+    /// compile-time `!impl` assertion — adding either impl breaks the
+    /// build. `serde::Serialize` is nameable here because `secrets` always
+    /// pulls the `serde` dep.
+    #[test]
+    fn secret_string_has_no_serialize_no_display() {
+        static_assertions::assert_not_impl_any!(SecretString: serde::Serialize, std::fmt::Display);
+    }
+
+    /// TS-SER-008 / GAP-002 regression: the `serde` DEP is on under
+    /// `secrets`, yet the `Deserialize` IMPL stays ABSENT because it is
+    /// gated on the dedicated `secret-serde` feature — proving the
+    /// default-off gate is satisfiable even while serde is compiled.
+    #[cfg(not(feature = "secret-serde"))]
+    #[test]
+    fn deserialize_absent_without_secret_serde_even_though_serde_dep_on() {
+        static_assertions::assert_not_impl_any!(
+            SecretString: serde::de::DeserializeOwned
+        );
+    }
+
+    /// TS-SER-008: with `secret-serde` on, the `Deserialize` impl is
+    /// present (and `Serialize` is still absent — see the always-on test).
+    #[cfg(feature = "secret-serde")]
+    #[test]
+    fn deserialize_present_with_secret_serde() {
+        static_assertions::assert_impl_all!(SecretString: serde::de::DeserializeOwned);
+        static_assertions::assert_not_impl_any!(SecretString: serde::Serialize);
+    }
+
+    /// TS-SER-003: `Deserialize` round-trips the value through the
+    /// zeroizing constructor; the result `ct_eq`s a directly-built secret
+    /// and has the right length.
+    #[cfg(feature = "secret-serde")]
+    #[test]
+    fn deserialize_routes_value_through_zeroizing_constructor() {
+        let s: SecretString = serde_json::from_str("\"correct horse battery staple\"").unwrap();
+        assert!(bool::from(
+            s.ct_eq(&SecretString::new("correct horse battery staple"))
+        ));
+        assert_eq!(s.len(), 28);
+    }
+
+    /// TS-SER-006: `JsonSchema` renders a plain `string` and leaks no
+    /// length/value policy — no `minLength`/`maxLength`/`pattern`/`format`,
+    /// no `example`/`default`/`enum`.
+    #[cfg(feature = "secret-schemars")]
+    #[test]
+    fn json_schema_is_plain_string_no_policy_leak() {
+        let schema = schemars::schema_for!(SecretString);
+        let v = serde_json::to_value(&schema).unwrap();
+        assert_eq!(v["type"], serde_json::json!("string"));
+        for forbidden in [
+            "minLength",
+            "maxLength",
+            "pattern",
+            "format",
+            "example",
+            "default",
+            "enum",
+        ] {
+            assert!(
+                v.get(forbidden).is_none(),
+                "schema leaked `{forbidden}`: {v}"
+            );
+        }
+        // Any description present must carry no example/secret value.
+        if let Some(desc) = v.get("description").and_then(|d| d.as_str()) {
+            assert!(!desc.contains("horse"));
+        }
     }
 
     #[test]

@@ -35,6 +35,6 @@ pub use file::{
     SERVICE_PREFIX,
 };
 pub use keyring::default_credential_store;
-pub use secret::{SecretBytes, SecretString};
+pub use secret::{SecretBytes, SecretString, MIN_PASSPHRASE_LEN};
 pub use store::SecretStore;
 pub use validate::WalletId;
