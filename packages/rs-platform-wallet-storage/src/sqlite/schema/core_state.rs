@@ -160,9 +160,9 @@ pub fn apply(
 }
 
 /// Resolve a UTXO's owning account index via the `core_derived_addresses` map.
-/// An address can be derived under multiple `account_type`s, so `ORDER BY` with
-/// `LIMIT 1` makes the choice deterministic (SQLite would otherwise pick an
-/// arbitrary matching row).
+/// `UNIQUE(wallet_id, address)` in V001 guarantees at most one row per
+/// `(wallet_id, address)` pair, so the query returns 0 or 1 rows.
+/// The `ORDER BY … LIMIT 1` is kept as a defensive guard against schema drift.
 const ACCOUNT_INDEX_BY_ADDRESS_SQL: &str = "SELECT account_index FROM core_derived_addresses \
      WHERE wallet_id = ?1 AND address = ?2 \
      ORDER BY account_type, account_index LIMIT 1";
