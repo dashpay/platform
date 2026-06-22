@@ -149,6 +149,15 @@ pub enum MnemonicResolverSignerError {
     /// error.
     #[error("invalid private key scalar: {0}")]
     InvalidScalar(String),
+
+    /// The resolved mnemonic does not bind to the wallet it was fetched
+    /// for: the account-xpub it derives differs from the wallet's
+    /// persisted one. Surfaced by [`MnemonicResolverCoreSigner::verify_binds_to_xpub`]
+    /// so a mis-mapped Keychain slot fails loud instead of silently
+    /// signing/deriving for the wrong wallet (replaces the wrong-seed
+    /// detection the deleted `attach_wallet_seed` dual gate provided).
+    #[error("resolved mnemonic does not bind to this wallet (account-xpub mismatch)")]
+    WrongSeed,
 }
 
 /// `key_wallet::signer::Signer` implementation that derives ECDSA
@@ -437,6 +446,27 @@ impl MnemonicResolverCoreSigner {
             contact_id: platform_encryption::decrypt_enc_to_user_id(&enc_key, enc_to_user_id),
             private_data,
         })
+    }
+
+    /// Verify the resolved mnemonic binds to this wallet: derive the extended
+    /// public key at `account_path` and compare to `expected` (the wallet's
+    /// persisted account-xpub). `Err(WrongSeed)` on mismatch. The host runs
+    /// this once at signer construction / first use so a mis-mapped Keychain
+    /// slot can't silently derive for the wrong wallet — replacing the
+    /// wrong-seed detection the deleted `attach_wallet_seed` dual gate gave.
+    pub fn verify_binds_to_xpub(
+        &self,
+        account_path: &DerivationPath,
+        expected: &ExtendedPubKey,
+    ) -> Result<(), MnemonicResolverSignerError> {
+        let (_master, derived) = self.resolve_derived_xprv(account_path)?;
+        let secp = Secp256k1::new();
+        let derived_xpub = ExtendedPubKey::from_priv(&secp, derived.key());
+        if derived_xpub == *expected {
+            Ok(())
+        } else {
+            Err(MnemonicResolverSignerError::WrongSeed)
+        }
     }
 }
 
@@ -833,6 +863,51 @@ mod tests {
         assert_eq!(
             sealed.enc_to_user_id, expected_enc,
             "signer encToUserId must equal the resident-seed encryption at the same path"
+        );
+
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// The wrong-seed self-check: `verify_binds_to_xpub` accepts the matching
+    /// account-xpub (the resolved mnemonic binds to the wallet) and rejects a
+    /// non-matching one with `WrongSeed` — so a mis-mapped Keychain slot fails
+    /// loud instead of deriving for the wrong wallet.
+    #[tokio::test]
+    async fn verify_binds_to_xpub_accepts_match_and_rejects_mismatch() {
+        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet::wallet::Wallet;
+
+        let path = test_path();
+        let mnemonic =
+            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let seed = mnemonic.to_seed("");
+        let wallet =
+            Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
+                .expect("seeded wallet");
+        let expected = wallet
+            .derive_extended_public_key(&path)
+            .expect("xpub at the binding path");
+        let wrong_path = path
+            .clone()
+            .extend([ChildNumber::from_normal_idx(7).unwrap()]);
+        let wrong = wallet
+            .derive_extended_public_key(&wrong_path)
+            .expect("xpub at a different path");
+
+        let resolver = make_resolver(english_resolve);
+        let signer =
+            unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+
+        signer
+            .verify_binds_to_xpub(&path, &expected)
+            .expect("the matching mnemonic must bind to the wallet");
+        let err = signer
+            .verify_binds_to_xpub(&path, &wrong)
+            .expect_err("a non-matching account-xpub must be rejected");
+        assert!(
+            matches!(err, MnemonicResolverSignerError::WrongSeed),
+            "a mismatch must surface WrongSeed, got {err:?}"
         );
 
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
