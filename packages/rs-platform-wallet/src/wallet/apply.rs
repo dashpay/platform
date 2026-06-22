@@ -108,6 +108,12 @@ impl PlatformWalletInfo {
             wallet_metadata: _,
             account_registrations: _,
             account_address_pools: _,
+            // The deferred contact-crypto queue is persistence-only here too:
+            // the in-memory queue is mutated directly at the enqueue (sweep)
+            // and drain (signer-present) sites, and restored at load via the
+            // start-state path. No changeset-replay hook in apply.
+            pending_contact_crypto_added: _,
+            pending_contact_crypto_cleared: _,
             // Shielded deltas are owned by `ShieldedWallet` (which
             // mutates its store directly during sync / spend); the
             // canonical in-memory state lives there and the

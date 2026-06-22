@@ -28,7 +28,8 @@ pub use changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, AssetLockChangeSet, AssetLockEntry,
     ContactChangeSet, ContactRequestEntry, CoreChangeSet, IdentityChangeSet, IdentityEntry,
     IdentityKeyDerivationIndices, IdentityKeyEntry, IdentityKeysChangeSet, KeyDerivationBreadcrumb,
-    KeyWithBreadcrumb, PlatformAddressBalanceEntry, PlatformAddressChangeSet,
+    KeyWithBreadcrumb, PendingContactCrypto, PendingContactCryptoKey, PendingContactCryptoKind,
+    PendingContactCryptoOp, PlatformAddressBalanceEntry, PlatformAddressChangeSet,
     PlatformWalletChangeSet, ReceivedContactRequestKey, SentContactRequestKey,
     TokenBalanceChangeSet, WalletMetadataEntry,
 };

@@ -1008,6 +1008,105 @@ pub struct AccountAddressPoolEntry {
 }
 
 // ---------------------------------------------------------------------------
+// Deferred contact-crypto queue (seedless background-sync deferral)
+// ---------------------------------------------------------------------------
+
+/// A DashPay contact-crypto operation that the background sync sweep could not
+/// perform because key material wasn't available at the time (watch-only
+/// wallet / Keychain signer not unlocked).
+///
+/// The sweep runs with no signer; rather than churn (receiving account) or
+/// irreversibly break the channel (external account), it **enqueues** the op
+/// here and the entry is drained when a signer becomes available (Keychain
+/// unlock, or any signer-present DashPay action). The queue carries **only
+/// ciphertext + public key indices** — never a secret — so it is safe to
+/// persist, which it must be: a restore-from-Keychain is exactly when a
+/// discovered contact would otherwise be stranded.
+///
+/// One op per `(owner, contact, kind)` — see [`PendingContactCryptoKey`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum PendingContactCryptoOp {
+    /// Derive our own DashPay receiving xpub (the friendship key) and register
+    /// the receiving account. No secret payload — the path is built from the
+    /// `(owner, contact)` identity ids. First-time only; a no-op once the
+    /// account is persisted.
+    RegisterReceiving,
+    /// Decrypt the contact's encrypted xpub via ECDH and register the external
+    /// (sending) account. Carries the on-chain ciphertext + the already-
+    /// validated key indices — all public.
+    RegisterExternal {
+        /// The contact's DIP-15 `encryptedPublicKey` blob (ciphertext).
+        encrypted_public_key: Vec<u8>,
+        /// Our decryption key index (validated upstream).
+        our_decryption_key_index: u32,
+        /// The contact's encryption key index (validated upstream).
+        contact_encryption_key_index: u32,
+    },
+    /// Re-fetch + decrypt this identity's contactInfo documents. Idempotent;
+    /// carries no payload (the drain re-fetches the owned docs).
+    ContactInfoDecrypt,
+}
+
+/// The kind discriminant of a [`PendingContactCryptoOp`] — the part of the
+/// dedup identity that ignores the (secret-free) payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum PendingContactCryptoKind {
+    RegisterReceiving,
+    RegisterExternal,
+    ContactInfoDecrypt,
+}
+
+impl PendingContactCryptoOp {
+    /// The kind discriminant, for dedup keying.
+    pub fn kind(&self) -> PendingContactCryptoKind {
+        match self {
+            Self::RegisterReceiving => PendingContactCryptoKind::RegisterReceiving,
+            Self::RegisterExternal { .. } => PendingContactCryptoKind::RegisterExternal,
+            Self::ContactInfoDecrypt => PendingContactCryptoKind::ContactInfoDecrypt,
+        }
+    }
+}
+
+/// One deferred contact-crypto op. The queue holds at most one entry per
+/// [`key`](Self::key); re-enqueuing the same `(owner, contact, kind)` is a
+/// no-op (the latest payload wins).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PendingContactCrypto {
+    /// The wallet-owned identity the op is for.
+    pub owner_identity_id: Identifier,
+    /// The contact identity the op concerns.
+    pub contact_id: Identifier,
+    /// What to do once a signer is available.
+    pub op: PendingContactCryptoOp,
+    /// Unix-millis enqueue time — observability / ordering only, NOT part of
+    /// the dedup identity.
+    pub enqueued_at_ms: u64,
+}
+
+impl PendingContactCrypto {
+    /// The dedup identity: `(owner, contact, kind)`.
+    pub fn key(&self) -> PendingContactCryptoKey {
+        PendingContactCryptoKey {
+            owner_identity_id: self.owner_identity_id,
+            contact_id: self.contact_id,
+            kind: self.op.kind(),
+        }
+    }
+}
+
+/// Dedup / removal identity for a [`PendingContactCrypto`] entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PendingContactCryptoKey {
+    pub owner_identity_id: Identifier,
+    pub contact_id: Identifier,
+    pub kind: PendingContactCryptoKind,
+}
+
+// ---------------------------------------------------------------------------
 // Top-Level PlatformWalletChangeSet
 // ---------------------------------------------------------------------------
 
@@ -1070,6 +1169,15 @@ pub struct PlatformWalletChangeSet {
     /// gap-limit population) and on any pool extension / "used" flip.
     /// See [`AccountAddressPoolEntry`] for the merge policy.
     pub account_address_pools: Vec<AccountAddressPoolEntry>,
+    /// Deferred contact-crypto ops enqueued by the seedless background sweep
+    /// (key material unavailable). Append-only delta; apply inserts into the
+    /// persisted queue, deduped by [`PendingContactCryptoKey`]. Secret-free.
+    /// See [`PendingContactCrypto`].
+    pub pending_contact_crypto_added: Vec<PendingContactCrypto>,
+    /// Keys of deferred ops to remove (drained successfully, or permanently
+    /// failed). Append-only delta; apply removes matching `(owner, contact,
+    /// kind)` from the persisted queue.
+    pub pending_contact_crypto_cleared: Vec<PendingContactCryptoKey>,
     /// Shielded sub-wallet deltas: per-subwallet decrypted notes,
     /// spent marks, sync watermarks, nullifier checkpoints. The
     /// commitment tree itself is **not** in here — it lives on
@@ -1172,6 +1280,12 @@ impl Merge for PlatformWalletChangeSet {
             .extend(other.account_registrations);
         self.account_address_pools
             .extend(other.account_address_pools);
+        // Deferred contact-crypto queue: append-only add/clear deltas; the
+        // apply side dedups adds and removes cleared keys.
+        self.pending_contact_crypto_added
+            .extend(other.pending_contact_crypto_added);
+        self.pending_contact_crypto_cleared
+            .extend(other.pending_contact_crypto_cleared);
         #[cfg(feature = "shielded")]
         {
             self.shielded.merge(other.shielded);
@@ -1193,7 +1307,9 @@ impl Merge for PlatformWalletChangeSet {
                 .is_none_or(|m| m.is_empty())
             && self.wallet_metadata.is_none()
             && self.account_registrations.is_empty()
-            && self.account_address_pools.is_empty();
+            && self.account_address_pools.is_empty()
+            && self.pending_contact_crypto_added.is_empty()
+            && self.pending_contact_crypto_cleared.is_empty();
         #[cfg(feature = "shielded")]
         {
             core_empty && self.shielded.as_ref().is_none_or(|s| s.is_empty())
@@ -1213,6 +1329,85 @@ mod tests {
     fn test_empty_changeset() {
         let cs = PlatformWalletChangeSet::default();
         assert!(cs.is_empty());
+    }
+
+    /// The deferred contact-crypto queue rides the changeset as add/clear
+    /// deltas: a pending enqueue OR a pending clear must mark the changeset
+    /// non-empty (so the persist round isn't skipped and the queue survives a
+    /// restart), merge extends both delta vecs, and the dedup key ignores the
+    /// (secret-free) payload + timestamp but distinguishes the op kind.
+    #[test]
+    fn pending_contact_crypto_queue_deltas_merge_and_dedup_key() {
+        let owner = Identifier::from([0x11; 32]);
+        let contact = Identifier::from([0x22; 32]);
+
+        let receiving = PendingContactCrypto {
+            owner_identity_id: owner,
+            contact_id: contact,
+            op: PendingContactCryptoOp::RegisterReceiving,
+            enqueued_at_ms: 0,
+        };
+        let external = PendingContactCrypto {
+            owner_identity_id: owner,
+            contact_id: contact,
+            op: PendingContactCryptoOp::RegisterExternal {
+                encrypted_public_key: vec![1, 2, 3],
+                our_decryption_key_index: 4,
+                contact_encryption_key_index: 5,
+            },
+            enqueued_at_ms: 7,
+        };
+
+        // A pending enqueue marks the changeset non-empty.
+        let mut cs = PlatformWalletChangeSet {
+            pending_contact_crypto_added: vec![receiving.clone()],
+            ..Default::default()
+        };
+        assert!(
+            !cs.is_empty(),
+            "a pending enqueue must mark the changeset non-empty"
+        );
+
+        // A clear-only changeset is also non-empty (the removal must persist).
+        let clear_only = PlatformWalletChangeSet {
+            pending_contact_crypto_cleared: vec![external.key()],
+            ..Default::default()
+        };
+        assert!(
+            !clear_only.is_empty(),
+            "a pending clear must mark the changeset non-empty"
+        );
+
+        // merge extends both delta vecs.
+        cs.merge(PlatformWalletChangeSet {
+            pending_contact_crypto_added: vec![external.clone()],
+            pending_contact_crypto_cleared: vec![receiving.key()],
+            ..Default::default()
+        });
+        assert_eq!(cs.pending_contact_crypto_added.len(), 2);
+        assert_eq!(cs.pending_contact_crypto_cleared.len(), 1);
+
+        // Dedup key ignores the payload + timestamp but distinguishes kind.
+        let external_other_payload = PendingContactCrypto {
+            owner_identity_id: owner,
+            contact_id: contact,
+            op: PendingContactCryptoOp::RegisterExternal {
+                encrypted_public_key: vec![9, 9],
+                our_decryption_key_index: 4,
+                contact_encryption_key_index: 5,
+            },
+            enqueued_at_ms: 999,
+        };
+        assert_eq!(
+            external.key(),
+            external_other_payload.key(),
+            "same (owner, contact, kind) → same dedup key regardless of payload/timestamp"
+        );
+        assert_ne!(
+            receiving.key(),
+            external.key(),
+            "different op kind → different dedup key"
+        );
     }
 
     /// `IdentityKeyEntry`'s hand-written `Debug` must redact the private
