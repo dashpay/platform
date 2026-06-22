@@ -21,7 +21,7 @@ use platform_wallet_storage::sqlite::schema::core_state;
 use platform_wallet_storage::WalletStorageError;
 
 /// Keyless account manifest the rehydration path resolves xpubs from.
-fn manifest_of(wallet: &Wallet) -> Vec<AccountRegistrationEntry> {
+fn manifest_for(wallet: &Wallet) -> Vec<AccountRegistrationEntry> {
     wallet
         .accounts
         .all_accounts()
@@ -117,7 +117,7 @@ fn rt2_nonzero_balance_survives_reopen() {
     let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
     platform_wallet::manager::rehydrate::apply_persisted_core_state(
         &mut info,
-        &manifest_of(&wallet),
+        &manifest_for(&wallet),
         &core,
     )
     .expect("BIP44 reconstruction must not error");
@@ -277,7 +277,7 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
     let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
     platform_wallet::manager::rehydrate::apply_persisted_core_state(
         &mut info,
-        &manifest_of(&wallet),
+        &manifest_for(&wallet),
         &core,
     )
     .expect("CoinJoin-only reconstruction must not error");
