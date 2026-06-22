@@ -1072,6 +1072,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 &candidate.encrypted_public_key,
                 candidate.our_decryption_key_index,
                 candidate.contact_encryption_key_index,
+                // Resident-seed path; the readiness gate above guarantees a seed
+                // here. The seedless drain is the only caller passing `Some`.
+                None,
             )
             .await
         {
@@ -1402,6 +1405,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             contact_encrypted_xpub,
             our_decryption_key_index,
             contact_encryption_key_index,
+            None,
         )
         .await
         .map_err(RegisterExternalError::into_inner)

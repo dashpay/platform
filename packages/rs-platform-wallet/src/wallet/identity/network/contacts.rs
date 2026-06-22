@@ -421,6 +421,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         contact_encrypted_xpub: &[u8],
         our_decryption_key_index: u32,
         contact_encryption_key_index: u32,
+        // Seedless drain supplies the ECDH shared secret already computed by the
+        // Keychain signer (the scalar never enters this crate). `None` = the
+        // resident-seed path, which derives the scalar locally (steps 2–4).
+        precomputed_shared_key: Option<[u8; 32]>,
     ) -> Result<(), RegisterExternalError> {
         use RegisterExternalError::{Permanent, Transient, Unavailable};
         let account_index: u32 = 0;
@@ -450,108 +454,114 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             }
         }
 
-        // --- 2. Derive our ECDH private key under a read lock. ---
-        let our_private_key = {
-            let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                Transient(PlatformWalletError::WalletNotFound(hex::encode(
-                    self.wallet_id,
-                )))
-            })?;
-            let managed = info
-                .identity_manager
-                .managed_identity(our_identity_id)
-                .ok_or_else(|| {
-                    Transient(PlatformWalletError::IdentityNotFound(*our_identity_id))
+        // Obtain the ECDH shared secret: the seedless drain supplies it from the
+        // Keychain signer (the scalar never enters this crate); otherwise derive
+        // it from the resident seed (steps 2–4).
+        let shared_key: [u8; 32] = if let Some(precomputed) = precomputed_shared_key {
+            precomputed
+        } else {
+            // --- 2. Derive our ECDH private key under a read lock. ---
+            let our_private_key = {
+                let wm = self.wallet_manager.read().await;
+                let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                    Transient(PlatformWalletError::WalletNotFound(hex::encode(
+                        self.wallet_id,
+                    )))
                 })?;
-            // ECDH key derivation needs the wallet HD slot — only valid
-            // for wallet-owned identities. Reject the out-of-wallet case
-            // explicitly rather than letting derivation produce a
-            // misleading error downstream.
-            let identity_index = managed.identity_index.ok_or_else(|| {
-                Transient(PlatformWalletError::IdentityIndexNotSet(*our_identity_id))
-            })?;
+                let managed = info
+                    .identity_manager
+                    .managed_identity(our_identity_id)
+                    .ok_or_else(|| {
+                        Transient(PlatformWalletError::IdentityNotFound(*our_identity_id))
+                    })?;
+                // ECDH key derivation needs the wallet HD slot — only valid
+                // for wallet-owned identities. Reject the out-of-wallet case
+                // explicitly rather than letting derivation produce a
+                // misleading error downstream.
+                let identity_index = managed.identity_index.ok_or_else(|| {
+                    Transient(PlatformWalletError::IdentityIndexNotSet(*our_identity_id))
+                })?;
 
-            let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
-                Transient(PlatformWalletError::WalletNotFound(hex::encode(
-                    self.wallet_id,
-                )))
-            })?;
+                let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
+                    Transient(PlatformWalletError::WalletNotFound(hex::encode(
+                        self.wallet_id,
+                    )))
+                })?;
 
-            // The ECDH scalar can only be derived when the wallet has resident
-            // key material. A watch-only / external-signable wallet (Keychain
-            // signer not yet unlocked) can't derive *now* — classify
-            // `Unavailable` so the build is DEFERRED, never broken: a locked
-            // Keychain is recoverable, and breaking the channel over it would
-            // irreversibly kill payments. Checked before the key-presence test
-            // below so a seedless wallet defers rather than being judged on a
-            // request it currently can't act on (request validity is already
-            // enforced upstream in `build_contact_accounts`). Currently "can
-            // derive" == `has_seed()`; the seedless model extends this to an
-            // available resolver-backed signer.
-            if !wallet.has_seed() {
-                return Err(Unavailable(PlatformWalletError::InvalidIdentityData(
-                    format!(
-                        "Cannot derive ECDH key for identity {}: wallet has no \
+                // The ECDH scalar can only be derived when the wallet has resident
+                // key material. A watch-only / external-signable wallet (Keychain
+                // signer not yet unlocked) can't derive *now* — classify
+                // `Unavailable` so the build is DEFERRED, never broken: a locked
+                // Keychain is recoverable, and breaking the channel over it would
+                // irreversibly kill payments. Checked before the key-presence test
+                // below so a seedless wallet defers rather than being judged on a
+                // request it currently can't act on (request validity is already
+                // enforced upstream in `build_contact_accounts`). Currently "can
+                // derive" == `has_seed()`; the seedless model extends this to an
+                // available resolver-backed signer.
+                if !wallet.has_seed() {
+                    return Err(Unavailable(PlatformWalletError::InvalidIdentityData(
+                        format!(
+                            "Cannot derive ECDH key for identity {}: wallet has no \
                          resident key material (watch-only / signer unavailable)",
-                        our_identity_id
-                    ),
-                )));
-            }
+                            our_identity_id
+                        ),
+                    )));
+                }
 
-            // Find our decryption key by its key ID. A missing key at the
-            // validated index is a malformed-request fault, not transient.
-            let our_encryption_key = managed
-                .identity
-                .public_keys()
-                .get(&our_decryption_key_index)
-                .cloned()
-                .ok_or_else(|| {
-                    Permanent(PlatformWalletError::InvalidIdentityData(format!(
-                        "Our encryption key {} not found on identity {}",
-                        our_decryption_key_index, our_identity_id
-                    )))
-                })?;
+                // Find our decryption key by its key ID. A missing key at the
+                // validated index is a malformed-request fault, not transient.
+                let our_encryption_key = managed
+                    .identity
+                    .public_keys()
+                    .get(&our_decryption_key_index)
+                    .cloned()
+                    .ok_or_else(|| {
+                        Permanent(PlatformWalletError::InvalidIdentityData(format!(
+                            "Our encryption key {} not found on identity {}",
+                            our_decryption_key_index, our_identity_id
+                        )))
+                    })?;
 
-            Self::derive_encryption_private_key(
-                wallet,
-                self.sdk.network,
-                identity_index,
-                &our_encryption_key,
-            )
-            .map_err(Permanent)?
+                Self::derive_encryption_private_key(
+                    wallet,
+                    self.sdk.network,
+                    identity_index,
+                    &our_encryption_key,
+                )
+                .map_err(Permanent)?
+            };
+
+            // --- 3. Extract the contact's encryption pubkey from the
+            //        already-fetched identity (NO network I/O here — the caller
+            //        fetched it for validation; re-fetching would turn a
+            //        transient DAPI blip into a permanent broken channel). ---
+            let contact_public_key: dashcore::secp256k1::PublicKey = {
+                let contact_key = contact_identity
+                    .public_keys()
+                    .get(&contact_encryption_key_index)
+                    .cloned()
+                    .ok_or_else(|| {
+                        Permanent(PlatformWalletError::InvalidIdentityData(format!(
+                            "Contact encryption key {} not found on identity {}",
+                            contact_encryption_key_index, contact_identity_id
+                        )))
+                    })?;
+
+                // Deserialize the compressed public key bytes from the identity key data.
+                dashcore::secp256k1::PublicKey::from_slice(contact_key.data().as_slice()).map_err(
+                    |e| {
+                        Permanent(PlatformWalletError::InvalidIdentityData(format!(
+                            "Contact encryption key is not a valid secp256k1 public key: {}",
+                            e
+                        )))
+                    },
+                )?
+            };
+
+            // --- 4. Derive the ECDH shared key (resident path). ---
+            platform_encryption::derive_shared_key_ecdh(&our_private_key, &contact_public_key)
         };
-
-        // --- 3. Extract the contact's encryption pubkey from the
-        //        already-fetched identity (NO network I/O here — the caller
-        //        fetched it for validation; re-fetching would turn a
-        //        transient DAPI blip into a permanent broken channel). ---
-        let contact_public_key: dashcore::secp256k1::PublicKey = {
-            let contact_key = contact_identity
-                .public_keys()
-                .get(&contact_encryption_key_index)
-                .cloned()
-                .ok_or_else(|| {
-                    Permanent(PlatformWalletError::InvalidIdentityData(format!(
-                        "Contact encryption key {} not found on identity {}",
-                        contact_encryption_key_index, contact_identity_id
-                    )))
-                })?;
-
-            // Deserialize the compressed public key bytes from the identity key data.
-            dashcore::secp256k1::PublicKey::from_slice(contact_key.data().as_slice()).map_err(
-                |e| {
-                    Permanent(PlatformWalletError::InvalidIdentityData(format!(
-                        "Contact encryption key is not a valid secp256k1 public key: {}",
-                        e
-                    )))
-                },
-            )?
-        };
-
-        // --- 4. Derive the ECDH shared key. ---
-        let shared_key: [u8; 32] =
-            platform_encryption::derive_shared_key_ecdh(&our_private_key, &contact_public_key);
 
         // --- 5. Decrypt the contact's xpub. ---
         let decrypted_xpub_bytes =

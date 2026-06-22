@@ -1814,7 +1814,7 @@ mod tests {
         let unmanaged_owner = Identifier::from([0x11; 32]);
         let contact = bare_identity([0x22; 32]);
         let err = iw
-            .register_external_contact_account(&unmanaged_owner, &contact, &[7u8; 96], 0, 0)
+            .register_external_contact_account(&unmanaged_owner, &contact, &[7u8; 96], 0, 0, None)
             .await
             .expect_err("unmanaged owner must fail");
         assert!(
@@ -1851,7 +1851,7 @@ mod tests {
         let owner_id = Identifier::from([0x11; 32]);
         let contact = bare_identity([0x22; 32]);
         let err = iw
-            .register_external_contact_account(&owner_id, &contact, &[7u8; 96], 0, 0)
+            .register_external_contact_account(&owner_id, &contact, &[7u8; 96], 0, 0, None)
             .await
             .expect_err("missing our encryption key must fail");
         assert!(
@@ -1892,7 +1892,7 @@ mod tests {
         let owner_id = Identifier::from([0x11; 32]);
         let contact = bare_identity([0x22; 32]);
         let err = iw
-            .register_external_contact_account(&owner_id, &contact, &[7u8; 96], 0, 0)
+            .register_external_contact_account(&owner_id, &contact, &[7u8; 96], 0, 0, None)
             .await
             .expect_err("a watch-only wallet cannot derive ECDH now");
         assert!(
@@ -1903,6 +1903,86 @@ mod tests {
             !err.is_permanent(),
             "a watch-only wallet must NOT break the channel (would kill payments \
              over a recoverable state), got {err:?}"
+        );
+    }
+
+    /// The seedless drain path: `register_external_contact_account` with a
+    /// **precomputed** ECDH shared secret (the Keychain signer computed it; the
+    /// scalar never entered this crate) decrypts the contact's xpub and builds
+    /// the `DashpayExternalAccount` — same result as the resident path. Pins the
+    /// reuse that lets the deferred-crypto drain complete an external-account
+    /// build once a signer is available. The contact identity is `bare` here,
+    /// proving the `Some` path skips the peer-key derivation entirely.
+    #[tokio::test]
+    async fn register_external_with_precomputed_shared_key_builds_account() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        let owner_id = Identifier::from([0x11; 32]);
+        let contact_id = Identifier::from([0x22; 32]);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(
+                    bare_identity([0x11; 32]),
+                    0,
+                    wallet_id,
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add owner");
+        }
+
+        // A real 69-byte compact xpub encrypted under a known shared key — the
+        // wire shape a contact would have sent us.
+        let shared_key = [0x55u8; 32];
+        let iv = [0x11u8; 16];
+        let compact = {
+            let wm = iw.wallet_manager.read().await;
+            let w = wm.get_wallet(&wallet_id).expect("wallet");
+            crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+                w,
+                Network::Testnet,
+                0,
+                &owner_id,
+                &contact_id,
+            )
+            .expect("derive a valid compact xpub")
+            .compact
+            .to_bytes()
+        };
+        let encrypted =
+            platform_encryption::encrypt_extended_public_key(&shared_key, &iv, &compact);
+
+        // Bare contact identity: the `Some` path must NOT touch the contact's
+        // encryption key (that derivation lives in the resident `None` branch).
+        let contact = bare_identity([0x22; 32]);
+        iw.register_external_contact_account(
+            &owner_id,
+            &contact,
+            &encrypted,
+            0,
+            0,
+            Some(shared_key),
+        )
+        .await
+        .expect("register external with a precomputed shared key");
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        use key_wallet::account::account_collection::DashpayAccountKey;
+        let key = DashpayAccountKey {
+            index: 0,
+            user_identity_id: owner_id.to_buffer(),
+            friend_identity_id: contact_id.to_buffer(),
+        };
+        assert!(
+            info.core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .contains_key(&key),
+            "the precomputed-shared-key path must build the external account (the drain's path)"
         );
     }
 }
