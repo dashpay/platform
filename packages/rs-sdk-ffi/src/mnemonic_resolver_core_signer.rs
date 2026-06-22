@@ -67,7 +67,7 @@ use std::ffi::c_void;
 use std::os::raw::c_char;
 
 use async_trait::async_trait;
-use key_wallet::bip32::{DerivationPath, ExtendedPrivKey, ExtendedPubKey};
+use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::dashcore::secp256k1::{self, Secp256k1};
 use key_wallet::signer::{Signer, SignerMethod};
 use key_wallet::Network;
@@ -369,6 +369,91 @@ impl MnemonicResolverCoreSigner {
             platform_encryption::derive_shared_key_ecdh(&derived.key().private_key, peer_pubkey);
         Ok(Zeroizing::new(shared))
     }
+
+    /// Derive the 32-byte AES key for one DIP-15 contactInfo feature
+    /// (`encToUserId` = 65536, `privateData` = 65537) at
+    /// `root_path / feature' / derivation_index'`. The scalar is wiped by the
+    /// `WipingXprv` guard; the returned key bytes are `Zeroizing`-wrapped.
+    fn derive_contact_info_aes_key(
+        &self,
+        root_path: &DerivationPath,
+        feature: u32,
+        derivation_index: u32,
+    ) -> Result<Zeroizing<[u8; 32]>, MnemonicResolverSignerError> {
+        let path = root_path.clone().extend([
+            ChildNumber::from_hardened_idx(feature).map_err(|e| {
+                MnemonicResolverSignerError::DerivationFailed(format!("contactInfo feature: {e}"))
+            })?,
+            ChildNumber::from_hardened_idx(derivation_index).map_err(|e| {
+                MnemonicResolverSignerError::DerivationFailed(format!("contactInfo index: {e}"))
+            })?,
+        ]);
+        let (_master, derived) = self.resolve_derived_xprv(&path)?;
+        Ok(Zeroizing::new(derived.key().private_key.secret_bytes()))
+    }
+
+    /// DIP-15 contactInfo **seal**: encrypt `contact_id` (`encToUserId`,
+    /// AES-256-ECB) and `private_data_plaintext` (`privateData`, AES-256-CBC
+    /// with `private_data_iv`) under the two hardened-child keys at `root_path`,
+    /// entirely in-process. Reuses `platform_encryption` (the single AES
+    /// source); the DIP-15 wire codec (length prefixes etc.) stays in the
+    /// caller — this handles only the key derivation + AES.
+    pub fn contact_info_seal(
+        &self,
+        root_path: &DerivationPath,
+        derivation_index: u32,
+        contact_id: &[u8; 32],
+        private_data_plaintext: &[u8],
+        private_data_iv: &[u8; 16],
+    ) -> Result<ContactInfoSealed, MnemonicResolverSignerError> {
+        let enc_key = self.derive_contact_info_aes_key(root_path, 65536, derivation_index)?;
+        let priv_key = self.derive_contact_info_aes_key(root_path, 65537, derivation_index)?;
+        Ok(ContactInfoSealed {
+            enc_to_user_id: platform_encryption::encrypt_enc_to_user_id(&enc_key, contact_id),
+            private_data: platform_encryption::encrypt_private_data(
+                &priv_key,
+                private_data_iv,
+                private_data_plaintext,
+            ),
+        })
+    }
+
+    /// DIP-15 contactInfo **open**: inverse of [`Self::contact_info_seal`] —
+    /// recover the contact id + private-data plaintext.
+    pub fn contact_info_open(
+        &self,
+        root_path: &DerivationPath,
+        derivation_index: u32,
+        enc_to_user_id: &[u8; 32],
+        private_data_blob: &[u8],
+    ) -> Result<ContactInfoOpened, MnemonicResolverSignerError> {
+        let enc_key = self.derive_contact_info_aes_key(root_path, 65536, derivation_index)?;
+        let priv_key = self.derive_contact_info_aes_key(root_path, 65537, derivation_index)?;
+        let private_data = platform_encryption::decrypt_private_data(&priv_key, private_data_blob)
+            .map_err(|e| {
+                MnemonicResolverSignerError::DerivationFailed(format!("contactInfo decrypt: {e}"))
+            })?;
+        Ok(ContactInfoOpened {
+            contact_id: platform_encryption::decrypt_enc_to_user_id(&enc_key, enc_to_user_id),
+            private_data,
+        })
+    }
+}
+
+/// Result of [`MnemonicResolverCoreSigner::contact_info_seal`].
+pub struct ContactInfoSealed {
+    /// `encToUserId` ciphertext (AES-256-ECB of the 32-byte contact id).
+    pub enc_to_user_id: [u8; 32],
+    /// `privateData` ciphertext (`iv ‖ AES-256-CBC`).
+    pub private_data: Vec<u8>,
+}
+
+/// Result of [`MnemonicResolverCoreSigner::contact_info_open`].
+pub struct ContactInfoOpened {
+    /// The recovered 32-byte contact id.
+    pub contact_id: [u8; 32],
+    /// The recovered private-data plaintext.
+    pub private_data: Vec<u8>,
 }
 
 /// RAII guard that scrubs an [`ExtendedPrivKey`]'s secret scalar on drop.
@@ -680,6 +765,74 @@ mod tests {
         assert_eq!(
             actual_bytes, expected,
             "signer-based ECDH must equal the resident-seed ECDH for the same mnemonic and path"
+        );
+
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// contactInfo seal/open round-trips, AND the signer's AES keys are
+    /// byte-identical to a resident wallet's derivation at the same DIP-15
+    /// contactInfo paths (`root / 65536' / idx'` and `root / 65537' / idx'`) —
+    /// so contactInfo the signer seals is readable by the reference clients.
+    #[tokio::test]
+    async fn contact_info_seal_open_round_trips_and_matches_wallet_derivation() {
+        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet::wallet::Wallet;
+
+        let resolver = make_resolver(english_resolve);
+        let signer =
+            unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+
+        let root_path = test_path();
+        let derivation_index = 0u32;
+        let contact_id = [0x33u8; 32];
+        let plaintext = b"hello private data".to_vec();
+        let iv = [0x11u8; 16];
+
+        // Seal, then open — must recover the inputs.
+        let sealed = signer
+            .contact_info_seal(&root_path, derivation_index, &contact_id, &plaintext, &iv)
+            .expect("seal");
+        let opened = signer
+            .contact_info_open(
+                &root_path,
+                derivation_index,
+                &sealed.enc_to_user_id,
+                &sealed.private_data,
+            )
+            .expect("open");
+        assert_eq!(
+            opened.contact_id, contact_id,
+            "open recovers the contact id"
+        );
+        assert_eq!(
+            opened.private_data, plaintext,
+            "open recovers the private data"
+        );
+
+        // Parity: encToUserId equals a resident wallet's derive+encrypt.
+        let mnemonic =
+            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let seed = mnemonic.to_seed("");
+        let wallet =
+            Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
+                .expect("seeded wallet");
+        let enc_key: [u8; 32] = {
+            let path = root_path.clone().extend([
+                ChildNumber::from_hardened_idx(65536).unwrap(),
+                ChildNumber::from_hardened_idx(derivation_index).unwrap(),
+            ]);
+            wallet
+                .derive_extended_private_key(&path)
+                .expect("derive encToUserId key")
+                .private_key
+                .secret_bytes()
+        };
+        let expected_enc = platform_encryption::encrypt_enc_to_user_id(&enc_key, &contact_id);
+        assert_eq!(
+            sealed.enc_to_user_id, expected_enc,
+            "signer encToUserId must equal the resident-seed encryption at the same path"
         );
 
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
