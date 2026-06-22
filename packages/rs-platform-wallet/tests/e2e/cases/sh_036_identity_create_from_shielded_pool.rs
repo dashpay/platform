@@ -117,13 +117,19 @@ async fn sh_036_identity_create_from_shielded_pool() {
     let handle = bind_shielded(&s.test_wallet, &[0], &s.ctx.workdir)
         .await
         .expect("bind_shielded");
+    // Shield only `denomination`, not `funding_credits`. `select_shield_inputs`
+    // withholds FEE_RESERVE_CREDITS (== FEE_HEADROOM) from the fee-bearing input
+    // to guarantee the shield fee can be paid from unshielded balance. Asking to
+    // shield the full `funding_credits` (denomination + FEE_HEADROOM) leaves no
+    // room for the reserve and hits the accumulated_claim < amount guard in
+    // `select_shield_inputs`. The FEE_HEADROOM stays transparent to cover the fee.
     s.test_wallet
         .platform_wallet()
         .shielded_shield_from_account(
             &handle.coordinator,
             0,
             0,
-            funding_credits,
+            denomination,
             s.test_wallet.address_signer(),
             prover,
         )

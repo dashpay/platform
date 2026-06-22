@@ -125,7 +125,10 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
     //      the same `block_info.time_ms` the claim transformer
     //      consults, so once we've seen it advance past the schedule
     //      we know the next claim will admit the distribution.
-    const FUTURE_OFFSET: Duration = Duration::from_secs(240);
+    // Raised from 240 s → 300 s (QA-V19-002): testnet block-time lag
+    // under load can reach 90–120 s; the wider offset keeps the contract
+    // creation strictly in the platform-future even on slow nodes.
+    const FUTURE_OFFSET: Duration = Duration::from_secs(300);
     /// Cushion past `epoch_zero_at` enforced against the OBSERVED
     /// platform block time (not wall-clock). Once the chain reports
     /// `time_ms >= epoch_zero_at + POST_EPOCH_CUSHION` the next
@@ -133,9 +136,13 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
     const POST_EPOCH_CUSHION: Duration = Duration::from_secs(15);
     /// Poll cadence for `ExtendedEpochInfo::fetch_current_with_metadata`.
     const POLL_INTERVAL: Duration = Duration::from_secs(3);
-    /// Hard ceiling on the wait so a stuck testnet fails the test
-    /// fast rather than hanging the suite.
-    const MAX_WAIT: Duration = Duration::from_secs(420);
+    /// Hard ceiling on the wait so a stuck testnet fails the test fast
+    /// rather than hanging the suite. Raised from 420 s → 600 s
+    /// (QA-V19-002): testnet block-time timestamps lag wall-clock by
+    /// 60–120 s under load; the previous 420 s budget was marginally
+    /// too tight (observed overshoot: ~11 s). 600 s accommodates
+    /// testnet block-time variability without masking genuine stalls.
+    const MAX_WAIT: Duration = Duration::from_secs(600);
 
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
