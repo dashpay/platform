@@ -32,6 +32,10 @@ Keep this current as cores land.
 | `9d532c2aba` | §4.6 | send via `EcdhProvider::ClientSide` — SDK no longer receives a private key; `SendContactRequestParams` carries the precomputed `shared_secret` + `expected_recipient_pubkey` guard (still resident-derived; seedless swap next) |
 | `88b7fb7671` | §4.6 | generalize `DrainCryptoProvider` → `ContactCryptoProvider` + `account_reference`/`unmask_account_reference`; glue impl wires the signer methods (serves drain AND send) |
 | `07e1821526` | §4.6 | **seedless send + accept** — xpub/ECDH/accountReference all via the provider; send/accept gain a `crypto` param; both FFI gain `core_signer_handle` + build the resolver provider. Verified host + `aarch64-apple-ios-sim` |
+| `5f1f75a9f9` | test | seedless `SeedCryptoProvider` test harness (derives from a test seed via `key_wallet`) — the deletion-rework prerequisite |
+| `9082d35aad` | §4.7 | drain `RegisterExternal` runs `validate_contact_request` (closes the deferred-path validation gap; makes always-enqueue validation-safe) |
+| `1b88d5a6ca` | §4.6 | **sweep always-enqueues** — removed `build_contact_accounts`' resident fast-path; the signerless sweep defers everything to the drain (−205 lines) |
+| `14566d96bd` | §4.9 | **C3** — delete the resident ECDH path: `register_external` non-`Option` (dead key-index params removed), `derive_encryption_private_key` + tests gone, `RegisterExternalError::Unavailable` removed |
 
 **Locked design decisions**
 - Raw-secret ops are **inherent methods on `MnemonicResolverCoreSigner`** (in
@@ -94,59 +98,44 @@ friendship xpub, ECDH secret, and accountReference through `ContactCryptoProvide
 both FFI take `core_signer_handle`. (The new C ABI param breaks the `.swift`
 callers — expected; that's the Swift task below.) Verified host + iOS-sim.
 
-**C3 — delete the resident ECDH path. BLOCKED on the sweep conversion.**
-`derive_encryption_private_key` is NOT yet dead: the background sync sweep
-(`build_contact_accounts`, the `register_external_contact_account(..., None)`
-caller) still uses the resident-derive path during migration — it has no signer
-in the background, so it either derives now (resident) or enqueues (seedless,
-the §4.7 `BuildReadiness` gate). To eliminate the resident path entirely:
-1. **Convert the sweep to always-enqueue** (`build_contact_accounts`): drop the
-   `Ready`→derive-now branch so the sweep ALWAYS enqueues the `RegisterExternal`
-   op; the drain (on unlock, with a signer) does the crypto. This is the
-   behaviour the acceptance test wants ("background-discover an inbound contact
-   then unlock → it becomes payable"). Careful change — re-read the
-   `BuildReadiness` gate first; do NOT rush.
-2. Then `register_external_contact_account`'s `precomputed_shared_key: Option`
-   has only `Some` callers (drain + accept) → make it non-`Option`
-   `shared_key: [u8; 32]`, delete the `None` resident branch (steps 2–4), drop
-   `Unavailable` from its local `use`, renumber its step comments.
-3. Then `derive_encryption_private_key` (`identity_handle.rs`) has only test
-   callers → delete it + the `ecdh_key_derivation_tests` module (its
-   purpose-agnostic/index-driven property is now structural in
-   `identity_auth_derivation_path`, which takes `key_id` not purpose).
-Confirm no `derive_contact_xpub(wallet)` / `derive_extended_private_key` survive
-on DashPay send/accept paths.
+**Sweep always-enqueue + C3 — DONE** (`1b88d5a6ca` sweep, `9082d35aad` drain
+validation, `5f1f75a9f9` seedless test harness, `14566d96bd` C3). The signerless
+sweep now defers everything to the drain; the resident `register_external` branch,
+`derive_encryption_private_key`, the 3 resident classification tests, and the
+`RegisterExternalError::Unavailable` machinery are all deleted. No DashPay
+**send/accept/sweep** path derives from a resident seed.
 
 **§4.6 persistence over FFI** — `IdentityKeyEntryFFI`-style carry of the queue
 deltas through the FFI persister + the Swift persister callback (the SQLite
 path landed in `79ca6a1c2c`; the FFI persister twin is Rust-doable, the Swift
 callback is below).
 
-### Ordering: why C3 / §4.9 / sweep-conversion can't land before the Swift wiring
+### §4.9 (delete `attach_wallet_seed`) is blocked on 3 remaining raw-secret paths
 
-Grounded in the actual sweep code (`build_contact_accounts`):
-- The `BuildReadiness::Ready` (resident `has_seed`) branch is a **deliberate
-  migration fast-path**: a wallet that still holds a resident seed registers
-  contacts immediately during the background sweep; a seedless wallet enqueues
-  for the drain. Deleting this branch makes the sweep *always* defer to the
-  drain — which needs a Keychain signer. A migration wallet that has a seed but
-  no wired signer-drain would then **never** register contacts → regression.
-- The platform-wallet test helpers (`make_wallet` etc. in `payments.rs`) call
-  `attach_wallet_seed` to set up resident-seed wallets. Deleting `attach_wallet_seed`
-  breaks every test that exercises a resident path; they'd first need a **real
-  seedless test `ContactCryptoProvider`** (derive from a test seed via `key_wallet`,
-  which platform-wallet already depends on — the existing `CannedProvider`/
-  `UnusedProvider` only return stubs).
-- The spec's own ordering: delete `attach_wallet_seed` "only after the sweep is
-  seedless-safe AND the drain replaces the Keychain-unlock re-attach" — and that
-  re-attach→drain swap is in `.swift` (env-blocked).
+Grounded in `git grep "wallet.derive_extended_private_key"` (production, non-test):
+deleting `attach_wallet_seed` makes `has_seed()` always false, which would break
+these paths that still derive from the **resident seed** and have no provider seam
+yet. Each needs the same treatment send/accept got (route through a signer method
+via a provider closure/seam) BEFORE `attach_wallet_seed` can go:
 
-So the correct sequence is: **Swift signer wiring (drain-on-unlock) FIRST**, then
-the wholesale end-state change (seedless test harness → sweep always-enqueue →
-C3 delete resident `register_external` branch + `derive_encryption_private_key`
-→ §4.9 delete `attach_wallet_seed`). Doing the Rust deletions before the Swift
-wiring leaves a Rust-green-but-app-broken intermediate and risks regressing the
-recurring sync (this branch's whole purpose).
+1. **contactInfo** (`crypto/contact_info.rs` `derive_contact_info_aes_key`) — the
+   resident twin of the signer's `contact_info_seal`/`contact_info_open` (which
+   already exist in `rs-sdk-ffi`, `45f903dc38`). Thread a provider; the seal/open
+   FFI is the Swift side.
+2. **auto-accept proof** (`crypto/auto_accept.rs`) — derives an auto-accept key
+   from the seed; needs a signer method + provider.
+3. **`derive_identity_auth_keypair`** (`network/identity_handle.rs`) — returns the
+   raw `ExtendedPrivKey`; used by the identity-discovery scan + the FFI key
+   preview. Delicate: discovery probes many candidate keys. Decide whether
+   discovery runs only with a signer present (import/unlock) — if so it can call
+   the signer directly; if it must run signerless, it needs public-derivation only.
+
+Only after those are seedless does `attach_wallet_seed` have no production caller.
+Then §4.9 deletes: `manager/attach_seed.rs` (+ its tests), the
+`platform_wallet_manager_attach_wallet_seed_from_mnemonic` FFI (+ 4 tests in
+`manager.rs`), and the `make_wallet` test helpers' attach calls (→ seedless,
+using `SeedCryptoProvider`). The `.swift` `unlockWalletFromKeychain` re-attach →
+`drain` swap is env-blocked.
 
 ## Remaining — environment-blocked (Swift + on-device)
 
