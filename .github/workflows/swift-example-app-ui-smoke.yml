@@ -86,7 +86,7 @@ jobs:
 
       - name: Build simulator DashSDKFFI.xcframework
         run: |
-          bash packages/swift-sdk/build_ios.sh --target sim --profile dev
+          bash packages/swift-sdk/build_swift.sh --target sim --profile dev
 
       - name: Create disposable iOS simulator
         id: simulator

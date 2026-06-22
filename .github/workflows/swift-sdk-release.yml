@@ -59,7 +59,7 @@ jobs:
 
       - name: Build DashSDKFFI.xcframework and install into Swift package
         run: |
-          bash packages/swift-sdk/build_ios.sh --target all --profile release
+          bash packages/swift-sdk/build_swift.sh --target all --profile release
 
       - name: Zip XCFramework and compute checksum
         id: zip

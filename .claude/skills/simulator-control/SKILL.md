@@ -275,7 +275,7 @@ If `idb connect` succeeds but `idb ui describe-all` returns a single root elemen
 
 ### Install the latest build before driving the UI
 
-The skill assumes the binary on the simulator is current. It's not, if you've built but forgotten to install. After every `./build_ios.sh --target sim` (or any code change), push the fresh artifact:
+The skill assumes the binary on the simulator is current. It's not, if you've built but forgotten to install. After every `./build_swift.sh --target sim` (or any code change), push the fresh artifact:
 
 ```bash
 BUNDLE=org.dashfoundation.SwiftExampleApp

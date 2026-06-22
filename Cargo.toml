@@ -61,10 +61,10 @@ dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "5c0113
 
 tokio-metrics = "0.5"
 
-# Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlib, which
-# otherwise ships huge. Inherits `release` and is ONLY used by the iOS
-# build (`build_ios.sh --profile release`)
-[profile.release-ios]
+# Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlibs, which
+# otherwise ships huge. Inherits `release` and is ONLY used by the Swift
+# build (`build_swift.sh --profile release`)
+[profile.release-swift]
 inherits = "release"
 panic = "abort"
 strip = "symbols"
@@ -72,9 +72,9 @@ lto = "fat"
 codegen-units = 1
 opt-level = 3
 
-# Debug counterpart for smaller iOS dev builds. Inherits the standard `dev`
-# profile (and is ONLY used by the iOS build (`build_ios.sh --profile dev`)
-[profile.dev-ios]
+# Debug counterpart for smaller Swift dev builds. Inherits the standard `dev`
+# profile (and is ONLY used by the Swift build (`build_swift.sh --profile dev`)
+[profile.dev-swift]
 inherits = "dev"
 panic = "abort"
 lto = "thin"

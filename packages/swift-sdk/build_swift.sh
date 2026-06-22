@@ -117,9 +117,9 @@ if ! $BUILD_IOS && ! $BUILD_SIM && ! $BUILD_MAC && ! $BUILD_INTEL_MAC; then
   show_help
 fi
 
-# Map the requested base profile (dev|release) onto its iOS-tuned custom
-# profile by appending "-ios" (dev-ios / release-ios)
-PROFILE="${PROFILE}-ios"
+# Map the requested base profile (dev|release) onto its swift-tuned custom
+# profile by appending "-swift" (dev-swift / release-swift)
+PROFILE="${PROFILE}-swift"
 OUTPUT_DIR="$PROFILE"
 
 log_info "Package: $PACKAGE"
@@ -196,7 +196,7 @@ EOF
 # the bundled SDK exposes the platform-wallet shielded FFI.
 CARGO_FEATURES="shielded"
 
-if [ "$PROFILE" = "dev-ios" ]; then
+if [ "$PROFILE" = "dev-swift" ]; then
   CARGO_FEATURES="$CARGO_FEATURES tokio-metrics"
   log_info "  → tokio-metrics enabled (dev profile)"
 fi

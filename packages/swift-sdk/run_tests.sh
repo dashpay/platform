@@ -20,7 +20,7 @@ if [ -z "$SIM_NAME" ]; then
   exit 1
 fi
 
-bash build_ios.sh --target all --profile dev
+bash build_swift.sh --target all --profile dev
 
 swift package clean
 swift build

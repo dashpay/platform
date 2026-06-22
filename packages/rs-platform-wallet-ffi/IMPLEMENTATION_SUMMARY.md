@@ -110,7 +110,7 @@ All Week 1-8 tasks have been completed without stubs.
 - Core types: Handle, IdentifierBytes, NetworkType, BlockTime, etc.
 
 **Build System:**
-- Integrated into existing `swift-sdk/build_ios.sh`
+- Integrated into existing `swift-sdk/build_swift.sh`
 - No standalone build script needed
 - Compiles cleanly with unified xcframework
 
