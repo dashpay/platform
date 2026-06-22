@@ -944,11 +944,16 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 return;
             }
             BuildReadiness::KeyMaterialUnavailable => {
+                // Enqueue the deferred crypto ops so a later drain (signer
+                // present) completes them, instead of churning the receiving
+                // account or breaking the external channel every sweep.
+                self.enqueue_deferred_contact_crypto(identity_id, &candidate)
+                    .await;
                 tracing::info!(
                     identity = %identity_id,
                     contact = %contact_id,
-                    "Deferring DashPay account build: key material unavailable \
-                     (watch-only / signer not unlocked); will retry when a signer is available"
+                    "Deferred DashPay account build: key material unavailable \
+                     (watch-only / signer not unlocked); ops enqueued, will run when a signer is available"
                 );
                 return;
             }
@@ -1101,6 +1106,55 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 );
             }
         }
+    }
+
+    /// Enqueue the deferred contact-crypto ops for a contact whose account
+    /// build was paused because key material is unavailable (watch-only /
+    /// signer locked). Idempotent per `(owner, contact, kind)` — re-enqueuing
+    /// updates the entry in place. Stores only the on-chain ciphertext +
+    /// public key indices, never a secret. The entries are drained when a
+    /// signer becomes available.
+    async fn enqueue_deferred_contact_crypto(
+        &self,
+        identity_id: &Identifier,
+        candidate: &AccountBuildCandidate,
+    ) {
+        use crate::changeset::{
+            upsert_pending_contact_crypto, PendingContactCrypto, PendingContactCryptoOp,
+        };
+        let enqueued_at_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        // (1) Our receiving xpub (no payload — derived from the identity ids).
+        upsert_pending_contact_crypto(
+            &mut info.pending_contact_crypto,
+            PendingContactCrypto {
+                owner_identity_id: *identity_id,
+                contact_id: candidate.contact_id,
+                op: PendingContactCryptoOp::RegisterReceiving,
+                enqueued_at_ms,
+            },
+        );
+        // (2) The external account — ECDH decrypt of the contact's xpub.
+        upsert_pending_contact_crypto(
+            &mut info.pending_contact_crypto,
+            PendingContactCrypto {
+                owner_identity_id: *identity_id,
+                contact_id: candidate.contact_id,
+                op: PendingContactCryptoOp::RegisterExternal {
+                    encrypted_public_key: candidate.encrypted_public_key.clone(),
+                    our_decryption_key_index: candidate.our_decryption_key_index,
+                    contact_encryption_key_index: candidate.contact_encryption_key_index,
+                },
+                enqueued_at_ms,
+            },
+        );
     }
 
     /// Mark an established contact's payment channel as permanently broken
@@ -1696,6 +1750,7 @@ mod sweep_tests {
             balance: Arc::new(WalletBalance::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
+            pending_contact_crypto: Vec::new(),
         }
     }
 

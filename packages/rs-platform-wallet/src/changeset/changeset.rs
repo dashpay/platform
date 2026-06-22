@@ -1106,6 +1106,21 @@ pub struct PendingContactCryptoKey {
     pub kind: PendingContactCryptoKind,
 }
 
+/// Insert `entry` into a deferred-crypto queue, replacing any existing entry
+/// with the same [`PendingContactCryptoKey`] (latest payload wins) so the
+/// queue holds at most one op per `(owner, contact, kind)`. Used by both the
+/// in-memory enqueue and the persisted-queue apply path.
+pub fn upsert_pending_contact_crypto(
+    queue: &mut Vec<PendingContactCrypto>,
+    entry: PendingContactCrypto,
+) {
+    if let Some(slot) = queue.iter_mut().find(|e| e.key() == entry.key()) {
+        *slot = entry;
+    } else {
+        queue.push(entry);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Top-Level PlatformWalletChangeSet
 // ---------------------------------------------------------------------------
@@ -1408,6 +1423,75 @@ mod tests {
             external.key(),
             "different op kind → different dedup key"
         );
+    }
+
+    /// `upsert_pending_contact_crypto` keeps at most one entry per
+    /// `(owner, contact, kind)`: a duplicate kind replaces in place (latest
+    /// payload + timestamp win, no growth), while a different kind is a new
+    /// entry.
+    #[test]
+    fn upsert_pending_contact_crypto_dedups_by_key_latest_wins() {
+        let owner = Identifier::from([1u8; 32]);
+        let contact = Identifier::from([2u8; 32]);
+        let mut q: Vec<PendingContactCrypto> = Vec::new();
+
+        let recv = PendingContactCrypto {
+            owner_identity_id: owner,
+            contact_id: contact,
+            op: PendingContactCryptoOp::RegisterReceiving,
+            enqueued_at_ms: 1,
+        };
+        upsert_pending_contact_crypto(&mut q, recv.clone());
+        upsert_pending_contact_crypto(&mut q, recv);
+        assert_eq!(
+            q.len(),
+            1,
+            "re-enqueuing the same kind must not grow the queue"
+        );
+
+        // A different kind is a separate entry.
+        upsert_pending_contact_crypto(
+            &mut q,
+            PendingContactCrypto {
+                owner_identity_id: owner,
+                contact_id: contact,
+                op: PendingContactCryptoOp::RegisterExternal {
+                    encrypted_public_key: vec![1],
+                    our_decryption_key_index: 0,
+                    contact_encryption_key_index: 0,
+                },
+                enqueued_at_ms: 2,
+            },
+        );
+        assert_eq!(q.len(), 2);
+
+        // Same key, newer payload → replaced in place (latest wins, no growth).
+        upsert_pending_contact_crypto(
+            &mut q,
+            PendingContactCrypto {
+                owner_identity_id: owner,
+                contact_id: contact,
+                op: PendingContactCryptoOp::RegisterExternal {
+                    encrypted_public_key: vec![9, 9],
+                    our_decryption_key_index: 0,
+                    contact_encryption_key_index: 0,
+                },
+                enqueued_at_ms: 3,
+            },
+        );
+        assert_eq!(q.len(), 2, "replacing must not grow the queue");
+        let stored = q
+            .iter()
+            .find(|e| e.op.kind() == PendingContactCryptoKind::RegisterExternal)
+            .expect("external entry present");
+        assert_eq!(stored.enqueued_at_ms, 3, "latest timestamp wins");
+        match &stored.op {
+            PendingContactCryptoOp::RegisterExternal {
+                encrypted_public_key,
+                ..
+            } => assert_eq!(encrypted_public_key, &vec![9, 9], "latest payload wins"),
+            _ => panic!("expected RegisterExternal"),
+        }
     }
 
     /// `IdentityKeyEntry`'s hand-written `Debug` must redact the private

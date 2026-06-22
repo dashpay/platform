@@ -246,6 +246,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             balance: Arc::clone(&balance),
             identity_manager: crate::wallet::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
+            pending_contact_crypto: Vec::new(),
         };
 
         wallet.downgrade_to_external_signable();

@@ -45,6 +45,14 @@ pub struct PlatformWalletInfo {
     pub balance: Arc<WalletBalance>,
     pub identity_manager: IdentityManager,
     pub tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>,
+    /// DashPay contact-crypto ops the unattended background sweep could not
+    /// perform because key material was unavailable (watch-only / signer
+    /// locked). Drained when a signer is available (Keychain unlock, or any
+    /// signer-present action). Secret-free — only on-chain ciphertext +
+    /// public key indices. Restored at load so a restore-from-Keychain
+    /// doesn't strand a discovered contact. See
+    /// [`PendingContactCrypto`](crate::changeset::PendingContactCrypto).
+    pub pending_contact_crypto: Vec<crate::changeset::PendingContactCrypto>,
 }
 
 /// A platform wallet that combines core UTXO functionality with identity management.

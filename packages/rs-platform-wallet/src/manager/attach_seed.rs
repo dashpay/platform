@@ -236,6 +236,7 @@ mod tests {
             balance: Arc::new(crate::wallet::core::WalletBalance::new()),
             identity_manager: crate::wallet::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
+            pending_contact_crypto: Vec::new(),
         };
         let mut wm = manager.wallet_manager.write().await;
         wm.insert_wallet(external, info)
@@ -348,6 +349,7 @@ mod tests {
                 balance: Arc::new(crate::wallet::core::WalletBalance::new()),
                 identity_manager: crate::wallet::identity::IdentityManager::new(),
                 tracked_asset_locks: std::collections::BTreeMap::new(),
+                pending_contact_crypto: Vec::new(),
             };
             let mut wm = manager.wallet_manager.write().await;
             wm.insert_wallet(external, info)
@@ -384,6 +386,7 @@ mod tests {
                 balance: Arc::new(crate::wallet::core::WalletBalance::new()),
                 identity_manager: crate::wallet::identity::IdentityManager::new(),
                 tracked_asset_locks: std::collections::BTreeMap::new(),
+                pending_contact_crypto: Vec::new(),
             };
             let mut wm = manager.wallet_manager.write().await;
             wm.insert_wallet(seeded, info).expect("insert seeded");

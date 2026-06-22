@@ -417,6 +417,7 @@ mod tests {
             balance: std::sync::Arc::new(WalletBalance::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
+            pending_contact_crypto: Vec::new(),
         }
     }
 

@@ -99,6 +99,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 balance: Arc::clone(&balance),
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
+                // Restored from the persisted queue once the storage layer
+                // carries it; empty until then.
+                pending_contact_crypto: Vec::new(),
             };
 
             // Insert into `wallet_manager` first so we have a wallet
