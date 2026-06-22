@@ -51,7 +51,6 @@ pub fn migration() -> String {
     let network_check = build_check_in(crate::sqlite::schema::wallets::NETWORK_LABELS);
     let account_type_check =
         build_check_in(crate::sqlite::schema::accounts::ACCOUNT_TYPE_LABELS);
-    let pool_type_check = build_check_in(crate::sqlite::schema::accounts::POOL_TYPE_LABELS);
     let asset_lock_status_check =
         build_check_in(crate::sqlite::schema::asset_locks::ASSET_LOCK_STATUS_LABELS);
     let contact_state_check =
@@ -79,16 +78,6 @@ CREATE TABLE account_registrations (
     account_index INTEGER NOT NULL,
     account_xpub_bytes BLOB NOT NULL,
     PRIMARY KEY (wallet_id, account_type, account_index),
-    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
-);
-
-CREATE TABLE account_address_pools (
-    wallet_id BLOB NOT NULL,
-    account_type TEXT NOT NULL CHECK (account_type IN {account_type_check}),
-    account_index INTEGER NOT NULL,
-    pool_type TEXT NOT NULL CHECK (pool_type IN {pool_type_check}),
-    snapshot_blob BLOB NOT NULL,
-    PRIMARY KEY (wallet_id, account_type, account_index, pool_type),
     FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 
@@ -140,25 +129,6 @@ CREATE TABLE core_instant_locks (
     txid BLOB NOT NULL,
     islock_blob BLOB NOT NULL,
     PRIMARY KEY (wallet_id, txid),
-    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
-);
-
-CREATE TABLE core_derived_addresses (
-    wallet_id BLOB NOT NULL,
-    account_type TEXT NOT NULL CHECK (account_type IN {account_type_check}),
-    account_index INTEGER NOT NULL,
-    pool_type TEXT NOT NULL CHECK (pool_type IN {pool_type_check}),
-    derivation_index INTEGER NOT NULL,
-    address TEXT NOT NULL,
-    used INTEGER NOT NULL,
-    -- PK is the BIP32 leaf identity: the full tuple (wallet, account_type,
-    -- account_index, pool, derivation_index) uniquely identifies one derived
-    -- leaf. `account_type` uses distinct labels per StandardAccountType
-    -- variant so BIP32 and BIP44 standard accounts never collapse. `address`
-    -- is a derived attribute — cross-leaf collisions trip UNIQUE(address).
-    -- The UNIQUE index also backs ACCOUNT_INDEX_BY_ADDRESS_SQL.
-    PRIMARY KEY (wallet_id, account_type, account_index, pool_type, derivation_index),
-    UNIQUE (wallet_id, address),
     FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 

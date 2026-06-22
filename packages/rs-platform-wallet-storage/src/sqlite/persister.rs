@@ -1053,9 +1053,10 @@ fn apply_changeset_to_tx(
     if !cs.account_registrations.is_empty() {
         schema::accounts::apply_registrations(tx, wallet_id, &cs.account_registrations)?;
     }
-    if !cs.account_address_pools.is_empty() {
-        schema::accounts::apply_pools(tx, wallet_id, &cs.account_address_pools)?;
-    }
+    // `account_address_pools` is intentionally NOT applied: UTXO attribution
+    // is hardcoded to the default account (index 0) in `core_state`, so the
+    // pool snapshot is no longer a storage input. The changeset field is kept
+    // for API stability and still feeds non-storage consumers.
     if let Some(core) = cs.core.as_ref() {
         schema::core_state::apply(tx, wallet_id, core)?;
     }

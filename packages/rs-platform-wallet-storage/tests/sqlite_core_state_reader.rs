@@ -13,10 +13,9 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
-use key_wallet::AddressInfo;
 use key_wallet::Utxo;
 use platform_wallet::changeset::{
-    AccountAddressPoolEntry, CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
+    CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet_storage::sqlite::schema::core_state;
 use platform_wallet_storage::WalletStorageError;
@@ -64,52 +63,6 @@ fn wallet_and_utxo(seed: [u8; 64], value: u64, height: u32, vout: u32) -> (Walle
     (w, utxo)
 }
 
-/// The `core_derived_addresses` row a real scan records before a UTXO on
-/// `address` lands. The strict UTXO writer refuses an unspent UTXO whose
-/// address was never derived, so every test paying a wallet address must
-/// seed the matching derivation. The writer keys its lookup on
-/// `(wallet_id, address)` only, so account_type/index/pubkey here are
-/// inert placeholders — the address is the load-bearing field.
-fn derived_for(address: &dashcore::Address) -> platform_wallet::DerivedAddress {
-    // Compressed secp256k1 generator point — a valid placeholder pubkey.
-    const PUBKEY_G: [u8; 33] = [
-        0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62, 0x95, 0xce, 0x87,
-        0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81, 0x5b, 0x16,
-        0xf8, 0x17, 0x98,
-    ];
-    platform_wallet::DerivedAddress {
-        account_type: key_wallet::account::AccountType::Standard {
-            index: 0,
-            standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
-        },
-        pool_type: key_wallet::managed_account::address_pool::AddressPoolType::External,
-        derivation_index: 0,
-        address: address.clone(),
-        public_key: dashcore::PublicKey::from_slice(&PUBKEY_G).expect("valid compressed pubkey"),
-    }
-}
-
-/// The in-band pool snapshot the emitter ships with the derivation above —
-/// `core_state::apply` now requires every `addresses_derived` address to be
-/// in the `account_address_pools` manifest. Matches `derived_for`'s slot.
-fn manifest_for(address: &dashcore::Address) -> AccountAddressPoolEntry {
-    let info = AddressInfo::new_from_script_pubkey_p2pkh(
-        address.script_pubkey(),
-        0,
-        Default::default(),
-        key_wallet::Network::Testnet,
-    )
-    .expect("p2pkh AddressInfo");
-    AccountAddressPoolEntry {
-        account_type: key_wallet::account::AccountType::Standard {
-            index: 0,
-            standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
-        },
-        pool_type: key_wallet::managed_account::address_pool::AddressPoolType::External,
-        addresses: vec![info],
-    }
-}
-
 /// A non-zero balance survives store → drop → reopen → load, guarding
 /// against a silent-zero-balance reconstruction.
 #[test]
@@ -123,13 +76,11 @@ fn rt2_nonzero_balance_survives_reopen() {
 
     let cs = PlatformWalletChangeSet {
         core: Some(CoreChangeSet {
-            addresses_derived: vec![derived_for(&utxo.address)],
             new_utxos: vec![utxo.clone()],
             last_processed_height: Some(200),
             synced_height: Some(200),
             ..Default::default()
         }),
-        account_address_pools: vec![manifest_for(&utxo.address)],
         ..Default::default()
     };
     persister.store(w, cs).unwrap();
@@ -179,12 +130,10 @@ fn b2_spent_utxo_excluded() {
             w,
             PlatformWalletChangeSet {
                 core: Some(CoreChangeSet {
-                    addresses_derived: vec![derived_for(&u_unspent.address)],
                     new_utxos: vec![u_unspent.clone()],
                     spent_utxos: vec![u_spent.clone()],
                     ..Default::default()
                 }),
-                account_address_pools: vec![manifest_for(&u_unspent.address)],
                 ..Default::default()
             },
         )
@@ -291,13 +240,11 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
             w,
             PlatformWalletChangeSet {
                 core: Some(CoreChangeSet {
-                    addresses_derived: vec![derived_for(&utxo.address)],
                     new_utxos: vec![utxo.clone()],
                     last_processed_height: Some(60),
                     synced_height: Some(60),
                     ..Default::default()
                 }),
-                account_address_pools: vec![manifest_for(&utxo.address)],
                 ..Default::default()
             },
         )

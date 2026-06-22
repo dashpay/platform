@@ -54,56 +54,15 @@ pub fn apply(
             ])?;
         }
     }
-    // Lazily-built address → account_index map from this wallet's
-    // `account_address_pools` (the in-band manifest, applied earlier in the
-    // same tx). Doubles as the UTXO writer's fallback (`execute_upsert_utxo`)
-    // and the emitter-contract guard below. Built at most once per `apply`,
-    // `None` until first needed so a manifest-free flush never decodes a blob.
-    let mut pool_addrs: Option<std::collections::HashMap<String, i64>> = None;
-    // Derived addresses are written before UTXOs (same tx) so the UTXO
-    // writer's address→account_index lookup sees the fresh rows.
-    for da in &cs.addresses_derived {
-        let address = da.address.to_string();
-        // Emitter contract: a derivation must arrive with its pool snapshot
-        // in the same changeset. Absent from the manifest ⇒ the emitter is
-        // broken; fail loud at the storage trust boundary rather than persist
-        // a row whose owning pool the manifest can't vouch for. Lag-safe:
-        // dropped events produce no changeset, so this only fires on a bug.
-        let pools = match &mut pool_addrs {
-            Some(map) => &*map,
-            None => pool_addrs.insert(pool_declared_address_indices(tx, wallet_id)?),
-        };
-        if !pools.contains_key(&address) {
-            return Err(WalletStorageError::DerivedIndexInvariantViolated { address });
-        }
-        let account_type = crate::sqlite::schema::accounts::account_type_db_label(&da.account_type);
-        let account_index = crate::sqlite::schema::accounts::account_index(&da.account_type);
-        let pool_type = crate::sqlite::schema::accounts::pool_type_db_label(&da.pool_type);
-        // Live derive events carry no `used` flag — default false.
-        upsert_derived_address_row(
-            tx,
-            wallet_id,
-            account_type,
-            i64::from(account_index),
-            pool_type,
-            da.derivation_index,
-            &address,
-            false,
-        )?;
-    }
+    // `addresses_derived` is intentionally NOT persisted here. The iOS
+    // address registry is fed by the FFI `addresses_derived` callback (fired
+    // before the UTXO changeset in the same round), and UTXO attribution is
+    // hardcoded to the default account (index 0), so the storage layer no
+    // longer keeps a derived-address lookup table.
     if !cs.new_utxos.is_empty() {
         let mut stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
-        let mut lookup_stmt = tx.prepare_cached(ACCOUNT_INDEX_BY_ADDRESS_SQL)?;
         for utxo in &cs.new_utxos {
-            execute_upsert_utxo(
-                tx,
-                &mut stmt,
-                &mut lookup_stmt,
-                wallet_id,
-                utxo,
-                false,
-                &mut pool_addrs,
-            )?;
+            execute_upsert_utxo(&mut stmt, wallet_id, utxo, false)?;
         }
     }
     if !cs.spent_utxos.is_empty() {
@@ -113,7 +72,6 @@ pub fn apply(
             "UPDATE core_utxos SET spent = 1 WHERE wallet_id = ?1 AND outpoint = ?2",
         )?;
         let mut upsert_stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
-        let mut lookup_stmt = tx.prepare_cached(ACCOUNT_INDEX_BY_ADDRESS_SQL)?;
         for utxo in &cs.spent_utxos {
             let op = blob::encode_outpoint(&utxo.outpoint)?;
             let exists: bool = exists_stmt
@@ -123,18 +81,11 @@ pub fn apply(
             if exists {
                 mark_spent_stmt.execute(params![wallet_id.as_slice(), &op[..]])?;
             } else {
-                // Spent-only synthetic row: best-effort account_index. A wrong
-                // index is inert since spent rows are excluded from
+                // Spent-only synthetic row for a UTXO we never saw unspent.
+                // account_index is the hardcoded default like every row, and
+                // inert anyway since spent rows are excluded from
                 // `list_unspent_utxos`.
-                execute_upsert_utxo(
-                    tx,
-                    &mut upsert_stmt,
-                    &mut lookup_stmt,
-                    wallet_id,
-                    utxo,
-                    true,
-                    &mut pool_addrs,
-                )?;
+                execute_upsert_utxo(&mut upsert_stmt, wallet_id, utxo, true)?;
             }
         }
     }
@@ -159,14 +110,6 @@ pub fn apply(
     Ok(())
 }
 
-/// Resolve a UTXO's owning account index via the `core_derived_addresses` map.
-/// `UNIQUE(wallet_id, address)` in V001 guarantees at most one row per
-/// `(wallet_id, address)` pair, so the query returns 0 or 1 rows.
-/// The `ORDER BY … LIMIT 1` is kept as a defensive guard against schema drift.
-const ACCOUNT_INDEX_BY_ADDRESS_SQL: &str = "SELECT account_index FROM core_derived_addresses \
-     WHERE wallet_id = ?1 AND address = ?2 \
-     ORDER BY account_type, account_index LIMIT 1";
-
 const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL) \
@@ -177,145 +120,32 @@ const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         account_index = excluded.account_index, \
         spent = excluded.spent";
 
-#[allow(clippy::too_many_arguments)]
+/// Account index written for every `core_utxos` row. The product uses only
+/// the default account (index 0); a non-default funds account is rejected
+/// upstream by the `core_bridge` single-account guard, so the writer never
+/// resolves per-UTXO attribution. The one reader (`list_unspent_utxos`
+/// per-account grouping) groups everything under 0.
+const CORE_UTXO_ACCOUNT_INDEX: i64 = 0;
+
+/// Upsert one `core_utxos` row. `account_index` is the hardcoded default
+/// ([`CORE_UTXO_ACCOUNT_INDEX`]); `spent` marks spent-only synthetic rows.
 fn execute_upsert_utxo(
-    tx: &Transaction<'_>,
     stmt: &mut rusqlite::CachedStatement<'_>,
-    lookup_stmt: &mut rusqlite::CachedStatement<'_>,
     wallet_id: &WalletId,
     utxo: &Utxo,
     spent: bool,
-    pool_addrs: &mut Option<std::collections::HashMap<String, i64>>,
 ) -> Result<(), WalletStorageError> {
     let op = blob::encode_outpoint(&utxo.outpoint)?;
-    let address = utxo.address.to_string();
-    // `Utxo` carries no account index; recover it from the live derived-address
-    // cache, then fall back to the pool manifest.
-    let looked_up: Option<i64> = lookup_stmt
-        .query_row(params![wallet_id.as_slice(), &address], |row| row.get(0))
-        .optional()?;
-    let account_index: i64 = match looked_up {
-        Some(idx) => idx,
-        // Cache miss on an unspent UTXO: fall back to the pool manifest
-        // (the in-band emitter snapshot is applied earlier in this same tx).
-        // Resolved there → use it. Absent from both → benign SPV gap-limit
-        // edge: warn + skip so one unresolvable row never aborts the flush;
-        // the balance re-warms once the address is later derived.
-        None if !spent => {
-            let pools = match pool_addrs {
-                Some(map) => &*map,
-                None => pool_addrs.insert(pool_declared_address_indices(tx, wallet_id)?),
-            };
-            match pools.get(&address) {
-                Some(idx) => *idx,
-                None => {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        address = %address,
-                        txid = %utxo.outpoint.txid,
-                        vout = utxo.outpoint.vout,
-                        "skipping unspent UTXO at an address absent from both core_derived_addresses and the pool manifest; balance re-warms once the address is later derived"
-                    );
-                    return Ok(());
-                }
-            }
-        }
-        None => {
-            tracing::debug!(
-                wallet_id = %hex::encode(wallet_id),
-                address = %address,
-                "spent-only UTXO address not found in core_derived_addresses; using account_index 0 placeholder"
-            );
-            0
-        }
-    };
     stmt.execute(params![
         wallet_id.as_slice(),
         &op[..],
         crate::sqlite::util::safe_cast::u64_to_i64("core_utxos.value", utxo.value())?,
         utxo.txout.script_pubkey.as_bytes(),
         i64::from(utxo.height),
-        account_index,
+        CORE_UTXO_ACCOUNT_INDEX,
         spent,
     ])?;
     Ok(())
-}
-
-// Conflict target = the BIP32-leaf PK. A same-leaf re-derive is
-// deterministic — `address` is a pure function of the slot and `used` is
-// write-once — so there is nothing legitimate to update; DO NOTHING. A
-// different leaf yielding the same `address` is a UNIQUE(address)
-// violation, not a PK hit, so it surfaces loud.
-const UPSERT_DERIVED_ADDRESS_SQL: &str = "INSERT INTO core_derived_addresses \
-        (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
-     ON CONFLICT(wallet_id, account_type, account_index, pool_type, derivation_index) DO NOTHING";
-
-/// Upsert one `core_derived_addresses` row from the live
-/// `addresses_derived` event path. `used` is set on insert only — the
-/// conflict clause leaves an existing `used` untouched so a later live
-/// re-derive (which carries no flag) cannot clear an earlier value.
-// Args map 1:1 onto the row's NOT-NULL columns; a wrapper struct would add
-// a single-use type for the one call site without improving clarity.
-#[allow(clippy::too_many_arguments)]
-fn upsert_derived_address_row(
-    tx: &Transaction<'_>,
-    wallet_id: &WalletId,
-    account_type: &str,
-    account_index: i64,
-    pool_type: &str,
-    derivation_index: u32,
-    address: &str,
-    used: bool,
-) -> Result<(), WalletStorageError> {
-    let mut stmt = tx.prepare_cached(UPSERT_DERIVED_ADDRESS_SQL)?;
-    stmt.execute(params![
-        wallet_id.as_slice(),
-        account_type,
-        account_index,
-        pool_type,
-        i64::from(derivation_index),
-        address,
-        used,
-    ])?;
-    Ok(())
-}
-
-/// Address → owning `account_index` for every address this wallet's
-/// persisted `account_address_pools` snapshots declare. This is the
-/// authoritative manifest the UTXO writer falls back to when an address
-/// is not yet in the live `core_derived_addresses` cache, and the set the
-/// apply-time emitter-contract guard checks `addresses_derived` against.
-/// A corrupt snapshot is fail-hard (never skipped).
-fn pool_declared_address_indices(
-    tx: &Transaction<'_>,
-    wallet_id: &WalletId,
-) -> Result<std::collections::HashMap<String, i64>, WalletStorageError> {
-    let snapshots: Vec<Vec<u8>> = {
-        let mut stmt = tx.prepare_cached(
-            "SELECT snapshot_blob FROM account_address_pools WHERE wallet_id = ?1",
-        )?;
-        let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
-            row.get::<_, Vec<u8>>(0)
-        })?;
-        let mut out = Vec::new();
-        for r in rows {
-            out.push(r?);
-        }
-        out
-    };
-
-    let mut map = std::collections::HashMap::new();
-    for payload in snapshots {
-        let entry: platform_wallet::changeset::AccountAddressPoolEntry = blob::decode(&payload)?;
-        let account_index = i64::from(crate::sqlite::schema::accounts::account_index(
-            &entry.account_type,
-        ));
-        for info in &entry.addresses {
-            map.insert(info.address.to_string(), account_index);
-        }
-    }
-    Ok(map)
 }
 
 fn upsert_sync_state(
@@ -564,47 +394,4 @@ pub fn list_unspent_utxos(
         by_account.entry(account_index).or_default().push(row);
     }
     Ok(by_account)
-}
-
-/// One `core_derived_addresses` row. Used by tests that assert the
-/// address→account map written by `apply_pools` matches the live derive
-/// path (row-shape parity) and that load-time rehydration repopulates it.
-#[cfg(any(test, feature = "__test-helpers"))]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DerivedAddressRow {
-    pub account_type: String,
-    pub account_index: i64,
-    pub pool_type: String,
-    pub derivation_index: i64,
-    pub address: String,
-    pub used: bool,
-}
-
-/// Every `core_derived_addresses` row for one wallet, ordered for
-/// determinism. Retained for this crate's integration tests.
-#[cfg(any(test, feature = "__test-helpers"))]
-pub fn list_derived_addresses_for_test(
-    conn: &Connection,
-    wallet_id: &WalletId,
-) -> Result<Vec<DerivedAddressRow>, WalletStorageError> {
-    let mut stmt = conn.prepare(
-        "SELECT account_type, account_index, pool_type, derivation_index, address, used \
-         FROM core_derived_addresses WHERE wallet_id = ?1 \
-         ORDER BY account_type, account_index, pool_type, derivation_index",
-    )?;
-    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
-        Ok(DerivedAddressRow {
-            account_type: row.get(0)?,
-            account_index: row.get(1)?,
-            pool_type: row.get(2)?,
-            derivation_index: row.get(3)?,
-            address: row.get(4)?,
-            used: row.get(5)?,
-        })
-    })?;
-    let mut out = Vec::new();
-    for r in rows {
-        out.push(r?);
-    }
-    Ok(out)
 }

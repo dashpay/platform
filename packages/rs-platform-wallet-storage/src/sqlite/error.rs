@@ -218,28 +218,6 @@ pub enum WalletStorageError {
         limit_bytes: usize,
     },
 
-    /// An unspent UTXO named an address absent from
-    /// `core_derived_addresses`, so its account index can't be resolved.
-    /// Retained as a fatal-classified typed marker; the apply path no
-    /// longer raises it — it skips such a UTXO (logged) so one
-    /// unresolvable row never aborts a whole flush, and the balance
-    /// re-warms when the address later derives.
-    #[error("unspent utxo address {address} is not in core_derived_addresses")]
-    UtxoAddressNotDerived { address: String },
-
-    /// A live `addresses_derived` entry arrived without its address in the
-    /// wallet's `account_address_pools` manifest. The emitter must attach a
-    /// full pool snapshot in-band with every derivation, so a derived
-    /// address absent from the manifest means the emitter contract is
-    /// broken — a logic regression, not a benign SPV gap. Failing loud at
-    /// the storage trust boundary surfaces it instead of persisting a row
-    /// the manifest can't vouch for.
-    #[error(
-        "emitter contract violated: derived address {address} is absent from the \
-         account_address_pools manifest (pool snapshot not emitted in-band)"
-    )]
-    DerivedIndexInvariantViolated { address: String },
-
     /// `PRAGMA foreign_keys = ON` was issued on open but the read-back
     /// reported the constraint enforcement is still off — the linked
     /// SQLite build silently ignores the pragma (no FK support compiled
@@ -387,8 +365,6 @@ impl WalletStorageError {
             | Self::IdentityEntryIdMismatch
             | Self::AssetLockEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
-            | Self::UtxoAddressNotDerived { .. }
-            | Self::DerivedIndexInvariantViolated { .. }
             | Self::IntegerOverflow { .. } => false,
         }
     }
@@ -465,8 +441,6 @@ impl WalletStorageError {
             Self::IdentityEntryIdMismatch => "identity_entry_id_mismatch",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
-            Self::UtxoAddressNotDerived { .. } => "utxo_address_not_derived",
-            Self::DerivedIndexInvariantViolated { .. } => "derived_index_invariant_violated",
             Self::IntegerOverflow { .. } => "integer_overflow",
         }
     }

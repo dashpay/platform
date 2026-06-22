@@ -116,40 +116,26 @@ fn make_utxo(addr: &Address, vout: u32, value: u64) -> Utxo {
     Utxo::new(outpoint, txout, addr.clone(), 10, false)
 }
 
-/// UTXOs resolve their real `account_index` from the derived-address
-/// map written earlier in the same transaction, instead of a hardcoded
-/// 0.
+/// Every `core_utxos` row is written with the hardcoded default
+/// `account_index = 0` (the product uses only the default account; a
+/// non-default account is rejected upstream by the `core_bridge` guard),
+/// so the per-account grouping reader buckets every unspent UTXO — at any
+/// address — under account 0.
 #[test]
-fn multi_account_utxos_bucket_to_real_account() {
+fn utxos_bucket_under_default_account_index_zero() {
     use platform_wallet_storage::sqlite::schema::core_state;
 
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xC7);
     ensure_wallet_meta(&persister, &w);
 
-    let addr_acct5 = p2pkh(0x05);
-    let addr_acct9 = p2pkh(0x09);
+    let addr_a = p2pkh(0x05);
+    let addr_b = p2pkh(0x09);
 
     {
         let mut conn = persister.lock_conn_for_test();
-        // Pre-seed the derived-address map with two distinct accounts.
-        // Distinct derivation_index keeps the rows off the same BIP32-leaf
-        // PK (account_index is account-level context, not a key).
-        for (acct, deriv, addr) in [(5u32, 0u32, &addr_acct5), (9u32, 1u32, &addr_acct9)] {
-            conn.execute(
-                "INSERT INTO core_derived_addresses \
-                    (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
-                 VALUES (?1, 'standard_bip44', ?2, 'external', ?3, ?4, 0)",
-                params![w.as_slice(), acct as i64, deriv as i64, addr.to_string()],
-            )
-            .unwrap();
-        }
-
         let cs = CoreChangeSet {
-            new_utxos: vec![
-                make_utxo(&addr_acct5, 0, 1000),
-                make_utxo(&addr_acct9, 1, 2000),
-            ],
+            new_utxos: vec![make_utxo(&addr_a, 0, 1000), make_utxo(&addr_b, 1, 2000)],
             ..Default::default()
         };
         let tx = conn.transaction().unwrap();
@@ -160,56 +146,20 @@ fn multi_account_utxos_bucket_to_real_account() {
     let conn = persister.lock_conn_for_test();
     let by_account = core_state::list_unspent_utxos(&conn, &w).unwrap();
     assert_eq!(
-        by_account.get(&5).map(|v| v.len()),
-        Some(1),
-        "account 5 should hold exactly one UTXO"
+        by_account.len(),
+        1,
+        "all UTXOs bucket under a single (default) account"
     );
     assert_eq!(
-        by_account.get(&9).map(|v| v.len()),
-        Some(1),
-        "account 9 should hold exactly one UTXO"
+        by_account.get(&0).map(|v| v.len()),
+        Some(2),
+        "both UTXOs are attributed to the default account (index 0)"
     );
 }
 
-/// A NEW unspent UTXO whose address is absent from
-/// `core_derived_addresses` cannot resolve an owning account. Rather than
-/// mis-filing live funds under account 0 (corruption) or aborting the
-/// whole flush (the genesis-rescan fatal loop), the writer SKIPS just
-/// that row: `apply` returns `Ok`, no `core_utxos` row is written, and
-/// the surrounding records still commit. The address re-warms its
-/// balance once it later derives — funds-safe.
-#[test]
-fn unspent_utxo_on_undeclared_address_is_skipped() {
-    use platform_wallet_storage::sqlite::schema::core_state;
-
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0xC8);
-    ensure_wallet_meta(&persister, &w);
-
-    let addr_unknown = p2pkh(0xEE);
-    {
-        let mut conn = persister.lock_conn_for_test();
-        let cs = CoreChangeSet {
-            new_utxos: vec![make_utxo(&addr_unknown, 0, 3000)],
-            ..Default::default()
-        };
-        let tx = conn.transaction().unwrap();
-        core_state::apply(&tx, &w, &cs)
-            .expect("an undeclared-address unspent UTXO must be skipped, not error");
-        tx.commit().unwrap();
-    }
-
-    let conn = persister.lock_conn_for_test();
-    let by_account = core_state::list_unspent_utxos(&conn, &w).unwrap();
-    assert!(
-        by_account.is_empty(),
-        "the unresolvable unspent UTXO must be skipped, leaving no core_utxos row"
-    );
-}
-
-/// A spent-only placeholder UTXO whose address was never derived still
-/// persists with the account-0 fallback — spent rows are excluded from
-/// the unspent set, so the placeholder index is inert.
+/// A spent-only placeholder UTXO (no prior unspent row to mark) persists
+/// with the hardcoded account 0 — spent rows are excluded from the unspent
+/// set, so the index is inert.
 #[test]
 fn spent_only_utxo_on_undeclared_address_uses_zero_fallback() {
     use platform_wallet_storage::sqlite::schema::core_state;

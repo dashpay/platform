@@ -90,11 +90,6 @@ fn tc027_smoke_insert_every_table() {
             &[&wallet_id.as_slice()],
         ),
         (
-            "account_address_pools",
-            "INSERT INTO account_address_pools (wallet_id, account_type, account_index, pool_type, snapshot_blob) VALUES (?1, 'standard_bip44', 0, 'external', X'00')",
-            &[&wallet_id.as_slice()],
-        ),
-        (
             "core_transactions",
             "INSERT INTO core_transactions (wallet_id, txid, height, block_hash, block_time, finalized, record_blob) VALUES (?1, ?2, NULL, NULL, NULL, 0, X'00')",
             &[&wallet_id.as_slice(), &txid],
@@ -108,11 +103,6 @@ fn tc027_smoke_insert_every_table() {
             "core_instant_locks",
             "INSERT INTO core_instant_locks (wallet_id, txid, islock_blob) VALUES (?1, ?2, X'00')",
             &[&wallet_id.as_slice(), &txid],
-        ),
-        (
-            "core_derived_addresses",
-            "INSERT INTO core_derived_addresses (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) VALUES (?1, 'standard_bip44', 0, 'external', 0, 'addr', 0)",
-            &[&wallet_id.as_slice()],
         ),
         (
             "core_sync_state",

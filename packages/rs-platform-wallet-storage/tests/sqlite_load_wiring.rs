@@ -12,61 +12,14 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
-use key_wallet::AddressInfo;
 use platform_wallet::changeset::{
-    AccountAddressPoolEntry, AccountRegistrationEntry, CoreChangeSet, PlatformWalletChangeSet,
-    PlatformWalletPersistence, WalletMetadataEntry,
+    AccountRegistrationEntry, CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
+    WalletMetadataEntry,
 };
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
 
 fn reopen(path: &std::path::Path) -> SqlitePersister {
     SqlitePersister::open(SqlitePersisterConfig::new(path)).expect("reopen")
-}
-
-/// The `core_derived_addresses` row a real scan records before a UTXO on
-/// `address` lands. The strict UTXO writer refuses an unspent UTXO whose
-/// address was never derived, so a stored UTXO must carry its matching
-/// derivation. The writer keys its lookup on `(wallet_id, address)` only
-/// and the read side re-attributes by topology, so the account fields
-/// here are inert placeholders — the address is the load-bearing field.
-fn derived_for(address: &dashcore::Address) -> platform_wallet::DerivedAddress {
-    // Compressed secp256k1 generator point — a valid placeholder pubkey.
-    const PUBKEY_G: [u8; 33] = [
-        0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62, 0x95, 0xce, 0x87,
-        0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81, 0x5b, 0x16,
-        0xf8, 0x17, 0x98,
-    ];
-    platform_wallet::DerivedAddress {
-        account_type: key_wallet::account::AccountType::Standard {
-            index: 0,
-            standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
-        },
-        pool_type: key_wallet::managed_account::address_pool::AddressPoolType::External,
-        derivation_index: 0,
-        address: address.clone(),
-        public_key: dashcore::PublicKey::from_slice(&PUBKEY_G).expect("valid compressed pubkey"),
-    }
-}
-
-/// The in-band pool snapshot the emitter ships with the derivation above —
-/// `core_state::apply` requires every `addresses_derived` address to be in
-/// the `account_address_pools` manifest. Matches `derived_for`'s slot.
-fn manifest_for(address: &dashcore::Address) -> AccountAddressPoolEntry {
-    let info = AddressInfo::new_from_script_pubkey_p2pkh(
-        address.script_pubkey(),
-        0,
-        Default::default(),
-        key_wallet::Network::Testnet,
-    )
-    .expect("p2pkh AddressInfo");
-    AccountAddressPoolEntry {
-        account_type: key_wallet::account::AccountType::Standard {
-            index: 0,
-            standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
-        },
-        pool_type: key_wallet::managed_account::address_pool::AddressPoolType::External,
-        addresses: vec![info],
-    }
 }
 
 /// A registered wallet with UTXOs round-trips into the keyless `wallets`
@@ -102,6 +55,7 @@ fn c1_load_populates_keyless_wallet_payload() {
     let reg = PlatformWalletChangeSet {
         wallet_metadata: Some(WalletMetadataEntry {
             network: key_wallet::Network::Testnet,
+            wallet_group_id: [0u8; 32],
             birth_height: 7,
         }),
         account_registrations: manifest.clone(),
@@ -135,13 +89,11 @@ fn c1_load_populates_keyless_wallet_payload() {
             w,
             PlatformWalletChangeSet {
                 core: Some(CoreChangeSet {
-                    addresses_derived: vec![derived_for(&utxo.address)],
                     new_utxos: vec![utxo.clone()],
                     last_processed_height: Some(50),
                     synced_height: Some(50),
                     ..Default::default()
                 }),
-                account_address_pools: vec![manifest_for(&utxo.address)],
                 ..Default::default()
             },
         )

@@ -249,6 +249,7 @@ fn wallets_anchor_and_children_in_same_changeset_commits() {
             PlatformWalletChangeSet {
                 wallet_metadata: Some(WalletMetadataEntry {
                     network: Network::Testnet,
+                    wallet_group_id: [0u8; 32],
                     birth_height: 0,
                 }),
                 identities: Some(identities_changeset(identity, Some(w))),

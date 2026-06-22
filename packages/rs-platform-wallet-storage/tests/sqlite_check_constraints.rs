@@ -1,11 +1,7 @@
 //! Smoke tests for the enum-domain `CHECK` constraints. The schema has
-//! eight such TEXT columns across five domains (`account_type` is reused
-//! by `account_registrations`, `account_address_pools`, and
-//! `core_derived_addresses`; `pool_type` by `account_address_pools` and
-//! `core_derived_addresses`). These tests exercise `wallets.network`,
-//! `account_registrations.account_type`, `account_address_pools.pool_type`,
-//! `asset_locks.status`, both `core_derived_addresses.pool_type` /
-//! `account_type`, and the synthetic `contacts.state` domain directly.
+//! four such TEXT columns across four domains: `wallets.network`,
+//! `account_registrations.account_type`, `asset_locks.status`, and the
+//! synthetic `contacts.state`. These tests exercise each directly.
 //!
 //! The per-module parity unit tests in `src/sqlite/schema/*` cover the
 //! Rust↔const-array equality. These tests cover the runtime half: a
@@ -69,66 +65,6 @@ fn check_rejects_bad_account_type_on_registrations() {
         params![wid(2).as_slice(), "bogus_account_type", 0i64, &[0u8; 4][..]],
     );
     assert_constraint_check(res, "account_registrations.account_type");
-}
-
-#[test]
-fn check_rejects_bad_pool_type() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let conn = persister.lock_conn_for_test();
-    conn.execute(
-        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, ?2, ?3)",
-        params![wid(3).as_slice(), "testnet", 0i64],
-    )
-    .expect("seed wallets");
-    let res = conn.execute(
-        "INSERT INTO account_address_pools \
-            (wallet_id, account_type, account_index, pool_type, snapshot_blob) \
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![
-            wid(3).as_slice(),
-            "standard_bip44",
-            0i64,
-            "not_a_pool",
-            &[0u8; 4][..]
-        ],
-    );
-    assert_constraint_check(res, "account_address_pools.pool_type");
-}
-
-#[test]
-fn check_rejects_bad_pool_type_on_derived_addresses() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let conn = persister.lock_conn_for_test();
-    conn.execute(
-        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, ?2, ?3)",
-        params![wid(5).as_slice(), "testnet", 0i64],
-    )
-    .expect("seed wallets");
-    let res = conn.execute(
-        "INSERT INTO core_derived_addresses \
-            (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
-         VALUES (?1, 'standard_bip44', 0, ?2, 0, 'addr', 0)",
-        params![wid(5).as_slice(), "not_a_pool"],
-    );
-    assert_constraint_check(res, "core_derived_addresses.pool_type");
-}
-
-#[test]
-fn check_rejects_bad_account_type_on_derived_addresses() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let conn = persister.lock_conn_for_test();
-    conn.execute(
-        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, ?2, ?3)",
-        params![wid(6).as_slice(), "testnet", 0i64],
-    )
-    .expect("seed wallets");
-    let res = conn.execute(
-        "INSERT INTO core_derived_addresses \
-            (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
-         VALUES (?1, ?2, 0, 'external', 0, 'addr', 0)",
-        params![wid(6).as_slice(), "bogus_account_type"],
-    );
-    assert_constraint_check(res, "core_derived_addresses.account_type");
 }
 
 #[test]

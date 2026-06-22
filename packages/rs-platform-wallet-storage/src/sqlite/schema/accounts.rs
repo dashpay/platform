@@ -1,22 +1,21 @@
-//! `account_registrations` + `account_address_pools` writers + readers
-//! (platform-payment registrations and the keyless account-manifest
-//! reader).
+//! `account_registrations` writer + keyless reader (platform-payment
+//! registrations and the rehydration account-manifest oracle).
 
 use std::collections::BTreeMap;
 
 use key_wallet::bip32::ExtendedPubKey;
 use rusqlite::{params, Connection, Transaction};
 
-use platform_wallet::changeset::{AccountAddressPoolEntry, AccountRegistrationEntry};
+use platform_wallet::changeset::AccountRegistrationEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
 
-// PUBLIC material only: account-manifest types (account xpubs / pool
-// snapshots) reaching `_blob` columns.
-impl_persistable_blob!(AccountRegistrationEntry, AccountAddressPoolEntry);
+// PUBLIC material only: the account-registration xpub manifest reaching
+// the `account_xpub_bytes` blob column.
+impl_persistable_blob!(AccountRegistrationEntry);
 
 /// Decoded `platform_payment` account registration: the DIP-17 account
 /// index and its extended public key, recovered from the bincode-serde
@@ -125,37 +124,6 @@ pub fn apply_registrations(
     Ok(())
 }
 
-pub fn apply_pools(
-    tx: &Transaction<'_>,
-    wallet_id: &WalletId,
-    entries: &[AccountAddressPoolEntry],
-) -> Result<(), WalletStorageError> {
-    if entries.is_empty() {
-        return Ok(());
-    }
-    let mut stmt = tx.prepare_cached(
-        "INSERT INTO account_address_pools \
-                (wallet_id, account_type, account_index, pool_type, snapshot_blob) \
-             VALUES (?1, ?2, ?3, ?4, ?5) \
-             ON CONFLICT(wallet_id, account_type, account_index, pool_type) DO UPDATE SET \
-                snapshot_blob = excluded.snapshot_blob",
-    )?;
-    for entry in entries {
-        let account_type = account_type_db_label(&entry.account_type);
-        let account_index = account_index(&entry.account_type);
-        let pool_type = pool_type_db_label(&entry.pool_type);
-        let payload = blob::encode(entry)?;
-        stmt.execute(params![
-            wallet_id.as_slice(),
-            account_type,
-            i64::from(account_index),
-            pool_type,
-            payload,
-        ])?;
-    }
-    Ok(())
-}
-
 /// Read every `account_registrations` row for `wallet_id` into a keyless
 /// [`AccountRegistrationEntry`] manifest — the rehydration account-set oracle
 /// (which accounts to re-derive + the per-account xpubs the wrong-account gate
@@ -210,15 +178,6 @@ pub(crate) const ACCOUNT_TYPE_LABELS: &[&str] = &[
     "platform_payment",
 ];
 
-/// Single source of truth for the `account_address_pools.pool_type`
-/// TEXT-column domain.
-///
-/// Mirrors every variant of
-/// [`key_wallet::managed_account::address_pool::AddressPoolType`]
-/// (writer side: [`pool_type_db_label`]). See [`ACCOUNT_TYPE_LABELS`]
-/// for the broader rationale and the parity-test contract.
-pub(crate) const POOL_TYPE_LABELS: &[&str] = &["external", "internal", "absent", "absent_hardened"];
-
 /// Stable database label for an `AccountType` variant (the `Debug` impl is not
 /// a stable format; this match is the contract). An added upstream variant
 /// fails this match's exhaustiveness check at compile time.
@@ -250,19 +209,6 @@ pub(crate) fn account_type_db_label(at: &key_wallet::account::AccountType) -> &'
         AccountType::DashpayReceivingFunds { .. } => "dashpay_receiving",
         AccountType::DashpayExternalAccount { .. } => "dashpay_external",
         AccountType::PlatformPayment { .. } => "platform_payment",
-    }
-}
-
-/// Stable database label for an `AddressPoolType` variant.
-pub(crate) fn pool_type_db_label(
-    pool: &key_wallet::managed_account::address_pool::AddressPoolType,
-) -> &'static str {
-    use key_wallet::managed_account::address_pool::AddressPoolType;
-    match pool {
-        AddressPoolType::External => "external",
-        AddressPoolType::Internal => "internal",
-        AddressPoolType::Absent => "absent",
-        AddressPoolType::AbsentHardened => "absent_hardened",
     }
 }
 
@@ -360,25 +306,6 @@ mod tests {
         variants
     }
 
-    fn all_pool_type_variants() -> Vec<key_wallet::managed_account::address_pool::AddressPoolType> {
-        use key_wallet::managed_account::address_pool::AddressPoolType;
-        let variants = vec![
-            AddressPoolType::External,
-            AddressPoolType::Internal,
-            AddressPoolType::Absent,
-            AddressPoolType::AbsentHardened,
-        ];
-        for v in &variants {
-            match v {
-                AddressPoolType::External
-                | AddressPoolType::Internal
-                | AddressPoolType::Absent
-                | AddressPoolType::AbsentHardened => {}
-            }
-        }
-        variants
-    }
-
     #[test]
     fn account_type_labels_match_enum() {
         let from_writer: HashSet<&'static str> = all_account_type_variants()
@@ -389,20 +316,6 @@ mod tests {
         assert_eq!(
             from_writer, from_const,
             "ACCOUNT_TYPE_LABELS ({:?}) drifted from account_type_db_label codomain ({:?})",
-            from_const, from_writer
-        );
-    }
-
-    #[test]
-    fn pool_type_labels_match_enum() {
-        let from_writer: HashSet<&'static str> = all_pool_type_variants()
-            .iter()
-            .map(pool_type_db_label)
-            .collect();
-        let from_const: HashSet<&'static str> = POOL_TYPE_LABELS.iter().copied().collect();
-        assert_eq!(
-            from_writer, from_const,
-            "POOL_TYPE_LABELS ({:?}) drifted from pool_type_db_label codomain ({:?})",
             from_const, from_writer
         );
     }

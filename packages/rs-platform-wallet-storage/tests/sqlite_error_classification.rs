@@ -157,12 +157,6 @@ fn samples() -> Vec<WalletStorageError> {
         WalletStorageError::InvalidWalletIdLength { actual: 10 },
         WalletStorageError::ConfigInvalid { reason: "bad knob" },
         WalletStorageError::IdentityEntryIdMismatch,
-        WalletStorageError::UtxoAddressNotDerived {
-            address: "yMockAddress".into(),
-        },
-        WalletStorageError::DerivedIndexInvariantViolated {
-            address: "yMockAddress".into(),
-        },
         // BincodeEncode / BincodeDecode / HashDecode / ConsensusCodec
         // need real upstream errors; omitted but covered by their arms.
         WalletStorageError::BlobDecode {
@@ -248,10 +242,6 @@ fn tc_p2_005_is_transient_table() {
                 (false, "asset_lock_entry_mismatch")
             }
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
-            WalletStorageError::UtxoAddressNotDerived { .. } => (false, "utxo_address_not_derived"),
-            WalletStorageError::DerivedIndexInvariantViolated { .. } => {
-                (false, "derived_index_invariant_violated")
-            }
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
             WalletStorageError::JournalModeNotApplied { .. } => (false, "journal_mode_not_applied"),
             WalletStorageError::SchemaHistoryMalformed { .. } => {

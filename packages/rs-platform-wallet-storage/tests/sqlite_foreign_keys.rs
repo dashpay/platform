@@ -65,48 +65,6 @@ fn tc047_delete_wallet_cascade() {
     assert_eq!(n, 0);
 }
 
-/// deleting a wallet cascades `core_derived_addresses` rows away — the
-/// `ON DELETE CASCADE` on the address→account read-index, exercised
-/// directly rather than asserted by comment.
-#[test]
-fn tc047b_delete_wallet_cascades_derived_addresses() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w = wid(0xC1);
-    ensure_wallet_meta(&persister, &w);
-    {
-        let conn = persister.lock_conn_for_test();
-        conn.execute(
-            "INSERT INTO core_derived_addresses \
-                (wallet_id, account_type, account_index, pool_type, derivation_index, address, used) \
-             VALUES (?1, 'standard_bip44', 0, 'external', 0, 'addr', 0)",
-            rusqlite::params![w.as_slice()],
-        )
-        .unwrap();
-    }
-
-    let before: i64 = persister
-        .lock_conn_for_test()
-        .query_row(
-            "SELECT COUNT(*) FROM core_derived_addresses WHERE wallet_id = ?1",
-            rusqlite::params![w.as_slice()],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(before, 1, "seed row must exist before delete");
-
-    persister.delete_wallet(w).expect("delete_wallet");
-
-    let after: i64 = persister
-        .lock_conn_for_test()
-        .query_row(
-            "SELECT COUNT(*) FROM core_derived_addresses WHERE wallet_id = ?1",
-            rusqlite::params![w.as_slice()],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(after, 0, "cascade must purge core_derived_addresses rows");
-}
-
 /// deleting a core_transactions row sets `spent_in_txid = NULL` on UTXOs.
 #[test]
 fn tc048_setnull_on_tx_delete() {

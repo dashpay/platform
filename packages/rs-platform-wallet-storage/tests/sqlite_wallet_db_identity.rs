@@ -60,6 +60,7 @@ fn fresh_wallet_db() -> (tempfile::TempDir, std::path::PathBuf) {
     let mut cs = PlatformWalletChangeSet::default();
     cs.wallet_metadata = Some(WalletMetadataEntry {
         network: key_wallet::Network::Testnet,
+        wallet_group_id: [0u8; 32],
         birth_height: 0,
     });
     cs.core = Some(CoreChangeSet {
