@@ -20,6 +20,8 @@ Keep this current as cores land.
 | `d944245204` | §4.5 | `MnemonicResolverCoreSigner::ecdh_shared_secret` (parity-pinned); design = inherent methods + closures (no trait/crate) |
 | `93fe4eac12` | §4.6 | `register_external_contact_account` takes `precomputed_shared_key: Option<[u8;32]>` (drain's decrypt core) + Some-path test |
 | `6832a52c31` | §4.6 | `register_contact_account` takes `precomputed_account_xpub: Option<ExtendedPubKey>` (drain's RegisterReceiving core) + Some-path test |
+| `4b6a6f7934` | §4.6 | deferred-crypto drain framework + `DrainCryptoProvider` trait + RegisterReceiving op + test |
+| `ecd288c735` | §4.6 | drain RegisterExternal op (ECDH path + contact fetch + provider + register) + deferral-safety test |
 
 **Locked design decisions**
 - Raw-secret ops are **inherent methods on `MnemonicResolverCoreSigner`** (in
@@ -39,17 +41,15 @@ Keep this current as cores land.
 1. ~~`register_contact_account` precomputed-xpub~~ **DONE** (`6832a52c31`). Both
    drain ops now have their seedless core (RegisterExternal=`93fe4eac12`,
    RegisterReceiving=`6832a52c31`).
-2. **The drain method** (`drain_pending_contact_crypto`) on `IdentityWallet`.
-   Generic over two provider closures supplied by the glue crate:
-   `xpub_at(path) -> ExtendedPubKey` (→ `register_contact_account(Some(..))`) and
-   `ecdh(path, peer) -> [u8;32]` (→ `register_external(.., Some(..))`); contactInfo
-   later. For each persisted `PendingContactCrypto`: run the op; on `Ok` →
-   push the key to `pending_contact_crypto_cleared` + remove from the in-memory
-   mirror; on `Permanent` → mark broken + clear; on `Unavailable`/`Transient` →
-   leave for next drain. Persist the clears via one changeset `store`. Tests:
-   queue with a RegisterExternal entry + a closure returning a known secret →
-   account built + entry cleared; a Permanent error clears + marks broken; an
-   Unavailable error leaves the entry.
+2. ~~The drain method~~ **DONE** (`4b6a6f7934` framework + RegisterReceiving;
+   `ecd288c735` RegisterExternal). `drain_pending_contact_crypto(provider)` on
+   `IdentityWallet`, generic over the platform-wallet-local `DrainCryptoProvider`
+   trait (`receiving_xpub` + `ecdh_shared_secret`; the glue crate impls it over
+   the resolver signer). Snapshots the queue, runs each op, removes completed
+   entries (in-memory + persisted clear delta), marks-broken on permanent
+   faults, leaves transient/unavailable for next drain. **Remaining:** the
+   `ContactInfoDecrypt` op (needs the §4.5 contactInfo primitive). End-to-end
+   RegisterExternal success path (real fetch + provider) verifies on-device.
 3. **§4.6 persistence round-trip (storage crate)** — SQLite table +
    writer/reader for `pending_contact_crypto_added/_cleared` (mirror
    `schema/accounts.rs`), persister dispatch (`persister.rs` ~984/1057), and
