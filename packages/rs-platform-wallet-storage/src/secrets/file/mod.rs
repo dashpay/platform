@@ -1475,6 +1475,30 @@ mod tests {
         );
     }
 
+    /// The no-plaintext-at-rest guarantee also holds through the public
+    /// `SecretStore::set` path (which writes an unprotected envelope sealed
+    /// under the vault key), not just the raw SPI entry path.
+    #[test]
+    fn no_plaintext_in_vault_file_via_secret_store_set() {
+        use crate::secrets::SecretStore;
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let store = SecretStore::file(&path, SecretString::new("pw-correct")).unwrap();
+        store
+            .set(
+                &wid(1),
+                "seed",
+                &SecretBytes::from_slice(b"PLAINTEXTNEEDLE"),
+            )
+            .unwrap();
+        let raw = fs::read(&path).unwrap();
+        assert!(
+            raw.windows(b"PLAINTEXTNEEDLE".len())
+                .all(|w| w != b"PLAINTEXTNEEDLE"),
+            "plaintext leaked into vault file via SecretStore::set"
+        );
+    }
+
     /// A blank passphrase is rejected at `open` →
     /// `BlankPassphrase`; no vault file (or lock sidecar) is created.
     #[test]

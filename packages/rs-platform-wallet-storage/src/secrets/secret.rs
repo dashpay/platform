@@ -369,6 +369,23 @@ mod tests {
         assert_eq!(s.trimmed().expose_secret(), "abandon ability");
     }
 
+    /// `SecretString::new` zeroizes its `String` source before that source
+    /// drops. The freed source buffer cannot be scanned after `new` returns
+    /// without use-after-free, and this crate forbids `unsafe`, so this
+    /// verifies the exact primitive `new` applies to its moved-in source —
+    /// `String::zeroize` empties the buffer in place — plus that `new`
+    /// faithfully copies the content into the wrapper.
+    #[test]
+    fn secret_string_new_zeroizes_string_source() {
+        // The primitive `new` calls on its owned source `String`.
+        let mut source = String::from("super secret seed material");
+        source.zeroize();
+        assert!(source.is_empty(), "String::zeroize must empty the source");
+        // And construction copies the content into the (zeroizing) wrapper.
+        let s = SecretString::new(String::from("super secret seed material"));
+        assert_eq!(s.expose_secret(), "super secret seed material");
+    }
+
     #[test]
     fn secret_string_ct_eq_is_value_based() {
         // Equality goes through `ConstantTimeEq` only.

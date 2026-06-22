@@ -625,6 +625,42 @@ mod tests {
         assert!(enveloped.len() <= MAX_SECRET_LEN);
     }
 
+    /// Scheme-1 accepts a plaintext of EXACTLY `MAX_PLAINTEXT_LEN` (the
+    /// accept boundary), round-trips it, and the enveloped bytes still fit
+    /// the backend's `MAX_SECRET_LEN` cap.
+    #[test]
+    fn scheme1_accepts_plaintext_at_exact_cap() {
+        let p = pw("pw");
+        let pt = vec![0x5Au8; MAX_PLAINTEXT_LEN];
+        let blob = wrap_with_params(&wid(1), "seed", Some(&p), &pt, floor()).unwrap();
+        assert!(
+            blob.len() <= MAX_SECRET_LEN,
+            "enveloped bytes exceed backend cap"
+        );
+        let got = unwrap(&wid(1), "seed", Some(&p), blob.expose_secret()).unwrap();
+        assert_eq!(got.expose_secret(), &pt[..]);
+    }
+
+    /// Value rollback is intentionally NOT defended: an older valid scheme-1
+    /// envelope still decrypts cleanly under the current password. Pinned so
+    /// a future reader does not mistake the strict read for rollback
+    /// protection (anti-rollback would need a monotonic anchor in the
+    /// consumer's integrity-protected metadata).
+    #[test]
+    fn value_rollback_is_not_defended() {
+        let p = pw("pw");
+        let old_blob = wrap_with_params(&wid(1), "seed", Some(&p), b"OLD-VALUE", floor()).unwrap();
+        // A newer value is written under the same identity + password …
+        let _new_blob = wrap_with_params(&wid(1), "seed", Some(&p), b"NEW-VALUE", floor()).unwrap();
+        // … yet "restoring" the OLD envelope still decrypts cleanly.
+        let restored = unwrap(&wid(1), "seed", Some(&p), old_blob.expose_secret()).unwrap();
+        assert_eq!(
+            restored.expose_secret(),
+            b"OLD-VALUE",
+            "older envelope still decrypts: value rollback is a known, undefended residual"
+        );
+    }
+
     /// magic/version discrimination: a magic-less blob is a legacy raw
     /// value — returned on a `None` read (with a one-time warning), refused
     /// fail-closed on `Some(pw)` so the strict rule holds. A magic-present

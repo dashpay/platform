@@ -16,7 +16,7 @@ use super::envelope;
 use super::error::{OsKeyringErrorKind, SecretStoreError};
 use super::secret::{SecretBytes, SecretString};
 use super::validate::WalletId;
-use super::{default_credential_store, EncryptedFileStore, SERVICE_PREFIX};
+use super::{default_credential_store, EncryptedFileStore, MAX_SECRET_LEN, SERVICE_PREFIX};
 
 /// A passphrase-or-OS-keyring backed store for wallet secret material.
 ///
@@ -165,7 +165,23 @@ impl SecretStore {
             Self::Os(store) => {
                 let entry = build_os(store, service, label)?;
                 match entry.get_secret() {
-                    Ok(v) => Ok(Some(SecretBytes::new(v))),
+                    Ok(v) => {
+                        // Defense-in-depth: reject an oversized backend blob
+                        // before it reaches the envelope parse/derive path.
+                        // The File arm's stored bytes are already capped at
+                        // MAX_SECRET_LEN by `put_bytes`; the Os backend has no
+                        // such ceiling, so cap here. A legitimate envelope
+                        // never exceeds MAX_SECRET_LEN; the overhead is
+                        // headroom.
+                        let cap = MAX_SECRET_LEN + envelope::MAX_ENVELOPE_OVERHEAD;
+                        if v.len() > cap {
+                            return Err(SecretStoreError::SecretTooLarge {
+                                found: v.len(),
+                                max: cap,
+                            });
+                        }
+                        Ok(Some(SecretBytes::new(v)))
+                    }
                     Err(KeyringError::NoEntry) => Ok(None),
                     Err(e) => Err(map_spi(e)),
                 }
@@ -1101,6 +1117,54 @@ mod tests {
         );
         assert!(matches!(
             s.get_secret(&w, "seed", Some(&new)).unwrap_err(),
+            SecretStoreError::WrongPassword
+        ));
+    }
+
+    /// [Os]: a backend failure during the rewrite's write (after the read
+    /// succeeds) leaves the OLD value intact — no half-rotation. The mock's
+    /// one-shot error injection fails the next write, simulating a crash
+    /// mid-rewrite. `reprotect` is read-then-`set_secret`, split here so the
+    /// error lands on the write.
+    #[test]
+    fn os_rewrite_mid_write_failure_leaves_old_intact() {
+        let mock = mock::Store::new().unwrap();
+        let store = SecretStore::Os(mock.clone());
+        let w = wid(15);
+        let old = SecretString::new("old-pw");
+        let new = SecretString::new("new-pw");
+        store
+            .set_secret(&w, "seed", &SecretBytes::from_slice(b"REAL"), Some(&old))
+            .unwrap();
+
+        // Read succeeds (the rewrite's first step) …
+        let secret = store.get_secret(&w, "seed", Some(&old)).unwrap().unwrap();
+        // … then inject a one-shot backend error so the write fails.
+        let service = format!("{SERVICE_PREFIX}{}", w.to_hex());
+        let entry = mock.build(&service, "seed", None).unwrap();
+        let cred: &mock::Cred = entry.as_any().downcast_ref().unwrap();
+        cred.set_error(KeyringError::PlatformFailure(Box::new(
+            std::io::Error::other("simulated backend write failure"),
+        )));
+        let err = store
+            .set_secret(&w, "seed", &secret, Some(&new))
+            .unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::OsKeyring { .. }),
+            "got {err:?}"
+        );
+
+        // The OLD value is still readable; nothing rotated to `new`.
+        assert_eq!(
+            store
+                .get_secret(&w, "seed", Some(&old))
+                .unwrap()
+                .unwrap()
+                .expose_secret(),
+            b"REAL"
+        );
+        assert!(matches!(
+            store.get_secret(&w, "seed", Some(&new)).unwrap_err(),
             SecretStoreError::WrongPassword
         ));
     }
