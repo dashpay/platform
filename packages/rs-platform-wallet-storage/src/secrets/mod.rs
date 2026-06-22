@@ -22,6 +22,7 @@
 //! `tests/secrets_scan.rs` exempts it, so it owns its own review
 //! discipline via `tests/secrets_guard.rs`.
 
+mod envelope;
 mod error;
 mod file;
 mod keyring;
@@ -29,6 +30,7 @@ mod secret;
 mod store;
 mod validate;
 
+pub use envelope::MAX_PLAINTEXT_LEN;
 pub use error::{IoError, OsKeyringErrorKind, SecretStoreError};
 pub use file::{
     EncryptedFileCredential, EncryptedFileStore, MAX_SECRET_LEN, MAX_VAULT_SIZE_BYTES,

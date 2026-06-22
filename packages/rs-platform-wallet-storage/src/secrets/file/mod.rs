@@ -34,8 +34,13 @@
 //! by zeroize + mlock. The derived AEAD key stays resident in a
 //! [`SecretBytes`] (to avoid per-op Argon2) and is zeroized on Drop.
 
-mod crypto;
-mod format;
+// `pub(super)` (= visible within `crate::secrets`) so the Tier-2
+// `envelope` module — a sibling of `file` under `secrets` — can reuse the
+// shared Argon2id/XChaCha primitives and `KDF_ID_ARGON2ID` without
+// duplicating crypto. Items inside stay `pub(crate)`/`pub(in …file)`, so
+// nothing escapes the secrets tree (see the crypto.rs module doc).
+pub(super) mod crypto;
+pub(super) mod format;
 
 use std::any::Any;
 use std::collections::HashMap;
