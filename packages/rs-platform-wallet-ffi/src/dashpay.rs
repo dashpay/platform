@@ -453,3 +453,79 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
     }
     PlatformWalletFFIResult::ok()
 }
+
+/// Glue adapter implementing platform-wallet's [`DrainCryptoProvider`] over the
+/// resolver-backed [`MnemonicResolverCoreSigner`]. The orphan rule needs the
+/// impl's type local to this crate, so the signer is wrapped here rather than
+/// implemented directly on it in `rs-sdk-ffi`.
+struct ResolverDrainProvider {
+    signer: MnemonicResolverCoreSigner,
+}
+
+#[async_trait::async_trait]
+impl platform_wallet::DrainCryptoProvider for ResolverDrainProvider {
+    async fn receiving_xpub(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<key_wallet::bip32::ExtendedPubKey, platform_wallet::PlatformWalletError> {
+        use key_wallet::signer::Signer;
+        self.signer
+            .extended_public_key(path)
+            .await
+            .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
+    }
+
+    async fn ecdh_shared_secret(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        peer: &dashcore::secp256k1::PublicKey,
+    ) -> Result<[u8; 32], platform_wallet::PlatformWalletError> {
+        self.signer
+            .ecdh_shared_secret(path, peer)
+            .map(|z| *z)
+            .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
+    }
+}
+
+/// Drain the persisted deferred-crypto queue using the Keychain signer for the
+/// key material. Call when a signer is available (Keychain unlock, or any
+/// signer-present DashPay action). Writes the number of completed entries to
+/// `out_drained`.
+///
+/// # Safety
+/// - `core_signer_handle` must be a valid, non-destroyed
+///   `*mut MnemonicResolverHandle`; ownership is retained by the caller.
+/// - `out_drained` must be a valid `*mut u32`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
+    wallet_handle: Handle,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_drained: *mut u32,
+) -> PlatformWalletFFIResult {
+    check_ptr!(core_signer_handle);
+    check_ptr!(out_drained);
+
+    let signer_addr = core_signer_handle as usize;
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        let wallet_id = wallet.wallet_id();
+        let network = wallet.network();
+        // SAFETY: same lifetime contract as platform_wallet_send_dashpay_payment —
+        // the caller pins the resolver handle for the duration of this call.
+        let signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        let provider = ResolverDrainProvider { signer };
+        block_on_worker(async move { identity.drain_pending_contact_crypto(&provider).await })
+    });
+    let drained = unwrap_option_or_return!(option);
+    unsafe {
+        *out_drained = drained as u32;
+    }
+    PlatformWalletFFIResult::ok()
+}

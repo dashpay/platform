@@ -5175,6 +5175,7 @@ name = "platform-wallet-ffi"
 version = "4.0.0-rc.2"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bincode",
  "bs58",
  "cbindgen 0.27.0",
