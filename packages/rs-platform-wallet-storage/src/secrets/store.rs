@@ -1168,4 +1168,28 @@ mod tests {
             SecretStoreError::WrongPassword
         ));
     }
+
+    /// [Os]: the read-size guard rejects an oversized backend blob (a
+    /// malicious keychain returning more than a legitimate envelope ever
+    /// could) BEFORE it reaches the envelope parse/derive path. The bound is
+    /// `MAX_SECRET_LEN + MAX_ENVELOPE_OVERHEAD`; both the `get_secret` and
+    /// legacy `get` read paths enforce it.
+    #[test]
+    fn os_read_rejects_oversized_blob() {
+        let b = os_backend();
+        let w = wid(16);
+        let cap = MAX_SECRET_LEN + envelope::MAX_ENVELOPE_OVERHEAD;
+        // Attacker writes a blob one byte over the cap straight to the slot.
+        b.place_raw(&w, "seed", &vec![0u8; cap + 1]);
+        let err = b.store.get_secret(&w, "seed", None).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::SecretTooLarge { found, max } if found == cap + 1 && max == cap),
+            "get_secret got {err:?}"
+        );
+        // The legacy `get` path is bounded too.
+        assert!(matches!(
+            b.store.get(&w, "seed").unwrap_err(),
+            SecretStoreError::SecretTooLarge { found, max } if found == cap + 1 && max == cap
+        ));
+    }
 }

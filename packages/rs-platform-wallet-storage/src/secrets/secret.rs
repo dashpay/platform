@@ -59,6 +59,8 @@ impl SecretString {
         let cap = source.len().max(DEFAULT_CAPACITY);
         let mut buf = String::with_capacity(cap);
         buf.push_str(&source);
+        // Do not remove: wipes the moved-in plaintext source before it drops
+        // (its freed buffer cannot be scanned in a test under deny(unsafe_code)).
         source.zeroize();
         let lock = region::lock(buf.as_ptr(), buf.capacity())
             .map_err(|e| {
@@ -369,19 +371,17 @@ mod tests {
         assert_eq!(s.trimmed().expose_secret(), "abandon ability");
     }
 
-    /// `SecretString::new` zeroizes its `String` source before that source
-    /// drops. The freed source buffer cannot be scanned after `new` returns
-    /// without use-after-free, and this crate forbids `unsafe`, so this
-    /// verifies the exact primitive `new` applies to its moved-in source —
-    /// `String::zeroize` empties the buffer in place — plus that `new`
-    /// faithfully copies the content into the wrapper.
+    /// Two sound checks (a direct freed-buffer scan would be use-after-free,
+    /// and this crate forbids `unsafe`): (1) `String::zeroize` empties a
+    /// buffer — the primitive `new` relies on; (2) `new` copies the content
+    /// into the wrapper faithfully. That `new` actually calls
+    /// `source.zeroize()` on its moved-in source is pinned by the
+    /// do-not-remove comment at that call site, not asserted here.
     #[test]
     fn secret_string_new_zeroizes_string_source() {
-        // The primitive `new` calls on its owned source `String`.
         let mut source = String::from("super secret seed material");
         source.zeroize();
         assert!(source.is_empty(), "String::zeroize must empty the source");
-        // And construction copies the content into the (zeroizing) wrapper.
         let s = SecretString::new(String::from("super secret seed material"));
         assert_eq!(s.expose_secret(), "super secret seed material");
     }
