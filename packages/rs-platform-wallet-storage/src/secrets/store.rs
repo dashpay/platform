@@ -50,36 +50,77 @@ impl SecretStore {
         Ok(Self::Os(default_credential_store().map_err(map_spi)?))
     }
 
-    /// Store `secret` under `(service, label)`, overwriting any prior
-    /// value. Takes `&SecretBytes` so the caller cannot pass an unwrapped
-    /// buffer; the wrapped bytes are exposed to the SPI only at the last
-    /// moment.
+    /// Store `secret` under `(service, label)` UNPROTECTED (Tier-2
+    /// scheme-0), overwriting any prior value — a `set_secret(.., None)`
+    /// wrapper kept for non-breaking back-compat. Takes `&SecretBytes` so
+    /// the caller cannot pass an unwrapped buffer.
     pub fn set(
         &self,
         service: &WalletId,
         label: &str,
         secret: &SecretBytes,
     ) -> Result<(), SecretStoreError> {
+        self.set_secret(service, label, secret, None)
+    }
+
+    /// Store `secret` under `(service, label)`, overwriting any prior value.
+    ///
+    /// `password` selects the Tier-2 protection: `None` writes an
+    /// unprotected scheme-0 envelope; `Some(pw)` writes a scheme-1 envelope
+    /// sealed under the object password `pw` (Argon2id + XChaCha20-Poly1305)
+    /// **before** the bytes reach the backend, so a protected object stays
+    /// confidential even under a full backend compromise. A blank `pw` is
+    /// rejected ([`BlankPassphrase`](SecretStoreError::BlankPassphrase)).
+    ///
+    /// The write is an atomic same-slot overwrite on both arms (File: the
+    /// vault's atomic replace; Os: the keychain item), so add/change/remove
+    /// password flows — see [`reprotect`](SecretStore::reprotect) — leave
+    /// the prior value intact on a crash.
+    pub fn set_secret(
+        &self,
+        service: &WalletId,
+        label: &str,
+        secret: &SecretBytes,
+        password: Option<&SecretString>,
+    ) -> Result<(), SecretStoreError> {
+        // Wrap above the backend: the backend only ever stores the opaque
+        // envelope (ciphertext for a protected object).
+        let blob = envelope::wrap(service, label, password, secret.expose_secret())?;
+        self.put_raw(service, label, &blob)
+    }
+
+    /// Store the already-enveloped opaque `blob` under `(service, label)`.
+    /// The shared write seam under [`set`] and [`set_secret`].
+    ///
+    /// [`set`]: SecretStore::set
+    fn put_raw(
+        &self,
+        service: &WalletId,
+        label: &str,
+        blob: &SecretBytes,
+    ) -> Result<(), SecretStoreError> {
         match self {
             // Inherent typed path — no lossy SPI seam, no bare buffer.
-            Self::File(s) => s.put_bytes(service, label, secret),
+            Self::File(s) => s.put_bytes(service, label, blob),
             Self::Os(store) => {
                 let entry = build_os(store, service, label)?;
-                entry.set_secret(secret.expose_secret()).map_err(map_spi)
+                entry.set_secret(blob.expose_secret()).map_err(map_spi)
             }
         }
     }
 
-    /// Retrieve the secret stored under `(service, label)`, or `Ok(None)`
-    /// if absent. The plaintext is wrapped into [`SecretBytes`] at the
-    /// seam with no named `Vec` intermediate, so the bare-buffer window is
-    /// zero statements.
+    /// Retrieve the UNPROTECTED secret stored under `(service, label)`, or
+    /// `Ok(None)` if absent — a `get_secret(.., None)` wrapper kept for
+    /// non-breaking back-compat. A scheme-1 (password-protected) object read
+    /// through this path returns
+    /// [`NeedsPassword`](SecretStoreError::NeedsPassword); use
+    /// [`get_secret`](SecretStore::get_secret) with the object password.
     pub fn get(
         &self,
         service: &WalletId,
         label: &str,
     ) -> Result<Option<SecretBytes>, SecretStoreError> {
-        self.get_raw(service, label)
+        self.get_secret(service, label, None)
     }
 
     /// Read the opaque bytes stored under `(service, label)`, or `Ok(None)`
@@ -145,6 +186,34 @@ impl SecretStore {
             return Ok(None);
         };
         envelope::unwrap(service, label, password, stored.expose_secret()).map(Some)
+    }
+
+    /// Add / change / remove an object password in one same-slot
+    /// unwrap→rewrap→overwrite — the canonical Tier-2 re-protection flow.
+    ///
+    /// Reads the object under the `current` expectation (so a strip is
+    /// caught fail-closed before any rewrap), then re-writes it under
+    /// `new`:
+    /// - **add:** `current = None`, `new = Some(pw)`;
+    /// - **change:** `current = Some(old)`, `new = Some(pw_new)`;
+    /// - **remove:** `current = Some(old)`, `new = None`.
+    ///
+    /// An absent object is a no-op (`Ok(())`). The rewrite is the atomic
+    /// same-slot overwrite of [`set_secret`], so a crash between the read
+    /// and the commit leaves the prior value intact and readable under
+    /// `current`. After a successful call the consumer MUST update its own
+    /// trusted protection-status record (the L-1 expectation lives there).
+    pub fn reprotect(
+        &self,
+        service: &WalletId,
+        label: &str,
+        current: Option<&SecretString>,
+        new: Option<&SecretString>,
+    ) -> Result<(), SecretStoreError> {
+        let Some(secret) = self.get_secret(service, label, current)? else {
+            return Ok(());
+        };
+        self.set_secret(service, label, &secret, new)
     }
 
     /// Delete the secret stored under `(service, label)`. Absent entries
@@ -437,11 +506,17 @@ mod tests {
     }
 
     fn protected(w: &WalletId, label: &str, pw: &str, secret: &[u8]) -> Vec<u8> {
-        envelope::wrap_with_params(w, label, Some(&SecretString::new(pw)), secret, floor()).unwrap()
+        envelope::wrap_with_params(w, label, Some(&SecretString::new(pw)), secret, floor())
+            .unwrap()
+            .expose_secret()
+            .to_vec()
     }
 
     fn unprotected(w: &WalletId, label: &str, secret: &[u8]) -> Vec<u8> {
-        envelope::wrap(w, label, None, secret).unwrap()
+        envelope::wrap(w, label, None, secret)
+            .unwrap()
+            .expose_secret()
+            .to_vec()
     }
 
     /// A backend under test plus the raw-write hook that plays the
@@ -780,5 +855,209 @@ mod tests {
     #[test]
     fn l1_scheme_flip_os() {
         run_scheme_flip(&os_backend());
+    }
+
+    // ===== Add / change / remove password + arm matrix (TS-PW / TS-ARM) =====
+    //
+    // These exercise the PUBLIC set_secret/get_secret/reprotect API, so the
+    // protected writes/reads run the real (default 64 MiB) Argon2 — kept to
+    // a small number of derivations per test.
+
+    /// TS-PW-001/002/003: the full enrol → change → remove lifecycle, each
+    /// step verified through the strict read.
+    fn run_pw_lifecycle(b: &Backend) {
+        let w = wid(10);
+        let pw1 = SecretString::new("pw-one");
+        let pw2 = SecretString::new("pw-two");
+
+        // ADD: start unprotected, enrol a password.
+        b.store
+            .set(&w, "seed", &SecretBytes::from_slice(b"SEED"))
+            .unwrap();
+        assert_eq!(
+            b.store.get(&w, "seed").unwrap().unwrap().expose_secret(),
+            b"SEED"
+        );
+        b.store.reprotect(&w, "seed", None, Some(&pw1)).unwrap();
+        assert!(
+            matches!(
+                b.store.get(&w, "seed").unwrap_err(),
+                SecretStoreError::NeedsPassword
+            ),
+            "[{}] after add, None read needs a password",
+            b.name
+        );
+        assert_eq!(
+            b.store
+                .get_secret(&w, "seed", Some(&pw1))
+                .unwrap()
+                .unwrap()
+                .expose_secret(),
+            b"SEED"
+        );
+
+        // CHANGE: rotate to a new password (unwrap-old → rewrap-new).
+        b.store
+            .reprotect(&w, "seed", Some(&pw1), Some(&pw2))
+            .unwrap();
+        assert_eq!(
+            b.store
+                .get_secret(&w, "seed", Some(&pw2))
+                .unwrap()
+                .unwrap()
+                .expose_secret(),
+            b"SEED"
+        );
+        assert!(
+            matches!(
+                b.store.get_secret(&w, "seed", Some(&pw1)).unwrap_err(),
+                SecretStoreError::WrongPassword
+            ),
+            "[{}] old password no longer unlocks after change",
+            b.name
+        );
+
+        // REMOVE: back to unprotected.
+        b.store.reprotect(&w, "seed", Some(&pw2), None).unwrap();
+        assert_eq!(
+            b.store.get(&w, "seed").unwrap().unwrap().expose_secret(),
+            b"SEED"
+        );
+        assert!(
+            matches!(
+                b.store.get_secret(&w, "seed", Some(&pw2)).unwrap_err(),
+                SecretStoreError::ExpectedProtectedButUnsealed
+            ),
+            "[{}] after remove, a password read fails closed until DET updates its DB",
+            b.name
+        );
+    }
+
+    #[test]
+    fn pw_lifecycle_file() {
+        run_pw_lifecycle(&file_backend());
+    }
+
+    #[test]
+    fn pw_lifecycle_os() {
+        run_pw_lifecycle(&os_backend());
+    }
+
+    /// TS-PW-005: losing the object password bricks the object — no recovery
+    /// path exists, every read fails closed.
+    fn run_pw_no_recovery(b: &Backend) {
+        let w = wid(11);
+        let pw = SecretString::new("the-only-pw");
+        b.store
+            .set_secret(&w, "seed", &SecretBytes::from_slice(b"SEED"), Some(&pw))
+            .unwrap();
+        assert!(matches!(
+            b.store
+                .get_secret(&w, "seed", Some(&SecretString::new("guess")))
+                .unwrap_err(),
+            SecretStoreError::WrongPassword
+        ));
+        assert!(matches!(
+            b.store.get(&w, "seed").unwrap_err(),
+            SecretStoreError::NeedsPassword
+        ));
+    }
+
+    #[test]
+    fn pw_no_recovery_file() {
+        run_pw_no_recovery(&file_backend());
+    }
+
+    #[test]
+    fn pw_no_recovery_os() {
+        run_pw_no_recovery(&os_backend());
+    }
+
+    /// TS-ARM-003: `set`/`get` are additive `..,None` wrappers — `set`
+    /// writes a scheme-0 envelope, `get` reads it byte-exact, and a
+    /// password-supplied read of that unprotected object fails closed.
+    fn run_set_get_wrappers(b: &Backend) {
+        let w = wid(12);
+        b.store
+            .set(&w, "seed", &SecretBytes::from_slice(b"plain"))
+            .unwrap();
+        assert_eq!(
+            b.store.get(&w, "seed").unwrap().unwrap().expose_secret(),
+            b"plain"
+        );
+        assert!(matches!(
+            b.store
+                .get_secret(&w, "seed", Some(&SecretString::new("pw")))
+                .unwrap_err(),
+            SecretStoreError::ExpectedProtectedButUnsealed
+        ));
+    }
+
+    #[test]
+    fn set_get_wrappers_file() {
+        run_set_get_wrappers(&file_backend());
+    }
+
+    #[test]
+    fn set_get_wrappers_os() {
+        run_set_get_wrappers(&os_backend());
+    }
+
+    /// TS-T1-005: the Os arm has no passphrase concept; the Tier-1 blank
+    /// guard never fires and the round-trip is byte-exact.
+    #[test]
+    fn os_arm_roundtrip_no_blank_guard() {
+        let b = os_backend();
+        let w = wid(13);
+        b.store
+            .set(&w, "seed", &SecretBytes::from_slice(b"abc"))
+            .unwrap();
+        assert_eq!(
+            b.store.get(&w, "seed").unwrap().unwrap().expose_secret(),
+            b"abc"
+        );
+        b.store.delete(&w, "seed").unwrap();
+        assert!(b.store.get(&w, "seed").unwrap().is_none());
+    }
+
+    /// TS-PW-004 ★ [File]: a crash (disk-write failure) between the unwrap
+    /// and the overwrite-commit leaves the OLD protected value intact and
+    /// readable — no half-rotated / unprotected state.
+    #[cfg(unix)]
+    #[test]
+    fn pw_change_crash_safety_leaves_old_intact_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let s = file_store(dir.path());
+        let w = wid(14);
+        let old = SecretString::new("old-pw");
+        let new = SecretString::new("new-pw");
+
+        s.set_secret(&w, "seed", &SecretBytes::from_slice(b"REAL"), Some(&old))
+            .unwrap();
+
+        // Make the vault's parent read-only so the atomic temp-write fails
+        // mid-change (mirrors rekey_does_not_corrupt_on_disk_temp_failure).
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o500)).unwrap();
+        let err = s.reprotect(&w, "seed", Some(&old), Some(&new)).unwrap_err();
+        assert!(matches!(err, SecretStoreError::Io(_)), "got {err:?}");
+
+        // Restore write so the resident store can sync/clean up at drop.
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        // The OLD value is still readable under the OLD password; the new
+        // password does not unlock it (no half-rotation).
+        assert_eq!(
+            s.get_secret(&w, "seed", Some(&old))
+                .unwrap()
+                .unwrap()
+                .expose_secret(),
+            b"REAL"
+        );
+        assert!(matches!(
+            s.get_secret(&w, "seed", Some(&new)).unwrap_err(),
+            SecretStoreError::WrongPassword
+        ));
     }
 }

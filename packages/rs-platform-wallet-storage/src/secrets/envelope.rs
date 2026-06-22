@@ -96,15 +96,17 @@ pub const MAX_PLAINTEXT_LEN: usize = MAX_SECRET_LEN - MAX_ENVELOPE_OVERHEAD;
 /// `None` → an unprotected (scheme-0) envelope; `Some(pw)` → a scheme-1
 /// envelope sealed under `pw`. A blank password is rejected at enrol
 /// ([`SecretStoreError::BlankPassphrase`]).
-// The write side is wired into `SecretStore::set_secret` in the next task;
-// until then it is exercised only by this module's tests.
-#[allow(dead_code)]
+///
+/// Returns the envelope inside a zeroizing [`SecretBytes`]: a scheme-0
+/// envelope embeds the raw plaintext, so the wire bytes are handled as
+/// sensitive (mlock'd, wiped on drop) by construction — symmetric with
+/// [`unwrap`]'s return.
 pub(crate) fn wrap(
     wallet_id: &WalletId,
     label: &str,
     password: Option<&SecretString>,
     plaintext: &[u8],
-) -> Result<Vec<u8>, SecretStoreError> {
+) -> Result<SecretBytes, SecretStoreError> {
     wrap_with_params(
         wallet_id,
         label,
@@ -117,14 +119,13 @@ pub(crate) fn wrap(
 /// [`wrap`] with explicit Argon2 `params` (tests use the floor params for
 /// speed; production uses [`KdfParams::default_target`]). `params` is
 /// ignored when `password` is `None`.
-#[allow(dead_code)]
 pub(crate) fn wrap_with_params(
     wallet_id: &WalletId,
     label: &str,
     password: Option<&SecretString>,
     plaintext: &[u8],
     params: KdfParams,
-) -> Result<Vec<u8>, SecretStoreError> {
+) -> Result<SecretBytes, SecretStoreError> {
     // Cap the PLAINTEXT (before overhead) uniformly for both schemes so the
     // enveloped bytes always fit the backend cap and the limit is stable.
     if plaintext.len() > MAX_PLAINTEXT_LEN {
@@ -141,7 +142,9 @@ pub(crate) fn wrap_with_params(
         out.push(ENVELOPE_VERSION);
         out.push(SCHEME_UNPROTECTED);
         out.extend_from_slice(plaintext);
-        return Ok(out);
+        // `SecretBytes::new` moves `out` into a zeroizing, mlock'd buffer
+        // (no copy) — the scheme-0 plaintext never lives in a bare Vec.
+        return Ok(SecretBytes::new(out));
     };
 
     // Reject a blank object password BEFORE any derivation (SEC-J).
@@ -167,7 +170,7 @@ pub(crate) fn wrap_with_params(
     out.extend_from_slice(&salt);
     out.extend_from_slice(&nonce);
     out.extend_from_slice(&ciphertext);
-    Ok(out)
+    Ok(SecretBytes::new(out))
 }
 
 /// Unwrap `blob` for `(wallet_id, label)`, applying the **strict,
@@ -390,12 +393,41 @@ mod tests {
         SecretString::new(s)
     }
 
+    /// Wrap and expose the envelope as a `Vec<u8>` for byte-level
+    /// inspection/mutation in tests (the production `wrap` returns a
+    /// zeroizing `SecretBytes`).
+    fn wrap_bytes(
+        w: &WalletId,
+        label: &str,
+        password: Option<&SecretString>,
+        pt: &[u8],
+    ) -> Vec<u8> {
+        wrap(w, label, password, pt)
+            .unwrap()
+            .expose_secret()
+            .to_vec()
+    }
+
+    /// [`wrap_bytes`] with explicit (floor) params, for the scheme-1 tests.
+    fn wrap_p(
+        w: &WalletId,
+        label: &str,
+        password: Option<&SecretString>,
+        pt: &[u8],
+        params: KdfParams,
+    ) -> Vec<u8> {
+        wrap_with_params(w, label, password, pt, params)
+            .unwrap()
+            .expose_secret()
+            .to_vec()
+    }
+
     /// TS-ENV-001: scheme-0 passthrough round-trip; the wrapped form leads
     /// with magic, version=1, scheme=0, then the raw payload.
     #[test]
     fn scheme0_passthrough_round_trip() {
         let secret = b"top secret seed bytes";
-        let blob = wrap(&wid(1), "seed", None, secret).unwrap();
+        let blob = wrap_bytes(&wid(1), "seed", None, secret);
         assert!(blob.starts_with(MAGIC));
         assert_eq!(blob[O_VERSION], 1);
         assert_eq!(blob[O_SCHEME], 0);
@@ -411,7 +443,7 @@ mod tests {
     fn scheme1_round_trip_and_fresh_salt_nonce() {
         let secret = b"correct horse battery staple seed";
         let p = pw("hunter2-but-better");
-        let blob = wrap_with_params(&wid(7), "seed", Some(&p), secret, floor()).unwrap();
+        let blob = wrap_p(&wid(7), "seed", Some(&p), secret, floor());
         assert!(blob.starts_with(MAGIC));
         assert_eq!(blob[O_VERSION], 1);
         assert_eq!(blob[O_SCHEME], 1);
@@ -422,7 +454,7 @@ mod tests {
         let got = unwrap(&wid(7), "seed", Some(&p), &blob).unwrap();
         assert_eq!(got.expose_secret(), secret);
 
-        let blob2 = wrap_with_params(&wid(7), "seed", Some(&p), secret, floor()).unwrap();
+        let blob2 = wrap_p(&wid(7), "seed", Some(&p), secret, floor());
         assert_ne!(
             &blob[O_SALT..O_SALT + SALT_LEN],
             &blob2[O_SALT..O_SALT + SALT_LEN],
@@ -438,7 +470,7 @@ mod tests {
     /// TS-ENV-003: wrong object password → WrongPassword, no plaintext.
     #[test]
     fn wrong_password_fails_closed() {
-        let blob = wrap_with_params(&wid(1), "seed", Some(&pw("right")), b"seed", floor()).unwrap();
+        let blob = wrap_p(&wid(1), "seed", Some(&pw("right")), b"seed", floor());
         let err = unwrap(&wid(1), "seed", Some(&pw("wrong")), &blob).unwrap_err();
         assert!(
             matches!(err, SecretStoreError::WrongPassword),
@@ -451,7 +483,7 @@ mod tests {
     #[test]
     fn relocation_across_identity_is_rejected() {
         let p = pw("pw");
-        let blob = wrap_with_params(&wid(0xA), "labelA", Some(&p), b"seed", floor()).unwrap();
+        let blob = wrap_p(&wid(0xA), "labelA", Some(&p), b"seed", floor());
         for (w, l) in [(0xB, "labelB"), (0xA, "labelB"), (0xB, "labelA")] {
             let err = unwrap(&wid(w), l, Some(&p), &blob).unwrap_err();
             assert!(
@@ -470,7 +502,7 @@ mod tests {
     #[test]
     fn header_tamper_fails_closed_per_field() {
         let p = pw("pw");
-        let base = wrap_with_params(&wid(1), "seed", Some(&p), b"seed", floor()).unwrap();
+        let base = wrap_p(&wid(1), "seed", Some(&p), b"seed", floor());
 
         // kdf.id → 7 (unknown) ⇒ KdfFailure (bounds reject pre-derive).
         let mut b = base.clone();
@@ -520,7 +552,7 @@ mod tests {
     #[test]
     fn kdf_ceiling_enforced_before_derivation() {
         let p = pw("pw");
-        let base = wrap_with_params(&wid(1), "seed", Some(&p), b"seed", floor()).unwrap();
+        let base = wrap_p(&wid(1), "seed", Some(&p), b"seed", floor());
 
         // m_kib = u32::MAX ⇒ KdfFailure, no allocation.
         let mut b = base.clone();
@@ -623,7 +655,7 @@ mod tests {
 
         // (c) Magic OK but version = 2 ⇒ UnsupportedEnvelopeVersion{2},
         // regardless of password (GAP-009).
-        let mut v2 = wrap(&wid(1), "seed", None, b"x").unwrap();
+        let mut v2 = wrap_bytes(&wid(1), "seed", None, b"x");
         v2[O_VERSION] = 2;
         for arg in [None, Some(&p)] {
             assert!(matches!(
@@ -633,7 +665,7 @@ mod tests {
         }
 
         // (d) Magic+version OK but unknown scheme = 9 ⇒ fail closed.
-        let mut s9 = wrap(&wid(1), "seed", None, b"x").unwrap();
+        let mut s9 = wrap_bytes(&wid(1), "seed", None, b"x");
         s9[O_SCHEME] = 9;
         assert!(matches!(
             unwrap(&wid(1), "seed", None, &s9).unwrap_err(),
@@ -645,7 +677,7 @@ mod tests {
     /// tests): a scheme-0 blob carrying `secret` DOES decode under `None`.
     #[test]
     fn scheme0_some_password_fails_closed_strip() {
-        let blob = wrap(&wid(1), "seed", None, b"attacker-seed").unwrap();
+        let blob = wrap_bytes(&wid(1), "seed", None, b"attacker-seed");
         // None ⇒ it WOULD decode to the (attacker) bytes…
         assert_eq!(
             unwrap(&wid(1), "seed", None, &blob)
@@ -666,8 +698,7 @@ mod tests {
     fn round_trip_is_constant_time_equal() {
         let p = pw("pw");
         let original = SecretBytes::from_slice(b"seed material");
-        let blob =
-            wrap_with_params(&wid(1), "seed", Some(&p), original.expose_secret(), floor()).unwrap();
+        let blob = wrap_p(&wid(1), "seed", Some(&p), original.expose_secret(), floor());
         let got = unwrap(&wid(1), "seed", Some(&p), &blob).unwrap();
         assert!(bool::from(got.ct_eq(&original)));
     }
@@ -682,7 +713,7 @@ mod tests {
     #[test]
     fn fuzz_byte_mutation_never_panics() {
         let p = pw("fuzz-pw");
-        let valid = wrap_with_params(&wid(0xAB), "seed", Some(&p), b"seed-bytes", floor()).unwrap();
+        let valid = wrap_p(&wid(0xAB), "seed", Some(&p), b"seed-bytes", floor());
         // The pristine envelope unwraps.
         assert_eq!(
             unwrap(&wid(0xAB), "seed", Some(&p), &valid)
