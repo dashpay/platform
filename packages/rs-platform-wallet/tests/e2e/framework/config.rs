@@ -159,12 +159,19 @@ pub const DEFAULT_BANK_CORE_GATE_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Default minimum bank balance in credits required to start the suite.
 ///
-/// 200B ensures the bank always meets the `EXPECTED_TOKEN_SUITE_FLOOR`
-/// (88.8B), so TK token tests run instead of silently skipping (the
-/// QA-012 false-green trap). Operators who observe the "Bank under-funded"
-/// panic should top up the Platform address shown in the message to at
-/// least this value.
-pub const DEFAULT_MIN_BANK_CREDITS: u64 = 200_000_000_000;
+/// Rationale: the [`FundingLedger`] measured a full run's **gross**
+/// platform demand at ~474.75B credits (~4.75 DASH). 550B credits
+/// (~5.5 DASH) gives ~16% headroom so the floor gate **fails fast** on
+/// an underfunded bank instead of cliffing mid-suite.
+///
+/// The observed peak *net* drawdown during a run is only ~298B (~3 DASH)
+/// because the sweep recovers credits during the run; the floor is
+/// intentionally conservative — it covers gross demand, not net drawdown.
+/// Operators who observe the "Bank under-funded" panic should top up the
+/// Platform address shown in the message to at least this value.
+///
+/// [`FundingLedger`]: super::funding_ledger::FundingLedger
+pub const DEFAULT_MIN_BANK_CREDITS: u64 = 550_000_000_000;
 
 /// Default minimum bank-identity balance (credits).
 ///
