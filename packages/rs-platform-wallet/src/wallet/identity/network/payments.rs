@@ -1790,122 +1790,6 @@ mod tests {
         );
     }
 
-    /// **#2 — a transient failure must NOT permanently break the payment
-    /// channel.** `register_external_contact_account` returns a typed
-    /// `RegisterExternalError` so the unattended sync sweep marks a contact
-    /// `payment_channel_broken` only on a *permanent* crypto/data
-    /// fault — not on a transient infra/persistence hiccup. A transient DAPI
-    /// fetch *inside* the method would otherwise be indistinguishable from a
-    /// malformed request and kill payments to the contact forever.
-    ///
-    /// An unmanaged owner identity is an infra-state miss → must classify
-    /// `Transient` (channel left intact, retried next sweep). This fails
-    /// against any code that flattens the failure to a single permanent
-    /// error class.
-    #[tokio::test]
-    async fn register_external_classifies_infra_miss_as_transient() {
-        let (manager, _persister, wallet_id) = make_wallet().await;
-        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
-        let iw = wallet.identity();
-
-        // Owner identity was never added to the manager → an infra-state
-        // miss, NOT a malformed request. The contact identity is passed in
-        // (no network fetch); its contents are irrelevant here.
-        let unmanaged_owner = Identifier::from([0x11; 32]);
-        let contact = bare_identity([0x22; 32]);
-        let err = iw
-            .register_external_contact_account(&unmanaged_owner, &contact, &[7u8; 96], 0, 0, None)
-            .await
-            .expect_err("unmanaged owner must fail");
-        assert!(
-            !err.is_permanent(),
-            "an unmanaged-owner infra miss must be Transient (channel left intact), got {err:?}"
-        );
-    }
-
-    /// **#2 (cont.) — a malformed request IS permanent.** When the owner is
-    /// managed but carries no encryption key at the validated index, the
-    /// request can't produce an ECDH key and re-deriving won't help, so the
-    /// channel is correctly broken (preserving the "no unbounded retry
-    /// on a poisoned channel" intent). Pins the *other* side of the split
-    /// so the transient test above isn't satisfied by classifying
-    /// everything transient.
-    #[tokio::test]
-    async fn register_external_classifies_missing_key_as_permanent() {
-        let (manager, persister, wallet_id) = make_wallet().await;
-        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
-        let iw = wallet.identity();
-        {
-            let mut wm = iw.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
-            info.identity_manager
-                .add_identity(
-                    bare_identity([0x11; 32]),
-                    0,
-                    wallet_id,
-                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
-                )
-                .expect("add owner");
-        }
-
-        let owner_id = Identifier::from([0x11; 32]);
-        let contact = bare_identity([0x22; 32]);
-        let err = iw
-            .register_external_contact_account(&owner_id, &contact, &[7u8; 96], 0, 0, None)
-            .await
-            .expect_err("missing our encryption key must fail");
-        assert!(
-            err.is_permanent(),
-            "a missing validated key is a permanent malformed-request fault, got {err:?}"
-        );
-    }
-
-    /// **#2 (cont.) — a seedless (watch-only) wallet DEFERS; it must NOT break
-    /// the channel.** When the owner is wallet-owned (has an HD index) but the
-    /// wallet has no resident key material (external-signable / Keychain signer
-    /// not unlocked), the ECDH scalar can't be derived *right now*. That must
-    /// classify `Unavailable` (defer, retry when a signer is available), never
-    /// `Permanent` — a locked Keychain is a recoverable condition, and breaking
-    /// the channel over it irreversibly kills payments to the contact. This
-    /// pins the unattended-sweep channel-kill fix: before it, the seedless
-    /// derive failure fell through to `Permanent`.
-    #[tokio::test]
-    async fn register_external_classifies_seedless_wallet_as_unavailable() {
-        let (manager, persister, wallet_id) = make_watch_only_wallet().await;
-        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
-        let iw = wallet.identity();
-        // Owner IS wallet-owned (index 0) — so this is not an infra miss — but
-        // the wallet is watch-only, so no ECDH scalar can be derived now.
-        {
-            let mut wm = iw.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
-            info.identity_manager
-                .add_identity(
-                    bare_identity([0x11; 32]),
-                    0,
-                    wallet_id,
-                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
-                )
-                .expect("add owner");
-        }
-
-        let owner_id = Identifier::from([0x11; 32]);
-        let contact = bare_identity([0x22; 32]);
-        let err = iw
-            .register_external_contact_account(&owner_id, &contact, &[7u8; 96], 0, 0, None)
-            .await
-            .expect_err("a watch-only wallet cannot derive ECDH now");
-        assert!(
-            err.is_unavailable(),
-            "a seedless wallet must DEFER (Unavailable), got {err:?}"
-        );
-        assert!(
-            !err.is_permanent(),
-            "a watch-only wallet must NOT break the channel (would kill payments \
-             over a recoverable state), got {err:?}"
-        );
-    }
-
     /// The seedless drain path: `register_external_contact_account` with a
     /// **precomputed** ECDH shared secret (the Keychain signer computed it; the
     /// scalar never entered this crate) decrypts the contact's xpub and builds
@@ -1956,18 +1840,11 @@ mod tests {
             platform_encryption::encrypt_extended_public_key(&shared_key, &iv, &compact);
 
         // Bare contact identity: the `Some` path must NOT touch the contact's
-        // encryption key (that derivation lives in the resident `None` branch).
+        // encryption key (the signer derives the secret out-of-crate).
         let contact = bare_identity([0x22; 32]);
-        iw.register_external_contact_account(
-            &owner_id,
-            &contact,
-            &encrypted,
-            0,
-            0,
-            Some(shared_key),
-        )
-        .await
-        .expect("register external with a precomputed shared key");
+        iw.register_external_contact_account(&owner_id, &contact, &encrypted, shared_key)
+            .await
+            .expect("register external with a signer-derived shared key");
 
         let wm = iw.wallet_manager.read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("info");

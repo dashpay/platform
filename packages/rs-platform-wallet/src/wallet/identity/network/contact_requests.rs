@@ -1412,9 +1412,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                             &entry.owner_identity_id,
                             &contact_identity,
                             encrypted_public_key,
-                            *our_decryption_key_index,
-                            *contact_encryption_key_index,
-                            Some(shared),
+                            shared,
                         )
                         .await
                     {
@@ -1775,9 +1773,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             our_identity_id,
             &contact_identity,
             contact_encrypted_xpub,
-            our_decryption_key_index,
-            contact_encryption_key_index,
-            Some(shared),
+            shared,
         )
         .await
         .map_err(RegisterExternalError::into_inner)
