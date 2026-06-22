@@ -128,43 +128,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 // ---------------------------------------------------------------------------
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Get the contact xpub data for a specific contact relationship.
-    ///
-    /// Derives the extended public key along path:
-    /// `m/9'/coin'/15'/account'/(sender_id)/(recipient_id)`
-    ///
-    /// The last two segments use DIP-14 256-bit non-hardened derivation.
-    ///
-    /// # Arguments
-    ///
-    /// * `account_index` - Account index (hardened) in the derivation path.
-    /// * `sender_id`     - Our identity identifier.
-    /// * `recipient_id`  - The contact's identity identifier.
-    pub async fn contact_xpub(
-        &self,
-        account_index: u32,
-        sender_id: &Identifier,
-        recipient_id: &Identifier,
-    ) -> Result<crate::wallet::identity::crypto::dip14::ContactXpubData, PlatformWalletError> {
-        let wm = self.wallet_manager.read().await;
-        let wallet = wm
-            .get_wallet(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        crate::wallet::identity::crypto::dip14::derive_contact_xpub(
-            wallet,
-            self.sdk.network,
-            account_index,
-            sender_id,
-            recipient_id,
-        )
-    }
-
-    // TODO: Isn't this something what should be done internally?
-    /// Derive payment addresses for a contact (for receiving payments from them).
-    ///
-    /// Returns `count` addresses starting from `start_index`, derived via
-    /// standard BIP32 from the contact xpub.
-    ///
     /// Register a DashPay contact account in the wallet's `ManagedWalletInfo`.
     ///
     /// Creates a `DashpayReceivingFunds` managed account with address pools
@@ -390,40 +353,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             });
         }
         None
-    }
-
-    /// # Arguments
-    ///
-    /// * `account_index` - Account index (hardened) in the derivation path.
-    /// * `sender_id`     - Our identity identifier.
-    /// * `recipient_id`  - The contact's identity identifier.
-    /// * `start_index`   - First payment address index.
-    /// * `count`         - Number of addresses to derive.
-    pub async fn contact_payment_addresses(
-        &self,
-        account_index: u32,
-        sender_id: &Identifier,
-        recipient_id: &Identifier,
-        start_index: u32,
-        count: u32,
-    ) -> Result<Vec<dashcore::Address>, PlatformWalletError> {
-        let wm = self.wallet_manager.read().await;
-        let wallet = wm
-            .get_wallet(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        let data = crate::wallet::identity::crypto::dip14::derive_contact_xpub(
-            wallet,
-            self.sdk.network,
-            account_index,
-            sender_id,
-            recipient_id,
-        )?;
-        crate::wallet::identity::crypto::dip14::derive_contact_payment_addresses(
-            &data.xpub,
-            start_index,
-            count,
-            self.sdk.network,
-        )
     }
 }
 

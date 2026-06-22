@@ -390,17 +390,22 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// * `to_contact_id`    - The contact's identity.
     /// * `amount_duffs`     - Amount to send in duffs (1 DASH = 1e8 duffs).
     /// * `memo`             - Optional free-text memo to attach to the entry.
+    /// * `signer`           - Keychain-backed [`key_wallet::signer::Signer`]
+    ///   that produces each funding input's ECDSA signature on demand. The
+    ///   wallet seed is never made resident — every signature is derived and
+    ///   wiped inside the signer (mirrors `core_wallet::send_to_addresses`).
     ///
     /// # Returns
     ///
     /// The `Txid` of the broadcast transaction and the newly created
     /// [`PaymentEntry`] recording the outgoing payment.
-    pub async fn send_payment(
+    pub async fn send_payment<S: key_wallet::signer::Signer>(
         &self,
         from_identity_id: &Identifier,
         to_contact_id: &Identifier,
         amount_duffs: u64,
         memo: Option<String>,
+        signer: &S,
     ) -> Result<
         (
             dashcore::Txid,
@@ -500,8 +505,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .set_funding(managed_account, account)
                 .add_output(&payment_address, amount_duffs);
 
+            // Sign through the injected signer (blanket
+            // `impl<S: Signer> TransactionSigner for S`) rather than the
+            // resident `wallet`, so funding-input signatures are produced
+            // from Keychain-derived keys without a resident seed.
             let (tx, _fee) = builder
-                .build_signed(wallet, |addr| {
+                .build_signed(signer, |addr| {
                     managed_account.address_derivation_path(&addr)
                 })
                 .await

@@ -1841,6 +1841,12 @@ extension ManagedPlatformWallet {
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
         let memoCopy = memo
+        // Resolver-backed core signer owns mnemonic access for the lifetime
+        // of this call. Each funding-input ECDSA signature happens atomically
+        // inside the resolver vtable (mnemonic fetched from Keychain, key
+        // derived, digest signed, buffers zeroed) — the seed never becomes
+        // resident and no private key leaves Swift.
+        let coreSigner = MnemonicResolver()
         return try await Task.detached(priority: .userInitiated) { () -> Data in
             var txidTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -1851,23 +1857,29 @@ extension ManagedPlatformWallet {
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
             )
-            let result: PlatformWalletFFIResult = fromBytes.withUnsafeBufferPointer {
-                fromBp -> PlatformWalletFFIResult in
-                toBytes.withUnsafeBufferPointer { toBp -> PlatformWalletFFIResult in
-                    let call: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = { memoPtr in
-                        platform_wallet_send_dashpay_payment(
-                            handle,
-                            fromBp.baseAddress!,
-                            toBp.baseAddress!,
-                            amountDuffs,
-                            memoPtr,
-                            &txidTuple
-                        )
-                    }
-                    if let memoCopy {
-                        return memoCopy.withCString { call($0) }
-                    } else {
-                        return call(nil)
+            // `withExtendedLifetime` (not a bare `_ = coreSigner`) keeps the
+            // resolver alive across the synchronous FFI call — the optimizer
+            // can otherwise drop it mid-call and the vtable callback would
+            // use-after-free.
+            let result: PlatformWalletFFIResult = withExtendedLifetime(coreSigner) {
+                fromBytes.withUnsafeBufferPointer { fromBp -> PlatformWalletFFIResult in
+                    toBytes.withUnsafeBufferPointer { toBp -> PlatformWalletFFIResult in
+                        let call: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = { memoPtr in
+                            platform_wallet_send_dashpay_payment(
+                                handle,
+                                fromBp.baseAddress!,
+                                toBp.baseAddress!,
+                                amountDuffs,
+                                memoPtr,
+                                coreSigner.handle,
+                                &txidTuple
+                            )
+                        }
+                        if let memoCopy {
+                            return memoCopy.withCString { call($0) }
+                        } else {
+                            return call(nil)
+                        }
                     }
                 }
             }

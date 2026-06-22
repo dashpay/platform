@@ -36,7 +36,7 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use platform_wallet::ContactRequest;
-use rs_sdk_ffi::{SignerHandle, VTableSigner};
+use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use crate::contact_request::CONTACT_REQUEST_STORAGE;
 use crate::error::*;
@@ -386,15 +386,30 @@ pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
 // ---------------------------------------------------------------------------
 
 /// Send a Dash payment from `from_identity_id` to `to_contact_identity_id`.
+///
+/// The funding inputs are signed through the supplied
+/// [`MnemonicResolverHandle`] — the same vtable shape used by
+/// [`crate::core_wallet::core_wallet_send_to_addresses`] — which the FFI
+/// wraps in a [`MnemonicResolverCoreSigner`] for the lifetime of this call.
+/// The wallet seed is never made resident; every signature is produced
+/// inside the signer's atomic derive-and-sign step.
+///
+/// # Safety
+/// - `core_signer_handle` must be a valid, non-destroyed
+///   `*mut MnemonicResolverHandle`. Ownership is retained by the caller —
+///   this function does NOT destroy it.
 #[no_mangle]
+#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
     wallet_handle: Handle,
     from_identity_id: *const u8,
     to_contact_identity_id: *const u8,
     amount_duffs: u64,
     memo: *const c_char,
+    core_signer_handle: *mut MnemonicResolverHandle,
     out_txid: *mut [u8; 32],
 ) -> PlatformWalletFFIResult {
+    check_ptr!(core_signer_handle);
     check_ptr!(out_txid);
 
     let from_id = unwrap_result_or_return!(unsafe { read_identifier(from_identity_id) });
@@ -404,11 +419,28 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
     } else {
         Some(unwrap_result_or_return!(unsafe { CStr::from_ptr(memo) }.to_str()).to_string())
     };
+
+    let signer_addr = core_signer_handle as usize;
+
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
+        let wallet_id = wallet.wallet_id();
+        let network = wallet.network();
+        // SAFETY: `signer_addr` came from `core_signer_handle`, which the
+        // caller pinned alive for the duration of this call (see fn-level
+        // safety doc). `MnemonicResolverCoreSigner` stores the handle as a
+        // `usize` and is `Send + Sync`, so it can move into the worker task;
+        // it is dropped when that task completes, before this call returns.
+        let signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
         block_on_worker(async move {
             identity
-                .send_payment(&from_id, &to_id, amount_duffs, memo_str)
+                .send_payment(&from_id, &to_id, amount_duffs, memo_str, &signer)
                 .await
         })
     });
