@@ -70,6 +70,91 @@ pub trait ContactCryptoProvider {
     ) -> Result<(u32, u32), PlatformWalletError>;
 }
 
+/// Test [`ContactCryptoProvider`] that derives from a resident test seed via
+/// `key_wallet` — the seedless-test stand-in for the production Keychain signer.
+/// It derives at exactly the Rust-built paths the production glue feeds, so a
+/// test wired through this provider exercises the same key material the resident
+/// seed would have produced, with no resident seed on the wallet under test.
+/// (Replaces the `attach_wallet_seed` test setup; faithful, unlike the
+/// canned/stub providers used by the queue-mechanics drain tests.)
+#[cfg(test)]
+pub(crate) struct SeedCryptoProvider {
+    wallet: key_wallet::wallet::Wallet,
+}
+
+#[cfg(test)]
+impl SeedCryptoProvider {
+    pub(crate) fn from_seed(seed: [u8; 64], network: key_wallet::Network) -> Self {
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet::wallet::Wallet;
+        Self {
+            wallet: Wallet::from_seed_bytes(seed, network, WalletAccountCreationOptions::None)
+                .expect("test seed wallet"),
+        }
+    }
+}
+
+#[cfg(test)]
+#[async_trait::async_trait]
+impl ContactCryptoProvider for SeedCryptoProvider {
+    async fn receiving_xpub(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<key_wallet::bip32::ExtendedPubKey, PlatformWalletError> {
+        self.wallet.derive_extended_public_key(path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("test receiving_xpub: {e}"))
+        })
+    }
+
+    async fn ecdh_shared_secret(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        peer: &dashcore::secp256k1::PublicKey,
+    ) -> Result<[u8; 32], PlatformWalletError> {
+        let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("test ecdh derive: {e}"))
+        })?;
+        Ok(platform_encryption::derive_shared_key_ecdh(
+            &xprv.private_key,
+            peer,
+        ))
+    }
+
+    async fn account_reference(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        compact_xpub: &[u8],
+        account_index: u32,
+        version: u32,
+    ) -> Result<u32, PlatformWalletError> {
+        let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("test accountRef derive: {e}"))
+        })?;
+        Ok(platform_encryption::calculate_account_reference(
+            &xprv.private_key.secret_bytes(),
+            compact_xpub,
+            account_index,
+            version,
+        ))
+    }
+
+    async fn unmask_account_reference(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        compact_xpub: &[u8],
+        account_reference: u32,
+    ) -> Result<(u32, u32), PlatformWalletError> {
+        let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("test unmask derive: {e}"))
+        })?;
+        Ok(platform_encryption::unmask_account_reference(
+            account_reference,
+            &xprv.private_key.secret_bytes(),
+            compact_xpub,
+        ))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Send contact request
 // ---------------------------------------------------------------------------

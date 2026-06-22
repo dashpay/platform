@@ -2036,34 +2036,29 @@ mod tests {
         );
     }
 
-    /// End-to-end drain of a `RegisterReceiving` queue entry: a canned provider
-    /// supplies the receiving xpub (as the Keychain signer would), the drain
-    /// builds the receiving account and removes the entry from the queue.
+    /// End-to-end drain of a `RegisterReceiving` entry on a SEEDLESS wallet: the
+    /// `SeedCryptoProvider` (the faithful test stand-in for the Keychain signer)
+    /// supplies the receiving xpub, the drain builds the receiving account with
+    /// that EXACT signer-derived xpub, and the entry is cleared from the queue.
+    /// Pins that a wallet with no resident seed becomes payable purely through
+    /// the signer-backed drain.
     #[tokio::test]
     async fn drain_completes_register_receiving_and_clears_queue() {
         use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
-        use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
 
-        let (manager, _persister, wallet_id) = make_wallet().await;
+        let (manager, _persister, wallet_id) = make_watch_only_wallet().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
         let iw = wallet_arc.identity();
 
         let owner = Identifier::from([0x11; 32]);
         let contact = Identifier::from([0x22; 32]);
 
-        // A valid receiving xpub the provider will hand back.
-        let supplied_xpub = {
-            let wm = iw.wallet_manager.read().await;
-            let w = wm.get_wallet(&wallet_id).expect("wallet");
-            crate::wallet::identity::crypto::dip14::derive_contact_xpub(
-                w,
-                Network::Testnet,
-                0,
-                &owner,
-                &contact,
-            )
-            .expect("derive a valid receiving xpub")
-            .xpub
+        // The signer's seed (the faithful test stand-in derives from it).
+        let seed = {
+            let mnemonic =
+                Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+            mnemonic.to_seed("")
         };
 
         // Enqueue a RegisterReceiving op (as the seedless sweep would).
@@ -2078,49 +2073,8 @@ mod tests {
             });
         }
 
-        struct CannedProvider {
-            xpub: key_wallet::bip32::ExtendedPubKey,
-        }
-        #[async_trait::async_trait]
-        impl ContactCryptoProvider for CannedProvider {
-            async fn receiving_xpub(
-                &self,
-                _path: &key_wallet::bip32::DerivationPath,
-            ) -> Result<key_wallet::bip32::ExtendedPubKey, crate::error::PlatformWalletError>
-            {
-                Ok(self.xpub)
-            }
-            async fn ecdh_shared_secret(
-                &self,
-                _path: &key_wallet::bip32::DerivationPath,
-                _peer: &dashcore::secp256k1::PublicKey,
-            ) -> Result<[u8; 32], crate::error::PlatformWalletError> {
-                Ok([0u8; 32])
-            }
-            async fn account_reference(
-                &self,
-                _path: &key_wallet::bip32::DerivationPath,
-                _compact_xpub: &[u8],
-                _account_index: u32,
-                _version: u32,
-            ) -> Result<u32, crate::error::PlatformWalletError> {
-                unimplemented!("accountReference is a send-path method, not exercised by the drain")
-            }
-            async fn unmask_account_reference(
-                &self,
-                _path: &key_wallet::bip32::DerivationPath,
-                _compact_xpub: &[u8],
-                _account_reference: u32,
-            ) -> Result<(u32, u32), crate::error::PlatformWalletError> {
-                unimplemented!("accountReference is a send-path method, not exercised by the drain")
-            }
-        }
-
-        let drained = iw
-            .drain_pending_contact_crypto(&CannedProvider {
-                xpub: supplied_xpub,
-            })
-            .await;
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let drained = iw.drain_pending_contact_crypto(&provider).await;
         assert_eq!(drained, 1, "the RegisterReceiving entry must be drained");
 
         let wm = iw.wallet_manager.read().await;
@@ -2140,7 +2094,7 @@ mod tests {
                 .accounts
                 .dashpay_receival_accounts
                 .contains_key(&key),
-            "the drain must build the receiving account"
+            "the seedless drain must build the receiving account via the signer provider"
         );
     }
 
