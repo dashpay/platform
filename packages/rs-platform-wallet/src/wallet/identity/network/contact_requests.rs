@@ -1062,224 +1062,50 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ) {
         let contact_id = candidate.contact_id;
 
-        // Readiness: can we build accounts for this identity right now?
-        // - Unmanaged or out-of-wallet (no HD slot) → not ours to build; skip.
-        // - Wallet-owned but no resident key material (watch-only / signer not
-        //   unlocked) → DEFER: do NOT churn the receiving account (step 1) or
-        //   break the external channel (step 3); the build runs on a later
-        //   sweep once a signer is available. Gating on `has_seed()` rather
-        //   than `identity_index.is_none()` is the fix: a wallet-owned but
-        //   seedless identity has an index, so the old predicate let it fall
-        //   through to a transient-churn (step 1) and a permanent channel-kill
-        //   (step 3). Currently "can derive" == `has_seed()`; the seedless
-        //   model extends this to an available resolver-backed signer.
-        enum BuildReadiness {
-            NotOurs,
-            KeyMaterialUnavailable,
-            Ready,
-        }
-        let readiness = {
-            let wm = self.wallet_manager.read().await;
-            let indexed = wm
-                .get_wallet_info(&self.wallet_id)
-                .and_then(|info| info.identity_manager.managed_identity(identity_id))
-                .map(|managed| managed.identity_index.is_some())
-                .unwrap_or(false);
-            if !indexed {
-                BuildReadiness::NotOurs
-            } else if wm
-                .get_wallet(&self.wallet_id)
-                .map(|w| w.has_seed())
-                .unwrap_or(false)
-            {
-                BuildReadiness::Ready
-            } else {
-                BuildReadiness::KeyMaterialUnavailable
-            }
-        };
-        match readiness {
-            BuildReadiness::NotOurs => {
-                tracing::info!(
-                    identity = %identity_id,
-                    contact = %contact_id,
-                    "Skipping DashPay account build for unmanaged/out-of-wallet identity"
-                );
-                return;
-            }
-            BuildReadiness::KeyMaterialUnavailable => {
-                // Enqueue the deferred crypto ops so a later drain (signer
-                // present) completes them, instead of churning the receiving
-                // account or breaking the external channel every sweep.
-                self.enqueue_deferred_contact_crypto(identity_id, &candidate)
-                    .await;
-                tracing::info!(
-                    identity = %identity_id,
-                    contact = %contact_id,
-                    "Deferred DashPay account build: key material unavailable \
-                     (watch-only / signer not unlocked); ops enqueued, will run when a signer is available"
-                );
-                return;
-            }
-            BuildReadiness::Ready => {}
-        }
-
-        // (1) Receiving account — derivable from our seed, no decryption.
-        if let Err(e) = self
-            .register_contact_account(identity_id, &contact_id, 0, None)
-            .await
-        {
-            // Treated as transient: a derivation/insert hiccup here doesn't
-            // poison the channel, and the receiving account is rebuilt on
-            // the next sweep. Do NOT mark broken.
-            tracing::warn!(
-                identity = %identity_id,
-                contact = %contact_id,
-                error = %e,
-                "Failed to register DashPay receiving account; will retry next sweep"
-            );
-        }
-
-        // (2) Fetch counterparty identity (transient on failure) + validate
-        //     key indices BEFORE any ECDH (permanent on failure).
-        let contact_identity = {
-            use dash_sdk::platform::Fetch;
-            match Identity::fetch(&self.sdk, contact_id).await {
-                Ok(Some(id)) => id,
-                Ok(None) => {
-                    // The contact identity isn't on Platform — treat as
-                    // transient (it may appear later); leave for retry.
-                    tracing::warn!(
-                        identity = %identity_id,
-                        contact = %contact_id,
-                        "Contact identity not found on Platform; deferring account build"
-                    );
-                    return;
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        identity = %identity_id,
-                        contact = %contact_id,
-                        error = %e,
-                        "Transient failure fetching contact identity; will retry next sweep"
-                    );
-                    return;
-                }
-            }
-        };
-
-        // Our identity for the validation (in-memory; cloned under a read lock).
-        let our_identity = {
+        // The recurring sweep has NO signer (it runs unattended in the
+        // background), so it can derive NO private-key material — neither the
+        // receiving (friendship) xpub nor the ECDH shared secret. Every
+        // account-build op is therefore DEFERRED: enqueue it for the
+        // signer-backed drain to complete when a signer becomes available
+        // (Keychain unlock / signer-present action). The drain fetches the
+        // contact, validates the key indices, and performs the derivation.
+        //
+        // We only SKIP identities that aren't ours to build (unmanaged /
+        // out-of-wallet — no HD slot); there is nothing to enqueue for those.
+        let is_ours = {
             let wm = self.wallet_manager.read().await;
             wm.get_wallet_info(&self.wallet_id)
                 .and_then(|info| info.identity_manager.managed_identity(identity_id))
-                .map(|m| m.identity.clone())
+                .map(|managed| managed.identity_index.is_some())
+                .unwrap_or(false)
         };
-        let Some(our_identity) = our_identity else {
-            tracing::warn!(
+        if !is_ours {
+            tracing::info!(
                 identity = %identity_id,
                 contact = %contact_id,
-                "Our identity vanished during account build; deferring"
+                "Skipping DashPay account build for unmanaged/out-of-wallet identity"
             );
             return;
-        };
+        }
 
-        // Validate the request's key indices (purpose ENCRYPTION/DECRYPTION
-        // + ECDSA type) BEFORE deriving the shared secret. A failure is
-        // PERMANENT — the request is malformed and re-deriving won't help.
-        let validation = crate::wallet::identity::crypto::validation::validate_contact_request(
-            &contact_identity,
-            candidate.contact_encryption_key_index,
-            &our_identity,
-            candidate.our_decryption_key_index,
+        // Enqueue the deferred crypto ops (receiving xpub + external decrypt).
+        // Idempotent per (owner, contact, kind), so re-enqueuing every sweep is
+        // a no-op until the drain clears them.
+        self.enqueue_deferred_contact_crypto(identity_id, &candidate)
+            .await;
+        tracing::info!(
+            identity = %identity_id,
+            contact = %contact_id,
+            "Deferred DashPay account build: enqueued for the signer-backed drain"
         );
-        if !validation.is_valid {
-            // A PURPOSE-only mismatch (e.g. a legacy 2024 doc
-            // referencing an AUTHENTICATION key) is NOT permanent — the
-            // immutable request can't change but our acceptance policy might,
-            // and on-chain history contains nonconforming-but-honest docs.
-            // Skip + log; the next sweep retries. Reserve the permanent
-            // broken mark for key-TYPE / missing-key / disabled-key failures.
-            // `is_purpose_only()` (not the bare `purpose_mismatch` flag) so a
-            // purpose mismatch that co-occurs with a hard error still marks
-            // broken instead of masking the permanent fault into a retry loop.
-            if validation.is_purpose_only() {
-                tracing::warn!(
-                    identity = %identity_id,
-                    contact = %contact_id,
-                    errors = ?validation.errors,
-                    "Contact request key-purpose mismatch; skipping account build (not marking broken — will retry)"
-                );
-                return;
-            }
-            tracing::warn!(
-                identity = %identity_id,
-                contact = %contact_id,
-                errors = ?validation.errors,
-                "Contact request failed key-index validation; marking payment channel broken (permanent)"
-            );
-            self.mark_contact_channel_broken(identity_id, &contact_id)
-                .await;
-            return;
-        }
-
-        // (3) Register the external (sending) account — decrypt + ECDH.
-        //     Pass the identity we already fetched above so registration
-        //     does no network I/O: that way a PERMANENT crypto/data fault
-        //     (bad encrypted xpub, missing key) breaks the channel, but a
-        //     TRANSIENT persistence hiccup is left for the next sweep to
-        //     retry instead of permanently killing payments.
-        match self
-            .register_external_contact_account(
-                identity_id,
-                &contact_identity,
-                &candidate.encrypted_public_key,
-                candidate.our_decryption_key_index,
-                candidate.contact_encryption_key_index,
-                // Resident-seed path; the readiness gate above guarantees a seed
-                // here. The seedless drain is the only caller passing `Some`.
-                None,
-            )
-            .await
-        {
-            Ok(()) => {}
-            Err(e) if e.is_unavailable() => {
-                // Key material became unavailable between the readiness gate
-                // and the derive (e.g. a Keychain lock mid-sweep). DEFER —
-                // never break the channel; a later sweep with a signer retries.
-                tracing::info!(
-                    identity = %identity_id,
-                    contact = %contact_id,
-                    error = %e.into_inner(),
-                    "Deferring DashPay external account: key material unavailable (channel left intact)"
-                );
-            }
-            Err(e) if e.is_permanent() => {
-                tracing::warn!(
-                    identity = %identity_id,
-                    contact = %contact_id,
-                    error = %e.into_inner(),
-                    "Contact request failed crypto registration; marking payment channel broken (permanent)"
-                );
-                self.mark_contact_channel_broken(identity_id, &contact_id)
-                    .await;
-            }
-            Err(e) => {
-                tracing::warn!(
-                    identity = %identity_id,
-                    contact = %contact_id,
-                    error = %e.into_inner(),
-                    "Transient failure registering DashPay external account; will retry next sweep (channel left intact)"
-                );
-            }
-        }
     }
 
-    /// Enqueue the deferred contact-crypto ops for a contact whose account
-    /// build was paused because key material is unavailable (watch-only /
-    /// signer locked). Idempotent per `(owner, contact, kind)` — re-enqueuing
-    /// updates the entry in place. Stores only the on-chain ciphertext +
-    /// public key indices, never a secret. The entries are drained when a
-    /// signer becomes available.
+    /// Enqueue the deferred contact-crypto ops for a contact discovered by the
+    /// signerless sweep. The sweep never derives, so this is its only
+    /// account-build action; the signer-backed drain completes the ops when a
+    /// signer is available. Idempotent per `(owner, contact, kind)` —
+    /// re-enqueuing each sweep updates the entry in place. Stores only the
+    /// on-chain ciphertext + public key indices, never a secret.
     async fn enqueue_deferred_contact_crypto(
         &self,
         identity_id: &Identifier,
