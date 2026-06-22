@@ -149,10 +149,9 @@ pub fn load_state(
     Ok(out)
 }
 
-/// Source of truth for the `account_type` TEXT domain across
-/// `account_registrations`, `account_address_pools`, and
-/// `core_derived_addresses`, mirroring [`key_wallet::account::AccountType`].
-/// `migrations/V001__initial.rs` interpolates it into each table's
+/// Source of truth for the `account_registrations.account_type` TEXT domain,
+/// mirroring [`key_wallet::account::AccountType`].
+/// `migrations/V001__initial.rs` interpolates it into the table's
 /// `CHECK (account_type IN (...))`; `account_type_labels_match_enum` keeps it
 /// in sync with [`account_type_db_label`].
 ///
@@ -213,8 +212,7 @@ pub(crate) fn account_type_db_label(at: &key_wallet::account::AccountType) -> &'
 }
 
 /// Numeric account index embedded in an `AccountType`, persisted in the
-/// `account_index` column of `account_registrations`, `account_address_pools`,
-/// and `core_derived_addresses`.
+/// `account_registrations.account_index` column.
 pub(crate) fn account_index(at: &key_wallet::account::AccountType) -> u32 {
     use key_wallet::account::AccountType;
     match at {
