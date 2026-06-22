@@ -75,6 +75,20 @@ use crate::wallet::platform_wallet::WalletId;
 /// startup default.
 pub const DEFAULT_SYNC_INTERVAL_SECS: u64 = 60;
 
+/// RAII guard that clears `is_syncing` when dropped.
+///
+/// Created at the start of a sync pass (after the `compare_exchange`
+/// that takes the slot). On any exit — normal return, early return, or
+/// panic-unwind — the flag is cleared, so `quiesce()`'s drain loop
+/// never spins forever on a panicked pass.
+struct IsSyncingGuard<'a>(&'a AtomicBool);
+
+impl Drop for IsSyncingGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
 /// Maximum number of token ids fetched in a single
 /// `IdentityTokenBalancesQuery`.
 ///
@@ -401,14 +415,13 @@ where
     /// The first pass runs immediately; subsequent passes fire every
     /// [`interval`](Self::interval).
     pub fn start(self: Arc<Self>) {
-        let mut guard = self.background_cancel.lock().expect("bg_cancel poisoned");
-        if guard.is_some() {
+        let mut cancel_guard = self.background_cancel.lock().expect("bg_cancel poisoned");
+        if cancel_guard.is_some() {
             return;
         }
         let cancel = CancellationToken::new();
-        *guard = Some(cancel.clone());
+        *cancel_guard = Some(cancel.clone());
         let my_gen = self.background_generation.fetch_add(1, Ordering::AcqRel) + 1;
-        drop(guard);
 
         let handle = tokio::runtime::Handle::current();
         let this = Arc::clone(&self);
@@ -440,8 +453,11 @@ where
                 });
             })
             .expect("failed to spawn identity-sync thread");
-        // Store the handle so `quiesce` can join the OS thread.
+        // Store the join handle while still holding cancel_guard — a
+        // concurrent quiesce() must wait for this lock before calling
+        // stop(), so the handle is always stored before it can be taken.
         *self.background_join.lock().expect("bg_join poisoned") = Some(join);
+        // cancel_guard drops here, releasing background_cancel.
     }
 
     /// Stop the background sync loop. No-op if not running.
@@ -521,12 +537,17 @@ where
             return;
         }
 
+        // RAII guard: clears `is_syncing` on every exit path, including
+        // panics. Without this a panic inside the pass would leave
+        // `is_syncing=true` forever and wedge `quiesce()`'s drain loop.
+        let _is_syncing_guard = IsSyncingGuard(&self.is_syncing);
+
         // A `quiesce()` may have raised the gate between our CAS and
-        // here; if so, release the slot and bail without running a pass
-        // so the drain can complete and shutdown gets a true barrier
-        // (no further `persister.store(...)` after quiesce returns).
+        // here; if so, bail without running a pass so the drain can
+        // complete and shutdown gets a true barrier (no further
+        // `persister.store(...)` after quiesce returns).
+        // Guard clears `is_syncing` on return.
         if self.quiescing.load(Ordering::Acquire) {
-            self.is_syncing.store(false, Ordering::Release);
             return;
         }
 
@@ -552,7 +573,7 @@ where
             .map(|d| d.as_secs())
             .unwrap_or(0);
         self.last_sync_unix.store(now, Ordering::Release);
-        self.is_syncing.store(false, Ordering::Release);
+        // `_is_syncing_guard` drops here → `is_syncing = false`
     }
 
     /// Sync a single identity's watched tokens against Platform.

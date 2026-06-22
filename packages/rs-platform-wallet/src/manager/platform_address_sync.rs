@@ -31,6 +31,20 @@ use crate::wallet::PlatformWallet;
 /// Default cadence — matches the 15s BLAST loop we previously ran in Swift.
 pub const DEFAULT_SYNC_INTERVAL_SECS: u64 = 15;
 
+/// RAII guard that clears `is_syncing` when dropped.
+///
+/// Created at the start of a sync pass (after the `compare_exchange`
+/// that takes the slot). On any exit — normal return, early return, or
+/// panic-unwind — the flag is cleared, so `quiesce()`'s drain loop
+/// never spins forever on a panicked pass.
+struct IsSyncingGuard<'a>(&'a AtomicBool);
+
+impl Drop for IsSyncingGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
 /// Outcome of syncing a single wallet in a pass.
 ///
 /// Not `Clone` because `AddressSyncResult` isn't. Consumers receive it
@@ -201,13 +215,12 @@ impl PlatformAddressSyncManager {
     /// The first pass runs immediately; subsequent passes fire every
     /// [`interval`](Self::interval).
     pub fn start(self: Arc<Self>) {
-        let mut guard = self.background_cancel.lock().expect("bg_cancel poisoned");
-        if guard.is_some() {
+        let mut cancel_guard = self.background_cancel.lock().expect("bg_cancel poisoned");
+        if cancel_guard.is_some() {
             return;
         }
         let cancel = CancellationToken::new();
-        *guard = Some(cancel.clone());
-        drop(guard);
+        *cancel_guard = Some(cancel.clone());
 
         let handle = tokio::runtime::Handle::current();
         let this = Arc::clone(&self);
@@ -235,8 +248,11 @@ impl PlatformAddressSyncManager {
                 });
             })
             .expect("failed to spawn platform-address-sync thread");
-        // Store the handle so `quiesce` can join the OS thread.
+        // Store the join handle while still holding cancel_guard — a
+        // concurrent quiesce() must wait for this lock before calling
+        // stop(), so the handle is always stored before it can be taken.
         *self.background_join.lock().expect("bg_join poisoned") = Some(join);
+        // cancel_guard drops here, releasing background_cancel.
     }
 
     /// Stop the background sync loop. No-op if not running.
@@ -312,13 +328,17 @@ impl PlatformAddressSyncManager {
             return PlatformAddressSyncSummary::default();
         }
 
+        // RAII guard: clears `is_syncing` on every exit path, including
+        // panics. Without this a panic inside the pass would leave
+        // `is_syncing=true` forever and wedge `quiesce()`'s drain loop.
+        let _is_syncing_guard = IsSyncingGuard(&self.is_syncing);
+
         // A `quiesce()` may have raised the gate between our CAS and
-        // here; if so, release the slot and bail without running a pass
-        // so the drain can complete and shutdown gets a true barrier
-        // (no further `on_platform_address_sync_completed` host callback
-        // after quiesce returns).
+        // here; if so, bail without running a pass so the drain can
+        // complete and shutdown gets a true barrier (no further
+        // `on_platform_address_sync_completed` host callback after
+        // quiesce returns). Guard clears `is_syncing` on return.
         if self.quiescing.load(Ordering::Acquire) {
-            self.is_syncing.store(false, Ordering::Release);
             return PlatformAddressSyncSummary::default();
         }
 
@@ -352,20 +372,18 @@ impl PlatformAddressSyncManager {
         summary.sync_unix_seconds = now;
         self.last_sync_unix.store(now, Ordering::Release);
 
-        // Dispatch the completion event BEFORE clearing `is_syncing`.
-        // `quiesce()` drains on the falling edge of `is_syncing`, so if
-        // we cleared the flag first a shutdown caller could unblock and
-        // free the host event-handler context while this completion
-        // event (FFI callback → host handler) is still pending — a
-        // use-after-free. Holding the flag across the dispatch makes
-        // quiesce's barrier cover the host callback too. Mirrors the
-        // ordering in `ShieldedSyncManager::sync_now`.
+        // Dispatch the completion event BEFORE `_is_syncing_guard` drops.
+        // `quiesce()` drains on the falling edge of `is_syncing`; if the
+        // guard cleared the flag before the dispatch a shutdown caller
+        // could unblock and free the host event-handler context while
+        // the callback is still pending — a use-after-free. The guard
+        // drops (clearing `is_syncing`) after this call returns, when
+        // the function frame unwinds.
         self.event_manager
             .on_platform_address_sync_completed(&summary);
 
-        self.is_syncing.store(false, Ordering::Release);
-
         summary
+        // `_is_syncing_guard` drops here → `is_syncing = false`
     }
 
     /// Sync a single wallet on demand. Does not set the global

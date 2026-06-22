@@ -44,6 +44,20 @@ use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedSyncSummary};
 /// is conservative compared to the 15s address-sync cadence.
 pub const DEFAULT_SYNC_INTERVAL_SECS: u64 = 60;
 
+/// RAII guard that clears `is_syncing` when dropped.
+///
+/// Created at the start of a sync pass (after the `compare_exchange`
+/// that takes the slot). On any exit — normal return, early return, or
+/// panic-unwind — the flag is cleared, so `quiesce()`'s drain loop
+/// never spins forever on a panicked pass.
+struct IsSyncingGuard<'a>(&'a AtomicBool);
+
+impl Drop for IsSyncingGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
 /// Outcome of syncing a single wallet in a shielded sync pass.
 ///
 /// Not `Clone` because `ShieldedSyncSummary` carries the underlying
@@ -228,17 +242,16 @@ impl ShieldedSyncManager {
     /// GRPC client state isn't `Send + Sync`). Same trade-off as
     /// [`PlatformAddressSyncManager::start`](super::platform_address_sync::PlatformAddressSyncManager::start).
     pub fn start(self: Arc<Self>) {
-        let mut guard = self.background_cancel.lock().expect("bg_cancel poisoned");
-        if guard.is_some() {
+        let mut cancel_guard = self.background_cancel.lock().expect("bg_cancel poisoned");
+        if cancel_guard.is_some() {
             return;
         }
         let cancel = CancellationToken::new();
-        *guard = Some(cancel.clone());
+        *cancel_guard = Some(cancel.clone());
         // Bump the generation while we still hold the slot lock so
         // the load below in any prior thread's cleanup observes
         // `current_gen != my_gen` ordered against this token swap.
         let my_gen = self.background_generation.fetch_add(1, Ordering::AcqRel) + 1;
-        drop(guard);
 
         let handle = tokio::runtime::Handle::current();
         let this = Arc::clone(&self);
@@ -281,8 +294,11 @@ impl ShieldedSyncManager {
                 });
             })
             .expect("failed to spawn shielded-sync thread");
-        // Store the handle so `quiesce` can join the OS thread.
+        // Store the join handle while still holding cancel_guard — a
+        // concurrent quiesce() must wait for this lock before calling
+        // stop(), so the handle is always stored before it can be taken.
         *self.background_join.lock().expect("bg_join poisoned") = Some(join);
+        // cancel_guard drops here, releasing background_cancel.
     }
 
     /// Stop the background sync loop. No-op if not running.
@@ -362,11 +378,15 @@ impl ShieldedSyncManager {
             return ShieldedSyncPassSummary::default();
         }
 
+        // RAII guard: clears `is_syncing` on every exit path, including
+        // panics. Without this a panic inside the pass would leave
+        // `is_syncing=true` forever and wedge `quiesce()`'s drain loop.
+        let _is_syncing_guard = IsSyncingGuard(&self.is_syncing);
+
         // A `quiesce()` may have raised the gate between our CAS and
-        // here; if so, release the slot and bail without running a pass
-        // so the drain can complete and Clear/stop get a true barrier.
+        // here; bail so the drain can complete and Clear/stop get a
+        // true barrier. Guard clears `is_syncing` on return.
         if self.quiescing.load(Ordering::Acquire) {
-            self.is_syncing.store(false, Ordering::Release);
             return ShieldedSyncPassSummary::default();
         }
 
@@ -403,18 +423,15 @@ impl ShieldedSyncManager {
         self.last_sync_unix
             .store(summary.sync_unix_seconds, Ordering::Release);
 
-        // Dispatch the completion event BEFORE clearing `is_syncing`.
-        // `quiesce()` drains on the falling edge of `is_syncing`, so if
-        // we cleared the flag first a stop/clear caller could unblock
-        // while this completion event (FFI callback → Swift
-        // `handleShieldedSyncCompleted`) is still pending — surfacing a
-        // stale post-stop/post-clear event. Holding the flag across the
-        // dispatch makes quiesce's barrier cover the event too.
+        // Dispatch the completion event BEFORE `_is_syncing_guard` drops.
+        // `quiesce()` drains on the falling edge of `is_syncing`; if
+        // the guard cleared the flag before the dispatch a stop/clear
+        // caller could unblock while the callback is still pending —
+        // surfacing a stale post-stop/post-clear event.
         self.event_manager.on_shielded_sync_completed(&summary);
 
-        self.is_syncing.store(false, Ordering::Release);
-
         summary
+        // `_is_syncing_guard` drops here → `is_syncing = false`
     }
 
     /// Sync a single wallet on demand.
@@ -457,15 +474,16 @@ impl ShieldedSyncManager {
             return Ok(None);
         }
 
+        // RAII guard clears `is_syncing` on every exit path including panics.
+        let _is_syncing_guard = IsSyncingGuard(&self.is_syncing);
+
         // Bail if a `quiesce()` raised the gate after our CAS (see
         // `sync_now`) so the drain barrier holds.
         if self.quiescing.load(Ordering::Acquire) {
-            self.is_syncing.store(false, Ordering::Release);
             return Ok(None);
         }
 
         let pass = coordinator.sync(force).await;
-        self.is_syncing.store(false, Ordering::Release);
 
         // Extract this wallet's slice from the network-wide pass
         // summary. If the wallet is registered, we'll get back an
