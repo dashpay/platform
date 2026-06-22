@@ -176,7 +176,7 @@ where
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
         let settings = sdk.query_settings();
         let owned_rich: <Self as Fetch>::Query = query.query(&settings)?;
-        // INTENTIONAL(CMT-008, #3711): For the common case `Self::Query = Self::Request`,
+        // INTENTIONAL(#3711): For the common case `Self::Query = Self::Request`,
         // the blanket `Query<T> for T` impl turns the `query.query(settings)` step into a
         // pure clone of the same owned request. Real but micro-cost (~63 impls hit
         // this path). Specializing via a `fn encode_request_owned()` default method on
