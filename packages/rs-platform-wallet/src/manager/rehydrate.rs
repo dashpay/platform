@@ -130,6 +130,7 @@ pub(super) fn build_watch_only_wallet(
 /// This never logs and never touches key material.
 pub fn apply_persisted_core_state(
     wallet_info: &mut ManagedWalletInfo,
+    manifest: &[AccountRegistrationEntry],
     core: &crate::changeset::CoreChangeSet,
 ) -> Result<(), PlatformWalletError> {
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
@@ -164,9 +165,12 @@ pub fn apply_persisted_core_state(
             .next()
         {
             Some(account) => {
-                for utxo in unspent {
-                    account.utxos.insert(utxo.outpoint, utxo.clone());
+                for utxo in &unspent {
+                    account.utxos.insert(utxo.outpoint, (*utxo).clone());
                 }
+                // Eager derivation covers only `0..=gap_limit`; extend each
+                // chain to cover restored UTXOs at deeper indices.
+                extend_pools_for_restored_utxos(account, manifest, &unspent);
             }
             None => {
                 return Err(PlatformWalletError::RehydrationTopologyUnsupported {
@@ -182,6 +186,127 @@ pub fn apply_persisted_core_state(
     // silent zero would be a hard FAIL of the rehydration contract.
     wallet_info.update_balance();
     Ok(())
+}
+
+/// Upper bound on forward derivation while resolving a restored UTXO
+/// address to its derivation index. Addresses that don't resolve within
+/// this many indices (e.g. they belong to a different funds account whose
+/// UTXOs were routed here, or are corrupt) are left for the next full
+/// rescan to re-warm — generous enough to cover any realistic per-account
+/// derivation depth. The common (single funds account) path terminates at
+/// the true high-water mark well before this and never reaches the cap.
+const MAX_REHYDRATION_DERIVATION_INDEX: u32 = 10_000;
+
+/// Extend `account`'s address pools so every restored UTXO address is
+/// derived at its exact `(chain, index)` slot, then refill the gap window
+/// beyond — mirroring the sync path's `mark_used` → `maintain_gap_limit`
+/// shape. Each chain is extended only to its own deepest restored index;
+/// addresses that don't resolve against this account's xpub are skipped
+/// (they re-warm on the next full sync). Never touches key material — the
+/// xpub is the keyless account public key.
+fn extend_pools_for_restored_utxos(
+    account: &mut key_wallet::managed_account::ManagedCoreFundsAccount,
+    manifest: &[AccountRegistrationEntry],
+    restored: &[&key_wallet::Utxo],
+) {
+    use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use std::collections::{BTreeSet, HashSet};
+
+    // The funds account carries no key material; recover its watch-only
+    // xpub from the keyless manifest by account type.
+    let account_type = account.managed_account_type().to_account_type();
+    let Some(account_xpub) = manifest
+        .iter()
+        .find(|e| e.account_type == account_type)
+        .map(|e| e.account_xpub)
+    else {
+        return;
+    };
+    let key_source = KeySource::Public(account_xpub);
+
+    // Restored addresses not already covered by the eager derivation.
+    let mut unresolved: HashSet<key_wallet::Address> = {
+        let pools = account.managed_account_type().address_pools();
+        restored
+            .iter()
+            .map(|u| u.address.clone())
+            .filter(|addr| !pools.iter().any(|p| p.contains_address(addr)))
+            .collect()
+    };
+    if unresolved.is_empty() {
+        return;
+    }
+
+    // Probe pools mirror each real pool's chain so the index search derives
+    // into throwaway state (real pools keep their own exact depth). Probe
+    // order matches `address_pools_mut()`, so the later positional zip holds.
+    let mut probes: Vec<(AddressPool, BTreeSet<u32>)> = account
+        .managed_account_type()
+        .address_pools()
+        .iter()
+        .map(|p| {
+            (
+                AddressPool::new_without_generation(
+                    p.base_path.clone(),
+                    p.pool_type,
+                    p.gap_limit,
+                    p.network,
+                ),
+                BTreeSet::new(),
+            )
+        })
+        .collect();
+
+    // Lockstep forward across all chains until every restored address is
+    // located (the true high-water mark) or the safety bound is hit.
+    let mut index: u32 = 0;
+    while !unresolved.is_empty() && index <= MAX_REHYDRATION_DERIVATION_INDEX {
+        for (probe, matched) in probes.iter_mut() {
+            if let Some(addr) = ensure_derived(probe, &key_source, index) {
+                if unresolved.remove(&addr) {
+                    matched.insert(index);
+                }
+            }
+        }
+        index = index.saturating_add(1);
+    }
+
+    // Apply each chain's resolved depth to its real pool: derive up to the
+    // deepest restored index, mark the restored slots used, then maintain
+    // the gap window beyond the highest used index.
+    let mut pools = account.managed_account_type_mut().address_pools_mut();
+    for (i, (_, matched)) in probes.iter().enumerate() {
+        let Some(&deepest) = matched.iter().next_back() else {
+            continue;
+        };
+        let pool = &mut *pools[i];
+        ensure_derived(pool, &key_source, deepest);
+        for &idx in matched {
+            pool.mark_index_used(idx);
+        }
+        let _ = pool.maintain_gap_limit(&key_source);
+    }
+}
+
+/// Ensure `pool` has derived through `index` (generating only the missing
+/// tail), and return that index's address. `None` only on a derivation
+/// error.
+fn ensure_derived(
+    pool: &mut key_wallet::managed_account::address_pool::AddressPool,
+    key_source: &key_wallet::managed_account::address_pool::KeySource,
+    index: u32,
+) -> Option<key_wallet::Address> {
+    let needs_more = match pool.highest_generated {
+        Some(highest) => highest < index,
+        None => true,
+    };
+    if needs_more {
+        let start = pool.highest_generated.map(|h| h + 1).unwrap_or(0);
+        pool.generate_addresses(index - start + 1, key_source, true)
+            .ok()?;
+    }
+    pool.address_at_index(index)
 }
 
 #[cfg(test)]
@@ -234,5 +359,134 @@ mod tests {
         let err = build_watch_only_wallet(Network::Testnet, [0u8; 32], &[])
             .expect_err("empty manifest must be MissingManifest");
         assert!(matches!(err, RehydrateRowError::MissingManifest));
+    }
+
+    /// Regression: after restart-in-place the watch-only pools eagerly
+    /// cover only `0..=gap_limit`, but persisted UTXOs can sit at deeper
+    /// derivation indices (e.g. internal idx 300). Rehydration must extend
+    /// each chain's pool to its deepest restored index so the per-address
+    /// view reconciles with the wallet total instead of undercounting.
+    #[test]
+    fn rehydration_extends_pools_to_cover_deep_index_utxos() {
+        use dashcore::blockdata::transaction::txout::TxOut;
+        use dashcore::{OutPoint, Txid};
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::{Address, Utxo};
+        use std::collections::HashSet;
+
+        let seed = [7u8; 64];
+        let wallet = Wallet::from_seed_bytes(
+            seed,
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+
+        // Mint the watch-only skeleton (pools cover only the eager gap
+        // window) and resolve the first funds account's keyless xpub.
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+        let funds_type = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .first()
+            .unwrap()
+            .managed_account_type()
+            .to_account_type();
+        let xpub = manifest
+            .iter()
+            .find(|e| e.account_type == funds_type)
+            .map(|e| e.account_xpub)
+            .expect("funds account xpub");
+
+        // Derive addresses on each chain from the same account xpub the
+        // pools use; the deep ones land past the eager window.
+        let derive = |pool_type, index: u32| -> Address {
+            let mut p = AddressPool::new_without_generation(
+                DerivationPath::master(),
+                pool_type,
+                DEFAULT_EXTERNAL_GAP_LIMIT,
+                Network::Testnet,
+            );
+            p.generate_addresses(index + 1, &KeySource::Public(xpub), true)
+                .unwrap();
+            p.address_at_index(index).unwrap()
+        };
+        let shallow_recv = derive(AddressPoolType::External, 3);
+        let deep_recv = derive(AddressPoolType::External, 35);
+        let deep_change = derive(AddressPoolType::Internal, 300);
+
+        let utxo = |addr: Address, value: u64, n: u8| Utxo {
+            outpoint: OutPoint {
+                txid: Txid::from([n; 32]),
+                vout: 0,
+            },
+            txout: TxOut {
+                value,
+                script_pubkey: addr.script_pubkey(),
+            },
+            address: addr,
+            height: 1,
+            is_coinbase: false,
+            is_confirmed: true,
+            is_instantlocked: false,
+            is_locked: false,
+            is_trusted: false,
+        };
+        let new_utxos = vec![
+            utxo(shallow_recv, 1_000, 1),
+            utxo(deep_recv.clone(), 20_000, 2),
+            utxo(deep_change.clone(), 300_000, 3),
+        ];
+        let expected_total: u64 = new_utxos.iter().map(|u| u.value()).sum();
+        let core = crate::changeset::CoreChangeSet {
+            new_utxos,
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+
+        apply_persisted_core_state(&mut wallet_info, &manifest, &core).unwrap();
+
+        // The wallet total is exact regardless (a sum over the UTXO set).
+        assert_eq!(wallet_info.balance.total(), expected_total);
+
+        // The per-address view joins pool addresses to UTXOs; every
+        // restored UTXO address must now be derived into a pool so the
+        // view reconciles to the total (the regression hid the deep ones).
+        let funds = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .next()
+            .unwrap();
+        let pool_addresses: HashSet<Address> = funds
+            .managed_account_type()
+            .address_pools()
+            .iter()
+            .flat_map(|p| p.addresses.values().map(|i| i.address.clone()))
+            .collect();
+        let visible: u64 = funds
+            .utxos
+            .values()
+            .filter(|u| pool_addresses.contains(&u.address))
+            .map(|u| u.value())
+            .sum();
+        assert_eq!(
+            visible, expected_total,
+            "deep-index UTXO addresses must be derived into their pools"
+        );
+
+        // Each deep address resolves to its exact derivation slot, not
+        // merely some slot — proving correct (chain, index) attribution.
+        let pools = funds.managed_account_type().address_pools();
+        let external = pools.iter().find(|p| p.is_external()).unwrap();
+        let internal = pools.iter().find(|p| p.is_internal()).unwrap();
+        assert_eq!(external.address_at_index(35).as_ref(), Some(&deep_recv));
+        assert_eq!(internal.address_at_index(300).as_ref(), Some(&deep_change));
     }
 }
