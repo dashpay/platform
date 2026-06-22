@@ -118,9 +118,10 @@ fn make_utxo(addr: &Address, vout: u32, value: u64) -> Utxo {
 
 /// Every `core_utxos` row is written with the hardcoded default
 /// `account_index = 0` (the product uses only the default account; a
-/// non-default account is rejected upstream by the `core_bridge` guard),
-/// so the per-account grouping reader buckets every unspent UTXO — at any
-/// address — under account 0.
+/// non-default account causes `core_bridge::warn_if_non_default_account`
+/// to log a `warn!` but still persists the record under index 0 to avoid
+/// fund loss), so the per-account grouping reader buckets every unspent
+/// UTXO — at any address — under account 0.
 #[test]
 fn utxos_bucket_under_default_account_index_zero() {
     use platform_wallet_storage::sqlite::schema::core_state;
