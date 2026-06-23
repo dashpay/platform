@@ -123,9 +123,9 @@ pub struct ContactInfoOpened {
 /// `key_wallet` — the seedless-test stand-in for the production Keychain signer.
 /// It derives at exactly the Rust-built paths the production glue feeds, so a
 /// test wired through this provider exercises the same key material the resident
-/// seed would have produced, with no resident seed on the wallet under test.
-/// (Replaces the `attach_wallet_seed` test setup; faithful, unlike the
-/// canned/stub providers used by the queue-mechanics drain tests.)
+/// seed would have produced, with no resident seed on the wallet under test —
+/// faithful, unlike the canned/stub providers used by the queue-mechanics
+/// drain tests.
 #[cfg(test)]
 pub(crate) struct SeedCryptoProvider {
     wallet: key_wallet::wallet::Wallet,

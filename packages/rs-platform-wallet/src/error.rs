@@ -154,19 +154,17 @@ pub enum PlatformWalletError {
     WalletLocked,
 
     #[error(
-        "Seed does not match wallet {wallet_id}: re-derived id {derived_id} \
-         from the supplied seed (refusing to attach the wrong seed)"
+        "Signer does not bind to wallet {wallet_id}: it derives a different \
+         BIP44 account-0 xpub (refusing to sign with the wrong seed)"
     )]
-    /// The seed handed to [`PlatformWalletManager::attach_wallet_seed`]
-    /// re-derives a network-scoped wallet id that does not equal the
-    /// target wallet's id. Attaching it would graft the wrong key
-    /// material onto a wallet whose persisted account xpubs came from a
-    /// different seed, so the upgrade is rejected outright.
+    /// The host signer derives a BIP44 account-0 extended public key that does
+    /// not equal this wallet's persisted account xpub — the signer resolves a
+    /// different seed than the one that owns the wallet (e.g. a mis-mapped
+    /// Keychain slot). The operation is refused so a wrong seed can never sign
+    /// for this wallet. Surfaced by [`crate::PlatformWallet::verify_seed_binds`].
     SeedMismatch {
-        /// Hex of the wallet id the caller asked to upgrade.
+        /// Hex of the wallet id whose binding check failed.
         wallet_id: String,
-        /// Hex of the id the supplied seed actually derives to.
-        derived_id: String,
     },
 
     #[error("SPV is already running — stop it before starting again")]

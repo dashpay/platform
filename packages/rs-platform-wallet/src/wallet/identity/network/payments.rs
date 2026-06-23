@@ -705,8 +705,8 @@ mod tests {
             .expect("wallet creation");
         let wallet_id = wallet.wallet_id();
         // Wallet stays external-signable (no resident seed) — the production
-        // posture after the attach_wallet_seed workaround was removed. Tests
-        // that need private-key ops derive via a Wallet-from-seed helper
+        // posture: signing runs through the host signer, never a grafted seed.
+        // Tests that need private-key ops derive via a Wallet-from-seed helper
         // (test_receiving_xpub) or a SeedCryptoProvider from the same mnemonic.
         (manager, wallet_id)
     }
@@ -738,16 +738,15 @@ mod tests {
             .expect("wallet creation");
         let wallet_id = wallet.wallet_id();
         // Wallet stays external-signable (no resident seed) — the production
-        // posture after the attach_wallet_seed workaround was removed. Tests
-        // that need private-key ops derive via a Wallet-from-seed helper
+        // posture: signing runs through the host signer, never a grafted seed.
+        // Tests that need private-key ops derive via a Wallet-from-seed helper
         // (test_receiving_xpub) or a SeedCryptoProvider from the same mnemonic.
         (manager, persister, wallet_id)
     }
 
-    /// Like [`make_wallet`] but WITHOUT re-attaching the seed, so the wallet
-    /// stays external-signable (`has_seed() == false`) — the watch-only /
-    /// seedless state the unattended sync sweep can hit before a Keychain
-    /// unlock.
+    /// Like [`make_wallet`], leaving the wallet external-signable
+    /// (`has_seed() == false`) — the watch-only / seedless state the
+    /// unattended sync sweep can hit before a Keychain unlock.
     async fn make_watch_only_wallet() -> (
         Arc<PlatformWalletManager<RecordingPersister>>,
         Arc<RecordingPersister>,
@@ -774,8 +773,8 @@ mod tests {
             .await
             .expect("wallet creation");
         let wallet_id = wallet.wallet_id();
-        // Intentionally NO attach_wallet_seed: creation downgrades to
-        // external-signable, so the wallet has no resident key material.
+        // Intentionally seedless: creation downgrades to external-signable, so
+        // the wallet has no resident key material.
         (manager, persister, wallet_id)
     }
 

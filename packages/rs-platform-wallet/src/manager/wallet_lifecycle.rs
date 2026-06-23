@@ -100,9 +100,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub async fn create_wallet_from_seed_bytes(
         &self,
         network: Network,
-        // By reference (like `attach_wallet_seed`): the named stack copy we
-        // hold of the master secret is wrapped in `Zeroizing` and scrubbed
-        // on drop. (`[u8; 64]` is `Copy`, so a transient by-value copy still
+        // By reference: the named stack copy we hold of the master secret is
+        // wrapped in `Zeroizing` and scrubbed on drop. (`[u8; 64]` is `Copy`,
+        // so a transient by-value copy still
         // crosses into key-wallet's `from_seed_bytes`, which consumes it into
         // its own zeroizing `Seed`; fully eliminating that residual copy
         // needs `from_seed_bytes` to take `&[u8; 64]` upstream in key-wallet.)

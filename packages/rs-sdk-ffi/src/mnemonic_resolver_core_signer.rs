@@ -154,8 +154,7 @@ pub enum MnemonicResolverSignerError {
     /// for: the account-xpub it derives differs from the wallet's
     /// persisted one. Surfaced by [`MnemonicResolverCoreSigner::verify_binds_to_xpub`]
     /// so a mis-mapped Keychain slot fails loud instead of silently
-    /// signing/deriving for the wrong wallet (replaces the wrong-seed
-    /// detection the deleted `attach_wallet_seed` dual gate provided).
+    /// signing/deriving for the wrong wallet.
     #[error("resolved mnemonic does not bind to this wallet (account-xpub mismatch)")]
     WrongSeed,
 }
@@ -494,8 +493,7 @@ impl MnemonicResolverCoreSigner {
     /// public key at `account_path` and compare to `expected` (the wallet's
     /// persisted account-xpub). `Err(WrongSeed)` on mismatch. The host runs
     /// this once at signer construction / first use so a mis-mapped Keychain
-    /// slot can't silently derive for the wrong wallet — replacing the
-    /// wrong-seed detection the deleted `attach_wallet_seed` dual gate gave.
+    /// slot can't silently derive for the wrong wallet.
     pub fn verify_binds_to_xpub(
         &self,
         account_path: &DerivationPath,

@@ -652,3 +652,54 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
     }
     PlatformWalletFFIResult::ok()
 }
+
+/// Verify the resolver signer resolves the seed that owns this wallet, before
+/// trusting it to sign. Derives the wallet's BIP44 account-0 xpub through the
+/// signer and compares it to the persisted account xpub; a mismatch means the
+/// signer is mapped to the wrong wallet and the call fails with
+/// `ErrorInvalidParameter`. Run once at unlock (alongside the deferred-crypto
+/// drain) so a mis-mapped Keychain slot can never sign for a wallet it does not
+/// own — the wrong-seed detection without a resident seed.
+///
+/// # Safety
+/// - `core_signer_handle` must be a valid, non-destroyed
+///   `*mut MnemonicResolverHandle`; ownership is retained by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_verify_seed_binds_to_wallet(
+    wallet_handle: Handle,
+    core_signer_handle: *mut MnemonicResolverHandle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(core_signer_handle);
+
+    let signer_addr = core_signer_handle as usize;
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let wallet_id = wallet.wallet_id();
+        let network = wallet.network();
+        // SAFETY: same lifetime contract as the drain FFI — the caller pins the
+        // resolver handle for the duration of this call.
+        let provider = unsafe {
+            resolver_contact_crypto_provider(
+                signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        let wallet = wallet.clone();
+        block_on_worker(async move { wallet.verify_seed_binds(&provider).await })
+    });
+    let result = unwrap_option_or_return!(option);
+    match result {
+        Ok(()) => PlatformWalletFFIResult::ok(),
+        Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                e.to_string(),
+            )
+        }
+        Err(e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            e.to_string(),
+        ),
+    }
+}

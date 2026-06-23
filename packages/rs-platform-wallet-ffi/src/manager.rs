@@ -4,7 +4,6 @@ use crate::check_ptr;
 use crate::error::*;
 use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
 use crate::handle::*;
-use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
 use crate::persistence::{FFIPersister, PersistenceCallbacks};
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
@@ -106,9 +105,8 @@ unsafe fn create_wallet_from_seed_impl(
 
     let network: Network = network.into();
 
-    // Zeroize the FFI-boundary copy of the master secret on drop, matching
-    // `attach_wallet_seed_from_mnemonic`. Passed by reference so the manager
-    // method doesn't take an un-zeroized owned copy.
+    // Zeroize the FFI-boundary copy of the master secret on drop. Passed by
+    // reference so the manager method doesn't take an un-zeroized owned copy.
     let mut seed = zeroize::Zeroizing::new([0u8; 64]);
     std::ptr::copy_nonoverlapping(seed_bytes, seed.as_mut_ptr(), 64);
 
@@ -400,102 +398,6 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
     }
 }
 
-/// Upgrade an already-loaded external-signable wallet to a fully
-/// seeded signing wallet **in place**, from a BIP-39 mnemonic.
-///
-/// The persisted-restore path (`load_from_persistor`) rehydrates every
-/// wallet watch-only (per-account xpubs only, no key material), so any
-/// signing operation — DashPay contact-xpub derivation, identity-key
-/// signing — fails after an app relaunch with `External signable wallet
-/// has no private key`. The host calls this once per wallet right after
-/// `load_from_persistor`, passing the mnemonic it holds in its Keychain,
-/// to make the wallet signing-capable again.
-///
-/// `mnemonic` is parsed against every supported BIP-39 wordlist;
-/// `passphrase` may be null (treated as the empty passphrase). The
-/// mnemonic → seed conversion happens here in Rust — Swift never derives
-/// the seed (per the Swift-SDK FFI boundary rules). The derived seed is
-/// held in a `Zeroizing` buffer for the duration of the call.
-///
-/// The library verifies the seed actually belongs to `wallet_id`
-/// (network-scoped id recomputed from the seed must match) before
-/// attaching it; a mismatched mnemonic is rejected without touching the
-/// wallet. Re-deriving a wallet that is already seed-backed is a no-op
-/// success.
-///
-/// Returns `NotFound` if no wallet with `wallet_id` is registered,
-/// `ErrorInvalidParameter` for an unparseable mnemonic or a mismatched
-/// seed, and `ErrorWalletOperation` for other upgrade failures.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_manager_attach_wallet_seed_from_mnemonic(
-    manager_handle: Handle,
-    wallet_id: *const [u8; 32],
-    mnemonic: *const std::os::raw::c_char,
-    passphrase: *const std::os::raw::c_char,
-) -> PlatformWalletFFIResult {
-    use std::ffi::CStr;
-    use zeroize::Zeroizing;
-
-    check_ptr!(wallet_id);
-    check_ptr!(mnemonic);
-    let wallet_id_value = *wallet_id;
-
-    let mnemonic_str = unwrap_result_or_return!(CStr::from_ptr(mnemonic).to_str());
-    let passphrase_str: &str = if passphrase.is_null() {
-        ""
-    } else {
-        unwrap_result_or_return!(CStr::from_ptr(passphrase).to_str())
-    };
-
-    // Mnemonic → seed in Rust. `parse_mnemonic_any_language` walks every
-    // supported wordlist so non-English phrases aren't rejected as
-    // "invalid English". The 64-byte seed is zeroized on drop.
-    let parsed = unwrap_result_or_return!(parse_mnemonic_any_language(mnemonic_str));
-    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(parsed.to_seed(passphrase_str));
-
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        // `runtime().block_on`, matching the sibling
-        // `create_wallet_from_seed_impl`: the upgrade only re-derives an
-        // HD wallet from the seed (BIP32 master + the fixed-depth account
-        // paths) — bounded, shallow recursion, not the deep GroveDB
-        // proof-verification recursion that forces the
-        // `block_on_worker` 8 MB-stack dispatch elsewhere (see
-        // `dashpay_sync.rs`). The work borrows `manager` from the
-        // `with_item` closure, which a `'static` worker spawn could not
-        // capture anyway.
-        // `&seed` is `&Zeroizing<[u8; 64]>`; it coerces to the
-        // `&[u8; 64]` the method takes at this argument position.
-        runtime().block_on(manager.attach_wallet_seed(wallet_id_value, &seed))
-    });
-    let result = unwrap_option_or_return!(option);
-    match result {
-        Ok(()) => PlatformWalletFFIResult::ok(),
-        Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
-            PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                e.to_string(),
-            )
-        }
-        Err(platform_wallet::PlatformWalletError::WalletNotFound(_)) => {
-            PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::NotFound,
-                format!(
-                    "Wallet {} not found in manager",
-                    hex::encode(wallet_id_value)
-                ),
-            )
-        }
-        Err(e) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!(
-                "Failed to attach seed to wallet {}: {}",
-                hex::encode(wallet_id_value),
-                e
-            ),
-        ),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -516,88 +418,4 @@ mod tests {
         assert_eq!(birth_height_override_opt(false, 99), None);
     }
 
-    // --- attach_wallet_seed_from_mnemonic input-validation paths ---
-    //
-    // The happy-path upgrade semantics (external-signable → signing,
-    // wallet-id safety gate, idempotency) are pinned by the library
-    // tests in `platform_wallet::manager::attach_seed::tests`. These FFI
-    // tests cover the marshalling boundary the library can't see: null
-    // handle, null pointers, and an unparseable mnemonic must be
-    // rejected before any manager lookup — matching the contract the
-    // other manager exports uphold.
-
-    use std::ffi::CString;
-
-    /// An unknown handle must surface `NotFound` (via
-    /// `unwrap_option_or_return!`) rather than dereferencing a stale
-    /// slot — but only after the pointer + mnemonic checks pass, since
-    /// those run first.
-    #[test]
-    fn attach_wallet_seed_unknown_handle_returns_not_found() {
-        let bogus: Handle = 0xDEAD_BEEF;
-        let wallet_id = [0u8; 32];
-        let mnemonic = CString::new(
-            "abandon abandon abandon abandon abandon abandon \
-             abandon abandon abandon abandon abandon about",
-        )
-        .unwrap();
-        let r = unsafe {
-            platform_wallet_manager_attach_wallet_seed_from_mnemonic(
-                bogus,
-                &wallet_id,
-                mnemonic.as_ptr(),
-                std::ptr::null(),
-            )
-        };
-        assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
-    }
-
-    /// A null `wallet_id` is rejected with `ErrorNullPointer` (the
-    /// `check_ptr!` contract) before the handle is looked up.
-    #[test]
-    fn attach_wallet_seed_null_wallet_id_is_null_pointer() {
-        let mnemonic = CString::new("abandon abandon about").unwrap();
-        let r = unsafe {
-            platform_wallet_manager_attach_wallet_seed_from_mnemonic(
-                1,
-                std::ptr::null(),
-                mnemonic.as_ptr(),
-                std::ptr::null(),
-            )
-        };
-        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
-    }
-
-    /// A null `mnemonic` is rejected with `ErrorNullPointer`.
-    #[test]
-    fn attach_wallet_seed_null_mnemonic_is_null_pointer() {
-        let wallet_id = [7u8; 32];
-        let r = unsafe {
-            platform_wallet_manager_attach_wallet_seed_from_mnemonic(
-                1,
-                &wallet_id,
-                std::ptr::null(),
-                std::ptr::null(),
-            )
-        };
-        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
-    }
-
-    /// An unparseable mnemonic is rejected with `ErrorInvalidParameter`
-    /// (mapped from `parse_mnemonic_any_language`'s error via
-    /// `unwrap_result_or_return!`) before any manager lookup.
-    #[test]
-    fn attach_wallet_seed_bad_mnemonic_is_invalid_parameter() {
-        let wallet_id = [7u8; 32];
-        let mnemonic = CString::new("not a real bip39 mnemonic at all").unwrap();
-        let r = unsafe {
-            platform_wallet_manager_attach_wallet_seed_from_mnemonic(
-                1,
-                &wallet_id,
-                mnemonic.as_ptr(),
-                std::ptr::null(),
-            )
-        };
-        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
-    }
 }
