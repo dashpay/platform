@@ -1563,17 +1563,28 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     }
                 }
                 PendingContactCryptoOp::ContactInfoDecrypt => {
-                    // The seal/open AES primitive exists; what's still missing is
-                    // the network re-fetch of this owner's contactInfo documents
-                    // (the op carries no ciphertext on purpose, so it always
-                    // decrypts the latest published version). Until the fetch
-                    // surface is wired in, leave the op queued (safe — re-run
-                    // later). Decrypting a stubbed/empty fetch would be a false
-                    // no-op, so this stays an honest deferral.
-                    tracing::debug!(
-                        owner = %entry.owner_identity_id, contact = %entry.contact_id,
-                        "drain: ContactInfoDecrypt awaiting contactInfo fetch surface; leaving queued"
-                    );
+                    // Re-fetch the owner's contactInfo docs + decrypt + apply via
+                    // the signer (the op carries no payload, so the latest
+                    // published version always wins). The owner-ownership /
+                    // confused-deputy guard lives in `drain_contact_info_decrypt`.
+                    match self
+                        .drain_contact_info_decrypt(&entry.owner_identity_id, provider)
+                        .await
+                    {
+                        Ok(applied) => {
+                            tracing::debug!(
+                                owner = %entry.owner_identity_id, applied,
+                                "drain: contactInfo decrypted + applied"
+                            );
+                            cleared.push(entry.key());
+                        }
+                        // Provider/fetch failure (signer unavailable, network blip,
+                        // or a non-owned entry) → leave queued for the next drain.
+                        Err(e) => tracing::warn!(
+                            owner = %entry.owner_identity_id, error = %e,
+                            "drain: contactInfo decrypt failed; leaving queued"
+                        ),
+                    }
                 }
             }
         }

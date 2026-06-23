@@ -2084,4 +2084,64 @@ mod tests {
             "the deferred entry must remain in the queue for a later drain"
         );
     }
+
+    /// Confused-deputy guard (security MUST-FIX): the `ContactInfoDecrypt` drain
+    /// refuses an identity this wallet does not own — it errors at the ownership
+    /// check BEFORE any fetch/decrypt, so a poisoned/mis-attributed queue entry
+    /// can never drive a decrypt under the wrong identity.
+    #[tokio::test]
+    async fn contact_info_decrypt_drain_rejects_non_owned_identity() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        let (manager, _persister, wallet_id) = make_watch_only_wallet().await;
+        let iw = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = iw.identity();
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let not_ours = Identifier::from([0x99; 32]);
+        let err = iw
+            .drain_contact_info_decrypt(&not_ours, &provider)
+            .await
+            .expect_err("a non-owned identity must be rejected");
+        assert!(
+            matches!(err, PlatformWalletError::InvalidIdentityData(_)),
+            "confused-deputy guard must reject a non-owned identity, got {err:?}"
+        );
+    }
+
+    /// The signerless sweep on a seedless wallet ENQUEUES a per-owner
+    /// `ContactInfoDecrypt` op (no inline decrypt, no network) for the drain to
+    /// complete when a signer is available.
+    #[tokio::test]
+    async fn seedless_sweep_enqueues_contact_info_decrypt() {
+        use crate::changeset::PendingContactCryptoKind;
+        let (manager, persister, wallet_id) = make_watch_only_wallet().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let owner = Identifier::from([0x11; 32]);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(
+                    bare_identity([0x11; 32]),
+                    0,
+                    wallet_id,
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add owner");
+        }
+        let applied = iw.sync_contact_infos().await.expect("sync");
+        assert_eq!(applied, 0, "seedless sweep applies nothing inline — it defers");
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        assert!(
+            info.pending_contact_crypto.iter().any(|e| {
+                e.owner_identity_id == owner
+                    && e.op.kind() == PendingContactCryptoKind::ContactInfoDecrypt
+            }),
+            "the seedless sweep must enqueue a ContactInfoDecrypt op for the owner"
+        );
+    }
 }

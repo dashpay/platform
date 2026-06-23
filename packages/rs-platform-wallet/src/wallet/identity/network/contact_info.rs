@@ -84,7 +84,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Single-sources the fetch for BOTH the resident sweep decrypt
     /// ([`Self::fetch_decrypted_contact_infos`]) and the seedless publish/drain
     /// (which decrypt via the signer) — no key material is touched here.
-    async fn fetch_contact_info_docs(
+    pub(super) async fn fetch_contact_info_docs(
         &self,
         identity_id: &Identifier,
     ) -> Result<(Vec<RawContactInfoDoc>, std::collections::BTreeMap<u32, u32>), PlatformWalletError>
@@ -284,20 +284,38 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ///
     /// Returns the number of contacts whose metadata was applied.
     pub async fn sync_contact_infos(&self) -> Result<u32, PlatformWalletError> {
-        let identity_ids: Vec<Identifier> = {
+        let (identity_ids, has_resident_keys): (Vec<Identifier>, bool) = {
             let wm = self.wallet_manager.read().await;
             let Some(info) = wm.get_wallet_info(&self.wallet_id) else {
                 return Ok(0);
             };
-            info.identity_manager
+            let ids = info
+                .identity_manager
                 .wallet_identities
                 .values()
                 .flat_map(|inner| inner.values().map(|m| m.id()))
-                .collect()
+                .collect();
+            // The recurring sweep is signerless. Only a resident-key wallet TYPE
+            // (Mnemonic/Seed) can decrypt contactInfo inline here; an
+            // external-signable (seedless) wallet has no resident key material,
+            // so it DEFERS the decrypt to the signer-backed drain.
+            let has_resident_keys = wm
+                .get_wallet(&self.wallet_id)
+                .map(|w| w.has_seed())
+                .unwrap_or(false);
+            (ids, has_resident_keys)
         };
 
         let mut applied = 0u32;
         for identity_id in identity_ids {
+            if !has_resident_keys {
+                // Seedless: enqueue a per-owner `ContactInfoDecrypt` op (idempotent
+                // per owner); the drain decrypts via the Keychain signer when one
+                // is available. The sweep itself never derives.
+                self.enqueue_contact_info_decrypt(&identity_id).await;
+                continue;
+            }
+            // Resident-key wallet type: decrypt in place (the kept resident path).
             // Log-and-continue per identity, matching the other sync steps.
             // The sync path only consumes the decrypted docs; the high-water
             // map is only needed by the publish path.
@@ -330,6 +348,117 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     decrypted.data,
                     &self.persister,
                 ) {
+                    applied += 1;
+                }
+            }
+        }
+        Ok(applied)
+    }
+
+    /// Enqueue a per-owner `ContactInfoDecrypt` op for the signerless sweep to
+    /// defer to the drain. Idempotent per owner — the dedup key uses
+    /// `(owner, owner, ContactInfoDecrypt)` (contactInfo is owner-scoped, so the
+    /// `contact_id` slot carries the owner as a sentinel; the op itself carries
+    /// no payload — the drain re-fetches the latest published docs). Stores only
+    /// the queue delta (no secret).
+    async fn enqueue_contact_info_decrypt(&self, owner_id: &Identifier) {
+        use crate::changeset::{
+            upsert_pending_contact_crypto, PendingContactCrypto, PendingContactCryptoOp,
+            PlatformWalletChangeSet,
+        };
+        let enqueued_at_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let entry = PendingContactCrypto {
+            owner_identity_id: *owner_id,
+            contact_id: *owner_id,
+            op: PendingContactCryptoOp::ContactInfoDecrypt,
+            enqueued_at_ms,
+        };
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+                return;
+            };
+            upsert_pending_contact_crypto(&mut info.pending_contact_crypto, entry.clone());
+        }
+        let changeset = PlatformWalletChangeSet {
+            pending_contact_crypto_added: vec![entry],
+            ..Default::default()
+        };
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::warn!(
+                owner = %owner_id, error = %e,
+                "failed to persist contactInfo-decrypt enqueue; will re-enqueue next sweep"
+            );
+        }
+    }
+
+    /// Drain a `ContactInfoDecrypt` queue entry: re-fetch `owner_id`'s contactInfo
+    /// documents (key-free scan) and decrypt + apply each via the signer-backed
+    /// `crypto`. Re-fetching means the latest published version always wins.
+    /// Returns the number of contacts whose metadata was applied.
+    ///
+    /// Confused-deputy guard: `owner_id` MUST be a managed identity of this wallet
+    /// (we resolve its HD index); a queue entry naming a non-owned identity errors
+    /// out and is left for the caller to handle, never decrypted under the wrong
+    /// identity. A provider failure (signer unavailable) errors so the caller
+    /// leaves the entry queued for the next drain.
+    pub(super) async fn drain_contact_info_decrypt<C: super::ContactCryptoProvider + Sync>(
+        &self,
+        owner_id: &Identifier,
+        crypto: &C,
+    ) -> Result<usize, PlatformWalletError> {
+        let identity_index = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .and_then(|info| info.identity_manager.managed_identity(owner_id))
+                .and_then(|m| m.identity_index)
+                .ok_or_else(|| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "ContactInfoDecrypt: {owner_id} is not a wallet-owned identity with an HD index"
+                    ))
+                })?
+        };
+
+        let (raw_docs, _high_water) = self.fetch_contact_info_docs(owner_id).await?;
+
+        // Decrypt each via the signer (no lock held during the async provider
+        // calls), collecting the decoded metadata to apply afterwards.
+        let mut decoded: Vec<(Identifier, ContactInfoPrivateData)> = Vec::new();
+        for raw in &raw_docs {
+            let root_path = super::identity_auth_derivation_path_for_type(
+                self.sdk.network,
+                key_wallet::bip32::KeyDerivationType::ECDSA,
+                identity_index,
+                raw.root_index,
+            )?;
+            let opened = crypto
+                .contact_info_open(
+                    &root_path,
+                    raw.derivation_index,
+                    &raw.enc_to_user_id,
+                    &raw.private_data,
+                )
+                .await?;
+            match decode_private_data(&opened.private_data) {
+                Ok(data) => decoded.push((Identifier::from(opened.contact_id), data)),
+                Err(e) => {
+                    // A malformed payload is a single bad doc, not a drain failure.
+                    tracing::warn!(owner = %owner_id, error = %e, "drain: contactInfo privateData decode failed; skipping doc");
+                }
+            }
+        }
+
+        let mut applied = 0usize;
+        let mut wm = self.wallet_manager.write().await;
+        if let Some(managed) = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .and_then(|info| info.identity_manager.managed_identity_mut(owner_id))
+        {
+            for (contact_id, data) in decoded {
+                if managed.set_contact_metadata(&contact_id, data, &self.persister) {
                     applied += 1;
                 }
             }
