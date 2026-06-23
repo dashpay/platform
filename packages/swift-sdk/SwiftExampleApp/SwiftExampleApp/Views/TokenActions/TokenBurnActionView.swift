@@ -21,6 +21,7 @@ struct TokenBurnActionView: View {
     var initialBalance: UInt64? = nil
 
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
@@ -228,9 +229,23 @@ struct TokenBurnActionView: View {
         let note = publicNote.trimmingCharacters(in: .whitespacesAndNewlines)
         let publicNoteOrNil: String? = note.isEmpty ? nil : note
 
+        // Capture the values the persist step needs off the @Model
+        // instance now, on the main actor.
+        let tokenRelationshipKey = token.id
+
         Task {
             do {
-                try await wallet.tokenBurn(
+                // The burn's broadcast result already carries the
+                // acting identity's proof-verified remaining balance —
+                // persist it straight into the local row so the burned
+                // amount disappears from the UI without waiting for the
+                // next periodic sync, and with no extra round-trip.
+                // (When the burn was sent as a group-action proposal
+                // nothing is burned until the group signs, so the FFI
+                // returns an empty map and the persist is a no-op.)
+                // Best-effort: a persist failure must not turn a
+                // successful burn into a user-visible error.
+                let balances = try await wallet.tokenBurn(
                     identityId: identityId,
                     contractId: contractId,
                     tokenPosition: position,
@@ -238,6 +253,12 @@ struct TokenBurnActionView: View {
                     publicNote: publicNoteOrNil,
                     groupAction: groupAction,
                     signer: signer
+                )
+                await self.persistBalanceAfterBurn(
+                    balances: balances,
+                    contractId: contractId,
+                    tokenPosition: position,
+                    tokenRelationshipKey: tokenRelationshipKey
                 )
                 await MainActor.run {
                     guard self.submitGeneration == gen else { return }
@@ -251,6 +272,34 @@ struct TokenBurnActionView: View {
                     self.isSubmitting = false
                 }
             }
+        }
+    }
+
+    /// Persist the proof-verified post-burn balance the burn returned
+    /// into the acting identity's local `PersistentTokenBalance` row.
+    /// Best-effort — any failure is logged and swallowed; the periodic
+    /// sync is the backstop.
+    ///
+    /// `@MainActor`-isolated: writes the main-context `modelContext` via
+    /// the SDK's `@MainActor` persist helper. No network round-trip.
+    @MainActor
+    private func persistBalanceAfterBurn(
+        balances: [Data: UInt64],
+        contractId: Data,
+        tokenPosition: UInt16,
+        tokenRelationshipKey: Data
+    ) async {
+        guard let sdk = appState.sdk else { return }
+        do {
+            try sdk.persistProvenTokenBalances(
+                contractId: contractId,
+                tokenPosition: tokenPosition,
+                tokenRelationshipKey: tokenRelationshipKey,
+                balances: balances,
+                in: modelContext
+            )
+        } catch {
+            print("⚠️ Post-burn balance persist failed: \(error)")
         }
     }
 }

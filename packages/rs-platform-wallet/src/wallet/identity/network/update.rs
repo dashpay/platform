@@ -233,20 +233,24 @@ impl IdentityWallet {
                 }
 
                 if !disabled_ids_for_local_apply.is_empty() {
-                    // TODO(disable-keys): wire a
-                    // `ManagedIdentity::disable_keys` counterpart to
-                    // `add_key` so the disable side of an update
-                    // transition stamps a `disabled_at` on the
-                    // matching `IdentityKeyEntry` rows. For now we
-                    // log + leave the cache stale on the disable
-                    // path; callers that need it should refresh
-                    // from Platform after the broadcast.
-                    tracing::warn!(
-                        identity = %identity_id,
-                        disabled_count = disabled_ids_for_local_apply.len(),
-                        "Disable-keys post-broadcast apply not yet implemented; \
-                         in-memory cache will not reflect disabled key flags \
-                         until the next refresh"
+                    // Disable-side counterpart to the `add_key` loop
+                    // above: stamp `disabled_at` on the matching cached
+                    // keys and fire the persister so the Swift
+                    // `PersistentPublicKey.disabledAt` rows flip without
+                    // a network re-fetch. The local wall-clock timestamp
+                    // is a placeholder — the next Platform refresh
+                    // reconciles it to the authoritative on-chain block
+                    // time. `disable_keys` reuses the same derivation
+                    // breadcrumb `add_key` carries, so the disabled key
+                    // keeps its private-key linkage.
+                    let disabled_at = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or_default();
+                    managed.disable_keys(
+                        &disabled_ids_for_local_apply,
+                        disabled_at,
+                        &self.persister,
                     );
                 }
             }

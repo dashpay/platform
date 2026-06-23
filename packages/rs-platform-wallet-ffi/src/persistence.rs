@@ -2433,7 +2433,15 @@ fn build_core_address_entry_ffi(
     // PlatformAddress conversion fails (only P2PKH / P2SH supported)
     // fall back to base58check so the address still surfaces.
     let rendered_address = if is_platform_payment {
-        let network = *info.address.network();
+        let network = if info
+            .address
+            .as_unchecked()
+            .is_valid_for_network(Network::Mainnet)
+        {
+            Network::Mainnet
+        } else {
+            Network::Testnet
+        };
         let converted: Result<PlatformAddress, _> = PlatformAddress::try_from(info.address.clone());
         converted
             .map(|p| p.to_bech32m_string(network))
@@ -2646,7 +2654,15 @@ fn build_address_pools_from_derived(
             // bech32m; everything else base58check (matching
             // `build_core_address_entry_ffi`'s logic).
             let rendered_address = if is_platform_payment {
-                let network = *d.address.network();
+                let network = if d
+                    .address
+                    .as_unchecked()
+                    .is_valid_for_network(Network::Mainnet)
+                {
+                    Network::Mainnet
+                } else {
+                    Network::Testnet
+                };
                 let converted: Result<PlatformAddress, _> =
                     PlatformAddress::try_from(d.address.clone());
                 converted

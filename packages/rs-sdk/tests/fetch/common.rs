@@ -106,8 +106,8 @@ pub fn mock_data_contract(
 /// Ratchet a fresh auto-detect mock SDK from the protocol-version floor up to the
 /// network's latest version, exactly as production does on its first proven response.
 ///
-/// An unpinned SDK boots at `DEFAULT_INITIAL_PROTOCOL_VERSION` (the upgrade-safe floor)
-/// and only learns the real network version after a *proven* fetch, when response
+/// An unpinned SDK boots at its per-network `min_protocol_version` (the upgrade-safe
+/// floor) and only learns the real network version after a *proven* fetch, when response
 /// metadata drives `maybe_update_protocol_version`. Mock tests that need the latest
 /// wire (e.g. Count / `group_by`, or V2 document types) must therefore perform one
 /// proven fetch before encoding their real request. This registers a cheap proven
