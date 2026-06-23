@@ -179,33 +179,37 @@ track, and the multi-agent reviews. Prioritized; check off as done.
   queue + SQLite, C3 (resident ECDH path deleted). Discovery is resolved via the
   KEPT carry-scalar (not a rewrite).
   **(4-lens plan review folded in — see the spec's Q2 banner for the MUST-FIX detail.)**
-  - [ ] **#7 contactInfo seedless** — add `contact_info_seal` AND `contact_info_open`
-    to `ContactCryptoProvider` (publish must DECRYPT existing docs for update-vs-create,
-    not just encrypt); refactor the shared `fetch_decrypted_contact_infos` (resident-
-    hardcoded, used by publish + signerless sweep) into public-high-water + provider-
-    decrypt; thread `crypto` into publish + the FFI (`core_signer_handle` ABI break).
-    MUST-FIX: build the contactInfo root path in Rust + pin the parity test to the REAL
-    auth path (silent-undecryptable hazard); publish derives high-water FRESH or refuses
-    (never index 0 → unique-index collision). Implement the `ContactInfoDecrypt` drain op
-    (no-op stub today) — re-fetch + open + validate; **testnet-validated**. Confused-deputy:
-    drain re-validates the entry's `owner_identity_id`. Delete `derive_contact_info_keys`
-    only once BOTH publish + sweep stop calling it.
-  - [ ] **Discovery/loading — NO library change** (corrected: the earlier "remove the
-    ResidentWallet variants" was wrong). External-signable wallets already route through
-    `discover_from_master`/`load_identity_by_index_from_master` (via `resolve_master_from_resolver`);
-    the `ResidentWallet` variants stay for genuine resident-key wallet TYPES. Just confirm
-    callers pass a non-null resolver post-deletion. The deep `verified_scalar`-drop rewrite
-    is NOT needed (carry-scalar kept).
-  - [ ] **Test-helper rework** — `payments.rs::make_wallet` (`:747`) / `make_wallet_with`
-    (`:711`) call `attach_wallet_seed`; rework to external-signable + `SeedCryptoProvider`/
-    test-`Signer` (`make_watch_only_wallet` is the template) BEFORE deletion.
-  - [ ] **Swift** — drain-on-unlock replacing `unlockWalletFromKeychain` re-attach.
-  - [ ] **Delete `attach_wallet_seed`** + FFI export + impl + dual-gate/`mem::swap`
-    + the dead `dash_sdk_dashpay_*` rs-sdk-ffi surface (4 fns, zero Swift callers)
-    + the legacy `KeychainSigner.sign(...)->Data?` nil-swallow. MUST-FIX: wire
-    `verify_binds_to_xpub` (§4.8, zero callers today) in the SAME change (else wrong-seed
-    detection vanishes). SHOULD-FIX: port `WipingXprv` to `sign_with_mnemonic_resolver.rs`
-    (§4.2 error-path leak).
+  - [x] **#7 contactInfo seedless — DONE** (`0da8ca5ddb`, `413229f048`, `15ca790aad`).
+    `contact_info_seal`/`open` on the provider (real-auth-path parity test); publish does
+    find-existing via `open` + encrypt via `seal` (shared fetch split into key-free scan +
+    resident wrapper); FFI gains `core_signer_handle`; sweep enqueues `ContactInfoDecrypt`
+    (seedless) / decrypts resident (resident-key types); drain op implemented (re-fetch +
+    open + apply + confused-deputy guard). `derive_contact_info_keys` KEPT for resident-key
+    types (per the discovery decision). Full re-fetch+decrypt is testnet-validated.
+  - [x] **Discovery/loading — confirmed NO library change needed.** External-signable
+    wallets already route through `discover_from_master` (via `resolve_master_from_resolver`);
+    the `ResidentWallet` variants stay for resident-key wallet TYPES. carry-scalar kept.
+  - [x] **De-dup — DONE** (`db18688545`): dead `dash_sdk_dashpay_*` rs-sdk-ffi surface
+    deleted (−743); the 4 inline provider constructions collapsed to one
+    `resolver_contact_crypto_provider` helper.
+  - [ ] **§4.9 deletion of `attach_wallet_seed`** (the remaining core). CASCADE (measured by
+    removing the `make_wallet`/`make_wallet_with` attach calls): **5 tests fail** —
+    `register_contact_account_persists_account_registration`,
+    `register_contact_account_with_precomputed_xpub_builds_account`,
+    `register_external_with_precomputed_shared_key_builds_account`,
+    `reconcile_records_received_payments_from_receival_utxos`,
+    `reconcile_does_not_clobber_existing_entry_for_same_txid`. They call
+    `register_contact_account(None)` (resident receiving-xpub derive) or derive a resident
+    xpub in their setup. Fix: derive the xpub via a `Wallet`-from-seed (or `SeedCryptoProvider`)
+    and pass `Some`; then determine whether `register_contact_account`'s `None` branch is
+    production-dead now (sweep always-enqueues, send/accept/drain pass `Some`) → if so,
+    C3-it (non-`Option`). Then delete `attach_wallet_seed` (`manager/attach_seed.rs`) + the
+    `platform_wallet_manager_attach_wallet_seed_from_mnemonic` FFI + its 4 tests
+    (`manager.rs`) + the `make_wallet` attach calls + the `KeychainSigner.sign(...)->Data?`
+    nil-swallow (Swift). MUST-FIX: wire `verify_binds_to_xpub` (§4.8, zero callers) in the
+    SAME change. SHOULD-FIX: port `WipingXprv` to `sign_with_mnemonic_resolver.rs` (§4.2).
+  - [ ] **Swift** — drain-on-unlock replacing `unlockWalletFromKeychain` re-attach; pass the
+    `core_signer_handle` the contactInfo/send/accept FFI now require.
   - [ ] **Testnet on-device acceptance** — happy path (import funded seed → discover →
     send/accept + pay + publish; background-discover inbound contact then unlock → payable)
     PLUS the two cases the all-positive script misses: (a) wrong/mis-mapped seed rejected

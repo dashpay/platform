@@ -83,6 +83,11 @@ headless. Resume the held work in an environment with Xcode + a live network.
 | `9082d35aad` | §4.7 | drain `RegisterExternal` runs `validate_contact_request` (closes the deferred-path validation gap; makes always-enqueue validation-safe) |
 | `1b88d5a6ca` | §4.6 | **sweep always-enqueues** — removed `build_contact_accounts`' resident fast-path; the signerless sweep defers everything to the drain (−205 lines) |
 | `14566d96bd` | §4.9 | **C3** — delete the resident ECDH path: `register_external` non-`Option` (dead key-index params removed), `derive_encryption_private_key` + tests gone, `RegisterExternalError::Unavailable` removed |
+| `8ed2605a91`,`3b2b418e66` | docs | 4-lens Q2 plan review folded into spec/TODO; Q2 banner + completion criteria |
+| `0da8ca5ddb` | §4.5/#7 | contactInfo `seal`/`open` on `ContactCryptoProvider` + glue + real-auth-path parity test (security MUST-FIX) |
+| `413229f048` | #7 | **seedless contactInfo publish** — find-existing via `open` + encrypt via `seal`; shared fetch split into key-free scan + resident wrapper (de-dup); FFI gains `core_signer_handle`; 4 provider constructions collapsed to one helper |
+| `15ca790aad` | #7 | **seedless contactInfo sweep+drain** — sweep enqueues `ContactInfoDecrypt` (seedless) / decrypts resident (resident-key types); drain op implemented (re-fetch + `open` + apply + confused-deputy guard). Network-validated end-to-end |
+| `db18688545` | §4.4 | delete the dead `dash_sdk_dashpay_*` rs-sdk-ffi surface (−743; de-dup, last `SdkSide` ABI) |
 
 **Locked design decisions**
 - Raw-secret ops are **inherent methods on `MnemonicResolverCoreSigner`** (in
