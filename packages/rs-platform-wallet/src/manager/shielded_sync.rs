@@ -230,7 +230,10 @@ impl ShieldedSyncManager {
     /// GRPC client state isn't `Send + Sync`). Same trade-off as
     /// [`PlatformAddressSyncManager::start`](super::platform_address_sync::PlatformAddressSyncManager::start).
     pub fn start(self: Arc<Self>) {
-        let mut cancel_guard = self.background_cancel.lock().expect("bg_cancel poisoned");
+        let mut cancel_guard = self
+            .background_cancel
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if cancel_guard.is_some() {
             return;
         }
@@ -259,7 +262,22 @@ impl ShieldedSyncManager {
                         // chunk every interval. User-initiated
                         // syncs pass `force=true` to the FFI
                         // entry point below and bypass this.
-                        this.sync_now(false).await;
+                        //
+                        // Race the pass against cancellation. `stop()` /
+                        // `quiesce()` cancel the token; with `biased` the
+                        // cancel arm is polled first, so a pass stalled on
+                        // a hung SDK fetch is dropped at its `.await` the
+                        // instant we cancel. Dropping the `sync_now` future
+                        // unwinds to the `is_syncing` `AtomicFlagGuard` it
+                        // holds, clearing the flag promptly — so the drain
+                        // loop in `quiesce()` frees and the join lands well
+                        // inside `shutdown()`'s timeout. A stalled pass can
+                        // no longer strand a live `!Send` thread.
+                        tokio::select! {
+                            biased;
+                            _ = cancel.cancelled() => break,
+                            _ = this.sync_now(false) => {}
+                        }
 
                         let interval = this.interval();
                         tokio::select! {
@@ -285,7 +303,10 @@ impl ShieldedSyncManager {
         // Store the join handle while still holding cancel_guard — a
         // concurrent quiesce() must wait for this lock before calling
         // stop(), so the handle is always stored before it can be taken.
-        *self.background_join.lock().expect("bg_join poisoned") = Some(join);
+        *self
+            .background_join
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(join);
         // cancel_guard drops here, releasing background_cancel.
     }
 
@@ -301,7 +322,7 @@ impl ShieldedSyncManager {
         if let Some(token) = self
             .background_cancel
             .lock()
-            .expect("bg_cancel poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .take()
         {
             token.cancel();
@@ -333,15 +354,21 @@ impl ShieldedSyncManager {
     /// one-shot host drops the runtime.
     pub async fn quiesce(&self) -> super::CoordinatorThreadStatus {
         self.quiescing.store(true, Ordering::Release);
+        // RAII gate: resets `quiescing` on *every* exit path — a normal
+        // return, a timed-out `shutdown()` / Clear dropping this future,
+        // or a panic. Without it a quiesce that doesn't run to completion
+        // leaves the gate latched `true`, silently bailing every future
+        // pass. Reopening on drop is safe because `stop()` (below) has
+        // already cancelled the loop, so no new pass can start.
+        let _quiescing_gate = AtomicFlagGuard::new(&self.quiescing);
         self.stop();
         while self.is_syncing.load(Ordering::Acquire) {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        self.quiescing.store(false, Ordering::Release);
         let handle = self
             .background_join
             .lock()
-            .expect("bg_join poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .take();
         super::join_coordinator_thread(handle).await
     }

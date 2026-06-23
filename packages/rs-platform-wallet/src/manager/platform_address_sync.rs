@@ -104,6 +104,14 @@ pub struct PlatformAddressSyncManager {
     /// confirm the `!Send` loop fully exited before the host drops the
     /// runtime.
     background_join: StdMutex<Option<std::thread::JoinHandle<()>>>,
+    /// Monotonically increasing generation counter. Bumped on every
+    /// `start()` so the exiting thread can tell whether its generation is
+    /// still the active one before clearing `background_cancel`. Without
+    /// this guard a tight `stop()` → `start()` reschedule lets the prior
+    /// thread's cleanup strip the *new* generation's token, leaving the
+    /// new loop running but untrackable via `is_running()` / `stop()`.
+    /// Mirrors the identity / shielded coordinators.
+    background_generation: AtomicU64,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
     /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
@@ -133,6 +141,7 @@ impl PlatformAddressSyncManager {
             event_manager,
             background_cancel: StdMutex::new(None),
             background_join: StdMutex::new(None),
+            background_generation: AtomicU64::new(0),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
             quiescing: AtomicBool::new(false),
@@ -203,12 +212,19 @@ impl PlatformAddressSyncManager {
     /// The first pass runs immediately; subsequent passes fire every
     /// [`interval`](Self::interval).
     pub fn start(self: Arc<Self>) {
-        let mut cancel_guard = self.background_cancel.lock().expect("bg_cancel poisoned");
+        let mut cancel_guard = self
+            .background_cancel
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if cancel_guard.is_some() {
             return;
         }
         let cancel = CancellationToken::new();
         *cancel_guard = Some(cancel.clone());
+        // Bump the generation while we still hold the slot lock so any
+        // prior thread's cleanup observes `current_gen != my_gen` ordered
+        // against this token swap.
+        let my_gen = self.background_generation.fetch_add(1, Ordering::AcqRel) + 1;
 
         let handle = tokio::runtime::Handle::current();
         let this = Arc::clone(&self);
@@ -221,7 +237,22 @@ impl PlatformAddressSyncManager {
                             break;
                         }
 
-                        this.sync_now().await;
+                        // Race the in-flight pass against cancellation.
+                        // `stop()` / `quiesce()` cancel the token; with
+                        // `biased` the cancel arm is polled first, so a
+                        // pass stalled on a hung SDK fetch is dropped at
+                        // its `.await` the instant we cancel. Dropping the
+                        // `sync_now` future unwinds to the `is_syncing`
+                        // `AtomicFlagGuard` it holds, clearing the flag
+                        // promptly — so `quiesce()`'s drain loop frees and
+                        // the join lands well inside `shutdown()`'s
+                        // timeout. A stalled pass can no longer strand a
+                        // live `!Send` thread past `shutdown()`.
+                        tokio::select! {
+                            biased;
+                            _ = cancel.cancelled() => break,
+                            _ = this.sync_now() => {}
+                        }
 
                         let interval = this.interval();
                         tokio::select! {
@@ -230,8 +261,15 @@ impl PlatformAddressSyncManager {
                         }
                     }
 
+                    // Only clear the slot if no newer start() has
+                    // installed a replacement token since we launched —
+                    // mirrors the identity / shielded coordinators so a
+                    // stop() → start() reschedule can't have this exiting
+                    // thread strip the new generation's cancel token.
                     if let Ok(mut guard) = this.background_cancel.lock() {
-                        *guard = None;
+                        if this.background_generation.load(Ordering::Acquire) == my_gen {
+                            *guard = None;
+                        }
                     }
                 });
             })
@@ -239,7 +277,10 @@ impl PlatformAddressSyncManager {
         // Store the join handle while still holding cancel_guard — a
         // concurrent quiesce() must wait for this lock before calling
         // stop(), so the handle is always stored before it can be taken.
-        *self.background_join.lock().expect("bg_join poisoned") = Some(join);
+        *self
+            .background_join
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(join);
         // cancel_guard drops here, releasing background_cancel.
     }
 
@@ -256,7 +297,7 @@ impl PlatformAddressSyncManager {
         if let Some(token) = self
             .background_cancel
             .lock()
-            .expect("bg_cancel poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .take()
         {
             token.cancel();
@@ -290,15 +331,21 @@ impl PlatformAddressSyncManager {
     /// one-shot host drops the runtime.
     pub async fn quiesce(&self) -> super::CoordinatorThreadStatus {
         self.quiescing.store(true, Ordering::Release);
+        // RAII gate: resets `quiescing` on *every* exit path — a normal
+        // return, a timed-out `shutdown()` dropping this future, or a
+        // panic. Without it a quiesce that doesn't run to completion
+        // leaves the gate latched `true`, silently bailing every future
+        // pass. Reopening on drop is safe because `stop()` (below) has
+        // already cancelled the loop, so no new pass can start.
+        let _quiescing_gate = AtomicFlagGuard::new(&self.quiescing);
         self.stop();
         while self.is_syncing.load(Ordering::Acquire) {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        self.quiescing.store(false, Ordering::Release);
         let handle = self
             .background_join
             .lock()
-            .expect("bg_join poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .take();
         super::join_coordinator_thread(handle).await
     }
