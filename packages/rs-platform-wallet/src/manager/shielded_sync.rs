@@ -237,6 +237,38 @@ impl ShieldedSyncManager {
         if cancel_guard.is_some() {
             return;
         }
+
+        // Drain any handle left by a prior stop() call. stop() takes-and-cancels
+        // the token but never touches background_join, so a stop()→start()
+        // sequence would otherwise overwrite (detach) the old handle —
+        // shutdown() would then miss that thread and join() only the new one.
+        // The old thread was already cancellation-signalled, so is_finished()
+        // becomes true within a few milliseconds; we spin-wait to guarantee
+        // no detached thread can fire callbacks after destroy() returns.
+        {
+            let prior = self
+                .background_join
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take();
+            if let Some(h) = prior {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+                while !h.is_finished() {
+                    if std::time::Instant::now() >= deadline {
+                        tracing::warn!(
+                            "shielded-sync prior thread did not finish within 1 s \
+                             after cancellation; detaching to unblock start()"
+                        );
+                        break; // Drop h — detaches; thread was already cancelled.
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                if h.is_finished() {
+                    let _ = h.join(); // Reap resources; near-instant since finished.
+                }
+            }
+        }
+
         let cancel = CancellationToken::new();
         *cancel_guard = Some(cancel.clone());
         // Bump the generation while we still hold the slot lock so

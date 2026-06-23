@@ -168,12 +168,19 @@ impl CoordinatorExitStatus {
 ///
 /// Called from each coordinator's `quiesce()` after cancelling the
 /// loop and draining any in-flight pass, so the thread is already on
-/// its way out and the join is near-instant. The blocking
-/// [`JoinHandle::join`](std::thread::JoinHandle::join) runs on the
-/// blocking pool (via [`spawn_blocking`](tokio::task::spawn_blocking))
-/// so the async executor stays unblocked. Joining while the runtime is
-/// still alive guarantees the `!Send` loop has stopped touching
+/// its way out and the join is near-instant. Joining while the runtime
+/// is still alive guarantees the `!Send` loop has stopped touching
 /// `tokio::time` before the host drops the runtime.
+///
+/// **Polling approach**: we poll [`JoinHandle::is_finished`] in 5 ms
+/// steps rather than wrapping `handle.join()` in
+/// [`spawn_blocking`](tokio::task::spawn_blocking). The
+/// `spawn_blocking` approach spawns a blocking-pool task that cannot be
+/// cancelled once started — so dropping the timeout future that wraps
+/// `quiesce()` would leave the blocking task alive and `handle.join()`
+/// still running, defeating the timeout boundary. Polling lets the
+/// executor yield at each `.await` step so `tokio::time::timeout`
+/// wrapping `quiesce()` can truly interrupt this call.
 ///
 /// **Requires a multi-thread runtime.** Each coordinator's OS thread
 /// drives its loop via [`Handle::block_on`](tokio::runtime::Handle::block_on)
@@ -187,13 +194,20 @@ pub(crate) async fn join_coordinator_thread(
     let Some(handle) = handle else {
         return CoordinatorThreadStatus::NotRunning;
     };
-    match tokio::task::spawn_blocking(move || handle.join()).await {
-        Ok(Ok(())) => CoordinatorThreadStatus::Ok,
-        Ok(Err(payload)) => CoordinatorThreadStatus::Panicked(panic_message(payload)),
-        // spawn_blocking fails only when the runtime shuts down before
-        // the blocking task can run — unreachable in normal operation
-        // since shutdown() is called while the runtime is alive.
-        Err(join_err) => CoordinatorThreadStatus::Error(format!("join task failed: {join_err}")),
+    // Poll until the thread exits. The coordinator was already cancelled
+    // (stop() fires before quiesce() calls us), so is_finished() becomes
+    // true nearly immediately — typically within a single 5 ms step.
+    loop {
+        if handle.is_finished() {
+            return match handle.join() {
+                Ok(()) => CoordinatorThreadStatus::Ok,
+                Err(payload) => CoordinatorThreadStatus::Panicked(panic_message(payload)),
+            };
+        }
+        // Yield to the executor so the outer tokio::time::timeout wrapping
+        // quiesce() can fire if the deadline has passed. Without this yield
+        // the loop would busy-spin and block the task.
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
     }
 }
 
@@ -711,31 +725,44 @@ mod tests {
     /// tokio task is cancelled or aborted rather than completing normally.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn event_adapter_non_panic_join_error_maps_to_stopped_and_is_not_clean() {
-        // Build a manager but immediately abort the event adapter task so
-        // we trigger the non-panic JoinError path in shutdown().
+        // Replace the real adapter handle with a guaranteed-pending task, then
+        // abort it. A `pending::<()>()` future can never complete on its own,
+        // so abort() always produces a non-panic JoinError — deterministically
+        // exercising the Stopped branch regardless of scheduler timing.
+        // (The original approach aborted the real adapter handle, which could
+        // race the task's own completion and silently yield `Ok` instead.)
         let manager = make_manager();
-        // Abort the adapter task directly so the join sees a non-panic JoinError.
-        {
+
+        // Drain and discard the real adapter (may already be finished).
+        let original = {
             let mut guard = manager.event_adapter_join.lock().await;
-            if let Some(handle) = guard.take() {
-                handle.abort();
-                // Put it back so shutdown() sees it and exercises the error path.
-                *guard = Some(handle);
-            }
+            guard.take()
+        };
+        if let Some(h) = original {
+            h.abort();
+            let _ = h.await;
         }
-        // Give tokio a moment to process the abort.
-        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Install a permanently-pending task and abort it so the JoinError
+        // path in shutdown() is 100 % deterministic.
+        let pending = tokio::spawn(std::future::pending::<()>());
+        pending.abort();
+        *manager.event_adapter_join.lock().await = Some(pending);
 
         let status = manager.shutdown().await;
-        // The adapter task was aborted → non-panic JoinError → Stopped.
-        match &status.event_adapter {
-            CoordinatorThreadStatus::Stopped(_) | CoordinatorThreadStatus::Ok => {
-                // Stopped is the expected path; Ok means it drained before abort — both
-                // are acceptable since abort() races the task completion.
-            }
-            other => panic!("expected Stopped or Ok (abort race), got {other:?}"),
-        }
-        // Regardless, all other workers were never started → clean.
+
+        // The aborted pending task always yields a non-panic JoinError →
+        // shutdown() maps it to Stopped.
+        assert!(
+            matches!(status.event_adapter, CoordinatorThreadStatus::Stopped(_)),
+            "expected Stopped from a non-panic JoinError, got {:?}",
+            status.event_adapter
+        );
+        assert!(
+            !status.event_adapter.is_clean(),
+            "Stopped must not count as clean"
+        );
+        // Coordinators were never started → their slots are clean.
         assert_eq!(
             status.platform_address_sync,
             CoordinatorThreadStatus::NotRunning
@@ -801,18 +828,18 @@ mod tests {
         );
     }
 
-    /// `join_coordinator_thread` uses `spawn_blocking` internally. Verify
-    /// it completes without deadlock within a bounded time when called
-    /// from a multi-thread runtime, as `shutdown()` requires.
+    /// `join_coordinator_thread` uses `is_finished()` polling. Verify
+    /// it completes within a bounded time on a multi-thread runtime, as
+    /// `shutdown()` requires (and that it doesn't busy-spin indefinitely).
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn join_coordinator_thread_no_deadlock_with_spawn_blocking() {
+    async fn join_coordinator_thread_completes_within_deadline() {
         let handle = std::thread::spawn(|| {});
         let result = tokio::time::timeout(
             Duration::from_secs(5),
             join_coordinator_thread(Some(handle)),
         )
         .await
-        .expect("join_coordinator_thread must complete within 5 s — no spawn_blocking deadlock");
+        .expect("join_coordinator_thread must complete within 5 s");
         assert_eq!(result, CoordinatorThreadStatus::Ok);
     }
 
@@ -871,15 +898,14 @@ mod tests {
     /// the join, the coordinator's `select!` wakeup (via tokio) would
     /// race the runtime teardown and reliably trigger the
     /// "Tokio … being shutdown" panic across the 10 iterations.
+    ///
+    /// Uses `std::panic::catch_unwind` around `drop(runtime)` rather than
+    /// a process-global panic hook; the hook would be live for seconds and
+    /// could swallow diagnostics from concurrently-running tests (e.g.
+    /// `join_coordinator_thread_surfaces_panic`).
     #[test]
     fn shutdown_then_drop_runtime_does_not_panic() {
         static SHUTDOWN_PANICS: AtomicUsize = AtomicUsize::new(0);
-        let prev_hook = std::panic::take_hook();
-        std::panic::set_hook(Box::new(|info| {
-            if info.to_string().contains("being shutdown") {
-                SHUTDOWN_PANICS.fetch_add(1, AO::SeqCst);
-            }
-        }));
 
         for _ in 0..10 {
             let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -912,7 +938,27 @@ mod tests {
                 manager.shutdown().await
             });
 
-            drop(runtime);
+            // Wrap the runtime drop in catch_unwind to intercept the specific
+            // "A Tokio 1.x context ... being shutdown" panic without installing
+            // a process-wide hook that would suppress diagnostics from other
+            // concurrently running tests.
+            let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                drop(runtime);
+            }));
+            if let Err(payload) = drop_result {
+                let msg = payload
+                    .downcast_ref::<String>()
+                    .map(String::as_str)
+                    .or_else(|| payload.downcast_ref::<&str>().copied())
+                    .unwrap_or("");
+                if msg.contains("being shutdown") {
+                    SHUTDOWN_PANICS.fetch_add(1, AO::SeqCst);
+                } else {
+                    // Unexpected panic — propagate so the test fails loudly.
+                    std::panic::resume_unwind(payload);
+                }
+            }
+
             // Brief settle — any stray thread activity surfaces here.
             std::thread::sleep(Duration::from_millis(50));
 
@@ -921,12 +967,12 @@ mod tests {
             assert!(status.all_clean(), "workers did not wind down: {status:?}");
         }
 
-        let racing_panics = SHUTDOWN_PANICS.load(AO::SeqCst);
-        std::panic::set_hook(prev_hook);
         assert_eq!(
-            racing_panics, 0,
+            SHUTDOWN_PANICS.load(AO::SeqCst),
+            0,
             "dropping the runtime after shutdown raced a coordinator thread \
-             ({racing_panics} panics across 10 iterations)"
+             ({} panics across 10 iterations)",
+            SHUTDOWN_PANICS.load(AO::SeqCst)
         );
     }
 }

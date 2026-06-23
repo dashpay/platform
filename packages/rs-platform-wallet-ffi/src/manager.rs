@@ -367,7 +367,18 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
         if !status.all_clean() {
             tracing::warn!(
                 ?status,
-                "platform wallet coordinator(s) did not exit cleanly"
+                "platform wallet coordinator(s) did not exit cleanly; \
+                 host must not free the callback context immediately"
+            );
+            // Return a distinct non-ok code so the host can delay freeing
+            // its callback context. A lingering coordinator thread (e.g. one
+            // that timed out) still holds an Arc to the event handler and may
+            // fire one final callback through the host-owned context pointer;
+            // returning ok() here would signal that the context is safe to
+            // free when it may not be yet.
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
+                format!("coordinator(s) did not exit cleanly: {status:?}"),
             );
         } else {
             tracing::debug!(?status, "platform wallet coordinators joined cleanly");

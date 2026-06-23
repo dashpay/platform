@@ -125,6 +125,15 @@ pub enum PlatformWalletFFIResultCode {
     /// and could double-send if the original spend landed.
     ErrorShieldedSpendUnconfirmed = 18,
 
+    /// One or more background coordinator threads did not exit cleanly before
+    /// the 30 s join deadline. The host **must not** free the callback context
+    /// immediately — a lingering thread may still hold a reference to it and
+    /// fire one final callback. Either keep the context alive for a further
+    /// grace period, or accept the potential (but statistically tiny) race.
+    /// This is distinct from a normal operation error; the manager IS torn
+    /// down; the host should not retry `destroy`.
+    ErrorShutdownIncomplete = 19,
+
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
 }
