@@ -151,9 +151,11 @@ pub struct CoordinatorExitStatus {
 }
 
 impl CoordinatorExitStatus {
-    /// `true` when every worker wound down without a panic (each is
+    /// `true` only when every worker is
     /// [`Ok`](CoordinatorThreadStatus::Ok) or
-    /// [`NotRunning`](CoordinatorThreadStatus::NotRunning)).
+    /// [`NotRunning`](CoordinatorThreadStatus::NotRunning); any
+    /// `Stopped`, `Panicked`, `Timeout`, or `Error` slot makes it
+    /// `false`.
     pub fn all_clean(&self) -> bool {
         self.platform_address_sync.is_clean()
             && self.identity_sync.is_clean()
@@ -173,8 +175,12 @@ impl CoordinatorExitStatus {
 /// still alive guarantees the `!Send` loop has stopped touching
 /// `tokio::time` before the host drops the runtime.
 ///
-/// **Requires a multi-thread runtime** — `spawn_blocking` is not
-/// available on `current_thread` runtimes and will panic there.
+/// **Requires a multi-thread runtime.** Each coordinator's OS thread
+/// drives its loop via [`Handle::block_on`](tokio::runtime::Handle::block_on)
+/// and needs the runtime's timer/IO driver; a `current_thread` runtime
+/// can only service one `block_on` at a time, so joining one coordinator
+/// while the others (and `shutdown()` itself) are mid-`block_on` would
+/// deadlock. `shutdown()` asserts the multi-thread flavor up front.
 pub(crate) async fn join_coordinator_thread(
     handle: Option<std::thread::JoinHandle<()>>,
 ) -> CoordinatorThreadStatus {
@@ -186,7 +192,7 @@ pub(crate) async fn join_coordinator_thread(
         Ok(Err(payload)) => CoordinatorThreadStatus::Panicked(panic_message(payload)),
         // spawn_blocking fails only when the runtime shuts down before
         // the blocking task can run — unreachable in normal operation
-        // since shutdown() is called while the runtime is alive (F-6).
+        // since shutdown() is called while the runtime is alive.
         Err(join_err) => CoordinatorThreadStatus::Error(format!("join task failed: {join_err}")),
     }
 }
@@ -203,12 +209,18 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
-/// Maximum time (seconds) `shutdown()` waits for one coordinator's
-/// quiesce+join to complete. Under normal operation this deadline is
-/// never reached (the RAII `is_syncing` guard ensures the drain exits
-/// even on panic). On timeout the coordinator slot reports
-/// [`CoordinatorThreadStatus::Timeout`].
-const SHUTDOWN_JOIN_TIMEOUT_SECS: u64 = 30;
+/// Maximum time (seconds) the teardown paths — `shutdown()`,
+/// `clear_shielded`, and the FFI shielded-stop bridge — wait for one
+/// coordinator's quiesce+join to complete.
+///
+/// This is a backstop, not the primary stop mechanism. `quiesce()`
+/// cancels the loop, which aborts any in-flight pass at its `.await`
+/// point (see each coordinator's `start()` select), so the `is_syncing`
+/// drain clears promptly and the join normally lands far inside this
+/// window. The deadline fires only if a pass's *drop* itself wedges
+/// (e.g. a blocking destructor); on timeout the coordinator slot reports
+/// [`CoordinatorThreadStatus::Timeout`] rather than hanging forever.
+pub const SHUTDOWN_JOIN_TIMEOUT_SECS: u64 = 30;
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Create a new PlatformWalletManager.
@@ -403,7 +415,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// must not commit its own persistence wipe in that case.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
-        self.shielded_sync_manager.quiesce().await;
+        // Bound the quiesce with the same backstop `shutdown()` uses so a
+        // stalled in-flight pass can't hang Clear forever — cancellation
+        // makes the drain prompt; this timeout only matters if a pass's
+        // drop wedges. The terminal status isn't surfaced on the Clear
+        // path (the coordinator reset below is what can fail), so the
+        // timeout result is intentionally discarded.
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(SHUTDOWN_JOIN_TIMEOUT_SECS),
+            self.shielded_sync_manager.quiesce(),
+        )
+        .await;
         if let Some(coord) = self.shielded_coordinator().await {
             coord.clear().await?;
         }
@@ -439,23 +461,35 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// [`CoordinatorExitStatus`] reports per-thread how each worker ended.
     ///
     /// **Precondition: must be called from a multi-thread Tokio runtime.**
-    /// `quiesce()` uses `spawn_blocking` internally; calling from a
-    /// `current_thread` runtime will panic (this is a real invariant
-    /// enforced in both debug and release builds).
+    /// Each coordinator's OS thread drives its loop via
+    /// [`Handle::block_on`](tokio::runtime::Handle::block_on) and needs
+    /// the runtime's timer/IO driver; a `current_thread` runtime can only
+    /// service one `block_on` at a time, so the join would deadlock. This
+    /// is asserted in both debug and release builds.
     ///
     /// Each coordinator quiesce+join is bounded by
-    /// [`SHUTDOWN_JOIN_TIMEOUT_SECS`]. If a coordinator does not exit
-    /// within that window, its slot reports
+    /// [`SHUTDOWN_JOIN_TIMEOUT_SECS`] as a backstop. `quiesce()` cancels
+    /// the loop, which aborts any in-flight pass at its `.await` point, so
+    /// the `is_syncing` drain clears promptly and the join normally lands
+    /// far inside the window — the deadline fires only if a pass's *drop*
+    /// itself wedges. On timeout the coordinator slot reports
     /// [`CoordinatorThreadStatus::Timeout`] rather than hanging forever.
-    /// Under normal operation (no infinite loops, RAII guard clears
-    /// `is_syncing` even on panic) this timeout is never reached.
+    ///
+    /// The clear-on-panic half of that guarantee rides on unwinding, so
+    /// it holds under `panic = "unwind"`. Under the iOS `panic = "abort"`
+    /// release profiles a pass panic aborts the process outright (no
+    /// `Drop`, no status) — there is no live manager left to read a
+    /// status from.
     pub async fn shutdown(&self) -> CoordinatorExitStatus {
         assert!(
             matches!(
                 tokio::runtime::Handle::current().runtime_flavor(),
                 tokio::runtime::RuntimeFlavor::MultiThread
             ),
-            "shutdown() requires a multi-thread Tokio runtime (spawn_blocking inside quiesce)"
+            "shutdown() requires a multi-thread Tokio runtime: each \
+             coordinator's OS thread drives its sync loop via \
+             Handle::block_on and needs the runtime's timer/IO driver, but \
+             a current_thread runtime can only drive one block_on at a time"
         );
 
         let timeout = std::time::Duration::from_secs(SHUTDOWN_JOIN_TIMEOUT_SECS);
@@ -484,12 +518,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // stores), so cancel + join it last — after the loops feeding it
         // are gone.
         self.event_adapter_cancel.cancel();
-        let event_adapter = match self.event_adapter_join.lock().await.take() {
+        // Take the handle out into a local first so the `tokio::Mutex`
+        // guard doesn't stay held across the (up-to-30s) join `.await`
+        // below — a match scrutinee temporary would otherwise keep the
+        // guard alive for the whole match.
+        let event_adapter_handle = self.event_adapter_join.lock().await.take();
+        let event_adapter = match event_adapter_handle {
             None => CoordinatorThreadStatus::NotRunning,
             Some(handle) => match tokio::time::timeout(timeout, handle).await {
                 Ok(Ok(())) => CoordinatorThreadStatus::Ok,
+                // The returned status already carries this failure, and the
+                // FFI `destroy` adapter logs the aggregate once at the host
+                // layer — so don't double-log here.
                 Ok(Err(e)) => {
-                    tracing::warn!(error = ?e, "Wallet event adapter task join error");
                     if e.is_panic() {
                         CoordinatorThreadStatus::Panicked(panic_message(e.into_panic()))
                     } else {
@@ -560,7 +601,8 @@ mod tests {
     }
 
     /// Build a manager that fires a slow (300 ms std::thread::sleep) callback
-    /// on `on_platform_address_sync_completed`. Used by F-2 drain test.
+    /// on `on_platform_address_sync_completed`. Used by the in-flight-pass
+    /// drain test.
     fn make_manager_with_slow_handler(
         started: Arc<AtomicBool>,
         completed: Arc<AtomicBool>,
@@ -592,10 +634,10 @@ mod tests {
         Arc::clone(&m.shielded_sync_manager).start();
     }
 
-    /// (1)+(5)+(6) Happy path: `shutdown()` joins every started worker
-    /// and reports `Ok`; it completes within a bounded time (no
-    /// `spawn_blocking` starvation/deadlock); a second `shutdown()` finds
-    /// nothing left to join (`NotRunning`) — idempotent.
+    /// Happy path: `shutdown()` joins every started worker and reports
+    /// `Ok`; it completes within a bounded time (no `spawn_blocking`
+    /// starvation/deadlock); a second `shutdown()` finds nothing left to
+    /// join (`NotRunning`) — idempotent.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn shutdown_joins_all_workers_reports_ok_and_is_idempotent() {
         let manager = make_manager();
@@ -627,7 +669,7 @@ mod tests {
         assert!(again.all_clean());
     }
 
-    /// (2) Never-started coordinators report `NotRunning` (no thread to
+    /// Never-started coordinators report `NotRunning` (no thread to
     /// join). The event adapter is spawned in `new`, so it still joins
     /// `Ok`.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -651,7 +693,7 @@ mod tests {
         assert!(status.all_clean());
     }
 
-    /// (4) A coordinator thread that panics surfaces as `Panicked` rather
+    /// A coordinator thread that panics surfaces as `Panicked` rather
     /// than being silently dropped.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn join_coordinator_thread_surfaces_panic() {
@@ -759,9 +801,9 @@ mod tests {
         );
     }
 
-    /// F-7: `join_coordinator_thread` uses `spawn_blocking` internally.
-    /// Verify it completes without deadlock within a bounded time when
-    /// called from a multi-thread runtime, as `shutdown()` requires.
+    /// `join_coordinator_thread` uses `spawn_blocking` internally. Verify
+    /// it completes without deadlock within a bounded time when called
+    /// from a multi-thread runtime, as `shutdown()` requires.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn join_coordinator_thread_no_deadlock_with_spawn_blocking() {
         let handle = std::thread::spawn(|| {});
@@ -774,8 +816,8 @@ mod tests {
         assert_eq!(result, CoordinatorThreadStatus::Ok);
     }
 
-    /// F-2: `shutdown()` must wait for an in-flight sync pass to drain
-    /// before joining the coordinator thread.
+    /// `shutdown()` must wait for an in-flight sync pass to drain before
+    /// joining the coordinator thread.
     ///
     /// A slow `on_platform_address_sync_completed` callback (300 ms)
     /// keeps `is_syncing=true` while it runs. We call `shutdown()` while
@@ -819,9 +861,9 @@ mod tests {
         );
     }
 
-    /// F-3 (strengthened): race regression — start coordinators with a
-    /// long sleep interval so they spend nearly all their time in a live
-    /// `tokio::time::sleep`, then `shutdown()` and drop the runtime.
+    /// Race regression — start coordinators with a long sleep interval so
+    /// they spend nearly all their time in a live `tokio::time::sleep`,
+    /// then `shutdown()` and drop the runtime.
     ///
     /// With the thread join in `shutdown()` every coordinator has fully
     /// exited its `block_on` before `drop(runtime)` — no race possible.
