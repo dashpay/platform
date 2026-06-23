@@ -68,6 +68,18 @@ pub const SIGN_WITH_RESOLVER_ERR_RESOLVER_NOT_FOUND: u8 = 9;
 /// Resolver callback returned `mnemonic_resolver_result::OTHER`.
 pub const SIGN_WITH_RESOLVER_ERR_RESOLVER_FAILED: u8 = 10;
 
+/// RAII guard that scrubs an [`ExtendedPrivKey`]'s secret scalar on drop, so an
+/// early `return`, `?`, or panic between derivation and use can't leak it (the
+/// type has no upstream `Drop`/`Zeroize`). Mirrors `WipingXprv` in
+/// `rs-sdk-ffi/src/mnemonic_resolver_core_signer.rs`.
+struct WipingXprv(ExtendedPrivKey);
+
+impl Drop for WipingXprv {
+    fn drop(&mut self) {
+        self.0.private_key.non_secure_erase();
+    }
+}
+
 /// Sign `data` with the ECDSA secp256k1 private key derived from
 /// `(mnemonic-via-resolver, derivation_path)`. Mnemonic, seed and
 /// derived secret bytes all stay in `Zeroizing` buffers and are
@@ -200,27 +212,19 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
     };
 
     let kw_network: Network = network.into();
-    let mut master = match ExtendedPrivKey::new_master(kw_network, seed.as_ref()) {
-        Ok(m) => m,
+    // `WipingXprv` scrubs both scalars on drop, covering the early `return`
+    // below (master is guarded the moment it is built) and any panic between
+    // here and signing. (Upstream `ExtendedPrivKey` has no `Drop`/`Zeroize`.)
+    let master = match ExtendedPrivKey::new_master(kw_network, seed.as_ref()) {
+        Ok(m) => WipingXprv(m),
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
     };
     let secp = Secp256k1::new();
-    let mut derived = match master.derive_priv(&secp, &path) {
-        Ok(d) => d,
+    let derived = match master.0.derive_priv(&secp, &path) {
+        Ok(d) => WipingXprv(d),
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
     };
-    let secret_bytes: Zeroizing<[u8; 32]> = Zeroizing::new(derived.private_key.secret_bytes());
-
-    // TODO(upstream): `key_wallet::bip32::ExtendedPrivKey` has no
-    // `Drop` / `Zeroize` impl — the inner `secp256k1::SecretKey`
-    // scalars on `master` and `derived` would otherwise drop un-wiped.
-    // Proper fix is a `Zeroize` / `ZeroizeOnDrop` impl in
-    // `dashpay/rust-dashcore`'s `key-wallet/src/bip32.rs`; until that
-    // lands, wipe the two SecretKey fields explicitly here. Mirrored
-    // in the sibling Rust signer at
-    // `rs-sdk-ffi/src/mnemonic_resolver_core_signer.rs::derive_priv`.
-    master.private_key.non_secure_erase();
-    derived.private_key.non_secure_erase();
+    let secret_bytes: Zeroizing<[u8; 32]> = Zeroizing::new(derived.0.private_key.secret_bytes());
 
     // ---- Sign ---------------------------------------------------------------
     let data_slice: &[u8] = if data_len == 0 {
