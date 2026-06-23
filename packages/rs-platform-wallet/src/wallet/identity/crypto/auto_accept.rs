@@ -79,25 +79,34 @@ fn build_message_hash(
     sha256::Hash::from_engine(engine).to_byte_array()
 }
 
+/// The DIP-15 auto-accept derivation path `m/9'/coin'/16'/expiry'` (all
+/// hardened). The owner derives the key here (for the QR / verify); `expiry`
+/// is the hardened leaf, so it must be ≤ 2^31−1 (rejected otherwise).
+pub fn auto_accept_derivation_path(
+    network: Network,
+    expiry: u32,
+) -> Result<DerivationPath, PlatformWalletError> {
+    let coin_type: u32 = match network {
+        Network::Mainnet => 5,
+        _ => 1,
+    };
+    Ok(DerivationPath::from(vec![
+        ChildNumber::from_hardened_idx(9).expect("valid"),
+        ChildNumber::from_hardened_idx(coin_type).expect("valid"),
+        ChildNumber::from_hardened_idx(DASHPAY_AUTO_ACCEPT_FEATURE).expect("valid"),
+        ChildNumber::from_hardened_idx(expiry).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("Invalid expiry index: {}", e))
+        })?,
+    ]))
+}
+
 /// Derive the auto-accept private key at `m/9'/coin'/16'/timestamp'`.
 pub fn derive_auto_accept_private_key(
     wallet: &Wallet,
     network: Network,
     timestamp: u32,
 ) -> Result<SecretKey, PlatformWalletError> {
-    let coin_type: u32 = match network {
-        Network::Mainnet => 5,
-        _ => 1,
-    };
-
-    let path = DerivationPath::from(vec![
-        ChildNumber::from_hardened_idx(9).expect("valid"),
-        ChildNumber::from_hardened_idx(coin_type).expect("valid"),
-        ChildNumber::from_hardened_idx(DASHPAY_AUTO_ACCEPT_FEATURE).expect("valid"),
-        ChildNumber::from_hardened_idx(timestamp).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!("Invalid timestamp index: {}", e))
-        })?,
-    ]);
+    let path = auto_accept_derivation_path(network, timestamp)?;
 
     let ext_priv = wallet.derive_extended_private_key(&path).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!("Failed to derive auto-accept key: {}", e))

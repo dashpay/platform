@@ -1046,6 +1046,12 @@ pub enum PendingContactCryptoOp {
     /// Re-fetch + decrypt this identity's contactInfo documents. Idempotent;
     /// carries no payload (the drain re-fetches the owned docs).
     ContactInfoDecrypt,
+    /// Verify a DIP-15 `autoAcceptProof` on an inbound contact request and, if
+    /// valid + unexpired, auto-accept it (send the reciprocal). No payload — the
+    /// `contact_id` is the request sender; the drain re-loads the request (and
+    /// its proof) from the incoming-requests map. Verify + accept both need a
+    /// signer, so this can only run in the signer-present drain, never the sweep.
+    AutoAccept,
 }
 
 /// The kind discriminant of a [`PendingContactCryptoOp`] — the part of the
@@ -1056,6 +1062,7 @@ pub enum PendingContactCryptoKind {
     RegisterReceiving,
     RegisterExternal,
     ContactInfoDecrypt,
+    AutoAccept,
 }
 
 impl PendingContactCryptoOp {
@@ -1065,6 +1072,7 @@ impl PendingContactCryptoOp {
             Self::RegisterReceiving => PendingContactCryptoKind::RegisterReceiving,
             Self::RegisterExternal { .. } => PendingContactCryptoKind::RegisterExternal,
             Self::ContactInfoDecrypt => PendingContactCryptoKind::ContactInfoDecrypt,
+            Self::AutoAccept => PendingContactCryptoKind::AutoAccept,
         }
     }
 }

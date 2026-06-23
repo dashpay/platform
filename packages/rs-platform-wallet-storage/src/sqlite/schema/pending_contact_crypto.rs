@@ -31,6 +31,7 @@ pub const KIND_LABELS: &[&str] = &[
     "register_receiving",
     "register_external",
     "contact_info_decrypt",
+    "auto_accept",
 ];
 
 fn kind_db_label(kind: PendingContactCryptoKind) -> &'static str {
@@ -38,6 +39,7 @@ fn kind_db_label(kind: PendingContactCryptoKind) -> &'static str {
         PendingContactCryptoKind::RegisterReceiving => "register_receiving",
         PendingContactCryptoKind::RegisterExternal => "register_external",
         PendingContactCryptoKind::ContactInfoDecrypt => "contact_info_decrypt",
+        PendingContactCryptoKind::AutoAccept => "auto_accept",
     }
 }
 
@@ -140,6 +142,7 @@ mod tests {
             PendingContactCryptoKind::RegisterReceiving,
             PendingContactCryptoKind::RegisterExternal,
             PendingContactCryptoKind::ContactInfoDecrypt,
+            PendingContactCryptoKind::AutoAccept,
         ]
         .into_iter()
         .map(kind_db_label)

@@ -758,17 +758,25 @@ fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, Plat
 // Sync contact requests from platform
 // ---------------------------------------------------------------------------
 
-/// Count the **account-build** ops in a deferred-crypto queue.
+/// Max `AutoAccept` ops queued per owner. Bounds the work a flood of
+/// junk-`autoAcceptProof` contact requests can create for the owner's next
+/// signer-present drain; over the cap, requests stay manually acceptable.
+const MAX_AUTO_ACCEPT_QUEUED_PER_OWNER: usize = 64;
+
+/// Count the ops that represent a contact **waiting for an unlock to finish
+/// setup** — the needs-unlock banner's source.
 ///
 /// `RegisterReceiving` / `RegisterExternal` build a contact's payment account
-/// and need a signer unlock to complete; they converge to 0 once drained
-/// (candidate selection skips contacts whose external account already exists),
-/// so their count is an actionable "waiting for unlock" backlog.
+/// and converge to 0 once drained (candidate selection skips contacts whose
+/// external account already exists). `AutoAccept` is an inbound request with a
+/// valid-looking proof awaiting auto-acceptance at the next signer-present drain
+/// — also "waiting to finish setup," and it clears on accept/permanent-reject,
+/// so it converges too.
 ///
 /// `ContactInfoDecrypt` is intentionally excluded: it is re-enqueued on every
 /// signerless sweep (there is no already-decrypted gate), so it is structurally
-/// always present and would make a "needs unlock" signal a permanent `> 0` —
-/// re-tripping the banner shortly after every unlock on a healthy wallet.
+/// always present and would make the signal a permanent `> 0` — re-tripping the
+/// banner shortly after every unlock on a healthy wallet.
 fn count_account_build_ops(queue: &[crate::changeset::PendingContactCrypto]) -> usize {
     use crate::changeset::PendingContactCryptoOp;
     queue
@@ -778,6 +786,7 @@ fn count_account_build_ops(queue: &[crate::changeset::PendingContactCrypto]) -> 
                 e.op,
                 PendingContactCryptoOp::RegisterReceiving
                     | PendingContactCryptoOp::RegisterExternal { .. }
+                    | PendingContactCryptoOp::AutoAccept
             )
         })
         .count()
@@ -1066,6 +1075,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             for candidate in candidates {
                 self.build_contact_accounts(&identity_id, candidate).await;
             }
+
+            // (4) Enqueue DIP-15 auto-accept for inbound requests carrying a
+            //     proof. Signerless: verify + accept happen later in
+            //     `drain_auto_accepts` at a signer-present moment.
+            self.enqueue_pending_auto_accepts(&identity_id).await;
         }
 
         Ok(all_requests)
@@ -1092,6 +1106,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .get("encryptedPublicKey")
             .and_then(|v: &Value| v.as_bytes())
             .cloned();
+        // Optional DIP-15 auto-accept proof — read so the sweep can enqueue an
+        // `AutoAccept` drain. Without this it would be dropped (the proof can't
+        // be acted on if it never reaches the request), so the contact would only
+        // ever be addable manually.
+        let auto_accept_proof = props
+            .get("autoAcceptProof")
+            .and_then(|v: &Value| v.as_bytes())
+            .cloned();
 
         match (
             sender_key_index,
@@ -1099,16 +1121,20 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             account_reference,
             encrypted_public_key,
         ) {
-            (Some(ski), Some(rki), Some(ar), Some(epk)) => Some(ContactRequest::new(
-                sender_id,
-                recipient_id,
-                ski,
-                rki,
-                ar,
-                epk,
-                doc.created_at_core_block_height().unwrap_or(0),
-                doc.created_at().unwrap_or(0),
-            )),
+            (Some(ski), Some(rki), Some(ar), Some(epk)) => {
+                let mut request = ContactRequest::new(
+                    sender_id,
+                    recipient_id,
+                    ski,
+                    rki,
+                    ar,
+                    epk,
+                    doc.created_at_core_block_height().unwrap_or(0),
+                    doc.created_at().unwrap_or(0),
+                );
+                request.auto_accept_proof = auto_accept_proof;
+                Some(request)
+            }
             _ => {
                 tracing::warn!(
                     sender = %sender_id,
@@ -1130,6 +1156,104 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         // Same field set as the received side; the only difference is which
         // identity is owner vs recipient.
         Self::parse_contact_request_doc(doc, owner_id, recipient_id)
+    }
+
+    /// Enqueue a DIP-15 `AutoAccept` op for each inbound contact request to
+    /// `identity_id` that carries a structurally-valid `autoAcceptProof` and is
+    /// not yet established — so the next signer-present [`drain_auto_accepts`]
+    /// verifies + auto-accepts it. Signerless (the sweep has no signer): only a
+    /// cheap structural pre-check (length + ECDSA key-type byte) runs here; the
+    /// cryptographic verify happens in the drain.
+    ///
+    /// Bounded to [`MAX_AUTO_ACCEPT_QUEUED_PER_OWNER`] entries per owner so a
+    /// flood of junk-proof requests can't grow the queue without limit — over
+    /// the cap the request is simply left manually acceptable. Dedup by
+    /// `(owner, sender, AutoAccept)` means re-runs are idempotent.
+    async fn enqueue_pending_auto_accepts(&self, identity_id: &Identifier) {
+        use crate::changeset::{
+            upsert_pending_contact_crypto, PendingContactCrypto, PendingContactCryptoOp,
+            PlatformWalletChangeSet,
+        };
+
+        // Collect candidate senders + the current AutoAccept count under a read
+        // guard (no awaits held).
+        let to_enqueue: Vec<Identifier> = {
+            let wm = self.wallet_manager.read().await;
+            let Some(info) = wm.get_wallet_info(&self.wallet_id) else {
+                return;
+            };
+            let mut already = info
+                .pending_contact_crypto
+                .iter()
+                .filter(|e| {
+                    e.owner_identity_id == *identity_id
+                        && matches!(e.op, PendingContactCryptoOp::AutoAccept)
+                })
+                .count();
+            let Some(managed) = info.identity_manager.managed_identity(identity_id) else {
+                return;
+            };
+            let mut picked = Vec::new();
+            for (sender, request) in &managed.incoming_contact_requests {
+                if already >= MAX_AUTO_ACCEPT_QUEUED_PER_OWNER {
+                    tracing::warn!(
+                        owner = %identity_id,
+                        "auto-accept enqueue cap reached; leaving further requests manually acceptable"
+                    );
+                    break;
+                }
+                if managed.established_contacts.contains_key(sender) {
+                    continue; // already a contact
+                }
+                // Structural pre-check only (no signer here): DIP-15 size + the
+                // ECDSA key-type byte. The real ECDSA verify is in the drain.
+                let structurally_ok = request
+                    .auto_accept_proof
+                    .as_deref()
+                    .is_some_and(|p| (38..=102).contains(&p.len()) && p[0] == 0x00);
+                if structurally_ok {
+                    picked.push(*sender);
+                    already += 1;
+                }
+            }
+            picked
+        };
+        if to_enqueue.is_empty() {
+            return;
+        }
+
+        let enqueued_at_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let entries: Vec<PendingContactCrypto> = to_enqueue
+            .into_iter()
+            .map(|sender| PendingContactCrypto {
+                owner_identity_id: *identity_id,
+                contact_id: sender,
+                op: PendingContactCryptoOp::AutoAccept,
+                enqueued_at_ms,
+            })
+            .collect();
+
+        {
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                for entry in &entries {
+                    upsert_pending_contact_crypto(&mut info.pending_contact_crypto, entry.clone());
+                }
+            }
+        }
+        let changeset = PlatformWalletChangeSet {
+            pending_contact_crypto_added: entries,
+            ..Default::default()
+        };
+        if let Err(e) = self.persister.store(changeset) {
+            tracing::warn!(
+                owner = %identity_id, error = %e,
+                "failed to persist auto-accept enqueue; will re-enqueue next sweep"
+            );
+        }
     }
 
     /// Collect every established contact (for `identity_id`) that is
@@ -1630,6 +1754,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         ),
                     }
                 }
+                PendingContactCryptoOp::AutoAccept => {
+                    // Verifying the proof and sending the reciprocal both need the
+                    // identity signer, which this provider-only drain doesn't
+                    // carry. Handled by `drain_auto_accepts` at a signer-present
+                    // moment; skip here so the entry stays queued (the inbound
+                    // request remains manually acceptable meanwhile).
+                }
             }
         }
 
@@ -1658,6 +1789,162 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         }
 
         cleared.len()
+    }
+
+    /// Drain queued `AutoAccept` ops (DIP-15 QR auto-accept) — verify each
+    /// inbound request's `autoAcceptProof` and, if valid + unexpired, auto-accept
+    /// it (send the reciprocal). Requires the identity `signer` (the reciprocal is
+    /// a signed state transition) as well as the crypto `provider` (to derive our
+    /// auto-accept public key); the provider-only [`drain_pending_contact_crypto`]
+    /// deliberately skips these. Returns the number auto-accepted.
+    ///
+    /// Anti-DoS: the cheap local checks (proof present, expiry, ECDSA verify
+    /// against our own re-derived key) run **before** any network/accept, so a
+    /// flood of junk proofs is cleared without per-entry round-trips. Verdict
+    /// mapping: invalid / expired / malformed / bad-index ⇒ permanent (clear);
+    /// provider-unavailable / accept-send failure ⇒ transient (leave queued).
+    pub async fn drain_auto_accepts<S, P>(&self, signer: &S, provider: &P) -> usize
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        P: ContactCryptoProvider + Sync,
+    {
+        use crate::changeset::{PendingContactCryptoKey, PendingContactCryptoOp};
+        use crate::wallet::identity::crypto::auto_accept::{
+            auto_accept_derivation_path, auto_accept_proof_expiry,
+            verify_auto_accept_proof_with_pubkey,
+        };
+
+        // Snapshot just the AutoAccept entries.
+        let entries: Vec<crate::changeset::PendingContactCrypto> = {
+            let wm = self.wallet_manager.read().await;
+            wm.get_wallet_info(&self.wallet_id)
+                .map(|info| {
+                    info.pending_contact_crypto
+                        .iter()
+                        .filter(|e| matches!(e.op, PendingContactCryptoOp::AutoAccept))
+                        .cloned()
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        if entries.is_empty() {
+            return 0;
+        }
+
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let mut cleared: Vec<PendingContactCryptoKey> = Vec::new();
+        let mut accepted: usize = 0;
+
+        for entry in &entries {
+            let owner = entry.owner_identity_id; // us (the QR owner / recipient)
+            let sender = entry.contact_id; // the scanner (request $ownerId)
+
+            // Re-load the inbound request (carrying the proof) from local state.
+            let request = {
+                let wm = self.wallet_manager.read().await;
+                wm.get_wallet_info(&self.wallet_id)
+                    .and_then(|info| info.identity_manager.managed_identity(&owner))
+                    .and_then(|mi| mi.incoming_contact_requests.get(&sender).cloned())
+            };
+            let Some(request) = request else {
+                // Gone (already established / removed) — nothing to do.
+                cleared.push(entry.key());
+                continue;
+            };
+            let Some(proof) = request.auto_accept_proof.as_deref() else {
+                cleared.push(entry.key()); // no proof (shouldn't happen) — permanent
+                continue;
+            };
+
+            // Expiry is the proof's embedded index — the same value that keys
+            // verification, so it can't be lied about independently of the sig.
+            let Some(expiry) = auto_accept_proof_expiry(proof) else {
+                cleared.push(entry.key()); // malformed — permanent
+                continue;
+            };
+            if now_secs > expiry as u64 {
+                tracing::info!(
+                    owner = %owner, sender = %sender, expiry,
+                    "auto-accept: proof expired; clearing (request stays manually acceptable)"
+                );
+                cleared.push(entry.key()); // expired — permanent
+                continue;
+            }
+
+            // Derive OUR auto-accept public key at the proof's expiry, via the
+            // provider (seedless — no resident wallet). Local ECDSA verify runs
+            // before any network/accept (anti-DoS). Bind the sender to the
+            // consensus-authenticated request `$ownerId` (request.sender_id).
+            let path = match auto_accept_derivation_path(self.sdk.network, expiry) {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!(owner = %owner, sender = %sender, error = %e,
+                        "auto-accept: bad expiry index; clearing");
+                    cleared.push(entry.key()); // bad index — permanent
+                    continue;
+                }
+            };
+            let pubkey = match provider.receiving_xpub(&path).await {
+                Ok(xpub) => xpub.public_key,
+                Err(e) => {
+                    tracing::warn!(owner = %owner, sender = %sender, error = %e,
+                        "auto-accept: provider unavailable; leaving queued");
+                    continue; // transient — leave queued
+                }
+            };
+            let valid = verify_auto_accept_proof_with_pubkey(
+                &pubkey,
+                proof,
+                &request.sender_id,
+                &owner,
+                request.account_reference,
+            );
+            if !valid {
+                tracing::warn!(owner = %owner, sender = %sender,
+                    "auto-accept: proof did not verify; clearing");
+                cleared.push(entry.key()); // invalid — permanent
+                continue;
+            }
+
+            // Valid + unexpired → accept (send the reciprocal). Idempotent.
+            match self
+                .accept_contact_request_with_external_signer(&request, signer, provider)
+                .await
+            {
+                Ok(_) => {
+                    tracing::info!(owner = %owner, sender = %sender,
+                        "auto-accept: proof verified; contact auto-accepted");
+                    accepted += 1;
+                    cleared.push(entry.key());
+                }
+                Err(e) => tracing::warn!(owner = %owner, sender = %sender, error = %e,
+                    "auto-accept: reciprocal send failed; leaving queued"),
+            }
+        }
+
+        if !cleared.is_empty() {
+            {
+                let mut wm = self.wallet_manager.write().await;
+                if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                    info.pending_contact_crypto
+                        .retain(|e| !cleared.iter().any(|k| *k == e.key()));
+                }
+            }
+            let changeset = crate::changeset::PlatformWalletChangeSet {
+                pending_contact_crypto_cleared: cleared,
+                ..Default::default()
+            };
+            if let Err(e) = self.persister.store(changeset) {
+                tracing::warn!(error = %e,
+                    "auto-accept: failed to persist cleared entries (in-memory already updated)");
+            }
+        }
+
+        accepted
     }
 
     /// Mark an established contact's payment channel as permanently broken
@@ -2987,14 +3274,21 @@ mod contact_info_provider_tests {
                 },
             ),
             mk(3, PendingContactCryptoOp::ContactInfoDecrypt),
+            mk(5, PendingContactCryptoOp::AutoAccept),
         ];
-        // Two account-build ops; the ContactInfoDecrypt is not counted.
-        assert_eq!(count_account_build_ops(&queue), 2);
+        // Two account-build ops + one auto-accept = 3 "waiting to finish setup";
+        // the ContactInfoDecrypt is not counted.
+        assert_eq!(count_account_build_ops(&queue), 3);
 
         // A queue of only ContactInfoDecrypt is zero actionable backlog.
         assert_eq!(
             count_account_build_ops(&[mk(4, PendingContactCryptoOp::ContactInfoDecrypt)]),
             0
+        );
+        // AutoAccept alone counts (a contact waiting to be auto-accepted).
+        assert_eq!(
+            count_account_build_ops(&[mk(6, PendingContactCryptoOp::AutoAccept)]),
+            1
         );
 
         // Empty queue is zero.
