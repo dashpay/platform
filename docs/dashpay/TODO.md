@@ -98,20 +98,35 @@ track, and the multi-agent reviews. Prioritized; check off as done.
 - [x] **contactInfo fetch pagination: DONE** (`e757d9a528`). `send address-reuse` —
   **DEFERRED (minor):** only bites if SPV drops our own broadcast; `mark_address_used`
   at broadcast is a small hardening with no observed incidence — revisit if it occurs.
-- [~] **QR-based auto-accept (DIP-15) — RESEARCHED, DEPRIORITIZED (2026-06-24).** Full
-  findings in `QR_AUTO_ACCEPT_RESEARCH.md`. Verdict: `autoAcceptProof` is **spec-only,
-  dormant in every reference client** — dashj has zero references (no ContactRequest
-  model); `android-dashpay` defines the field + an unused builder (0 callers, no sign/
-  verify/accept); `dash-wallet` keeps it as a dormant DB pass-through and its QR scanner
-  only does payments/sweeps. So there is **no interoperable counterparty** — wiring it
-  would invent an iOS-only convention no one verifies, and DIP-15 leaves the
-  security-critical half (verification algo, signed-byte serialization, expiry
-  enforcement, replay) undefined. Our `auto_accept.rs` crypto also models the wrong
-  actor for the scanner side (derives from a full wallet seed; the spec's scanner signs
-  with the loose QR-handed key). **Keep `auto_accept.rs` as-is (tested, dormant); do NOT
-  delete the helpers.** If contact-onboarding is the real goal, the shipped/interoperable
-  feature is **Invitations** (DIP-13 sub-feature `3'`, `dashpay://invite` deep-link +
-  AssetLock funding → register a new identity), a separate larger feature — not this.
+- [~] **QR-based auto-accept (DIP-15) — IMPLEMENTED (2026-06-24), iOS-first reference
+  impl.** Research in `QR_AUTO_ACCEPT_RESEARCH.md`; reviewed spec in
+  `QR_AUTO_ACCEPT_SPEC.md`. Built faithfully to DIP-15 wire formats (no Android client
+  verifies `autoAcceptProof`, so it works iOS↔iOS and sets the convention). Commits:
+  crypto primitives `b8ff05c6f8`, receive/auto-accept flow `a714b4e8de`, owner QR-create
+  + scoped raw-key export `b39e0cf6f0`, scanner + drain-signer `ff2403d7a1`, Swift UI
+  `e6b7468d87`. Three roles: owner derives `m/9'/5'/16'/expiry'` + builds
+  `dash:?du=…&dapk=…`; scanner decodes + signs `$ownerId+toUserId+accountReference` +
+  sends with the proof; recipient's signer-present drain (`drain_auto_accepts`) verifies
+  (provider pubkey, no resident seed) + expiry-checks + auto-accepts. Security must-fixes
+  folded: consensus-authenticated sender binding, no expired-but-valid foot-gun, drain
+  verdict mapping, queue bound + verify-before-fetch. **Tests:** platform-wallet 299 +
+  ffi 117 green (cross-actor sign→verify, blob/URI codecs, AutoAccept count); `build_ios.sh`
+  green. **On-device:** the My-QR UI + DPNS-name guard verified; the full QR-generate→scan→
+  auto-accept loop wasn't exercised because both available devnet identities lack a
+  *locally-cached* DPNS name (names are on-chain but not in `PersistentIdentity.dpnsName`;
+  imported/edge-case wallets — a create-in-app identity has it set). **Follow-up (P3):**
+  make `build_auto_accept_qr` resolve the owner's DPNS name on-chain when the local field
+  is empty, so the QR works regardless of local-name caching (and unblocks the on-device
+  full-loop test). Keep `auto_accept.rs` (extended, not deleted).
+- [ ] **DashPay Invitations (DIP-13) — NEXT (queued 2026-06-24).** The shipped,
+  interoperable onboarding feature: an existing user funds an AssetLock and shares a
+  `dashpay://invite?du=…&assetlocktx=…&pk=<WIF>&islock=…` deep-link (web fallback
+  `invitations.dashpay.io`); the recipient claims it — rebuild the AssetLockTransaction,
+  decode the embedded WIF, and register a brand-new identity from the funded invite
+  (DIP-13 sub-feature `3'` invitation funding keys). Separate, larger feature than
+  auto-accept (L1 funding + identity registration + deep-link + UI); matches dash-wallet
+  so invites interop. Research the in-repo asset-lock-funding / identity-registration
+  building blocks (register_from_addresses, FundFromAssetLock coordinators) for reuse.
 
 ## Spec / design track (in order — sync is FIRST)
 

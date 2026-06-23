@@ -5,11 +5,17 @@ DIP-15 wire formats** so we are a correct reference implementation. Research (in
 finding that no reference client implements this today, so it is iOS-first / convention-
 setting) is in `QR_AUTO_ACCEPT_RESEARCH.md`. Invitations (DIP-13) are queued next.
 
-> **Status:** REVIEWED (4-lens: DIP-fidelity / security / feasibility / scope, 2026-06-24)
-> and revised — see §10 for what changed. The first draft's §4 was materially wrong
+> **Status:** IMPLEMENTED (2026-06-24) across Rust + FFI + Swift; `build_ios.sh` green,
+> platform-wallet 299 + ffi 117 tests green. REVIEWED (4-lens: DIP-fidelity / security /
+> feasibility / scope) and revised — §10. The first draft's §4 was materially wrong
 > (verify can't use `&Wallet` in the seedless drain; the drain lacks the identity signer;
-> the sweep parser drops the proof). Those are fixed below. **Owner decisions:** TTL = 1h
-> fixed; auto-accept = always automatic (no toggle); scope = whole feature in one pass.
+> the sweep parser drops the proof) — all fixed. **Owner decisions:** TTL = 1h fixed;
+> auto-accept = always automatic; whole feature in one pass; DIP-literal HD-derived owner
+> key (scoped raw-key export). **On-device:** My-QR UI + DPNS-name guard verified; the full
+> QR-generate→scan→auto-accept loop is pending a DPNS-named *local* identity (the available
+> devnet wallets have on-chain names not cached in `PersistentIdentity.dpnsName`). Follow-up
+> (P3): resolve the owner's DPNS name on-chain in `build_auto_accept_qr` when the local
+> field is empty.
 
 ## 1. Problem & goal
 
