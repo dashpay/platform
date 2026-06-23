@@ -732,38 +732,22 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
     /// Run one `$ownerId In [chunk]` profile query, returning the present
     /// profiles keyed by owner id (absent ids are simply missing). The
-    /// `profile` `ownerId` index is unique, so the set lookup proves cleanly
-    /// with an empty `order_by` and no pagination (≤1 profile per owner).
+    /// `profile` `ownerId` index is unique, so the set lookup needs no
+    /// pagination (≤1 profile per owner). The query is built by
+    /// [`contact_profiles_chunk_query`].
     async fn fetch_contact_profiles_chunk(
         &self,
         dashpay_contract: &Arc<dpp::data_contract::DataContract>,
         chunk: &[Identifier],
     ) -> Result<std::collections::BTreeMap<Identifier, Option<DashPayProfile>>, PlatformWalletError>
     {
-        use dash_sdk::drive::query::{WhereClause, WhereOperator};
         use dash_sdk::platform::FetchMany;
         use dpp::document::Document;
-        use dpp::platform_value::{platform_value, Value};
 
         if chunk.is_empty() {
             return Ok(Default::default());
         }
-        let in_values = Value::Array(chunk.iter().map(|id| platform_value!(id)).collect());
-        let query = dash_sdk::platform::DocumentQuery {
-            select: dash_sdk::drive::query::SelectProjection::documents(),
-            data_contract: Arc::clone(dashpay_contract),
-            document_type_name: "profile".to_string(),
-            where_clauses: vec![WhereClause {
-                field: "$ownerId".to_string(),
-                operator: WhereOperator::In,
-                value: in_values,
-            }],
-            group_by: vec![],
-            having: vec![],
-            order_by_clauses: vec![],
-            limit: CONTACT_PROFILE_IN_CAP as u32,
-            start: None,
-        };
+        let query = contact_profiles_chunk_query(dashpay_contract, chunk);
 
         let docs = Document::fetch_many(&self.sdk, query)
             .await
@@ -789,6 +773,41 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             out.insert(owner, entry);
         }
         Ok(out)
+    }
+}
+
+/// Build the `$ownerId In [chunk]` profile fetch query for one chunk.
+///
+/// `In` is a range operator, so DAPI requires a matching `orderBy` on the
+/// range field or it rejects the query with "missing order by for range".
+/// The `$ownerId` index is unique, so ordering does not change the result
+/// set (≤1 profile per owner) — the `orderBy` is only there to satisfy that
+/// range-orderBy rule.
+fn contact_profiles_chunk_query(
+    dashpay_contract: &Arc<dpp::data_contract::DataContract>,
+    chunk: &[Identifier],
+) -> dash_sdk::platform::DocumentQuery {
+    use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
+    use dpp::platform_value::{platform_value, Value};
+
+    let in_values = Value::Array(chunk.iter().map(|id| platform_value!(id)).collect());
+    dash_sdk::platform::DocumentQuery {
+        select: dash_sdk::drive::query::SelectProjection::documents(),
+        data_contract: Arc::clone(dashpay_contract),
+        document_type_name: "profile".to_string(),
+        where_clauses: vec![WhereClause {
+            field: "$ownerId".to_string(),
+            operator: WhereOperator::In,
+            value: in_values,
+        }],
+        group_by: vec![],
+        having: vec![],
+        order_by_clauses: vec![OrderClause {
+            field: "$ownerId".to_string(),
+            ascending: true,
+        }],
+        limit: CONTACT_PROFILE_IN_CAP as u32,
+        start: None,
     }
 }
 
@@ -983,5 +1002,40 @@ mod tests {
         // Present -> confirmed-absent is a change and caches the negative.
         assert!(apply_fetched_profile(&mut cache, id, None, 400));
         assert!(cache[&id].profile.is_none());
+    }
+
+    /// DAPI rejects any query that uses a range where-operator without a
+    /// matching `orderBy` on the range field ("missing order by for range").
+    /// The profile chunk query filters by `$ownerId In [...]` — a range op —
+    /// so every range clause it builds must carry an `orderBy` on its field.
+    /// Guarded against vacuous truth: the query must actually contain a range
+    /// clause, otherwise the invariant would pass trivially.
+    #[test]
+    fn contact_profiles_chunk_query_orders_by_every_range_field() {
+        let contract = crate::wallet::identity::network::dashpay_contract()
+            .expect("DashPay system contract loads");
+        let chunk = vec![Identifier::new([1u8; 32]), Identifier::new([2u8; 32])];
+
+        let query = contact_profiles_chunk_query(&contract, &chunk);
+
+        // Non-vacuous: there is at least one range where-clause to satisfy.
+        assert!(
+            query.where_clauses.iter().any(|wc| wc.operator.is_range()),
+            "expected a range where-clause (e.g. $ownerId In [...])"
+        );
+
+        for wc in &query.where_clauses {
+            if wc.operator.is_range() {
+                assert!(
+                    query
+                        .order_by_clauses
+                        .iter()
+                        .any(|oc| oc.field == wc.field),
+                    "range clause on `{}` has no matching orderBy; DAPI rejects \
+                     this with \"missing order by for range\"",
+                    wc.field
+                );
+            }
+        }
     }
 }
