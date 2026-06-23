@@ -468,9 +468,10 @@ mod tests {
             let after = chrono::Utc::now();
 
             let info = address_list.ban_info();
+            let addr_uri = addr.to_string();
             let entry = info
                 .iter()
-                .find(|i| i.uri.contains("3000"))
+                .find(|i| i.uri == addr_uri)
                 .expect("address present in ban info");
 
             assert!(entry.banned, "genuine failure must ban the node");
