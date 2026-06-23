@@ -13,6 +13,8 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, Mutex as StdMutex,
 };
+
+use dash_async::AtomicFlagGuard;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use arc_swap::ArcSwapOption;
@@ -30,20 +32,6 @@ use crate::wallet::PlatformWallet;
 
 /// Default cadence — matches the 15s BLAST loop we previously ran in Swift.
 pub const DEFAULT_SYNC_INTERVAL_SECS: u64 = 15;
-
-/// RAII guard that clears `is_syncing` when dropped.
-///
-/// Created at the start of a sync pass (after the `compare_exchange`
-/// that takes the slot). On any exit — normal return, early return, or
-/// panic-unwind — the flag is cleared, so `quiesce()`'s drain loop
-/// never spins forever on a panicked pass.
-struct IsSyncingGuard<'a>(&'a AtomicBool);
-
-impl Drop for IsSyncingGuard<'_> {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
-    }
-}
 
 /// Outcome of syncing a single wallet in a pass.
 ///
@@ -331,7 +319,7 @@ impl PlatformAddressSyncManager {
         // RAII guard: clears `is_syncing` on every exit path, including
         // panics. Without this a panic inside the pass would leave
         // `is_syncing=true` forever and wedge `quiesce()`'s drain loop.
-        let _is_syncing_guard = IsSyncingGuard(&self.is_syncing);
+        let _is_syncing_guard = AtomicFlagGuard::new(&self.is_syncing);
 
         // A `quiesce()` may have raised the gate between our CAS and
         // here; if so, bail without running a pass so the drain can

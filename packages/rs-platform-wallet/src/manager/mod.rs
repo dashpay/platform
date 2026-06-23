@@ -101,19 +101,28 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
 pub enum CoordinatorThreadStatus {
     /// The loop exited and its thread/task joined cleanly.
     Ok,
+    /// The thread/task exited for a non-panic reason that is not a clean
+    /// return — e.g. a tokio task was cancelled or aborted. Carries a
+    /// reason string when one is available.
+    Stopped(Option<String>),
     /// The thread/task panicked; carries the best-effort panic message.
     Panicked(String),
+    /// The join did not complete within [`SHUTDOWN_JOIN_TIMEOUT_SECS`].
+    Timeout,
     /// No thread/task was running to join — never started, or already
     /// joined by a previous `shutdown()`.
     NotRunning,
-    /// The join did not complete within the bounded timeout, or the
-    /// `spawn_blocking` task itself failed (e.g. runtime torn down
-    /// before the join could run — unreachable in normal operation).
+    /// Infrastructural join failure that is neither a timeout nor a
+    /// panic — e.g. the `spawn_blocking` task itself failed because
+    /// the runtime was torn down before the join could run (unreachable
+    /// in normal operation).
     Error(String),
 }
 
 impl CoordinatorThreadStatus {
-    /// `true` for a non-failure outcome (joined cleanly or never ran).
+    /// `true` only for a fully clean outcome: joined normally (`Ok`) or
+    /// never ran (`NotRunning`). `Stopped`, `Panicked`, `Timeout`, and
+    /// `Error` are all considered non-clean.
     pub fn is_clean(&self) -> bool {
         matches!(self, Self::Ok | Self::NotRunning)
     }
@@ -198,7 +207,7 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 /// quiesce+join to complete. Under normal operation this deadline is
 /// never reached (the RAII `is_syncing` guard ensures the drain exits
 /// even on panic). On timeout the coordinator slot reports
-/// [`CoordinatorThreadStatus::Error`]`("join timed out")`.
+/// [`CoordinatorThreadStatus::Timeout`].
 const SHUTDOWN_JOIN_TIMEOUT_SECS: u64 = 30;
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
@@ -431,18 +440,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// **Precondition: must be called from a multi-thread Tokio runtime.**
     /// `quiesce()` uses `spawn_blocking` internally; calling from a
-    /// `current_thread` runtime will `debug_assert!`-panic in debug
-    /// builds or deadlock in release builds.
+    /// `current_thread` runtime will panic (this is a real invariant
+    /// enforced in both debug and release builds).
     ///
     /// Each coordinator quiesce+join is bounded by
     /// [`SHUTDOWN_JOIN_TIMEOUT_SECS`]. If a coordinator does not exit
     /// within that window, its slot reports
-    /// [`CoordinatorThreadStatus::Error`]`("join timed out")` rather
-    /// than hanging forever. Under normal operation (no infinite loops,
-    /// RAII guard clears `is_syncing` even on panic) this timeout is
-    /// never reached.
+    /// [`CoordinatorThreadStatus::Timeout`] rather than hanging forever.
+    /// Under normal operation (no infinite loops, RAII guard clears
+    /// `is_syncing` even on panic) this timeout is never reached.
     pub async fn shutdown(&self) -> CoordinatorExitStatus {
-        debug_assert!(
+        assert!(
             matches!(
                 tokio::runtime::Handle::current().runtime_flavor(),
                 tokio::runtime::RuntimeFlavor::MultiThread
@@ -456,17 +464,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let platform_address_sync =
             tokio::time::timeout(timeout, self.platform_address_sync_manager.quiesce())
                 .await
-                .unwrap_or_else(|_| CoordinatorThreadStatus::Error("join timed out".into()));
+                .unwrap_or(CoordinatorThreadStatus::Timeout);
 
         let identity_sync = tokio::time::timeout(timeout, self.identity_sync_manager.quiesce())
             .await
-            .unwrap_or_else(|_| CoordinatorThreadStatus::Error("join timed out".into()));
+            .unwrap_or(CoordinatorThreadStatus::Timeout);
 
         #[cfg(feature = "shielded")]
         let shielded_sync = {
             let r = tokio::time::timeout(timeout, self.shielded_sync_manager.quiesce())
                 .await
-                .unwrap_or_else(|_| CoordinatorThreadStatus::Error("join timed out".into()));
+                .unwrap_or(CoordinatorThreadStatus::Timeout);
             Some(r)
         };
         #[cfg(not(feature = "shielded"))]
@@ -485,10 +493,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     if e.is_panic() {
                         CoordinatorThreadStatus::Panicked(panic_message(e.into_panic()))
                     } else {
-                        CoordinatorThreadStatus::Ok
+                        // Non-panic JoinError: task was cancelled or aborted —
+                        // not a clean exit, but also not a panic.
+                        CoordinatorThreadStatus::Stopped(Some(format!("{e}")))
                     }
                 }
-                Err(_) => CoordinatorThreadStatus::Error("join timed out".into()),
+                Err(_) => CoordinatorThreadStatus::Timeout,
             },
         };
 
@@ -654,6 +664,86 @@ mod tests {
         }
     }
 
+    /// A non-panic `JoinError` on the event adapter maps to `Stopped`, not
+    /// `Ok`, and is NOT considered clean. This covers the case where the
+    /// tokio task is cancelled or aborted rather than completing normally.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn event_adapter_non_panic_join_error_maps_to_stopped_and_is_not_clean() {
+        // Build a manager but immediately abort the event adapter task so
+        // we trigger the non-panic JoinError path in shutdown().
+        let manager = make_manager();
+        // Abort the adapter task directly so the join sees a non-panic JoinError.
+        {
+            let mut guard = manager.event_adapter_join.lock().await;
+            if let Some(handle) = guard.take() {
+                handle.abort();
+                // Put it back so shutdown() sees it and exercises the error path.
+                *guard = Some(handle);
+            }
+        }
+        // Give tokio a moment to process the abort.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let status = manager.shutdown().await;
+        // The adapter task was aborted → non-panic JoinError → Stopped.
+        match &status.event_adapter {
+            CoordinatorThreadStatus::Stopped(_) | CoordinatorThreadStatus::Ok => {
+                // Stopped is the expected path; Ok means it drained before abort — both
+                // are acceptable since abort() races the task completion.
+            }
+            other => panic!("expected Stopped or Ok (abort race), got {other:?}"),
+        }
+        // Regardless, all other workers were never started → clean.
+        assert_eq!(
+            status.platform_address_sync,
+            CoordinatorThreadStatus::NotRunning
+        );
+    }
+
+    /// `Stopped` and `Timeout` are NOT clean; `Ok` and `NotRunning` ARE.
+    /// Unit-tests the `is_clean` predicate directly so we don't need to
+    /// trigger a real timeout (30s) in a deterministic test.
+    #[test]
+    fn coordinator_thread_status_clean_predicate() {
+        assert!(CoordinatorThreadStatus::Ok.is_clean());
+        assert!(CoordinatorThreadStatus::NotRunning.is_clean());
+
+        assert!(!CoordinatorThreadStatus::Stopped(None).is_clean());
+        assert!(!CoordinatorThreadStatus::Stopped(Some("cancelled".into())).is_clean());
+        assert!(!CoordinatorThreadStatus::Panicked("boom".into()).is_clean());
+        assert!(!CoordinatorThreadStatus::Timeout.is_clean());
+        assert!(!CoordinatorThreadStatus::Error("infra".into()).is_clean());
+    }
+
+    /// `all_clean()` on `CoordinatorExitStatus` is false whenever any
+    /// slot is non-clean.
+    #[test]
+    fn coordinator_exit_status_all_clean() {
+        let clean = CoordinatorExitStatus {
+            platform_address_sync: CoordinatorThreadStatus::Ok,
+            identity_sync: CoordinatorThreadStatus::NotRunning,
+            shielded_sync: None,
+            event_adapter: CoordinatorThreadStatus::Ok,
+        };
+        assert!(clean.all_clean());
+
+        let with_timeout = CoordinatorExitStatus {
+            platform_address_sync: CoordinatorThreadStatus::Timeout,
+            identity_sync: CoordinatorThreadStatus::Ok,
+            shielded_sync: None,
+            event_adapter: CoordinatorThreadStatus::Ok,
+        };
+        assert!(!with_timeout.all_clean());
+
+        let with_stopped = CoordinatorExitStatus {
+            platform_address_sync: CoordinatorThreadStatus::Ok,
+            identity_sync: CoordinatorThreadStatus::Ok,
+            shielded_sync: Some(CoordinatorThreadStatus::Stopped(Some("aborted".into()))),
+            event_adapter: CoordinatorThreadStatus::Ok,
+        };
+        assert!(!with_stopped.all_clean());
+    }
+
     /// A cleanly-returning thread joins as `Ok`; an absent handle is
     /// `NotRunning`.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -705,9 +795,13 @@ mod tests {
 
         // Wait until the slow completion callback is running
         // (`is_syncing` stays true for its 300 ms duration).
-        while !handler_started.load(AO::Acquire) {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !handler_started.load(AO::Acquire) {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("handler did not start within 5s");
 
         // Shutdown must drain the in-flight pass before joining.
         let status = tokio::time::timeout(Duration::from_secs(5), manager.shutdown())

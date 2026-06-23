@@ -30,6 +30,8 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, Mutex as StdMutex,
 };
+
+use dash_async::AtomicFlagGuard;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::RwLock;
@@ -43,20 +45,6 @@ use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedSyncSummary};
 /// (chunked at 2048 entries with trial decryption per entry), so this
 /// is conservative compared to the 15s address-sync cadence.
 pub const DEFAULT_SYNC_INTERVAL_SECS: u64 = 60;
-
-/// RAII guard that clears `is_syncing` when dropped.
-///
-/// Created at the start of a sync pass (after the `compare_exchange`
-/// that takes the slot). On any exit — normal return, early return, or
-/// panic-unwind — the flag is cleared, so `quiesce()`'s drain loop
-/// never spins forever on a panicked pass.
-struct IsSyncingGuard<'a>(&'a AtomicBool);
-
-impl Drop for IsSyncingGuard<'_> {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
-    }
-}
 
 /// Outcome of syncing a single wallet in a shielded sync pass.
 ///
@@ -381,7 +369,7 @@ impl ShieldedSyncManager {
         // RAII guard: clears `is_syncing` on every exit path, including
         // panics. Without this a panic inside the pass would leave
         // `is_syncing=true` forever and wedge `quiesce()`'s drain loop.
-        let _is_syncing_guard = IsSyncingGuard(&self.is_syncing);
+        let _is_syncing_guard = AtomicFlagGuard::new(&self.is_syncing);
 
         // A `quiesce()` may have raised the gate between our CAS and
         // here; bail so the drain can complete and Clear/stop get a
@@ -475,7 +463,7 @@ impl ShieldedSyncManager {
         }
 
         // RAII guard clears `is_syncing` on every exit path including panics.
-        let _is_syncing_guard = IsSyncingGuard(&self.is_syncing);
+        let _is_syncing_guard = AtomicFlagGuard::new(&self.is_syncing);
 
         // Bail if a `quiesce()` raised the gate after our CAS (see
         // `sync_now`) so the drain barrier holds.

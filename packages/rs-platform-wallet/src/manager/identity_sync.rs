@@ -51,6 +51,8 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, Mutex as StdMutex,
 };
+
+use dash_async::AtomicFlagGuard;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use dpp::balances::credits::TokenAmount;
@@ -74,20 +76,6 @@ use crate::wallet::platform_wallet::WalletId;
 /// [`IdentitySyncManager::set_interval`]; this value is just the
 /// startup default.
 pub const DEFAULT_SYNC_INTERVAL_SECS: u64 = 60;
-
-/// RAII guard that clears `is_syncing` when dropped.
-///
-/// Created at the start of a sync pass (after the `compare_exchange`
-/// that takes the slot). On any exit — normal return, early return, or
-/// panic-unwind — the flag is cleared, so `quiesce()`'s drain loop
-/// never spins forever on a panicked pass.
-struct IsSyncingGuard<'a>(&'a AtomicBool);
-
-impl Drop for IsSyncingGuard<'_> {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
-    }
-}
 
 /// Maximum number of token ids fetched in a single
 /// `IdentityTokenBalancesQuery`.
@@ -540,7 +528,7 @@ where
         // RAII guard: clears `is_syncing` on every exit path, including
         // panics. Without this a panic inside the pass would leave
         // `is_syncing=true` forever and wedge `quiesce()`'s drain loop.
-        let _is_syncing_guard = IsSyncingGuard(&self.is_syncing);
+        let _is_syncing_guard = AtomicFlagGuard::new(&self.is_syncing);
 
         // A `quiesce()` may have raised the gate between our CAS and
         // here; if so, bail without running a pass so the drain can

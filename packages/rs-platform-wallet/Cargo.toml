@@ -31,6 +31,7 @@ bimap = "0.6"
 # Async runtime
 tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
 tokio-util = { version = "0.7.12" }
+dash-async = { path = "../rs-dash-async" }
 
 # Logging
 tracing = "0.1"
