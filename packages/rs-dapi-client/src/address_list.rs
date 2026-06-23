@@ -106,11 +106,13 @@ impl AddressStatus {
     /// Ban the address for an exact `period` (server-advertised), bypassing the
     /// exponential ladder used by [`AddressStatus::ban_with_reason`].
     ///
-    /// Sets `ban_count = max(ban_count, 1)` so that diagnostics
-    /// (`is_banned()`, `ban_info()`) correctly report the node as banned, but
-    /// the genuine-failure exponential ladder is not inflated — a subsequent
-    /// health failure still escalates from the existing `ban_count`, not from an
-    /// artificially incremented one.
+    /// The ban window is flat (not exponential), but `ban_count` is raised to
+    /// `max(ban_count, 1)` so that `is_banned()` and `ban_info()` correctly
+    /// report the node as banned.  Side-effect: a previously-clean node
+    /// (ban_count 0) enters the ladder at floor 1, meaning its *next* genuine
+    /// health failure via [`AddressStatus::ban_with_reason`] uses
+    /// `60 s × e¹ ≈ 163 s` rather than the first-rung `60 s × e⁰ = 60 s`.
+    /// The counter resets to 0 on [`AddressStatus::unban`].
     pub fn ban_for(&mut self, period: Duration, reason: Option<String>) {
         self.banned_until = Some(chrono::Utc::now() + period);
         self.ban_count = self.ban_count.max(1);
@@ -196,8 +198,9 @@ impl AddressList {
         true
     }
 
-    /// Ban the address for an exact `period` (server-advertised).
-    /// See [`AddressStatus::ban_for`] for the full contract.
+    /// Ban the address for an exact `period` (server-advertised); delegates to
+    /// [`AddressStatus::ban_for`] — see that method for the full contract
+    /// including the `ban_count` floor and ladder side-effect.
     ///
     /// Returns `false` if the address is not in the list.
     pub fn ban_for(&self, address: &Address, period: Duration, reason: Option<String>) -> bool {
@@ -815,6 +818,44 @@ mod tests {
         assert_eq!(status.ban_reason.as_deref(), Some("rate limited"));
     }
 
+    /// `ban_for` on a fresh node (ban_count = 0) raises ban_count to 1 (the
+    /// ladder floor).  That means the *next* genuine health ban will escalate
+    /// from position 1 (~163 s) instead of position 0 (~60 s).  This pins the
+    /// documented side-effect so regressions are caught.
+    #[test]
+    fn test_ban_for_raises_fresh_node_to_ladder_floor() {
+        let mut status = AddressStatus::default();
+        assert_eq!(status.ban_count, 0, "starts clean");
+
+        // Rate-limit ban on a never-before-banned node.
+        status.ban_for(Duration::from_secs(10), Some("rl".into()));
+        assert_eq!(
+            status.ban_count, 1,
+            "ban_for must raise ban_count 0 → 1 (ladder floor)"
+        );
+
+        // Subsequent genuine health failure must escalate from the floor (1),
+        // yielding ~60 s × e^1 ≈ 163 s, NOT the first-rung ~60 s × e^0 = 60 s.
+        let base = Duration::from_secs(60);
+        let before = chrono::Utc::now();
+        status.ban_with_reason(&base, None); // ban_count 1 → 2; window = 60s × e^1
+        let after = chrono::Utc::now();
+        assert_eq!(status.ban_count, 2);
+
+        let until = status.banned_until.expect("banned_until set");
+        let lo = (until - before).num_milliseconds() as f64 / 1000.0;
+        let hi = (until - after).num_milliseconds() as f64 / 1000.0;
+        let expected = 60.0_f64 * std::f64::consts::E; // ≈ 163 s
+        assert!(
+            lo >= expected - 0.5,
+            "window lower {lo:.1}s < expected {expected:.1}s (should escalate from floor 1)"
+        );
+        assert!(
+            hi <= expected + 0.5,
+            "window upper {hi:.1}s > expected {expected:.1}s"
+        );
+    }
+
     #[test]
     fn test_address_status_ban_for_does_not_inflate_existing_ban_count() {
         // A node already health-banned (ban_count = 3) gets rate-limited.
@@ -852,6 +893,34 @@ mod tests {
         assert_eq!(info.len(), 1);
         assert!(info[0].banned);
         assert_eq!(info[0].ban_count, 1);
+    }
+
+    /// After `ban_for`'s window expires the address re-enters rotation via
+    /// `get_live_address`.  We verify both directions: the node is hidden during
+    /// an active window, and becomes live once the window passes.
+    ///
+    /// A zero-duration window means `banned_until = Utc::now()` at call time;
+    /// `get_live_address` samples `Utc::now()` fresh, so at least one clock tick
+    /// separates the two calls and `banned_until < new_now` holds.
+    #[test]
+    fn test_ban_for_address_re_enters_rotation_after_window_expires() {
+        let mut list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        list.add(addr.clone());
+
+        // Active 300-second window → node hidden.
+        assert!(list.ban_for(&addr, Duration::from_secs(300), Some("rl".into())));
+        assert!(
+            list.get_live_address().is_none(),
+            "node must be hidden during active ban window"
+        );
+
+        // Re-ban with a zero window (already expired when get_live_address runs).
+        assert!(list.ban_for(&addr, Duration::ZERO, None));
+        assert!(
+            list.get_live_address().is_some(),
+            "address must re-enter rotation after ban_for window expires"
+        );
     }
 
     /// Invariant 1 at the ladder source: the exponential ban window is

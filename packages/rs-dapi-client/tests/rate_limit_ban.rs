@@ -104,8 +104,16 @@ fn test_ratelimit_reset_clamped_to_max() {
 }
 
 /// `ratelimit-reset: 0` or non-numeric → `None` → normal `ban_with_reason` ladder.
+///
+/// The key assertion is the resulting `banned_until` window: the ladder's first
+/// ban is `60 s × e^0 = 60 s`, **not** some header-derived value.  Checking only
+/// `ban_count == 1` would pass even if the wrong path (ban_for) were taken.
 #[test]
 fn test_zero_and_garbage_header_falls_back_to_ladder() {
+    // Default AddressList uses DEFAULT_BASE_BAN_PERIOD = 60 s.
+    // First ladder ban: coefficient = e^0 = 1.0, window = 60 s.
+    const EXPECTED_WINDOW_SECS: f64 = 60.0;
+
     for bad in &["0", "garbage", ""] {
         let mut address_list = AddressList::new();
         let addr = make_address();
@@ -123,10 +131,14 @@ fn test_zero_and_garbage_header_falls_back_to_ladder() {
             retries: 0,
             address: Some(addr.clone()),
         });
+
+        let before = chrono::Utc::now();
         update_address_ban_status(&address_list, &result, &applied_settings(true));
+        let after = chrono::Utc::now();
 
         let info = address_list.ban_info();
         let entry = info.iter().find(|i| i.uri == addr.to_string()).unwrap();
+
         assert!(
             entry.banned,
             "bad header '{bad}' must still result in a ban via the ladder"
@@ -135,10 +147,31 @@ fn test_zero_and_garbage_header_falls_back_to_ladder() {
             entry.ban_count, 1,
             "ladder ban → ban_count = 1 for header '{bad}'"
         );
+
+        // The ban window must be the exponential ladder's first rung (~60 s),
+        // NOT a header-derived value.  This assertion fails if ban_for were
+        // mistakenly called instead of ban_with_reason.
+        let until = entry
+            .banned_until
+            .expect("banned_until set for header '{bad}'");
+        let lo = (until - before).num_milliseconds() as f64 / 1000.0;
+        let hi = (until - after).num_milliseconds() as f64 / 1000.0;
+        assert!(
+            lo >= EXPECTED_WINDOW_SECS - 0.5,
+            "bad header '{bad}': ban window lower {lo:.1}s < expected ~{EXPECTED_WINDOW_SECS}s (ladder path)"
+        );
+        assert!(
+            hi <= EXPECTED_WINDOW_SECS + 0.5,
+            "bad header '{bad}': ban window upper {hi:.1}s > expected ~{EXPECTED_WINDOW_SECS}s (should be ladder, not ban_for)"
+        );
     }
 }
 
 /// Missing `ratelimit-reset` header → `None` → normal exponential health-ban ladder.
+///
+/// Asserts the `banned_until` window is ~60 s (first ladder rung), NOT a
+/// header-derived value.  A mere `ban_count == 1` check would pass even if
+/// `ban_for` were wrongly invoked (both paths yield ban_count 1 on first ban).
 #[test]
 fn test_missing_header_falls_back_to_ladder() {
     let mut address_list = AddressList::new();
@@ -152,7 +185,10 @@ fn test_missing_header_falls_back_to_ladder() {
         retries: 0,
         address: Some(addr.clone()),
     });
+
+    let before = chrono::Utc::now();
     update_address_ban_status(&address_list, &result, &applied_settings(true));
+    let after = chrono::Utc::now();
 
     let info = address_list.ban_info();
     let entry = info.iter().find(|i| i.uri == addr.to_string()).unwrap();
@@ -161,6 +197,19 @@ fn test_missing_header_falls_back_to_ladder() {
         "missing header must still result in a ladder ban"
     );
     assert_eq!(entry.ban_count, 1, "first ladder ban → ban_count = 1");
+
+    // Window must be the first exponential rung: 60 s × e^0 = 60 s.
+    let until = entry.banned_until.expect("banned_until set");
+    let lo = (until - before).num_milliseconds() as f64 / 1000.0;
+    let hi = (until - after).num_milliseconds() as f64 / 1000.0;
+    assert!(
+        lo >= 59.5,
+        "ladder window lower {lo:.1}s < expected ~60 s (missing header must use ladder)"
+    );
+    assert!(
+        hi <= 60.5,
+        "ladder window upper {hi:.1}s > expected ~60 s (should be ladder, not ban_for)"
+    );
 }
 
 /// `rate_limit_ban_duration` on `CanRetry` returns `Some` only for

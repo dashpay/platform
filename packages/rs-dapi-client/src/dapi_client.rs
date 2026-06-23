@@ -18,8 +18,11 @@ use crate::{
     RequestSettings,
 };
 
-/// Floor for the Envoy-advertised `RateLimit-Reset` ban duration.
-/// Prevents re-ban thrash when the header carries a value of 0 or 1.
+/// Intended minimum for the Envoy-advertised `RateLimit-Reset` ban duration.
+/// Note: the `> 0` filter applied before the clamp already rejects 0 → `None`,
+/// so this constant never actively clamps the lower bound — it documents intent
+/// (the smallest meaningful reset is 1 s) and acts as the `.clamp(MIN, MAX)`
+/// lower argument for clarity.
 pub(crate) const MIN_RATE_LIMIT_BAN_SECS: u64 = 1;
 /// Ceiling for the Envoy-advertised `RateLimit-Reset` ban duration.
 /// Prevents a misconfigured or hostile header from parking a healthy node for
@@ -337,7 +340,28 @@ mod tests {
         let dur = TransportError::Grpc(s).rate_limit_ban_duration();
         assert_eq!(dur, Some(Duration::from_secs(MAX_RATE_LIMIT_BAN_SECS)));
 
-        // Value below MIN (0) → no header → None.
+        // Clamp edge: exactly MIN (1) → 1 s (passes through unchanged).
+        let s = make_rl_status(Some("1"));
+        assert_eq!(
+            TransportError::Grpc(s).rate_limit_ban_duration(),
+            Some(Duration::from_secs(1))
+        );
+
+        // Clamp edge: exactly MAX (600) → 600 s (not clamped).
+        let s = make_rl_status(Some("600"));
+        assert_eq!(
+            TransportError::Grpc(s).rate_limit_ban_duration(),
+            Some(Duration::from_secs(600))
+        );
+
+        // One above MAX (601) → clamped to 600 s.
+        let s = make_rl_status(Some("601"));
+        assert_eq!(
+            TransportError::Grpc(s).rate_limit_ban_duration(),
+            Some(Duration::from_secs(600))
+        );
+
+        // Value below MIN (0) → filtered to None before clamp.
         let s = make_rl_status(Some("0"));
         assert!(TransportError::Grpc(s).rate_limit_ban_duration().is_none());
 
