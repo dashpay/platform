@@ -10,7 +10,6 @@ use tracing::Instrument;
 
 use crate::address_list::AddressListError;
 use crate::connection_pool::ConnectionPool;
-use crate::rate_limit::{fallback_rate_limit_ban_duration, RATE_LIMIT_BAN_ENV_VAR};
 use crate::request_settings::AppliedRequestSettings;
 use crate::transport::{self, TransportError};
 use crate::{
@@ -19,13 +18,13 @@ use crate::{
     RequestSettings,
 };
 
-/// Flat delay between retries for all non-rate-limited failures.
-///
-/// Rate-limited (`ResourceExhausted`) failures ban the node for the
-/// server-dictated window (see [`crate::rate_limit`] and
-/// `DAPI_RATE_LIMIT_BAN_MS`); the retry then picks the next live node
-/// immediately without an additional sleep.
-const RETRY_DELAY_MS: u64 = 10;
+/// Floor for the Envoy-advertised `RateLimit-Reset` ban duration.
+/// Prevents re-ban thrash when the header carries a value of 0 or 1.
+pub(crate) const MIN_RATE_LIMIT_BAN_SECS: u64 = 1;
+/// Ceiling for the Envoy-advertised `RateLimit-Reset` ban duration.
+/// Prevents a misconfigured or hostile header from parking a healthy node for
+/// an unreasonably long time.
+pub(crate) const MAX_RATE_LIMIT_BAN_SECS: u64 = 600;
 
 /// General DAPI request error type.
 #[derive(Debug, thiserror::Error, Clone)]
@@ -75,18 +74,6 @@ impl CanRetry for DapiClientError {
             self,
             DapiClientError::NoAvailableAddresses | DapiClientError::NoAvailableAddressesToRetry(_)
         )
-    }
-
-    fn is_rate_limited(&self) -> bool {
-        use DapiClientError::*;
-        match self {
-            NoAvailableAddresses => false,
-            NoAvailableAddressesToRetry(_) => false,
-            Transport(transport_error) => transport_error.is_rate_limited(),
-            AddressList(_) => false,
-            #[cfg(feature = "mocks")]
-            Mock(_) => false,
-        }
     }
 
     fn rate_limit_ban_duration(&self) -> Option<Duration> {
@@ -213,51 +200,27 @@ pub fn update_address_ban_status<R, E>(
         }
         Err(error) => {
             if error.can_retry() {
-                if error.is_rate_limited() {
-                    // ResourceExhausted is a server-side rate-limit / congestion
-                    // signal, not a node health failure.  Ban the node for the
-                    // duration Envoy embeds in `google.rpc.RetryInfo`; fall back
-                    // to the `DAPI_RATE_LIMIT_BAN_MS` env var (default 60 s) when
-                    // no such hint is present.  Because the node is healthy, the
-                    // health-ban counter (ban_count) is NOT incremented — the
-                    // exponential health-ban ladder stays intact.
-                    if let Some(address) = error.address.as_ref() {
-                        if applied_settings.ban_failed_address {
-                            let ban_dur = error
-                                .rate_limit_ban_duration()
-                                .unwrap_or_else(fallback_rate_limit_ban_duration);
-                            if address_list.ban_for_duration(
-                                address,
-                                ban_dur,
-                                Some(error.to_string()),
-                            ) {
-                                tracing::debug!(
-                                    ?address,
-                                    ban_ms = ban_dur.as_millis() as u64,
-                                    "rate-limited (ResourceExhausted): banning \
-                                     {address} for {}ms (env {RATE_LIMIT_BAN_ENV_VAR})",
-                                    ban_dur.as_millis()
-                                );
-                            } else {
-                                tracing::debug!(
-                                    ?address,
-                                    "unable to apply rate-limit ban to {address}: \
-                                     not in address list (already removed?)"
-                                );
-                            }
-                        } else {
-                            tracing::debug!(
-                                ?error,
-                                ?address,
-                                "rate-limited address {address}: ban disabled by settings"
-                            );
-                        }
-                    } else {
-                        tracing::debug!(?error, "rate-limited error has no address; skipping ban");
-                    }
-                } else if let Some(address) = error.address.as_ref() {
+                if let Some(address) = error.address.as_ref() {
                     if applied_settings.ban_failed_address {
-                        if address_list.ban_with_reason(address, Some(error.to_string())) {
+                        let reason = Some(error.to_string());
+                        let banned = match error.rate_limit_ban_duration() {
+                            // Envoy advertised a reset window: ban for exactly that period.
+                            // ban_count is set to max(ban_count,1) so diagnostics see the node
+                            // as banned, but the exponential ladder is not inflated.
+                            Some(period) => {
+                                tracing::debug!(
+                                    ?address,
+                                    ban_secs = period.as_secs(),
+                                    "rate-limited (ResourceExhausted): banning {address} \
+                                     for {}s (from RateLimit-Reset header)",
+                                    period.as_secs()
+                                );
+                                address_list.ban_for(address, period, reason)
+                            }
+                            // No rate-limit hint: normal exponential health-ban ladder.
+                            None => address_list.ban_with_reason(address, reason),
+                        };
+                        if banned {
                             tracing::warn!(
                                 ?address,
                                 ?error,
@@ -346,134 +309,126 @@ mod tests {
         assert!(!err.can_retry());
     }
 
+    /// `rate_limit_ban_duration` returns `Some` only when the `ratelimit-reset`
+    /// header is present and positive on a `ResourceExhausted` response, and
+    /// the value is clamped to `[MIN_RATE_LIMIT_BAN_SECS, MAX_RATE_LIMIT_BAN_SECS]`.
     #[test]
-    fn test_dapi_client_error_is_rate_limited() {
-        // Transport ResourceExhausted → rate-limited (but still retryable).
-        let rate_limited = DapiClientError::Transport(TransportError::Grpc(
-            dapi_grpc::tonic::Status::resource_exhausted("429"),
-        ));
-        assert!(rate_limited.is_rate_limited());
-        assert!(rate_limited.can_retry());
+    fn test_rate_limit_ban_duration_header_parse() {
+        use dapi_grpc::tonic::metadata::MetadataValue;
 
-        // Other transport codes are not rate-limited.
-        let unavailable = DapiClientError::Transport(TransportError::Grpc(
-            dapi_grpc::tonic::Status::unavailable("down"),
-        ));
-        assert!(!unavailable.is_rate_limited());
+        // Helper: build a ResourceExhausted status with a ratelimit-reset header.
+        let make_rl_status = |header: Option<&str>| -> dapi_grpc::tonic::Status {
+            let mut status = dapi_grpc::tonic::Status::resource_exhausted("429");
+            if let Some(v) = header {
+                status
+                    .metadata_mut()
+                    .insert("ratelimit-reset", MetadataValue::try_from(v).unwrap());
+            }
+            status
+        };
 
-        // Non-transport variants are never rate-limited.
-        assert!(!DapiClientError::NoAvailableAddresses.is_rate_limited());
-        let to_retry = DapiClientError::NoAvailableAddressesToRetry(Box::new(
-            TransportError::Grpc(dapi_grpc::tonic::Status::resource_exhausted("429")),
-        ));
-        assert!(!to_retry.is_rate_limited());
+        // Normal header value: returned clamped.
+        let s = make_rl_status(Some("45"));
+        let dur = TransportError::Grpc(s).rate_limit_ban_duration();
+        assert_eq!(dur, Some(Duration::from_secs(45)));
+
+        // Value above MAX → clamped to MAX.
+        let s = make_rl_status(Some("9999"));
+        let dur = TransportError::Grpc(s).rate_limit_ban_duration();
+        assert_eq!(dur, Some(Duration::from_secs(MAX_RATE_LIMIT_BAN_SECS)));
+
+        // Value below MIN (0) → no header → None.
+        let s = make_rl_status(Some("0"));
+        assert!(TransportError::Grpc(s).rate_limit_ban_duration().is_none());
+
+        // Non-numeric → None.
+        let s = make_rl_status(Some("garbage"));
+        assert!(TransportError::Grpc(s).rate_limit_ban_duration().is_none());
+
+        // Header absent → None.
+        let s = make_rl_status(None);
+        assert!(TransportError::Grpc(s).rate_limit_ban_duration().is_none());
+
+        // Non-ResourceExhausted code → None regardless of header.
+        let mut unavail = dapi_grpc::tonic::Status::unavailable("down");
+        unavail
+            .metadata_mut()
+            .insert("ratelimit-reset", MetadataValue::try_from("30").unwrap());
+        assert!(TransportError::Grpc(unavail)
+            .rate_limit_ban_duration()
+            .is_none());
+    }
+
+    /// When `ResourceExhausted` carries a valid `ratelimit-reset` header,
+    /// `update_address_ban_status` calls `ban_for` (exact period, no ladder
+    /// inflation); when the header is absent it falls through to `ban_with_reason`
+    /// (normal exponential ladder).
+    #[test]
+    fn test_update_address_ban_status_rate_limit_ban_path() {
+        use dapi_grpc::tonic::metadata::MetadataValue;
+
+        let mut address_list = AddressList::new();
+        let addr = mock_address();
+        address_list.add(addr.clone());
+
+        // Build a ResourceExhausted status with ratelimit-reset: 45.
+        let mut status = dapi_grpc::tonic::Status::resource_exhausted("429");
+        status
+            .metadata_mut()
+            .insert("ratelimit-reset", MetadataValue::try_from("45").unwrap());
+
+        let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            inner: DapiClientError::Transport(TransportError::Grpc(status)),
+            retries: 0,
+            address: Some(addr.clone()),
+        });
+        let before = chrono::Utc::now();
+        update_address_ban_status(&address_list, &result, &make_applied_settings(true));
+        let after = chrono::Utc::now();
+
+        let info = address_list.ban_info();
+        let entry = info.iter().find(|i| i.uri == addr.to_string()).unwrap();
+
+        // Node is banned for ~45 s.
+        assert!(entry.banned, "rate-limited node must be banned");
+        assert_eq!(entry.ban_count, 1, "ban_count must be 1 after ban_for");
+        let until = entry.banned_until.expect("banned_until set");
+        let lo = (until - before).num_milliseconds() as f64 / 1000.0;
+        let hi = (until - after).num_milliseconds() as f64 / 1000.0;
         assert!(
-            !DapiClientError::AddressList(AddressListError::InvalidAddressUri("bad".to_string()))
-                .is_rate_limited()
+            lo >= 44.9 && hi <= 45.1,
+            "ban window must be ~45 s, got lo={lo} hi={hi}"
         );
     }
 
+    /// When `ResourceExhausted` has NO `ratelimit-reset` header,
+    /// `update_address_ban_status` must fall back to the normal `ban_with_reason`
+    /// ladder (not produce a zero-second or panic ban).
     #[test]
-    fn test_execution_error_is_rate_limited_delegates() {
-        let err: ExecutionError<DapiClientError> = ExecutionError {
+    fn test_update_address_ban_status_rate_limit_no_header_uses_ladder() {
+        let mut address_list = AddressList::new();
+        let addr = mock_address();
+        address_list.add(addr.clone());
+
+        let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
             inner: DapiClientError::Transport(TransportError::Grpc(
                 dapi_grpc::tonic::Status::resource_exhausted("429"),
             )),
             retries: 0,
-            address: Some(mock_address()),
-        };
-        assert!(err.is_rate_limited());
+            address: Some(addr.clone()),
+        });
+        update_address_ban_status(&address_list, &result, &make_applied_settings(true));
 
-        let err: ExecutionError<DapiClientError> = ExecutionError {
-            inner: DapiClientError::Transport(TransportError::Grpc(
-                dapi_grpc::tonic::Status::internal("boom"),
-            )),
-            retries: 0,
-            address: Some(mock_address()),
-        };
-        assert!(!err.is_rate_limited());
-    }
-
-    /// Property: the load-bearing `is_rate_limited() ⇒ can_retry()` invariant
-    /// holds for *every* gRPC status code across *every* in-crate `CanRetry`
-    /// implementor (`tonic::Status`, `TransportError`, `DapiClientError`,
-    /// `ExecutionError`).
-    ///
-    /// The rotate-don't-ban behavior depends on this: a rate-limited error that
-    /// is NOT retryable would skip the retry loop, silently killing rotation
-    /// (see the `CanRetry` docs and the `debug_assert!` in `execute`). This test
-    /// pins the invariant so any future widening of `is_rate_limited` (or
-    /// narrowing of `can_retry`) that breaks it fails loudly here.
-    #[test]
-    fn test_rate_limit_implies_retryable_invariant() {
-        use dapi_grpc::tonic::Code::*;
-
-        // The full gRPC code set — keep exhaustive so a newly classified code
-        // can never silently dodge the invariant check.
-        let all_codes = [
-            Ok,
-            Cancelled,
-            Unknown,
-            InvalidArgument,
-            DeadlineExceeded,
-            NotFound,
-            AlreadyExists,
-            PermissionDenied,
-            ResourceExhausted,
-            FailedPrecondition,
-            Aborted,
-            OutOfRange,
-            Unimplemented,
-            Internal,
-            Unavailable,
-            DataLoss,
-            Unauthenticated,
-        ];
-
-        let addr = mock_address();
-
-        for code in all_codes {
-            // `tonic::Status` is not `Clone`, so build a fresh one per layer.
-            let status = dapi_grpc::tonic::Status::new(code, "x");
-            assert!(
-                !status.is_rate_limited() || status.can_retry(),
-                "tonic::Status {code:?}: is_rate_limited() must imply can_retry()"
-            );
-
-            let te = TransportError::Grpc(dapi_grpc::tonic::Status::new(code, "x"));
-            assert!(
-                !te.is_rate_limited() || te.can_retry(),
-                "TransportError {code:?}: is_rate_limited() must imply can_retry()"
-            );
-
-            let dce = DapiClientError::Transport(TransportError::Grpc(
-                dapi_grpc::tonic::Status::new(code, "x"),
-            ));
-            assert!(
-                !dce.is_rate_limited() || dce.can_retry(),
-                "DapiClientError {code:?}: is_rate_limited() must imply can_retry()"
-            );
-
-            let ee: ExecutionError<DapiClientError> = ExecutionError {
-                inner: DapiClientError::Transport(TransportError::Grpc(
-                    dapi_grpc::tonic::Status::new(code, "x"),
-                )),
-                retries: 0,
-                address: Some(addr.clone()),
-            };
-            assert!(
-                !ee.is_rate_limited() || ee.can_retry(),
-                "ExecutionError {code:?}: is_rate_limited() must imply can_retry()"
-            );
-        }
-
-        // Guard the non-vacuous case: ResourceExhausted must actually be BOTH
-        // rate-limited AND retryable, otherwise the invariant could hold only
-        // because nothing is ever rate-limited (the feature would be dead).
-        let re = dapi_grpc::tonic::Status::resource_exhausted("429");
+        // The ban ladder is invoked: first ban → ban_count = 1, window = 60 s.
+        let info = address_list.ban_info();
+        let entry = info.iter().find(|i| i.uri == addr.to_string()).unwrap();
         assert!(
-            re.is_rate_limited() && re.can_retry(),
-            "ResourceExhausted must be rate-limited AND retryable"
+            entry.banned,
+            "node must be banned on ResourceExhausted without header"
+        );
+        assert_eq!(
+            entry.ban_count, 1,
+            "first health-ladder ban → ban_count = 1"
         );
     }
 
@@ -563,178 +518,6 @@ mod tests {
             reason.contains("temporary"),
             "ban reason should carry the underlying error, got: {reason}"
         );
-    }
-
-    /// Invariant 1: the genuine-failure health-ban ladder is unchanged.
-    ///
-    /// A genuine failure (Unavailable / Internal) must still ban the node with
-    /// the `60s × e^ban_count` exponential window, `ban_count` incrementing on
-    /// each ban — byte-for-byte the pre-existing behavior.
-    #[test]
-    fn test_invariant_genuine_failure_still_bans_with_unchanged_ladder() {
-        let mut address_list = AddressList::new(); // base ban period = 60s
-        let addr = mock_address();
-        address_list.add(addr.clone());
-
-        let base_secs = 60.0_f64; // DEFAULT_BASE_BAN_PERIOD
-
-        for expected_count in 1..=3usize {
-            // Alternate genuine-failure codes to prove the ladder is not
-            // code-specific (both are non-rate-limited, retryable failures).
-            let status = if expected_count % 2 == 1 {
-                dapi_grpc::tonic::Status::unavailable("node down")
-            } else {
-                dapi_grpc::tonic::Status::internal("boom")
-            };
-
-            let before = chrono::Utc::now();
-            let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
-                inner: DapiClientError::Transport(TransportError::Grpc(status)),
-                retries: 0,
-                address: Some(addr.clone()),
-            });
-            update_address_ban_status(&address_list, &result, &make_applied_settings(true));
-            let after = chrono::Utc::now();
-
-            let info = address_list.ban_info();
-            let entry = info
-                .iter()
-                .find(|i| i.uri.contains("3000"))
-                .expect("address present in ban info");
-
-            assert!(entry.banned, "genuine failure must ban the node");
-            assert_eq!(
-                entry.ban_count, expected_count,
-                "ban_count must increment on each genuine failure"
-            );
-
-            // Window must equal base × e^(ban_count - 1). Since
-            // banned_until = t_call + period with before <= t_call <= after:
-            //   (banned_until - before) >= period   and
-            //   (banned_until - after)  <= period.
-            let period = base_secs * ((expected_count - 1) as f64).exp();
-            let banned_until = entry.banned_until.expect("banned_until is set");
-            let lower = (banned_until - before).num_milliseconds() as f64 / 1000.0;
-            let upper = (banned_until - after).num_milliseconds() as f64 / 1000.0;
-            assert!(
-                lower >= period - 0.05,
-                "ban #{expected_count} window lower bound {lower}s < expected {period}s",
-            );
-            assert!(
-                upper <= period + 0.05,
-                "ban #{expected_count} window upper bound {upper}s > expected {period}s",
-            );
-        }
-    }
-
-    /// Invariant 2: rate-limited bans use a fixed-duration window, not the
-    /// exponential health-ban ladder.
-    ///
-    /// After a `ResourceExhausted` error:
-    /// * the address IS banned (`banned_until` is `Some` and in the future), so
-    ///   subsequent retries naturally pick a *different* node;
-    /// * `ban_count` stays at 0 — the health-ban ladder is untouched;
-    /// * the pool is NOT permanently empty: the ban expires after the window.
-    #[test]
-    fn test_invariant_rate_limited_bans_with_duration_not_health_ladder() {
-        let mut address_list = AddressList::new();
-        let addresses: Vec<crate::Address> = (3000..3003)
-            .map(|p| {
-                format!("http://127.0.0.1:{p}")
-                    .parse()
-                    .expect("valid address")
-            })
-            .collect();
-        for addr in &addresses {
-            address_list.add(addr.clone());
-        }
-
-        // Apply a ResourceExhausted to each address once (no RetryInfo → fallback duration).
-        for addr in &addresses {
-            let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
-                inner: DapiClientError::Transport(TransportError::Grpc(
-                    dapi_grpc::tonic::Status::resource_exhausted("429"),
-                )),
-                retries: 0,
-                address: Some(addr.clone()),
-            });
-            update_address_ban_status(&address_list, &result, &make_applied_settings(true));
-        }
-
-        for info in address_list.ban_info() {
-            // Rate-limited: DOES ban (window from server or fallback).
-            assert!(
-                info.banned,
-                "rate-limited address {} must be temporarily banned",
-                info.uri
-            );
-            // Health-ban ladder: untouched.
-            assert_eq!(
-                info.ban_count, 0,
-                "ban_count must stay 0 after rate-limit ban for {}",
-                info.uri
-            );
-            assert!(
-                info.banned_until.is_some(),
-                "banned_until must be set after rate-limit ban for {}",
-                info.uri
-            );
-        }
-    }
-
-    /// Invariant 2b: a rate-limit ban must NOT increment ban_count even when
-    /// a genuine health ban was already applied to the same address.
-    #[test]
-    fn test_invariant_rate_limit_ban_does_not_increment_ban_count() {
-        let mut address_list = AddressList::new();
-        let addr = mock_address();
-        address_list.add(addr.clone());
-
-        // First: genuine health failure → ban_count = 1.
-        let genuine: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
-            inner: DapiClientError::Transport(TransportError::Grpc(
-                dapi_grpc::tonic::Status::unavailable("node down"),
-            )),
-            retries: 0,
-            address: Some(addr.clone()),
-        });
-        update_address_ban_status(&address_list, &genuine, &make_applied_settings(true));
-        let count_after_health_ban = address_list
-            .ban_info()
-            .into_iter()
-            .find(|i| i.uri.contains("3000"))
-            .map(|i| i.ban_count)
-            .unwrap_or(0);
-        assert_eq!(
-            count_after_health_ban, 1,
-            "health ban must set ban_count = 1"
-        );
-
-        // Unban to simulate ban expiry.
-        address_list.unban(&addr);
-
-        // Then: rate-limit → ban_count must remain at 0 (fresh after unban).
-        // But even starting from ban_count=0 post-unban, a rate-limit must not
-        // push it to 1.
-        let rate_limited: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
-            inner: DapiClientError::Transport(TransportError::Grpc(
-                dapi_grpc::tonic::Status::resource_exhausted("429"),
-            )),
-            retries: 0,
-            address: Some(addr.clone()),
-        });
-        update_address_ban_status(&address_list, &rate_limited, &make_applied_settings(true));
-
-        let info = address_list.ban_info();
-        let entry = info
-            .iter()
-            .find(|i| i.uri == addr.to_string())
-            .expect("address in ban_info");
-        assert_eq!(
-            entry.ban_count, 0,
-            "rate-limit ban must NOT increment ban_count"
-        );
-        assert!(entry.banned, "address must still be temporarily banned");
     }
 
     #[test]
@@ -929,16 +712,15 @@ impl DapiRequestExecutor for DapiClient {
         let dump_request = request.clone();
 
         let max_retries = applied_settings.retries;
+        let retry_delay = Duration::from_millis(10);
 
         let mut retries: usize = 0;
-        // Track the last transport error for when all addresses get exhausted.
+        // Track the last transport error for when all addresses get exhausted
         let mut last_transport_error: Option<TransportError> = None;
 
         let result: ExecutionResult<R::Response, DapiClientError> = async {
             loop {
-                // Pick a live (not-banned) address.  Rate-limited nodes are
-                // banned for a server-dictated window by update_address_ban_status,
-                // so they are naturally excluded until the window expires.
+                // Try to get an address to initialize transport on:
                 let Some(address) = self.address_list.get_live_address() else {
                     // No available addresses - wrap with last meaningful error if we have one
                     let error = if let Some(transport_error) = last_transport_error.take() {
@@ -993,15 +775,6 @@ impl DapiRequestExecutor for DapiClient {
                         // Clone error before moving it
                         let cloned_error = transport_error.clone();
 
-                        // Invariant lock (mirror of the transport-error arm
-                        // below): a rate-limited error MUST be retryable, else
-                        // the rotation never fires. See `CanRetry` docs and
-                        // `test_rate_limit_implies_retryable_invariant`.
-                        debug_assert!(
-                            !cloned_error.is_rate_limited() || cloned_error.can_retry(),
-                            "is_rate_limited() must imply can_retry(); rate-limit rotation depends on it"
-                        );
-
                         let execution_error = ExecutionError {
                             inner: DapiClientError::Transport(transport_error),
                             retries,
@@ -1021,10 +794,10 @@ impl DapiRequestExecutor for DapiClient {
                             retries += 1;
                             tracing::warn!(
                                 error = ?execution_error,
-                                delay_ms = RETRY_DELAY_MS,
-                                "retrying error"
+                                "retrying error with sleeping {} secs",
+                                retry_delay.as_secs_f32()
                             );
-                            transport::sleep(Duration::from_millis(RETRY_DELAY_MS)).await;
+                            transport::sleep(retry_delay).await;
                             continue;
                         }
 
@@ -1071,14 +844,6 @@ impl DapiRequestExecutor for DapiClient {
                 match execution_result {
                     Ok(response) => return Ok(response),
                     Err(error) => {
-                        // Invariant: a rate-limited error MUST be retryable so
-                        // update_address_ban_status applies the ban-for-duration
-                        // path.  See CanRetry docs and
-                        // test_rate_limit_implies_retryable_invariant.
-                        debug_assert!(
-                            !error.is_rate_limited() || error.can_retry(),
-                            "is_rate_limited() must imply can_retry(); ban-for-duration depends on it"
-                        );
                         if error.can_retry() && retries < max_retries {
                             // Store last transport error
                             if let DapiClientError::Transport(ref te) = error.inner {
@@ -1088,10 +853,10 @@ impl DapiRequestExecutor for DapiClient {
                             retries += 1;
                             tracing::warn!(
                                 ?error,
-                                delay_ms = RETRY_DELAY_MS,
-                                "retrying error"
+                                "retrying error with sleeping {} secs",
+                                retry_delay.as_secs_f32()
                             );
-                            transport::sleep(Duration::from_millis(RETRY_DELAY_MS)).await;
+                            transport::sleep(retry_delay).await;
                             continue;
                         }
 

@@ -147,20 +147,37 @@ impl CanRetry for dapi_grpc::tonic::Status {
         )
     }
 
-    fn is_rate_limited(&self) -> bool {
-        // ResourceExhausted is the gRPC mapping of an upstream rate-limit /
-        // backpressure (e.g. Envoy per-IP 429). It is retryable but the node
-        // is healthy, so it receives a fixed-duration ban rather than the
-        // exponential health-ban ladder (see `update_address_ban_status`).
-        // Exactly one code — do NOT widen this.
-        self.code() == dapi_grpc::tonic::Code::ResourceExhausted
-    }
-
+    /// Returns the Envoy-advertised ban duration for a `ResourceExhausted`
+    /// response, or `None` if this is not a rate-limit or carries no usable
+    /// `RateLimit-Reset` header.
+    ///
+    /// Envoy's global rate-limit filter emits `RateLimit-Reset: <seconds>` when
+    /// `LIMIT_RESPONSE_HEADERS_ENABLED=true` is set on the Lyft RLS container
+    /// (see `packages/dashmate/docker-compose.rate_limiter.yml`).  The value is
+    /// the whole-second count until the per-IP window resets.
+    ///
+    /// Parse rules (adversarial-input safe):
+    /// * Non-`ResourceExhausted` code → `None`.
+    /// * Header absent, non-numeric, or `0` → `None` (caller uses normal ban
+    ///   ladder).
+    /// * Valid positive integer → clamped to
+    ///   [`[MIN_RATE_LIMIT_BAN_SECS, MAX_RATE_LIMIT_BAN_SECS]`]
+    ///   (`dapi_client.rs`) and returned as `Some(Duration)`.
     fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
-        if self.code() != dapi_grpc::tonic::Code::ResourceExhausted {
+        use crate::dapi_client::{MAX_RATE_LIMIT_BAN_SECS, MIN_RATE_LIMIT_BAN_SECS};
+        use dapi_grpc::tonic::Code;
+        if self.code() != Code::ResourceExhausted {
             return None;
         }
-        crate::rate_limit::rate_limit_ban_duration(self)
+        let secs = self
+            .metadata()
+            .get("ratelimit-reset")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .filter(|&s| s > 0)?;
+        Some(std::time::Duration::from_secs(
+            secs.clamp(MIN_RATE_LIMIT_BAN_SECS, MAX_RATE_LIMIT_BAN_SECS),
+        ))
     }
 }
 

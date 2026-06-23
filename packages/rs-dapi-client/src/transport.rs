@@ -107,12 +107,6 @@ impl CanRetry for TransportError {
         }
     }
 
-    fn is_rate_limited(&self) -> bool {
-        match self {
-            TransportError::Grpc(status) => status.is_rate_limited(),
-        }
-    }
-
     fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
         match self {
             TransportError::Grpc(status) => status.rate_limit_ban_duration(),
@@ -224,53 +218,62 @@ mod tests {
         assert!(!non_retryable.can_retry());
     }
 
+    /// `rate_limit_ban_duration` returns `Some` only for `ResourceExhausted` with
+    /// a parseable positive `ratelimit-reset` header.  Every other code returns
+    /// `None` regardless of headers.
     #[test]
-    fn test_tonic_status_is_rate_limited_only_resource_exhausted() {
-        // Exactly one code is a rate-limit signal.
-        assert!(dapi_grpc::tonic::Status::new(Code::ResourceExhausted, "429").is_rate_limited());
+    fn test_tonic_status_rate_limit_ban_duration() {
+        use dapi_grpc::tonic::metadata::MetadataValue;
 
-        // Every other code — including the *other* retryable ones and
-        // DeadlineExceeded — must stay false. Widening this set would
-        // reintroduce the reverted multi-code classifier.
-        let not_rate_limited = [
+        // ResourceExhausted + valid header → Some.
+        let mut status = dapi_grpc::tonic::Status::new(Code::ResourceExhausted, "429");
+        status
+            .metadata_mut()
+            .insert("ratelimit-reset", MetadataValue::try_from("30").unwrap());
+        assert_eq!(
+            status.rate_limit_ban_duration(),
+            Some(std::time::Duration::from_secs(30))
+        );
+
+        // ResourceExhausted without header → None.
+        let no_header = dapi_grpc::tonic::Status::new(Code::ResourceExhausted, "429");
+        assert!(no_header.rate_limit_ban_duration().is_none());
+
+        // Non-ResourceExhausted codes → None regardless.
+        for code in [
             Code::Ok,
-            Code::Cancelled,
-            Code::Unknown,
-            Code::InvalidArgument,
-            Code::DeadlineExceeded,
-            Code::NotFound,
-            Code::AlreadyExists,
-            Code::PermissionDenied,
-            Code::FailedPrecondition,
-            Code::Aborted,
-            Code::OutOfRange,
-            Code::Unimplemented,
-            Code::Internal,
             Code::Unavailable,
-            Code::DataLoss,
-            Code::Unauthenticated,
-        ];
-        for code in not_rate_limited {
+            Code::Internal,
+            Code::DeadlineExceeded,
+        ] {
+            let mut s = dapi_grpc::tonic::Status::new(code, "x");
+            s.metadata_mut()
+                .insert("ratelimit-reset", MetadataValue::try_from("30").unwrap());
             assert!(
-                !dapi_grpc::tonic::Status::new(code, "x").is_rate_limited(),
-                "code {:?} must NOT be classified as rate-limited",
-                code
+                s.rate_limit_ban_duration().is_none(),
+                "code {code:?} must return None"
             );
         }
     }
 
     #[test]
-    fn test_transport_error_is_rate_limited_delegates() {
-        let rate_limited = TransportError::Grpc(dapi_grpc::tonic::Status::new(
-            Code::ResourceExhausted,
-            "429",
-        ));
-        assert!(rate_limited.is_rate_limited());
-        // Rate-limited is still retryable; only the ban decision differs.
+    fn test_transport_error_rate_limit_ban_duration_delegates() {
+        use dapi_grpc::tonic::metadata::MetadataValue;
+
+        let mut status = dapi_grpc::tonic::Status::new(Code::ResourceExhausted, "429");
+        status
+            .metadata_mut()
+            .insert("ratelimit-reset", MetadataValue::try_from("45").unwrap());
+        let rate_limited = TransportError::Grpc(status);
+        assert_eq!(
+            rate_limited.rate_limit_ban_duration(),
+            Some(std::time::Duration::from_secs(45))
+        );
+        // Still retryable — rate-limit ban duration doesn't affect can_retry.
         assert!(rate_limited.can_retry());
 
         let unavailable = TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("down"));
-        assert!(!unavailable.is_rate_limited());
+        assert!(unavailable.rate_limit_ban_duration().is_none());
         assert!(unavailable.can_retry());
     }
 

@@ -42,6 +42,10 @@ services:
       - GRPC_MAX_CONNECTION_AGE=1h
       - GRPC_MAX_CONNECTION_AGE_GRACE=10m
       - GRPC_PORT=8081
+      # Emit RateLimit-Limit / RateLimit-Remaining / RateLimit-Reset response
+      # headers so rs-dapi-client can read the exact reset window and ban the
+      # node for that duration instead of the exponential health-ban ladder.
+      - LIMIT_RESPONSE_HEADERS_ENABLED=true
     expose:
       - 8081
     profiles:

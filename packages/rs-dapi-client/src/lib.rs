@@ -11,7 +11,6 @@ pub mod dump;
 mod executor;
 #[cfg(feature = "mocks")]
 pub mod mock;
-mod rate_limit;
 mod request_settings;
 pub mod transport;
 
@@ -96,26 +95,11 @@ pub trait CanRetry {
         false
     }
 
-    /// Returns true if this error is a rate-limit / congestion signal
-    /// (gRPC `ResourceExhausted`).
-    ///
-    /// Rate-limit errors are retryable (see [`CanRetry::can_retry`]) but,
-    /// unlike genuine node ill-health, the node is healthy — just throttled.
-    /// `update_address_ban_status` applies a short, server-dictated ban via
-    /// [`CanRetry::rate_limit_ban_duration`] instead of the exponential
-    /// health-ban ladder, so the node re-joins the live pool as soon as the
-    /// rate-limit window expires.
-    fn is_rate_limited(&self) -> bool {
-        false
-    }
-
-    /// Returns the server-suggested ban duration for a rate-limited error.
-    ///
-    /// When a `ResourceExhausted` status carries a `google.rpc.RetryInfo`
-    /// detail, this returns the embedded `retry_delay`.  Returns `None` for
-    /// all non-rate-limited errors and for rate-limited errors that carry no
-    /// server hint (the caller should use a configurable fallback in that
-    /// case — see `DAPI_RATE_LIMIT_BAN_MS`).
+    /// If this error is a gRPC `ResourceExhausted` (Envoy rate-limit) that
+    /// carries a `RateLimit-Reset` metadata header, returns the server-advertised
+    /// ban duration (clamped to a safe range).  Returns `None` for all other
+    /// errors and for rate-limit errors that carry no usable header (the caller
+    /// falls back to the normal exponential ban ladder in that case).
     fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
         None
     }
