@@ -239,6 +239,19 @@ using `SeedCryptoProvider`). The `.swift` `unlockWalletFromKeychain` re-attach �
 
 ## Remaining — environment-blocked (Swift + on-device)
 
+> **STATUS (2026-06-23, superseded):** The Swift work below is **DONE** — see
+> `70aaf32f9f` and the spec banner (authoritative). `unlockWalletFromKeychain(_:)`
+> now verifies-binds + background-drains (no re-attach); send/accept/contactInfo
+> thread `core_signer_handle`; the `KeychainSigner.sign(...)->Data?` nil-swallow is
+> deleted. Verified: header regenerated (`build_ios.sh --target sim`), arm64-sim
+> SwiftExampleApp **BUILD SUCCEEDED**, and an **on-device smoke test** (booted
+> sim, fresh install + launch) reached the Sync Status screen with **DashPay sync
+> running** against real persisted state — the new seedless binary launches/runs
+> with no crash. The bullets below are kept for history. The ONLY open item is the
+> **funded testnet acceptance** (happy + wrong-seed-rejected + cross-device
+> contactInfo) — interactive manual QA: it needs the funded wallet activated, a
+> deliberately mis-mapped slot, a second device, and on-chain testnet writes.
+
 Need Xcode + iOS simulator runtime (absent here). After the Rust/FFI lands,
 regenerate the cbindgen header (`build_ios.sh` — the header lives inside the
 xcframework build artifact, so it can't be hand-regenerated meaningfully without
