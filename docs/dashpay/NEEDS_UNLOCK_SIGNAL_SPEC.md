@@ -4,10 +4,15 @@ Source backlog item: `SIGNER_SEED_ELIMINATION_SPEC.md` §4.7 / §9-7 (MEDIUM) �
 "UI marker for contacts pending an unlock-drain"; `TODO.md` Q2 follow-up
 ("needs-unlock / verify-failed UI signal").
 
-> **Status:** REVIEWED (4-lens: feasibility / scope / failure-modes / domain-fit,
-> 2026-06-23). Must-fixes folded in; see §9 for what changed. The headline design
-> changed materially from the first draft — the count now tracks only
-> **account-build** ops, and the Swift surface collapsed to one Equatable struct.
+> **Status:** DONE (`9963923e05` Rust+FFI, `841802c587` Swift). REVIEWED (4-lens:
+> feasibility / scope / failure-modes / domain-fit, 2026-06-23); must-fixes folded
+> in (§9). The headline design changed materially from the first draft — the count
+> tracks only **account-build** ops, and the Swift surface collapsed to one
+> Equatable struct. On-device (devnet paloma, iPhone 17 Pro sim): the three banner
+> states all verified — "N waiting" + Unlock → "Finishing…" → cleared — and the
+> banner does **not** re-trip after a full sweep cadence (the M1 regression check).
+> The `seedMismatch` red banner is covered by the `verify_seed_binds` unit test +
+> the scoped-catch logic (a live wrong-seed import is destructive, so not staged).
 
 ## 1. Problem
 

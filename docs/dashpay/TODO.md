@@ -227,11 +227,22 @@ track, and the multi-agent reviews. Prioritized; check off as done.
     `WrongSeed` deleted; `None`-account + verify-FFI marshalling tests added; `WipingSecretKey`
     panic-window guard; neutral drain log; SeedMismatch-vs-transient unlock branch; doc/spec
     fixes). Deferred:
-    - **needs-unlock / verify-failed UI signal** (silent-failure HIGH + a `seedVerified`/
-      `needsUnlock` flag on `ManagedPlatformWallet`): a failed/stuck background drain, or a
-      wallet that failed `verify_seed_binds`, currently shows only a `print()` — no UI/telemetry.
-      Fold into the existing needs-unlock-marker work (§4.7/§9-7); surface `pending_contact_crypto`
-      count + the verify outcome through persistence the way `paymentChannelBroken` already is.
+    - [x] **needs-unlock / verify-failed UI signal — DONE** (`9963923e05` Rust+FFI,
+      `841802c587` Swift). Spec + 4-lens review in `NEEDS_UNLOCK_SIGNAL_SPEC.md`.
+      Diverged from "through persistence like `paymentChannelBroken`" (the review found
+      that path isn't buildable today — the per-wallet restore is blocked upstream — and
+      would persist self-healing state): instead a pollable FFI count getter + a per-wallet
+      `@Published DashPayUnlockStatus` (one Equatable struct: `pendingAccountBuilds`,
+      `seedMismatch`, `draining`) + a `DashPayTabView` banner. Critical review catch (M1):
+      the count tracks **only** account-build ops (`RegisterReceiving`/`RegisterExternal`),
+      excluding `ContactInfoDecrypt` which re-enqueues every sweep and would make the signal a
+      permanent ">0". `seedMismatch` set from the verify FFI result (scoped, not a broad catch);
+      drain gets an in-flight guard + MainActor hop (no more `print()`-only swallow);
+      `deleteWallet` purges the status (no ghost banner). On-device (devnet paloma, iPhone 17
+      Pro sim): all three states verified — "2 contacts waiting" + Unlock → "Finishing…" →
+      cleared, and the banner does **not** re-trip after a full sweep cadence (the M1 check).
+      `seedMismatch` red banner is covered by the `verify_seed_binds` unit test + scoped-catch
+      logic (live wrong-seed import is destructive; not staged).
     - [x] **`account_xpub` survives the restore round-trip — DONE** (reframed from the
       reviewer's "restored-wallet verify test"). On investigation this is NOT a
       `verify_seed_binds` test: `load_from_persistor` receives already-deserialized structs,
