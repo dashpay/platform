@@ -98,18 +98,20 @@ track, and the multi-agent reviews. Prioritized; check off as done.
 - [x] **contactInfo fetch pagination: DONE** (`e757d9a528`). `send address-reuse` —
   **DEFERRED (minor):** only bites if SPV drops our own broadcast; `mark_address_used`
   at broadcast is a small hardening with no observed incidence — revisit if it occurs.
-- [ ] **Wire QR-based auto-accept (DIP-15).** `auto_accept.rs` fully implements the
-  DIP-15 auto-accept proof (generate + verify, `m/9'/coin'/16'/timestamp'`, the
-  70-byte proof format) but nothing wires it to a flow — the send path threads
-  `auto_accept_proof: Option<Vec<u8>>` and production always passes `None`; the
-  source even carries `// TODO: Where and how we use these helpers?`. The feature:
-  a QR creator embeds a proof so the scanner's client auto-sends + auto-accepts the
-  contact request without manual approval. To do: define the QR payload + scan flow,
-  generate the proof on QR create, verify + auto-accept on scan. Confirm parity vs
-  Android (dashj / kotlin-platform) — our comparison doc doesn't cover it yet. NOTE
-  for the signer-seed-elimination work: `generate/verify_auto_accept_proof` is a
-  *sign* path (derive key → ECDSA-sign), so it converts to the `Signer` model
-  cleanly when wired; keep the helpers (do NOT delete as dead code).
+- [~] **QR-based auto-accept (DIP-15) — RESEARCHED, DEPRIORITIZED (2026-06-24).** Full
+  findings in `QR_AUTO_ACCEPT_RESEARCH.md`. Verdict: `autoAcceptProof` is **spec-only,
+  dormant in every reference client** — dashj has zero references (no ContactRequest
+  model); `android-dashpay` defines the field + an unused builder (0 callers, no sign/
+  verify/accept); `dash-wallet` keeps it as a dormant DB pass-through and its QR scanner
+  only does payments/sweeps. So there is **no interoperable counterparty** — wiring it
+  would invent an iOS-only convention no one verifies, and DIP-15 leaves the
+  security-critical half (verification algo, signed-byte serialization, expiry
+  enforcement, replay) undefined. Our `auto_accept.rs` crypto also models the wrong
+  actor for the scanner side (derives from a full wallet seed; the spec's scanner signs
+  with the loose QR-handed key). **Keep `auto_accept.rs` as-is (tested, dormant); do NOT
+  delete the helpers.** If contact-onboarding is the real goal, the shipped/interoperable
+  feature is **Invitations** (DIP-13 sub-feature `3'`, `dashpay://invite` deep-link +
+  AssetLock funding → register a new identity), a separate larger feature — not this.
 
 ## Spec / design track (in order — sync is FIRST)
 
