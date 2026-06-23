@@ -42,7 +42,7 @@ struct DecryptedContactInfo {
 /// paginated owner-scoped scan. Shared by the resident sweep decrypt and the
 /// seedless publish/drain (which decrypt via the signer), so the document fetch
 /// is single-sourced and no key material is needed to produce it.
-struct RawContactInfoDoc {
+pub(super) struct RawContactInfoDoc {
     doc_id: Identifier,
     revision: u64,
     root_index: u32,
