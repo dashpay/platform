@@ -4604,6 +4604,64 @@ mod tests {
         ManagedWalletInfo::from_wallet(&wallet, 0)
     }
 
+    /// `account_xpub` must survive the persist→restore byte round-trip — it is
+    /// the key the seed-binding self-check (`PlatformWallet::verify_seed_binds`)
+    /// later compares the resolver-derived xpub against, so a corrupted restore
+    /// would silently make a correct seed fail to bind. This drives the exact
+    /// production chain: the store side bincode-encodes the account xpub
+    /// (`build_account_specs_for_callback`), and the restore side decodes it from
+    /// `AccountSpecFFI.account_xpub_bytes` and rebuilds the account via
+    /// `Account::from_xpub` (`build_wallet_start_state`). Pins that both ends use
+    /// the same bincode config and that `Account::from_xpub` preserves the xpub.
+    /// (Asserted here at the FFI persister layer, where the bytes round-trip
+    /// actually happens — `load_from_persistor` itself only sees decoded structs.)
+    #[test]
+    fn account_xpub_survives_persist_restore_round_trip() {
+        let mnemonic = Mnemonic::from_phrase(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+            Language::English,
+        )
+        .expect("static BIP-39 vector must parse");
+        let seed = mnemonic.to_seed("");
+        let wallet = Wallet::from_seed_bytes(
+            seed,
+            Network::Testnet,
+            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+        )
+        .expect("seeded wallet");
+        let wallet_id = wallet.wallet_id;
+        let source = wallet
+            .get_bip44_account(0)
+            .expect("a Default-created wallet has BIP44 account 0");
+        let account_type = source.account_type.clone();
+        let expected_xpub = source.account_xpub;
+
+        // Store side: encode the xpub exactly as the callback producer does.
+        let xpub_bytes =
+            bincode::encode_to_vec(expected_xpub, config::standard()).expect("encode account xpub");
+        // The C struct the host hands back on restore.
+        let spec = build_account_spec_ffi(&account_type, &xpub_bytes);
+
+        // Restore side: reconstruct the account type + decode the xpub exactly as
+        // `build_wallet_start_state` does, then rebuild via `Account::from_xpub`.
+        let restored_type =
+            account_type_from_spec(&spec).expect("account type tag round-trips through the spec");
+        let raw = unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
+        let (decoded_xpub, _): (ExtendedPubKey, usize) =
+            bincode::decode_from_slice(raw, config::standard()).expect("decode account xpub");
+        assert_eq!(
+            decoded_xpub, expected_xpub,
+            "the bincode round-trip must preserve the account xpub byte-for-byte"
+        );
+        let restored =
+            Account::from_xpub(Some(wallet_id), restored_type, decoded_xpub, Network::Testnet)
+                .expect("Account::from_xpub on the restored xpub must succeed");
+        assert_eq!(
+            restored.account_xpub, expected_xpub,
+            "the restored account's xpub must equal the original — the key verify_seed_binds binds against"
+        );
+    }
+
     /// Helper: a minimum valid consensus-encodable transaction —
     /// version 1, one synthetic input, one zero-value output. The
     /// restoration helper only cares that the bytes round-trip

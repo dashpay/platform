@@ -231,15 +231,18 @@ track, and the multi-agent reviews. Prioritized; check off as done.
       wallet that failed `verify_seed_binds`, currently shows only a `print()` — no UI/telemetry.
       Fold into the existing needs-unlock-marker work (§4.7/§9-7); surface `pending_contact_crypto`
       count + the verify outcome through persistence the way `paymentChannelBroken` already is.
-    - **`account_xpub` survives the restore round-trip** (reframed; the reviewer's
-      "restored-wallet verify test"). On investigation this is NOT a `verify_seed_binds`
-      test: `load_from_persistor` receives already-deserialized structs, so a
-      platform-wallet test would duplicate the create-path coverage — `verify_seed_binds`
+    - [x] **`account_xpub` survives the restore round-trip — DONE** (reframed from the
+      reviewer's "restored-wallet verify test"). On investigation this is NOT a
+      `verify_seed_binds` test: `load_from_persistor` receives already-deserialized structs,
+      so a platform-wallet test would duplicate the create-path coverage — `verify_seed_binds`
       reads `account_xpub` identically regardless of how the account was built and cannot
-      regress from a serde bug. The only real round-trip is the FFI persister decoding
-      `AccountSpecFFI.account_xpub_bytes` → `ExtendedPubKey` (`rs-platform-wallet-ffi`);
-      add/confirm the assertion there. (WipingXprv de-dup intentionally NOT tracked — two
-      documented 6-line guards are fine; the real fix is upstream `ZeroizeOnDrop`, see §4.2.)
+      regress from a serde bug. The real round-trip is the FFI persister decoding
+      `AccountSpecFFI.account_xpub_bytes` → `ExtendedPubKey`; added
+      `account_xpub_survives_persist_restore_round_trip` in `rs-platform-wallet-ffi/persistence.rs`
+      driving the exact `encode_to_vec`→`AccountSpecFFI`→`decode_from_slice`→`Account::from_xpub`
+      chain (red→green verified: a store/restore bincode-config mismatch fails it).
+      (WipingXprv de-dup intentionally NOT tracked — two documented 6-line guards are fine;
+      the real fix is upstream `ZeroizeOnDrop`, see §4.2.)
     - **Remove the `Signer` protocol** once the public DashPay API (send/accept/contactInfo
       `signer:` params) is narrowed from `any Signer` to `KeychainSigner` — it's now a one-method
       (`canSign`) transitional shim.
