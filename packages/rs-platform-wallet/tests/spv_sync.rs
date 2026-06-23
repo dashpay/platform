@@ -219,13 +219,9 @@ async fn test_spv_sync_and_balance() {
     }
 
     // --- Start SPV in background ---
-    let manager_for_spv = Arc::clone(&manager);
-    let spv_handle = tokio::spawn(async move {
-        if let Err(e) = manager_for_spv.spv().run(config).await {
-            eprintln!("SPV runtime error: {}", e);
-        }
-    });
-
+    let spv = manager.spv_arc();
+    spv.start(config).await.unwrap();
+    spv.spawn_run_loop();
     // --- Wait for confirmed balance ---
     // Cold start needs to sync full testnet chain headers (~1M+ blocks).
     // Second run with cached state is much faster (~20s).
@@ -241,7 +237,6 @@ async fn test_spv_sync_and_balance() {
     loop {
         if start.elapsed() > timeout {
             let _ = manager.spv().stop().await;
-            let _ = spv_handle.await;
             panic!("Timeout waiting for wallet balance after {:?}", timeout);
         }
 
@@ -266,7 +261,6 @@ async fn test_spv_sync_and_balance() {
         if confirmed > 0 {
             println!("SUCCESS: Wallet has confirmed balance: {} duffs", confirmed);
             let _ = manager.spv().stop().await;
-            let _ = spv_handle.await;
 
             // --- Verify persistence ---
             let core_stores = persister_for_check.core_store_count();

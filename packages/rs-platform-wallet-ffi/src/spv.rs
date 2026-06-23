@@ -10,7 +10,7 @@ use platform_wallet::spv::{
 
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::runtime;
+use crate::runtime::{block_on_worker, runtime};
 use crate::types::FFINetwork;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
@@ -358,10 +358,23 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
             config.devnet = Some(devnet);
         }
 
-        let _guard = runtime().enter();
-        manager.spv_arc().spawn_in_background(config);
+        let spv = manager.spv_arc();
+        let start_result = {
+            let spv = spv.clone();
+            block_on_worker(async move { spv.start(config).await })
+        };
+
+        if start_result.is_ok() {
+            let _guard = runtime().enter();
+            spv.spawn_run_loop();
+        }
+
+        start_result
     });
-    unwrap_option_or_return!(option);
+
+    let start_result = unwrap_option_or_return!(option);
+    unwrap_result_or_return!(start_result);
+
     PlatformWalletFFIResult::ok()
 }
 

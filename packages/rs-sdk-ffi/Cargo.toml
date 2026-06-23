@@ -45,6 +45,7 @@ bincode = { version = "=2.0.1", features = ["serde"] }
 
 # Async runtime
 tokio = { version = "1.41", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio-metrics = { workspace = true, optional = true }
 
 # Error handling
 thiserror = "2.0"
@@ -92,6 +93,7 @@ log = "0.4"
 
 [features]
 default = []
+tokio-metrics = ["dep:tokio-metrics"]
 
 # Optional mocks for development/testing; maps to dash-sdk's mocks
 mocks = ["dash-sdk/mocks"]
