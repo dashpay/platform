@@ -39,6 +39,15 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// outcome. Do NOT auto-retry — a retry would rebuild the bundle and
     /// could double-execute if the original landed.
     case errorShieldedSpendUnconfirmed = 18
+    /// One or more background coordinator threads did not exit cleanly
+    /// before the FFI's 30 s join deadline. The host MUST keep its
+    /// callback context (the persister + event-handler Swift objects whose
+    /// `Unmanaged.passUnretained` opaque pointers were handed to Rust)
+    /// alive past `platform_wallet_manager_destroy` — a lingering
+    /// coordinator thread still holds an `Arc<FFIPersister>` /
+    /// `Arc<FFIEventHandler>` and may fire one final callback through
+    /// that context. The manager IS torn down; do NOT retry `destroy`.
+    case errorShutdownIncomplete = 19
     case notFound = 98
     case errorUnknown = 99
 
@@ -82,6 +91,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedBroadcastUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_SPEND_UNCONFIRMED:
             self = .errorShieldedSpendUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHUTDOWN_INCOMPLETE:
+            self = .errorShutdownIncomplete
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -177,6 +188,14 @@ public enum PlatformWalletError: LocalizedError {
     /// notes reserved wallet-side (a shield reserves nothing) until the
     /// next sync reconciles the outcome. Do NOT auto-retry.
     case shieldedSpendUnconfirmed(String)
+    /// `platform_wallet_manager_destroy` returned without proving that
+    /// every background coordinator OS thread had exited. The manager is
+    /// torn down, but the host must not free the Swift-side persister /
+    /// event-handler context until that thread has had a chance to wind
+    /// down — `PlatformWalletManager.deinit` retains those handlers in a
+    /// process-global leak slot on this code so a final, lingering Rust
+    /// callback finds valid memory.
+    case shutdownIncomplete(String)
     case notFound(String)
     case unknown(String)
 
@@ -192,6 +211,7 @@ public enum PlatformWalletError: LocalizedError {
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
+             .shutdownIncomplete(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -222,6 +242,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
         case .errorShieldedSpendUnconfirmed: self = .shieldedSpendUnconfirmed(detail)
+        case .errorShutdownIncomplete: self = .shutdownIncomplete(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }
