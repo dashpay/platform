@@ -255,9 +255,11 @@ track, and the multi-agent reviews. Prioritized; check off as done.
       chain (red→green verified: a store/restore bincode-config mismatch fails it).
       (WipingXprv de-dup intentionally NOT tracked — two documented 6-line guards are fine;
       the real fix is upstream `ZeroizeOnDrop`, see §4.2.)
-    - **Remove the `Signer` protocol** once the public DashPay API (send/accept/contactInfo
-      `signer:` params) is narrowed from `any Signer` to `KeychainSigner` — it's now a one-method
-      (`canSign`) transitional shim.
+    - [x] **`Signer` protocol — KEPT (decided 2026-06-23, do not re-raise).** The
+      API-narrowing prerequisite is already done (38 `signer: KeychainSigner` call sites,
+      0 `any Signer`/`Signer`), so the protocol is a harmless ~6-line vestigial `canSign`
+      shim with zero type-level consumers besides the `KeychainSigner` conformance. Decided
+      it isn't worth a churn commit — keep it.
 
 - [ ] **§6b — restore the deferred-crypto queue into `PlatformWalletInfo` on load.**
   Reader `all_pending_contact_crypto` exists (`cfg(test)`-gated); blocked upstream by
