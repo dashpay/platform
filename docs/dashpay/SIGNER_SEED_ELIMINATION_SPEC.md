@@ -88,33 +88,99 @@ accountReference, contactInfo seal/open, wrong-seed check), the deferred-crypto
 queue + SQLite persistence, and C3 (resident ECDH path deleted). Discovery is
 NOT a rewrite target — the **carry-scalar fix is kept** (§1).
 
-**Remaining for Q2 (do in this order):**
-1. **#7 contactInfo** — publish (write) via `ContactCryptoProvider::contact_info_seal`;
-   sweep (read) → enqueue `ContactInfoDecrypt`; drain op → `contact_info_open`
-   (re-fetch is testnet-validated).
-2. **Discovery/loading `ResidentWallet` fallback** — route the transient master
-   xpriv through `discover()` / `load_identity_by_index()` (the `Master` variants
-   exist) so import/unlock derive from the transient mnemonic; remove the
-   `ResidentWallet` variants. Carry-scalar unchanged.
-3. **Swift** — drain-on-unlock replacing `unlockWalletFromKeychain`'s re-attach;
-   rework test helpers to inject a test `Signer`.
-4. **Delete** `attach_wallet_seed` + the FFI export + the dual-gate/`mem::swap` +
-   the legacy `KeychainSigner.sign(...)->Data?` nil-swallow.
+**Remaining for Q2 (do in this order). Folds in the 4-lens plan review
+(feasibility / security / scope-dedup / adversarial), which corrected two
+over-optimistic items in an earlier draft of this banner — see the MUST-FIX
+notes.**
+
+1. **#7 contactInfo (the load-bearing item).**
+   - Add `contact_info_seal` AND **`contact_info_open`** to `ContactCryptoProvider`
+     (+ glue impl over the signer primitives + `SeedCryptoProvider` test impl).
+     **MUST-FIX (review):** publish is NOT seal-only — it must DECRYPT existing
+     owned docs to decide update-vs-create (the doc↔contact binding lives inside
+     `encToUserId` ciphertext; `contact_info.rs:435-447`), so it needs `open`.
+   - Refactor the shared helper `fetch_decrypted_contact_infos` (resident-hardcoded
+     at `:206`/`:450`, used by BOTH publish and the signerless sweep) into a public
+     high-water scan (no keys) + a provider-`open` decrypt step. Thread `crypto`
+     into `set_contact_info_with_external_signer` (publish) and the FFI
+     (`platform_wallet_set_dashpay_contact_info_with_signer` gains a
+     `core_signer_handle` — ABI break, like send/accept).
+   - **MUST-FIX (security): root-path provenance.** Build the contactInfo root
+     path in **Rust** via `identity_auth_derivation_path_for_type(net, ECDSA,
+     identity_index, root_key_id)` (never Swift); pin the parity test against that
+     REAL path, not `test_path()` — a wrong root silently writes undecryptable
+     contactInfo with no on-chain oracle.
+   - **MUST-FIX (security): high-water.** Publish is signer-present, so derive the
+     high-water `derivationIndex` from a FRESH full decrypt, or refuse to publish —
+     NEVER fall back to `0`/stale (collides the unique `($ownerId, rootIndex,
+     derivationIndex)` index / reuses a key).
+   - Implement the `ContactInfoDecrypt` **drain op** (currently a no-op stub,
+     `contact_requests.rs:1440`): re-fetch owned docs + `contact_info_open` via the
+     provider + re-run `validate_contact_request`-equivalent. Re-fetch = **testnet
+     validated**. `derive_contact_info_keys` (resident twin) is deleted ONLY after
+     both publish AND this sweep/drain path no longer call it.
+   - **MUST-FIX (security): confused-deputy.** The drain (and opportunistic drains)
+     must re-validate the queue entry's `owner_identity_id` is owned by THIS wallet
+     before decrypting/registering.
+
+2. **Discovery/loading — NO library change (corrected; was wrong in the earlier
+   draft).** The FFI already routes external-signable wallets through
+   `discover_from_master` / `load_identity_by_index_from_master` (via
+   `resolve_master_from_resolver`), and the `ResidentWallet` variants are the
+   **live path for genuine resident-key wallet TYPES** (`WalletType::Mnemonic`/
+   `Seed`, e.g. raw-seed imports with no persisted mnemonic) — NOT dead duplicates.
+   So **keep** them; do **NOT** attempt the deep `verified_scalar`-drop rewrite
+   (that's the env-blocked architectural change, and unnecessary — carry-scalar is
+   kept). The only Q2 work here: (a) confirm every discovery/loading caller passes
+   a non-null resolver after the deletion makes external-signable the universal
+   posture (the FFI already errors on null — `identity_discovery.rs:194`); (b) the
+   test-helper rework in step 3. NOTE: the §2 "exhaustive" table is exhaustive over
+   *DashPay-contact* paths; the discovery resident derive `derive_identity_auth_keypair`
+   (`identity_handle.rs:191`) is a resident-key-TYPE path that legitimately stays.
+
+3. **Test-helper rework + Swift.** `payments.rs::make_wallet` (`:747`) and
+   `make_wallet_with` (`:711`) call `attach_wallet_seed` — rework them to the
+   external-signable + `SeedCryptoProvider`/test-`Signer` shape (`make_watch_only_wallet`,
+   `:757`, is the template) BEFORE the deletion; move every resident-derive test
+   assertion onto the provider. Swift: drain-on-unlock replacing
+   `unlockWalletFromKeychain`'s re-attach.
+
+4. **Delete** `attach_wallet_seed` + FFI export + dual-gate/`mem::swap` + the dead
+   `dash_sdk_dashpay_*` rs-sdk-ffi surface (4 fns, zero Swift callers — confirmed)
+   + the legacy `KeychainSigner.sign(...)->Data?` nil-swallow.
+   - **MUST-FIX (security): atomic wrong-seed wiring.** `verify_binds_to_xpub`
+     (§4.8) exists but has ZERO production callers. Its glue wiring MUST land in the
+     SAME change that deletes the dual gate — else wrong-seed/wrong-wallet detection
+     vanishes with nothing in its place (silent wrong-signature risk).
+   - **SHOULD-FIX (security): §4.2 sibling-FFI leak.** Port the `WipingXprv` RAII
+     guard to `rs-platform-wallet-ffi/src/sign_with_mnemonic_resolver.rs:203-223`
+     (still hand-places `non_secure_erase` on the Ok-path only; `?`/panic leaks).
 
 **Done when:** `git grep attach_wallet_seed` is empty; `cargo test -p platform-wallet`
-green; `build_ios.sh` + SwiftExampleApp build clean; and the **testnet on-device
-acceptance** passes (clean wipe → import the funded testnet seed → discover →
-send/accept contact request, send payment, publish profile + contactInfo;
-background-discover an inbound contact then unlock → it becomes payable).
+green; `build_ios.sh` + SwiftExampleApp build clean; and **testnet on-device
+acceptance** passes — INCLUDING the two negative/cross-device cases the all-positive
+script currently misses (review): (a) a **wrong/mis-mapped seed is rejected loud**
+(exercises `verify_binds_to_xpub`); (b) **cross-device contactInfo deferral** —
+publish on A → background-sync on seedless B → unlock B → contactInfo appears
+(exercises the `ContactInfoDecrypt` drain). Plus the happy path: clean wipe →
+import funded testnet seed → discover → send/accept + pay + publish; background-
+discover inbound contact then unlock → payable.
 
 **Out of Q2 scope** (tracked in `TODO.md`): §6b queue restore (upstream
-`ClientStartState::wallets`); the §4.2 error-/unwind-path wipe hardening; the
-§4.8 present-but-zero-keys import caveat; QR auto-accept wiring.
+`ClientStartState::wallets` — note the security review's caveat that until restore
+works, a contact discovered-then-app-killed-before-unlock never finishes setup);
+the §4.8 present-but-zero-keys import caveat; QR auto-accept wiring.
 
-## 2. Inventory of seed-dependent paths (revised; exhaustive)
+## 2. Inventory of seed-dependent paths (revised; exhaustive over **DashPay-contact** paths)
 
 Verified by grepping every `derive_extended_p*_key` / `build_signed(wallet` /
 `.has_seed()` reader, and by tracing reachability from the background sweep.
+NOTE (plan review): this table enumerates the DashPay-contact seed paths (#1–#7).
+The **identity-discovery** resident derive `derive_identity_auth_keypair`
+(`identity_handle.rs:191`) is a separate resident-key-TYPE path — it legitimately
+stays for `WalletType::Mnemonic`/`Seed` wallets and is NOT a Q2 deletion target
+(external-signable wallets already route discovery through the resolver). See the
+Q2 banner step 2.
 
 `bg?` = reachable from the **signerless** recurring sweep
 (`DashPaySyncManager` → `dashpay_sync` → `build_contact_accounts` /

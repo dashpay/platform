@@ -178,26 +178,49 @@ track, and the multi-agent reviews. Prioritized; check off as done.
   primitives (ECDH/accountReference/contactInfo seal-open/wrong-seed), deferred-crypto
   queue + SQLite, C3 (resident ECDH path deleted). Discovery is resolved via the
   KEPT carry-scalar (not a rewrite).
-  - [ ] **#7 contactInfo seedless** — publish via `ContactCryptoProvider::contact_info_seal`;
-    sweep read → enqueue `ContactInfoDecrypt`; drain op → `contact_info_open` (re-fetch).
-  - [ ] **Discovery/loading `ResidentWallet` fallback removal** — route the transient
-    master xpriv through `discover()` / `load_identity_by_index()` (the `Master`
-    variants exist); delete the `ResidentWallet` variants. Carry-scalar unchanged.
-  - [ ] **Swift** — drain-on-unlock replacing `unlockWalletFromKeychain` re-attach;
-    rework test helpers to inject a test `Signer`.
+  **(4-lens plan review folded in — see the spec's Q2 banner for the MUST-FIX detail.)**
+  - [ ] **#7 contactInfo seedless** — add `contact_info_seal` AND `contact_info_open`
+    to `ContactCryptoProvider` (publish must DECRYPT existing docs for update-vs-create,
+    not just encrypt); refactor the shared `fetch_decrypted_contact_infos` (resident-
+    hardcoded, used by publish + signerless sweep) into public-high-water + provider-
+    decrypt; thread `crypto` into publish + the FFI (`core_signer_handle` ABI break).
+    MUST-FIX: build the contactInfo root path in Rust + pin the parity test to the REAL
+    auth path (silent-undecryptable hazard); publish derives high-water FRESH or refuses
+    (never index 0 → unique-index collision). Implement the `ContactInfoDecrypt` drain op
+    (no-op stub today) — re-fetch + open + validate; **testnet-validated**. Confused-deputy:
+    drain re-validates the entry's `owner_identity_id`. Delete `derive_contact_info_keys`
+    only once BOTH publish + sweep stop calling it.
+  - [ ] **Discovery/loading — NO library change** (corrected: the earlier "remove the
+    ResidentWallet variants" was wrong). External-signable wallets already route through
+    `discover_from_master`/`load_identity_by_index_from_master` (via `resolve_master_from_resolver`);
+    the `ResidentWallet` variants stay for genuine resident-key wallet TYPES. Just confirm
+    callers pass a non-null resolver post-deletion. The deep `verified_scalar`-drop rewrite
+    is NOT needed (carry-scalar kept).
+  - [ ] **Test-helper rework** — `payments.rs::make_wallet` (`:747`) / `make_wallet_with`
+    (`:711`) call `attach_wallet_seed`; rework to external-signable + `SeedCryptoProvider`/
+    test-`Signer` (`make_watch_only_wallet` is the template) BEFORE deletion.
+  - [ ] **Swift** — drain-on-unlock replacing `unlockWalletFromKeychain` re-attach.
   - [ ] **Delete `attach_wallet_seed`** + FFI export + impl + dual-gate/`mem::swap`
-    + the legacy `KeychainSigner.sign(...)->Data?` nil-swallow.
-  - [ ] **Testnet on-device acceptance** — clean wipe → import funded testnet seed →
-    discover → send/accept + pay + publish profile/contactInfo; background-discover
-    inbound contact then unlock → payable; `git grep attach_wallet_seed` empty.
+    + the dead `dash_sdk_dashpay_*` rs-sdk-ffi surface (4 fns, zero Swift callers)
+    + the legacy `KeychainSigner.sign(...)->Data?` nil-swallow. MUST-FIX: wire
+    `verify_binds_to_xpub` (§4.8, zero callers today) in the SAME change (else wrong-seed
+    detection vanishes). SHOULD-FIX: port `WipingXprv` to `sign_with_mnemonic_resolver.rs`
+    (§4.2 error-path leak).
+  - [ ] **Testnet on-device acceptance** — happy path (import funded seed → discover →
+    send/accept + pay + publish; background-discover inbound contact then unlock → payable)
+    PLUS the two cases the all-positive script misses: (a) wrong/mis-mapped seed rejected
+    LOUD; (b) cross-device contactInfo deferral (publish on A → seedless B sync → unlock B →
+    appears). `git grep attach_wallet_seed` empty.
 
 - [ ] **§6b — restore the deferred-crypto queue into `PlatformWalletInfo` on load.**
   Reader `all_pending_contact_crypto` exists (`cfg(test)`-gated); blocked upstream by
   `persister.rs` `LOAD_UNIMPLEMENTED: ClientStartState::wallets` (no per-wallet
   rehydration yet — nothing to attach the queue to). Wire once that lands. (Not Q2.)
-- [ ] **§4.2 — error-/unwind-path scalar wipe hardening** in `resolve_derived_xprv`
-  / `sign_with_mnemonic_resolver.rs`: prefer one RAII wipe-guard over hand-placed
-  `non_secure_erase`; close the unwind-path residue gap. (Security hardening; not Q2.)
+- [ ] **§4.2 — error-/unwind-path scalar wipe hardening.** `resolve_derived_xprv` is
+  already fixed (the `WipingXprv` RAII guard); the sibling
+  `rs-platform-wallet-ffi/src/sign_with_mnemonic_resolver.rs:203-223` still hand-places
+  `non_secure_erase` on the Ok-path only (a `?`/panic leaks both scalars). Folded into
+  **Q2 step 4 as a SHOULD-FIX** (security review) — port `WipingXprv` to the sibling.
 - [ ] **§4.8 caveat — present-but-zero-keys import** isn't covered by the xpub
   self-check. The carry-scalar fix means imports now materialize keys (so it's
   currently moot), but if a zero-keys import recurs, `verify_binds_to_xpub` won't
