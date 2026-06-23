@@ -653,6 +653,38 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
     PlatformWalletFFIResult::ok()
 }
 
+/// Number of deferred **account-build** contact-crypto ops queued for this
+/// wallet (the `RegisterReceiving` / `RegisterExternal` ops that build a
+/// contact's payment account and need a signer unlock). Writes the count to
+/// `out_count`.
+///
+/// Signerless read of in-memory state — no signer handle needed, safe to poll.
+/// `> 0` means some contacts are waiting for an unlock to finish setup; it is a
+/// wallet-scoped upper bound (aggregates the wallet's identities; may include
+/// ops that resolve to channel-broken on the next drain). `ContactInfoDecrypt`
+/// is excluded — it re-enqueues every sweep, so it is structurally always
+/// present and is not an actionable backlog.
+///
+/// # Safety
+/// - `out_count` must be a valid `*mut u32`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_pending_contact_crypto_count(
+    wallet_handle: Handle,
+    out_count: *mut u32,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_count);
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        block_on_worker(async move { identity.pending_contact_crypto_count().await })
+    });
+    let count = unwrap_option_or_return!(option);
+    unsafe {
+        *out_count = count as u32;
+    }
+    PlatformWalletFFIResult::ok()
+}
+
 /// Verify the resolver signer resolves the seed that owns this wallet, before
 /// trusting it to sign. Derives the wallet's BIP44 account-0 xpub through the
 /// signer and compares it to the persisted account xpub; a mismatch means the
@@ -730,5 +762,26 @@ mod tests {
         let r =
             unsafe { platform_wallet_verify_seed_binds_to_wallet(0xDEAD_BEEF, dummy_signer) };
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
+    }
+
+    /// A null `out_count` is rejected with `ErrorNullPointer` (the `check_ptr!`
+    /// contract) before any wallet lookup.
+    #[test]
+    fn pending_contact_crypto_count_null_out_is_null_pointer() {
+        let r =
+            unsafe { platform_wallet_pending_contact_crypto_count(1, std::ptr::null_mut()) };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    /// An unknown `wallet_handle` surfaces `NotFound` via the `with_item`
+    /// lookup miss; `out_count` is left untouched.
+    #[test]
+    fn pending_contact_crypto_count_unknown_wallet_is_not_found() {
+        let mut count: u32 = 7;
+        let r = unsafe {
+            platform_wallet_pending_contact_crypto_count(0xDEAD_BEEF, &mut count)
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
+        assert_eq!(count, 7, "out_count is untouched on a lookup miss");
     }
 }

@@ -49,9 +49,11 @@ pub struct PlatformWalletInfo {
     /// perform because key material was unavailable (watch-only / signer
     /// locked). Drained when a signer is available (Keychain unlock, or any
     /// signer-present action). Secret-free — only on-chain ciphertext +
-    /// public key indices. Restored at load so a restore-from-Keychain
-    /// doesn't strand a discovered contact. See
-    /// [`PendingContactCrypto`](crate::changeset::PendingContactCrypto).
+    /// public key indices. In-memory for the live session: the queue is
+    /// persisted to the changeset, but cold-load restore is blocked upstream
+    /// (`ClientStartState::wallets` is not yet rehydrated), so a re-imported
+    /// wallet re-syncs from scratch and the sweep re-enqueues what it needs.
+    /// See [`PendingContactCrypto`](crate::changeset::PendingContactCrypto).
     pub pending_contact_crypto: Vec<crate::changeset::PendingContactCrypto>,
 }
 

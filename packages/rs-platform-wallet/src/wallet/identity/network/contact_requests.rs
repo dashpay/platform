@@ -758,6 +758,31 @@ fn select_recipient_key_index(recipient_identity: &Identity) -> Result<u32, Plat
 // Sync contact requests from platform
 // ---------------------------------------------------------------------------
 
+/// Count the **account-build** ops in a deferred-crypto queue.
+///
+/// `RegisterReceiving` / `RegisterExternal` build a contact's payment account
+/// and need a signer unlock to complete; they converge to 0 once drained
+/// (candidate selection skips contacts whose external account already exists),
+/// so their count is an actionable "waiting for unlock" backlog.
+///
+/// `ContactInfoDecrypt` is intentionally excluded: it is re-enqueued on every
+/// signerless sweep (there is no already-decrypted gate), so it is structurally
+/// always present and would make a "needs unlock" signal a permanent `> 0` —
+/// re-tripping the banner shortly after every unlock on a healthy wallet.
+fn count_account_build_ops(queue: &[crate::changeset::PendingContactCrypto]) -> usize {
+    use crate::changeset::PendingContactCryptoOp;
+    queue
+        .iter()
+        .filter(|e| {
+            matches!(
+                e.op,
+                PendingContactCryptoOp::RegisterReceiving
+                    | PendingContactCryptoOp::RegisterExternal { .. }
+            )
+        })
+        .count()
+}
+
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Fetch and process contact requests from the platform for all local identities.
     ///
@@ -1292,6 +1317,23 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 "failed to persist deferred contact-crypto enqueue; will re-enqueue next sweep"
             );
         }
+    }
+
+    /// Number of deferred **account-build** contact-crypto ops queued for this
+    /// wallet (in-memory): the `RegisterReceiving` / `RegisterExternal` ops that
+    /// build a contact's payment account and need a signer unlock to complete.
+    ///
+    /// A `> 0` count means some contacts are waiting for an unlock to finish
+    /// setup. It is a wallet-scoped upper bound — it aggregates across the
+    /// wallet's identities and includes ops that may resolve to channel-broken
+    /// on the next drain — so a caller should phrase it as "waiting," not
+    /// "will succeed." `ContactInfoDecrypt` is excluded (see
+    /// [`count_account_build_ops`]). Signerless / public read; no persistence.
+    pub async fn pending_contact_crypto_count(&self) -> usize {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .map(|info| count_account_build_ops(&info.pending_contact_crypto))
+            .unwrap_or(0)
     }
 
     /// Drain the persisted deferred-crypto queue using `provider` for the
@@ -2914,5 +2956,48 @@ mod contact_info_provider_tests {
             .expect("open");
         assert_eq!(opened.contact_id, contact_id, "open recovers the contact id");
         assert_eq!(opened.private_data, plaintext, "open recovers the private data");
+    }
+
+    /// The "needs unlock" count must track only the account-build ops
+    /// (`RegisterReceiving` / `RegisterExternal`) and exclude
+    /// `ContactInfoDecrypt`. `ContactInfoDecrypt` is re-enqueued on every
+    /// signerless sweep, so counting it would make the count a permanent
+    /// `> 0` and re-trip the UI banner ~15s after every unlock on a healthy
+    /// wallet. This fails against a naive `pending_contact_crypto.len()`.
+    #[test]
+    fn account_build_count_excludes_contact_info_decrypt() {
+        use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
+
+        let owner = Identifier::from([1u8; 32]);
+        let mk = |contact: u8, op| PendingContactCrypto {
+            owner_identity_id: owner,
+            contact_id: Identifier::from([contact; 32]),
+            op,
+            enqueued_at_ms: 0,
+        };
+
+        let queue = vec![
+            mk(2, PendingContactCryptoOp::RegisterReceiving),
+            mk(
+                2,
+                PendingContactCryptoOp::RegisterExternal {
+                    encrypted_public_key: vec![0u8; 96],
+                    our_decryption_key_index: 0,
+                    contact_encryption_key_index: 0,
+                },
+            ),
+            mk(3, PendingContactCryptoOp::ContactInfoDecrypt),
+        ];
+        // Two account-build ops; the ContactInfoDecrypt is not counted.
+        assert_eq!(count_account_build_ops(&queue), 2);
+
+        // A queue of only ContactInfoDecrypt is zero actionable backlog.
+        assert_eq!(
+            count_account_build_ops(&[mk(4, PendingContactCryptoOp::ContactInfoDecrypt)]),
+            0
+        );
+
+        // Empty queue is zero.
+        assert_eq!(count_account_build_ops(&[]), 0);
     }
 }
