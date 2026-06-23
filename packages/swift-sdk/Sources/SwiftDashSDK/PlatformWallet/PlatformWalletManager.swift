@@ -16,6 +16,34 @@ final class ShieldedSyncGenerationCounter: @unchecked Sendable {
     @discardableResult func bump() -> UInt64 { lock.withLock { value &+= 1; return value } }
 }
 
+/// Per-wallet DashPay "needs unlock / verify failed" status, surfaced for the
+/// UI. One coherent snapshot per wallet (not parallel dictionaries) so a banner
+/// is a pure function of one `Equatable` value.
+public struct DashPayUnlockStatus: Equatable {
+    /// Count of deferred account-build contact-crypto ops waiting for a signer
+    /// unlock to finish payment-account setup. A wallet-scoped upper bound
+    /// (aggregates the wallet's identities; may include ops that resolve to
+    /// channel-broken on the next drain) — phrase it as "waiting," not "will
+    /// succeed." Polled from `platform_wallet_pending_contact_crypto_count`.
+    public var pendingAccountBuilds: UInt32 = 0
+    /// The Keychain-resolved seed does not bind to this wallet (Rust
+    /// `SeedMismatch`): DashPay signing is disabled until the mapping is fixed.
+    /// Set from the verify FFI result at unlock.
+    public var seedMismatch: Bool = false
+    /// A deferred-crypto drain is in flight. Drives a "finishing…" state and
+    /// disables a second Unlock tap so the banner can't kick a concurrent drain.
+    public var draining: Bool = false
+
+    public init(pendingAccountBuilds: UInt32 = 0, seedMismatch: Bool = false, draining: Bool = false) {
+        self.pendingAccountBuilds = pendingAccountBuilds
+        self.seedMismatch = seedMismatch
+        self.draining = draining
+    }
+
+    /// Whether anything is worth showing the user (a banner host can early-out).
+    public var hasSignal: Bool { seedMismatch || draining || pendingAccountBuilds > 0 }
+}
+
 /// The one thing SwiftUI needs for all wallet operations.
 ///
 /// Owns the Rust-side `PlatformWalletManager` handle which drives:
@@ -130,6 +158,14 @@ public class PlatformWalletManager: ObservableObject {
     /// wallet they care about via [`wallet(for:)`] rather than
     /// assuming a single "active" wallet.
     @Published public private(set) var wallets: [Data: ManagedPlatformWallet] = [:]
+
+    /// Per-wallet DashPay needs-unlock / verify-failed status, keyed by the
+    /// 32-byte wallet id. `pendingAccountBuilds` is refreshed by the progress
+    /// poller; `seedMismatch` and `draining` are set at the unlock / drain call
+    /// sites. Keys are pruned when a wallet leaves [`wallets`] (and explicitly
+    /// on [`deleteWallet`]) so a re-created wallet with the same deterministic
+    /// id can't inherit a stale banner.
+    @Published public private(set) var dashPayUnlockStatus: [Data: DashPayUnlockStatus] = [:]
 
     /// Last error from a wallet operation, if any. Cleared on successful op.
     @Published public private(set) var lastError: Error?
@@ -512,12 +548,36 @@ public class PlatformWalletManager: ObservableObject {
         // resolver alive across the synchronous FFI call (its vtable callback
         // fires during it). Throws if the resolved seed derives a different
         // BIP44 account-0 xpub than the wallet's persisted one.
-        try withExtendedLifetime(coreSigner) {
-            try platform_wallet_verify_seed_binds_to_wallet(
-                walletHandle,
-                coreSigner.handle
-            ).check()
+        //
+        // Publish the per-wallet `seedMismatch` from the verify result itself,
+        // scoped to JUST this call: the verify FFI maps Rust `SeedMismatch` →
+        // `.invalidParameter`, and scoping the catch here keeps the earlier
+        // 32-byte `walletId` precondition (also `.invalidParameter`) from being
+        // mistaken for a seed mismatch. Rethrow so the existing caller handling
+        // (loadFromPersistor's log-and-continue) is unchanged.
+        do {
+            try withExtendedLifetime(coreSigner) {
+                try platform_wallet_verify_seed_binds_to_wallet(
+                    walletHandle,
+                    coreSigner.handle
+                ).check()
+            }
+            setDashPaySeedMismatch(walletId, false)
+        } catch let error as PlatformWalletError {
+            if case .invalidParameter = error {
+                setDashPaySeedMismatch(walletId, true)
+            }
+            throw error
         }
+
+        // Don't stack a second drain on an in-flight one: a banner Unlock tap
+        // (or a second unlock) while a drain runs would duplicate the network
+        // re-fetch + ECDH work and race the channel-broken writes. The banner
+        // also disables Unlock while `draining`, but guard here too.
+        if dashPayUnlockStatus[walletId]?.draining == true {
+            return true
+        }
+        setDashPayDraining(walletId, true)
 
         // Drain deferred contact-crypto in the background — it re-fetches and
         // decrypts over the network, so it must not block the caller. The
@@ -527,8 +587,10 @@ public class PlatformWalletManager: ObservableObject {
         // destroyed before the drain runs, `with_item` Rust-side simply misses
         // the handle and the drain no-ops (NotFound) — no use-after-free.
         // Fire-and-forget: a failure here is not fatal (the next signer-present
-        // DashPay action re-attempts the drain via its own provider).
-        Task.detached(priority: .utility) {
+        // DashPay action re-attempts the drain via its own provider), but it is
+        // no longer swallowed silently — the failure lands on `lastError` and
+        // the `draining` flag is cleared, both on the main actor.
+        Task.detached(priority: .utility) { [weak self] in
             var drained: UInt32 = 0
             let result = withExtendedLifetime(coreSigner) {
                 platform_wallet_drain_pending_contact_crypto(
@@ -537,9 +599,18 @@ public class PlatformWalletManager: ObservableObject {
                     &drained
                 )
             }
-            do {
-                try result.check()
-                if drained > 0 {
+            let drainError: Error? = {
+                do { try result.check(); return nil } catch { return error }
+            }()
+            await MainActor.run {
+                self?.setDashPayDraining(walletId, false)
+                if let drainError {
+                    self?.lastError = drainError
+                    print(
+                        "⚠️ contact-crypto drain failed for "
+                            + "\(walletId.toHexString().prefix(8)): \(drainError)"
+                    )
+                } else if drained > 0 {
                     // `drained` counts cleared queue entries — both completed
                     // and permanently-failed (channel-broken) ops — so report
                     // it neutrally rather than implying all succeeded.
@@ -548,11 +619,6 @@ public class PlatformWalletManager: ObservableObject {
                             + "\(walletId.toHexString().prefix(8))"
                     )
                 }
-            } catch {
-                print(
-                    "⚠️ contact-crypto drain failed for "
-                        + "\(walletId.toHexString().prefix(8)): \(error)"
-                )
             }
         }
         return true
@@ -777,6 +843,10 @@ public class PlatformWalletManager: ObservableObject {
         }
 
         wallets.removeValue(forKey: walletId)
+        // Drop the needs-unlock banner state immediately so a re-created wallet
+        // with the same deterministic id doesn't inherit a stale banner (the
+        // poller would also prune it, but not until the next tick).
+        dashPayUnlockStatus.removeValue(forKey: walletId)
 
         try persistenceHandler.deleteWalletData(walletId: walletId)
 
@@ -821,6 +891,39 @@ public class PlatformWalletManager: ObservableObject {
         guard !wallets.isEmpty else { return nil }
         let key = wallets.keys.min(by: { $0.lexicographicallyPrecedes($1) })
         return key.flatMap { wallets[$0] }
+    }
+
+    // MARK: - DashPay needs-unlock signal
+
+    /// Count of deferred **account-build** contact-crypto ops queued for the
+    /// wallet (the contacts waiting for a signer unlock to finish payment-account
+    /// setup). Thin bridge over `platform_wallet_pending_contact_crypto_count`;
+    /// the Rust side decides what counts (account-build ops only). Signerless —
+    /// safe to poll.
+    public func pendingAccountBuildCount(for walletId: Data) throws -> UInt32 {
+        guard let wallet = wallets[walletId] else {
+            throw PlatformWalletError.invalidParameter("unknown wallet")
+        }
+        var count: UInt32 = 0
+        try platform_wallet_pending_contact_crypto_count(wallet.handle, &count).check()
+        return count
+    }
+
+    /// Update `seedMismatch` for a wallet, gated on change to avoid needless
+    /// `@Published` churn.
+    private func setDashPaySeedMismatch(_ walletId: Data, _ value: Bool) {
+        var status = dashPayUnlockStatus[walletId] ?? .init()
+        guard status.seedMismatch != value else { return }
+        status.seedMismatch = value
+        dashPayUnlockStatus[walletId] = status
+    }
+
+    /// Update `draining` for a wallet, gated on change.
+    private func setDashPayDraining(_ walletId: Data, _ value: Bool) {
+        var status = dashPayUnlockStatus[walletId] ?? .init()
+        guard status.draining != value else { return }
+        status.draining = value
+        dashPayUnlockStatus[walletId] = status
     }
 
     // MARK: - Xpub rendering
@@ -990,6 +1093,22 @@ public class PlatformWalletManager: ObservableObject {
                 let tip = (try? self.currentSpvTipBlockTime()) ?? nil
                 if tip != self.spvTipBlockTime {
                     self.spvTipBlockTime = tip
+                }
+                // Refresh the per-wallet needs-unlock count (account-build ops).
+                // Per-wallet, so O(wallets)/tick; gated on change per key.
+                for walletId in self.wallets.keys {
+                    if let n = try? self.pendingAccountBuildCount(for: walletId),
+                       n != self.dashPayUnlockStatus[walletId]?.pendingAccountBuilds {
+                        var status = self.dashPayUnlockStatus[walletId] ?? .init()
+                        status.pendingAccountBuilds = n
+                        self.dashPayUnlockStatus[walletId] = status
+                    }
+                }
+                // Prune status for wallets no longer loaded (e.g. removed by a
+                // wipe) so a re-created wallet with the same id starts clean.
+                let stale = self.dashPayUnlockStatus.keys.filter { self.wallets[$0] == nil }
+                for walletId in stale {
+                    self.dashPayUnlockStatus.removeValue(forKey: walletId)
                 }
                 try? await Task.sleep(for: .seconds(1))
             }

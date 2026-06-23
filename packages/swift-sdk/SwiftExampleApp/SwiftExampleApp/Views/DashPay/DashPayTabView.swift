@@ -237,6 +237,8 @@ struct DashPayTabView: View {
 
                 dashPayBalanceRow(identity: identity)
 
+                dashPayUnlockBanner(identity: identity)
+
                 Picker("Section", selection: $segment) {
                     Text("Contacts").tag(DashPaySegment.contacts)
                     Text("Requests").tag(DashPaySegment.requests)
@@ -259,6 +261,79 @@ struct DashPayTabView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Needs-unlock / verify-failed banner
+
+    /// Surfaces the DashPay needs-unlock / verify-failed signal for the active
+    /// identity's wallet. Priority: a seed mismatch (signing disabled) supersedes
+    /// everything; an in-flight drain shows a non-actionable "finishing" state;
+    /// otherwise a pending account-build backlog offers Unlock. Nothing renders
+    /// on a healthy wallet. The count is wallet-scoped (may include sibling
+    /// identities on the same wallet), so the copy says "waiting," not a promise.
+    @ViewBuilder
+    private func dashPayUnlockBanner(identity: PersistentIdentity) -> some View {
+        if let walletId = identity.wallet?.walletId,
+           let status = walletManager.dashPayUnlockStatus[walletId],
+           status.hasSignal {
+            if status.seedMismatch {
+                unlockBannerRow(
+                    text: "Seed verification failed — this wallet's Keychain seed "
+                        + "doesn't match. DashPay signing is disabled.",
+                    systemImage: "exclamationmark.triangle.fill",
+                    tint: .red,
+                    action: nil
+                )
+            } else if status.draining {
+                unlockBannerRow(
+                    text: "Finishing contact setup…",
+                    systemImage: "hourglass",
+                    tint: .orange,
+                    action: nil
+                )
+            } else if status.pendingAccountBuilds > 0 {
+                let n = Int(status.pendingAccountBuilds)
+                unlockBannerRow(
+                    text: "\(n) contact\(n == 1 ? "" : "s") waiting to finish setup",
+                    systemImage: "lock.fill",
+                    tint: .orange,
+                    action: walletManager.wallet(for: walletId).map { wallet in
+                        { try? walletManager.unlockWalletFromKeychain(wallet) }
+                    }
+                )
+            }
+        }
+    }
+
+    /// One banner row: an icon + message tinted by severity, with an optional
+    /// trailing Unlock button. Mirrors the inline `paymentChannelBroken` warning
+    /// styling (icon + `.orange`/`.red`), promoted to a tappable container.
+    private func unlockBannerRow(
+        text: String,
+        systemImage: String,
+        tint: Color,
+        action: (() -> Void)?
+    ) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .foregroundColor(tint)
+            Text(text)
+                .font(.caption)
+                .foregroundColor(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            if let action {
+                Button("Unlock", action: action)
+                    .font(.caption.bold())
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            }
+        }
+        .padding(10)
+        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal)
+        .padding(.bottom, 6)
+        .accessibilityIdentifier("dashpay.unlockBanner")
     }
 
     // MARK: - Identity picker
