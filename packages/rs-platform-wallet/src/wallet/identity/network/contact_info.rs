@@ -30,13 +30,25 @@ use crate::wallet::identity::crypto::contact_info::{
     decode_private_data, derive_contact_info_keys, encode_private_data, ContactInfoPrivateData,
 };
 
-/// One decrypted `contactInfo` document.
+/// One decrypted `contactInfo` document — the fields the sweep applies. (The
+/// publish path's update-vs-create needs `doc_id`/`revision`/`derivation_index`
+/// too; it reads those from [`RawContactInfoDoc`] before decrypting.)
 struct DecryptedContactInfo {
-    doc_id: Identifier,
-    revision: u64,
-    derivation_index: u32,
     contact_id: Identifier,
     data: ContactInfoPrivateData,
+}
+
+/// A `contactInfo` document's public, key-free fields — the result of the
+/// paginated owner-scoped scan. Shared by the resident sweep decrypt and the
+/// seedless publish/drain (which decrypt via the signer), so the document fetch
+/// is single-sourced and no key material is needed to produce it.
+struct RawContactInfoDoc {
+    doc_id: Identifier,
+    revision: u64,
+    root_index: u32,
+    derivation_index: u32,
+    enc_to_user_id: [u8; 32],
+    private_data: Vec<u8>,
 }
 
 /// Outcome of [`IdentityWallet::set_contact_info_with_external_signer`].
@@ -62,34 +74,26 @@ pub enum ContactInfoPublishOutcome {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
-    /// Fetch + decrypt every `contactInfo` document owned by
-    /// `identity_id`. Documents whose keys we can't derive (foreign
-    /// root index) or whose payload doesn't decrypt are skipped with a
-    /// warning — a malformed doc must not abort the sync pass.
+    /// Paginated owner-scoped scan of `contactInfo` documents — fetch + parse the
+    /// **public, key-free** fields. Returns the raw docs that carry all public
+    /// fields PLUS a `rootEncryptionKeyIndex → max(derivationEncryptionKeyIndex)`
+    /// high-water map over ALL owned docs (so a slot held by a doc we can't
+    /// parse/decrypt still reserves its index against new writes — the unique
+    /// index is `($ownerId, rootEncryptionKeyIndex, derivationEncryptionKeyIndex)`).
     ///
-    /// Returns the decrypted docs PLUS a `rootEncryptionKeyIndex →
-    /// max(derivationEncryptionKeyIndex)` high-water map computed over
-    /// **all** owned docs, including the skipped/undecryptable ones. The
-    /// unique index is `($ownerId, rootEncryptionKeyIndex,
-    /// derivationEncryptionKeyIndex)`, so allocating the next index from
-    /// the decryptable docs alone could collide with a skipped doc that
-    /// still occupies its slot on chain — the high-water map prevents that.
-    async fn fetch_decrypted_contact_infos(
+    /// Single-sources the fetch for BOTH the resident sweep decrypt
+    /// ([`Self::fetch_decrypted_contact_infos`]) and the seedless publish/drain
+    /// (which decrypt via the signer) — no key material is touched here.
+    async fn fetch_contact_info_docs(
         &self,
         identity_id: &Identifier,
-    ) -> Result<
-        (
-            Vec<DecryptedContactInfo>,
-            std::collections::BTreeMap<u32, u32>,
-        ),
-        PlatformWalletError,
-    > {
+    ) -> Result<(Vec<RawContactInfoDoc>, std::collections::BTreeMap<u32, u32>), PlatformWalletError>
+    {
+        use dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
         use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
         use dash_sdk::platform::FetchMany;
         use dpp::document::DocumentV0Getters;
         use dpp::platform_value::platform_value;
-
-        use dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
 
         let dashpay_contract = super::dashpay_contract()?;
 
@@ -140,28 +144,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             }
         }
 
-        // Resolve the wallet HD slot once; decryption is per-doc.
-        let (identity_index, wallet_snapshot) = {
-            let wm = self.wallet_manager.read().await;
-            let info = wm
-                .get_wallet_info(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-            let managed = info
-                .identity_manager
-                .managed_identity(identity_id)
-                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            let Some(identity_index) = managed.identity_index else {
-                // Watch-only / out-of-wallet identity — no HD slot to
-                // derive the self-encryption keys from (deferred to the
-                // host-side signing hook).
-                return Ok((Vec::new(), std::collections::BTreeMap::new()));
-            };
-            let wallet = wm
-                .get_wallet(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-            (identity_index, wallet.clone())
-        };
-
         let mut out = Vec::new();
         // root_index → max derivation_index seen across ALL owned docs.
         let mut high_water: std::collections::BTreeMap<u32, u32> =
@@ -202,28 +184,80 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 tracing::warn!(owner = %identity_id, doc = %doc_id, "contactInfo encToUserId is not 32 bytes");
                 continue;
             };
+            out.push(RawContactInfoDoc {
+                doc_id: *doc_id,
+                revision: doc.revision().unwrap_or(dpp::document::INITIAL_REVISION),
+                root_index,
+                derivation_index,
+                enc_to_user_id,
+                private_data,
+            });
+        }
+        Ok((out, high_water))
+    }
 
+    /// Fetch + decrypt every `contactInfo` document owned by `identity_id` using
+    /// the RESIDENT wallet — the signerless sweep's path. Built on the
+    /// single-sourced [`Self::fetch_contact_info_docs`]; docs whose keys we can't
+    /// derive or whose payload doesn't decrypt are skipped with a warning (a
+    /// malformed doc must not abort the sync). Returns the decrypted docs + the
+    /// same high-water map.
+    async fn fetch_decrypted_contact_infos(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<
+        (
+            Vec<DecryptedContactInfo>,
+            std::collections::BTreeMap<u32, u32>,
+        ),
+        PlatformWalletError,
+    > {
+        let (raw_docs, high_water) = self.fetch_contact_info_docs(identity_id).await?;
+
+        // Resolve the wallet HD slot once; decryption is per-doc.
+        let (identity_index, wallet_snapshot) = {
+            let wm = self.wallet_manager.read().await;
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let managed = info
+                .identity_manager
+                .managed_identity(identity_id)
+                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+            let Some(identity_index) = managed.identity_index else {
+                // Watch-only / out-of-wallet identity — no resident HD slot; the
+                // seedless drain handles its contactInfo decrypt via the signer.
+                return Ok((Vec::new(), high_water));
+            };
+            let wallet = wm
+                .get_wallet(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            (identity_index, wallet.clone())
+        };
+
+        let mut out = Vec::new();
+        for raw in &raw_docs {
             let keys = match derive_contact_info_keys(
                 &wallet_snapshot,
                 self.sdk.network,
                 identity_index,
-                root_index,
-                derivation_index,
+                raw.root_index,
+                raw.derivation_index,
             ) {
                 Ok(k) => k,
                 Err(e) => {
-                    tracing::warn!(owner = %identity_id, doc = %doc_id, error = %e, "contactInfo key derivation failed");
+                    tracing::warn!(owner = %identity_id, doc = %raw.doc_id, error = %e, "contactInfo key derivation failed");
                     continue;
                 }
             };
 
             let contact_id = Identifier::from(platform_encryption::decrypt_enc_to_user_id(
                 &keys.enc_to_user_id_key,
-                &enc_to_user_id,
+                &raw.enc_to_user_id,
             ));
             let data = match platform_encryption::decrypt_private_data(
                 &keys.private_data_key,
-                &private_data,
+                &raw.private_data,
             )
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!("privateData decrypt: {e}"))
@@ -232,18 +266,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             {
                 Ok(d) => d,
                 Err(e) => {
-                    tracing::warn!(owner = %identity_id, doc = %doc_id, error = %e, "contactInfo privateData decode failed");
+                    tracing::warn!(owner = %identity_id, doc = %raw.doc_id, error = %e, "contactInfo privateData decode failed");
                     continue;
                 }
             };
 
-            out.push(DecryptedContactInfo {
-                doc_id: *doc_id,
-                revision: doc.revision().unwrap_or(dpp::document::INITIAL_REVISION),
-                derivation_index,
-                contact_id,
-                data,
-            });
+            out.push(DecryptedContactInfo { contact_id, data });
         }
         Ok((out, high_water))
     }
@@ -318,7 +346,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// trivially linkable to the pair's contactRequest); the local
     /// state still updates and the next edit after the second contact
     /// is established publishes normally.
-    pub async fn set_contact_info_with_external_signer<S>(
+    pub async fn set_contact_info_with_external_signer<S, C>(
         &self,
         identity_id: &Identifier,
         contact_id: &Identifier,
@@ -326,9 +354,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         note: Option<String>,
         display_hidden: bool,
         signer: &S,
+        crypto: &C,
     ) -> Result<ContactInfoPublishOutcome, PlatformWalletError>
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
+        C: super::ContactCryptoProvider + Sync,
     {
         use dashcore::secp256k1::rand::{thread_rng, RngCore};
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -347,7 +377,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         };
 
         // 1. Local state first — works offline and feeds SwiftData.
-        let (established_count, identity_index, signing_key, root_key_id, wallet_snapshot) = {
+        let (established_count, identity_index, signing_key, root_key_id) = {
             let mut wm = self.wallet_manager.write().await;
             let info = wm
                 .get_wallet_info_mut(&self.wallet_id)
@@ -382,19 +412,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         && k.disabled_at().is_none()
                 })
                 .map(|(_, k)| k.id());
-            drop(wm);
-            let wm = self.wallet_manager.read().await;
-            let wallet = wm
-                .get_wallet(&self.wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
-                .clone();
-            (
-                established_count,
-                identity_index,
-                signing_key,
-                root_key_id,
-                wallet,
-            )
+            (established_count, identity_index, signing_key, root_key_id)
         };
 
         // 2. DIP-15 privacy gate.
@@ -429,42 +447,74 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             )
         })?;
 
-        // 3. Resolve the existing doc for this contact (stateless: by
-        //    decrypting encToUserId of each owned doc) or pick the next
-        //    sequential derivation index for a fresh one.
-        let (existing, high_water) = self.fetch_decrypted_contact_infos(identity_id).await?;
-        let (doc_id, revision, derivation_index) =
-            match existing.iter().find(|d| d.contact_id == *contact_id) {
-                Some(d) => (Some(d.doc_id), d.revision + 1, d.derivation_index),
-                None => {
-                    // Allocate the next index from the high-water mark over ALL
-                    // owned docs at THIS root (including skipped/undecryptable
-                    // ones), not just the decryptable subset — otherwise a
-                    // skipped doc's slot would collide on the unique index.
-                    let next_index = high_water.get(&root_key_id).map(|m| m + 1).unwrap_or(0);
-                    (None, dpp::document::INITIAL_REVISION, next_index)
+        // 3. Resolve the existing doc for this contact via the signer: the fetch
+        //    is key-free (fetch_contact_info_docs); decrypt each owned doc's
+        //    encToUserId through the provider and match its contact id. No
+        //    existing match → allocate the next sequential derivation index.
+        //    Signer-present (publish), so we decrypt fresh — never guess the index.
+        let (raw_docs, high_water) = self.fetch_contact_info_docs(identity_id).await?;
+        let mut existing: Option<(Identifier, u64, u32)> = None;
+        for raw in &raw_docs {
+            // Each doc carries its own root index (our encryption key may have
+            // rotated); build that doc's root path in Rust.
+            let raw_root_path = super::identity_auth_derivation_path_for_type(
+                self.sdk.network,
+                key_wallet::bip32::KeyDerivationType::ECDSA,
+                identity_index,
+                raw.root_index,
+            )?;
+            match crypto
+                .contact_info_open(
+                    &raw_root_path,
+                    raw.derivation_index,
+                    &raw.enc_to_user_id,
+                    &raw.private_data,
+                )
+                .await
+            {
+                Ok(opened) if opened.contact_id == contact_id.to_buffer() => {
+                    existing = Some((raw.doc_id, raw.revision, raw.derivation_index));
+                    break;
                 }
-            };
+                // Different contact, or a payload we can't open — not our target;
+                // skip (matches the resident path's skip-on-fail).
+                _ => continue,
+            }
+        }
+        let (doc_id, revision, derivation_index) = match existing {
+            Some((id, rev, idx)) => (Some(id), rev + 1, idx),
+            None => {
+                // Allocate the next index from the high-water mark over ALL owned
+                // docs at THIS root (including skipped/undecryptable ones), not
+                // just the decryptable subset — otherwise a skipped doc's slot
+                // would collide on the unique index.
+                let next_index = high_water.get(&root_key_id).map(|m| m + 1).unwrap_or(0);
+                (None, dpp::document::INITIAL_REVISION, next_index)
+            }
+        };
 
-        // 4. Encrypt the payload.
-        let keys = derive_contact_info_keys(
-            &wallet_snapshot,
+        // 4. Encrypt the payload via the signer — the two hardened-child AES keys
+        //    are derived + wiped in the signer; only ciphertext returns. Root
+        //    path built in Rust at our current encryption key.
+        let root_path = super::identity_auth_derivation_path_for_type(
             self.sdk.network,
+            key_wallet::bip32::KeyDerivationType::ECDSA,
             identity_index,
             root_key_id,
-            derivation_index,
         )?;
-        let enc_to_user_id = platform_encryption::encrypt_enc_to_user_id(
-            &keys.enc_to_user_id_key,
-            &contact_id.to_buffer(),
-        );
         let mut iv = [0u8; 16];
         thread_rng().fill_bytes(&mut iv);
-        let private_data = platform_encryption::encrypt_private_data(
-            &keys.private_data_key,
-            &iv,
-            &encode_private_data(&metadata),
-        );
+        let sealed = crypto
+            .contact_info_seal(
+                &root_path,
+                derivation_index,
+                &contact_id.to_buffer(),
+                &encode_private_data(&metadata),
+                &iv,
+            )
+            .await?;
+        let enc_to_user_id = sealed.enc_to_user_id;
+        let private_data = sealed.private_data;
 
         // 5. Build + put the document through the write seam.
         let mut properties = std::collections::BTreeMap::new();

@@ -253,15 +253,12 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
         let network = wallet.network();
         // SAFETY: same lifetime contract as the drain FFI — the caller pins
         // both handles for the duration of this call.
-        let core_signer = unsafe {
-            MnemonicResolverCoreSigner::new(
+        let provider = unsafe {
+            resolver_contact_crypto_provider(
                 core_signer_addr as *mut MnemonicResolverHandle,
                 wallet_id,
                 network,
             )
-        };
-        let provider = ResolverContactCryptoProvider {
-            signer: core_signer,
         };
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
@@ -322,15 +319,12 @@ pub unsafe extern "C" fn platform_wallet_accept_contact_request_with_signer(
         let network = wallet.network();
         // SAFETY: same lifetime contract as the drain FFI — the caller pins
         // both handles for the duration of this call.
-        let core_signer = unsafe {
-            MnemonicResolverCoreSigner::new(
+        let provider = unsafe {
+            resolver_contact_crypto_provider(
                 core_signer_addr as *mut MnemonicResolverHandle,
                 wallet_id,
                 network,
             )
-        };
-        let provider = ResolverContactCryptoProvider {
-            signer: core_signer,
         };
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
@@ -501,10 +495,27 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
 /// Glue adapter implementing platform-wallet's [`ContactCryptoProvider`] over
 /// the resolver-backed [`MnemonicResolverCoreSigner`]. The orphan rule needs
 /// the impl's type local to this crate, so the signer is wrapped here rather
-/// than implemented directly on it in `rs-sdk-ffi`. Serves both the
-/// deferred-crypto drain and the live send/accept flow.
-struct ResolverContactCryptoProvider {
+/// than implemented directly on it in `rs-sdk-ffi`. Serves the deferred-crypto
+/// drain, the live send/accept flow, AND contactInfo publish.
+pub(crate) struct ResolverContactCryptoProvider {
     signer: MnemonicResolverCoreSigner,
+}
+
+/// Wrap a caller-owned resolver handle as a [`ContactCryptoProvider`] for a
+/// `(wallet_id, network)` — the single construction the contact-crypto FFI
+/// entry points (send / accept / drain / contactInfo) share.
+///
+/// # Safety
+/// `core_signer_handle` must be a valid, non-destroyed `*mut MnemonicResolverHandle`;
+/// the caller pins it for the duration of the provider's use.
+pub(crate) unsafe fn resolver_contact_crypto_provider(
+    core_signer_handle: *mut MnemonicResolverHandle,
+    wallet_id: [u8; 32],
+    network: key_wallet::Network,
+) -> ResolverContactCryptoProvider {
+    ResolverContactCryptoProvider {
+        signer: MnemonicResolverCoreSigner::new(core_signer_handle, wallet_id, network),
+    }
 }
 
 #[async_trait::async_trait]
@@ -626,14 +637,13 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
         let network = wallet.network();
         // SAFETY: same lifetime contract as platform_wallet_send_dashpay_payment —
         // the caller pins the resolver handle for the duration of this call.
-        let signer = unsafe {
-            MnemonicResolverCoreSigner::new(
+        let provider = unsafe {
+            resolver_contact_crypto_provider(
                 signer_addr as *mut MnemonicResolverHandle,
                 wallet_id,
                 network,
             )
         };
-        let provider = ResolverContactCryptoProvider { signer };
         block_on_worker(async move { identity.drain_pending_contact_crypto(&provider).await })
     });
     let drained = unwrap_option_or_return!(option);

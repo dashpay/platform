@@ -12,7 +12,9 @@
 use std::os::raw::c_char;
 
 use platform_wallet::ContactInfoPublishOutcome;
-use rs_sdk_ffi::{SignerHandle, VTableSigner};
+use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle, VTableSigner};
+
+use crate::dashpay::resolver_contact_crypto_provider;
 
 use crate::check_ptr;
 use crate::dashpay_profile::decode_opt_c_str;
@@ -39,12 +41,18 @@ pub const CONTACT_INFO_SKIPPED_WATCH_ONLY: u8 = 2;
 /// updated, but the cross-device document publish may have been
 /// deferred or skipped.
 ///
+/// `core_signer_handle` is the wallet-HD resolver signer (as for send/accept):
+/// the contactInfo AES keys are derived through it, so no resident seed is
+/// needed and watch-only / external-signable wallets publish too.
+///
 /// # Safety
 /// `wallet_handle` must be a live wallet handle; `identity_id` and
 /// `contact_id` must point at 32 readable bytes; `signer_handle`
-/// must be a live `VTableSigner` for the duration of the call;
+/// must be a live `VTableSigner` and `core_signer_handle` a live
+/// `*mut MnemonicResolverHandle` for the duration of the call;
 /// `out_outcome` must be null or point at one writable byte.
 #[no_mangle]
+#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_set_dashpay_contact_info_with_signer(
     wallet_handle: Handle,
     identity_id: *const u8,
@@ -53,9 +61,11 @@ pub unsafe extern "C" fn platform_wallet_set_dashpay_contact_info_with_signer(
     note: *const c_char,
     display_hidden: bool,
     signer_handle: *mut SignerHandle,
+    core_signer_handle: *mut MnemonicResolverHandle,
     out_outcome: *mut u8,
 ) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
+    check_ptr!(core_signer_handle);
 
     let identity = unwrap_result_or_return!(read_identifier(identity_id));
     let contact = unwrap_result_or_return!(read_identifier(contact_id));
@@ -63,9 +73,21 @@ pub unsafe extern "C" fn platform_wallet_set_dashpay_contact_info_with_signer(
     let note = unwrap_result_or_return!(decode_opt_c_str(note));
 
     let signer_addr = signer_handle as usize;
+    let core_signer_addr = core_signer_handle as usize;
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, move |wallet| {
         let identity_wallet = wallet.identity().clone();
+        let wallet_id = wallet.wallet_id();
+        let network = wallet.network();
+        // SAFETY: same lifetime contract as the drain/send FFI — the caller pins
+        // both handles for the duration of this call.
+        let provider = unsafe {
+            resolver_contact_crypto_provider(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
             identity_wallet
@@ -76,6 +98,7 @@ pub unsafe extern "C" fn platform_wallet_set_dashpay_contact_info_with_signer(
                     note,
                     display_hidden,
                     signer,
+                    &provider,
                 )
                 .await
         })
