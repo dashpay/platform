@@ -57,7 +57,9 @@ mod seed_binding;
 mod tokens;
 
 pub use contact_info::ContactInfoPublishOutcome;
-pub use contact_requests::{ContactCryptoProvider, ContactInfoOpened, ContactInfoSealed};
+pub use contact_requests::{
+    AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened, ContactInfoSealed,
+};
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
 pub use identity_handle::{

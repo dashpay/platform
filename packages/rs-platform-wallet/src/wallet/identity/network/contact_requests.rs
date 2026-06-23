@@ -309,6 +309,36 @@ impl SeedCryptoProvider {
 // Send contact request
 // ---------------------------------------------------------------------------
 
+/// How the optional DIP-15 `autoAcceptProof` is supplied to a contact-request
+/// send. The proof signs over `(sender, recipient, accountReference)`, and
+/// `accountReference` is computed **inside** the send — so the QR-scanner
+/// variant carries the handed key and is signed there, once the reference is
+/// known (binding the proof to the exact reference the document carries).
+pub enum AutoAcceptProofSource {
+    /// No proof (the normal manual flow).
+    None,
+    /// A pre-built proof blob.
+    Provided(Vec<u8>),
+    /// Sign the proof in-send with the auto-accept key decoded from a scanned
+    /// QR (`dapk`), binding it to the accountReference this send computes.
+    SignWithKey {
+        /// The auto-accept private key handed out in the QR.
+        secret_key: dashcore::secp256k1::SecretKey,
+        /// The proof's expiry (the key blob's timestamp / derivation index).
+        expiry: u32,
+    },
+}
+
+impl AutoAcceptProofSource {
+    /// Map a pre-built optional proof (the FFI / legacy shape) into a source.
+    pub fn from_option(proof: Option<Vec<u8>>) -> Self {
+        match proof {
+            Some(p) => Self::Provided(p),
+            None => Self::None,
+        }
+    }
+}
+
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Send a contact request to another identity using an
     /// externally-supplied signer for the document state-transition.
@@ -342,7 +372,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         sender_identity_id: &Identifier,
         recipient_identity_id: &Identifier,
         account_label: Option<String>,
-        auto_accept_proof: Option<Vec<u8>>,
+        auto_accept_proof: AutoAcceptProofSource,
         signer: &S,
         crypto: &C,
     ) -> Result<ContactRequest, PlatformWalletError>
@@ -520,6 +550,24 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .await?
         };
 
+        // 4c. Resolve the auto-accept proof now that `account_reference` is
+        //     known. The QR-scanner variant signs `(sender, recipient,
+        //     account_reference)` here with the handed key, binding the proof to
+        //     the exact reference this document carries.
+        let auto_accept_proof: Option<Vec<u8>> = match auto_accept_proof {
+            AutoAcceptProofSource::None => None,
+            AutoAcceptProofSource::Provided(p) => Some(p),
+            AutoAcceptProofSource::SignWithKey { secret_key, expiry } => {
+                Some(crate::wallet::identity::crypto::auto_accept::sign_auto_accept_proof(
+                    &secret_key,
+                    sender_identity_id,
+                    recipient_identity_id,
+                    account_reference,
+                    expiry,
+                ))
+            }
+        };
+
         // 5. Build the signing key reference for document signing.
         let identity_public_key = sender_identity
             // Contact-request send writes a document state transition,
@@ -652,6 +700,51 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         .await?;
 
         Ok(contact_request)
+    }
+}
+
+/// QR-scan send lives in a non-generic `impl` block because it resolves a DPNS
+/// name via [`Self::resolve_name`], which is defined on `impl IdentityWallet`.
+impl IdentityWallet {
+    /// Send a contact request from a scanned DIP-15 auto-accept QR
+    /// (`dash:?du=<username>&dapk=<key_blob>`).
+    ///
+    /// Resolves the QR's `du` username to the owner's identity, decodes the
+    /// handed auto-accept key from `dapk`, and sends a contact request carrying a
+    /// proof signed (in-send) over this send's `accountReference` — so the
+    /// owner's client can verify it and auto-accept without a manual tap.
+    pub async fn send_contact_request_from_qr<S, C>(
+        &self,
+        sender_identity_id: &Identifier,
+        uri: &str,
+        signer: &S,
+        crypto: &C,
+    ) -> Result<ContactRequest, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        C: ContactCryptoProvider + Sync,
+    {
+        use crate::wallet::identity::crypto::auto_accept::{
+            decode_auto_accept_key_blob, parse_dashpay_contact_uri,
+        };
+
+        let (username, key_blob) = parse_dashpay_contact_uri(uri)?;
+        let recipient_id = self.resolve_name(&username).await?.ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "auto-accept QR username '{username}' did not resolve to an identity"
+            ))
+        })?;
+        let (secret_key, expiry) = decode_auto_accept_key_blob(&key_blob)?;
+
+        self.send_contact_request_with_external_signer(
+            sender_identity_id,
+            &recipient_id,
+            None,
+            AutoAcceptProofSource::SignWithKey { secret_key, expiry },
+            signer,
+            crypto,
+        )
+        .await
     }
 }
 
@@ -2157,7 +2250,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 &our_identity_id,
                 &sender_id,
                 None,
-                None,
+                AutoAcceptProofSource::None,
                 signer,
                 crypto,
             )

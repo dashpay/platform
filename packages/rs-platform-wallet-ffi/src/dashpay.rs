@@ -264,8 +264,70 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
             identity
                 .send_contact_request_with_external_signer(
-                    &sender, &recipient, label, proof, signer, &provider,
+                    &sender,
+                    &recipient,
+                    label,
+                    platform_wallet::AutoAcceptProofSource::from_option(proof),
+                    signer,
+                    &provider,
                 )
+                .await
+        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let request = unwrap_result_or_return!(result);
+    *out_request_handle = CONTACT_REQUEST_STORAGE.insert(request);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Send a contact request from a scanned DIP-15 auto-accept QR
+/// (`dash:?du=<username>&dapk=<key_blob>`). Resolves the QR's username to the
+/// owner's identity, decodes the handed auto-accept key, signs the proof over
+/// this send's `accountReference`, and broadcasts — so the owner can auto-accept
+/// it. Inserts the resulting request at `*out_request_handle`.
+///
+/// # Safety
+/// - `sender_identity_id` must point to 32 readable bytes.
+/// - `uri` must be a valid NUL-terminated UTF-8 C string.
+/// - `signer_handle` / `core_signer_handle` must be valid, non-destroyed handles
+///   (the caller pins both for the duration of this call).
+/// - `out_request_handle` must be a valid `*mut Handle`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_send_contact_request_from_qr(
+    wallet_handle: Handle,
+    sender_identity_id: *const u8,
+    uri: *const c_char,
+    signer_handle: *mut SignerHandle,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_request_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(uri);
+    check_ptr!(signer_handle);
+    check_ptr!(core_signer_handle);
+    check_ptr!(out_request_handle);
+
+    let sender = unwrap_result_or_return!(read_identifier(sender_identity_id));
+    let uri = unwrap_result_or_return!(CStr::from_ptr(uri).to_str()).to_string();
+    let signer_addr = signer_handle as usize;
+    let core_signer_addr = core_signer_handle as usize;
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        let wallet_id = wallet.wallet_id();
+        let network = wallet.network();
+        // SAFETY: same lifetime contract as the send FFI — the caller pins both
+        // handles for the duration of this call.
+        let provider = unsafe {
+            resolver_contact_crypto_provider(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        block_on_worker(async move {
+            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+            identity
+                .send_contact_request_from_qr(&sender, &uri, signer, &provider)
                 .await
         })
     });
@@ -625,42 +687,54 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
 
 /// Drain the persisted deferred-crypto queue using the Keychain signer for the
 /// key material. Call when a signer is available (Keychain unlock, or any
-/// signer-present DashPay action). Writes the number of completed entries to
-/// `out_drained`.
+/// signer-present DashPay action). Runs the provider-only ops (account build /
+/// contactInfo decrypt) AND the DIP-15 auto-accept pass (which needs the
+/// identity `signer_handle` to send the reciprocal). Writes the total number of
+/// completed entries (drained + auto-accepted) to `out_drained`.
 ///
 /// # Safety
-/// - `core_signer_handle` must be a valid, non-destroyed
-///   `*mut MnemonicResolverHandle`; ownership is retained by the caller.
+/// - `signer_handle` (the identity document signer) and `core_signer_handle`
+///   (the wallet-HD resolver) must each be valid, non-destroyed handles;
+///   ownership is retained by the caller for the duration of this call.
 /// - `out_drained` must be a valid `*mut u32`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
     wallet_handle: Handle,
+    signer_handle: *mut SignerHandle,
     core_signer_handle: *mut MnemonicResolverHandle,
     out_drained: *mut u32,
 ) -> PlatformWalletFFIResult {
+    check_ptr!(signer_handle);
     check_ptr!(core_signer_handle);
     check_ptr!(out_drained);
 
-    let signer_addr = core_signer_handle as usize;
+    let signer_addr = signer_handle as usize;
+    let core_signer_addr = core_signer_handle as usize;
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity = wallet.identity().clone();
         let wallet_id = wallet.wallet_id();
         let network = wallet.network();
         // SAFETY: same lifetime contract as platform_wallet_send_dashpay_payment —
-        // the caller pins the resolver handle for the duration of this call.
+        // the caller pins both handles for the duration of this call.
         let provider = unsafe {
             resolver_contact_crypto_provider(
-                signer_addr as *mut MnemonicResolverHandle,
+                core_signer_addr as *mut MnemonicResolverHandle,
                 wallet_id,
                 network,
             )
         };
-        block_on_worker(async move { identity.drain_pending_contact_crypto(&provider).await })
+        block_on_worker(async move {
+            let drained = identity.drain_pending_contact_crypto(&provider).await;
+            // The auto-accept pass needs the identity signer for the reciprocal.
+            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+            let accepted = identity.drain_auto_accepts(signer, &provider).await;
+            drained + accepted
+        })
     });
-    let drained = unwrap_option_or_return!(option);
+    let total = unwrap_option_or_return!(option);
     unsafe {
-        *out_drained = drained as u32;
+        *out_drained = total as u32;
     }
     PlatformWalletFFIResult::ok()
 }
