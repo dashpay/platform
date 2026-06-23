@@ -155,9 +155,46 @@ public class PlatformWalletManager: ObservableObject {
         if handle != NULL_HANDLE {
             platform_wallet_manager_platform_address_sync_stop(handle).discard()
             platform_wallet_manager_shielded_sync_stop(handle).discard()
-            platform_wallet_manager_destroy(handle).discard()
+            // `destroy` joins every coordinator OS thread with a 30 s
+            // deadline. On `errorShutdownIncomplete` one or more
+            // coordinators are still alive and still hold the
+            // `Arc<FFIPersister>` / `Arc<FFIEventHandler>` whose context
+            // pointer is `Unmanaged.passUnretained(handler).toOpaque()`
+            // for the Swift handler objects below — freeing those Swift
+            // objects now would dangle that pointer and the next
+            // callback would be a use-after-free. Stash them in a
+            // process-global leak slot so any final callback still
+            // sees valid memory. We accept the bounded leak (two small
+            // objects per non-clean shutdown); a clean shutdown returns
+            // success and the handlers are released as usual.
+            let destroyResult = PlatformWalletResult(
+                platform_wallet_manager_destroy(handle)
+            )
+            if destroyResult.code == .errorShutdownIncomplete {
+                PlatformWalletManager._leakedContextLock.lock()
+                if let h = persistenceHandler {
+                    PlatformWalletManager._leakedContext.append(h)
+                }
+                if let h = eventHandler {
+                    PlatformWalletManager._leakedContext.append(h)
+                }
+                PlatformWalletManager._leakedContextLock.unlock()
+            }
         }
     }
+
+    /// Lock guarding `_leakedContext`. Both are `nonisolated` so the
+    /// (implicitly nonisolated) `deinit` can append to the leak slot
+    /// without an isolation hop.
+    nonisolated static let _leakedContextLock = NSLock()
+    /// Process-global retention list for persister / event-handler
+    /// objects we cannot release at `deinit` because a lingering Rust
+    /// coordinator thread (`errorShutdownIncomplete` from `destroy`)
+    /// may still callback through their `Unmanaged.passUnretained`
+    /// context pointer. `AnyObject` keeps the existential opaque so
+    /// `PlatformWalletPersistenceHandler` / `PlatformWalletEventHandler`
+    /// don't need to be `Sendable` to be retained here.
+    nonisolated(unsafe) static var _leakedContext: [AnyObject] = []
 
     // MARK: - Configuration
 
