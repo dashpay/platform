@@ -704,13 +704,10 @@ mod tests {
             .await
             .expect("wallet creation");
         let wallet_id = wallet.wallet_id();
-        // Creation downgrades the wallet to external-signable; re-attach the
-        // seed so private-key paths (DashPay contact-xpub derivation) work,
-        // mirroring the app's post-restore keychain unlock.
-        manager
-            .attach_wallet_seed(wallet_id, &seed)
-            .await
-            .expect("attach seed");
+        // Wallet stays external-signable (no resident seed) — the production
+        // posture after the attach_wallet_seed workaround was removed. Tests
+        // that need private-key ops derive via a Wallet-from-seed helper
+        // (test_receiving_xpub) or a SeedCryptoProvider from the same mnemonic.
         (manager, wallet_id)
     }
 
@@ -740,13 +737,10 @@ mod tests {
             .await
             .expect("wallet creation");
         let wallet_id = wallet.wallet_id();
-        // Creation downgrades the wallet to external-signable; re-attach the
-        // seed so private-key paths (DashPay contact-xpub derivation) work,
-        // mirroring the app's post-restore keychain unlock.
-        manager
-            .attach_wallet_seed(wallet_id, &seed)
-            .await
-            .expect("attach seed");
+        // Wallet stays external-signable (no resident seed) — the production
+        // posture after the attach_wallet_seed workaround was removed. Tests
+        // that need private-key ops derive via a Wallet-from-seed helper
+        // (test_receiving_xpub) or a SeedCryptoProvider from the same mnemonic.
         (manager, persister, wallet_id)
     }
 
@@ -1852,10 +1846,17 @@ mod tests {
         let shared_key = [0x55u8; 32];
         let iv = [0x11u8; 16];
         let compact = {
-            let wm = iw.wallet_manager.read().await;
-            let w = wm.get_wallet(&wallet_id).expect("wallet");
+            let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+                .expect("mnemonic")
+                .to_seed("");
+            let w = key_wallet::wallet::Wallet::from_seed_bytes(
+                seed,
+                Network::Testnet,
+                WalletAccountCreationOptions::None,
+            )
+            .expect("seed wallet");
             crate::wallet::identity::crypto::dip14::derive_contact_xpub(
-                w,
+                &w,
                 Network::Testnet,
                 0,
                 &owner_id,
@@ -1907,19 +1908,7 @@ mod tests {
         let contact = Identifier::from([0x22; 32]);
 
         // A valid ExtendedPubKey to supply as the signer would.
-        let supplied_xpub = {
-            let wm = iw.wallet_manager.read().await;
-            let w = wm.get_wallet(&wallet_id).expect("wallet");
-            crate::wallet::identity::crypto::dip14::derive_contact_xpub(
-                w,
-                Network::Testnet,
-                0,
-                &owner,
-                &contact,
-            )
-            .expect("derive a valid receiving xpub")
-            .xpub
-        };
+        let supplied_xpub = test_receiving_xpub(&owner, &contact);
 
         iw.register_contact_account(&owner, &contact, 0, supplied_xpub)
             .await
