@@ -204,29 +204,42 @@ track, and the multi-agent reviews. Prioritized; check off as done.
   - [x] **De-dup — DONE** (`db18688545`): dead `dash_sdk_dashpay_*` rs-sdk-ffi surface
     deleted (−743); the 4 inline provider constructions collapsed to one
     `resolver_contact_crypto_provider` helper.
-  - [ ] **§4.9 deletion of `attach_wallet_seed`** (the remaining core). CASCADE (measured by
-    removing the `make_wallet`/`make_wallet_with` attach calls): **5 tests fail** —
-    `register_contact_account_persists_account_registration`,
-    `register_contact_account_with_precomputed_xpub_builds_account`,
-    `register_external_with_precomputed_shared_key_builds_account`,
-    `reconcile_records_received_payments_from_receival_utxos`,
-    `reconcile_does_not_clobber_existing_entry_for_same_txid`. They call
-    `register_contact_account(None)` (resident receiving-xpub derive) or derive a resident
-    xpub in their setup. Fix: derive the xpub via a `Wallet`-from-seed (or `SeedCryptoProvider`)
-    and pass `Some`; then determine whether `register_contact_account`'s `None` branch is
-    production-dead now (sweep always-enqueues, send/accept/drain pass `Some`) → if so,
-    C3-it (non-`Option`). Then delete `attach_wallet_seed` (`manager/attach_seed.rs`) + the
-    `platform_wallet_manager_attach_wallet_seed_from_mnemonic` FFI + its 4 tests
-    (`manager.rs`) + the `make_wallet` attach calls + the `KeychainSigner.sign(...)->Data?`
-    nil-swallow (Swift). MUST-FIX: wire `verify_binds_to_xpub` (§4.8, zero callers) in the
-    SAME change. SHOULD-FIX: port `WipingXprv` to `sign_with_mnemonic_resolver.rs` (§4.2).
-  - [ ] **Swift** — drain-on-unlock replacing `unlockWalletFromKeychain` re-attach; pass the
-    `core_signer_handle` the contactInfo/send/accept FFI now require.
-  - [ ] **Testnet on-device acceptance** — happy path (import funded seed → discover →
-    send/accept + pay + publish; background-discover inbound contact then unlock → payable)
-    PLUS the two cases the all-positive script misses: (a) wrong/mis-mapped seed rejected
-    LOUD; (b) cross-device contactInfo deferral (publish on A → seedless B sync → unlock B →
-    appears). `git grep attach_wallet_seed` empty.
+  - [x] **§4.9 deletion of `attach_wallet_seed` — DONE** (`fe3ab74e19`): deleted the lib impl
+    (`manager/attach_seed.rs`) + FFI export + dual-gate/`mem::swap` + 9 tests, and wired the
+    atomic replacement in the same commit — `PlatformWallet::verify_seed_binds` +
+    `platform_wallet_verify_seed_binds_to_wallet` FFI (signer-derived BIP44-0 xpub vs the
+    persisted one; mismatch → `SeedMismatch`). `register_contact_account` C3'd to non-`Option`
+    (`a4270484d6`); test wallets made seedless (`c42d2e413e`). §4.2 `WipingXprv` ported to the
+    sibling FFI (`feb266fd1b`). `git grep attach_wallet_seed` empty (outside docs).
+  - [x] **Swift — DONE** (`70aaf32f9f`): `unlockWalletFromKeychain` verifies-binds +
+    background-drains (no re-attach); send/accept/contactInfo thread `core_signer_handle`;
+    `KeychainSigner.sign(...)->Data?` nil-swallow + its `Signer` protocol requirement removed.
+  - [~] **On-device acceptance — VALIDATED on devnet `paloma` cross-device** (two simulators,
+    idb): seedless Core payment + IS-lock, identity registration, DPNS name, profile publish,
+    contactInfo publish (create+update), and contact-request **send + accept** across two
+    wallets — all via the resolver, no resident seed. **Remaining (manual):** (a) wrong-seed
+    rejected LOUD on-chain (covered by the `verify_seed_binds` unit test; on-chain trigger
+    needs a destructive wipe+reimport); (b) same-owner cross-device contactInfo *decrypt*
+    (publish validated; decrypt unit-tested) — needs the same wallet on 2 devices.
+  - [ ] **Q2 multi-reviewer follow-ups (deferred; 6-lens review 2026-06-23).** The
+    blocking/quick items were fixed in the post-review batch (dead `verify_binds_to_xpub` +
+    `WrongSeed` deleted; `None`-account + verify-FFI marshalling tests added; `WipingSecretKey`
+    panic-window guard; neutral drain log; SeedMismatch-vs-transient unlock branch; doc/spec
+    fixes). Deferred:
+    - **needs-unlock / verify-failed UI signal** (silent-failure HIGH + a `seedVerified`/
+      `needsUnlock` flag on `ManagedPlatformWallet`): a failed/stuck background drain, or a
+      wallet that failed `verify_seed_binds`, currently shows only a `print()` — no UI/telemetry.
+      Fold into the existing needs-unlock-marker work (§4.7/§9-7); surface `pending_contact_crypto`
+      count + the verify outcome through persistence the way `paymentChannelBroken` already is.
+    - **De-duplicate `WipingXprv`** — defined identically in `rs-sdk-ffi` and
+      `rs-platform-wallet-ffi`; hoist one canonical guard (the true fix is `ZeroizeOnDrop` on
+      `key_wallet::bip32::ExtendedPrivKey`/`SecretKey` upstream in rust-dashcore).
+    - **Restored-wallet (`Account::from_xpub`) verify test** — both `verify_seed_binds` tests use
+      the create-path (in-memory); add a from-persistor round-trip test so a serialization
+      regression of the persisted account xpub is caught.
+    - **Remove the `Signer` protocol** once the public DashPay API (send/accept/contactInfo
+      `signer:` params) is narrowed from `any Signer` to `KeychainSigner` — it's now a one-method
+      (`canSign`) transitional shim.
 
 - [ ] **§6b — restore the deferred-crypto queue into `PlatformWalletInfo` on load.**
   Reader `all_pending_contact_crypto` exists (`cfg(test)`-gated); blocked upstream by

@@ -152,9 +152,12 @@ notes.**
      `attach_wallet_seed` (lib + FFI + dual gate) deleted and `verify_seed_binds`
      (`PlatformWallet` method + `platform_wallet_verify_seed_binds_to_wallet` FFI)
      landed in the same commit — signer-derived BIP44-0 xpub vs the persisted one,
-     mismatch → `SeedMismatch`. Reuses the existing `verify_binds_to_xpub` primitive
-     via the `ContactCryptoProvider::receiving_xpub` seam (no redundant trait
-     method). The dead `dash_sdk_dashpay_*` surface was removed earlier (`db18688545`).
+     mismatch → `SeedMismatch`. The comparison lives in `verify_seed_binds`, which
+     derives the xpub through the `ContactCryptoProvider::receiving_xpub` seam (a
+     generic derive-at-path) — no redundant trait method. (The signer's
+     `verify_binds_to_xpub` primitive was NOT used and was deleted post-review as
+     dead code; the live path reimplements the equality in `verify_seed_binds`.)
+     The dead `dash_sdk_dashpay_*` surface was removed earlier (`db18688545`).
      ✓ Swift wiring DONE (`70aaf32f9f`): the verify FFI is called at unlock and the
      `KeychainSigner.sign(...)->Data?` nil-swallow is deleted (see step 3 Swift).
    - **SHOULD-FIX (security): §4.2 sibling-FFI leak.** ✓ DONE (`feb266fd1b`): the
