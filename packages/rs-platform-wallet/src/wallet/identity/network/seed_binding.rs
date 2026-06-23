@@ -169,4 +169,33 @@ mod tests {
             "expected SeedMismatch, got: {err:?}"
         );
     }
+
+    /// A wallet with no BIP44 account 0 (created without the default account
+    /// set) is refused with `InvalidIdentityData` — the gate has no persisted
+    /// xpub to bind against, so it must fail closed rather than pass silently.
+    #[tokio::test]
+    async fn verify_seed_binds_rejects_wallet_without_bip44_account() {
+        let manager = make_manager();
+        let network = Network::Testnet;
+        let seed = seed_for(TEST_MNEMONIC);
+
+        let wallet = manager
+            .create_wallet_from_seed_bytes(network, &seed, WalletAccountCreationOptions::None, Some(0))
+            .await
+            .expect("wallet creation");
+        assert!(
+            wallet.state().await.wallet().get_bip44_account(0).is_none(),
+            "precondition: wallet has no BIP44 account 0"
+        );
+
+        let crypto = SeedCryptoProvider::from_seed(seed, network);
+        let err = wallet
+            .verify_seed_binds(&crypto)
+            .await
+            .expect_err("a wallet with no BIP44 account 0 cannot be bound");
+        assert!(
+            matches!(err, PlatformWalletError::InvalidIdentityData(_)),
+            "expected InvalidIdentityData, got: {err:?}"
+        );
+    }
 }

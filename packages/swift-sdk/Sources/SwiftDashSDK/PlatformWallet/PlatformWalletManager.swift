@@ -407,6 +407,26 @@ public class PlatformWalletManager: ObservableObject {
                         "🔓 wallet unlock \(walletId.toHexString().prefix(8)): "
                             + (unlocked ? "seed verified — drain scheduled" : "no mnemonic — stays watch-only")
                     )
+                } catch let error as PlatformWalletError {
+                    // Distinguish a wrong-seed binding (Rust `SeedMismatch` →
+                    // `ErrorInvalidParameter` → `.invalidParameter`) from a
+                    // transient failure. The verify FFI is the only `.check()` on
+                    // this path and `walletId` is already 32 bytes here, so
+                    // `.invalidParameter` ≡ the seed-binding rejection — a
+                    // security-relevant Keychain slot mis-mapping, not a hiccup.
+                    // Either way the wallet stays external-signable (cannot sign),
+                    // so no wrong-seed signing can occur.
+                    if case .invalidParameter = error {
+                        print(
+                            "🚫 wallet unlock REJECTED \(walletId.toHexString().prefix(8)): "
+                                + "seed does not bind (mis-mapped Keychain slot?) — stays watch-only"
+                        )
+                    } else {
+                        // Transient (resolver/Keychain unavailable, …) — not
+                        // retried this pass; a later signer-present action re-tries.
+                        print("⚠️ wallet unlock failed \(walletId.toHexString().prefix(8)) (transient): \(error)")
+                    }
+                    self.lastError = error
                 } catch {
                     print("❌ wallet unlock failed \(walletId.toHexString().prefix(8)): \(error)")
                     self.lastError = error
@@ -502,7 +522,12 @@ public class PlatformWalletManager: ObservableObject {
         // Drain deferred contact-crypto in the background — it re-fetches and
         // decrypts over the network, so it must not block the caller. The
         // detached task retains `coreSigner`, keeping the resolver alive for
-        // the drain's vtable callbacks.
+        // the drain's vtable callbacks. It captures the raw `walletHandle`
+        // (a `UInt64`), not the `ManagedPlatformWallet`: if the wallet is
+        // destroyed before the drain runs, `with_item` Rust-side simply misses
+        // the handle and the drain no-ops (NotFound) — no use-after-free.
+        // Fire-and-forget: a failure here is not fatal (the next signer-present
+        // DashPay action re-attempts the drain via its own provider).
         Task.detached(priority: .utility) {
             var drained: UInt32 = 0
             let result = withExtendedLifetime(coreSigner) {
@@ -515,8 +540,11 @@ public class PlatformWalletManager: ObservableObject {
             do {
                 try result.check()
                 if drained > 0 {
+                    // `drained` counts cleared queue entries — both completed
+                    // and permanently-failed (channel-broken) ops — so report
+                    // it neutrally rather than implying all succeeded.
                     print(
-                        "🔑 drained \(drained) deferred contact-crypto op(s) for "
+                        "🔑 processed \(drained) deferred contact-crypto op(s) for "
                             + "\(walletId.toHexString().prefix(8))"
                     )
                 }

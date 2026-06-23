@@ -149,14 +149,6 @@ pub enum MnemonicResolverSignerError {
     /// error.
     #[error("invalid private key scalar: {0}")]
     InvalidScalar(String),
-
-    /// The resolved mnemonic does not bind to the wallet it was fetched
-    /// for: the account-xpub it derives differs from the wallet's
-    /// persisted one. Surfaced by [`MnemonicResolverCoreSigner::verify_binds_to_xpub`]
-    /// so a mis-mapped Keychain slot fails loud instead of silently
-    /// signing/deriving for the wrong wallet.
-    #[error("resolved mnemonic does not bind to this wallet (account-xpub mismatch)")]
-    WrongSeed,
 }
 
 /// `key_wallet::signer::Signer` implementation that derives ECDSA
@@ -489,25 +481,6 @@ impl MnemonicResolverCoreSigner {
         })
     }
 
-    /// Verify the resolved mnemonic binds to this wallet: derive the extended
-    /// public key at `account_path` and compare to `expected` (the wallet's
-    /// persisted account-xpub). `Err(WrongSeed)` on mismatch. The host runs
-    /// this once at signer construction / first use so a mis-mapped Keychain
-    /// slot can't silently derive for the wrong wallet.
-    pub fn verify_binds_to_xpub(
-        &self,
-        account_path: &DerivationPath,
-        expected: &ExtendedPubKey,
-    ) -> Result<(), MnemonicResolverSignerError> {
-        let (_master, derived) = self.resolve_derived_xprv(account_path)?;
-        let secp = Secp256k1::new();
-        let derived_xpub = ExtendedPubKey::from_priv(&secp, derived.key());
-        if derived_xpub == *expected {
-            Ok(())
-        } else {
-            Err(MnemonicResolverSignerError::WrongSeed)
-        }
-    }
 }
 
 /// Result of [`MnemonicResolverCoreSigner::contact_info_seal`].
@@ -552,6 +525,18 @@ impl Drop for WipingXprv {
     }
 }
 
+/// RAII guard that scrubs a `secp256k1::SecretKey`'s scalar on drop. `from_slice`
+/// allocates a 32-byte scalar copy distinct from the `Zeroizing` source bytes,
+/// and `SecretKey` has no `Drop` wipe of its own — so without this the copy would
+/// survive a panic between construction and signing. `WipingXprv` for the leaf key.
+struct WipingSecretKey(secp256k1::SecretKey);
+
+impl Drop for WipingSecretKey {
+    fn drop(&mut self) {
+        self.0.non_secure_erase();
+    }
+}
+
 #[async_trait]
 impl Signer for MnemonicResolverCoreSigner {
     type Error = MnemonicResolverSignerError;
@@ -570,30 +555,30 @@ impl Signer for MnemonicResolverCoreSigner {
     ) -> Result<(secp256k1::ecdsa::Signature, secp256k1::PublicKey), Self::Error> {
         let secret_bytes = self.derive_priv(path)?;
         let secp = Secp256k1::new();
-        // `SecretKey::from_slice` validates the 32-byte scalar is a
-        // legitimate field element.
-        let mut secret = secp256k1::SecretKey::from_slice(secret_bytes.as_ref())
-            .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?;
+        // `SecretKey::from_slice` validates the 32-byte scalar is a legitimate
+        // field element. The `WipingSecretKey` guard scrubs the SecretKey-owned
+        // copy on every exit path (incl. panic) — `Zeroizing<[u8;32]>` only
+        // covers `secret_bytes`, not the separate copy `from_slice` allocates.
+        let secret = WipingSecretKey(
+            secp256k1::SecretKey::from_slice(secret_bytes.as_ref())
+                .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?,
+        );
         let msg = secp256k1::Message::from_digest(sighash);
-        let signature = secp.sign_ecdsa(&msg, &secret);
-        let pubkey = secp256k1::PublicKey::from_secret_key(&secp, &secret);
-        // Wipe the SecretKey-owned scalar before it drops. `Zeroizing<[u8;32]>`
-        // covers `secret_bytes`; `SecretKey::from_slice` allocated a separate
-        // 32-byte copy that needs its own wipe.
-        secret.non_secure_erase();
+        let signature = secp.sign_ecdsa(&msg, &secret.0);
+        let pubkey = secp256k1::PublicKey::from_secret_key(&secp, &secret.0);
         Ok((signature, pubkey))
     }
 
     async fn public_key(&self, path: &DerivationPath) -> Result<secp256k1::PublicKey, Self::Error> {
         let secret_bytes = self.derive_priv(path)?;
         let secp = Secp256k1::new();
-        let mut secret = secp256k1::SecretKey::from_slice(secret_bytes.as_ref())
-            .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?;
-        let pubkey = secp256k1::PublicKey::from_secret_key(&secp, &secret);
-        // Wipe the SecretKey-owned scalar before it drops. `Zeroizing<[u8;32]>`
-        // covers `secret_bytes`; `SecretKey::from_slice` allocated a separate
-        // 32-byte copy that needs its own wipe.
-        secret.non_secure_erase();
+        // `WipingSecretKey` scrubs the SecretKey-owned scalar copy on every exit
+        // path including panic (see `sign_ecdsa`).
+        let secret = WipingSecretKey(
+            secp256k1::SecretKey::from_slice(secret_bytes.as_ref())
+                .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?,
+        );
+        let pubkey = secp256k1::PublicKey::from_secret_key(&secp, &secret.0);
         Ok(pubkey)
     }
 
@@ -969,51 +954,6 @@ mod tests {
         assert_eq!(
             sealed.enc_to_user_id, expected_enc,
             "signer encToUserId must equal the resident-seed encryption at the same path"
-        );
-
-        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
-    }
-
-    /// The wrong-seed self-check: `verify_binds_to_xpub` accepts the matching
-    /// account-xpub (the resolved mnemonic binds to the wallet) and rejects a
-    /// non-matching one with `WrongSeed` — so a mis-mapped Keychain slot fails
-    /// loud instead of deriving for the wrong wallet.
-    #[tokio::test]
-    async fn verify_binds_to_xpub_accepts_match_and_rejects_mismatch() {
-        use key_wallet::mnemonic::{Language, Mnemonic};
-        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-        use key_wallet::wallet::Wallet;
-
-        let path = test_path();
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
-        let seed = mnemonic.to_seed("");
-        let wallet =
-            Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
-                .expect("seeded wallet");
-        let expected = wallet
-            .derive_extended_public_key(&path)
-            .expect("xpub at the binding path");
-        let wrong_path = path
-            .clone()
-            .extend([ChildNumber::from_normal_idx(7).unwrap()]);
-        let wrong = wallet
-            .derive_extended_public_key(&wrong_path)
-            .expect("xpub at a different path");
-
-        let resolver = make_resolver(english_resolve);
-        let signer =
-            unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
-
-        signer
-            .verify_binds_to_xpub(&path, &expected)
-            .expect("the matching mnemonic must bind to the wallet");
-        let err = signer
-            .verify_binds_to_xpub(&path, &wrong)
-            .expect_err("a non-matching account-xpub must be rejected");
-        assert!(
-            matches!(err, MnemonicResolverSignerError::WrongSeed),
-            "a mismatch must surface WrongSeed, got {err:?}"
         );
 
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };

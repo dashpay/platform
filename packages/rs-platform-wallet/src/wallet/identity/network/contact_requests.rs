@@ -34,7 +34,9 @@ use crate::wallet::identity::types::dashpay::established_contact::EstablishedCon
 /// handed), and no private scalar ever crosses back into platform-wallet.
 #[async_trait::async_trait]
 pub trait ContactCryptoProvider {
-    /// Extended public key at `path` — our DashPay receiving (friendship) xpub.
+    /// Extended public key at `path` (a generic derive-at-path): the DashPay
+    /// receiving (friendship) xpub, and also the seed-binding self-check's
+    /// BIP44 account-0 xpub ([`crate::PlatformWallet::verify_seed_binds`]).
     async fn receiving_xpub(
         &self,
         path: &key_wallet::bip32::DerivationPath,

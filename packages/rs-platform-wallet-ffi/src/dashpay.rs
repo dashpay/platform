@@ -703,3 +703,32 @@ pub unsafe extern "C" fn platform_wallet_verify_seed_binds_to_wallet(
         ),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Marshalling-boundary coverage for the verify entry point, replacing what
+    // the removed attach FFI's input-validation tests upheld. The crypto
+    // semantics (matching seed binds, wrong seed rejected) are pinned library-
+    // side in `platform_wallet::...::seed_binding`.
+
+    /// A null `core_signer_handle` is rejected with `ErrorNullPointer` (the
+    /// `check_ptr!` contract) before any wallet lookup.
+    #[test]
+    fn verify_seed_binds_null_signer_is_null_pointer() {
+        let r = unsafe { platform_wallet_verify_seed_binds_to_wallet(1, std::ptr::null_mut()) };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    /// An unknown `wallet_handle` surfaces `NotFound` via the `with_item`
+    /// lookup miss. The signer handle is never dereferenced (the wallet lookup
+    /// fails first), so a non-null dummy pointer is safe here.
+    #[test]
+    fn verify_seed_binds_unknown_wallet_is_not_found() {
+        let dummy_signer = 1usize as *mut MnemonicResolverHandle;
+        let r =
+            unsafe { platform_wallet_verify_seed_binds_to_wallet(0xDEAD_BEEF, dummy_signer) };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
+    }
+}
