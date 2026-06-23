@@ -1635,6 +1635,11 @@ extension ManagedPlatformWallet {
     ) async throws -> ContactRequest {
         let handle = self.handle
         let signerHandle = signer.handle
+        // Resolver-backed core signer: the contact-request crypto (friendship
+        // xpub, ECDH shared secret, DIP-15 accountReference) is derived through
+        // the Keychain mnemonic resolver Rust-side, so no resident seed is
+        // needed and watch-only / external-signable wallets work.
+        let coreSigner = MnemonicResolver()
         let senderBytes: [UInt8] = senderIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
@@ -1646,45 +1651,52 @@ extension ManagedPlatformWallet {
 
         let requestHandle: Handle = try await Task.detached(priority: .userInitiated) {
             () -> Handle in
-            _ = signer
             var outHandle: Handle = NULL_HANDLE
-            let result: PlatformWalletFFIResult = senderBytes.withUnsafeBufferPointer {
-                senderBp -> PlatformWalletFFIResult in
-                recipientBytes.withUnsafeBufferPointer { recipientBp -> PlatformWalletFFIResult in
-                    let callWithLabel: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = {
-                        labelPtr in
-                        if let autoAcceptProof, !autoAcceptProof.isEmpty {
-                            return autoAcceptProof.withUnsafeBytes { rawBuf in
-                                let bytesPtr = rawBuf.baseAddress?
-                                    .assumingMemoryBound(to: UInt8.self)
+            // `withExtendedLifetime` keeps both the document signer and the
+            // resolver alive across the synchronous FFI call — the optimizer
+            // can otherwise drop them mid-call and a vtable callback would
+            // use-after-free.
+            let result: PlatformWalletFFIResult = withExtendedLifetime((signer, coreSigner)) {
+                senderBytes.withUnsafeBufferPointer {
+                    senderBp -> PlatformWalletFFIResult in
+                    recipientBytes.withUnsafeBufferPointer { recipientBp -> PlatformWalletFFIResult in
+                        let callWithLabel: (UnsafePointer<CChar>?) -> PlatformWalletFFIResult = {
+                            labelPtr in
+                            if let autoAcceptProof, !autoAcceptProof.isEmpty {
+                                return autoAcceptProof.withUnsafeBytes { rawBuf in
+                                    let bytesPtr = rawBuf.baseAddress?
+                                        .assumingMemoryBound(to: UInt8.self)
+                                    return platform_wallet_send_contact_request_with_signer(
+                                        handle,
+                                        senderBp.baseAddress!,
+                                        recipientBp.baseAddress!,
+                                        labelPtr,
+                                        bytesPtr,
+                                        UInt(autoAcceptProof.count),
+                                        signerHandle,
+                                        coreSigner.handle,
+                                        &outHandle
+                                    )
+                                }
+                            } else {
                                 return platform_wallet_send_contact_request_with_signer(
                                     handle,
                                     senderBp.baseAddress!,
                                     recipientBp.baseAddress!,
                                     labelPtr,
-                                    bytesPtr,
-                                    UInt(autoAcceptProof.count),
+                                    nil,
+                                    0,
                                     signerHandle,
+                                    coreSigner.handle,
                                     &outHandle
                                 )
                             }
-                        } else {
-                            return platform_wallet_send_contact_request_with_signer(
-                                handle,
-                                senderBp.baseAddress!,
-                                recipientBp.baseAddress!,
-                                labelPtr,
-                                nil,
-                                0,
-                                signerHandle,
-                                &outHandle
-                            )
                         }
-                    }
-                    if let accountLabel {
-                        return accountLabel.withCString { callWithLabel($0) }
-                    } else {
-                        return callWithLabel(nil)
+                        if let accountLabel {
+                            return accountLabel.withCString { callWithLabel($0) }
+                        } else {
+                            return callWithLabel(nil)
+                        }
                     }
                 }
             }
@@ -1705,17 +1717,25 @@ extension ManagedPlatformWallet {
         let walletHandle = self.handle
         let requestHandle = request.handle
         let signerHandle = signer.handle
+        // Resolver-backed core signer: the reciprocal request's contact crypto
+        // (ECDH + external-account registration) is derived through the Keychain
+        // mnemonic resolver Rust-side, so no resident seed is needed.
+        let coreSigner = MnemonicResolver()
         let establishedHandle: Handle = try await Task.detached(
             priority: .userInitiated
         ) { () -> Handle in
-            _ = signer
             var outHandle: Handle = NULL_HANDLE
-            let result = platform_wallet_accept_contact_request_with_signer(
-                walletHandle,
-                requestHandle,
-                signerHandle,
-                &outHandle
-            )
+            // Keep both signers alive across the FFI call (vtable callbacks fire
+            // during it); a bare `_ = ...` lets the optimizer drop them.
+            let result = withExtendedLifetime((signer, coreSigner)) {
+                platform_wallet_accept_contact_request_with_signer(
+                    walletHandle,
+                    requestHandle,
+                    signerHandle,
+                    coreSigner.handle,
+                    &outHandle
+                )
+            }
             try result.check()
             return outHandle
         }.value
@@ -2137,6 +2157,10 @@ extension ManagedPlatformWallet {
     ) async throws -> ContactInfoPublishOutcome {
         let handle = self.handle
         let signerHandle = signer.handle
+        // Resolver-backed core signer: the contactInfo seal/find-existing crypto
+        // is derived through the Keychain mnemonic resolver Rust-side, so no
+        // resident seed is needed.
+        let coreSigner = MnemonicResolver()
         let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
@@ -2145,21 +2169,25 @@ extension ManagedPlatformWallet {
         }
 
         let outcomeRaw: UInt8 = try await Task.detached(priority: .userInitiated) {
-            _ = signer
             var outcomeRaw: UInt8 = 0
-            let result: PlatformWalletFFIResult = idBytes.withUnsafeBufferPointer { idBp in
-                contactBytes.withUnsafeBufferPointer { contactBp in
-                    invokeWithOptionalCStrings(alias, note, nil) { aliasPtr, notePtr, _ in
-                        platform_wallet_set_dashpay_contact_info_with_signer(
-                            handle,
-                            idBp.baseAddress!,
-                            contactBp.baseAddress!,
-                            aliasPtr,
-                            notePtr,
-                            hidden,
-                            signerHandle,
-                            &outcomeRaw
-                        )
+            // Keep both signers alive across the FFI call (vtable callbacks fire
+            // during it); a bare `_ = ...` lets the optimizer drop them.
+            let result: PlatformWalletFFIResult = withExtendedLifetime((signer, coreSigner)) {
+                idBytes.withUnsafeBufferPointer { idBp in
+                    contactBytes.withUnsafeBufferPointer { contactBp in
+                        invokeWithOptionalCStrings(alias, note, nil) { aliasPtr, notePtr, _ in
+                            platform_wallet_set_dashpay_contact_info_with_signer(
+                                handle,
+                                idBp.baseAddress!,
+                                contactBp.baseAddress!,
+                                aliasPtr,
+                                notePtr,
+                                hidden,
+                                signerHandle,
+                                coreSigner.handle,
+                                &outcomeRaw
+                            )
+                        }
                     }
                 }
             }

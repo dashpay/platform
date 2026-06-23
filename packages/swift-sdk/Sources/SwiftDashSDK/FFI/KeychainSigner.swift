@@ -637,24 +637,6 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
 
     // MARK: - Signer protocol conformance (legacy)
 
-    /// Legacy `Signer` protocol path — exposed so views that still hold
-    /// a `Signer` (rather than a `KeychainSigner.handle`) keep
-    /// compiling during the FFI migration. Always treats the input
-    /// as an identity-key request (legacy callers never produced
-    /// platform-address requests) and routes through the same
-    /// SwiftData → Keychain identity-key lookup the trampoline uses.
-    public func sign(identityPublicKey: Data, data: Data) -> Data? {
-        switch lookupIdentityPrivateKey(publicKey: identityPublicKey) {
-        case .failure:
-            return nil
-        case .success(let priv):
-            switch ffiSign(privateKey: priv, data: data) {
-            case .success(let sig): return sig
-            case .failure: return nil
-            }
-        }
-    }
-
     public func canSign(identityPublicKey: Data) -> Bool {
         canSign(publicKey: identityPublicKey, keyType: KeyType.ecdsaSecp256k1.rawValue)
     }

@@ -342,11 +342,12 @@ public class PlatformWalletManager: ObservableObject {
     /// we call `platform_wallet_manager_get_wallet` for each restored id
     /// so Swift gets a `ManagedPlatformWallet` handle.
     ///
-    /// Each restored wallet is then upgraded back to signing-capable via
-    /// [`unlockWalletFromKeychain`](Self/unlockWalletFromKeychain(walletId:)):
-    /// the mnemonic stored in the Keychain is handed to Rust, which
-    /// re-derives the seed and grafts the key material onto the loaded
-    /// wallet in place. Wallets with no stored mnemonic (genuine
+    /// Each restored wallet then runs the seedless unlock via
+    /// [`unlockWalletFromKeychain`](Self/unlockWalletFromKeychain(_:)): it
+    /// verifies the Keychain-resolved seed binds to the wallet (refusing a
+    /// mis-mapped slot) and drains any contact-crypto deferred while the
+    /// wallet was seedless — the seed never becomes resident; signing runs
+    /// through the resolver. Wallets with no stored mnemonic (genuine
     /// watch-only) stay watch-only — the unlock is best-effort per
     /// wallet and never fails the restore.
     ///
@@ -393,20 +394,18 @@ public class PlatformWalletManager: ObservableObject {
                 restored.append(managedWallet)
                 self.wallets[walletId] = managedWallet
 
-                // Upgrade the just-restored external-signable (watch-only)
-                // wallet back to signing-capable using the mnemonic in the
-                // Keychain. Best-effort, per wallet: a wallet with no stored
-                // mnemonic (genuine watch-only) stays watch-only, and any
-                // unlock error is logged-and-continued so one wallet can't
-                // fail the whole restore. Without this, signing operations
-                // (DashPay contact-xpub derivation, identity-key signing)
-                // fail after every relaunch with "External signable wallet
-                // has no private key".
+                // Seedless unlock of the just-restored external-signable
+                // (watch-only) wallet: verify the Keychain-resolved seed binds
+                // to this wallet and drain any deferred contact-crypto.
+                // Best-effort, per wallet: a wallet with no stored mnemonic
+                // (genuine watch-only) stays watch-only, and any unlock error
+                // (e.g. a mis-mapped Keychain slot) is logged-and-continued so
+                // one wallet can't fail the whole restore.
                 do {
-                    let unlocked = try unlockWalletFromKeychain(walletId: walletId)
+                    let unlocked = try unlockWalletFromKeychain(managedWallet)
                     print(
                         "🔓 wallet unlock \(walletId.toHexString().prefix(8)): "
-                            + (unlocked ? "seed attached" : "no mnemonic — stays watch-only")
+                            + (unlocked ? "seed verified — drain scheduled" : "no mnemonic — stays watch-only")
                     )
                 } catch {
                     print("❌ wallet unlock failed \(walletId.toHexString().prefix(8)): \(error)")
@@ -438,71 +437,94 @@ public class PlatformWalletManager: ObservableObject {
 
     // MARK: - Keychain seed unlock
 
-    /// Upgrade a restored watch-only wallet to signing-capable using the
-    /// mnemonic stored in the Keychain.
+    /// Seedless unlock of a restored external-signable wallet.
     ///
     /// The persisted-restore path (`loadFromPersistor`) rehydrates every
     /// wallet **external-signable** — per-account xpubs only, no key
-    /// material. Signing operations (DashPay contact-xpub derivation,
-    /// identity-key signing) then fail until the seed is re-attached.
-    /// This reads the wallet's mnemonic from `WalletStorage` (the
-    /// per-wallet Keychain entry) and hands it to
-    /// `platform_wallet_manager_attach_wallet_seed_from_mnemonic`, which
-    /// re-derives the seed in Rust and grafts the key material onto the
-    /// loaded wallet in place — preserving all loaded state.
+    /// material. Rather than grafting a resident seed back on, signing runs
+    /// through the Keychain-backed resolver per-operation. This unlock does
+    /// two things, both through a resolver (the seed never becomes resident):
     ///
-    /// Per the Swift-SDK FFI boundary rules, the mnemonic → seed
-    /// conversion and the wallet-id safety check happen entirely in Rust;
-    /// Swift only fetches the Keychain string (the one allowed Keychain
-    /// exception) and bridges it across.
+    /// 1. **Verify** the resolved seed binds to this wallet —
+    ///    `platform_wallet_verify_seed_binds_to_wallet` derives the BIP44
+    ///    account-0 xpub through the resolver and compares it to the
+    ///    persisted one. A mis-mapped Keychain slot derives a different xpub
+    ///    and the call throws, so a wrong seed never signs for this wallet.
+    /// 2. **Drain** (in the background) any contact-crypto deferred while
+    ///    the wallet was seedless — `platform_wallet_drain_pending_contact_crypto`.
+    ///    The drain re-fetches + decrypts over the network, so it runs in a
+    ///    detached task off the caller's thread.
     ///
-    /// - Parameter walletId: the 32-byte network-scoped wallet id.
-    /// - Returns: `true` if the wallet was unlocked (or was already
-    ///   signing-capable — the Rust side is idempotent); `false` if no
-    ///   mnemonic is stored for this wallet (a genuine watch-only
-    ///   wallet), without throwing.
-    /// - Throws: `PlatformWalletError` if the FFI call fails for a reason
-    ///   other than a missing mnemonic (e.g. a mismatched seed, or an
-    ///   unregistered wallet id).
+    /// Per the Swift-SDK FFI boundary rules, the mnemonic → seed conversion
+    /// happens entirely inside the resolver vtable in Rust; Swift only
+    /// checks the Keychain entry's existence (`hasMnemonic`) and never pulls
+    /// the plaintext across.
+    ///
+    /// - Parameter wallet: the restored `ManagedPlatformWallet`.
+    /// - Returns: `true` if the wallet's seed verified (drain scheduled);
+    ///   `false` if no mnemonic is stored for this wallet (a genuine
+    ///   watch-only wallet), without throwing.
+    /// - Throws: `PlatformWalletError` if the verify FFI fails (e.g. the
+    ///   resolved seed does not bind — a mis-mapped Keychain slot).
     @discardableResult
-    public func unlockWalletFromKeychain(walletId: Data) throws -> Bool {
+    public func unlockWalletFromKeychain(_ wallet: ManagedPlatformWallet) throws -> Bool {
         try ensureConfigured()
+        let walletId = wallet.walletId
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
                 "walletId must be 32 bytes, got \(walletId.count)"
             )
         }
 
-        // Fetch the mnemonic from the Keychain. A genuine watch-only
-        // wallet (imported by xpub, never holding a seed) has none —
-        // return false rather than throwing so the caller treats it as
-        // "stays watch-only".
-        let mnemonic: String
-        do {
-            mnemonic = try WalletStorage().retrieveMnemonic(for: walletId)
-        } catch WalletStorageError.mnemonicNotFound {
+        // A genuine watch-only wallet (imported by xpub, never holding a
+        // seed) has no Keychain mnemonic — stays watch-only. Existence-only
+        // check; the plaintext is never materialized in Swift.
+        guard WalletStorage().hasMnemonic(for: walletId) else {
             return false
         }
 
-        try mnemonic.withCString { mnemonicPtr in
-            try walletId.withUnsafeBytes { raw in
-                // C signature is `const uint8_t (*wallet_id)[32]`, imported
-                // by Swift as `UnsafePointer<FFIByteTuple32>?`. Rebind the
-                // raw 32-byte buffer to the 32-tuple shape so the call
-                // type-checks (same marshalling as `get_wallet`).
-                guard let base = raw.baseAddress?.assumingMemoryBound(to: FFIByteTuple32.self) else {
-                    throw PlatformWalletError.nullPointer(
-                        "wallet_id buffer base address was nil"
+        let walletHandle = wallet.handle
+        // Resolver-backed signer: the mnemonic is fetched from the Keychain
+        // inside the resolver vtable Rust-side; no resident seed.
+        let coreSigner = MnemonicResolver()
+
+        // Wrong-seed / wrong-wallet gate. `withExtendedLifetime` keeps the
+        // resolver alive across the synchronous FFI call (its vtable callback
+        // fires during it). Throws if the resolved seed derives a different
+        // BIP44 account-0 xpub than the wallet's persisted one.
+        try withExtendedLifetime(coreSigner) {
+            try platform_wallet_verify_seed_binds_to_wallet(
+                walletHandle,
+                coreSigner.handle
+            ).check()
+        }
+
+        // Drain deferred contact-crypto in the background — it re-fetches and
+        // decrypts over the network, so it must not block the caller. The
+        // detached task retains `coreSigner`, keeping the resolver alive for
+        // the drain's vtable callbacks.
+        Task.detached(priority: .utility) {
+            var drained: UInt32 = 0
+            let result = withExtendedLifetime(coreSigner) {
+                platform_wallet_drain_pending_contact_crypto(
+                    walletHandle,
+                    coreSigner.handle,
+                    &drained
+                )
+            }
+            do {
+                try result.check()
+                if drained > 0 {
+                    print(
+                        "🔑 drained \(drained) deferred contact-crypto op(s) for "
+                            + "\(walletId.toHexString().prefix(8))"
                     )
                 }
-                // `passphrase` is nullable; this app's wallets use no
-                // BIP-39 passphrase, so pass null (Rust treats it as "").
-                try platform_wallet_manager_attach_wallet_seed_from_mnemonic(
-                    handle,
-                    base,
-                    mnemonicPtr,
-                    nil
-                ).check()
+            } catch {
+                print(
+                    "⚠️ contact-crypto drain failed for "
+                        + "\(walletId.toHexString().prefix(8)): \(error)"
+                )
             }
         }
         return true
