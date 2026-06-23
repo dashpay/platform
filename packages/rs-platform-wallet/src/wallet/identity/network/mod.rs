@@ -36,7 +36,6 @@ mod account_labels;
 mod contact_info;
 mod contact_requests;
 mod contacts;
-mod dashpay_sync;
 mod payment_handler;
 pub(crate) use payment_handler::DashPayPaymentHandler;
 // Re-exported for the payments unit tests, which drive the hooks

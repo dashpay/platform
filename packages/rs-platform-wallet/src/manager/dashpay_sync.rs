@@ -1,36 +1,38 @@
 //! Periodic DashPay (contact-request + profile) sync coordinator.
 //!
-//! Folds the on-demand `dashpay_sync()` refresh into the recurring
-//! background loop, alongside the platform-address, identity-token, and
-//! shielded coordinators. Before this, contact requests and DashPay
-//! profiles only refreshed when the host explicitly called the FFI
-//! sync entry point; there was no background DashPay refresh at all.
+//! Folds the DashPay refresh into the recurring background loop, alongside
+//! the platform-address, identity-token, and shielded coordinators. Before
+//! this, contact requests and DashPay profiles only refreshed when the host
+//! explicitly called the FFI sync entry point; there was no background DashPay
+//! refresh at all.
 //!
-//! **Wallet-driven, not registry-driven — by design.** This is a
-//! sibling of [`PlatformAddressSyncManager`](super::platform_address_sync::PlatformAddressSyncManager)
-//! rather than an extension of
-//! [`IdentitySyncManager`](super::identity_sync::IdentitySyncManager).
-//! `IdentitySyncManager` walks a per-identity token *registry* and
-//! **skips identities with empty token lists**; a DashPay-only identity
-//! with no watched tokens would never sync if DashPay rode that
-//! registry. So this coordinator instead holds a handle to the same
-//! `wallets` map the address-sync manager receives, snapshots the
-//! wallet `Arc`s under a read guard each sweep, and calls
-//! [`IdentityWallet::dashpay_sync`](crate::wallet::identity::network::IdentityWallet::dashpay_sync)
-//! on **every** wallet — coupling DashPay sync to the token registry is
-//! the failure mode this avoids.
+//! **Wallet-driven, not registry-driven — by design.** This coordinator is a
+//! sibling of [`PlatformAddressSyncManager`](super::platform_address_sync::PlatformAddressSyncManager):
+//! it holds the same `wallets` map, snapshots the wallet `Arc`s under a read
+//! guard each sweep, and refreshes **every** wallet. It deliberately does NOT
+//! extend [`IdentitySyncManager`](super::identity_sync::IdentitySyncManager):
+//! that one is token-registry-driven and skips identities with no watched
+//! tokens, so a DashPay-only identity would never sync under its gating.
+//!
+//! **The DashPay sync orchestration lives here**, in the coordinator
+//! ([`DashPaySyncManager::sync_wallet_dashpay`]): the per-wallet refresh
+//! sequences the six DashPay steps (contact requests → own profiles → contact
+//! profiles → contactInfo → incoming/sent payment reconciles). Each step is an
+//! `IdentityWallet` domain operation (which also has standalone on-demand FFI
+//! callers); the coordinator owns only the *sequencing* and the log-and-continue
+//! policy.
 //!
 //! Each pass:
 //! 1. Snapshots the wallet map (short read lock, no await while held).
-//! 2. Calls `wallet.identity().dashpay_sync()` on each wallet.
+//! 2. Runs [`sync_wallet_dashpay`](DashPaySyncManager::sync_wallet_dashpay) per wallet.
 //! 3. Stores the pass timestamp.
 //!
-//! **Error semantics: log-and-continue per wallet.** A failing
-//! `dashpay_sync()` for one wallet is logged and recorded in the pass
-//! summary; it never aborts the sweep across the other wallets. The
-//! per-*identity* continue (so one identity's fetch failure inside a
-//! wallet doesn't abort that wallet's other identities) lives inside
-//! `sync_contact_requests` / `sync_profiles` themselves.
+//! **Error semantics: log-and-continue per wallet.** A failing per-wallet
+//! refresh is logged and recorded in the pass summary; it never aborts the
+//! sweep across the other wallets. Within a wallet the six steps run
+//! independently — one step's failure doesn't skip the rest — and the
+//! per-*identity* continue (so one identity's fetch failure doesn't abort the
+//! others within a step) lives inside the steps themselves.
 //!
 //! `sync_now` is re-entrant-safe: if a pass is already running, calling
 //! `sync_now` again returns an empty summary immediately (the caller
@@ -52,6 +54,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
+use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
@@ -360,7 +363,7 @@ impl DashPaySyncManager {
         for (wallet_id, wallet) in snapshot {
             // Log-and-continue per wallet: one wallet's failure must not
             // abort DashPay sync for the others.
-            let outcome = match wallet.identity().dashpay_sync().await {
+            let outcome = match self.sync_wallet_dashpay(&wallet).await {
                 Ok(()) => WalletDashPaySyncOutcome::Ok,
                 Err(e) => {
                     tracing::warn!(
@@ -384,6 +387,90 @@ impl DashPaySyncManager {
         self.is_syncing.store(false, Ordering::Release);
 
         summary
+    }
+
+    /// Run one wallet's comprehensive DashPay refresh. The orchestration lives
+    /// here in the sync coordinator; each step is an `IdentityWallet` domain
+    /// operation (each also has its own standalone on-demand FFI caller).
+    ///
+    /// The six steps run **independently** (log-and-continue) so a failure in
+    /// one does not skip the others. The two network *fetch* steps
+    /// (`sync_contact_requests`, `sync_profiles`) surface their first error so
+    /// the sweep can record this wallet as failed; the remaining steps
+    /// (contact profiles, contactInfo, the two payment reconciles) are
+    /// display- or local-only and never fail the pass. Contact requests run
+    /// first so freshly established contacts' accounts are registered before
+    /// the incoming-payment reconcile.
+    async fn sync_wallet_dashpay(
+        &self,
+        wallet: &Arc<PlatformWallet>,
+    ) -> Result<(), PlatformWalletError> {
+        let identity = wallet.identity();
+        let wallet_id = wallet.wallet_id();
+
+        // Contact requests first — may establish new contacts.
+        let contact_result = identity.sync_contact_requests().await;
+        if let Err(e) = &contact_result {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "DashPay contact-request sync failed; continuing to profile sync"
+            );
+        }
+
+        // Own-identity profiles — attempted even if the contact step failed.
+        let profile_result = identity.sync_profiles().await;
+        if let Err(e) = &profile_result {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "DashPay profile sync failed"
+            );
+        }
+
+        // Contact profiles (established contacts + pending senders) for the UI.
+        // Distinct target set/cache from own profiles; display-only.
+        if let Err(e) = identity.sync_contact_profiles().await {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "DashPay contact-profile sync failed"
+            );
+        }
+
+        // contactInfo (alias/note/hidden) — cross-device metadata.
+        if let Err(e) = identity.sync_contact_infos().await {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "DashPay contactInfo sync failed"
+            );
+        }
+
+        // Local-only: derive missing `Received` entries from receival-account
+        // UTXOs. After the contact step so newly established accounts exist.
+        if let Err(e) = identity.reconcile_incoming_payments().await {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "DashPay incoming-payment reconcile failed"
+            );
+        }
+
+        // Local-only: confirm `Pending` `Sent` payments the persisted core
+        // record reports final (mined or InstantSend-locked).
+        if let Err(e) = identity.reconcile_sent_payments().await {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "DashPay sent-payment reconcile failed"
+            );
+        }
+
+        // Surface the first fetch error (if any); both fetch steps have run.
+        contact_result?;
+        profile_result?;
+        Ok(())
     }
 }
 
