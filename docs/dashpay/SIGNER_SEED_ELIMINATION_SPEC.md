@@ -74,6 +74,43 @@ session — see §8 — so there is no off-the-shelf signer-based DashPay to cop
 - Wiring QR-based auto-accept — tracked in `TODO.md` (helpers KEPT, not
   deleted; §2 note).
 
+### Q2 scope, status & completion criteria (2026-06-23)
+
+**Q2** (the PR reviewer ask) = *remove the assign-seed workaround* = delete
+`attach_wallet_seed` (this §; §4.9). Live status tracker:
+`SEED_ELIMINATION_HANDOFF.md`.
+
+**Done + verified** (branch `feat/dashpay-m1-sync-correctness`; platform-wallet
+292/292; glue builds host + `aarch64-apple-ios-sim`): §2 inventory sites **#1–#6**
+— the entire seedless contact-request flow (send/accept/drain/always-enqueue
+sweep), the `ContactCryptoProvider` seam + signer host primitives (ECDH,
+accountReference, contactInfo seal/open, wrong-seed check), the deferred-crypto
+queue + SQLite persistence, and C3 (resident ECDH path deleted). Discovery is
+NOT a rewrite target — the **carry-scalar fix is kept** (§1).
+
+**Remaining for Q2 (do in this order):**
+1. **#7 contactInfo** — publish (write) via `ContactCryptoProvider::contact_info_seal`;
+   sweep (read) → enqueue `ContactInfoDecrypt`; drain op → `contact_info_open`
+   (re-fetch is testnet-validated).
+2. **Discovery/loading `ResidentWallet` fallback** — route the transient master
+   xpriv through `discover()` / `load_identity_by_index()` (the `Master` variants
+   exist) so import/unlock derive from the transient mnemonic; remove the
+   `ResidentWallet` variants. Carry-scalar unchanged.
+3. **Swift** — drain-on-unlock replacing `unlockWalletFromKeychain`'s re-attach;
+   rework test helpers to inject a test `Signer`.
+4. **Delete** `attach_wallet_seed` + the FFI export + the dual-gate/`mem::swap` +
+   the legacy `KeychainSigner.sign(...)->Data?` nil-swallow.
+
+**Done when:** `git grep attach_wallet_seed` is empty; `cargo test -p platform-wallet`
+green; `build_ios.sh` + SwiftExampleApp build clean; and the **testnet on-device
+acceptance** passes (clean wipe → import the funded testnet seed → discover →
+send/accept contact request, send payment, publish profile + contactInfo;
+background-discover an inbound contact then unlock → it becomes payable).
+
+**Out of Q2 scope** (tracked in `TODO.md`): §6b queue restore (upstream
+`ClientStartState::wallets`); the §4.2 error-/unwind-path wipe hardening; the
+§4.8 present-but-zero-keys import caveat; QR auto-accept wiring.
+
 ## 2. Inventory of seed-dependent paths (revised; exhaustive)
 
 Verified by grepping every `derive_extended_p*_key` / `build_signed(wallet` /

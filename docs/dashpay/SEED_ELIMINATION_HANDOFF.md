@@ -8,7 +8,40 @@ headless dev env — same wall Phase 1 hit).
 
 Keep this current as cores land.
 
-## DECISION (2026-06-23): §4.9 + discovery rewrite + Swift wiring are HELD
+## SCOPE CORRECTION (2026-06-23, after re-reading the spec §2 inventory)
+
+Earlier entries below over-scoped discovery as a "deep storage/signing rewrite
+that drops verified_scalar." **That was wrong.** The spec (§1, §2, §7) is
+explicit: the **carry-scalar (`verified_scalar`) is the ACCEPTED, KEPT fix** for
+the imported-identity zero-keys bug (RESOLVED, on-device 23/23). Seed elimination
+removes the **resident** seed (`attach_wallet_seed`'s `mem::swap` graft), NOT the
+stored per-key scalars. Per the spec's exhaustive §2 inventory, sites #1–#6 are
+**done** (the contact-request flow); the only remaining seed-dependent path is
+**#7 contactInfo**. Discovery is NOT a §4.9 blocker as a "rewrite" — it just has a
+`ResidentWallet` derivation fallback to eliminate (route through `Master(transient
+xpriv)`; carry-scalar stays).
+
+**Corrected remaining work for §4.9 (delete `attach_wallet_seed`):**
+1. **#7 contactInfo** — publish (write) via a `ContactCryptoProvider`
+   `contact_info_seal`/`open` seam (signer primitives exist + parity-tested,
+   `45f903dc38`); sync (read) via the `ContactInfoDecrypt` deferred op (testnet).
+2. **Discovery/loading `ResidentWallet` fallback** — `discover()` (discovery.rs:189)
+   + `load_identity_by_index()` (loading.rs:123) pass `ResidentWallet`; route the
+   transient master xpriv through (the `Master` variants exist:
+   `discover_from_master` 216) so import/unlock derive from the transient mnemonic,
+   then remove the `ResidentWallet` variants. Carry-scalar unchanged.
+3. **Swift** — drain-on-unlock replacing `unlockWalletFromKeychain`'s re-attach +
+   test-helper rework.
+4. **Delete** `attach_wallet_seed` + FFI export + impl + dual-gate/`mem::swap` +
+   the `KeychainSigner.sign(...)->Data?` nil-swallow.
+
+Environment (verified 2026-06-23): Xcode 26.5 + iOS-sim SDK present (BUILDS work);
+NO sim runtime installed (`simctl` 0 disk images — user installing via Xcode);
+testnet acceptance feasible (user has a funded testnet seed). Plan: implement +
+build-verify (cargo + build_ios.sh + SwiftExampleApp) here; run testnet acceptance
+once the runtime lands.
+
+## SUPERSEDED — earlier HOLD decision (2026-06-23, now reversed by the scope correction above)
 
 The seedless **contact-request flow** (send/accept/drain/always-enqueue sweep)
 and the resident-ECDH-path deletion (C3) are **DONE + verified** (292/292).

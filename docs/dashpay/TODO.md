@@ -170,6 +170,39 @@ track, and the multi-agent reviews. Prioritized; check off as done.
   field on the `profile` doc (Contract track), whose update timing is conflated with
   normal profile edits.**
 
+- [~] **Seed elimination — Q2 = remove the `attach_wallet_seed` workaround.**
+  Spec `SIGNER_SEED_ELIMINATION_SPEC.md` (design, REVIEWED v3, + Q2 status banner);
+  live tracker `SEED_ELIMINATION_HANDOFF.md`. **Done + verified** (platform-wallet
+  292/292; glue builds host + iOS-sim): the whole seedless contact-request flow —
+  send/accept/drain/always-enqueue sweep, `ContactCryptoProvider` + signer host
+  primitives (ECDH/accountReference/contactInfo seal-open/wrong-seed), deferred-crypto
+  queue + SQLite, C3 (resident ECDH path deleted). Discovery is resolved via the
+  KEPT carry-scalar (not a rewrite).
+  - [ ] **#7 contactInfo seedless** — publish via `ContactCryptoProvider::contact_info_seal`;
+    sweep read → enqueue `ContactInfoDecrypt`; drain op → `contact_info_open` (re-fetch).
+  - [ ] **Discovery/loading `ResidentWallet` fallback removal** — route the transient
+    master xpriv through `discover()` / `load_identity_by_index()` (the `Master`
+    variants exist); delete the `ResidentWallet` variants. Carry-scalar unchanged.
+  - [ ] **Swift** — drain-on-unlock replacing `unlockWalletFromKeychain` re-attach;
+    rework test helpers to inject a test `Signer`.
+  - [ ] **Delete `attach_wallet_seed`** + FFI export + impl + dual-gate/`mem::swap`
+    + the legacy `KeychainSigner.sign(...)->Data?` nil-swallow.
+  - [ ] **Testnet on-device acceptance** — clean wipe → import funded testnet seed →
+    discover → send/accept + pay + publish profile/contactInfo; background-discover
+    inbound contact then unlock → payable; `git grep attach_wallet_seed` empty.
+
+- [ ] **§6b — restore the deferred-crypto queue into `PlatformWalletInfo` on load.**
+  Reader `all_pending_contact_crypto` exists (`cfg(test)`-gated); blocked upstream by
+  `persister.rs` `LOAD_UNIMPLEMENTED: ClientStartState::wallets` (no per-wallet
+  rehydration yet — nothing to attach the queue to). Wire once that lands. (Not Q2.)
+- [ ] **§4.2 — error-/unwind-path scalar wipe hardening** in `resolve_derived_xprv`
+  / `sign_with_mnemonic_resolver.rs`: prefer one RAII wipe-guard over hand-placed
+  `non_secure_erase`; close the unwind-path residue gap. (Security hardening; not Q2.)
+- [ ] **§4.8 caveat — present-but-zero-keys import** isn't covered by the xpub
+  self-check. The carry-scalar fix means imports now materialize keys (so it's
+  currently moot), but if a zero-keys import recurs, `verify_binds_to_xpub` won't
+  catch it. Track as a residual. (Not Q2.)
+
 ## Contract track (DIP / governance — later)
 
 These need a change to the registered `dashpay` data contract, so they're a
