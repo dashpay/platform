@@ -1707,6 +1707,74 @@ extension ManagedPlatformWallet {
         return ContactRequest(handle: requestHandle)
     }
 
+    /// Build a DIP-15 auto-accept QR URI (`dash:?du=<username>&dapk=<key_blob>`)
+    /// for this wallet, valid for 1 hour. `username` is the owner's DPNS name. The
+    /// returned URI is rendered as a QR; a scanner sends a contact request the
+    /// owner auto-accepts. All derivation/encoding happens Rust-side.
+    public func buildAutoAcceptQR(username: String) async throws -> String {
+        let handle = self.handle
+        let coreSigner = MnemonicResolver()
+        return try await Task.detached(priority: .userInitiated) { () -> String in
+            var outURI: UnsafeMutablePointer<CChar>?
+            let result: PlatformWalletFFIResult = withExtendedLifetime(coreSigner) {
+                username.withCString { uPtr in
+                    platform_wallet_build_auto_accept_qr(
+                        handle,
+                        uPtr,
+                        coreSigner.handle,
+                        &outURI
+                    )
+                }
+            }
+            try result.check()
+            guard let outURI else {
+                throw PlatformWalletError.nullPointer("auto-accept QR returned a null URI")
+            }
+            let uri = String(cString: outURI)
+            platform_wallet_string_free(outURI)
+            return uri
+        }.value
+    }
+
+    /// Send a contact request from a scanned DIP-15 auto-accept QR
+    /// (`dash:?du=<username>&dapk=<key_blob>`): resolve the username, decode the
+    /// handed key, sign the proof, and broadcast — so the owner auto-accepts it.
+    public func sendContactRequestFromQR(
+        senderIdentityId: Identifier,
+        uri: String,
+        signer: KeychainSigner
+    ) async throws -> ContactRequest {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let coreSigner = MnemonicResolver()
+        let senderBytes: [UInt8] = senderIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+
+        let requestHandle: Handle = try await Task.detached(priority: .userInitiated) {
+            () -> Handle in
+            var outHandle: Handle = NULL_HANDLE
+            let result: PlatformWalletFFIResult = withExtendedLifetime((signer, coreSigner)) {
+                senderBytes.withUnsafeBufferPointer { senderBp -> PlatformWalletFFIResult in
+                    uri.withCString { uriPtr in
+                        platform_wallet_send_contact_request_from_qr(
+                            handle,
+                            senderBp.baseAddress!,
+                            uriPtr,
+                            signerHandle,
+                            coreSigner.handle,
+                            &outHandle
+                        )
+                    }
+                }
+            }
+            try result.check()
+            return outHandle
+        }.value
+
+        return ContactRequest(handle: requestHandle)
+    }
+
     /// Accept an incoming contact request using an externally-supplied
     /// `KeychainSigner` for the reciprocal request's document
     /// state-transition.

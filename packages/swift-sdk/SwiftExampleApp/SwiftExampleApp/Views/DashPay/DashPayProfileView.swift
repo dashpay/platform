@@ -1,5 +1,6 @@
-import SwiftUI
+import CoreImage.CIFilterBuiltins
 import SwiftDashSDK
+import SwiftUI
 
 /// Read-only DashPay profile sheet, promoted out of
 /// `IdentityDetailView`'s inline card: large avatar, display name,
@@ -12,6 +13,12 @@ struct DashPayProfileView: View {
     let onEdit: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var walletManager: PlatformWalletManager
+
+    /// DIP-15 auto-accept QR state (generated lazily on appear).
+    @State private var qrImage: UIImage?
+    @State private var qrURI: String?
+    @State private var qrError: String?
 
     private var displayName: String {
         if let name = profile?.displayName?
@@ -64,6 +71,47 @@ struct DashPayProfileView: View {
                         .textSelection(.enabled)
                 }
 
+                Section("Add me (DIP-15 QR)") {
+                    if let qrImage {
+                        VStack(spacing: 8) {
+                            Image(uiImage: qrImage)
+                                .interpolation(.none)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 200, height: 200)
+                                .padding(8)
+                                .background(Color.white)
+                                .cornerRadius(12)
+                            Text("Scan to send me a contact request — auto-accepted for 1 hour.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                            if let qrURI {
+                                Text(qrURI)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                                    .truncationMode(.middle)
+                                    .textSelection(.enabled)
+                                    .accessibilityIdentifier("dashpay.profile.qrURI")
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                    } else if let qrError {
+                        Text(qrError)
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    } else {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Generating QR…")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .task { await generateAutoAcceptQR() }
+
                 if let url = profile?.avatarUrl?
                     .trimmingCharacters(in: .whitespacesAndNewlines),
                    !url.isEmpty {
@@ -93,5 +141,42 @@ struct DashPayProfileView: View {
                 }
             }
         }
+    }
+
+    /// Build the DIP-15 auto-accept QR for this identity (once), via the Rust
+    /// `buildAutoAcceptQR`. Requires a DPNS name (the QR's `du`).
+    private func generateAutoAcceptQR() async {
+        guard qrImage == nil, qrError == nil else { return }
+        guard let walletId = identity.wallet?.walletId,
+              let wallet = walletManager.wallet(for: walletId) else {
+            qrError = "No wallet loaded for this identity."
+            return
+        }
+        guard let username = (identity.mainDpnsName ?? identity.dpnsName)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !username.isEmpty else {
+            qrError = "Register a DPNS username to share an auto-accept QR."
+            return
+        }
+        do {
+            let uri = try await wallet.buildAutoAcceptQR(username: username)
+            qrURI = uri
+            qrImage = Self.makeQRCode(from: uri)
+        } catch {
+            qrError = "Couldn't build the QR: \(error.localizedDescription)"
+        }
+    }
+
+    /// Render a string as a QR `UIImage` (native CoreImage generator, scaled 10×
+    /// for crispness). Mirrors the receive-address QR helper.
+    private static func makeQRCode(from string: String) -> UIImage? {
+        let context = CIContext()
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(string.utf8)
+        guard
+            let output = filter.outputImage?
+                .transformed(by: CGAffineTransform(scaleX: 10, y: 10)),
+            let cgImage = context.createCGImage(output, from: output.extent)
+        else { return nil }
+        return UIImage(cgImage: cgImage)
     }
 }

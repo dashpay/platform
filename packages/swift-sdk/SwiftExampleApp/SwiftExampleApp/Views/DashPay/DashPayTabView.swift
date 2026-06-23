@@ -31,6 +31,7 @@ struct DashPayTabView: View {
 
     @State private var segment: DashPaySegment = .contacts
     @State private var showAddContact = false
+    @State private var showAddViaQR = false
 
     /// Optimistic overlay for *send*: contact ids whose request
     /// was just broadcast but whose outgoing row hasn't landed via
@@ -111,6 +112,15 @@ struct DashPayTabView: View {
                         .disabled(activeIdentity == nil)
                         .accessibilityIdentifier("dashpay.addContact")
                     }
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            showAddViaQR = true
+                        } label: {
+                            Image(systemName: "qrcode.viewfinder")
+                        }
+                        .disabled(activeIdentity == nil)
+                        .accessibilityIdentifier("dashpay.addViaQR")
+                    }
                     ToolbarItem(placement: .navigationBarLeading) {
                         if let identity = activeIdentity {
                             NavigationLink {
@@ -121,6 +131,12 @@ struct DashPayTabView: View {
                             }
                             .accessibilityIdentifier("dashpay.openIgnored")
                         }
+                    }
+                }
+                .sheet(isPresented: $showAddViaQR) {
+                    if let identity = activeIdentity {
+                        AddViaQRSheet(identity: identity)
+                            .environmentObject(walletManager)
                     }
                 }
                 .sheet(isPresented: $showAddContact) {
@@ -160,6 +176,7 @@ struct DashPayTabView: View {
                                 showProfileView = false
                             }
                         )
+                        .environmentObject(walletManager)
                     }
                 }
                 .sheet(isPresented: $showProfileEditor) {
@@ -298,7 +315,7 @@ struct DashPayTabView: View {
                     systemImage: "lock.fill",
                     tint: .orange,
                     action: walletManager.wallet(for: walletId).map { wallet in
-                        { try? walletManager.unlockWalletFromKeychain(wallet) }
+                        { _ = try? walletManager.unlockWalletFromKeychain(wallet) }
                     }
                 )
             }
@@ -569,5 +586,89 @@ struct DashPayEmptyStateView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+    }
+}
+
+/// Send a contact request from a DIP-15 auto-accept QR URI. The user pastes the
+/// `dash:?du=…&dapk=…` URI (from another user's "Add me" QR; a camera scan would
+/// produce the same string); the Rust side resolves the username, signs the
+/// proof, and broadcasts, so the QR owner auto-accepts.
+private struct AddViaQRSheet: View {
+    let identity: PersistentIdentity
+
+    @EnvironmentObject private var walletManager: PlatformWalletManager
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var uri = ""
+    @State private var isSending = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("dash:?du=…&dapk=…", text: $uri, axis: .vertical)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .lineLimit(2...4)
+                        .accessibilityIdentifier("dashpay.qr.uriField")
+                } header: {
+                    Text("Paste an auto-accept QR URI")
+                } footer: {
+                    Text(
+                        "From another user's “Add me (DIP-15 QR)”. They auto-accept "
+                            + "your request for as long as their QR is valid."
+                    )
+                }
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+            }
+            .navigationTitle("Add via QR")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSending {
+                        ProgressView()
+                    } else {
+                        Button("Send") { send() }
+                            .disabled(uri.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .accessibilityIdentifier("dashpay.qr.send")
+                    }
+                }
+            }
+        }
+    }
+
+    private func send() {
+        let trimmed = uri.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        isSending = true
+        errorMessage = nil
+        Task { @MainActor in
+            defer { isSending = false }
+            do {
+                guard let walletId = identity.wallet?.walletId,
+                      let wallet = walletManager.wallet(for: walletId) else {
+                    errorMessage = "No wallet loaded for this identity."
+                    return
+                }
+                let signer = KeychainSigner(modelContainer: modelContext.container)
+                _ = try await wallet.sendContactRequestFromQR(
+                    senderIdentityId: identity.identityId,
+                    uri: trimmed,
+                    signer: signer
+                )
+                dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 }

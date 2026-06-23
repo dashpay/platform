@@ -179,6 +179,13 @@ public class PlatformWalletManager: ObservableObject {
     /// context pointer remains valid.
     private var persistenceHandler: PlatformWalletPersistenceHandler?
 
+    /// SwiftData container + network captured at `configure`, used to build a
+    /// `KeychainSigner` (the identity document signer) for the unlock-time
+    /// auto-accept drain. Nil when configured without persistence (no Keychain
+    /// signing possible → the drain runs provider-only).
+    private var modelContainer: ModelContainer?
+    private var signerNetwork: Network?
+
     /// Retained for the lifetime of the FFI handle so the event-handler
     /// context pointer remains valid.
     private var eventHandler: PlatformWalletEventHandler?
@@ -272,6 +279,8 @@ public class PlatformWalletManager: ObservableObject {
         self.handle = handle
         self.persistenceHandler = handler
         self.eventHandler = eventHandler
+        self.modelContainer = modelContainer
+        self.signerNetwork = network
         self.isConfigured = true
 
         startProgressPolling()
@@ -579,22 +588,32 @@ public class PlatformWalletManager: ObservableObject {
         }
         setDashPayDraining(walletId, true)
 
+        // Identity document signer for the DIP-15 auto-accept pass (which sends
+        // the reciprocal contact request). Nil when no SwiftData container is
+        // configured → the drain runs provider-only (account build / contactInfo)
+        // and skips auto-accept. `KeychainSigner` is `@unchecked Sendable`;
+        // captured (with the resolver) in the detached task below.
+        let identitySigner: KeychainSigner? = self.modelContainer.map {
+            KeychainSigner(modelContainer: $0, network: self.signerNetwork ?? .testnet)
+        }
+
         // Drain deferred contact-crypto in the background — it re-fetches and
         // decrypts over the network, so it must not block the caller. The
-        // detached task retains `coreSigner`, keeping the resolver alive for
-        // the drain's vtable callbacks. It captures the raw `walletHandle`
-        // (a `UInt64`), not the `ManagedPlatformWallet`: if the wallet is
-        // destroyed before the drain runs, `with_item` Rust-side simply misses
-        // the handle and the drain no-ops (NotFound) — no use-after-free.
+        // detached task retains `coreSigner` (+ the identity signer), keeping
+        // them alive for the drain's vtable callbacks. It captures the raw
+        // `walletHandle` (a `UInt64`), not the `ManagedPlatformWallet`: if the
+        // wallet is destroyed before the drain runs, `with_item` Rust-side simply
+        // misses the handle and the drain no-ops (NotFound) — no use-after-free.
         // Fire-and-forget: a failure here is not fatal (the next signer-present
         // DashPay action re-attempts the drain via its own provider), but it is
         // no longer swallowed silently — the failure lands on `lastError` and
         // the `draining` flag is cleared, both on the main actor.
         Task.detached(priority: .utility) { [weak self] in
             var drained: UInt32 = 0
-            let result = withExtendedLifetime(coreSigner) {
+            let result = withExtendedLifetime((coreSigner, identitySigner)) {
                 platform_wallet_drain_pending_contact_crypto(
                     walletHandle,
+                    identitySigner?.handle,
                     coreSigner.handle,
                     &drained
                 )
