@@ -91,6 +91,7 @@ headless. Resume the held work in an environment with Xcode + a live network.
 | `74f15496ef` | #7 | keep-warnings-green: `RawContactInfoDoc` made `pub(super)` to match its `pub(super)` fetch |
 | `feb266fd1b` | §4.2 | port `WipingXprv` RAII guard to the sibling FFI (`sign_with_mnemonic_resolver.rs`) — scrubs derived scalars on the error/unwind paths the Ok-only `non_secure_erase` missed |
 | `fe3ab74e19` | §4.9 | **delete `attach_wallet_seed`** (lib + FFI + dual-gate/`mem::swap` + all refs) and wire its replacement atomically: `PlatformWallet::verify_seed_binds` + `platform_wallet_verify_seed_binds_to_wallet` FFI (signer-derived BIP44-0 xpub vs persisted, wrong-seed → `SeedMismatch`). Red→green verified. `git grep attach_wallet_seed` empty (Rust) |
+| `70aaf32f9f` | §4.9 | **Swift seedless unlock** — `unlockWalletFromKeychain(_:)` verifies-binds + background-drains (no seed graft); send/accept/contactInfo thread the resolver `core_signer_handle`; `KeychainSigner.sign(...)->Data?` nil-swallow + its `Signer` protocol requirement deleted. Header regenerated; arm64-sim SwiftExampleApp **BUILD SUCCEEDED** |
 
 **Locked design decisions**
 - Raw-secret ops are **inherent methods on `MnemonicResolverCoreSigner`** (in

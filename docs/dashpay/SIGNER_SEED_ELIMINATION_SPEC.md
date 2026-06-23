@@ -138,12 +138,12 @@ notes.**
    *DashPay-contact* paths; the discovery resident derive `derive_identity_auth_keypair`
    (`identity_handle.rs:191`) is a resident-key-TYPE path that legitimately stays.
 
-3. **Test-helper rework + Swift.** `payments.rs::make_wallet` (`:747`) and
-   `make_wallet_with` (`:711`) call `attach_wallet_seed` — rework them to the
-   external-signable + `SeedCryptoProvider`/test-`Signer` shape (`make_watch_only_wallet`,
-   `:757`, is the template) BEFORE the deletion; move every resident-derive test
-   assertion onto the provider. Swift: drain-on-unlock replacing
-   `unlockWalletFromKeychain`'s re-attach.
+3. **Test-helper rework + Swift.** ✓ DONE. The test helpers were made seedless
+   earlier (`c42d2e413e`). Swift (`70aaf32f9f`): `unlockWalletFromKeychain(_:)`
+   now verifies-binds + drains-on-unlock (no seed graft); send/accept/contactInfo
+   thread the resolver `core_signer_handle`. Verified by regenerating the
+   xcframework header (`build_ios.sh --target sim`) + an arm64-sim SwiftExampleApp
+   build (BUILD SUCCEEDED).
 
 4. **Delete** `attach_wallet_seed` + FFI export + dual-gate/`mem::swap` + the dead
    `dash_sdk_dashpay_*` rs-sdk-ffi surface (4 fns, zero Swift callers — confirmed)
@@ -155,22 +155,27 @@ notes.**
      mismatch → `SeedMismatch`. Reuses the existing `verify_binds_to_xpub` primitive
      via the `ContactCryptoProvider::receiving_xpub` seam (no redundant trait
      method). The dead `dash_sdk_dashpay_*` surface was removed earlier (`db18688545`).
-     **Remaining (Swift, buildable):** call the verify FFI at unlock + the
-     `KeychainSigner.sign(...)->Data?` nil-swallow deletion (see step 3 Swift).
+     ✓ Swift wiring DONE (`70aaf32f9f`): the verify FFI is called at unlock and the
+     `KeychainSigner.sign(...)->Data?` nil-swallow is deleted (see step 3 Swift).
    - **SHOULD-FIX (security): §4.2 sibling-FFI leak.** ✓ DONE (`feb266fd1b`): the
      `WipingXprv` RAII guard now wraps `master`/`derived` in
      `rs-platform-wallet-ffi/src/sign_with_mnemonic_resolver.rs`, scrubbing on the
      error/unwind paths the Ok-only `non_secure_erase` missed.
 
-**Done when:** `git grep attach_wallet_seed` is empty; `cargo test -p platform-wallet`
-green; `build_ios.sh` + SwiftExampleApp build clean; and **testnet on-device
-acceptance** passes — INCLUDING the two negative/cross-device cases the all-positive
-script currently misses (review): (a) a **wrong/mis-mapped seed is rejected loud**
-(exercises `verify_binds_to_xpub`); (b) **cross-device contactInfo deferral** —
-publish on A → background-sync on seedless B → unlock B → contactInfo appears
-(exercises the `ContactInfoDecrypt` drain). Plus the happy path: clean wipe →
-import funded testnet seed → discover → send/accept + pay + publish; background-
-discover inbound contact then unlock → payable.
+**Done when:**
+- ✓ `git grep attach_wallet_seed` empty (outside docs/regenerated headers).
+- ✓ `cargo test -p platform-wallet` green (292) + glue (`platform-wallet-ffi`) green.
+- ✓ `build_ios.sh --target sim` regenerates the header (verify FFI present, attach
+  gone, send/accept/contactInfo carry `core_signer_handle`) + SwiftExampleApp
+  builds clean (arm64 sim, BUILD SUCCEEDED).
+- ⏳ **REMAINING — testnet on-device acceptance** (env-gated; needs a running sim
+  + funded testnet seed). Must include the two negative/cross-device cases the
+  all-positive script misses (review): (a) a **wrong/mis-mapped seed is rejected
+  loud** (exercises `verify_seed_binds`); (b) **cross-device contactInfo deferral**
+  — publish on A → background-sync on seedless B → unlock B → contactInfo appears
+  (exercises the `ContactInfoDecrypt` drain). Plus the happy path: clean wipe →
+  import funded testnet seed → discover → send/accept + pay + publish; background-
+  discover inbound contact then unlock → payable.
 
 **Out of Q2 scope** (tracked in `TODO.md`): §6b queue restore (upstream
 `ClientStartState::wallets` — note the security review's caveat that until restore
