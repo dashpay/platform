@@ -425,21 +425,39 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// disk but its contents are reset to empty so the next bind cold-
     /// resyncs from index 0.
     ///
-    /// Returns an error if the coordinator's store reset fails; the host
-    /// must not commit its own persistence wipe in that case.
+    /// Returns an error — and leaves the store untouched — in two cases, so
+    /// the host knows **not** to commit its own persistence wipe:
+    /// - the in-flight sync pass did not drain cleanly (timed out on the join
+    ///   backstop, or its loop ended non-cleanly) →
+    ///   [`crate::error::PlatformWalletError::ShieldedShutdownIncomplete`]; or
+    /// - the coordinator's store reset itself fails.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
         // Bound the quiesce with the same backstop `shutdown()` uses so a
         // stalled in-flight pass can't hang Clear forever — cancellation
         // makes the drain prompt; this timeout only matters if a pass's
-        // drop wedges. The terminal status isn't surfaced on the Clear
-        // path (the coordinator reset below is what can fail), so the
-        // timeout result is intentionally discarded.
-        let _ = tokio::time::timeout(
+        // drop wedges. Unlike `shutdown()`, the terminal status is
+        // load-bearing HERE: a non-clean drain means the in-flight pass may
+        // still be running and could re-persist notes into the very store
+        // the `clear()` below is about to wipe. A timeout (the future was
+        // dropped at the deadline) is treated as the non-clean `Timeout`
+        // status, matching `shutdown()`'s backstop substitution.
+        let status = match tokio::time::timeout(
             std::time::Duration::from_secs(SHUTDOWN_JOIN_TIMEOUT_SECS),
             self.shielded_sync_manager.quiesce(),
         )
-        .await;
+        .await
+        {
+            Ok(status) => status,
+            Err(_elapsed) => CoordinatorThreadStatus::Timeout,
+        };
+        // Only commit the store wipe once the in-flight pass has fully
+        // drained. Otherwise refuse: a partial/timed-out drain could let a
+        // surviving pass write into a store we just cleared, desyncing the
+        // host's own wipe from a repopulated tree.
+        if !status.is_clean() {
+            return Err(crate::error::PlatformWalletError::ShieldedShutdownIncomplete { status });
+        }
         if let Some(coord) = self.shielded_coordinator().await {
             coord.clear().await?;
         }

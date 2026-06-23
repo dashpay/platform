@@ -39,14 +39,18 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// outcome. Do NOT auto-retry — a retry would rebuild the bundle and
     /// could double-execute if the original landed.
     case errorShieldedSpendUnconfirmed = 18
-    /// One or more background coordinator threads did not exit cleanly
-    /// before the FFI's 30 s join deadline. The host MUST keep its
-    /// callback context (the persister + event-handler Swift objects whose
+    /// A destroy / stop / clear completed but one or more background
+    /// coordinator threads did not exit cleanly before the FFI's 30 s
+    /// join deadline. The host MUST keep its callback context (the
+    /// persister + event-handler Swift objects whose
     /// `Unmanaged.passUnretained` opaque pointers were handed to Rust)
     /// alive past `platform_wallet_manager_destroy` — a lingering
     /// coordinator thread still holds an `Arc<FFIPersister>` /
     /// `Arc<FFIEventHandler>` and may fire one final callback through
-    /// that context. The manager IS torn down; do NOT retry `destroy`.
+    /// that context. On the clear path, the host must also NOT commit
+    /// its own persistence wipe — the Rust store was left intact so it
+    /// can be retried once the pass settles. The manager IS torn down;
+    /// do NOT retry `destroy`.
     case errorShutdownIncomplete = 19
     case notFound = 98
     case errorUnknown = 99
@@ -188,13 +192,16 @@ public enum PlatformWalletError: LocalizedError {
     /// notes reserved wallet-side (a shield reserves nothing) until the
     /// next sync reconciles the outcome. Do NOT auto-retry.
     case shieldedSpendUnconfirmed(String)
-    /// `platform_wallet_manager_destroy` returned without proving that
-    /// every background coordinator OS thread had exited. The manager is
-    /// torn down, but the host must not free the Swift-side persister /
+    /// A destroy / stop / clear completed but a background coordinator
+    /// OS thread did not exit cleanly — `platform_wallet_manager_destroy`
+    /// returned without proving every coordinator had exited. The manager
+    /// is torn down, but the host must not free the Swift-side persister /
     /// event-handler context until that thread has had a chance to wind
     /// down — `PlatformWalletManager.deinit` retains those handlers in a
     /// process-global leak slot on this code so a final, lingering Rust
-    /// callback finds valid memory.
+    /// callback finds valid memory. On the clear path, the host must also
+    /// NOT commit its own persistence wipe — the Rust store was left
+    /// intact so it can be retried once the pass settles.
     case shutdownIncomplete(String)
     case notFound(String)
     case unknown(String)

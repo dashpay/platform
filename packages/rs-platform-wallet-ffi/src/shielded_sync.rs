@@ -68,11 +68,19 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_start(
 /// Stop the shielded sync manager and wait for any in-flight pass to
 /// drain before returning. No-op if not running.
 ///
-/// Uses `quiesce` rather than cancel-only stop, so on return: the loop
-/// is cancelled, no new pass will start, and any in-flight pass has
+/// Uses `quiesce` rather than cancel-only stop, so on a clean return: the
+/// loop is cancelled, no new pass will start, and any in-flight pass has
 /// fully drained — its **persistence callbacks have completed** (no
 /// note/sync-state row can be written after this returns) and its
 /// completion-event *dispatch* on the Rust side has run.
+///
+/// Returns `ErrorShutdownIncomplete` instead of `Success` when that drain
+/// did **not** complete cleanly (the in-flight pass timed out on the join
+/// backstop, or the loop ended non-cleanly). The terminal coordinator
+/// status is rendered into the result message. On this code the host must
+/// **not** free the callback context immediately — a lingering pass may
+/// still fire one final callback through it (symmetric with
+/// `platform_wallet_manager_destroy`).
 ///
 /// Caveat on host-observed events: a host that marshals the completion
 /// callback onto its own executor (e.g. the Swift trampoline hops it to
@@ -92,17 +100,36 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
             // Bound the quiesce with the same backstop `shutdown()` uses so
             // a stalled in-flight pass can't hang the host's stop call
             // forever. Cancellation makes the drain prompt; this only
-            // matters if a pass's drop wedges. The terminal status is
-            // discarded — the C ABI exposes none of it, we only need the
-            // drain not to wedge.
-            let _ = tokio::time::timeout(
+            // matters if a pass's drop wedges. A timeout (the future was
+            // dropped at the deadline) is reported as the non-clean
+            // `Timeout` status, matching `shutdown()`'s backstop
+            // substitution, so the host learns the drain may be incomplete.
+            match tokio::time::timeout(
                 Duration::from_secs(platform_wallet::SHUTDOWN_JOIN_TIMEOUT_SECS),
                 manager.shielded_sync().quiesce(),
             )
-            .await;
-        });
+            .await
+            {
+                Ok(status) => status,
+                Err(_elapsed) => platform_wallet::CoordinatorThreadStatus::Timeout,
+            }
+        })
     });
-    unwrap_option_or_return!(option);
+    let status = unwrap_option_or_return!(option);
+    // Symmetric with `platform_wallet_manager_destroy`: a non-clean drain
+    // means the shielded loop may still hold a reference to the host-owned
+    // event-handler / persister context and could fire one final callback,
+    // so signal the host to defer freeing that context rather than returning
+    // ok() and inviting a use-after-free.
+    if !status.is_clean() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
+            format!(
+                "shielded sync stop did not drain cleanly ({status:?}); \
+                 host must not free the callback context immediately"
+            ),
+        );
+    }
     PlatformWalletFFIResult::ok()
 }
 
@@ -429,7 +456,9 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
 /// via the changeset path.
 ///
 /// Returns `ErrorWalletOperation` if the Rust-side store reset
-/// fails. The host **must** check this before wiping its own
+/// fails, or `ErrorShutdownIncomplete` if the in-flight sync pass
+/// did not drain cleanly first (in which case the store is left
+/// intact). The host **must** check this before wiping its own
 /// persistence: a silent failure would leave the shared tree
 /// populated while the host drops its rows, and the next cold
 /// resync would gate-skip every re-downloaded position against the
@@ -455,10 +484,19 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
     });
     let result = unwrap_option_or_return!(option);
     if let Err(e) = result {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("clear_shielded failed: {e}"),
-        );
+        // A non-clean / timed-out quiesce aborts the clear *before* the store
+        // is touched: surface it as ErrorShutdownIncomplete (symmetric with
+        // destroy / shielded_sync_stop) so the host defers freeing its
+        // callback context and does NOT commit its own persistence wipe — the
+        // store was intentionally left intact. Every other clear failure is a
+        // store-reset error → ErrorWalletOperation, as before.
+        let code = match &e {
+            platform_wallet::PlatformWalletError::ShieldedShutdownIncomplete { .. } => {
+                PlatformWalletFFIResultCode::ErrorShutdownIncomplete
+            }
+            _ => PlatformWalletFFIResultCode::ErrorWalletOperation,
+        };
+        return PlatformWalletFFIResult::err(code, format!("clear_shielded failed: {e}"));
     }
     PlatformWalletFFIResult::ok()
 }

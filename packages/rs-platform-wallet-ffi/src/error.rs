@@ -246,6 +246,14 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::ShieldedSpendUnconfirmed { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
             }
+            // A Clear that refused because the in-flight shielded pass didn't
+            // drain cleanly: surface it as ErrorShutdownIncomplete (symmetric
+            // with `platform_wallet_manager_destroy`) so the host defers
+            // freeing its callback context AND does not commit its own
+            // persistence wipe — the store was intentionally left intact.
+            PlatformWalletError::ShieldedShutdownIncomplete { .. } => {
+                PlatformWalletFFIResultCode::ErrorShutdownIncomplete
+            }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
         PlatformWalletFFIResult::err(code, error.to_string())
@@ -597,6 +605,29 @@ mod tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
             "ShieldedSpendUnconfirmed should map to ErrorShieldedSpendUnconfirmed (rendered: {rendered})"
+        );
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered, "Display payload must survive verbatim");
+    }
+
+    /// A Clear that refused on a non-clean shielded drain must surface as
+    /// `ErrorShutdownIncomplete` (symmetric with `destroy`), not flatten to
+    /// `ErrorUnknown`, so the host knows to defer freeing its callback
+    /// context and to NOT commit its own persistence wipe. The typed Display
+    /// rendering (carrying the terminal coordinator status) survives verbatim.
+    #[test]
+    fn shielded_shutdown_incomplete_maps_to_dedicated_code() {
+        let err = PlatformWalletError::ShieldedShutdownIncomplete {
+            status: platform_wallet::CoordinatorThreadStatus::Timeout,
+        };
+        let rendered = err.to_string();
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
+            "ShieldedShutdownIncomplete should map to ErrorShutdownIncomplete (rendered: {rendered})"
         );
         let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
             .to_string_lossy()

@@ -411,36 +411,22 @@ where
             return;
         }
 
-        // Drain any handle left by a prior stop() call. stop() takes-and-cancels
-        // the token but never touches background_join, so a stop()→start()
-        // sequence would otherwise overwrite (detach) the old handle —
-        // shutdown() would then miss that thread and join() only the new one.
-        // The old thread was already cancellation-signalled, so is_finished()
-        // becomes true within a few milliseconds; we spin-wait to guarantee
-        // no detached thread can fire callbacks after destroy() returns.
-        {
-            let prior = self
-                .background_join
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .take();
-            if let Some(h) = prior {
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-                while !h.is_finished() {
-                    if std::time::Instant::now() >= deadline {
-                        tracing::warn!(
-                            "identity-sync prior thread did not finish within 1 s \
-                             after cancellation; detaching to unblock start()"
-                        );
-                        break; // Drop h — detaches; thread was already cancelled.
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(5));
-                }
-                if h.is_finished() {
-                    let _ = h.join(); // Reap resources; near-instant since finished.
-                }
-            }
-        }
+        // Take any handle left by a prior stop() call so we can reap it — but
+        // DON'T join it here, while we still hold background_cancel. stop()
+        // takes-and-cancels the token but never touches background_join, so a
+        // stop()→start() sequence would otherwise overwrite (detach) the old
+        // handle and shutdown() would miss that thread. Joining it under
+        // background_cancel would DEADLOCK the reap into its 1 s backstop: the
+        // exiting prior thread's epilogue also locks background_cancel (to
+        // clear its slot), so it would block on the lock we hold → never
+        // finish → get detached on the exact stop()→start() path the reap
+        // exists for. We install the new token + bump the generation below,
+        // release the lock, and only THEN reap (after this fn's tail).
+        let prior = self
+            .background_join
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
 
         let cancel = CancellationToken::new();
         *cancel_guard = Some(cancel.clone());
@@ -498,7 +484,37 @@ where
             .background_join
             .lock()
             .unwrap_or_else(|e| e.into_inner()) = Some(join);
-        // cancel_guard drops here, releasing background_cancel.
+
+        // Release background_cancel BEFORE reaping the prior thread, so its
+        // epilogue can acquire the lock, observe the bumped generation, skip
+        // clearing our freshly-installed token, and return. Holding the lock
+        // across the join below is what would block the prior thread, spin
+        // the full 1 s deadline, and detach — the very stall this ordering
+        // removes.
+        drop(cancel_guard);
+
+        // Now reap the prior thread. It was already cancellation-signalled by
+        // stop(), and with the lock released its epilogue completes promptly,
+        // so is_finished() trips within a few milliseconds and the join is
+        // near-instant. The 1 s deadline survives only as a genuine-wedge
+        // backstop (e.g. a pass wedged in a Drop that never yields); if it
+        // fires we detach the already-cancelled thread to unblock start().
+        if let Some(h) = prior {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+            while !h.is_finished() {
+                if std::time::Instant::now() >= deadline {
+                    tracing::warn!(
+                        "identity-sync prior thread did not finish within 1 s \
+                         after cancellation; detaching to unblock start()"
+                    );
+                    break; // Drop h — detaches; thread was already cancelled.
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            if h.is_finished() {
+                let _ = h.join(); // Reap resources; near-instant since finished.
+            }
+        }
     }
 
     /// Stop the background sync loop. No-op if not running.
@@ -1023,6 +1039,60 @@ mod tests {
         assert!(!mgr.quiescing.load(Ordering::Acquire));
         assert!(!mgr.is_syncing());
         pass.await.unwrap();
+    }
+
+    /// Regression: a tight `stop()` → `start()` must reap the prior loop's
+    /// OS thread promptly, NOT stall on the 1 s detach backstop.
+    ///
+    /// The prior thread's exit epilogue locks `background_cancel` to
+    /// conditionally clear its slot. The earlier ordering held
+    /// `background_cancel` across the prior-handle join inside `start()`, so
+    /// on a back-to-back `stop()` → `start()` the exiting thread blocked on
+    /// that lock, never finished, and the reap spin-waited the full second
+    /// before detaching — a 1 s stall plus a transient untracked thread. The
+    /// fix installs the new token + generation, releases `background_cancel`,
+    /// and only then reaps, so the prior thread's epilogue runs and the join
+    /// lands in milliseconds.
+    ///
+    /// `stop()` and `start()` run back-to-back in one blocking closure
+    /// (mirroring the real call site) so `start()` re-acquires the lock
+    /// microseconds after `stop()` frees it — before the async-woken prior
+    /// thread can reach its epilogue. Against the old lock-held ordering this
+    /// reliably stalls ~1 s and fails the bound below.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn restart_after_stop_reaps_prior_thread() {
+        let mgr = make_manager();
+
+        // Launch the first loop and let its immediate (no-op, nothing
+        // registered) pass complete so the thread parks in the interval
+        // sleep, where cancellation lands cleanly.
+        Arc::clone(&mgr).start();
+        assert!(mgr.is_running());
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Back-to-back cancel-only stop + restart, off the runtime so the
+        // synchronous reap can't starve a worker. `start()` re-grabs
+        // background_cancel right after `stop()` frees it.
+        let restart = Arc::clone(&mgr);
+        let elapsed = tokio::task::spawn_blocking(move || {
+            restart.stop();
+            let started = std::time::Instant::now();
+            Arc::clone(&restart).start();
+            started.elapsed()
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "stop()→start() stalled for {elapsed:?}: prior thread was not \
+             reaped promptly (background_cancel held across the join?)"
+        );
+        assert!(mgr.is_running(), "restart must leave the new loop tracked");
+
+        // Wind the new loop down so the test leaves no live !Send thread.
+        mgr.quiesce().await;
+        assert!(!mgr.is_running());
     }
 
     /// A `sync_now()` invoked while `quiescing` is set must bail without
