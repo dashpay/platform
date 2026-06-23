@@ -88,6 +88,9 @@ headless. Resume the held work in an environment with Xcode + a live network.
 | `413229f048` | #7 | **seedless contactInfo publish** — find-existing via `open` + encrypt via `seal`; shared fetch split into key-free scan + resident wrapper (de-dup); FFI gains `core_signer_handle`; 4 provider constructions collapsed to one helper |
 | `15ca790aad` | #7 | **seedless contactInfo sweep+drain** — sweep enqueues `ContactInfoDecrypt` (seedless) / decrypts resident (resident-key types); drain op implemented (re-fetch + `open` + apply + confused-deputy guard). Network-validated end-to-end |
 | `db18688545` | §4.4 | delete the dead `dash_sdk_dashpay_*` rs-sdk-ffi surface (−743; de-dup, last `SdkSide` ABI) |
+| `74f15496ef` | #7 | keep-warnings-green: `RawContactInfoDoc` made `pub(super)` to match its `pub(super)` fetch |
+| `feb266fd1b` | §4.2 | port `WipingXprv` RAII guard to the sibling FFI (`sign_with_mnemonic_resolver.rs`) — scrubs derived scalars on the error/unwind paths the Ok-only `non_secure_erase` missed |
+| `fe3ab74e19` | §4.9 | **delete `attach_wallet_seed`** (lib + FFI + dual-gate/`mem::swap` + all refs) and wire its replacement atomically: `PlatformWallet::verify_seed_binds` + `platform_wallet_verify_seed_binds_to_wallet` FFI (signer-derived BIP44-0 xpub vs persisted, wrong-seed → `SeedMismatch`). Red→green verified. `git grep attach_wallet_seed` empty (Rust) |
 
 **Locked design decisions**
 - Raw-secret ops are **inherent methods on `MnemonicResolverCoreSigner`** (in

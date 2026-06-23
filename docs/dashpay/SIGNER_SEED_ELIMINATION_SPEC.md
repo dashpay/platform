@@ -148,13 +148,19 @@ notes.**
 4. **Delete** `attach_wallet_seed` + FFI export + dual-gate/`mem::swap` + the dead
    `dash_sdk_dashpay_*` rs-sdk-ffi surface (4 fns, zero Swift callers — confirmed)
    + the legacy `KeychainSigner.sign(...)->Data?` nil-swallow.
-   - **MUST-FIX (security): atomic wrong-seed wiring.** `verify_binds_to_xpub`
-     (§4.8) exists but has ZERO production callers. Its glue wiring MUST land in the
-     SAME change that deletes the dual gate — else wrong-seed/wrong-wallet detection
-     vanishes with nothing in its place (silent wrong-signature risk).
-   - **SHOULD-FIX (security): §4.2 sibling-FFI leak.** Port the `WipingXprv` RAII
-     guard to `rs-platform-wallet-ffi/src/sign_with_mnemonic_resolver.rs:203-223`
-     (still hand-places `non_secure_erase` on the Ok-path only; `?`/panic leaks).
+   - **MUST-FIX (security): atomic wrong-seed wiring.** ✓ DONE (Rust, `fe3ab74e19`):
+     `attach_wallet_seed` (lib + FFI + dual gate) deleted and `verify_seed_binds`
+     (`PlatformWallet` method + `platform_wallet_verify_seed_binds_to_wallet` FFI)
+     landed in the same commit — signer-derived BIP44-0 xpub vs the persisted one,
+     mismatch → `SeedMismatch`. Reuses the existing `verify_binds_to_xpub` primitive
+     via the `ContactCryptoProvider::receiving_xpub` seam (no redundant trait
+     method). The dead `dash_sdk_dashpay_*` surface was removed earlier (`db18688545`).
+     **Remaining (Swift, buildable):** call the verify FFI at unlock + the
+     `KeychainSigner.sign(...)->Data?` nil-swallow deletion (see step 3 Swift).
+   - **SHOULD-FIX (security): §4.2 sibling-FFI leak.** ✓ DONE (`feb266fd1b`): the
+     `WipingXprv` RAII guard now wraps `master`/`derived` in
+     `rs-platform-wallet-ffi/src/sign_with_mnemonic_resolver.rs`, scrubbing on the
+     error/unwind paths the Ok-only `non_secure_erase` missed.
 
 **Done when:** `git grep attach_wallet_seed` is empty; `cargo test -p platform-wallet`
 green; `build_ios.sh` + SwiftExampleApp build clean; and **testnet on-device
