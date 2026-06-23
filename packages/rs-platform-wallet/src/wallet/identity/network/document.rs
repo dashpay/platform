@@ -27,6 +27,7 @@
 //!     post-broadcast GroveDB proof-verification recursion.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 
@@ -34,16 +35,26 @@ use dpp::address_funds::AddressWitness;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::Document;
+use dpp::document::DocumentV0Setters;
+use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::{BinaryData, Value};
 use dpp::prelude::{DataContract, Identifier};
 use dpp::ProtocolError;
 
+use dash_sdk::platform::documents::transitions::{
+    DocumentDeleteResult, DocumentDeleteTransitionBuilder, DocumentPurchaseResult,
+    DocumentPurchaseTransitionBuilder, DocumentReplaceResult, DocumentReplaceTransitionBuilder,
+    DocumentSetPriceResult, DocumentSetPriceTransitionBuilder, DocumentTransferResult,
+    DocumentTransferTransitionBuilder,
+};
 use dash_sdk::platform::transition::put_document::PutDocument;
-use dash_sdk::platform::Fetch;
+use dash_sdk::platform::{DocumentQuery, Fetch};
 
 use crate::error::PlatformWalletError;
 
@@ -286,6 +297,443 @@ impl IdentityWallet {
                 ))
             })?;
 
+        Ok(confirmed)
+    }
+
+    /// Fetch the on-chain `DataContract` for `contract_id` (wrapped in
+    /// an `Arc`, the shape the document-transition builders take) and
+    /// resolve+verify that `document_type_name` exists on it.
+    ///
+    /// Shared by the mutate-existing-document flows (replace / delete /
+    /// transfer / set-price / purchase) — each needs the contract as an
+    /// `Arc<DataContract>` for both the single-document fetch query and
+    /// the transition builder.
+    async fn fetch_contract_arc_for_document_op(
+        &self,
+        contract_id: &Identifier,
+        document_type_name: &str,
+    ) -> Result<Arc<DataContract>, PlatformWalletError> {
+        let data_contract = DataContract::fetch(&self.sdk, *contract_id)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to fetch contract {contract_id} for document operation: {e}"
+                ))
+            })?
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Data contract {contract_id} not found on Platform; cannot operate on document"
+                ))
+            })?;
+        // Validate the document type exists up front so the caller gets
+        // a clear error before a fetch/broadcast round-trip.
+        data_contract
+            .document_type_for_name(document_type_name)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Document type {document_type_name:?} not found on contract {contract_id}: {e}"
+                ))
+            })?;
+        Ok(Arc::new(data_contract))
+    }
+
+    /// Fetch the single current on-chain `Document` for
+    /// `(contract, document_type_name, document_id)`.
+    ///
+    /// The mutate flows that carry the full document into their
+    /// transition builder (replace / transfer / set-price / purchase)
+    /// need the *current* revision + base data — they clone it, bump the
+    /// revision, and (for replace) overwrite properties. Fetching here
+    /// (rather than trusting a Swift-supplied document) keeps the
+    /// revision authoritative and matches `rs-sdk-ffi`'s builder path,
+    /// which also operates on a fetched/known document.
+    async fn fetch_current_document(
+        &self,
+        data_contract: &Arc<DataContract>,
+        document_type_name: &str,
+        document_id: &Identifier,
+    ) -> Result<Document, PlatformWalletError> {
+        let query = DocumentQuery::new(Arc::clone(data_contract), document_type_name)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to build document query: {e}"
+                ))
+            })?
+            .with_document_id(document_id);
+        Document::fetch(&self.sdk, query)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to fetch document {document_id}: {e}"
+                ))
+            })?
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Document {document_id} not found on Platform; cannot operate on it"
+                ))
+            })
+    }
+
+    /// Resolve the AUTHENTICATION signing key `signing_key_id` on
+    /// `owner_identity_id` from the in-process wallet manager.
+    ///
+    /// Unlike `create_document_with_signer` (which auto-selects an
+    /// AUTHENTICATION key by security level), the mutate flows take an
+    /// explicit `signing_key_id` chosen by the caller's key picker, so
+    /// the user keeps control of which key signs. We still enforce the
+    /// document state-transition signing rule here: the key must exist,
+    /// be AUTHENTICATION-purpose, and be ECDSA_SECP256K1 — the same
+    /// purpose `create` uses (see
+    /// `project_document_signing_key_purpose_bug`: signing with a
+    /// non-AUTHENTICATION key, e.g. a TRANSFER/CRITICAL key, is rejected
+    /// by consensus with "requires AUTHENTICATION").
+    async fn resolve_authentication_signing_key(
+        &self,
+        owner_identity_id: &Identifier,
+        signing_key_id: u32,
+    ) -> Result<IdentityPublicKey, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(
+                "Wallet info not found in wallet manager".to_string(),
+            )
+        })?;
+        let manager = &info.identity_manager;
+        let identity = manager
+            .identity(owner_identity_id)
+            .map(|m| m.identity.clone())
+            .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
+        let key = identity
+            .get_public_key_by_id(signing_key_id)
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Signing key {signing_key_id} not found on identity {owner_identity_id}"
+                ))
+            })?
+            .clone();
+        if key.purpose() != Purpose::AUTHENTICATION {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "Signing key {signing_key_id} on identity {owner_identity_id} has purpose {:?}, \
+                 but a document state transition must be signed with an AUTHENTICATION key",
+                key.purpose()
+            )));
+        }
+        if key.key_type() != KeyType::ECDSA_SECP256K1 {
+            return Err(PlatformWalletError::InvalidIdentityData(format!(
+                "Signing key {signing_key_id} on identity {owner_identity_id} has key type {:?}, \
+                 but a document state transition must be signed with an ECDSA_SECP256K1 key",
+                key.key_type()
+            )));
+        }
+        Ok(key)
+    }
+
+    /// Replace an existing document's properties on
+    /// `contract_id`'s `document_type_name` and broadcast.
+    ///
+    /// Fetches the current document, applies `properties_json` (parsed
+    /// + schema-sanitized exactly like the create path), bumps the
+    /// revision, signs with the explicit `signing_key_id`
+    /// (AUTHENTICATION + ECDSA), broadcasts via `Sdk::document_replace`
+    /// on the platform-wallet 8 MB worker stack, and returns the
+    /// confirmed `Document`.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn replace_document_with_signer<S>(
+        &self,
+        owner_identity_id: &Identifier,
+        contract_id: &Identifier,
+        document_type_name: &str,
+        document_id: &Identifier,
+        properties_json: &str,
+        signing_key_id: u32,
+        signer: &S,
+    ) -> Result<Document, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let data_contract = self
+            .fetch_contract_arc_for_document_op(contract_id, document_type_name)
+            .await?;
+
+        // Owned `DocumentType` to sanitize the supplied properties
+        // against the schema — same conversion the create path runs.
+        let document_type = data_contract
+            .document_type_cloned_for_name(document_type_name)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Document type {document_type_name:?} not found on contract {contract_id}: {e}"
+                ))
+            })?;
+
+        let mut document = self
+            .fetch_current_document(&data_contract, document_type_name, document_id)
+            .await?;
+
+        // Parse + sanitize the new properties, then overwrite the
+        // fetched document's property map. The system fields (id, owner,
+        // timestamps, revision) are preserved from the fetched document.
+        let properties_value: serde_json::Value =
+            serde_json::from_str(properties_json).map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Invalid document properties JSON: {e}"
+                ))
+            })?;
+        let mut properties: BTreeMap<String, Value> = serde_json::from_value(properties_value)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Document properties must be a JSON object keyed by property name: {e}"
+                ))
+            })?;
+        document_type
+            .as_ref()
+            .sanitize_document_properties(&mut properties);
+        document.set_properties(properties);
+
+        // Bump the revision for the replacement (mirrors the rs-sdk-ffi
+        // replace builder, which increments before building).
+        document.increment_revision().map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to increment document revision: {e}"
+            ))
+        })?;
+
+        let signing_key = self
+            .resolve_authentication_signing_key(owner_identity_id, signing_key_id)
+            .await?;
+
+        let builder = DocumentReplaceTransitionBuilder::new(
+            data_contract,
+            document_type_name.to_string(),
+            document,
+        );
+        let DocumentReplaceResult::Document(confirmed) = self
+            .sdk
+            .document_replace(builder, &signing_key, &SignerRef(signer))
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!("Failed to replace document: {e}"))
+            })?;
+        Ok(confirmed)
+    }
+
+    /// Delete an existing document on `contract_id`'s
+    /// `document_type_name` and broadcast.
+    ///
+    /// Signs with the explicit `signing_key_id` (AUTHENTICATION +
+    /// ECDSA) and broadcasts via `Sdk::document_delete` on the
+    /// platform-wallet 8 MB worker stack. Returns the deleted document's
+    /// `Identifier` on confirmation.
+    pub async fn delete_document_with_signer<S>(
+        &self,
+        owner_identity_id: &Identifier,
+        contract_id: &Identifier,
+        document_type_name: &str,
+        document_id: &Identifier,
+        signing_key_id: u32,
+        signer: &S,
+    ) -> Result<Identifier, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let data_contract = self
+            .fetch_contract_arc_for_document_op(contract_id, document_type_name)
+            .await?;
+
+        let signing_key = self
+            .resolve_authentication_signing_key(owner_identity_id, signing_key_id)
+            .await?;
+
+        // Delete is keyed by (document_id, owner_id); no current-document
+        // fetch is required.
+        let builder = DocumentDeleteTransitionBuilder::new(
+            data_contract,
+            document_type_name.to_string(),
+            *document_id,
+            *owner_identity_id,
+        );
+        let DocumentDeleteResult::Deleted(deleted_id) = self
+            .sdk
+            .document_delete(builder, &signing_key, &SignerRef(signer))
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!("Failed to delete document: {e}"))
+            })?;
+        Ok(deleted_id)
+    }
+
+    /// Transfer an existing document on `contract_id`'s
+    /// `document_type_name` to `recipient_id` and broadcast.
+    ///
+    /// Fetches the current document, bumps the revision, signs with the
+    /// explicit `signing_key_id` (AUTHENTICATION + ECDSA), broadcasts
+    /// via `Sdk::document_transfer` on the platform-wallet 8 MB worker
+    /// stack, and returns the confirmed `Document` (now owned by
+    /// `recipient_id`).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn transfer_document_with_signer<S>(
+        &self,
+        owner_identity_id: &Identifier,
+        contract_id: &Identifier,
+        document_type_name: &str,
+        document_id: &Identifier,
+        recipient_id: &Identifier,
+        signing_key_id: u32,
+        signer: &S,
+    ) -> Result<Document, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let data_contract = self
+            .fetch_contract_arc_for_document_op(contract_id, document_type_name)
+            .await?;
+
+        let mut document = self
+            .fetch_current_document(&data_contract, document_type_name, document_id)
+            .await?;
+        document.increment_revision().map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to increment document revision: {e}"
+            ))
+        })?;
+
+        let signing_key = self
+            .resolve_authentication_signing_key(owner_identity_id, signing_key_id)
+            .await?;
+
+        let builder = DocumentTransferTransitionBuilder::new(
+            data_contract,
+            document_type_name.to_string(),
+            document,
+            *recipient_id,
+        );
+        let DocumentTransferResult::Document(confirmed) = self
+            .sdk
+            .document_transfer(builder, &signing_key, &SignerRef(signer))
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to transfer document: {e}"
+                ))
+            })?;
+        Ok(confirmed)
+    }
+
+    /// Set (update) the trade price of an existing document on
+    /// `contract_id`'s `document_type_name` and broadcast.
+    ///
+    /// Fetches the current document, bumps the revision, signs with the
+    /// explicit `signing_key_id` (AUTHENTICATION + ECDSA), broadcasts
+    /// via `Sdk::document_set_price` on the platform-wallet 8 MB worker
+    /// stack, and returns the confirmed `Document` (now carrying
+    /// `$price`).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn set_document_price_with_signer<S>(
+        &self,
+        owner_identity_id: &Identifier,
+        contract_id: &Identifier,
+        document_type_name: &str,
+        document_id: &Identifier,
+        price: u64,
+        signing_key_id: u32,
+        signer: &S,
+    ) -> Result<Document, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let data_contract = self
+            .fetch_contract_arc_for_document_op(contract_id, document_type_name)
+            .await?;
+
+        let mut document = self
+            .fetch_current_document(&data_contract, document_type_name, document_id)
+            .await?;
+        document.increment_revision().map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to increment document revision: {e}"
+            ))
+        })?;
+
+        let signing_key = self
+            .resolve_authentication_signing_key(owner_identity_id, signing_key_id)
+            .await?;
+
+        let builder = DocumentSetPriceTransitionBuilder::new(
+            data_contract,
+            document_type_name.to_string(),
+            document,
+            price as Credits,
+        );
+        let DocumentSetPriceResult::Document(confirmed) = self
+            .sdk
+            .document_set_price(builder, &signing_key, &SignerRef(signer))
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to set document price: {e}"
+                ))
+            })?;
+        Ok(confirmed)
+    }
+
+    /// Purchase an existing for-sale document on `contract_id`'s
+    /// `document_type_name` and broadcast.
+    ///
+    /// `purchaser_identity_id` is the buyer (which becomes the new
+    /// owner) and signs the transition with `signing_key_id`
+    /// (AUTHENTICATION + ECDSA) — so the signing key is resolved on the
+    /// purchaser, not the current owner. Fetches the current document,
+    /// bumps the revision, broadcasts via `Sdk::document_purchase` on
+    /// the platform-wallet 8 MB worker stack, and returns the confirmed
+    /// `Document` (now owned by the purchaser). Consensus rejects a
+    /// purchase where the buyer is the current owner — the caller's UI
+    /// gates against that.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn purchase_document_with_signer<S>(
+        &self,
+        purchaser_identity_id: &Identifier,
+        contract_id: &Identifier,
+        document_type_name: &str,
+        document_id: &Identifier,
+        price: u64,
+        signing_key_id: u32,
+        signer: &S,
+    ) -> Result<Document, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let data_contract = self
+            .fetch_contract_arc_for_document_op(contract_id, document_type_name)
+            .await?;
+
+        let mut document = self
+            .fetch_current_document(&data_contract, document_type_name, document_id)
+            .await?;
+        document.increment_revision().map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to increment document revision: {e}"
+            ))
+        })?;
+
+        let signing_key = self
+            .resolve_authentication_signing_key(purchaser_identity_id, signing_key_id)
+            .await?;
+
+        let builder = DocumentPurchaseTransitionBuilder::new(
+            data_contract,
+            document_type_name.to_string(),
+            document,
+            *purchaser_identity_id,
+            price as Credits,
+        );
+        let DocumentPurchaseResult::Document(confirmed) = self
+            .sdk
+            .document_purchase(builder, &signing_key, &SignerRef(signer))
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to purchase document: {e}"
+                ))
+            })?;
         Ok(confirmed)
     }
 }
