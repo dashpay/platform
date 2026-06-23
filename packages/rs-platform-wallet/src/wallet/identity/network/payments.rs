@@ -785,6 +785,35 @@ mod tests {
         (manager, persister, wallet_id)
     }
 
+    /// The DashPay receiving (friendship) xpub for `(owner, contact)` at account
+    /// 0, derived from `TEST_MNEMONIC` via a standalone `Wallet` — the same xpub
+    /// the Keychain signer produces in production. Lets seedless-wallet tests
+    /// supply `register_contact_account`'s now-mandatory xpub without a resident
+    /// wallet.
+    fn test_receiving_xpub(
+        owner: &Identifier,
+        contact: &Identifier,
+    ) -> key_wallet::bip32::ExtendedPubKey {
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let wallet = key_wallet::wallet::Wallet::from_seed_bytes(
+            seed,
+            Network::Testnet,
+            WalletAccountCreationOptions::None,
+        )
+        .expect("seed wallet");
+        crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+            &wallet,
+            Network::Testnet,
+            0,
+            owner,
+            contact,
+        )
+        .expect("derive receiving xpub")
+        .xpub
+    }
+
     fn bare_identity(id_bytes: [u8; 32]) -> Identity {
         Identity::V0(IdentityV0 {
             id: Identifier::from(id_bytes),
@@ -875,7 +904,7 @@ mod tests {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             wallet
                 .identity()
-                .register_contact_account(&owner, &contact, 0, None)
+                .register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
                 .await
                 .expect("register_contact_account");
         }
@@ -908,7 +937,7 @@ mod tests {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             wallet
                 .identity()
-                .register_contact_account(&owner, &contact, 0, None)
+                .register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
                 .await
                 .expect("re-register is a no-op");
         }
@@ -933,7 +962,7 @@ mod tests {
         {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             let iw = wallet.identity();
-            iw.register_contact_account(&owner, &contact, 0, None)
+            iw.register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
                 .await
                 .expect("register_contact_account");
             // The owner identity must be managed for the entry to land.
@@ -999,7 +1028,7 @@ mod tests {
         {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             let iw = wallet.identity();
-            iw.register_contact_account(&owner, &contact, 0, None)
+            iw.register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
                 .await
                 .expect("register_contact_account");
             let mut wm = iw.wallet_manager.write().await;
@@ -1892,7 +1921,7 @@ mod tests {
             .xpub
         };
 
-        iw.register_contact_account(&owner, &contact, 0, Some(supplied_xpub))
+        iw.register_contact_account(&owner, &contact, 0, supplied_xpub)
             .await
             .expect("register receiving account with a precomputed xpub");
 

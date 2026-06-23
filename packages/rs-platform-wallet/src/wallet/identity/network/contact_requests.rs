@@ -622,7 +622,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             sender_identity_id,
             recipient_identity_id,
             account_index,
-            Some(contact_xpub_ext),
+            contact_xpub_ext,
         )
         .await?;
 
@@ -1347,7 +1347,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                                 &entry.owner_identity_id,
                                 &entry.contact_id,
                                 0,
-                                Some(xpub),
+                                xpub,
                             )
                             .await
                         {
@@ -1747,7 +1747,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             {
                 Ok(xpub) => {
                     if let Err(e) = self
-                        .register_contact_account(&our_identity_id, &sender_id, 0, Some(xpub))
+                        .register_contact_account(&our_identity_id, &sender_id, 0, xpub)
                         .await
                     {
                         tracing::warn!(

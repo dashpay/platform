@@ -142,10 +142,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         our_identity_id: &Identifier,
         contact_identity_id: &Identifier,
         account_index: u32,
-        // Seedless drain supplies our receiving xpub (the friendship key)
-        // already derived by the Keychain signer. `None` = resident path
-        // (derive it from the wallet seed below).
-        precomputed_account_xpub: Option<key_wallet::bip32::ExtendedPubKey>,
+        // Our receiving (friendship) xpub, derived by the Keychain signer. There
+        // is no resident-seed path — every caller supplies it.
+        account_xpub: key_wallet::bip32::ExtendedPubKey,
     ) -> Result<(), PlatformWalletError> {
         let account_type = AccountType::DashpayReceivingFunds {
             index: account_index,
@@ -182,24 +181,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let wallet = wm
             .get_wallet(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        let account_xpub = if let Some(xpub) = precomputed_account_xpub {
-            // Seedless drain: the Keychain signer derived our receiving xpub
-            // (the friendship key); no resident seed needed.
-            xpub
-        } else {
-            let path = account_type
-                .derivation_path(self.sdk.network)
-                .map_err(|err| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to derive DashPay contact account path: {err}"
-                    ))
-                })?;
-            wallet.derive_extended_public_key(&path).map_err(|err| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to derive DashPay contact xpub: {err}"
-                ))
-            })?
-        };
 
         let account = key_wallet::Account {
             parent_wallet_id: Some(wallet.wallet_id),
