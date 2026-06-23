@@ -238,36 +238,22 @@ impl ShieldedSyncManager {
             return;
         }
 
-        // Drain any handle left by a prior stop() call. stop() takes-and-cancels
-        // the token but never touches background_join, so a stop()→start()
-        // sequence would otherwise overwrite (detach) the old handle —
-        // shutdown() would then miss that thread and join() only the new one.
-        // The old thread was already cancellation-signalled, so is_finished()
-        // becomes true within a few milliseconds; we spin-wait to guarantee
-        // no detached thread can fire callbacks after destroy() returns.
-        {
-            let prior = self
-                .background_join
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .take();
-            if let Some(h) = prior {
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-                while !h.is_finished() {
-                    if std::time::Instant::now() >= deadline {
-                        tracing::warn!(
-                            "shielded-sync prior thread did not finish within 1 s \
-                             after cancellation; detaching to unblock start()"
-                        );
-                        break; // Drop h — detaches; thread was already cancelled.
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(5));
-                }
-                if h.is_finished() {
-                    let _ = h.join(); // Reap resources; near-instant since finished.
-                }
-            }
-        }
+        // Take any handle left by a prior stop() call so we can reap it — but
+        // DON'T join it here, while we still hold background_cancel. stop()
+        // takes-and-cancels the token but never touches background_join, so a
+        // stop()→start() sequence would otherwise overwrite (detach) the old
+        // handle and shutdown() would miss that thread. Joining it under
+        // background_cancel would DEADLOCK the reap into its 1 s backstop: the
+        // exiting prior thread's epilogue also locks background_cancel (to
+        // clear its slot), so it would block on the lock we hold → never
+        // finish → get detached on the exact stop()→start() path the reap
+        // exists for. We install the new token + bump the generation below,
+        // release the lock, and only THEN reap (after this fn's tail).
+        let prior = self
+            .background_join
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
 
         let cancel = CancellationToken::new();
         *cancel_guard = Some(cancel.clone());
@@ -339,7 +325,37 @@ impl ShieldedSyncManager {
             .background_join
             .lock()
             .unwrap_or_else(|e| e.into_inner()) = Some(join);
-        // cancel_guard drops here, releasing background_cancel.
+
+        // Release background_cancel BEFORE reaping the prior thread, so its
+        // epilogue can observe the bumped generation (and skip clearing our
+        // freshly-installed token) without contending the lock we hold.
+        // Holding the lock across the join below is what would block the
+        // prior thread, spin the full 1 s deadline, and detach — the very
+        // stall this ordering removes.
+        drop(cancel_guard);
+
+        // Now reap the prior thread. It was already cancellation-signalled by
+        // stop(), and with the lock released its epilogue completes promptly,
+        // so is_finished() trips within a few milliseconds and the join is
+        // near-instant. The 1 s deadline survives only as a genuine-wedge
+        // backstop (e.g. a pass wedged in a Drop that never yields); if it
+        // fires we detach the already-cancelled thread to unblock start().
+        if let Some(h) = prior {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+            while !h.is_finished() {
+                if std::time::Instant::now() >= deadline {
+                    tracing::warn!(
+                        "shielded-sync prior thread did not finish within 1 s \
+                         after cancellation; detaching to unblock start()"
+                    );
+                    break; // Drop h — detaches; thread was already cancelled.
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            if h.is_finished() {
+                let _ = h.join(); // Reap resources; near-instant since finished.
+            }
+        }
     }
 
     /// Stop the background sync loop. No-op if not running.
