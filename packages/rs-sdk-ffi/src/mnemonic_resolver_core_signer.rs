@@ -343,6 +343,35 @@ impl MnemonicResolverCoreSigner {
         Ok(bytes)
     }
 
+    /// Export the raw auto-accept private scalar at `path` (DIP-15 QR
+    /// auto-accept) — the **one deliberate raw-key export** from this signer
+    /// (every other method returns only a derived product, never the scalar).
+    /// The auto-accept key is a shareable, expiry-bounded bearer credential the
+    /// owner embeds in a QR (`dapk`), so it must leave the signer.
+    ///
+    /// Scoped by defense-in-depth: `path` MUST be an auto-accept path
+    /// (`m/9'/coin_type'/16'/expiry'`, 4 components with `9'` purpose + `16'`
+    /// feature) — otherwise this errors, so it cannot be repurposed to
+    /// exfiltrate a signing or identity key. Returns the 32-byte scalar
+    /// `Zeroizing`-wrapped (the QR encoder copies it; the wrapper wipes the
+    /// temporary on drop).
+    pub fn export_auto_accept_private_key(
+        &self,
+        path: &DerivationPath,
+    ) -> Result<Zeroizing<[u8; 32]>, MnemonicResolverSignerError> {
+        let purpose9 = ChildNumber::from_hardened_idx(9)
+            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
+        let feature16 = ChildNumber::from_hardened_idx(16)
+            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
+        let comps: &[ChildNumber] = path.as_ref();
+        if comps.len() != 4 || comps[0] != purpose9 || comps[2] != feature16 {
+            return Err(MnemonicResolverSignerError::DerivationFailed(
+                "export_auto_accept_private_key: path is not an auto-accept path".to_string(),
+            ));
+        }
+        self.derive_priv(path)
+    }
+
     /// Compute the DIP-15 ECDH shared secret between our identity-encryption
     /// key (derived at `path`) and the contact's `peer_pubkey`, entirely
     /// in-process. The derived private scalar never leaves this function —

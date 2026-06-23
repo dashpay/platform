@@ -2044,6 +2044,12 @@ mod tests {
             ) -> Result<[u8; 32], crate::error::PlatformWalletError> {
                 Ok([0u8; 32])
             }
+            async fn export_auto_accept_private_key(
+                &self,
+                _path: &key_wallet::bip32::DerivationPath,
+            ) -> Result<dashcore::secp256k1::SecretKey, crate::error::PlatformWalletError> {
+                unimplemented!("auto-accept QR is a send-path method, not exercised by the drain")
+            }
             async fn account_reference(
                 &self,
                 _path: &key_wallet::bip32::DerivationPath,

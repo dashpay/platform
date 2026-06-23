@@ -542,6 +542,18 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
             .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
     }
 
+    async fn export_auto_accept_private_key(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<dashcore::secp256k1::SecretKey, platform_wallet::PlatformWalletError> {
+        let scalar = self
+            .signer
+            .export_auto_accept_private_key(path)
+            .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+        dashcore::secp256k1::SecretKey::from_slice(scalar.as_ref())
+            .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
+    }
+
     async fn account_reference(
         &self,
         path: &key_wallet::bip32::DerivationPath,
@@ -681,6 +693,65 @@ pub unsafe extern "C" fn platform_wallet_pending_contact_crypto_count(
     let count = unwrap_option_or_return!(option);
     unsafe {
         *out_count = count as u32;
+    }
+    PlatformWalletFFIResult::ok()
+}
+
+/// Build a DIP-15 auto-accept QR URI (`dash:?du=<username>&dapk=<key_blob>`) for
+/// this wallet, valid for 1 hour. `username` is the owner's DPNS name (a scanner
+/// resolves it to the owner's identity). Writes a heap C string to `*out_uri`;
+/// the caller frees it with `platform_wallet_string_free`.
+///
+/// Derives the wallet's auto-accept private key through the resolver (the one
+/// deliberate raw-key export — the key is a bearer credential the QR shares) and
+/// encodes the `dapk` blob + URI Rust-side.
+///
+/// # Safety
+/// - `username` must be a valid NUL-terminated UTF-8 C string.
+/// - `core_signer_handle` must be a valid, non-destroyed `*mut MnemonicResolverHandle`
+///   (the caller pins it for the duration of this call).
+/// - `out_uri` must be a valid `*mut *mut c_char`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_build_auto_accept_qr(
+    wallet_handle: Handle,
+    username: *const c_char,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_uri: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    check_ptr!(username);
+    check_ptr!(core_signer_handle);
+    check_ptr!(out_uri);
+
+    let username = unwrap_result_or_return!(CStr::from_ptr(username).to_str()).to_string();
+    let core_signer_addr = core_signer_handle as usize;
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity = wallet.identity().clone();
+        let wallet_id = wallet.wallet_id();
+        let network = wallet.network();
+        // SAFETY: same lifetime contract as the send/drain FFIs — the caller
+        // pins the resolver handle for the duration of this call.
+        let provider = unsafe {
+            resolver_contact_crypto_provider(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        block_on_worker(async move { identity.build_auto_accept_qr(&username, &provider).await })
+    });
+    let result = unwrap_option_or_return!(option);
+    let uri = unwrap_result_or_return!(result);
+    let c_uri = match std::ffi::CString::new(uri) {
+        Ok(c) => c,
+        Err(_) => {
+            return PlatformWalletFFIResult::from(
+                "auto-accept URI contained an interior NUL".to_string(),
+            )
+        }
+    };
+    unsafe {
+        *out_uri = c_uri.into_raw();
     }
     PlatformWalletFFIResult::ok()
 }

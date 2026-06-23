@@ -50,6 +50,19 @@ pub trait ContactCryptoProvider {
         peer: &dashcore::secp256k1::PublicKey,
     ) -> Result<[u8; 32], PlatformWalletError>;
 
+    /// Export the raw **auto-accept private key** at `path` (DIP-15 QR
+    /// auto-accept) — the **one deliberate exception** to "the signer never
+    /// returns a raw scalar." The auto-accept key is a shareable, expiry-bounded
+    /// bearer credential the owner embeds in a QR (`dapk`), so it must leave the
+    /// signer. `path` MUST be an auto-accept path (`m/9'/coin'/16'/expiry'`); the
+    /// only caller is [`IdentityWallet::build_auto_accept_qr`], which builds it
+    /// via `auto_accept_derivation_path`. The key authorizes only contact
+    /// auto-acceptance — never payments or identity control.
+    async fn export_auto_accept_private_key(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError>;
+
     /// DIP-15 `accountReference` for a send: the scalar at `path` (the sender's
     /// encryption key) keys the HMAC+mask over `compact_xpub`. Computed in the
     /// signer so the raw scalar never returns to platform-wallet.
@@ -169,6 +182,16 @@ impl ContactCryptoProvider for SeedCryptoProvider {
             &xprv.private_key,
             peer,
         ))
+    }
+
+    async fn export_auto_accept_private_key(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<dashcore::secp256k1::SecretKey, PlatformWalletError> {
+        let xprv = self.wallet.derive_extended_private_key(path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("test export auto-accept: {e}"))
+        })?;
+        Ok(xprv.private_key)
     }
 
     async fn account_reference(
@@ -1945,6 +1968,39 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         }
 
         accepted
+    }
+
+    /// Build a DIP-15 auto-accept QR URI (`dash:?du=<username>&dapk=<key_blob>`),
+    /// valid for [`AUTO_ACCEPT_TTL_SECS`](crate::wallet::identity::crypto::auto_accept::AUTO_ACCEPT_TTL_SECS).
+    ///
+    /// Derives the wallet's auto-accept key at `m/9'/coin'/16'/expiry'` via
+    /// `provider` — the deliberate raw-key export (the key is a bearer credential
+    /// the QR shares) — encodes the 38-byte `dapk` blob, and assembles the URI.
+    /// `username` is the owner's DPNS name (required so a scanner can resolve the
+    /// owner's identity); errors if empty.
+    pub async fn build_auto_accept_qr<P: ContactCryptoProvider + Sync>(
+        &self,
+        username: &str,
+        provider: &P,
+    ) -> Result<String, PlatformWalletError> {
+        use crate::wallet::identity::crypto::auto_accept::{
+            auto_accept_derivation_path, encode_auto_accept_key_blob, encode_dashpay_contact_uri,
+            AUTO_ACCEPT_TTL_SECS,
+        };
+        if username.is_empty() {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "auto-accept QR requires a DPNS username".to_string(),
+            ));
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as u32)
+            .unwrap_or(0);
+        let expiry = now.saturating_add(AUTO_ACCEPT_TTL_SECS);
+        let path = auto_accept_derivation_path(self.sdk.network, expiry)?;
+        let secret_key = provider.export_auto_accept_private_key(&path).await?;
+        let blob = encode_auto_accept_key_blob(&secret_key, expiry);
+        Ok(encode_dashpay_contact_uri(username, &blob))
     }
 
     /// Mark an established contact's payment channel as permanently broken
