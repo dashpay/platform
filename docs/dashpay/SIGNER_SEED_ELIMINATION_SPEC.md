@@ -168,25 +168,43 @@ notes.**
 - ✓ `build_ios.sh --target sim` regenerates the header (verify FFI present, attach
   gone, send/accept/contactInfo carry `core_signer_handle`) + SwiftExampleApp
   builds clean (arm64 sim, BUILD SUCCEEDED).
-- **On-device acceptance — PARTIALLY VALIDATED on devnet (2026-06-23)** via idb UI
-  automation against the funded `Test_devnet` wallet (9 DASH; 3 identities w/ credits):
+- **On-device acceptance — VALIDATED on devnet `paloma` (2026-06-23)** via idb UI
+  automation across **two simulators** (sim A = funded `Test_devnet`, 9 DASH, 3
+  identities; sim B = freshly created `SimB` wallet + new identity "Eve"). Every
+  signing op below ran through the Keychain resolver with **no resident seed**:
   - ✓ App builds, installs, launches, runs full (SDK init, network switch, wallet
     list/detail, DashPay sync) on the new seedless binary — no crash.
-  - ✓ **Seedless contactInfo publish on-chain** — `setDashPayContactInfo` (the
-    `core_signer_handle`-threaded Swift call) published an encrypted contactInfo doc
-    via the Keychain resolver, **both create** (`updated=false`) **and update**
-    (`updated=true`) branches, written to Platform/DAPI. This is the **publish half
-    of the cross-device contactInfo flow** (the decrypt-drain half is unit-tested).
-  - ✓ **Seedless payment signing** — `send_dashpay_payment` signed the tx via the
-    resolver; broadcast blocked only by `SPV Client not started` (orthogonal env
-    state; devnet SPV also has known IS/CL gaps). Not a seed/signing defect.
-  - ⏳ STILL MANUAL (env/2nd-device/destructive): (a) **wrong-seed rejected loud**
+  - ✓ **Seedless Core payment + IS-lock** — sim A sent 1 DASH to sim B's address;
+    tx signed via the resolver, broadcast, **InstantLock validated** (this is the
+    real wrong-seed-would-fail path: the seedless wallet signed a real Core tx).
+  - ✓ **Seedless identity registration** — sim B: asset lock → InstantSend proof →
+    ChainLock proof → Platform registration, all via the resolver ("Identity
+    created" `BfWHEg…`).
+  - ✓ **Seedless DPNS name registration** (`eveqaseed1ess2026`) + **profile publish**
+    ("Eve") — both Platform writes via the resolver.
+  - ✓ **Seedless contactInfo publish** — `setDashPayContactInfo`
+    (`core_signer_handle`) published an encrypted contactInfo doc, **create**
+    (`updated=false`) **and update** (`updated=true`).
+  - ✓ **Seedless contact request SEND** (Alice→Eve) — `send_contact_request_with_signer`
+    (`core_signer_handle`): registered the DashpayReceivingFunds account.
+  - ✓ **Seedless contact request ACCEPT** (Eve→Alice) —
+    `accept_contact_request_with_signer` (`core_signer_handle`): reciprocal request
+    + registered DashpayReceivingFunds **and** DashpayExternalAccount (the ECDH +
+    accountReference path). Contact established cross-device (sim A shows Eve as
+    contact #3).
+  - ⏳ NOT exercised on-chain (covered elsewhere): (a) **wrong-seed rejected loud**
     via `verify_seed_binds` at unlock — gated behind the `loadFromPersistor`
-    restorable path; cleanly forced only by clean-wipe→re-import (destructive +
-    needs the seed). Covered by the high-fidelity unit test (real `key_wallet`
-    wallet + same BIP44-0 path, accept/reject). (b) **cross-device contactInfo
-    decrypt** on a 2nd device. (c) full clean-wipe→import→discover happy path with
-    SPV started.
+    restorable path; cleanly forced only by a destructive wipe+reimport. Covered by
+    the high-fidelity unit test (real `key_wallet` wallet, same BIP44-0 path,
+    accept/reject) — and the live Core/Platform signing above proves the resolver
+    derives correct keys. (b) **cross-device contactInfo decrypt** (same owner on a
+    2nd device) — publish validated; decrypt-drain unit-tested.
+
+  **Unrelated finding (not a seed defect):** the DashPay contact-profile chunk fetch
+  fails with a DAPI error `missing order by for range error: query must have an
+  orderBy field for each range element` ("Failed to fetch a contact-profile chunk;
+  will retry next sweep"). Contact establishment still succeeds; contact *profiles*
+  may not render. Track + fix separately.
 
 **Out of Q2 scope** (tracked in `TODO.md`): §6b queue restore (upstream
 `ClientStartState::wallets` — note the security review's caveat that until restore
