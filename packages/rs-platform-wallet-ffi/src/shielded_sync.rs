@@ -88,7 +88,19 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.shielded_sync().quiesce());
+        runtime().block_on(async {
+            // Bound the quiesce with the same backstop `shutdown()` uses so
+            // a stalled in-flight pass can't hang the host's stop call
+            // forever. Cancellation makes the drain prompt; this only
+            // matters if a pass's drop wedges. The terminal status is
+            // discarded — the C ABI exposes none of it, we only need the
+            // drain not to wedge.
+            let _ = tokio::time::timeout(
+                Duration::from_secs(platform_wallet::SHUTDOWN_JOIN_TIMEOUT_SECS),
+                manager.shielded_sync().quiesce(),
+            )
+            .await;
+        });
     });
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
