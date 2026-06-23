@@ -2044,6 +2044,31 @@ mod tests {
             ) -> Result<(u32, u32), crate::error::PlatformWalletError> {
                 unimplemented!("accountReference is a send-path method, not exercised by the drain")
             }
+            async fn contact_info_seal(
+                &self,
+                _root_path: &key_wallet::bip32::DerivationPath,
+                _derivation_index: u32,
+                _contact_id: &[u8; 32],
+                _private_data_plaintext: &[u8],
+                _private_data_iv: &[u8; 16],
+            ) -> Result<
+                crate::wallet::identity::network::ContactInfoSealed,
+                crate::error::PlatformWalletError,
+            > {
+                unimplemented!("contactInfo is not exercised by this drain test")
+            }
+            async fn contact_info_open(
+                &self,
+                _root_path: &key_wallet::bip32::DerivationPath,
+                _derivation_index: u32,
+                _enc_to_user_id: &[u8; 32],
+                _private_data_blob: &[u8],
+            ) -> Result<
+                crate::wallet::identity::network::ContactInfoOpened,
+                crate::error::PlatformWalletError,
+            > {
+                unimplemented!("contactInfo is not exercised by this drain test")
+            }
         }
 
         let drained = iw.drain_pending_contact_crypto(&UnusedProvider).await;

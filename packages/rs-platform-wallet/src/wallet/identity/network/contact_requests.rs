@@ -68,6 +68,55 @@ pub trait ContactCryptoProvider {
         compact_xpub: &[u8],
         account_reference: u32,
     ) -> Result<(u32, u32), PlatformWalletError>;
+
+    /// DIP-15 contactInfo **seal** — encrypt the contact id (`encToUserId`,
+    /// AES-256-ECB) and the private-data plaintext (`privateData`, AES-256-CBC
+    /// with `private_data_iv`) under the two hardened-child keys derived from
+    /// `root_path` (the identity-auth path; the signer extends it internally with
+    /// the DIP-15 `65536'`/`65537'` feature children + `derivation_index'`). The
+    /// AES keys + scalars stay in the signer; only ciphertext returns.
+    ///
+    /// `root_path` MUST be built in Rust via `identity_auth_derivation_path_for_type`
+    /// (never assembled by the host) — a wrong root silently produces contactInfo
+    /// no client can decrypt.
+    async fn contact_info_seal(
+        &self,
+        root_path: &key_wallet::bip32::DerivationPath,
+        derivation_index: u32,
+        contact_id: &[u8; 32],
+        private_data_plaintext: &[u8],
+        private_data_iv: &[u8; 16],
+    ) -> Result<ContactInfoSealed, PlatformWalletError>;
+
+    /// Inverse of [`Self::contact_info_seal`] — recover the contact id +
+    /// private-data plaintext from the on-chain ciphertexts at `root_path` /
+    /// `derivation_index`.
+    async fn contact_info_open(
+        &self,
+        root_path: &key_wallet::bip32::DerivationPath,
+        derivation_index: u32,
+        enc_to_user_id: &[u8; 32],
+        private_data_blob: &[u8],
+    ) -> Result<ContactInfoOpened, PlatformWalletError>;
+}
+
+/// Result of [`ContactCryptoProvider::contact_info_seal`] — the two DIP-15
+/// contactInfo ciphertexts to publish on chain.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContactInfoSealed {
+    /// `encToUserId` ciphertext (AES-256-ECB of the 32-byte contact id).
+    pub enc_to_user_id: [u8; 32],
+    /// `privateData` ciphertext (`iv ‖ AES-256-CBC`).
+    pub private_data: Vec<u8>,
+}
+
+/// Result of [`ContactCryptoProvider::contact_info_open`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContactInfoOpened {
+    /// The recovered 32-byte contact id (the `toUserId` this doc is about).
+    pub contact_id: [u8; 32],
+    /// The recovered `privateData` plaintext (DIP-15 codec applied by the caller).
+    pub private_data: Vec<u8>,
 }
 
 /// Test [`ContactCryptoProvider`] that derives from a resident test seed via
@@ -152,6 +201,82 @@ impl ContactCryptoProvider for SeedCryptoProvider {
             &xprv.private_key.secret_bytes(),
             compact_xpub,
         ))
+    }
+
+    async fn contact_info_seal(
+        &self,
+        root_path: &key_wallet::bip32::DerivationPath,
+        derivation_index: u32,
+        contact_id: &[u8; 32],
+        private_data_plaintext: &[u8],
+        private_data_iv: &[u8; 16],
+    ) -> Result<ContactInfoSealed, PlatformWalletError> {
+        let enc_key = self.contact_info_child(root_path, derivation_index, true)?;
+        let priv_key = self.contact_info_child(root_path, derivation_index, false)?;
+        Ok(ContactInfoSealed {
+            enc_to_user_id: platform_encryption::encrypt_enc_to_user_id(&enc_key, contact_id),
+            private_data: platform_encryption::encrypt_private_data(
+                &priv_key,
+                private_data_iv,
+                private_data_plaintext,
+            ),
+        })
+    }
+
+    async fn contact_info_open(
+        &self,
+        root_path: &key_wallet::bip32::DerivationPath,
+        derivation_index: u32,
+        enc_to_user_id: &[u8; 32],
+        private_data_blob: &[u8],
+    ) -> Result<ContactInfoOpened, PlatformWalletError> {
+        let enc_key = self.contact_info_child(root_path, derivation_index, true)?;
+        let priv_key = self.contact_info_child(root_path, derivation_index, false)?;
+        let private_data = platform_encryption::decrypt_private_data(&priv_key, private_data_blob)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!("test contactInfo decrypt: {e}"))
+            })?;
+        Ok(ContactInfoOpened {
+            contact_id: platform_encryption::decrypt_enc_to_user_id(&enc_key, enc_to_user_id),
+            private_data,
+        })
+    }
+}
+
+#[cfg(test)]
+impl SeedCryptoProvider {
+    /// Derive one DIP-15 contactInfo hardened-child AES key (`encToUserId` =
+    /// `enc=true`, `privateData` = `enc=false`) at
+    /// `root_path / feature' / derivation_index'` — mirrors the resident
+    /// `derive_contact_info_keys` so the test provider produces byte-identical
+    /// keys to the production wallet derivation.
+    fn contact_info_child(
+        &self,
+        root_path: &key_wallet::bip32::DerivationPath,
+        derivation_index: u32,
+        enc: bool,
+    ) -> Result<[u8; 32], PlatformWalletError> {
+        use crate::wallet::identity::crypto::contact_info::{
+            ENC_TO_USER_ID_CHILD, PRIVATE_DATA_CHILD,
+        };
+        use key_wallet::bip32::ChildNumber;
+        let feature = if enc {
+            ENC_TO_USER_ID_CHILD
+        } else {
+            PRIVATE_DATA_CHILD
+        };
+        let path = root_path.clone().extend([
+            ChildNumber::from_hardened_idx(feature).map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!("test contactInfo feature: {e}"))
+            })?,
+            ChildNumber::from_hardened_idx(derivation_index).map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!("test contactInfo index: {e}"))
+            })?,
+        ]);
+        let xprv = self.wallet.derive_extended_private_key(&path).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("test contactInfo derive: {e}"))
+        })?;
+        Ok(xprv.private_key.secret_bytes())
     }
 }
 
@@ -2690,5 +2815,91 @@ mod recipient_key_selection_tests {
             matches!(err, PlatformWalletError::InvalidIdentityData(_)),
             "a sole disabled key must error, got {err:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod contact_info_provider_tests {
+    use super::*;
+    use crate::wallet::identity::crypto::contact_info::derive_contact_info_keys;
+    use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
+    use key_wallet::bip32::KeyDerivationType;
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::Network;
+
+    // Canonical BIP-39 test mnemonic.
+    const PHRASE: &str =
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    /// MUST-FIX (security review): the contactInfo seal/open the signer produces
+    /// must be byte-identical to the resident `derive_contact_info_keys` AT THE
+    /// REAL identity-auth root path — not an arbitrary path. contactInfo is
+    /// self-encrypted (no counterparty round-trip), so a wrong root silently
+    /// writes data no client can decrypt, with no on-chain oracle. This pins the
+    /// provider's seal to the production derivation at the real path and confirms
+    /// open round-trips.
+    #[tokio::test]
+    async fn contact_info_seal_open_matches_resident_derivation_at_real_auth_path() {
+        let seed = Mnemonic::from_phrase(PHRASE, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let network = Network::Testnet;
+        let identity_index = 0u32;
+        let root_key_id = 2u32;
+        let derivation_index = 0u32;
+        let contact_id = [0x33u8; 32];
+        let plaintext = b"hello private data".to_vec();
+        let iv = [0x11u8; 16];
+
+        // The REAL identity-auth root the production publish path builds.
+        let root_path = identity_auth_derivation_path_for_type(
+            network,
+            KeyDerivationType::ECDSA,
+            identity_index,
+            root_key_id,
+        )
+        .expect("auth path");
+
+        let provider = SeedCryptoProvider::from_seed(seed, network);
+        let sealed = provider
+            .contact_info_seal(&root_path, derivation_index, &contact_id, &plaintext, &iv)
+            .await
+            .expect("seal");
+
+        // Resident twin at the same real path → byte-identical ciphertext.
+        let wallet = key_wallet::wallet::Wallet::from_seed_bytes(
+            seed,
+            network,
+            key_wallet::wallet::initialization::WalletAccountCreationOptions::None,
+        )
+        .expect("wallet");
+        let keys =
+            derive_contact_info_keys(&wallet, network, identity_index, root_key_id, derivation_index)
+                .expect("resident keys");
+        let enc_k: [u8; 32] = *keys.enc_to_user_id_key;
+        let priv_k: [u8; 32] = *keys.private_data_key;
+        let expected_enc = platform_encryption::encrypt_enc_to_user_id(&enc_k, &contact_id);
+        let expected_priv = platform_encryption::encrypt_private_data(&priv_k, &iv, &plaintext);
+        assert_eq!(
+            sealed.enc_to_user_id, expected_enc,
+            "encToUserId must equal the resident derivation at the REAL auth path"
+        );
+        assert_eq!(
+            sealed.private_data, expected_priv,
+            "privateData must equal the resident derivation at the REAL auth path"
+        );
+
+        // open round-trips the inputs.
+        let opened = provider
+            .contact_info_open(
+                &root_path,
+                derivation_index,
+                &sealed.enc_to_user_id,
+                &sealed.private_data,
+            )
+            .await
+            .expect("open");
+        assert_eq!(opened.contact_id, contact_id, "open recovers the contact id");
+        assert_eq!(opened.private_data, plaintext, "open recovers the private data");
     }
 }

@@ -553,6 +553,51 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
             .unmask_account_reference(path, compact_xpub, account_reference)
             .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
     }
+
+    async fn contact_info_seal(
+        &self,
+        root_path: &key_wallet::bip32::DerivationPath,
+        derivation_index: u32,
+        contact_id: &[u8; 32],
+        private_data_plaintext: &[u8],
+        private_data_iv: &[u8; 16],
+    ) -> Result<platform_wallet::ContactInfoSealed, platform_wallet::PlatformWalletError> {
+        let sealed = self
+            .signer
+            .contact_info_seal(
+                root_path,
+                derivation_index,
+                contact_id,
+                private_data_plaintext,
+                private_data_iv,
+            )
+            .map_err(|e| {
+                platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string())
+            })?;
+        Ok(platform_wallet::ContactInfoSealed {
+            enc_to_user_id: sealed.enc_to_user_id,
+            private_data: sealed.private_data,
+        })
+    }
+
+    async fn contact_info_open(
+        &self,
+        root_path: &key_wallet::bip32::DerivationPath,
+        derivation_index: u32,
+        enc_to_user_id: &[u8; 32],
+        private_data_blob: &[u8],
+    ) -> Result<platform_wallet::ContactInfoOpened, platform_wallet::PlatformWalletError> {
+        let opened = self
+            .signer
+            .contact_info_open(root_path, derivation_index, enc_to_user_id, private_data_blob)
+            .map_err(|e| {
+                platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string())
+            })?;
+        Ok(platform_wallet::ContactInfoOpened {
+            contact_id: opened.contact_id,
+            private_data: opened.private_data,
+        })
+    }
 }
 
 /// Drain the persisted deferred-crypto queue using the Keychain signer for the
