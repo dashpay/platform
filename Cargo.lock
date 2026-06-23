@@ -5064,8 +5064,9 @@ version = "4.0.0-rc.2"
 dependencies = [
  "aes",
  "cbc",
- "dashcore",
- "hex",
+ "hmac",
+ "secp256k1",
+ "sha2",
  "thiserror 1.0.69",
 ]
 

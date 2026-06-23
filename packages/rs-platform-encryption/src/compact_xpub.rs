@@ -139,8 +139,8 @@ pub fn parse_compact_xpub(bytes: &[u8]) -> Result<CompactXpub, CryptoError> {
 mod tests {
     use super::*;
     use crate::ecdh::derive_shared_key_ecdh;
-    use dashcore::secp256k1::rand::{thread_rng, RngCore};
-    use dashcore::secp256k1::Secp256k1;
+    use secp256k1::rand::{thread_rng, RngCore};
+    use secp256k1::Secp256k1;
 
     #[test]
     fn test_extended_public_key_encryption() {

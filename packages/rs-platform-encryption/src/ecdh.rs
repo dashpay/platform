@@ -1,6 +1,6 @@
 //! DIP-15 ECDH shared-secret derivation.
 
-use dashcore::secp256k1::{PublicKey, SecretKey};
+use secp256k1::{PublicKey, SecretKey};
 
 /// Derive a shared secret key using ECDH as specified in DIP-15
 ///
@@ -14,7 +14,7 @@ use dashcore::secp256k1::{PublicKey, SecretKey};
 /// # Returns
 /// A 32-byte shared secret key
 pub fn derive_shared_key_ecdh(private_key: &SecretKey, public_key: &PublicKey) -> [u8; 32] {
-    use dashcore::secp256k1::ecdh::SharedSecret;
+    use secp256k1::ecdh::SharedSecret;
 
     // Use secp256k1's built-in ECDH which matches libsecp256k1_ecdh
     // This computes SHA256((y[31]&0x1|0x2) || x) internally
@@ -28,8 +28,8 @@ pub fn derive_shared_key_ecdh(private_key: &SecretKey, public_key: &PublicKey) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore::secp256k1::rand::thread_rng;
-    use dashcore::secp256k1::Secp256k1;
+    use secp256k1::rand::thread_rng;
+    use secp256k1::Secp256k1;
 
     #[test]
     fn test_ecdh_key_derivation() {
@@ -55,8 +55,8 @@ mod tests {
     /// (b) the exact compressed-y-prefix-‖-x preimage convention.
     #[test]
     fn ecdh_matches_sha256_y_parity_prefix_convention() {
-        use dashcore::hashes::{sha256, Hash};
-        use dashcore::secp256k1::{Scalar, Secp256k1};
+        use secp256k1::{Scalar, Secp256k1};
+        use sha2::{Digest, Sha256};
 
         let secp = Secp256k1::new();
         let priv_a = SecretKey::from_slice(&[0xC0u8; 32]).expect("valid scalar");
@@ -79,7 +79,8 @@ mod tests {
         let mut preimage = Vec::with_capacity(33);
         preimage.push(prefix);
         preimage.extend_from_slice(&uncompressed[1..33]); // x
-        let manual = sha256::Hash::hash(&preimage).to_byte_array();
+        let mut manual = [0u8; 32];
+        manual.copy_from_slice(&Sha256::digest(&preimage));
         assert_eq!(ab, manual, "ECDH must be SHA256((y&1|2)‖x)");
     }
 }

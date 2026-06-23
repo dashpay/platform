@@ -11,12 +11,14 @@
 /// its own sender; we match iOS so our sent requests are bit-identical to the
 /// incumbent wallet's.
 fn account_secret_key_28(sender_secret_key: &[u8; 32], compact_xpub: &[u8]) -> u32 {
-    use dashcore::hashes::hmac::{Hmac, HmacEngine};
-    use dashcore::hashes::{sha256, Hash, HashEngine};
-    let mut engine = HmacEngine::<sha256::Hash>::new(sender_secret_key);
-    engine.input(compact_xpub);
-    let ask = Hmac::<sha256::Hash>::from_engine(engine);
-    extract_ask28(&ask.to_byte_array())
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    let mut mac = Hmac::<Sha256>::new_from_slice(sender_secret_key)
+        .expect("HMAC accepts a key of any length");
+    mac.update(compact_xpub);
+    let mut ask = [0u8; 32];
+    ask.copy_from_slice(&mac.finalize().into_bytes());
+    extract_ask28(&ask)
 }
 
 /// Extract `ASK28` from the 32-byte HMAC digest using the iOS dash-shared-core
@@ -98,14 +100,15 @@ mod tests {
     /// dash-shared-core) — not the head-of-digest reading (the old bug).
     #[test]
     fn account_reference_ask28_uses_digest_tail_big_endian() {
-        use dashcore::hashes::hmac::{Hmac, HmacEngine};
-        use dashcore::hashes::{sha256, Hash, HashEngine};
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
         let secret_key = [0x42u8; 32];
         let compact = test_compact_xpub();
 
-        let mut engine = HmacEngine::<sha256::Hash>::new(&secret_key);
-        engine.input(&compact);
-        let digest = Hmac::<sha256::Hash>::from_engine(engine).to_byte_array();
+        let mut mac = Hmac::<Sha256>::new_from_slice(&secret_key).expect("hmac key");
+        mac.update(&compact);
+        let mut digest = [0u8; 32];
+        digest.copy_from_slice(&mac.finalize().into_bytes());
         let expected_ask28 =
             u32::from_be_bytes([digest[28], digest[29], digest[30], digest[31]]) >> 4;
 

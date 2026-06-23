@@ -50,8 +50,8 @@ pub fn decrypt_account_label(
 mod tests {
     use super::*;
     use crate::ecdh::derive_shared_key_ecdh;
-    use dashcore::secp256k1::rand::{thread_rng, RngCore};
-    use dashcore::secp256k1::Secp256k1;
+    use secp256k1::rand::{thread_rng, RngCore};
+    use secp256k1::Secp256k1;
 
     #[test]
     fn test_account_label_encryption() {

@@ -63,7 +63,7 @@ pub fn decrypt_aes_256_cbc(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore::secp256k1::rand::{thread_rng, RngCore};
+    use secp256k1::rand::{thread_rng, RngCore};
 
     #[test]
     fn test_aes_encryption_decryption() {
