@@ -36,6 +36,18 @@ track, and the multi-agent reviews. Prioritized; check off as done.
 - [x] **Contact-profile sync: DONE** (Spec 0 stage 2 + UI + durable persistence,
   `1f53897b63`/`b1936a7312`/`87d6cc733d`) — id-keyed `contact_profiles` cache for
   established + pending senders, displayed in the UI, survives restart.
+- [ ] **Contact-profile chunk fetch fails: missing `orderBy` on the `In` range.**
+  Found during the 2026-06-23 two-simulator on-device acceptance: every contact-
+  profile sweep logs `Failed to fetch a contact-profile chunk; will retry next
+  sweep` with DAPI error `missing order by for range error: query must have an
+  orderBy field for each range element`. Root cause: `fetch_contact_profiles_chunk`
+  (`profile.rs:737`) builds a `$ownerId In [chunk]` query (`WhereOperator::In`,
+  a range op) but leaves `order_by_clauses: vec![]` (line ~763) — DAPI requires an
+  `orderBy` on every range field. Fix: add `OrderClause { field: "$ownerId",
+  ascending: true }`. The single-id `Equal` query (`fetch_profile_document`,
+  `:101`) is unaffected (equality is not a range). Contact *establishment* still
+  works (send/accept register accounts fine); only contact **profile display**
+  silently never lands. Unrelated to the seed-elimination work.
 
 ## P1 — interop (cross-client correctness)
 
