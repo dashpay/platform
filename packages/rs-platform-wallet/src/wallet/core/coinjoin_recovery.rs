@@ -8,6 +8,11 @@
 //! gap — matching DashSync's `SEQUENCE_GAP_LIMIT_INITIAL_COINJOIN` of 400 —
 //! before starting SPV, runs the recovery scan, then reverts to the default.
 //!
+//! The actual gap-limit widening + address materialization lives upstream in
+//! key-wallet
+//! ([`ManagedCoreFundsAccount::set_coinjoin_gap_limit`](key_wallet::managed_account::ManagedCoreFundsAccount::set_coinjoin_gap_limit));
+//! this wrapper only resolves the account under the wallet lock and delegates.
+//!
 //! ## Scope: external CoinJoin chain only
 //!
 //! This widens only the CoinJoin account's external pool (`.../0/i`). DashSync
@@ -15,41 +20,25 @@
 //! SDK's CoinJoin account models only the external chain, and a migrated wallet's
 //! internal-chain mixed coins arrive as **imported spendable UTXOs** — not via an
 //! SPV address scan — so no gap widening is needed to discover them. The sweep
-//! still signs them regardless of chain: `coinjoin_sweep_path_map` (in
-//! `core::broadcast`) re-derives both `/0/` and `/1/` from the account xpub. If a
-//! future migration path instead relied on SPV to *re-discover* internal-chain
-//! coins, this recovery would also need to materialize the internal pool.
-
-use key_wallet::gap_limit::MAX_GAP_LIMIT;
-use key_wallet::managed_account::address_pool::KeySource;
-use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+//! still signs them regardless of chain: key-wallet's `coinjoin_sweep` resolver
+//! re-derives both `/0/` and `/1/` from the account xpub. If a future migration
+//! path instead relied on SPV to *re-discover* internal-chain coins, this
+//! recovery would also need to materialize the internal pool.
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::{CoreWallet, PlatformWalletError};
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// Widen the CoinJoin account's single-pool gap limit to `gap_limit` and
-    /// generate addresses so indices up to `highest_used + gap_limit` exist
-    /// and are watched by SPV. Returns the pool's highest generated index.
+    /// generate addresses so SPV watches the wider window. Returns the pool's
+    /// highest generated index.
     ///
-    /// Setting the gap limit alone is **not** enough: SPV only watches
-    /// addresses materialized into the pool's script index, so a scan starting
-    /// at the default gap (30) never sees — and so never extends toward — a
-    /// used CoinJoin address sitting beyond index 30. Pre-generating the wide
-    /// window (via [`AddressPool::maintain_gap_limit`]) is what lets the
-    /// recovery scan find scattered mixed coins; the in-progress scan then
-    /// auto-extends from there as deep addresses are marked used (see
-    /// `wallet_checker`'s `maintain_gap_limit` call).
-    ///
-    /// Idempotent: generation only fills missing indices, so re-running with
-    /// the same (or a smaller) limit is a cheap no-op. The widened `gap_limit`
-    /// is in-memory only — it is not persisted, so a later wallet load
-    /// reconstructs the pool at the default gap. That is the intended
-    /// "revert after recovery" behavior: the app re-applies the widen on each
-    /// flagged launch and stops once the coins are swept.
-    ///
-    /// Derivation uses the account's **public** xpub only — no private key
-    /// crosses any boundary (CoinJoin receive addresses are non-hardened).
+    /// Resolves the account's watch-only public xpub and managed account under
+    /// the wallet write lock, then delegates the widening + address
+    /// materialization + monitor-revision bump to
+    /// [`ManagedCoreFundsAccount::set_coinjoin_gap_limit`](key_wallet::managed_account::ManagedCoreFundsAccount::set_coinjoin_gap_limit),
+    /// which rejects a zero gap limit and clamps to `MAX_GAP_LIMIT`. Derivation
+    /// uses the account's public xpub only — no private key crosses any boundary.
     pub async fn set_coinjoin_gap_limit(
         &self,
         account_index: u32,
@@ -70,11 +59,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             .map(|a| a.account_xpub)
             .ok_or_else(|| {
                 PlatformWalletError::WalletNotFound(format!(
-                    "CoinJoin account {} not found",
-                    account_index
+                    "CoinJoin account {account_index} not found"
                 ))
             })?;
-        let key_source = KeySource::Public(account_xpub);
 
         let managed_account = info
             .core_wallet
@@ -83,46 +70,12 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             .get_mut(&account_index)
             .ok_or_else(|| {
                 PlatformWalletError::WalletNotFound(format!(
-                    "CoinJoin managed account {} not found",
-                    account_index
+                    "CoinJoin managed account {account_index} not found"
                 ))
             })?;
 
-        // CoinJoin uses a single address pool. Widen the gap limit, then
-        // materialize addresses up to it. Scope the pool borrow so it ends
-        // before `bump_monitor_revision` reborrows the managed account.
-        let new_highest = {
-            let pool = managed_account
-                .managed_account_type_mut()
-                .address_pools_mut()
-                .into_iter()
-                .next()
-                .ok_or_else(|| {
-                    PlatformWalletError::AddressOperation(
-                        "CoinJoin account has no address pool".to_string(),
-                    )
-                })?;
-
-            // Reject a zero gap limit before touching the pool. key-wallet's
-            // `maintain_gap_limit` computes `gap_limit - 1` when no address has
-            // been used yet, which underflows at 0 (debug panic / release wrap
-            // to u32::MAX → ~4B address generations under the write lock).
-            let gap_limit = gap_limit.min(MAX_GAP_LIMIT);
-            if gap_limit == 0 {
-                return Err(PlatformWalletError::AddressOperation(
-                    "CoinJoin gap limit must be greater than zero".to_string(),
-                ));
-            }
-            pool.gap_limit = gap_limit;
-            pool.maintain_gap_limit(&key_source)
-                .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))?;
-            pool.highest_generated.unwrap_or(0)
-        };
-
-        // The watched-address set changed — bump the revision so the SPV
-        // compact-filter / bloom filter is rebuilt to include the new scripts.
-        managed_account.bump_monitor_revision();
-
-        Ok(new_highest)
+        managed_account
+            .set_coinjoin_gap_limit(account_xpub, gap_limit)
+            .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
     }
 }
