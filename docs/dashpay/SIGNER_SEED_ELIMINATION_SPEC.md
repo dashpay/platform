@@ -168,14 +168,25 @@ notes.**
 - ✓ `build_ios.sh --target sim` regenerates the header (verify FFI present, attach
   gone, send/accept/contactInfo carry `core_signer_handle`) + SwiftExampleApp
   builds clean (arm64 sim, BUILD SUCCEEDED).
-- ⏳ **REMAINING — testnet on-device acceptance** (env-gated; needs a running sim
-  + funded testnet seed). Must include the two negative/cross-device cases the
-  all-positive script misses (review): (a) a **wrong/mis-mapped seed is rejected
-  loud** (exercises `verify_seed_binds`); (b) **cross-device contactInfo deferral**
-  — publish on A → background-sync on seedless B → unlock B → contactInfo appears
-  (exercises the `ContactInfoDecrypt` drain). Plus the happy path: clean wipe →
-  import funded testnet seed → discover → send/accept + pay + publish; background-
-  discover inbound contact then unlock → payable.
+- **On-device acceptance — PARTIALLY VALIDATED on devnet (2026-06-23)** via idb UI
+  automation against the funded `Test_devnet` wallet (9 DASH; 3 identities w/ credits):
+  - ✓ App builds, installs, launches, runs full (SDK init, network switch, wallet
+    list/detail, DashPay sync) on the new seedless binary — no crash.
+  - ✓ **Seedless contactInfo publish on-chain** — `setDashPayContactInfo` (the
+    `core_signer_handle`-threaded Swift call) published an encrypted contactInfo doc
+    via the Keychain resolver, **both create** (`updated=false`) **and update**
+    (`updated=true`) branches, written to Platform/DAPI. This is the **publish half
+    of the cross-device contactInfo flow** (the decrypt-drain half is unit-tested).
+  - ✓ **Seedless payment signing** — `send_dashpay_payment` signed the tx via the
+    resolver; broadcast blocked only by `SPV Client not started` (orthogonal env
+    state; devnet SPV also has known IS/CL gaps). Not a seed/signing defect.
+  - ⏳ STILL MANUAL (env/2nd-device/destructive): (a) **wrong-seed rejected loud**
+    via `verify_seed_binds` at unlock — gated behind the `loadFromPersistor`
+    restorable path; cleanly forced only by clean-wipe→re-import (destructive +
+    needs the seed). Covered by the high-fidelity unit test (real `key_wallet`
+    wallet + same BIP44-0 path, accept/reject). (b) **cross-device contactInfo
+    decrypt** on a 2nd device. (c) full clean-wipe→import→discover happy path with
+    SPV started.
 
 **Out of Q2 scope** (tracked in `TODO.md`): §6b queue restore (upstream
 `ClientStartState::wallets` — note the security review's caveat that until restore
