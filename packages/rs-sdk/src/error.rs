@@ -356,19 +356,25 @@ impl CanRetry for Error {
 
     /// Delegate rate-limit classification to the wrapped [`DapiClientError`].
     ///
-    /// This keeps the rotate-don't-ban semantics introduced in `rs-dapi-client`
-    /// alive at the SDK layer independently of how [`Self::can_retry`] is
-    /// defined: should a future change make a wrapped transport error retryable,
-    /// `update_address_ban_status` will correctly rotate a throttled node rather
-    /// than ban it (today the `can_retry()` guard short-circuits first, so this
-    /// is pure future-proofing with no behavior change).
-    ///
-    /// Note this is the one `CanRetry` method where `is_rate_limited() ⇒
-    /// can_retry()` need NOT hold at the SDK layer: the SDK's outer retry loop
-    /// is intentionally conservative (see `sync::retry`) and the actual
-    /// rate-limit rotation happens in the inner `rs-dapi-client` executor.
+    /// When a `ResourceExhausted` status carries a `google.rpc.RetryInfo` hint,
+    /// `update_address_ban_status` applies a server-dictated ban duration rather
+    /// than the exponential health-ban ladder.  Delegating here keeps the SDK
+    /// layer transparent to that mechanism.
     fn is_rate_limited(&self) -> bool {
         matches!(self, Error::DapiClientError(inner) if inner.is_rate_limited())
+    }
+
+    /// Delegate the server-dictated ban duration to the wrapped error.
+    ///
+    /// Returns the `google.rpc.RetryInfo` retry delay when the inner transport
+    /// error is `ResourceExhausted` and the status carries that detail; `None`
+    /// otherwise (caller should fall back to `DAPI_RATE_LIMIT_BAN_MS`).
+    fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
+        if let Error::DapiClientError(inner) = self {
+            inner.rate_limit_ban_duration()
+        } else {
+            None
+        }
     }
 }
 
@@ -585,9 +591,9 @@ mod tests {
     }
 
     /// Regression: the SDK `Error` must propagate the wrapped
-    /// `DapiClientError`'s rate-limit classification so a throttled node is not
-    /// banned at the SDK layer (rotate-don't-ban). Locks the delegation so a
-    /// future refactor cannot silently drop it.
+    /// `DapiClientError`'s rate-limit classification so a throttled node is
+    /// banned for the server-dictated window rather than the health-ban ladder.
+    /// Locks the delegation so a future refactor cannot silently drop it.
     #[test]
     fn test_is_rate_limited_delegates_to_inner_dapi_client_error() {
         // A ResourceExhausted transport error wrapped by the SDK is rate-limited.
@@ -609,5 +615,40 @@ mod tests {
 
         // Non-DAPI errors fall back to the trait default (false).
         assert!(!Error::Config("misconfigured".to_string()).is_rate_limited());
+    }
+
+    #[test]
+    fn test_rate_limit_ban_duration_delegates_to_inner() {
+        // Non-rate-limited transport error → always None.
+        let unavailable: Error = DapiClientError::Transport(TransportError::Grpc(
+            dapi_grpc::tonic::Status::unavailable("down"),
+        ))
+        .into();
+        assert!(
+            unavailable.rate_limit_ban_duration().is_none(),
+            "non-rate-limited error must not have a ban duration"
+        );
+
+        // Non-DAPI error → None (default impl).
+        assert!(
+            Error::Config("bad".into())
+                .rate_limit_ban_duration()
+                .is_none(),
+            "non-DAPI SDK errors must return None"
+        );
+
+        // ResourceExhausted with no RetryInfo → None (caller uses fallback).
+        // This validates the delegation path without requiring the internal
+        // test helper from rs-dapi-client; the RetryInfo extraction is tested
+        // exhaustively in rs-dapi-client's rate_limit module unit tests.
+        let rate_limited: Error = DapiClientError::Transport(TransportError::Grpc(
+            dapi_grpc::tonic::Status::resource_exhausted("429"),
+        ))
+        .into();
+        // No RetryInfo attached → delegation returns None (fallback will be used).
+        assert!(
+            rate_limited.rate_limit_ban_duration().is_none(),
+            "ResourceExhausted without RetryInfo must return None (caller uses fallback)"
+        );
     }
 }

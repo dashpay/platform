@@ -150,9 +150,17 @@ impl CanRetry for dapi_grpc::tonic::Status {
     fn is_rate_limited(&self) -> bool {
         // ResourceExhausted is the gRPC mapping of an upstream rate-limit /
         // backpressure (e.g. Envoy per-IP 429). It is retryable but the node
-        // is healthy, so it must rotate rather than ban (see
-        // `update_address_ban_status`). Exactly one code — do NOT widen this.
+        // is healthy, so it receives a fixed-duration ban rather than the
+        // exponential health-ban ladder (see `update_address_ban_status`).
+        // Exactly one code — do NOT widen this.
         self.code() == dapi_grpc::tonic::Code::ResourceExhausted
+    }
+
+    fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
+        if self.code() != dapi_grpc::tonic::Code::ResourceExhausted {
+            return None;
+        }
+        crate::rate_limit::rate_limit_ban_duration(self)
     }
 }
 

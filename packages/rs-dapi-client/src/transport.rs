@@ -112,6 +112,12 @@ impl CanRetry for TransportError {
             TransportError::Grpc(status) => status.is_rate_limited(),
         }
     }
+
+    fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
+        match self {
+            TransportError::Grpc(status) => status.rate_limit_ban_duration(),
+        }
+    }
 }
 
 /// Serialization of [TransportError].

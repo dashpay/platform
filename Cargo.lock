@@ -6276,6 +6276,7 @@ dependencies = [
  "http",
  "http-serde",
  "lru",
+ "prost 0.14.4",
  "rand 0.8.6",
  "serde",
  "serde_json",

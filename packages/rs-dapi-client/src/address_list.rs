@@ -103,6 +103,29 @@ impl AddressStatus {
         self.ban_reason = reason;
     }
 
+    /// Ban the address for a fixed `duration` **without** incrementing the
+    /// health-ban counter ([`AddressStatus::ban_count`]).
+    ///
+    /// Used for rate-limit (`ResourceExhausted`) bans where the server
+    /// dictates when the node may be retried again.  Because the node is
+    /// healthy (not failing), the exponential health-ban ladder must not be
+    /// touched — a future genuine failure should still get the first-offense
+    /// 60 s window.
+    ///
+    /// If the address already has a longer ban in effect (e.g. from a
+    /// previous health ban), the later expiry is kept so a health ban cannot
+    /// be shortened by a subsequent rate-limit.
+    pub fn ban_for_duration(&mut self, duration: Duration, reason: Option<String>) {
+        let new_until = chrono::Utc::now() + duration;
+        self.banned_until = Some(match self.banned_until {
+            Some(existing) if existing > new_until => existing,
+            _ => new_until,
+        });
+        self.ban_reason = reason;
+        // ban_count intentionally NOT incremented: rate-limit is not a
+        // health signal and must not affect the exponential ban ladder.
+    }
+
     /// Check if [Address] is banned.
     pub fn is_banned(&self) -> bool {
         self.ban_count > 0
@@ -182,6 +205,27 @@ impl AddressList {
         true
     }
 
+    /// Ban the address for a fixed `duration` without touching the health-ban
+    /// counter.  See [`AddressStatus::ban_for_duration`] for the full contract.
+    ///
+    /// Returns `false` if the address is not in the list.
+    pub fn ban_for_duration(
+        &self,
+        address: &Address,
+        duration: Duration,
+        reason: Option<String>,
+    ) -> bool {
+        let mut guard = self.addresses.write().unwrap();
+
+        let Some(status) = guard.get_mut(address) else {
+            return false;
+        };
+
+        status.ban_for_duration(duration, reason);
+
+        true
+    }
+
     /// Clears address' ban record
     /// Returns false if the address is not in the list.
     pub fn unban(&self, address: &Address) -> bool {
@@ -237,38 +281,25 @@ impl AddressList {
         self.add(Address::try_from(uri).expect("valid uri"))
     }
 
-    /// Randomly select a not banned address.
+    /// Randomly select a not-banned address.
+    ///
+    /// An address is considered live when it has never been banned or when its
+    /// ban period has already expired.
     pub fn get_live_address(&self) -> Option<Address> {
-        self.get_live_address_excluding(&[])
-    }
-
-    /// Randomly select a not-banned address that is not in `exclude`.
-    ///
-    /// Uses the same ban filtering as [`Self::get_live_address`] (skips
-    /// addresses whose ban period has not yet expired) but additionally skips
-    /// any address present in `exclude`. The retry loop uses this to rotate to
-    /// a *different* node after a failure — in particular after a rate-limit,
-    /// where the just-tried node is healthy and stays in the pool, so plain
-    /// ban-filtering would happily pick it again.
-    ///
-    /// Passing an empty slice is equivalent to [`Self::get_live_address`].
-    pub fn get_live_address_excluding(&self, exclude: &[Address]) -> Option<Address> {
-        // TODO(low): module-wide `.read()/.write().unwrap()` panics on a poisoned
-        // lock; adopt poison-tolerant locking consistently (known LOW, SEC-003).
+        // TODO(low): module-wide `.read()/.write().unwrap()` panics on a
+        // poisoned lock; adopt poison-tolerant locking consistently (SEC-003).
         let guard = self.addresses.read().unwrap();
 
         let mut rng = SmallRng::from_entropy();
-
         let now = chrono::Utc::now();
 
         guard
             .iter()
-            .filter(|(addr, status)| {
+            .filter(|(_, status)| {
                 status
                     .banned_until
                     .map(|banned_until| banned_until < now)
                     .unwrap_or(true)
-                    && !exclude.contains(addr)
             })
             .choose(&mut rng)
             .map(|(addr, _)| addr.clone())
@@ -326,11 +357,16 @@ impl AddressList {
         guard
             .iter()
             .map(|(addr, status)| {
-                let banned = status.ban_count > 0
-                    && status
-                        .banned_until
-                        .map(|banned_until| banned_until >= now)
-                        .unwrap_or(false);
+                // An address is "effectively banned" when its ban window is
+                // still in the future.  This is intentionally consistent with
+                // the `banned_until`-only filter in `get_live_address`: a
+                // rate-limit ban (`ban_count == 0`, `banned_until` in the
+                // future) is still a ban from the caller's perspective even
+                // though the health-ban counter is not incremented.
+                let banned = status
+                    .banned_until
+                    .map(|banned_until| banned_until >= now)
+                    .unwrap_or(false);
                 AddressBanInfo {
                     uri: addr.to_string(),
                     banned,
@@ -774,113 +810,72 @@ mod tests {
     }
 
     #[test]
-    fn test_get_live_address_excluding_skips_excluded() {
-        let mut list = AddressList::new();
-        let addr1: Address = "http://127.0.0.1:3000".parse().unwrap();
-        let addr2: Address = "http://127.0.0.1:3001".parse().unwrap();
-        let addr3: Address = "http://127.0.0.1:3002".parse().unwrap();
-        list.add(addr1.clone());
-        list.add(addr2.clone());
-        list.add(addr3.clone());
+    fn test_address_status_ban_for_duration_sets_banned_until_no_ban_count() {
+        let mut status = AddressStatus::default();
+        assert_eq!(status.ban_count, 0);
+        assert!(status.banned_until.is_none());
 
-        // Excluding two leaves exactly the third, deterministically.
-        let exclude = [addr1, addr2];
-        for _ in 0..20 {
-            let selected = list
-                .get_live_address_excluding(&exclude)
-                .expect("one address left");
-            assert_eq!(selected, addr3);
-        }
-    }
+        let before = chrono::Utc::now();
+        status.ban_for_duration(Duration::from_secs(30), Some("rate limited".into()));
+        let after = chrono::Utc::now();
 
-    #[test]
-    fn test_get_live_address_excluding_empty_slice_equivalent_to_get_live_address() {
-        let mut list = AddressList::new();
-        list.add("http://127.0.0.1:3000".parse().unwrap());
-        assert!(list.get_live_address_excluding(&[]).is_some());
-        assert!(list.get_live_address().is_some());
-    }
-
-    #[test]
-    fn test_get_live_address_excluding_all_excluded_returns_none() {
-        let mut list = AddressList::new();
-        let addr1: Address = "http://127.0.0.1:3000".parse().unwrap();
-        let addr2: Address = "http://127.0.0.1:3001".parse().unwrap();
-        list.add(addr1.clone());
-        list.add(addr2.clone());
-
-        let exclude = [addr1, addr2];
-        assert!(list.get_live_address_excluding(&exclude).is_none());
-    }
-
-    #[test]
-    fn test_get_live_address_excluding_still_skips_banned() {
-        let mut list = AddressList::new();
-        let addr1: Address = "http://127.0.0.1:3000".parse().unwrap();
-        let addr2: Address = "http://127.0.0.1:3001".parse().unwrap();
-        list.add(addr1.clone());
-        list.add(addr2.clone());
-        list.ban(&addr1); // addr1 banned → filtered out
-
-        // addr1 is banned and addr2 is excluded → nothing live remains.
-        assert!(list
-            .get_live_address_excluding(std::slice::from_ref(&addr2))
-            .is_none());
-        // Without exclusion, only the unbanned addr2 is live.
-        assert_eq!(list.get_live_address_excluding(&[]), Some(addr2));
-    }
-
-    /// Mirrors the retry loop's three-tier selection algorithm:
-    ///   1. `get_live_address_excluding(&tried)` — rotate off every tried node;
-    ///   2. else `get_live_address_excluding(&[just_tried])` — at least rotate
-    ///      off the node we *just* failed on (small-pool alternation);
-    ///   3. else `get_live_address()` — reuse (single-node pool).
-    ///
-    /// With N healthy (unbanned) nodes, N consecutive selections must visit N
-    /// distinct nodes — i.e. each retry rotates off the just-tried node — and
-    /// once exclusion empties the pool, the graceful fallback still yields a
-    /// node rather than erroring.
-    #[test]
-    fn test_retry_rotation_visits_distinct_nodes_then_falls_back() {
-        let mut list = AddressList::new();
-        let addrs: Vec<Address> = (3000..3003)
-            .map(|p| format!("http://127.0.0.1:{p}").parse().unwrap())
-            .collect();
-        for a in &addrs {
-            list.add(a.clone());
-        }
-
-        let select = |list: &AddressList, tried: &[Address]| {
-            list.get_live_address_excluding(tried)
-                .or_else(|| {
-                    tried.last().and_then(|last| {
-                        list.get_live_address_excluding(std::slice::from_ref(last))
-                    })
-                })
-                .or_else(|| list.get_live_address())
-        };
-
-        let mut tried: Vec<Address> = Vec::new();
-        for _ in 0..addrs.len() {
-            let selected = select(&list, &tried).expect("address available");
-            assert!(
-                !tried.contains(&selected),
-                "retry must rotate off an already-tried node"
-            );
-            tried.push(selected);
-        }
-        assert_eq!(tried.len(), addrs.len(), "every node visited exactly once");
-
-        // Pool exhausted by exclusion → graceful fallback keeps it non-empty so
-        // a healthy-but-throttled node can still be retried; the just-tried node
-        // is never the one re-selected while another node is available.
-        let fallback = select(&list, &tried);
-        assert!(fallback.is_some(), "fallback must keep the pool non-empty");
-        assert_ne!(
-            fallback.as_ref(),
-            tried.last(),
-            "fallback must rotate off the just-tried node when another exists"
+        // ban_count must stay at 0 — rate-limit is not a health signal.
+        assert_eq!(
+            status.ban_count, 0,
+            "ban_for_duration must not touch ban_count"
         );
+
+        // banned_until should be roughly now + 30 s.
+        let until = status.banned_until.expect("banned_until must be set");
+        let lower = (until - before).num_milliseconds() as f64 / 1000.0;
+        let upper = (until - after).num_milliseconds() as f64 / 1000.0;
+        assert!(
+            lower >= 29.9,
+            "banned_until lower bound too short: {lower}s"
+        );
+        assert!(upper <= 30.1, "banned_until upper bound too long: {upper}s");
+        assert_eq!(status.ban_reason.as_deref(), Some("rate limited"));
+    }
+
+    #[test]
+    fn test_address_status_ban_for_duration_does_not_shorten_longer_ban() {
+        let mut status = AddressStatus::default();
+        // First apply a long health ban via ban_for_duration (100 s).
+        status.ban_for_duration(Duration::from_secs(100), Some("node down".into()));
+        let long_until = status.banned_until.unwrap();
+
+        // Now apply a short rate-limit ban (10 s) — must NOT shorten the ban.
+        status.ban_for_duration(Duration::from_secs(10), Some("rate limited".into()));
+        assert_eq!(
+            status.banned_until.unwrap(),
+            long_until,
+            "ban_for_duration must not shorten a longer existing ban"
+        );
+        // But the reason is updated.
+        assert_eq!(status.ban_reason.as_deref(), Some("rate limited"));
+    }
+
+    #[test]
+    fn test_address_list_ban_for_duration_returns_false_for_unknown() {
+        let list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        assert!(!list.ban_for_duration(&addr, Duration::from_secs(5), None));
+    }
+
+    #[test]
+    fn test_address_list_ban_for_duration_bans_known_address() {
+        let mut list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        list.add(addr.clone());
+
+        assert!(list.ban_for_duration(&addr, Duration::from_secs(60), Some("rl".into())));
+        // The address must now be hidden from get_live_address.
+        assert!(list.get_live_address().is_none());
+        // ban_count is still 0 (rate-limit ban, not health ban).
+        let info = list.ban_info();
+        assert_eq!(info.len(), 1);
+        assert!(info[0].banned);
+        assert_eq!(info[0].ban_count, 0);
     }
 
     /// Invariant 1 at the ladder source: the exponential ban window is
