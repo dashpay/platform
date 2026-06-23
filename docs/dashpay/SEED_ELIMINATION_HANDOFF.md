@@ -8,6 +8,20 @@ headless dev env — same wall Phase 1 hit).
 
 Keep this current as cores land.
 
+## DECISION (2026-06-23): §4.9 + discovery rewrite + Swift wiring are HELD
+
+The seedless **contact-request flow** (send/accept/drain/always-enqueue sweep)
+and the resident-ECDH-path deletion (C3) are **DONE + verified** (292/292).
+The user **decided to HOLD** the remaining seed-elimination — deleting
+`attach_wallet_seed` (§4.9), the discovery key-storage/signing rewrite, and the
+Swift Keychain-signer wiring — for an **iOS-capable session**, because their
+correctness is only observable against the iOS Keychain signer (env-blocked) and
+discovery is the most safety-critical path (a wrong key-storage change locks
+users out of signing). This is a deliberate deferral, not an oversight:
+`attach_wallet_seed` is intentionally retained while its remaining production
+callers (discovery, contactInfo sweep decrypt) still need it. Do NOT delete it
+headless. Resume the held work in an environment with Xcode + a live network.
+
 ## Status — landed (branch `feat/dashpay-m1-sync-correctness`)
 
 | Commit | Spec | Summary |
