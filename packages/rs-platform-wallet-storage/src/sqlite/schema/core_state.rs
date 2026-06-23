@@ -57,8 +57,8 @@ pub fn apply(
     // `addresses_derived` is intentionally NOT persisted here. The iOS
     // address registry is fed by the FFI `addresses_derived` callback (fired
     // before the UTXO changeset in the same round), and UTXO attribution is
-    // hardcoded to the default account (index 0), so the storage layer no
-    // longer keeps a derived-address lookup table.
+    // hardcoded to the default account (index 0); the storage layer keeps no
+    // derived-address lookup table.
     if !cs.new_utxos.is_empty() {
         let mut stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
         for utxo in &cs.new_utxos {

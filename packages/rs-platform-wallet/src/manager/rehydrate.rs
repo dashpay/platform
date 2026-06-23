@@ -96,8 +96,9 @@ pub(super) fn build_watch_only_wallet(
 ///   account). Each entry carries an `account_type` → `account_xpub`
 ///   mapping used by [`extend_pools_for_restored_utxos`] to derive
 ///   addresses for restored UTXOs. If an account's `account_type` is
-///   absent from the manifest, pool extension is skipped for that
-///   account (no xpub → no derivation possible).
+///   absent from the manifest, deep-index derivation is skipped for that
+///   account (no xpub → no derivation possible); already-derived in-window
+///   addresses are still marked used.
 /// - `core`: the persisted core-state changeset to apply.
 ///
 /// # Reconstructed (safety-critical-correct)
@@ -125,12 +126,19 @@ pub(super) fn build_watch_only_wallet(
 ///   The *wallet total* is unaffected (it is a sum across all funds
 ///   accounts).
 /// - **Deep-index address visibility**: each chain's pool scan stops
-///   after [`MAX_REHYDRATION_DERIVATION_INDEX`] or after
-///   `gap_limit` consecutive non-matching indices past the deepest
-///   resolved index. UTXO addresses that fall outside that window
-///   (foreign keys, multi-account mismatch) are counted and logged via
-///   `tracing::warn!`; they re-warm on the next full sync. Total
-///   balance is unaffected.
+///   after [`MAX_REHYDRATION_DERIVATION_INDEX`] or after `gap_limit`
+///   consecutive non-matching indices past the deepest resolved index.
+///   The horizon only advances when an unspent UTXO anchors a match, so a
+///   UTXO address can be left unresolved in two distinct cases: (1) it is
+///   genuinely foreign (a different account's key routed here, or corrupt),
+///   and (2) it is a *legitimately-owned but deep-and-sparse* address —
+///   owned by this account, yet sitting past the first `gap_limit` window
+///   with no nearer unspent UTXO to walk the horizon out to it. Both cases
+///   are counted and logged via `tracing::warn!` and re-warm on the next
+///   full sync. The wallet *total* stays exact (every UTXO is summed
+///   regardless of pool visibility); only the per-address view is
+///   incomplete until that sync. This is the accepted behavior of the
+///   horizon-walk algorithm — see [`extend_pools_for_restored_utxos`].
 /// - **`last_applied_chain_lock`**: not a persisted column (V001) and
 ///   never written by the core-state writer; always `None` from disk.
 ///   SPV re-applies a fresh chainlock on the first post-restart sync.
@@ -156,6 +164,10 @@ pub fn apply_persisted_core_state(
     core: &crate::changeset::CoreChangeSet,
 ) -> Result<(), PlatformWalletError> {
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+    // Captured before the mutable account borrow below so it can flow into
+    // pool-extension diagnostics without re-borrowing `wallet_info`.
+    let wallet_id = wallet_info.wallet_id;
 
     // Sync watermarks first so `update_balance`'s maturity check sees
     // the restored tip.
@@ -192,11 +204,11 @@ pub fn apply_persisted_core_state(
                 }
                 // Eager derivation covers only `0..=gap_limit`; extend each
                 // chain to cover restored UTXOs at deeper indices.
-                extend_pools_for_restored_utxos(account, manifest, &unspent);
+                extend_pools_for_restored_utxos(account, manifest, &unspent, wallet_id)?;
             }
             None => {
                 return Err(PlatformWalletError::RehydrationTopologyUnsupported {
-                    wallet_id: wallet_info.wallet_id,
+                    wallet_id,
                     utxo_count: core.new_utxos.len(),
                 });
             }
@@ -219,58 +231,70 @@ pub fn apply_persisted_core_state(
 /// the true high-water mark well before this and never reaches the cap.
 const MAX_REHYDRATION_DERIVATION_INDEX: u32 = 10_000;
 
+/// Soft threshold past which a single chain's discovery scan is treated as
+/// abnormally deep and worth a `tracing::warn!`. Real funds chains anchor
+/// well below this; reaching it means either a corrupt / foreign-heavy UTXO
+/// set walking the horizon out, or an approach toward the hard
+/// [`MAX_REHYDRATION_DERIVATION_INDEX`] ceiling — both worth surfacing.
+const REHYDRATION_DEEP_SCAN_WARN_INDEX: u32 = 1_000;
+
 /// Extend `account`'s address pools so every resolved UTXO address is
-/// derived at its exact `(chain, index)` slot, then refill the gap window
-/// beyond — following the sync path's `mark_used` → `maintain_gap_limit`
-/// sequence. Each chain is scanned independently, stopping once no
-/// unresolved address matches within a `gap_limit`-sized window past the
-/// deepest resolved index; [`MAX_REHYDRATION_DERIVATION_INDEX`] is the
-/// hard ceiling. Addresses not derivable from this account's xpub (foreign
-/// keys, multi-account mismatch) are counted and logged via
-/// `tracing::warn!`; they re-warm on the next full sync.
+/// derived at its exact `(chain, index)` slot and marked used, then refill
+/// the gap window beyond — following the sync path's `mark_used` →
+/// `maintain_gap_limit` sequence. Each chain is scanned independently,
+/// stopping once no unresolved address matches within a `gap_limit`-sized
+/// window past the deepest resolved index; [`MAX_REHYDRATION_DERIVATION_INDEX`]
+/// is the hard ceiling. Addresses that don't resolve from this account's
+/// xpub — foreign keys, multi-account mismatch, or legitimately-owned but
+/// deep-and-sparse slots with no nearer unspent UTXO to anchor the horizon —
+/// are counted and logged via `tracing::warn!`; they re-warm on the next
+/// full sync. Every restored address the pools *do* hold (in-window or
+/// deep-resolved) is marked used so a funded address is never handed out as
+/// a fresh receive address.
 ///
 /// Tested with Standard BIP44 topology (External + Internal pools) and
-/// CoinJoin topology (single External pool). The per-chain probe loop has
-/// no topology-specific branches, so Absent and AbsentHardened pool types
-/// follow the same code path with a different relative derivation path.
+/// CoinJoin topology (single External pool). The per-chain probe loop has no
+/// topology-specific branches, so the non-hardened single-pool type
+/// (`Absent`) follows the same code path with a different relative derivation
+/// path. `AbsentHardened` pools cannot be derived from a public xpub at all —
+/// hardened child derivation needs the private key — so under watch-only
+/// rehydration their addresses never resolve and always defer to the next
+/// sync (shared code path, but the outcome is "unresolved").
+///
+/// # Errors
+///
+/// [`PlatformWalletError::RehydrationPoolMismatch`] if the discovery probes
+/// don't mirror the real pools 1:1 (a structural invariant break, not
+/// user-reachable). Fail-closed rather than apply a probe depth to the wrong
+/// pool by position.
 ///
 /// Never touches key material — the xpub is the keyless account public key.
 fn extend_pools_for_restored_utxos(
     account: &mut key_wallet::managed_account::ManagedCoreFundsAccount,
     manifest: &[AccountRegistrationEntry],
     restored: &[&key_wallet::Utxo],
-) {
+    wallet_id: [u8; 32],
+) -> Result<(), PlatformWalletError> {
     use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use std::collections::{BTreeSet, HashSet};
 
-    // The funds account carries no key material; recover its watch-only
-    // xpub from the keyless manifest by account type.
     let account_type = account.managed_account_type().to_account_type();
-    let Some(account_xpub) = manifest
+
+    // The funds account carries no key material; recover its watch-only xpub
+    // from the keyless manifest by account type. Without it we cannot derive
+    // deeper, but can still mark already-derived (in-window) addresses used.
+    let key_source = manifest
         .iter()
         .find(|e| e.account_type == account_type)
-        .map(|e| e.account_xpub)
-    else {
-        return;
-    };
-    let key_source = KeySource::Public(account_xpub);
+        .map(|e| KeySource::Public(e.account_xpub));
 
-    // Restored addresses not already covered by the eager derivation.
-    let mut unresolved: HashSet<key_wallet::Address> = {
-        let pools = account.managed_account_type().address_pools();
-        restored
-            .iter()
-            .map(|u| u.address.clone())
-            .filter(|addr| !pools.iter().any(|p| p.contains_address(addr)))
-            .collect()
-    };
-    if unresolved.is_empty() {
-        return;
-    }
-
-    // Probe pools mirror each real pool's chain so the index search derives
-    // into throwaway state (real pools keep their own exact depth).
+    // Probe pools mirror each real pool's chain 1:1 so the index search
+    // derives into throwaway state (real pools keep their own exact depth)
+    // and the resolved depth can be applied back by position. Re-deriving
+    // each probe from index 0 is an accepted, bounded one-time-load cost
+    // (per chain capped at MAX_REHYDRATION_DERIVATION_INDEX); rehydration
+    // runs once per wallet at startup, never on a hot path.
     let mut probes: Vec<(AddressPool, BTreeSet<u32>)> = account
         .managed_account_type()
         .address_pools()
@@ -288,75 +312,160 @@ fn extend_pools_for_restored_utxos(
         })
         .collect();
 
-    // Per-chain scan: each chain advances independently. We stop a chain
-    // once no unresolved address resolves within gap_limit indices past the
-    // deepest match on that chain (preventing a full 10k scan when the UTXO
-    // set contains foreign addresses). MAX_REHYDRATION_DERIVATION_INDEX is
-    // the hard ceiling regardless.
-    for (probe, matched) in probes.iter_mut() {
-        if unresolved.is_empty() {
-            break;
-        }
-        let chain_gap = probe.gap_limit;
-        let mut deepest_resolved: Option<u32> = None;
-        let mut index: u32 = 0;
+    // Deep-index discovery (requires the xpub): resolve restored addresses the
+    // eager derivation didn't already cover, recording the matching index per
+    // chain. Each chain advances independently and stops once no unresolved
+    // address resolves within gap_limit indices past its deepest match
+    // (preventing a full scan when the UTXO set carries foreign addresses);
+    // MAX_REHYDRATION_DERIVATION_INDEX is the hard ceiling regardless.
+    if let Some(key_source) = key_source.as_ref() {
+        let mut unresolved: HashSet<key_wallet::Address> = {
+            let pools = account.managed_account_type().address_pools();
+            restored
+                .iter()
+                .map(|u| u.address.clone())
+                .filter(|addr| !pools.iter().any(|p| p.contains_address(addr)))
+                .collect()
+        };
 
-        loop {
-            // Horizon: gap_limit past the deepest match, or the initial
-            // gap_limit window when nothing has resolved yet.
-            let horizon = deepest_resolved
-                .map(|d| d.saturating_add(chain_gap))
-                .unwrap_or(chain_gap);
-
-            if index > horizon || index > MAX_REHYDRATION_DERIVATION_INDEX {
-                break;
-            }
-
-            if let Some(addr) = ensure_derived(probe, &key_source, index) {
-                if unresolved.remove(&addr) {
-                    matched.insert(index);
-                    deepest_resolved = Some(index);
-                }
-            }
-
+        for (probe, matched) in probes.iter_mut() {
             if unresolved.is_empty() {
                 break;
             }
+            let chain_gap = probe.gap_limit;
+            let mut deepest_resolved: Option<u32> = None;
+            let mut index: u32 = 0;
 
-            index = index.saturating_add(1);
+            loop {
+                // Horizon: gap_limit past the deepest match, or the initial
+                // gap_limit window when nothing has resolved yet.
+                let horizon = deepest_resolved
+                    .map(|d| d.saturating_add(chain_gap))
+                    .unwrap_or(chain_gap);
+
+                if index > horizon || index > MAX_REHYDRATION_DERIVATION_INDEX {
+                    break;
+                }
+
+                if let Some(addr) = ensure_derived(probe, key_source, index) {
+                    if unresolved.remove(&addr) {
+                        matched.insert(index);
+                        deepest_resolved = Some(index);
+                    }
+                }
+
+                if unresolved.is_empty() {
+                    break;
+                }
+
+                index = index.saturating_add(1);
+            }
+
+            // Surface an abnormally deep scan once per chain (outside the loop
+            // — never log inside the per-index walk).
+            if index > REHYDRATION_DEEP_SCAN_WARN_INDEX {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    account_type = ?account_type,
+                    pool_type = ?probe.pool_type,
+                    deepest_resolved = ?deepest_resolved,
+                    scanned_to = index.saturating_sub(1),
+                    "rehydration: chain discovery scanned abnormally deep — \
+                     likely a foreign-heavy or sparse UTXO set"
+                );
+            }
+        }
+
+        // Still-unresolved addresses are either foreign (a different account's
+        // key routed here, or corrupt) or legitimately-owned but deep-and-sparse
+        // (past the first gap window with no nearer unspent UTXO to anchor the
+        // horizon). Either way they re-warm on the next full sync; the wallet
+        // total is exact regardless.
+        if !unresolved.is_empty() {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                account_type = ?account_type,
+                unresolved_count = unresolved.len(),
+                "rehydration: UTXO address(es) unresolved for this account xpub \
+                 — will re-warm on next sync; balance total is exact"
+            );
         }
     }
 
-    // Addresses still unresolved are not derivable from this account's xpub
-    // (foreign key, routed from a different funds account, or corrupt).
-    // They re-warm on the next full sync; total balance is exact regardless.
-    if !unresolved.is_empty() {
-        tracing::warn!(
-            unresolved_count = unresolved.len(),
-            "rehydration: {} UTXO address(es) unresolved for this account \
-             xpub — will re-warm on next sync; balance total is exact",
-            unresolved.len(),
-        );
-    }
+    // No explicit aggregate-derivation cap is needed: a funds account exposes
+    // a fixed, small number of chains (Standard = 2, others = 1), each already
+    // capped at MAX_REHYDRATION_DERIVATION_INDEX, so total derivation is bounded
+    // by chains × MAX with no unbounded growth — an aggregate cap would either
+    // equal that natural bound (no-op) or clip a legitimate deep multi-chain
+    // wallet. The per-chain ceiling plus the deep-scan warn above are the
+    // proportionate guard against a corrupt/foreign-heavy UTXO set.
 
-    // Apply each chain's resolved depth to its real pool: derive up to the
-    // deepest resolved index, mark the resolved slots used, then maintain
-    // the gap window beyond the highest used index.
-    // Chains with no resolved UTXOs are skipped — their eager gap window
-    // (from initialization) already covers the correct depth, and calling
-    // maintain_gap_limit without any used indices would be a no-op anyway.
+    // Apply discovered depths and mark restored addresses used. `probes` is
+    // built directly from `address_pools()`, so it mirrors `address_pools_mut()`
+    // 1:1 and in chain order; verify that invariant before zipping by position.
     let mut pools = account.managed_account_type_mut().address_pools_mut();
-    for (i, (_, matched)) in probes.iter().enumerate() {
-        let Some(&deepest) = matched.iter().next_back() else {
-            continue;
-        };
-        let pool = &mut *pools[i];
-        ensure_derived(pool, &key_source, deepest);
-        for &idx in matched {
-            pool.mark_index_used(idx);
-        }
-        let _ = pool.maintain_gap_limit(&key_source);
+    if pools.len() != probes.len() {
+        return Err(PlatformWalletError::RehydrationPoolMismatch {
+            expected: probes.len(),
+            found: pools.len(),
+        });
     }
+    for (pool, (probe, matched)) in pools.iter_mut().zip(probes.iter()) {
+        // `iter_mut()` over `Vec<&mut AddressPool>` yields `&mut &mut _`;
+        // reborrow once so the pool flows into `ensure_derived` cleanly.
+        let pool: &mut AddressPool = pool;
+        debug_assert_eq!(
+            pool.pool_type, probe.pool_type,
+            "probe/pool chain order must match for by-position depth apply"
+        );
+
+        // Derive up to the deepest discovered index so its address exists in
+        // the real pool before we mark it used.
+        if let Some(&deepest) = matched.iter().next_back() {
+            if let Some(key_source) = key_source.as_ref() {
+                if ensure_derived(pool, key_source, deepest).is_none() {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        account_type = ?account_type,
+                        pool_type = ?pool.pool_type,
+                        index = deepest,
+                        "rehydration: failed to derive resolved index into pool; \
+                         deferring its address to the next sync"
+                    );
+                }
+            }
+        }
+
+        // Mark every restored address this pool now holds as used — covers both
+        // deep-resolved addresses (just derived) and in-window addresses the
+        // discovery scan never visits. Without this an already-derived but
+        // funded address keeps `used = false` and could be handed out as a fresh
+        // receive address. `mark_used` is a no-op for addresses not in this
+        // pool, so an underived (foreign / sparse) index is never marked.
+        let mut marked_any = false;
+        for u in restored {
+            if pool.mark_used(&u.address) {
+                marked_any = true;
+            }
+        }
+
+        // Refill the gap window past the deepest used index (needs the xpub).
+        if marked_any {
+            if let Some(key_source) = key_source.as_ref() {
+                if let Err(e) = pool.maintain_gap_limit(key_source) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        account_type = ?account_type,
+                        pool_type = ?pool.pool_type,
+                        error = %e,
+                        "rehydration: gap-limit maintenance failed; pool window \
+                         may be short until the next sync"
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Ensure `pool` has derived through `index` (generating only the missing
@@ -444,8 +553,8 @@ mod tests {
     /// - external idx 50: within extended window (50 < 60), resolved
     /// - internal idx 30: within initial scan window, resolved
     ///
-    /// QA-003: Standard BIP44 topology (External + Internal pools) is exercised.
-    /// QA-005: asserts that maintain_gap_limit fills beyond the deepest resolved.
+    /// Standard BIP44 topology (External + Internal pools) is exercised.
+    /// Asserts that maintain_gap_limit fills beyond the deepest resolved.
     #[test]
     fn rehydration_extends_pools_to_cover_deep_index_utxos() {
         use dashcore::blockdata::transaction::txout::TxOut;
@@ -579,7 +688,7 @@ mod tests {
         assert_eq!(external.address_at_index(50).as_ref(), Some(&deep_recv));
         assert_eq!(internal.address_at_index(30).as_ref(), Some(&deep_change));
 
-        // QA-005: maintain_gap_limit must refill BEYOND the deepest restored
+        // maintain_gap_limit must refill BEYOND the deepest restored
         // index so the gap window is actually exercised, not just the restore.
         // Deepest external resolved = idx 50; gap window must reach >= 50+30=80.
         let expected_min_gen = 50 + DEFAULT_EXTERNAL_GAP_LIMIT;
@@ -591,7 +700,7 @@ mod tests {
         );
     }
 
-    /// QA-004: a UTXO whose address is not derivable from this account's
+    /// A UTXO whose address is not derivable from this account's
     /// xpub (foreign key, multi-account mismatch) must not cause a panic or
     /// hang. The total balance is exact (the UTXO is in the set regardless),
     /// but the foreign address is absent from the pool so per-address
@@ -743,7 +852,7 @@ mod tests {
         );
     }
 
-    /// QA-003: CoinJoin topology (single External pool, no Internal chain).
+    /// CoinJoin topology (single External pool, no Internal chain).
     /// Verifies that `extend_pools_for_restored_utxos` handles a single-pool
     /// account at a deep derivation index (idx 30, just past the eager window).
     #[test]
@@ -864,5 +973,321 @@ mod tests {
             Some(&deep_cj_addr),
             "CoinJoin pool must be extended to cover deep-index address at idx 30"
         );
+    }
+
+    /// In-window restored UTXO: an address already covered by the eager
+    /// derivation (idx 3, inside `0..=gap_limit-1`) must still be marked
+    /// `used` during rehydration. The discovery scan never visits in-window
+    /// addresses, so without an explicit mark pass a funded address would keep
+    /// `used = false` and could later be handed out as a fresh receive address.
+    #[test]
+    fn rehydration_marks_in_window_restored_address_used() {
+        use dashcore::blockdata::transaction::txout::TxOut;
+        use dashcore::{OutPoint, Txid};
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::{Address, Utxo};
+
+        let wallet = Wallet::from_seed_bytes(
+            [5u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+
+        let funds_type = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .first()
+            .unwrap()
+            .managed_account_type()
+            .to_account_type();
+        let xpub = manifest
+            .iter()
+            .find(|e| e.account_type == funds_type)
+            .map(|e| e.account_xpub)
+            .expect("funds account xpub");
+
+        // External idx 3 — inside the eager window, so NOT in the discovery set.
+        let in_window: Address = {
+            let mut p = AddressPool::new_without_generation(
+                DerivationPath::master(),
+                AddressPoolType::External,
+                DEFAULT_EXTERNAL_GAP_LIMIT,
+                Network::Testnet,
+            );
+            p.generate_addresses(4, &KeySource::Public(xpub), true)
+                .unwrap();
+            p.address_at_index(3).unwrap()
+        };
+
+        let core = crate::changeset::CoreChangeSet {
+            new_utxos: vec![Utxo {
+                outpoint: OutPoint {
+                    txid: Txid::from([1u8; 32]),
+                    vout: 0,
+                },
+                txout: TxOut {
+                    value: 12_345,
+                    script_pubkey: in_window.script_pubkey(),
+                },
+                address: in_window.clone(),
+                height: 1,
+                is_coinbase: false,
+                is_confirmed: true,
+                is_instantlocked: false,
+                is_locked: false,
+                is_trusted: false,
+            }],
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+
+        apply_persisted_core_state(&mut wallet_info, &manifest, &core).unwrap();
+
+        let funds = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .next()
+            .unwrap();
+        let pools = funds.managed_account_type().address_pools();
+        let external = pools.iter().find(|p| p.is_external()).unwrap();
+        let info = external
+            .address_info(&in_window)
+            .expect("in-window address must be present in the pool");
+        assert!(
+            info.used,
+            "in-window restored UTXO address must be marked used"
+        );
+        assert!(
+            external.used_indices.contains(&3),
+            "used_indices must record the in-window slot"
+        );
+        assert_eq!(
+            external.highest_used,
+            Some(3),
+            "highest_used must reflect the in-window slot"
+        );
+    }
+
+    /// Documented limitation (solution b): a legitimately-owned but
+    /// deep-and-sparse UTXO — external idx 45 with nothing unspent at idx
+    /// <= 30 — is left unresolved because the discovery horizon (gap_limit
+    /// past the deepest match) never advances far enough to reach it. The
+    /// wallet total stays exact; only the per-address view is incomplete
+    /// until the next sync (a `tracing::warn!` records the deferral).
+    #[test]
+    fn rehydration_deep_sparse_utxo_left_unresolved_total_exact() {
+        use dashcore::blockdata::transaction::txout::TxOut;
+        use dashcore::{OutPoint, Txid};
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::{Address, Utxo};
+        use std::collections::HashSet;
+
+        let wallet = Wallet::from_seed_bytes(
+            [21u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+
+        let funds_type = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .first()
+            .unwrap()
+            .managed_account_type()
+            .to_account_type();
+        let xpub = manifest
+            .iter()
+            .find(|e| e.account_type == funds_type)
+            .map(|e| e.account_xpub)
+            .expect("funds account xpub");
+
+        // External idx 45 — past the eager window AND past the initial scan
+        // window (horizon = gap_limit = 30 with no nearer match to extend it).
+        let sparse_deep: Address = {
+            let mut p = AddressPool::new_without_generation(
+                DerivationPath::master(),
+                AddressPoolType::External,
+                DEFAULT_EXTERNAL_GAP_LIMIT,
+                Network::Testnet,
+            );
+            p.generate_addresses(46, &KeySource::Public(xpub), true)
+                .unwrap();
+            p.address_at_index(45).unwrap()
+        };
+
+        let value = 500_000u64;
+        let core = crate::changeset::CoreChangeSet {
+            new_utxos: vec![Utxo {
+                outpoint: OutPoint {
+                    txid: Txid::from([4u8; 32]),
+                    vout: 0,
+                },
+                txout: TxOut {
+                    value,
+                    script_pubkey: sparse_deep.script_pubkey(),
+                },
+                address: sparse_deep.clone(),
+                height: 1,
+                is_coinbase: false,
+                is_confirmed: true,
+                is_instantlocked: false,
+                is_locked: false,
+                is_trusted: false,
+            }],
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+
+        apply_persisted_core_state(&mut wallet_info, &manifest, &core).unwrap();
+
+        // The wallet total is exact regardless (a sum over the UTXO set).
+        assert_eq!(wallet_info.balance.total(), value);
+
+        let funds = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .next()
+            .unwrap();
+        let pools = funds.managed_account_type().address_pools();
+        let external = pools.iter().find(|p| p.is_external()).unwrap();
+        assert!(
+            !external.contains_address(&sparse_deep),
+            "deep-sparse idx 45 must be left unresolved (absent from the pool)"
+        );
+
+        // Per-address view: the deep-sparse UTXO is not pool-visible yet.
+        let pool_addresses: HashSet<Address> = pools
+            .iter()
+            .flat_map(|p| p.addresses.values().map(|i| i.address.clone()))
+            .collect();
+        let visible: u64 = funds
+            .utxos
+            .values()
+            .filter(|u| pool_addresses.contains(&u.address))
+            .map(|u| u.value())
+            .sum();
+        assert_eq!(
+            visible, 0,
+            "the deep-sparse UTXO is deferred — not pool-visible until next sync"
+        );
+        assert!(visible < value, "per-address visible < exact total");
+    }
+
+    /// Topology guard: a wallet with persisted UTXOs but NO funds-bearing
+    /// account cannot hold them — fail closed with
+    /// `RehydrationTopologyUnsupported` (reporting the persisted count) rather
+    /// than reconstruct a silent zero balance.
+    #[test]
+    fn rehydration_utxos_without_funds_account_errors() {
+        use dashcore::address::Payload;
+        use dashcore::blockdata::transaction::txout::TxOut;
+        use dashcore::hashes::Hash;
+        use dashcore::{OutPoint, PubkeyHash, Txid};
+        use key_wallet::account::AccountType;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::{Address, Utxo};
+        use std::collections::BTreeSet;
+
+        // Keys-only wallet: a single IdentityRegistration account, no funds.
+        let opts = WalletAccountCreationOptions::SpecificAccounts(
+            BTreeSet::new(),
+            BTreeSet::new(),
+            BTreeSet::new(),
+            BTreeSet::new(),
+            BTreeSet::new(),
+            Some(vec![AccountType::IdentityRegistration]),
+        );
+        let wallet = Wallet::from_seed_bytes([23u8; 64], Network::Testnet, opts).unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+        assert!(
+            wallet_info.accounts.all_funding_accounts().is_empty(),
+            "fixture must have NO funds-bearing account"
+        );
+
+        let addr = Address::new(
+            Network::Testnet,
+            Payload::PubkeyHash(PubkeyHash::from_byte_array([9u8; 20])),
+        );
+        let core = crate::changeset::CoreChangeSet {
+            new_utxos: vec![Utxo {
+                outpoint: OutPoint {
+                    txid: Txid::from([2u8; 32]),
+                    vout: 0,
+                },
+                txout: TxOut {
+                    value: 800_000,
+                    script_pubkey: addr.script_pubkey(),
+                },
+                address: addr,
+                height: 1,
+                is_coinbase: false,
+                is_confirmed: true,
+                is_instantlocked: false,
+                is_locked: false,
+                is_trusted: false,
+            }],
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+
+        let err = apply_persisted_core_state(&mut wallet_info, &manifest, &core)
+            .expect_err("must fail closed when no funds account can hold the UTXOs");
+        match err {
+            PlatformWalletError::RehydrationTopologyUnsupported { utxo_count, .. } => {
+                assert_eq!(utxo_count, 1, "utxo_count must match the persisted set");
+            }
+            other => panic!("expected RehydrationTopologyUnsupported, got {other:?}"),
+        }
+    }
+
+    /// Companion to the topology guard: the same keys-only wallet with an
+    /// EMPTY persisted UTXO set is `Ok` — there is nothing to hold, so the
+    /// guard does not trip.
+    #[test]
+    fn rehydration_no_funds_account_empty_utxos_ok() {
+        use key_wallet::account::AccountType;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use std::collections::BTreeSet;
+
+        let opts = WalletAccountCreationOptions::SpecificAccounts(
+            BTreeSet::new(),
+            BTreeSet::new(),
+            BTreeSet::new(),
+            BTreeSet::new(),
+            BTreeSet::new(),
+            Some(vec![AccountType::IdentityRegistration]),
+        );
+        let wallet = Wallet::from_seed_bytes([24u8; 64], Network::Testnet, opts).unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+        assert!(wallet_info.accounts.all_funding_accounts().is_empty());
+
+        let core = crate::changeset::CoreChangeSet {
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+        apply_persisted_core_state(&mut wallet_info, &manifest, &core)
+            .expect("empty UTXO set must be Ok even with no funds account");
     }
 }

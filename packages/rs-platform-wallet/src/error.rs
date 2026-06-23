@@ -26,6 +26,22 @@ pub enum PlatformWalletError {
         utxo_count: usize,
     },
 
+    /// The deep-index discovery probes did not mirror the account's real
+    /// address pools 1:1 during rehydration, so applying probe depths by
+    /// position would index the wrong pool. Fail-closed instead of risking
+    /// a misattributed derivation — the probes are built directly from the
+    /// same `address_pools()` enumeration, so a mismatch is a structural
+    /// invariant break, not user-reachable.
+    #[error(
+        "rehydration pool/probe mismatch: expected {expected} address pool(s) to mirror the discovery probes, found {found}"
+    )]
+    RehydrationPoolMismatch {
+        /// Number of discovery probes built from `address_pools()`.
+        expected: usize,
+        /// Number of real address pools from `address_pools_mut()`.
+        found: usize,
+    },
+
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),
 

@@ -29,8 +29,8 @@
 //! read back) at every connection open via `open_conn`
 //! (`src/sqlite/conn.rs`).
 //!
-//! Enum-shaped TEXT columns (`network`, `account_type`, `pool_type`,
-//! `status`, `state`) carry a `CHECK (col IN (...))` clause whose
+//! Enum-shaped TEXT columns (`network`, `account_type`, `status`,
+//! `state`) carry a `CHECK (col IN (...))` clause whose
 //! IN-list is built from the `*_LABELS` const arrays in
 //! `crate::sqlite::schema::{wallets, accounts, asset_locks,
 //! contacts}`. The consts are the single source of truth shared with
