@@ -152,10 +152,45 @@ public class PlatformWalletManager: ObservableObject {
 
     deinit {
         progressPollTask?.cancel()
-        if handle != NULL_HANDLE {
-            platform_wallet_manager_platform_address_sync_stop(handle).discard()
-            platform_wallet_manager_shielded_sync_stop(handle).discard()
-            platform_wallet_manager_destroy(handle).discard()
+        guard handle != NULL_HANDLE else { return }
+
+        // Tear down the Rust manager: cancel the address-sync loop, drain
+        // the shielded loop, then destroy. The first stop is cancel-only
+        // and never reports an incomplete drain, so we still `discard()` it.
+        platform_wallet_manager_platform_address_sync_stop(handle).discard()
+
+        // Capture the CODE (not just free the message) for the two calls
+        // that CAN report `.errorShutdownIncomplete`: `shielded_sync_stop`
+        // and `destroy`. Rust returns that code when a background
+        // coordinator did not drain within the join deadline — meaning a
+        // lingering `!Send` coordinator thread may still hold the
+        // `passUnretained` context pointers Rust was handed for our
+        // `persistenceHandler` / `eventHandler` and fire ONE final callback
+        // through them. The contract: on that code the host must NOT free
+        // the callback context immediately.
+        let shieldedStopCode =
+            platform_wallet_manager_shielded_sync_stop(handle).discardReturningCode()
+        let destroyCode =
+            platform_wallet_manager_destroy(handle).discardReturningCode()
+
+        // Both handlers are passed to Rust via `Unmanaged.passUnretained`
+        // (see `PlatformWalletPersistenceHandler`/`PlatformWalletEventHandler`
+        // `makeCallbacks()`), so Rust holds non-owning pointers and these
+        // objects are kept alive ONLY by the stored properties below. The
+        // instant this deinit returns, ARC releases them — which would be a
+        // use-after-free if a lingering coordinator then fires its final
+        // callback. So, ONLY on an incomplete shutdown, deliberately leak one
+        // extra strong reference to each (an unbalanced `passRetained` that is
+        // never released) so they outlive any lingering thread. A clean
+        // shutdown (the common case) takes neither branch and releases the
+        // handlers normally — we never leak unconditionally. The leak is
+        // bounded by how often a shutdown wedges (rare) and trades two small
+        // objects for guaranteed callback safety, since an incomplete drain
+        // gives no later signal that the lingering thread has finally exited.
+        if shieldedStopCode == .errorShutdownIncomplete
+            || destroyCode == .errorShutdownIncomplete {
+            if let persistenceHandler { _ = Unmanaged.passRetained(persistenceHandler) }
+            if let eventHandler { _ = Unmanaged.passRetained(eventHandler) }
         }
     }
 

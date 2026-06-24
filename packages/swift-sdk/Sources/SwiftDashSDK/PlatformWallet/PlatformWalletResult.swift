@@ -256,4 +256,16 @@ extension PlatformWalletFFIResult {
     func discard() {
         _ = PlatformWalletResult(self)
     }
+
+    /// Free the result's Rust-owned message and return its typed code.
+    ///
+    /// Like `discard()`, but hands back the code so the caller can branch
+    /// on it — used by `PlatformWalletManager.deinit`, which must detect
+    /// `.errorShutdownIncomplete` to decide whether to keep its callback
+    /// context alive. The message is still freed deterministically (the
+    /// temporary `PlatformWalletResult` frees it on drop).
+    @inline(__always)
+    func discardReturningCode() -> PlatformWalletResultCode {
+        PlatformWalletResult(self).code
+    }
 }
