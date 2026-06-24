@@ -107,9 +107,12 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
   **Framing corrected:** this is NOT a counterparty-interop break — the recipient pays
   from the *shared xpub* and ignores `accountReference` (per DIP-15 + our code), so a
   multi-account counterparty doesn't affect us. The real limitation is that *we* can't
-  run multiple DashPay accounts → it's the **same item as multi-account (P2)**. Remaining
-  after #813 merges: bump the key-wallet rev + thread the real account through our callers
-  (`register_contact_account(.., account)` etc., currently hardcoded `0`).
+  run multiple DashPay accounts → it's the **same item as multi-account (P2)**.
+  **UPDATE (2026-06-24): #813 is MERGED and already in our pinned rev `b4779fc`**
+  (`derivation_path` honors `*account_index`) — no rev bump needed. Threading the real
+  account through our callers is now **subsumed by the multi-account item below**, which
+  is SPEC'D + reviewed → **KEEP DEFERRED** (see `MULTI_ACCOUNT_SPEC.md`). Not actionable
+  standalone (a non-zero send is meaningless without the multi-channel state).
 - [x] **`encryptedAccountLabel` length normalization: FIXED (send side)** (was the
   REGRESSED re-audit finding `DIP_CONFORMANCE_GAPS.md` §1.2). The DIP-15 normalization
   now lives in the single primitive `platform_encryption::{encrypt,decrypt}_account_label`:
@@ -139,11 +142,23 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
 - [x] **ECDH known-answer test: DONE** (`4ae8504a2b`). KAT recomputes the shared key
   by hand (`SHA256((y&1|2)‖x)`) for fixed keys + pins symmetry — locks the byte
   convention.
-- [~] **Multi-account contacts** — **DEFERRED (conditional, not a requirement).** The
-  DIP-15 codec now carries `accepted_accounts` (Spec 1), but nothing populates it;
-  widen only if simultaneous multi-account contacts become a real requirement. Shares
-  the upstream derivation-path fix [rust-dashcore#813](https://github.com/dashpay/rust-dashcore/pull/813)
-  (P1 above) — that PR is the enabling prerequisite for any non-zero DashPay account.
+- [~] **Multi-account contacts** — **SPEC'D + 4-LENS REVIEWED → KEEP DEFERRED**
+  (`docs/dashpay/MULTI_ACCOUNT_SPEC.md`, 2026-06-24). #813 is now **merged AND already
+  in our pinned rev `b4779fc`** (`derivation_path` honors `*account_index`), so the
+  upstream blocker is gone — but the review found the feature is **not buildable as
+  designed** and there is **no requirement**: (B-1) channel identity is
+  *information-theoretically* unresolvable from the wire (rotation-of-an-added-account
+  is indistinguishable from a new account — `accountReference` is a sender-private
+  one-time pad; the version nibble doesn't correlate it to a channel), so channel
+  identity must be out-of-band/user-assigned; (B-2) keying the sweep collapse by
+  `accountReference` re-opens the PR #3841 thrash; (B-3) a fabricated receiving-account
+  index corrupts the hardened derivation path → invisible incoming payments; (B-4/5/6)
+  collision-unsafe keying, no per-sender flood cap, and an "Add account" phishing
+  surface. **Conformant cheaper alternative:** DIP-15 §8.4 also allows silently
+  disregarding additional requests (≈ today's collapse). **Next step only if a
+  requirement appears:** a B-1 channel-identity design note, then re-spec. The
+  `accepted_accounts` round-trip (the inert codec field) folds into that work — do
+  **not** ship it standalone. (Subsumes the friendship-path `account'=0'` item above.)
 - [x] **rs-sdk-ffi `DashSDKContactRequestResult` entropy: DONE** (`514b32ebd1`).
   Added an inline `entropy: [u8;32]` field for generic embedders.
 - [x] **contactInfo fetch pagination: DONE** (`e757d9a528`). `send address-reuse` —
