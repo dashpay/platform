@@ -691,7 +691,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// context — a use-after-free. So we `quiesce()` the sync managers
     /// FIRST (so no further persister store or host callback can start),
     /// and only THEN cancel + join the event adapter, which is the sink
-    /// those stores feed into.
+    /// those stores feed into. The three coordinators are independent —
+    /// each `quiesce()` touches only its own state (its `quiescing` /
+    /// `is_syncing` atomics and its own `background_cancel` /
+    /// `background_join` mutexes) and joins its own OS thread, sharing no
+    /// lock — so they are drained *concurrently* via `tokio::join!`; only
+    /// the event-adapter teardown stays ordered strictly after them,
+    /// because it is the sink the coordinators store into.
     ///
     /// After each coordinator's `quiesce()` drains its in-flight pass,
     /// this also **joins** the loop's OS thread, so when `shutdown()`
@@ -708,8 +714,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// service one `block_on` at a time, so the join would deadlock. This
     /// is asserted in both debug and release builds.
     ///
-    /// Each coordinator quiesce+join is bounded by
-    /// [`SHUTDOWN_JOIN_TIMEOUT_SECS`] as a backstop. `quiesce()` cancels
+    /// Each coordinator quiesce+join is bounded by its own
+    /// [`SHUTDOWN_JOIN_TIMEOUT_SECS`] backstop. Because the three drain
+    /// concurrently, the worst-case wait collapses to ~that single
+    /// backstop instead of the sum of all three. `quiesce()` cancels
     /// the loop, which aborts any in-flight pass at its `.await` point, so
     /// the `is_syncing` drain clears promptly and the join normally lands
     /// far inside the window — the deadline fires only if a pass's *drop*
@@ -735,25 +743,42 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         let timeout = std::time::Duration::from_secs(SHUTDOWN_JOIN_TIMEOUT_SECS);
 
-        // Each quiesce() drains any in-flight pass AND joins the thread.
-        let platform_address_sync =
+        // Drain the three independent periodic coordinators *concurrently*.
+        // Each quiesce() drains any in-flight pass AND joins its own OS
+        // thread, touching only that coordinator's own state (no shared
+        // lock), so racing them is sound and collapses the worst case from
+        // the sum of the three backstops to ~max(...). Each drain keeps its
+        // OWN inner `tokio::time::timeout`, so it still yields its own
+        // per-coordinator `CoordinatorThreadStatus` — a single outer timeout
+        // around the whole join! would flatten all three to `Timeout` and
+        // lose that detail.
+        let drain_platform_address = async {
             tokio::time::timeout(timeout, self.platform_address_sync_manager.quiesce())
                 .await
-                .unwrap_or(CoordinatorThreadStatus::Timeout);
-
-        let identity_sync = tokio::time::timeout(timeout, self.identity_sync_manager.quiesce())
-            .await
-            .unwrap_or(CoordinatorThreadStatus::Timeout);
+                .unwrap_or(CoordinatorThreadStatus::Timeout)
+        };
+        let drain_identity = async {
+            tokio::time::timeout(timeout, self.identity_sync_manager.quiesce())
+                .await
+                .unwrap_or(CoordinatorThreadStatus::Timeout)
+        };
+        #[cfg(feature = "shielded")]
+        let drain_shielded = async {
+            tokio::time::timeout(timeout, self.shielded_sync_manager.quiesce())
+                .await
+                .unwrap_or(CoordinatorThreadStatus::Timeout)
+        };
 
         #[cfg(feature = "shielded")]
-        let shielded_sync = {
-            let r = tokio::time::timeout(timeout, self.shielded_sync_manager.quiesce())
-                .await
-                .unwrap_or(CoordinatorThreadStatus::Timeout);
-            Some(r)
+        let (platform_address_sync, identity_sync, shielded_sync) = {
+            let (p, i, s) = tokio::join!(drain_platform_address, drain_identity, drain_shielded);
+            (p, i, Some(s))
         };
         #[cfg(not(feature = "shielded"))]
-        let shielded_sync = None;
+        let (platform_address_sync, identity_sync, shielded_sync) = {
+            let (p, i) = tokio::join!(drain_platform_address, drain_identity);
+            (p, i, None)
+        };
 
         // The event adapter is a tokio task (it sinks the coordinators'
         // stores), so cancel + join it last — after the loops feeding it
