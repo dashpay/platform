@@ -1520,6 +1520,21 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '4.0.0-rc.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // Add responseHeaders toggle to rate limiter (default true so existing
+            // deployments keep emitting RateLimit-* headers; rs-dapi-client depends
+            // on RateLimit-Reset to apply precise ban windows instead of the
+            // exponential health-ban ladder).
+            if (options.platform?.gateway?.rateLimiter
+              && typeof options.platform.gateway.rateLimiter.responseHeaders === 'undefined') {
+              options.platform.gateway.rateLimiter.responseHeaders = base.get('platform.gateway.rateLimiter.responseHeaders');
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 
