@@ -2,11 +2,14 @@
 //! the node to be banned for that exact period (`ban_for`), while a missing
 //! header falls back to the normal exponential health-ban ladder.
 
+mod common;
+
+use common::ScriptedRequest;
 use dapi_grpc::tonic::metadata::MetadataValue;
 use rs_dapi_client::transport::{AppliedRequestSettings, TransportError};
 use rs_dapi_client::{
-    update_address_ban_status, AddressList, CanRetry, DapiClientError, ExecutionError,
-    ExecutionResult,
+    update_address_ban_status, Address, AddressList, CanRetry, DapiClient, DapiClientError,
+    DapiRequestExecutor, ExecutionError, ExecutionResult, RequestSettings,
 };
 use std::time::Duration;
 
@@ -369,4 +372,83 @@ fn test_rate_limit_ban_duration_trait_delegation() {
         address: Some(make_address()),
     };
     assert_eq!(ee.rate_limit_ban_duration(), Some(Duration::from_secs(20)));
+}
+
+/// End-to-end proof: a `ResourceExhausted` response carrying `ratelimit-reset:
+/// 300` that travels through the *real* `DapiClient::execute()` path causes the
+/// node to be banned for the Envoy-advertised 300 s window (`ban_for`), NOT the
+/// exponential ladder's first rung (~60 s).
+///
+/// The 300 s figure is deliberately chosen so that:
+/// - it differs unambiguously from the ladder's first rung (60 s), and
+/// - it is within the [1, 600] s clamp range.
+///
+/// `ban_count == 1` confirms the flat `ban_for` path, not the ladder.
+#[tokio::test]
+async fn rate_limited_node_banned_for_advertised_window_via_execute() {
+    // Single-node pool: after one ResourceExhausted the node is banned and no
+    // live address remains, which collapses to NoAvailableAddressesToRetry.
+    let node: Address = "http://127.0.0.1:10201".parse().expect("valid address");
+    let address_list: AddressList = "http://127.0.0.1:10201"
+        .parse()
+        .expect("valid address list");
+
+    // The responder returns ResourceExhausted + ratelimit-reset: 300 on every call.
+    let request = ScriptedRequest::new(|_uri| {
+        let mut status = dapi_grpc::tonic::Status::resource_exhausted("429");
+        status
+            .metadata_mut()
+            .insert("ratelimit-reset", MetadataValue::try_from("300").unwrap());
+        Err(TransportError::Grpc(status))
+    });
+
+    let client = DapiClient::new(address_list, RequestSettings::default());
+
+    let before = chrono::Utc::now();
+    let err = client
+        .execute(request.clone(), RequestSettings::default())
+        .await
+        .expect_err("single rate-limited node: expect NoAvailableAddressesToRetry");
+    let after = chrono::Utc::now();
+
+    // The only node must be banned.
+    assert!(
+        client.address_list().is_banned(&node),
+        "rate-limited node must be banned after execute()"
+    );
+
+    // The error must be the address-exhaustion variant (single node, now banned).
+    match err.inner {
+        DapiClientError::NoAvailableAddressesToRetry(_) => {}
+        other => panic!(
+            "expected NoAvailableAddressesToRetry from exhausted single-node pool, got: {other:?}"
+        ),
+    }
+
+    // The ban window must be ~300 s (from the ratelimit-reset header), NOT ~60 s
+    // (the ladder's first rung).  This is the key assertion that proves ban_for
+    // was called through execute(), not ban_with_reason.
+    let info = client.address_list().ban_info();
+    let entry = info
+        .iter()
+        .find(|i| i.uri == node.to_string())
+        .expect("ban_info entry for the rate-limited node");
+
+    assert!(entry.banned, "node must be effectively banned");
+
+    // ban_count == 1 proves the flat ban_for floor, not the exponential ladder
+    // (both yield ban_count 1 on first ban, but the window assertion below
+    // disambiguates; this assertion additionally documents the intent).
+    assert_eq!(
+        entry.ban_count, 1,
+        "ban_for sets ban_count to 1 (flat floor, not ladder escalation)"
+    );
+
+    let until = entry.banned_until.expect("banned_until must be set");
+    let lo = (until - before).num_milliseconds() as f64 / 1000.0;
+    let hi = (until - after).num_milliseconds() as f64 / 1000.0;
+    assert!(
+        lo >= 299.5 && hi <= 300.5,
+        "ban window must be ~300 s (ratelimit-reset header); got lo={lo:.3}s hi={hi:.3}s"
+    );
 }
