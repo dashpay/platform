@@ -2069,10 +2069,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Derives the wallet's auto-accept key at `m/9'/coin'/16'/expiry'` via
     /// `provider` — the deliberate raw-key export (the key is a bearer credential
     /// the QR shares) — encodes the 38-byte `dapk` blob, and assembles the URI.
-    /// `username` is the owner's DPNS name (required so a scanner can resolve the
-    /// owner's identity); errors if empty.
+    ///
+    /// The QR's `du` is `owner_identity_id`'s DPNS name (a scanner resolves it
+    /// back to the owner's identity). `username` is the locally-cached name when
+    /// available; pass an empty string to resolve it on-chain instead — imported
+    /// or restored identities carry the name on-chain but not in the local cache,
+    /// which is exactly when this matters. Errors if no name can be found.
     pub async fn build_auto_accept_qr<P: ContactCryptoProvider + Sync>(
         &self,
+        owner_identity_id: &Identifier,
         username: &str,
         provider: &P,
     ) -> Result<String, PlatformWalletError> {
@@ -2080,11 +2085,35 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             auto_accept_derivation_path, encode_auto_accept_key_blob, encode_dashpay_contact_uri,
             AUTO_ACCEPT_TTL_SECS,
         };
-        if username.is_empty() {
-            return Err(PlatformWalletError::InvalidIdentityData(
-                "auto-accept QR requires a DPNS username".to_string(),
-            ));
-        }
+        // Prefer the caller-supplied (cached) name; fall back to an on-chain
+        // lookup when it is empty so the QR works regardless of local caching.
+        let resolved_name;
+        let username = if username.is_empty() {
+            let names = self
+                .sdk
+                .get_dpns_usernames_by_identity(*owner_identity_id, None)
+                .await
+                .map_err(|e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "auto-accept QR: failed to resolve a DPNS name on-chain for \
+                         {owner_identity_id}: {e}"
+                    ))
+                })?;
+            // Any of the identity's names resolves back to it, so the choice is
+            // cosmetic; pick the lexicographically smallest for a deterministic
+            // QR that stays stable across rebuilds. The app's "main name"
+            // preference isn't visible on this on-chain path — the cached-name
+            // branch above honors it whenever a local name is present.
+            resolved_name = names.into_iter().map(|n| n.label).min().ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(
+                    "auto-accept QR requires a DPNS username; none is registered for this identity"
+                        .to_string(),
+                )
+            })?;
+            resolved_name.as_str()
+        } else {
+            username
+        };
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as u32)

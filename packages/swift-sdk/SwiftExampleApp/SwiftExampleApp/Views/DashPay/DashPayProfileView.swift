@@ -144,7 +144,9 @@ struct DashPayProfileView: View {
     }
 
     /// Build the DIP-15 auto-accept QR for this identity (once), via the Rust
-    /// `buildAutoAcceptQR`. Requires a DPNS name (the QR's `du`).
+    /// `buildAutoAcceptQR`. The QR's `du` is the owner's DPNS name; Rust resolves
+    /// it on-chain when it isn't cached locally, and surfaces a clear error only
+    /// if no name is registered for the identity at all.
     private func generateAutoAcceptQR() async {
         guard qrImage == nil, qrError == nil else { return }
         guard let walletId = identity.wallet?.walletId,
@@ -152,13 +154,17 @@ struct DashPayProfileView: View {
             qrError = "No wallet loaded for this identity."
             return
         }
-        guard let username = (identity.mainDpnsName ?? identity.dpnsName)?
-            .trimmingCharacters(in: .whitespacesAndNewlines), !username.isEmpty else {
-            qrError = "Register a DPNS username to share an auto-accept QR."
-            return
-        }
+        // Prefer the locally-cached DPNS name; pass "" so Rust resolves it
+        // on-chain when the cache is empty (imported/restored identities carry
+        // the name on-chain but not in the local field). If no name is
+        // registered at all, the Rust call surfaces a clear error.
+        let username = (identity.mainDpnsName ?? identity.dpnsName)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         do {
-            let uri = try await wallet.buildAutoAcceptQR(username: username)
+            let uri = try await wallet.buildAutoAcceptQR(
+                ownerIdentityId: identity.identityId,
+                username: username
+            )
             qrURI = uri
             qrImage = Self.makeQRCode(from: uri)
         } catch {

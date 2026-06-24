@@ -772,15 +772,20 @@ pub unsafe extern "C" fn platform_wallet_pending_contact_crypto_count(
 }
 
 /// Build a DIP-15 auto-accept QR URI (`dash:?du=<username>&dapk=<key_blob>`) for
-/// this wallet, valid for 1 hour. `username` is the owner's DPNS name (a scanner
-/// resolves it to the owner's identity). Writes a heap C string to `*out_uri`;
-/// the caller frees it with `platform_wallet_string_free`.
+/// the identity `owner_identity_id`, valid for 1 hour. The QR's `du` is the
+/// owner's DPNS name (a scanner resolves it back to the owner's identity).
+/// `username` is the locally-cached name when available; pass an **empty** C
+/// string (or one resolving to empty) to resolve the name on-chain instead —
+/// needed for imported/restored identities whose name isn't cached locally.
+/// Writes a heap C string to `*out_uri`; the caller frees it with
+/// `platform_wallet_string_free`.
 ///
 /// Derives the wallet's auto-accept private key through the resolver (the one
 /// deliberate raw-key export — the key is a bearer credential the QR shares) and
 /// encodes the `dapk` blob + URI Rust-side.
 ///
 /// # Safety
+/// - `owner_identity_id` must point to 32 readable bytes.
 /// - `username` must be a valid NUL-terminated UTF-8 C string.
 /// - `core_signer_handle` must be a valid, non-destroyed `*mut MnemonicResolverHandle`
 ///   (the caller pins it for the duration of this call).
@@ -788,6 +793,7 @@ pub unsafe extern "C" fn platform_wallet_pending_contact_crypto_count(
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_build_auto_accept_qr(
     wallet_handle: Handle,
+    owner_identity_id: *const u8,
     username: *const c_char,
     core_signer_handle: *mut MnemonicResolverHandle,
     out_uri: *mut *mut c_char,
@@ -796,6 +802,8 @@ pub unsafe extern "C" fn platform_wallet_build_auto_accept_qr(
     check_ptr!(core_signer_handle);
     check_ptr!(out_uri);
 
+    // `read_identifier` null-checks the pointer (matches the sibling QR FFIs).
+    let owner = unwrap_result_or_return!(read_identifier(owner_identity_id));
     let username = unwrap_result_or_return!(CStr::from_ptr(username).to_str()).to_string();
     let core_signer_addr = core_signer_handle as usize;
 
@@ -812,7 +820,11 @@ pub unsafe extern "C" fn platform_wallet_build_auto_accept_qr(
                 network,
             )
         };
-        block_on_worker(async move { identity.build_auto_accept_qr(&username, &provider).await })
+        block_on_worker(async move {
+            identity
+                .build_auto_accept_qr(&owner, &username, &provider)
+                .await
+        })
     });
     let result = unwrap_option_or_return!(option);
     let uri = unwrap_result_or_return!(result);

@@ -1708,22 +1708,34 @@ extension ManagedPlatformWallet {
     }
 
     /// Build a DIP-15 auto-accept QR URI (`dash:?du=<username>&dapk=<key_blob>`)
-    /// for this wallet, valid for 1 hour. `username` is the owner's DPNS name. The
-    /// returned URI is rendered as a QR; a scanner sends a contact request the
-    /// owner auto-accepts. All derivation/encoding happens Rust-side.
-    public func buildAutoAcceptQR(username: String) async throws -> String {
+    /// for `ownerIdentityId`, valid for 1 hour. The QR's `du` is the owner's DPNS
+    /// name; pass the locally-cached `username` when known, or an empty string to
+    /// have Rust resolve it on-chain (needed for imported/restored identities
+    /// whose name isn't cached locally). The returned URI is rendered as a QR; a
+    /// scanner sends a contact request the owner auto-accepts. All
+    /// derivation/encoding/resolution happens Rust-side.
+    public func buildAutoAcceptQR(
+        ownerIdentityId: Identifier,
+        username: String
+    ) async throws -> String {
         let handle = self.handle
         let coreSigner = MnemonicResolver()
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
         return try await Task.detached(priority: .userInitiated) { () -> String in
             var outURI: UnsafeMutablePointer<CChar>?
             let result: PlatformWalletFFIResult = withExtendedLifetime(coreSigner) {
-                username.withCString { uPtr in
-                    platform_wallet_build_auto_accept_qr(
-                        handle,
-                        uPtr,
-                        coreSigner.handle,
-                        &outURI
-                    )
+                ownerBytes.withUnsafeBufferPointer { ownerBp in
+                    username.withCString { uPtr in
+                        platform_wallet_build_auto_accept_qr(
+                            handle,
+                            ownerBp.baseAddress!,
+                            uPtr,
+                            coreSigner.handle,
+                            &outURI
+                        )
+                    }
                 }
             }
             try result.check()

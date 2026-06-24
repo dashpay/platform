@@ -59,9 +59,11 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
 
 ## P1 — interop (cross-client correctness)
 
-- [ ] **coreHeight block-rescan — DIP-15 §8.7 + §12.6 (NEW, payment-loss).**
+- [~] **coreHeight block-rescan — DIP-15 §8.7 + §12.6 (NEW, payment-loss).** Tasks A+B
+  IMPLEMENTED + reviewed + pushed (`cba515aaf1`, `18483e4232`); only the funding-gated
+  `dp_*` e2e (C) and the optional durability breadcrumb (D) remain.
   Surfaced by the re-audit (`DIP_CONFORMANCE_GAPS.md` §1.1). **Spec
-  `docs/dashpay/CORE_HEIGHT_RESCAN_SPEC.md` — REVIEWED (4 lenses), ready to implement.**
+  `docs/dashpay/CORE_HEIGHT_RESCAN_SPEC.md` — REVIEWED (4 lenses), implemented.**
   An incoming payment that landed on a contact's receival address **before** that address
   was watched is silently missed. The review reshaped the fix (see spec §0): the dash-spv
   `FiltersManager` already backfills when a wallet's `synced_height` drops below the scan
@@ -70,18 +72,21 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
   **No upstream change** (the forward-only guard is only on the `WalletManager` wrapper;
   the inner setter is unconditional). Regression of `synced_height` is **safe** (full
   consumer audit). Split (spec §7):
-  - [ ] **A — restore birth-height default:** DashPay re-import passes `Some(0)` instead
-    of `None` (`manager.rs:245`/`PlatformWalletManager.swift:317`) so history isn't
-    skipped. Durable; covers restore/second-device. Ships alone.
-  - [ ] **B — rescan reconcile + primitive:** `SpvRuntime::rewind_synced_height` (uses the
-    already-public `get_wallet_info_mut().update_synced_height()`) + a
-    `reconcile_dashpay_rescan` step reading `min(outgoing,incoming) core_height` off
-    `EstablishedContact`, receival-only, coalesced (act only when floor < committed),
-    clamp-to-header-floor + warn; wired into wallet-load and `dashpay_sync`. Covers
-    offline-accept→pay.
-  - [ ] **C — tests:** §5 unit suite + `dp_*` e2e offline-pay-then-establish (rides #3549
-    + devnet funding). NB: a test must avoid persisting `synced_height==0` (masks the bug
-    via birth-fallback).
+  - [x] **A — restore birth-height default — DONE** (`cba515aaf1`). DashPay
+    create-wallet gains a `birthHeight: UInt32?`; imported/recovered/add-to-network seeds
+    pass `0` (recovery uses the persisted birth height), generated seeds pass `nil` (tip).
+    No Rust logic change (routes to the existing `*_with_birth_height` FFI); SwiftExampleApp
+    BUILD SUCCEEDED.
+  - [x] **B — rescan reconcile — DONE** (`18483e4232`). `IdentityWallet::reconcile_dashpay_rescan`
+    lowers `synced_height` to `min(outgoing,incoming) core_height` over established receival
+    contacts (via the inner unconditional setter, no `SpvRuntime` method), wired into the
+    recurring `dashpay_sync`. In-memory `ManagedIdentity::dashpay_rescan_triggered` guard
+    (self-heals on restart) prevents recurring-sweep thrash; review hardening also marks
+    forward-covered contacts. 301/301 lib tests, clippy clean.
+  - [~] **C — tests:** unit suite DONE (4 tests: floor/idempotency/forward-covered/`==0`,
+    in `18483e4232`); the `dp_*` e2e offline-pay-then-establish still rides #3549 + devnet
+    funding. NB: a test must avoid persisting `synced_height==0` (masks the bug via
+    birth-fallback).
   - [ ] **D — durability breadcrumb (OPTIONAL, deferred):** persist a pending-rescan-floor
     so a crash mid-backfill resumes; only if at-least-once-across-restart is needed.
   - ~~T1 upstream guard-bypass~~ **DELETED** — no rust-dashcore change required.
@@ -160,10 +165,13 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
   green. **On-device:** the My-QR UI + DPNS-name guard verified; the full QR-generate→scan→
   auto-accept loop wasn't exercised because both available devnet identities lack a
   *locally-cached* DPNS name (names are on-chain but not in `PersistentIdentity.dpnsName`;
-  imported/edge-case wallets — a create-in-app identity has it set). **Follow-up (P3):**
-  make `build_auto_accept_qr` resolve the owner's DPNS name on-chain when the local field
-  is empty, so the QR works regardless of local-name caching (and unblocks the on-device
-  full-loop test). Keep `auto_accept.rs` (extended, not deleted).
+  imported/edge-case wallets — a create-in-app identity has it set). **Follow-up (P3) —
+  DONE:** `build_auto_accept_qr` now takes the owner identity id and resolves the DPNS name
+  on-chain (`get_dpns_usernames_by_identity`, deterministic lexically-smallest) when the
+  caller passes an empty name, so the QR works regardless of local-name caching; the Swift
+  My-QR view passes `identity.identityId` + the cached name (or "") and no longer bails on
+  an empty cache. 4 layers (lib/FFI/wrapper/view); xcframework regenerated; app BUILD
+  SUCCEEDED. On-device full-loop still rides a funded devnet. Keep `auto_accept.rs`.
 - [ ] **DashPay Invitations (DIP-13) — NEXT (queued 2026-06-24).** The shipped,
   interoperable onboarding feature: an existing user funds an AssetLock and shares a
   `dashpay://invite?du=…&assetlocktx=…&pk=<WIF>&islock=…` deep-link (web fallback
