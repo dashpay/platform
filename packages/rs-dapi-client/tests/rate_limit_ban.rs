@@ -212,6 +212,72 @@ fn test_missing_header_falls_back_to_ladder() {
     );
 }
 
+/// `ban_for` must never shorten an already-active ban.
+///
+/// (a) LONG then SHORT → `banned_until` stays at the LONG window.
+/// (b) SHORT then LONG → `banned_until` extends to the LONG window.
+/// (c) `ban_count` ends at ≥ 1 in both scenarios.
+#[test]
+fn test_ban_for_never_shortens_active_ban() {
+    let addr: rs_dapi_client::Address = "http://127.0.0.1:3000".parse().expect("valid address");
+
+    // (a) LONG then SHORT — short reset must NOT reduce banned_until
+    {
+        let mut list = rs_dapi_client::AddressList::new();
+        list.add(addr.clone());
+
+        let long_period = Duration::from_secs(300);
+        let short_period = Duration::from_secs(30);
+
+        let before_long = chrono::Utc::now();
+        list.ban_for(&addr, long_period, None);
+        list.ban_for(&addr, short_period, None);
+
+        let info = list.ban_info();
+        let entry = info.iter().find(|i| i.uri == addr.to_string()).unwrap();
+
+        let until = entry.banned_until.expect("banned_until must be set");
+        let remaining = (until - before_long).num_milliseconds() as f64 / 1000.0;
+        assert!(
+            remaining >= 299.0,
+            "(a) LONG→SHORT must not shorten ban; remaining={remaining:.1}s, expected >=299s"
+        );
+        assert!(
+            entry.ban_count >= 1,
+            "(a) ban_count must be >= 1; got {}",
+            entry.ban_count
+        );
+    }
+
+    // (b) SHORT then LONG — long reset MUST extend banned_until
+    {
+        let mut list = rs_dapi_client::AddressList::new();
+        list.add(addr.clone());
+
+        let short_period = Duration::from_secs(30);
+        let long_period = Duration::from_secs(300);
+
+        let before_long = chrono::Utc::now();
+        list.ban_for(&addr, short_period, None);
+        list.ban_for(&addr, long_period, None);
+
+        let info = list.ban_info();
+        let entry = info.iter().find(|i| i.uri == addr.to_string()).unwrap();
+
+        let until = entry.banned_until.expect("banned_until must be set");
+        let remaining = (until - before_long).num_milliseconds() as f64 / 1000.0;
+        assert!(
+            remaining >= 299.0,
+            "(b) SHORT→LONG must extend ban; remaining={remaining:.1}s, expected >=299s"
+        );
+        assert!(
+            entry.ban_count >= 1,
+            "(b) ban_count must be >= 1; got {}",
+            entry.ban_count
+        );
+    }
+}
+
 /// `rate_limit_ban_duration` on `CanRetry` returns `Some` only for
 /// `ResourceExhausted` with a parseable positive `ratelimit-reset`.
 #[test]

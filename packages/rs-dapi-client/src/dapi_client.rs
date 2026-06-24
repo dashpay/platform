@@ -206,24 +206,24 @@ pub fn update_address_ban_status<R, E>(
                 if let Some(address) = error.address.as_ref() {
                     if applied_settings.ban_failed_address {
                         let reason = Some(error.to_string());
-                        let banned = match error.rate_limit_ban_duration() {
+                        let period_opt = error.rate_limit_ban_duration();
+                        let banned = match period_opt {
                             // Envoy advertised a reset window: ban for exactly that period.
                             // ban_count is set to max(ban_count,1) so diagnostics see the node
                             // as banned, but the exponential ladder is not inflated.
-                            Some(period) => {
-                                tracing::debug!(
-                                    ?address,
-                                    ban_secs = period.as_secs(),
-                                    "rate-limited (ResourceExhausted): banning {address} \
-                                     for {}s (from RateLimit-Reset header)",
-                                    period.as_secs()
-                                );
-                                address_list.ban_for(address, period, reason)
-                            }
+                            Some(period) => address_list.ban_for(address, period, reason),
                             // No rate-limit hint: normal exponential health-ban ladder.
                             None => address_list.ban_with_reason(address, reason),
                         };
                         if banned {
+                            if let Some(period) = period_opt {
+                                tracing::debug!(
+                                    ?address,
+                                    ban_secs = period.as_secs(),
+                                    "rate-limited (ResourceExhausted): banning {address} for {}s (from RateLimit-Reset header)",
+                                    period.as_secs()
+                                );
+                            }
                             tracing::warn!(
                                 ?address,
                                 ?error,

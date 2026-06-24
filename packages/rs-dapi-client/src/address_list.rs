@@ -106,17 +106,29 @@ impl AddressStatus {
     /// Ban the address for an exact `period` (server-advertised), bypassing the
     /// exponential ladder used by [`AddressStatus::ban_with_reason`].
     ///
-    /// The ban window is flat (not exponential), but `ban_count` is raised to
-    /// `max(ban_count, 1)` so that `is_banned()` and `ban_info()` correctly
-    /// report the node as banned.  Side-effect: a previously-clean node
-    /// (ban_count 0) enters the ladder at floor 1, meaning its *next* genuine
-    /// health failure via [`AddressStatus::ban_with_reason`] uses
-    /// `60 s × e¹ ≈ 163 s` rather than the first-rung `60 s × e⁰ = 60 s`.
-    /// The counter resets to 0 on [`AddressStatus::unban`].
+    /// The ban window is flat (not exponential).  `banned_until` is advanced to
+    /// `now + period` only when that timestamp is **later** than the current
+    /// `banned_until`, so a short-reset call never shortens a longer active ban
+    /// (health ban or a prior longer rate-limit ban).  `ban_reason` is updated
+    /// only when the window is extended.  `ban_count` is raised to
+    /// `max(ban_count, 1)` unconditionally so that `is_banned()` and
+    /// `ban_info()` correctly report the node as banned.  Side-effect: a
+    /// previously-clean node (ban_count 0) enters the ladder at floor 1,
+    /// meaning its *next* genuine health failure via
+    /// [`AddressStatus::ban_with_reason`] uses `60 s × e¹ ≈ 163 s` rather
+    /// than the first-rung `60 s × e⁰ = 60 s`.  The counter resets to 0 on
+    /// [`AddressStatus::unban`].
     pub fn ban_for(&mut self, period: Duration, reason: Option<String>) {
-        self.banned_until = Some(chrono::Utc::now() + period);
+        let advertised_until = chrono::Utc::now() + period;
+        if self
+            .banned_until
+            .map(|current| current < advertised_until)
+            .unwrap_or(true)
+        {
+            self.banned_until = Some(advertised_until);
+            self.ban_reason = reason;
+        }
         self.ban_count = self.ban_count.max(1);
-        self.ban_reason = reason;
     }
 
     /// Check if [Address] is banned.
@@ -899,9 +911,8 @@ mod tests {
     /// `get_live_address`.  We verify both directions: the node is hidden during
     /// an active window, and becomes live once the window passes.
     ///
-    /// A zero-duration window means `banned_until = Utc::now()` at call time;
-    /// `get_live_address` samples `Utc::now()` fresh, so at least one clock tick
-    /// separates the two calls and `banned_until < new_now` holds.
+    /// `ban_for` uses max-semantics (never shortens a longer active ban), so the
+    /// correct way to immediately release an active ban is `unban()`.
     #[test]
     fn test_ban_for_address_re_enters_rotation_after_window_expires() {
         let mut list = AddressList::new();
@@ -915,11 +926,11 @@ mod tests {
             "node must be hidden during active ban window"
         );
 
-        // Re-ban with a zero window (already expired when get_live_address runs).
-        assert!(list.ban_for(&addr, Duration::ZERO, None));
+        // Unban explicitly — the correct way to immediately release a node.
+        assert!(list.unban(&addr));
         assert!(
             list.get_live_address().is_some(),
-            "address must re-enter rotation after ban_for window expires"
+            "address must re-enter rotation after unban"
         );
     }
 
