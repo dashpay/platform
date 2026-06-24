@@ -223,6 +223,43 @@ impl PlatformAddressWallet {
         .await;
     }
 
+    /// Reset the platform-address sync watermark and drop every cached
+    /// balance for this wallet, forcing a full trunk/branch/compact
+    /// rescan on the next `sync_balances`.
+    ///
+    /// Backs the host's "Clear" flow. Clears BOTH in-memory balance
+    /// stores a resume would otherwise read from:
+    ///   * the provider's incremental seed (`found`) + watermark — what
+    ///     makes a resync "fast" (see
+    ///     [`PlatformPaymentAddressProvider::reset_sync_state`]);
+    ///   * each `ManagedPlatformAccount`'s `address_balances` map — what
+    ///     [`addresses_with_balances`](Self::addresses_with_balances) /
+    ///     `total_credits` and the transfer/withdraw spend paths read.
+    ///     Without this the UI/spend paths would keep reporting stale
+    ///     balances until the next full sync re-zeroed them via the
+    ///     absent diff.
+    ///
+    /// Does NOT route through [`apply_sync_state`] — that helper's
+    /// all-None early-return guard is meant for persisted-state replay
+    /// and is irrelevant here. The two locks are taken sequentially
+    /// (one released before the next is acquired), so there is no
+    /// nested-lock hazard; this mirrors the ordering rationale in
+    /// [`initialize_from_persisted`].
+    pub async fn reset_sync_state(&self) {
+        {
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                for account in info.core_wallet.all_platform_payment_managed_accounts_mut() {
+                    account.clear_balances();
+                }
+            }
+        }
+        let mut guard = self.provider.write().await;
+        if let Some(provider) = guard.as_mut() {
+            provider.reset_sync_state();
+        }
+    }
+
     /// Internal accessor for the diagnostic snapshot path on
     /// [`crate::manager::PlatformWalletManager`]. The provider lock is
     /// otherwise crate-private — the manager-level snapshot needs to

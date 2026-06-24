@@ -8,6 +8,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import SwiftData
 import SwiftDashSDK
 
 /// Observable service managing BLAST address balance sync UI state.
@@ -187,6 +188,54 @@ class PlatformBalanceSyncService: ObservableObject {
         walletManager = nil
         syncEventCancellable?.cancel()
         syncStateCancellable?.cancel()
+    }
+
+    /// Clear platform-address sync data for real — what the Platform
+    /// Sync "Clear" button calls.
+    ///
+    /// Plain [`clearDisplay`] only zeroes the in-memory `@Published`
+    /// mirror, so the next sync resumed from the surviving watermark in
+    /// ~2s (the "Clear didn't work" symptom). This wipes all three
+    /// stores the synced data actually lives in, mirroring
+    /// `ShieldedService.clearLocalState`: Rust-side reset FIRST (so the
+    /// next sync can't re-persist stale rows), then the SwiftData wipe,
+    /// then the published-mirror reset.
+    ///
+    /// The Rust reset and the SwiftData delete are both network-wide
+    /// (every wallet) — the Clear button lives on the global Sync Status
+    /// surface, so its semantics are "blow away platform persistence",
+    /// not "scope to one wallet".
+    func clearLocalState(modelContext: ModelContext) async {
+        // 1) Reset the Rust-owned state BEFORE touching disk. Without
+        //    this the in-memory watermark survives and the next "Sync
+        //    Now" resumes incrementally (fast) instead of doing a full
+        //    rescan; a still-registered background pass could also
+        //    re-persist the rows we're about to delete. Best-effort —
+        //    failure logs but doesn't abort the wipe.
+        if let walletManager {
+            do {
+                try await walletManager.resetPlatformAddressSyncState()
+            } catch {
+                SDKLogger.error(
+                    "PlatformBalanceSyncService.clearLocalState: resetPlatformAddressSyncState failed: \(error.localizedDescription)"
+                )
+            }
+        }
+
+        // 2) Delete every platform-address SwiftData row across all
+        //    wallets on this device: the cached per-address balances and
+        //    the network-scoped sync-state watermark.
+        do {
+            try modelContext.delete(model: PersistentPlatformAddress.self)
+            try modelContext.delete(model: PersistentPlatformAddressesSyncState.self)
+            try modelContext.save()
+        } catch {
+            lastError = "Failed to wipe persisted platform-address state: \(error.localizedDescription)"
+            SDKLogger.error(lastError ?? "")
+        }
+
+        // 3) Zero the published display mirror.
+        clearDisplay()
     }
 
     /// Trigger a manual sync. No-op if already syncing.

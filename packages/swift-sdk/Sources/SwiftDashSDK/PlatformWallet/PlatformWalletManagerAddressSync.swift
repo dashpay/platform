@@ -219,4 +219,27 @@ extension PlatformWalletManager {
             try platform_wallet_manager_platform_address_sync_sync_now(handle).check()
         }.value
     }
+
+    /// Reset the platform-address (BLAST/DIP-17) incremental-sync
+    /// watermark and drop every cached balance across all registered
+    /// wallets, forcing a full rescan on the next sync. Backs the
+    /// SwiftExampleApp Platform Sync "Clear" button.
+    ///
+    /// Quiesces the background sync loop before resetting (so no
+    /// in-flight pass re-writes the watermark) and leaves it stopped —
+    /// callers re-arm via `startPlatformAddressSync` or one-shot
+    /// `syncPlatformAddressNow`. Runs off the main actor because the
+    /// quiesce drains any in-flight pass.
+    public func resetPlatformAddressSyncState() async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+
+        let handle = self.handle
+        try await Task.detached(priority: .userInitiated) {
+            try platform_wallet_manager_platform_address_sync_reset(handle).check()
+        }.value
+    }
 }
