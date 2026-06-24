@@ -1617,8 +1617,10 @@ dependencies = [
 name = "dash-async"
 version = "4.0.0-rc.2"
 dependencies = [
+ "futures",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
