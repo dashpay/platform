@@ -47,14 +47,12 @@
 //! identities are registered and the SDK is connected.
 
 use std::collections::BTreeMap;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 
-use dash_async::{AtomicFlagGuard, DrainHook, ThreadRegistry, WorkerConfig};
+use dash_async::ThreadRegistry;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use super::coordinator_lifecycle::CoordinatorLifecycle;
 use super::WalletWorker;
 
 use dpp::balances::credits::TokenAmount;
@@ -161,24 +159,14 @@ where
     /// over `P` so every `persister.store(...)` call on the hot sync
     /// loop dispatches statically.
     persister: Arc<P>,
-    /// Shared worker-lifecycle engine. `start` / `stop` / `is_running` /
-    /// `quiesce` delegate to it under the [`WalletWorker::IdentitySync`]
-    /// key; it owns the loop's cancel token, OS-thread join handle, the
-    /// restart reap-or-park, and the orphan list.
-    registry: Arc<ThreadRegistry<WalletWorker>>,
-    interval_secs: AtomicU64,
-    is_syncing: AtomicBool,
-    /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
-    /// drains an in-flight one. `sync_now` bails (after taking the
-    /// `is_syncing` slot) when this is set, so once `quiesce` observes
-    /// `is_syncing == false` no further pass can start — giving shutdown
-    /// a real "no more host-visible persister stores" barrier that
+    /// Shared lifecycle state + pass-gating protocol under the
+    /// [`WalletWorker::IdentitySync`] key: the registry handle, polling
+    /// interval, the `is_syncing` / `quiescing` handshake, and the
+    /// last-sync stamp. `start` / `stop` / `is_running` / `quiesce` and the
+    /// `sync_now` pass gate delegate to it. The `quiescing` half gives
+    /// shutdown a real "no more host-visible persister stores" barrier that
     /// cancel-only [`stop`](Self::stop) does not provide.
-    quiescing: AtomicBool,
-    /// Unix seconds of the last completed pass across all identities.
-    /// `0` = never. Identity-level timestamps live on the per-identity
-    /// rows in [`IdentitySyncManager::state`].
-    last_sync_unix: AtomicU64,
+    lifecycle: CoordinatorLifecycle,
     /// Per-identity registry / cache. Keyed by identity id; each row
     /// carries the per-(identity, token) token rows plus the
     /// per-identity last-sync timestamp.
@@ -209,11 +197,11 @@ where
         Self {
             sdk,
             persister,
-            registry,
-            interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
-            is_syncing: AtomicBool::new(false),
-            quiescing: AtomicBool::new(false),
-            last_sync_unix: AtomicU64::new(0),
+            lifecycle: CoordinatorLifecycle::new(
+                registry,
+                WalletWorker::IdentitySync,
+                DEFAULT_SYNC_INTERVAL_SECS,
+            ),
             state: RwLock::new(BTreeMap::new()),
         }
     }
@@ -314,47 +302,28 @@ where
     ///
     /// The running loop picks this up on its next sleep.
     pub fn set_interval(&self, interval: Duration) {
-        let secs = interval.as_secs().max(1);
-        self.interval_secs.store(secs, Ordering::Release);
+        self.lifecycle.set_interval(interval);
     }
 
     /// Current polling interval.
     pub fn interval(&self) -> Duration {
-        Duration::from_secs(self.interval_secs.load(Ordering::Acquire))
+        self.lifecycle.interval()
     }
 
     /// Whether the background loop is currently running.
     pub fn is_running(&self) -> bool {
-        self.registry.is_running(WalletWorker::IdentitySync)
-    }
-
-    /// The drain barrier handed to the registry: raise the `quiescing`
-    /// gate so any pass past its `is_syncing` CAS bails. The registry then
-    /// cancels the loop and joins the thread (the join waits for the
-    /// in-flight pass to drop and `is_syncing` to clear), so the barrier
-    /// itself is instant and never blocks teardown.
-    fn drain_hook(self: &Arc<Self>) -> DrainHook {
-        let this = Arc::clone(self);
-        Arc::new(move || {
-            let this = Arc::clone(&this);
-            Box::pin(async move {
-                this.quiescing.store(true, Ordering::Release);
-            })
-        })
+        self.lifecycle.is_running()
     }
 
     /// Whether a sync pass is in flight right now.
     pub fn is_syncing(&self) -> bool {
-        self.is_syncing.load(Ordering::Acquire)
+        self.lifecycle.is_syncing()
     }
 
     /// Unix seconds of the last completed pass (across all identities),
     /// or `None` if no pass has ever completed.
     pub fn last_sync_unix_seconds(&self) -> Option<u64> {
-        match self.last_sync_unix.load(Ordering::Acquire) {
-            0 => None,
-            n => Some(n),
-        }
+        self.lifecycle.last_sync_unix_seconds()
     }
 
     /// Per-identity last-sync timestamp.
@@ -414,13 +383,9 @@ where
     pub fn start(self: Arc<Self>) {
         // Reopen the quiescing gate so this (re)start's passes can run; a
         // prior quiesce raised it via the drain hook.
-        self.quiescing.store(false, Ordering::Release);
+        self.lifecycle.reopen_quiescing_gate();
 
-        let cfg = WorkerConfig {
-            weight: super::COORDINATOR_WEIGHT,
-            join_budget: Duration::from_secs(super::SHUTDOWN_JOIN_TIMEOUT_SECS),
-            drain: Some(self.drain_hook()),
-        };
+        let cfg = self.lifecycle.worker_config();
 
         // The loop drives `!Send` SDK futures via `Handle::block_on` on a
         // dedicated OS thread (the registry spawns it). The handle is
@@ -431,8 +396,9 @@ where
         // the join lands inside the budget.
         let handle = tokio::runtime::Handle::current();
         let this = Arc::clone(&self);
-        self.registry
-            .start_thread(WalletWorker::IdentitySync, cfg, move |cancel| {
+        self.lifecycle
+            .registry()
+            .start_thread(self.lifecycle.worker(), cfg, move |cancel| {
                 handle.block_on(async move {
                     loop {
                         if cancel.is_cancelled() {
@@ -463,7 +429,7 @@ where
     /// by manager shutdown so the host can free the persister context —
     /// use [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
-        self.registry.cancel(WalletWorker::IdentitySync);
+        self.lifecycle.stop();
     }
 
     /// Cancel the background loop **and wait for any in-flight sync pass
@@ -491,17 +457,7 @@ where
     /// the `!Send` loop has stopped touching `tokio::time` before a
     /// one-shot host drops the runtime.
     pub async fn quiesce(&self) -> super::CoordinatorThreadStatus {
-        // RAII gate: reopen `quiescing` on *every* exit path — normal
-        // return, a dropped future, or a panic. The registry's drain hook
-        // raises it inside `quiesce` below; without this reset a quiesce
-        // that doesn't complete would leave the gate latched and silently
-        // bail every future pass. Reopening is safe because the loop has
-        // been cancelled, so no new pass can start.
-        let _quiescing_gate = AtomicFlagGuard::new(&self.quiescing);
-        self.registry
-            .quiesce(WalletWorker::IdentitySync)
-            .await
-            .into()
+        self.lifecycle.quiesce().await
     }
 
     /// Run one sync pass across every registered identity.
@@ -515,27 +471,13 @@ where
     /// `!Send` (no `tokio::spawn`) and because the design brief
     /// explicitly forbids it.
     pub async fn sync_now(&self) {
-        if self
-            .is_syncing
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
+        // Claim the pass slot and honour the quiescing gate; bail without
+        // work (and without a `persister.store(...)` after quiesce returns)
+        // if a pass is already in flight or a teardown raised the gate. The
+        // returned guard clears `is_syncing` on every exit path.
+        let Some(_pass) = self.lifecycle.begin_pass() else {
             return;
-        }
-
-        // RAII guard: clears `is_syncing` on every exit path, including
-        // panics. Without this a panic inside the pass would leave
-        // `is_syncing=true` forever and wedge `quiesce()`'s drain loop.
-        let _is_syncing_guard = AtomicFlagGuard::new(&self.is_syncing);
-
-        // A `quiesce()` may have raised the gate between our CAS and
-        // here; if so, bail without running a pass so the drain can
-        // complete and shutdown gets a true barrier (no further
-        // `persister.store(...)` after quiesce returns).
-        // Guard clears `is_syncing` on return.
-        if self.quiescing.load(Ordering::Acquire) {
-            return;
-        }
+        };
 
         // Snapshot the per-identity watch list under a short read
         // lock and release it before any network call. We keep
@@ -558,8 +500,8 @@ where
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        self.last_sync_unix.store(now, Ordering::Release);
-        // `_is_syncing_guard` drops here → `is_syncing = false`
+        self.lifecycle.store_last_sync_unix(now);
+        // `_pass` drops here → `is_syncing = false`
     }
 
     /// Sync a single identity's watched tokens against Platform.
@@ -700,7 +642,7 @@ where
         f.debug_struct("IdentitySyncManager")
             .field("is_running", &self.is_running())
             .field("is_syncing", &self.is_syncing())
-            .field("interval_secs", &self.interval_secs.load(Ordering::Acquire))
+            .field("interval_secs", &self.lifecycle.interval_secs())
             .field("last_sync_unix", &self.last_sync_unix_seconds())
             .finish()
     }
@@ -924,8 +866,8 @@ mod tests {
         let token_x = Identifier::from([10u8; 32]);
         mgr.register_identity(id_a, [token_x]).await;
 
-        // Raise the gate as `quiesce()` would.
-        mgr.quiescing.store(true, Ordering::Release);
+        // Raise the gate as `quiesce()` would, held across the pass.
+        let _gate = mgr.lifecycle.hold_quiescing_gate();
 
         mgr.sync_now().await;
 

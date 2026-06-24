@@ -1,6 +1,7 @@
 //! Multi-wallet manager with SPV coordination.
 
 pub mod accessors;
+mod coordinator_lifecycle;
 pub mod identity_sync;
 mod load;
 pub mod platform_address_sync;

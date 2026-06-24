@@ -26,16 +26,14 @@
 //! [`configure_shielded`]: crate::manager::PlatformWalletManager::configure_shielded
 
 use std::collections::BTreeMap;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 
-use dash_async::{AtomicFlagGuard, DrainHook, ThreadRegistry, WorkerConfig};
+use dash_async::{AtomicFlagGuard, ThreadRegistry};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::RwLock;
 
+use super::coordinator_lifecycle::CoordinatorLifecycle;
 use super::WalletWorker;
 use crate::events::PlatformEventManager;
 use crate::wallet::platform_wallet::WalletId;
@@ -141,21 +139,14 @@ pub struct ShieldedSyncManager {
     /// run first, so an empty slot guarantees no shielded state
     /// exists).
     coordinator_slot: Arc<RwLock<Option<Arc<NetworkShieldedCoordinator>>>>,
-    /// Shared worker-lifecycle engine. `start` / `stop` / `is_running` /
-    /// `quiesce` delegate to it under the [`WalletWorker::ShieldedSync`]
-    /// key.
-    registry: Arc<ThreadRegistry<WalletWorker>>,
-    interval_secs: AtomicU64,
-    is_syncing: AtomicBool,
-    /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
-    /// drains an in-flight one. `sync_now` / `sync_wallet` bail (after
-    /// taking the `is_syncing` slot) when this is set, so once `quiesce`
-    /// observes `is_syncing == false` no further pass can start — giving
-    /// Clear / stop a real "no more host-visible mutations" barrier that
-    /// cancel-only [`stop`](Self::stop) does not provide.
-    quiescing: AtomicBool,
-    /// Unix seconds of the last completed pass. `0` = never.
-    last_sync_unix: AtomicU64,
+    /// Shared lifecycle state + pass-gating protocol under the
+    /// [`WalletWorker::ShieldedSync`] key: registry handle, polling
+    /// interval, the `is_syncing` / `quiescing` handshake, and the
+    /// last-sync stamp. `start` / `stop` / `is_running` / `quiesce` and the
+    /// `sync_now` / `sync_wallet` pass gate delegate to it. The `quiescing`
+    /// half gives Clear / stop a real "no more host-visible mutations"
+    /// barrier that cancel-only [`stop`](Self::stop) does not provide.
+    lifecycle: CoordinatorLifecycle,
 }
 
 impl ShieldedSyncManager {
@@ -167,11 +158,11 @@ impl ShieldedSyncManager {
         Self {
             event_manager,
             coordinator_slot,
-            registry,
-            interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
-            is_syncing: AtomicBool::new(false),
-            quiescing: AtomicBool::new(false),
-            last_sync_unix: AtomicU64::new(0),
+            lifecycle: CoordinatorLifecycle::new(
+                registry,
+                WalletWorker::ShieldedSync,
+                DEFAULT_SYNC_INTERVAL_SECS,
+            ),
         }
     }
 
@@ -179,47 +170,28 @@ impl ShieldedSyncManager {
     ///
     /// The running loop picks this up on its next sleep.
     pub fn set_interval(&self, interval: Duration) {
-        let secs = interval.as_secs().max(1);
-        self.interval_secs.store(secs, Ordering::Release);
+        self.lifecycle.set_interval(interval);
     }
 
     /// Current polling interval.
     pub fn interval(&self) -> Duration {
-        Duration::from_secs(self.interval_secs.load(Ordering::Acquire))
+        self.lifecycle.interval()
     }
 
     /// Whether the background loop is currently running.
     pub fn is_running(&self) -> bool {
-        self.registry.is_running(WalletWorker::ShieldedSync)
-    }
-
-    /// The drain barrier handed to the registry: raise the `quiescing`
-    /// gate so any pass past its `is_syncing` CAS bails. The registry then
-    /// cancels the loop and joins the thread (the join waits for the
-    /// in-flight pass — incl. its persister fan-out — to drop and
-    /// `is_syncing` to clear), so this barrier is instant.
-    fn drain_hook(self: &Arc<Self>) -> DrainHook {
-        let this = Arc::clone(self);
-        Arc::new(move || {
-            let this = Arc::clone(&this);
-            Box::pin(async move {
-                this.quiescing.store(true, Ordering::Release);
-            })
-        })
+        self.lifecycle.is_running()
     }
 
     /// Whether a sync pass is in flight right now.
     pub fn is_syncing(&self) -> bool {
-        self.is_syncing.load(Ordering::Acquire)
+        self.lifecycle.is_syncing()
     }
 
     /// Unix seconds of the last completed pass, or `None` if no pass
     /// has ever completed.
     pub fn last_sync_unix_seconds(&self) -> Option<u64> {
-        match self.last_sync_unix.load(Ordering::Acquire) {
-            0 => None,
-            n => Some(n),
-        }
+        self.lifecycle.last_sync_unix_seconds()
     }
 
     /// Start the background sync loop. Idempotent — calling while
@@ -231,13 +203,9 @@ impl ShieldedSyncManager {
     /// [`PlatformAddressSyncManager::start`](super::platform_address_sync::PlatformAddressSyncManager::start).
     pub fn start(self: Arc<Self>) {
         // Reopen the quiescing gate so this (re)start's passes can run.
-        self.quiescing.store(false, Ordering::Release);
+        self.lifecycle.reopen_quiescing_gate();
 
-        let cfg = WorkerConfig {
-            weight: super::COORDINATOR_WEIGHT,
-            join_budget: Duration::from_secs(super::SHUTDOWN_JOIN_TIMEOUT_SECS),
-            drain: Some(self.drain_hook()),
-        };
+        let cfg = self.lifecycle.worker_config();
 
         // The loop drives `!Send` SDK futures via `Handle::block_on` on a
         // dedicated OS thread (spawned by the registry). The background
@@ -247,8 +215,9 @@ impl ShieldedSyncManager {
         // SDK fetch is dropped the instant the registry cancels.
         let handle = tokio::runtime::Handle::current();
         let this = Arc::clone(&self);
-        self.registry
-            .start_thread(WalletWorker::ShieldedSync, cfg, move |cancel| {
+        self.lifecycle
+            .registry()
+            .start_thread(self.lifecycle.worker(), cfg, move |cancel| {
                 handle.block_on(async move {
                     loop {
                         if cancel.is_cancelled() {
@@ -279,7 +248,7 @@ impl ShieldedSyncManager {
     /// nothing more will be persisted" barrier — required by Clear,
     /// unregister, and rebind — use [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
-        self.registry.cancel(WalletWorker::ShieldedSync);
+        self.lifecycle.stop();
     }
 
     /// Cancel the background loop **and wait for any in-flight sync pass
@@ -306,14 +275,7 @@ impl ShieldedSyncManager {
     /// the `!Send` loop has stopped touching `tokio::time` before a
     /// one-shot host drops the runtime.
     pub async fn quiesce(&self) -> super::CoordinatorThreadStatus {
-        // RAII gate: reopen `quiescing` on every exit path. The registry's
-        // drain hook raises it inside `quiesce`; reopening on return is
-        // safe because the loop has been cancelled, so no new pass starts.
-        let _quiescing_gate = AtomicFlagGuard::new(&self.quiescing);
-        self.registry
-            .quiesce(WalletWorker::ShieldedSync)
-            .await
-            .into()
+        self.lifecycle.quiesce().await
     }
 
     /// Raise the `quiescing` gate and hold it raised until the returned
@@ -322,8 +284,7 @@ impl ShieldedSyncManager {
     /// direct `sync_now` / `sync_wallet` passes off across a check-then-wipe
     /// so the "no new pass" guarantee does not lapse between the two steps.
     pub(crate) fn hold_quiescing_gate(&self) -> AtomicFlagGuard<'_> {
-        self.quiescing.store(true, Ordering::Release);
-        AtomicFlagGuard::new(&self.quiescing)
+        self.lifecycle.hold_quiescing_gate()
     }
 
     /// Run one sync pass across every registered wallet.
@@ -338,25 +299,13 @@ impl ShieldedSyncManager {
     /// If a pass is already in flight, returns an empty summary and
     /// skips — the caller can inspect [`is_syncing`] to distinguish.
     pub async fn sync_now(&self, force: bool) -> ShieldedSyncPassSummary {
-        if self
-            .is_syncing
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
+        // Claim the pass slot and honour the quiescing gate; bail with an
+        // empty summary if a pass is already in flight or a teardown
+        // (Clear/stop) raised the gate. The guard clears `is_syncing` on
+        // every exit path.
+        let Some(_pass) = self.lifecycle.begin_pass() else {
             return ShieldedSyncPassSummary::default();
-        }
-
-        // RAII guard: clears `is_syncing` on every exit path, including
-        // panics. Without this a panic inside the pass would leave
-        // `is_syncing=true` forever and wedge `quiesce()`'s drain loop.
-        let _is_syncing_guard = AtomicFlagGuard::new(&self.is_syncing);
-
-        // A `quiesce()` may have raised the gate between our CAS and
-        // here; bail so the drain can complete and Clear/stop get a
-        // true barrier. Guard clears `is_syncing` on return.
-        if self.quiescing.load(Ordering::Acquire) {
-            return ShieldedSyncPassSummary::default();
-        }
+        };
 
         // Snapshot the coordinator Arc and release the slot lock
         // before awaiting so a concurrent `configure_shielded`
@@ -388,10 +337,10 @@ impl ShieldedSyncManager {
         if summary.sync_unix_seconds == 0 {
             summary.sync_unix_seconds = now;
         }
-        self.last_sync_unix
-            .store(summary.sync_unix_seconds, Ordering::Release);
+        self.lifecycle
+            .store_last_sync_unix(summary.sync_unix_seconds);
 
-        // Dispatch the completion event BEFORE `_is_syncing_guard` drops.
+        // Dispatch the completion event BEFORE the `_pass` guard drops.
         // `quiesce()` drains on the falling edge of `is_syncing`; if
         // the guard cleared the flag before the dispatch a stop/clear
         // caller could unblock while the callback is still pending —
@@ -399,7 +348,7 @@ impl ShieldedSyncManager {
         self.event_manager.on_shielded_sync_completed(&summary);
 
         summary
-        // `_is_syncing_guard` drops here → `is_syncing = false`
+        // `_pass` drops here → `is_syncing = false`
     }
 
     /// Sync a single wallet on demand.
@@ -430,26 +379,14 @@ impl ShieldedSyncManager {
         };
 
         // Reuse the manager-wide `is_syncing` flag so a per-wallet
-        // `sync_wallet()` can't race the periodic `sync_now()`
-        // against the same store — both go through
-        // `coordinator.sync()`, which serializes per-coordinator
-        // but the manager flag is what the host UI watches.
-        if self
-            .is_syncing
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
+        // `sync_wallet()` can't race the periodic `sync_now()` against the
+        // same store — both go through `coordinator.sync()`, which
+        // serializes per-coordinator, but the manager flag is what the host
+        // UI watches. Bail (Ok(None)) if a pass is already in flight or a
+        // teardown raised the quiescing gate.
+        let Some(_pass) = self.lifecycle.begin_pass() else {
             return Ok(None);
-        }
-
-        // RAII guard clears `is_syncing` on every exit path including panics.
-        let _is_syncing_guard = AtomicFlagGuard::new(&self.is_syncing);
-
-        // Bail if a `quiesce()` raised the gate after our CAS (see
-        // `sync_now`) so the drain barrier holds.
-        if self.quiescing.load(Ordering::Acquire) {
-            return Ok(None);
-        }
+        };
 
         let pass = coordinator.sync(force).await;
 
@@ -476,7 +413,7 @@ impl std::fmt::Debug for ShieldedSyncManager {
         f.debug_struct("ShieldedSyncManager")
             .field("is_running", &self.is_running())
             .field("is_syncing", &self.is_syncing())
-            .field("interval_secs", &self.interval_secs.load(Ordering::Acquire))
+            .field("interval_secs", &self.lifecycle.interval_secs())
             .field("last_sync_unix", &self.last_sync_unix_seconds())
             .finish()
     }

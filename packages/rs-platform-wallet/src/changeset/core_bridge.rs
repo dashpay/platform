@@ -21,9 +21,9 @@
 //!
 //! [`wallet_event_adapter_loop`] is the task body. The caller (typically
 //! `PlatformWalletManager`) registers it on the shared `ThreadRegistry`
-//! via `start_task`, which owns its [`JoinHandle`] and cancellation; on
-//! shutdown the registry fires the [`CancellationToken`] to make the task
-//! exit cleanly and joins it.
+//! via `start_task`, which owns its [`JoinHandle`](tokio::task::JoinHandle)
+//! and cancellation; on shutdown the registry fires the
+//! [`CancellationToken`] to make the task exit cleanly and joins it.
 
 use std::sync::Arc;
 
