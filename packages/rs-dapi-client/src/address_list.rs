@@ -90,10 +90,17 @@ impl AddressStatus {
 
     /// Ban the [Address] and record the `reason` for the ban.
     ///
-    /// Applies the same exponential backoff as [`AddressStatus::ban`];
-    /// the only difference is that `ban_reason` is stored so callers
-    /// (diagnostics, the iOS explorer) can surface why a node was
-    /// banned.
+    /// Applies exponential backoff: the ban window is `base × e^ban_count`
+    /// (where `ban_count` is the value *before* this call), and `banned_until`
+    /// is always reset to `now + window` regardless of any existing active ban.
+    /// This unconditional overwrite is intentional — each successive health
+    /// failure escalates the window, so re-basing is correct here.  The
+    /// no-shorten max-semantics invariant (see [`AddressStatus::ban_for`]) is
+    /// scoped to `ban_for → ban_for` interactions only and does not apply to
+    /// this method.
+    ///
+    /// `ban_count` is incremented and `ban_reason` is updated unconditionally.
+    /// The counter resets to 0 on [`AddressStatus::unban`].
     pub fn ban_with_reason(&mut self, base_ban_period: &Duration, reason: Option<String>) {
         let coefficient = (self.ban_count as f64).exp();
         let ban_period = Duration::from_secs_f64(base_ban_period.as_secs_f64() * coefficient);

@@ -214,14 +214,20 @@ fn test_missing_header_falls_back_to_ladder() {
 
 /// `ban_for` must never shorten an already-active ban.
 ///
-/// (a) LONG then SHORT → `banned_until` stays at the LONG window.
-/// (b) SHORT then LONG → `banned_until` extends to the LONG window.
+/// (a) LONG then SHORT → `banned_until` stays at the LONG window; `ban_reason`
+///     is preserved from the LONG call (SHORT must not overwrite it).
+/// (b) SHORT then LONG → `banned_until` extends to the LONG window; `ban_reason`
+///     is adopted from the LONG call (window was extended, so reason updates).
 /// (c) `ban_count` ends at ≥ 1 in both scenarios.
+///
+/// QA-007: case (a) uses an exact `assert_eq!` on `banned_until` snapshots —
+/// a last-wins regression would produce ~30 s and fail unambiguously.
+/// QA-008: named reasons in both cases pin the `ban_reason` update contract.
 #[test]
 fn test_ban_for_never_shortens_active_ban() {
     let addr: rs_dapi_client::Address = "http://127.0.0.1:3000".parse().expect("valid address");
 
-    // (a) LONG then SHORT — short reset must NOT reduce banned_until
+    // (a) LONG then SHORT — SHORT must NOT change banned_until or ban_reason.
     {
         let mut list = rs_dapi_client::AddressList::new();
         list.add(addr.clone());
@@ -229,18 +235,33 @@ fn test_ban_for_never_shortens_active_ban() {
         let long_period = Duration::from_secs(300);
         let short_period = Duration::from_secs(30);
 
-        let before_long = chrono::Utc::now();
-        list.ban_for(&addr, long_period, None);
-        list.ban_for(&addr, short_period, None);
+        list.ban_for(&addr, long_period, Some("long-reason".into()));
+
+        // Snapshot banned_until immediately after the LONG ban.
+        let snapshot = list
+            .ban_info()
+            .into_iter()
+            .find(|i| i.uri == addr.to_string())
+            .unwrap()
+            .banned_until
+            .expect("banned_until set after LONG ban");
+
+        list.ban_for(&addr, short_period, Some("short-reason".into()));
 
         let info = list.ban_info();
         let entry = info.iter().find(|i| i.uri == addr.to_string()).unwrap();
 
-        let until = entry.banned_until.expect("banned_until must be set");
-        let remaining = (until - before_long).num_milliseconds() as f64 / 1000.0;
-        assert!(
-            remaining >= 299.0,
-            "(a) LONG→SHORT must not shorten ban; remaining={remaining:.1}s, expected >=299s"
+        // Exact equality: last-wins regression would produce ~30 s here.
+        assert_eq!(
+            entry.banned_until.expect("banned_until must still be set"),
+            snapshot,
+            "(a) LONG→SHORT must not change banned_until (last-wins regression guard)"
+        );
+        // ban_reason must be preserved from the LONG call.
+        assert_eq!(
+            entry.reason.as_deref(),
+            Some("long-reason"),
+            "(a) SHORT ban must not overwrite ban_reason set by LONG ban"
         );
         assert!(
             entry.ban_count >= 1,
@@ -249,7 +270,7 @@ fn test_ban_for_never_shortens_active_ban() {
         );
     }
 
-    // (b) SHORT then LONG — long reset MUST extend banned_until
+    // (b) SHORT then LONG — LONG must extend banned_until AND adopt ban_reason.
     {
         let mut list = rs_dapi_client::AddressList::new();
         list.add(addr.clone());
@@ -258,8 +279,8 @@ fn test_ban_for_never_shortens_active_ban() {
         let long_period = Duration::from_secs(300);
 
         let before_long = chrono::Utc::now();
-        list.ban_for(&addr, short_period, None);
-        list.ban_for(&addr, long_period, None);
+        list.ban_for(&addr, short_period, Some("short-reason".into()));
+        list.ban_for(&addr, long_period, Some("long-reason".into()));
 
         let info = list.ban_info();
         let entry = info.iter().find(|i| i.uri == addr.to_string()).unwrap();
@@ -269,6 +290,12 @@ fn test_ban_for_never_shortens_active_ban() {
         assert!(
             remaining >= 299.0,
             "(b) SHORT→LONG must extend ban; remaining={remaining:.1}s, expected >=299s"
+        );
+        // ban_reason must be adopted from the LONG call (window was extended).
+        assert_eq!(
+            entry.reason.as_deref(),
+            Some("long-reason"),
+            "(b) LONG ban must update ban_reason when it extends the window"
         );
         assert!(
             entry.ban_count >= 1,
