@@ -3,7 +3,7 @@
 //! Upstream `key_wallet_manager::WalletManager` exposes a
 //! `broadcast::Sender<WalletEvent>` and a `subscribe_events()` accessor
 //! returning a `broadcast::Receiver<WalletEvent>`; consumers attach at
-//! startup and drain the stream. [`spawn_wallet_event_adapter`] is the
+//! startup and drain the stream. [`wallet_event_adapter_loop`] is the
 //! platform-wallet-side consumer: a tokio task that pulls events off
 //! that broadcast, projects each one into a
 //! [`CoreChangeSet`](crate::changeset::CoreChangeSet), wraps it in a

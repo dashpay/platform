@@ -34,6 +34,7 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -60,9 +61,11 @@ pub struct ShutdownWeight(pub i32);
 // Status
 // ---------------------------------------------------------------------
 
-/// Terminal status of one worker. Variant set and payloads are
-/// byte-identical to the wallet's `CoordinatorThreadStatus`, which is
-/// constructed from this via `From` so the FFI surface stays stable.
+/// Terminal status of one worker. Its variant set and payloads correspond
+/// 1:1 to the wallet's `CoordinatorThreadStatus`, which is built from this
+/// via an exhaustive by-name `From` so the FFI surface stays stable. The
+/// two enums keep their own declaration order and carry no `#[repr]`, so
+/// the mapping is a match, never a layout-compatible cast.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WorkerStatus {
     /// The loop exited and its thread/task joined cleanly.
@@ -163,6 +166,18 @@ impl Default for WorkerConfig {
     }
 }
 
+impl std::fmt::Debug for WorkerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `drain` is a boxed closure with no useful `Debug`; render its
+        // presence instead.
+        f.debug_struct("WorkerConfig")
+            .field("weight", &self.weight)
+            .field("drain", &self.drain.is_some())
+            .field("join_budget", &self.join_budget)
+            .finish()
+    }
+}
+
 // ---------------------------------------------------------------------
 // Internal handle + slot state
 // ---------------------------------------------------------------------
@@ -256,6 +271,28 @@ pub struct ThreadRegistry<K: RegistryKey> {
     slots: Mutex<BTreeMap<K, SlotState>>,
     orphans: Mutex<Vec<(K, WorkerHandle)>>,
     reap_backstop: Duration,
+    /// One-way teardown latch. [`shutdown`](Self::shutdown) sets it under
+    /// the slot lock before snapshotting tiers; `start_thread`/`start_task`
+    /// honour it under the same lock and refuse to register a new worker
+    /// once teardown has begun, so a start racing shutdown can never leave
+    /// an un-joined worker behind.
+    closing: AtomicBool,
+    /// Test seam: when set, the next OS-thread spawn returns an injected
+    /// `io::Error` instead of really spawning, so the spawn-failure
+    /// rollback path can be exercised deterministically.
+    #[cfg(test)]
+    force_spawn_failure: AtomicBool,
+}
+
+impl<K: RegistryKey> std::fmt::Debug for ThreadRegistry<K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ThreadRegistry")
+            .field("live_slots", &self.lock_slots().len())
+            .field("orphans", &self.lock_orphans().len())
+            .field("reap_backstop", &self.reap_backstop)
+            .field("closing", &self.closing.load(Ordering::Acquire))
+            .finish()
+    }
 }
 
 impl<K: RegistryKey> ThreadRegistry<K> {
@@ -271,6 +308,9 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             slots: Mutex::new(BTreeMap::new()),
             orphans: Mutex::new(Vec::new()),
             reap_backstop: backstop,
+            closing: AtomicBool::new(false),
+            #[cfg(test)]
+            force_spawn_failure: AtomicBool::new(false),
         })
     }
 
@@ -279,10 +319,21 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     /// internally — the `!Send` value never crosses the spawn boundary
     /// (`body` itself is `Send`). Starting a key that already has a live
     /// worker is a no-op; a key whose prior thread has not been reaped is
-    /// reaped-or-parked first (the restart-reap path).
+    /// reaped-or-parked first (the restart-reap path). After
+    /// [`shutdown`](Self::shutdown) has begun the call is also a no-op (the
+    /// one-way closing latch).
     ///
     /// **Requires a multi-thread runtime**: the worker drives its loop
     /// via `Handle::block_on` and needs the shared timer/IO driver.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called outside a multi-thread Tokio runtime (see
+    /// [`shutdown`](Self::shutdown)). It does **not** panic on thread-spawn
+    /// failure: a failed spawn (e.g. the OS thread-count limit) is rolled
+    /// back — the prior handle is re-installed rather than detached and the
+    /// slot returns to not-running — and the call simply does not start a
+    /// worker.
     pub fn start_thread<F>(self: &Arc<Self>, key: K, cfg: WorkerConfig, body: F)
     where
         F: FnOnce(CancellationToken) + Send + 'static,
@@ -290,6 +341,11 @@ impl<K: RegistryKey> ThreadRegistry<K> {
         Self::assert_multi_thread("start_thread");
         let prior = {
             let mut slots = self.lock_slots();
+            // One-way teardown latch: refuse new workers once shutdown has
+            // begun, under the same lock shutdown snapshots tiers with.
+            if self.closing.load(Ordering::Acquire) {
+                return;
+            }
             let slot = slots.entry(key).or_insert_with(SlotState::dormant);
             if slot.cancel.is_some() {
                 return;
@@ -308,18 +364,45 @@ impl<K: RegistryKey> ThreadRegistry<K> {
 
             let reg = Arc::clone(self);
             let body_token = token;
-            let join = std::thread::Builder::new()
-                .name(format!("tr-worker-{key:?}"))
-                .spawn(move || {
-                    body(body_token);
-                    reg.run_epilogue(key, my_gen);
-                })
-                .expect("failed to spawn registry worker thread");
-            // Store the handle while still under the slot lock; the guard
-            // is released at the end of this block, BEFORE the reap below
-            // (R1: store handle -> drop guard -> THEN reap-or-park).
-            slot.handle = Some(WorkerHandle::OsThread(join));
-            prior
+            // Build the epilogue drop-guard INSIDE the worker closure, not
+            // here: on a spawn failure the closure is dropped while we still
+            // hold the slot lock, and a guard constructed out here would run
+            // `run_epilogue` (which re-locks `slots`) on that drop and
+            // deadlock. Constructing it inside means it only exists once the
+            // thread is actually running. A panicking `body` then still
+            // clears this generation's running flag via the guard's Drop
+            // (under `panic = "unwind"`), and the panic keeps unwinding so
+            // the join handle still classifies as `Panicked`.
+            match self.spawn_os_thread(key, move || {
+                let _epilogue = EpilogueGuard { reg, key, my_gen };
+                body(body_token);
+            }) {
+                Ok(join) => {
+                    // Store the handle while still under the slot lock; the
+                    // guard is released at the end of this block, BEFORE the
+                    // reap below (R1: store handle -> drop guard -> THEN
+                    // reap-or-park).
+                    slot.handle = Some(WorkerHandle::OsThread(join));
+                    prior
+                }
+                Err(e) => {
+                    // Spawn failed (e.g. EAGAIN at the OS thread ceiling).
+                    // Roll back so the prior handle is never detached and
+                    // the slot is not left wedged "running": re-install
+                    // prior, clear the running flag. `generation` stays
+                    // bumped (it is only ever monotonic), which is harmless
+                    // — the next start reaps the re-installed prior.
+                    tracing::error!(
+                        ?key,
+                        error = %e,
+                        "failed to spawn registry worker thread; rolling back \
+                         start (prior handle re-installed, not detached)"
+                    );
+                    slot.cancel = None;
+                    slot.handle = prior;
+                    None
+                }
+            }
         };
 
         // The prior thread was cancellation-signalled by a preceding
@@ -345,6 +428,12 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     // registry: either drop the assert from `shutdown` for all-task
     // registries (track whether any OS-thread worker was ever started) or
     // assert in `start_task` too and require multi-thread everywhere.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called outside a Tokio runtime context (`tokio::spawn`'s
+    /// own precondition). After [`shutdown`](Self::shutdown) has begun the
+    /// call is a no-op (the one-way closing latch).
     pub fn start_task<F, Fut>(self: &Arc<Self>, key: K, cfg: WorkerConfig, body: F)
     where
         F: FnOnce(CancellationToken) -> Fut + Send + 'static,
@@ -352,6 +441,10 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     {
         let prior = {
             let mut slots = self.lock_slots();
+            // One-way teardown latch — see `start_thread`.
+            if self.closing.load(Ordering::Acquire) {
+                return;
+            }
             let slot = slots.entry(key).or_insert_with(SlotState::dormant);
             if slot.cancel.is_some() {
                 return;
@@ -367,9 +460,12 @@ impl<K: RegistryKey> ThreadRegistry<K> {
 
             let reg = Arc::clone(self);
             let body_token = token;
+            // Drop-guard epilogue, same rationale as `start_thread`: a task
+            // whose future panics still clears its running flag via the
+            // guard's Drop during unwind.
             let join = tokio::spawn(async move {
+                let _epilogue = EpilogueGuard { reg, key, my_gen };
                 body(body_token).await;
-                reg.run_epilogue(key, my_gen);
             });
             slot.handle = Some(WorkerHandle::Task(join));
             prior
@@ -385,7 +481,7 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             .unwrap_or(false)
     }
 
-    /// Signal-only cancellation of one worker (was `stop()`).
+    /// Signal-only cancellation of one worker.
     pub fn cancel(&self, key: K) {
         if let Some(slot) = self.lock_slots().get_mut(&key) {
             if let Some(token) = slot.cancel.take() {
@@ -409,13 +505,14 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     /// it; on the managed timeout — or if this future is dropped
     /// mid-poll — the handle is re-parked into the orphan list. [F1 FIX]
     pub async fn quiesce(&self, key: K) -> WorkerStatus {
-        // Snapshot the drain hook + budget, and bail early if nothing is
-        // registered for this key.
-        let (drain, budget) = {
+        // Snapshot the drain hook + budget + generation, and bail early if
+        // nothing is registered for this key. The generation is the anchor
+        // for the supersede guard below.
+        let (drain, budget, my_gen) = {
             let slots = self.lock_slots();
             match slots.get(&key) {
                 Some(s) if s.cancel.is_some() || s.handle.is_some() => {
-                    (s.drain.clone(), s.join_budget)
+                    (s.drain.clone(), s.join_budget, s.generation)
                 }
                 _ => return WorkerStatus::NotRunning,
             }
@@ -427,29 +524,46 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             drain().await;
         }
 
-        // Signal-only cancel.
+        // Signal-only cancel — but only if this is still the generation we
+        // snapshotted. A concurrent restart (which can proceed the instant
+        // we take `cancel` below) bumps the generation; taking the new
+        // token here would silently un-track the fresh worker.
         if let Some(slot) = self.lock_slots().get_mut(&key) {
-            if let Some(token) = slot.cancel.take() {
-                token.cancel();
+            if slot.generation == my_gen {
+                if let Some(token) = slot.cancel.take() {
+                    token.cancel();
+                }
             }
         }
 
         // Poll-join within budget. The re-park guard moves the slot's
         // still-live handle into orphans if this future is dropped before
-        // the loop finishes — the handle is never owned by this frame.
-        let _repark = Repark { reg: self, key };
+        // the loop finishes — the handle is never owned by this frame. Both
+        // the guard and the loop are generation-scoped, so a concurrent
+        // same-key restart's live handle is never parked or classified by
+        // the quiesce that cancelled the *prior* generation.
+        let _repark = Repark {
+            reg: self,
+            key,
+            my_gen,
+        };
         let deadline = Instant::now() + budget;
         loop {
             enum Step {
                 Classify(WorkerHandle),
                 Park(WorkerHandle),
                 NotRunning,
+                Superseded,
                 Wait,
             }
             let step = {
                 let mut slots = self.lock_slots();
                 match slots.get_mut(&key) {
                     None => Step::NotRunning,
+                    // A restart replaced the generation we were draining:
+                    // the handle now in the slot belongs to a newer, live
+                    // worker the restart owns. Leave it untouched.
+                    Some(slot) if slot.generation != my_gen => Step::Superseded,
                     Some(slot) => match slot.handle.take_if(|h| h.is_finished()) {
                         Some(h) => Step::Classify(h),
                         None if slot.handle.is_none() => Step::NotRunning,
@@ -466,7 +580,7 @@ impl<K: RegistryKey> ThreadRegistry<K> {
                     self.lock_orphans().push((key, h));
                     return WorkerStatus::Timeout;
                 }
-                Step::NotRunning => return WorkerStatus::NotRunning,
+                Step::NotRunning | Step::Superseded => return WorkerStatus::NotRunning,
                 Step::Wait => tokio::time::sleep(Duration::from_millis(5)).await,
             }
         }
@@ -511,15 +625,31 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     /// Weight-ordered teardown: ascending tier by tier, each worker's
     /// (drain-hook -> cancel -> join) run concurrently within a tier;
     /// orphan reap runs last. **Requires a multi-thread runtime.**
+    ///
+    /// Latches the registry closed first (under the slot lock, before the
+    /// tier snapshot), so any `start_thread`/`start_task` racing teardown is
+    /// either already in the snapshot or refused outright — shutdown is a
+    /// one-way door and never leaves a worker un-joined. Idempotent.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called outside a multi-thread Tokio runtime: an OS-thread
+    /// worker drives its loop via `Handle::block_on` and needs the shared
+    /// timer/IO driver, so a `current_thread` runtime would deadlock the
+    /// join.
     pub async fn shutdown(&self) -> ShutdownReport<K> {
         // TODO(rs-dapi-adoption): see `start_task` — this assert is the late
         // panic point for a task-only consumer on a current_thread runtime.
         Self::assert_multi_thread("shutdown");
 
         // Snapshot keys grouped by weight. A `BTreeMap` iterates tiers in
-        // ascending weight order, giving the lower-first drain.
+        // ascending weight order, giving the lower-first drain. Latch the
+        // registry closed under the same lock and before the snapshot so a
+        // racing start is serialized: it either landed before this lock (and
+        // is in the snapshot) or sees `closing` and bails.
         let tiers: BTreeMap<ShutdownWeight, Vec<K>> = {
             let slots = self.lock_slots();
+            self.closing.store(true, Ordering::Release);
             let mut tiers: BTreeMap<ShutdownWeight, Vec<K>> = BTreeMap::new();
             for (key, slot) in slots.iter() {
                 tiers.entry(slot.weight).or_default().push(*key);
@@ -574,15 +704,31 @@ impl<K: RegistryKey> ThreadRegistry<K> {
         );
     }
 
-    /// Gen-gated exit epilogue, run on the worker after its body returns:
-    /// clear this slot's running flag only if a newer start has not since
-    /// installed a replacement.
+    /// Gen-gated exit epilogue, run on the worker after its body returns
+    /// (or unwinds): clear this slot's running flag only if a newer start
+    /// has not since installed a replacement.
     fn run_epilogue(&self, key: K, my_gen: u64) {
         if let Some(slot) = self.lock_slots().get_mut(&key) {
             if slot.generation == my_gen {
                 slot.cancel = None;
             }
         }
+    }
+
+    /// Spawn the named OS worker thread, surfacing a spawn failure as
+    /// `io::Result` instead of panicking so the caller can roll back. The
+    /// `#[cfg(test)]` seam forces a synthetic failure to exercise that path.
+    fn spawn_os_thread<C>(&self, key: K, closure: C) -> std::io::Result<std::thread::JoinHandle<()>>
+    where
+        C: FnOnce() + Send + 'static,
+    {
+        #[cfg(test)]
+        if self.force_spawn_failure.load(Ordering::Acquire) {
+            return Err(std::io::Error::other("forced spawn failure (test seam)"));
+        }
+        std::thread::Builder::new()
+            .name(format!("tr-worker-{key:?}"))
+            .spawn(closure)
     }
 
     /// Reap a restarted key's prior worker — or park it if it is genuinely
@@ -670,7 +816,9 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     /// Test-only seam: park a raw thread handle as an orphan under `key`.
     /// Used by cross-crate regression tests (e.g. the wallet's F2 gate)
     /// that must inject a wedged prior-generation thread without driving
-    /// the full restart-reap path.
+    /// the full restart-reap path. Feature-gated behind `test-util` so it
+    /// never ships in a production build of a downstream consumer.
+    #[cfg(any(test, feature = "test-util"))]
     #[doc(hidden)]
     pub fn park_orphan_for_test(&self, key: K, handle: std::thread::JoinHandle<()>) {
         self.lock_orphans()
@@ -688,23 +836,52 @@ fn slot_alive(slot: &SlotState) -> bool {
 /// the slot's still-live handle into the orphan list instead of letting it
 /// be dropped-and-detached. On normal completion the handle has already
 /// been taken from the slot, so this is a no-op.
+///
+/// Generation-scoped: it only re-parks the handle if the slot still holds
+/// the generation `quiesce` was draining. A concurrent same-key restart
+/// bumps the generation and installs its own live handle; this guard leaves
+/// that fresh handle alone.
 struct Repark<'a, K: RegistryKey> {
     reg: &'a ThreadRegistry<K>,
     key: K,
+    my_gen: u64,
 }
 
 impl<K: RegistryKey> Drop for Repark<'_, K> {
     fn drop(&mut self) {
         // Take the handle under the slot lock, release it, then push to
-        // orphans — never nest the two locks.
+        // orphans — never nest the two locks. Skip if a restart superseded
+        // our generation (the handle is the new worker's, not ours).
         let handle = self
             .reg
             .lock_slots()
             .get_mut(&self.key)
+            .filter(|slot| slot.generation == self.my_gen)
             .and_then(|slot| slot.handle.take());
         if let Some(handle) = handle {
             self.reg.lock_orphans().push((self.key, handle));
         }
+    }
+}
+
+/// Worker-side exit guard. Runs the generation-gated [`run_epilogue`]
+/// from its `Drop`, so a worker whose `body` returns normally **or**
+/// unwinds on panic still clears its running flag — `is_running()` then
+/// reflects reality and `start()` can relaunch a crashed loop.
+///
+/// Panic-strategy caveat (same as `AtomicFlagGuard`): the clear-on-panic
+/// half relies on `Drop` running while the stack unwinds, so it holds under
+/// `panic = "unwind"`. Under `panic = "abort"` a worker panic aborts the
+/// process and there is no "after" to gate.
+struct EpilogueGuard<K: RegistryKey> {
+    reg: Arc<ThreadRegistry<K>>,
+    key: K,
+    my_gen: u64,
+}
+
+impl<K: RegistryKey> Drop for EpilogueGuard<K> {
+    fn drop(&mut self) {
+        self.reg.run_epilogue(self.key, self.my_gen);
     }
 }
 
@@ -1340,5 +1517,151 @@ mod tests {
         assert_eq!(cfg.weight, ShutdownWeight(0));
         assert!(cfg.drain.is_none());
         assert_eq!(cfg.join_budget, DEFAULT_JOIN_BUDGET);
+    }
+
+    // ----- Group 6: concurrency-hazard regressions --------------------
+
+    /// `quiesce` is generation-guarded. A same-key restart that lands after
+    /// quiesce takes the prior's cancel must not have its fresh, live handle
+    /// parked or reported `Timeout`: the superseded quiesce returns
+    /// `NotRunning` and the new generation survives.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn quiesce_generation_guard_spares_concurrent_restart() {
+        let reg = ThreadRegistry::<&str>::new();
+        // gen-1: a task that ignores cancellation (pending forever), with a
+        // tiny join budget so a non-guarded quiesce would Timeout quickly.
+        reg.start_task(
+            "k",
+            WorkerConfig {
+                join_budget: Duration::from_millis(150),
+                ..WorkerConfig::default()
+            },
+            |_cancel| async move { std::future::pending::<()>().await },
+        );
+
+        // Drive quiesce concurrently; it snapshots gen=1, cancels (ignored),
+        // and enters the poll loop with cancel already taken.
+        let reg_q = Arc::clone(&reg);
+        let q = tokio::spawn(async move { reg_q.quiesce("k").await });
+
+        // Let quiesce pass cancel.take() so a restart can proceed.
+        tokio::time::sleep(Duration::from_millis(40)).await;
+
+        // Restart: cancel is now None, so this proceeds — it takes gen-1's
+        // live handle as its prior (parked) and installs gen-2.
+        reg.start_task("k", WorkerConfig::default(), |cancel| async move {
+            cancel.cancelled().await;
+        });
+
+        // The superseded quiesce must NOT park gen-2 / report Timeout.
+        let status = q.await.unwrap();
+        assert_eq!(
+            status,
+            WorkerStatus::NotRunning,
+            "superseded quiesce returns NotRunning, never a spurious Timeout"
+        );
+        assert!(reg.is_running("k"), "gen-2 survives the racing quiesce");
+
+        // gen-2 quiesces cleanly.
+        assert_eq!(reg.quiesce("k").await, WorkerStatus::Ok);
+    }
+
+    /// A thread-spawn failure must neither panic nor detach the live prior
+    /// handle: it rolls back (prior re-installed, running flag cleared) and
+    /// the slot stays usable / reapable.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn spawn_failure_reparks_live_prior_without_panic() {
+        let reg = ThreadRegistry::<&str>::new();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        // gen-1: wedged (ignores cancel), stays live until released.
+        reg.start_thread("k", WorkerConfig::default(), wedged_body(release_rx));
+        // cancel() takes the token (slot.cancel = None) but the wedged thread
+        // keeps running — the slot now holds a LIVE prior handle with cancel
+        // cleared, the exact shape a racing restart would take as its prior.
+        reg.cancel("k");
+        assert!(!reg.is_running("k"));
+
+        // Force the restart's spawn to fail; it must not panic.
+        reg.force_spawn_failure.store(true, Ordering::Release);
+        reg.start_thread("k", WorkerConfig::default(), |_cancel| {});
+        assert!(
+            !reg.is_running("k"),
+            "failed spawn clears the running flag, never leaves it wedged"
+        );
+        assert!(reg.any_alive(), "live prior re-installed, never detached");
+
+        // Recover: release the prior; quiesce reaps the now-finished handle
+        // cleanly, proving it was owned (not leaked/detached) and the slot is
+        // not wedged.
+        reg.force_spawn_failure.store(false, Ordering::Release);
+        release_tx.send(()).unwrap();
+        assert_eq!(reg.quiesce("k").await, WorkerStatus::Ok);
+        assert!(!reg.any_alive());
+    }
+
+    /// A panicking worker body still runs its epilogue (via the drop-guard),
+    /// so `is_running()` reflects the crash and `start()` can relaunch the
+    /// loop instead of silently no-op'ing.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn panicked_worker_clears_running_and_allows_restart() {
+        let reg = ThreadRegistry::<&str>::new();
+        // A worker whose body panics immediately.
+        reg.start_thread("k", WorkerConfig::default(), |_cancel| {
+            panic!("deliberate worker-body panic");
+        });
+
+        // The drop-guard epilogue clears the running flag despite the panic.
+        let mut waited = Duration::ZERO;
+        while reg.is_running("k") && waited < Duration::from_secs(2) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+            waited += Duration::from_millis(5);
+        }
+        assert!(
+            !reg.is_running("k"),
+            "panicked worker clears its running flag via the epilogue guard"
+        );
+
+        // start() can relaunch a crashed loop (no longer a silent no-op).
+        let ran = Arc::new(AtomicBool::new(false));
+        let ran_w = Arc::clone(&ran);
+        let handle = Handle::current();
+        reg.start_thread("k", WorkerConfig::default(), move |cancel| {
+            ran_w.store(true, Ordering::Release);
+            handle.block_on(async move { cancel.cancelled().await });
+        });
+        assert!(
+            reg.is_running("k"),
+            "start() relaunches a previously-panicked worker"
+        );
+        assert_eq!(reg.quiesce("k").await, WorkerStatus::Ok);
+        assert!(
+            ran.load(Ordering::Acquire),
+            "restarted worker body executed"
+        );
+    }
+
+    /// `shutdown()` latches the registry closed: a start racing (or
+    /// following) teardown is refused, so no worker is left un-joined.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn shutdown_latches_closed_refusing_new_workers() {
+        let reg = ThreadRegistry::<&str>::new();
+        start_clean(&reg, "live", WorkerConfig::default());
+        let report = reg.shutdown().await;
+        assert!(report.all_clean());
+
+        // One-way door: both worker kinds are refused after shutdown.
+        start_clean(&reg, "late_thread", WorkerConfig::default());
+        assert!(
+            !reg.is_running("late_thread"),
+            "start_thread after shutdown is refused"
+        );
+        reg.start_task("late_task", WorkerConfig::default(), |cancel| async move {
+            cancel.cancelled().await;
+        });
+        assert!(
+            !reg.is_running("late_task"),
+            "start_task after shutdown is refused"
+        );
+        assert!(!reg.any_alive(), "nothing started post-shutdown");
     }
 }

@@ -316,6 +316,16 @@ impl ShieldedSyncManager {
             .into()
     }
 
+    /// Raise the `quiescing` gate and hold it raised until the returned
+    /// guard drops. Where [`quiesce`](Self::quiesce) reopens the gate as
+    /// soon as it returns, this lets a multi-step teardown (Clear) keep new
+    /// direct `sync_now` / `sync_wallet` passes off across a check-then-wipe
+    /// so the "no new pass" guarantee does not lapse between the two steps.
+    pub(crate) fn hold_quiescing_gate(&self) -> AtomicFlagGuard<'_> {
+        self.quiescing.store(true, Ordering::Release);
+        AtomicFlagGuard::new(&self.quiescing)
+    }
+
     /// Run one sync pass across every registered wallet.
     ///
     /// `force` is propagated to each wallet's

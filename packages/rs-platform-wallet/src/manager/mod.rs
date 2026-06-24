@@ -145,7 +145,7 @@ pub enum CoordinatorThreadStatus {
     /// `stop()`→`start()` reap had to detach past its 1 s wedge-backstop
     /// was still alive at the shutdown deadline.
     ///
-    /// Such a thread was parked in the manager's [`CoordinatorOrphans`]
+    /// Such a thread was parked in the shared [`ThreadRegistry`]'s orphan
     /// list (not silently dropped) precisely so this case is visible.
     /// A still-live detached thread keeps an `Arc` to the host event
     /// handler and may fire one final callback, so the host must NOT
@@ -165,9 +165,12 @@ impl CoordinatorThreadStatus {
 }
 
 /// Relocate a registry [`WorkerStatus`](dash_async::WorkerStatus) into the
-/// FFI-stable `CoordinatorThreadStatus`. The variant set and payloads are
-/// identical by construction, so this is a byte-stable 1:1 mapping — the
-/// FFI `destroy` / shielded-stop adapters keep reading the same shape.
+/// FFI-stable `CoordinatorThreadStatus`. The variant sets and payloads
+/// correspond 1:1, so the body is an exhaustive by-name `From` match that
+/// the compiler keeps total. The two enums intentionally keep their own
+/// declaration order and carry no `#[repr]`, so this is a match, never a
+/// layout-compatible cast — the FFI `destroy` / shielded-stop adapters keep
+/// reading the same logical shape.
 impl From<dash_async::WorkerStatus> for CoordinatorThreadStatus {
     fn from(status: dash_async::WorkerStatus) -> Self {
         use dash_async::WorkerStatus as W;
@@ -205,7 +208,7 @@ pub struct CoordinatorExitStatus {
     pub event_adapter: CoordinatorThreadStatus,
     /// Aggregate status of any coordinator OS threads that an earlier
     /// tight `stop()`→`start()` reap had to detach past its 1 s
-    /// wedge-backstop and park in the manager's [`CoordinatorOrphans`]
+    /// wedge-backstop and park in the shared [`ThreadRegistry`]'s orphan
     /// list.
     ///
     /// [`Ok`](CoordinatorThreadStatus::Ok) when none were detached (or
@@ -280,8 +283,8 @@ impl CoordinatorExitStatus {
 pub const SHUTDOWN_JOIN_TIMEOUT_SECS: u64 = 30;
 
 /// Grace period (seconds) [`PlatformWalletManager::shutdown`] spends
-/// polling any parked [`CoordinatorOrphans`] before declaring a survivor
-/// [`Detached`](CoordinatorThreadStatus::Detached).
+/// polling any orphans parked in the shared [`ThreadRegistry`] before
+/// declaring a survivor [`Detached`](CoordinatorThreadStatus::Detached).
 ///
 /// Unlike a live coordinator — whose `quiesce()` may legitimately spend
 /// seconds draining an in-flight pass, hence the 30 s
@@ -507,6 +510,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///   backstop, or its loop ended non-cleanly) →
     ///   [`crate::error::PlatformWalletError::ShieldedShutdownIncomplete`]; or
     /// - the coordinator's store reset itself fails.
+    ///
+    /// **Host-serialization precondition**: the caller must not invoke
+    /// `shielded_sync_start` for this manager concurrently with `clear`. A
+    /// concurrent direct `sync_now`/`sync_wallet` is held off (the quiescing
+    /// gate stays raised across the liveness check and the wipe), but a full
+    /// restart re-opens that gate as it spawns a fresh loop, so a `start`
+    /// racing `clear` can still re-persist into the wiped store. The wallet
+    /// UI drives these from one place; that ordering is the host's contract
+    /// until the registry grows a per-key clearing latch.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
         // Quiesce the shielded loop: cancel it, drain any in-flight pass
@@ -524,6 +536,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         if !status.is_clean() {
             return Err(crate::error::PlatformWalletError::ShieldedShutdownIncomplete { status });
         }
+        // Hold the shielded quiescing gate raised across BOTH the liveness
+        // check below and the store wipe, so the gate guarding "no new pass"
+        // does not lapse between check and act: a direct `sync_now` /
+        // `sync_wallet` that lands here observes the gate and bails instead
+        // of writing into the store we are about to clear. The guard lowers
+        // the gate on return (every path), so a later start/sync works.
+        let _clearing_gate = self.shielded_sync_manager.hold_quiescing_gate();
+
         // [F2 FIX] Also refuse if a prior-generation shielded thread is
         // still parked alive: it holds an `Arc` to the persister/store and
         // could re-persist notes into the store we are about to wipe. The
