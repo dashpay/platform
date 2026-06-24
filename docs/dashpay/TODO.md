@@ -2,7 +2,8 @@
 
 Single source of truth for outstanding DashPay work. Sources: the
 kotlin-platform/dashj comparison (`KOTLIN_PLATFORM_COMPARISON.md`), the spec
-track, and the multi-agent reviews. Prioritized; check off as done.
+track, the multi-agent reviews, and the code-verified DIP-15 + DIP-16 conformance
+audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
 
 > **STATUS (2026-06-18): the implementable backlog is complete.** Every P0/P1/P2
 > bug, the full sync-correctness spec (Spec 0/1/2 + reject→ignore refactor), the
@@ -19,6 +20,12 @@ track, and the multi-agent reviews. Prioritized; check off as done.
 >   registered `dashpay` data-contract change (DIP / governance), not wallet code.
 > - The struck `[toUserId, $ownerId]` GROUP-BY index is a deliberate **don't-do**
 >   (privacy guardrail R6), kept unchecked as a do-not-reintroduce marker.
+> - **Re-audit (2026-06-24, `DIP_CONFORMANCE_GAPS.md`):** a from-scratch DIP-15 +
+>   DIP-16 conformance pass against the actual code surfaced **two under-tracked
+>   items** — the §12.6 coreHeight block-rescan (P1, payment-loss; see P1 below) and
+>   the account-label padding regression (the "DONE" fix is dead code; see P1 below).
+>   It also confirmed the DIP-15 core flow fully conforms and corrected the stale
+>   `SPEC.md` G3 claim (accountReference is computed + version-rotated, not 0).
 
 ---
 
@@ -52,6 +59,35 @@ track, and the multi-agent reviews. Prioritized; check off as done.
 
 ## P1 — interop (cross-client correctness)
 
+- [ ] **coreHeight block-rescan — DIP-15 §8.7 + §12.6 (NEW, payment-loss).**
+  Surfaced by the re-audit (`DIP_CONFORMANCE_GAPS.md` §1.1). **Spec
+  `docs/dashpay/CORE_HEIGHT_RESCAN_SPEC.md` — REVIEWED (4 lenses), ready to implement.**
+  An incoming payment that landed on a contact's receival address **before** that address
+  was watched is silently missed. The review reshaped the fix (see spec §0): the dash-spv
+  `FiltersManager` already backfills when a wallet's `synced_height` drops below the scan
+  pointer; the trigger must NOT key off fresh registration (the sweep only enqueues; the
+  drain registers; restore early-exits) but be a **reconcile over established contacts**.
+  **No upstream change** (the forward-only guard is only on the `WalletManager` wrapper;
+  the inner setter is unconditional). Regression of `synced_height` is **safe** (full
+  consumer audit). Split (spec §7):
+  - [ ] **A — restore birth-height default:** DashPay re-import passes `Some(0)` instead
+    of `None` (`manager.rs:245`/`PlatformWalletManager.swift:317`) so history isn't
+    skipped. Durable; covers restore/second-device. Ships alone.
+  - [ ] **B — rescan reconcile + primitive:** `SpvRuntime::rewind_synced_height` (uses the
+    already-public `get_wallet_info_mut().update_synced_height()`) + a
+    `reconcile_dashpay_rescan` step reading `min(outgoing,incoming) core_height` off
+    `EstablishedContact`, receival-only, coalesced (act only when floor < committed),
+    clamp-to-header-floor + warn; wired into wallet-load and `dashpay_sync`. Covers
+    offline-accept→pay.
+  - [ ] **C — tests:** §5 unit suite + `dp_*` e2e offline-pay-then-establish (rides #3549
+    + devnet funding). NB: a test must avoid persisting `synced_height==0` (masks the bug
+    via birth-fallback).
+  - [ ] **D — durability breadcrumb (OPTIONAL, deferred):** persist a pending-rescan-floor
+    so a crash mid-backfill resumes; only if at-least-once-across-restart is needed.
+  - ~~T1 upstream guard-bypass~~ **DELETED** — no rust-dashcore change required.
+  *Pin:* a payment to a receival address at `h < synced_height` surfaces after the
+  reconcile rewind (red before, green after).
+
 - [x] **`accountReference` ASK28 byte-order — RESOLVED: keep ours** (`c47314a90c`).
   An iOS-stack diff found iOS dash-shared-core and our Rust are *algebraically
   identical*, and that DIP-15 makes `accountReference` a one-time-pad obfuscation
@@ -69,9 +105,18 @@ track, and the multi-agent reviews. Prioritized; check off as done.
   run multiple DashPay accounts → it's the **same item as multi-account (P2)**. Remaining
   after #813 merges: bump the key-wallet rev + thread the real account through our callers
   (`register_contact_account(.., account)` etc., currently hardcoded `0`).
-- [x] **`encryptedAccountLabel` padded to ≥16 chars: DONE** (`2419159bb3`). Pad with
-  trailing spaces on encrypt (kotlin `padEnd(16)`) so the ciphertext clears the
-  48-byte contract floor; trim on decrypt; always emit. Tests pin it.
+- [~] **`encryptedAccountLabel` padded to ≥16 chars: REGRESSED — REOPEN** (was
+  `2419159bb3`). The re-audit (`DIP_CONFORMANCE_GAPS.md` §1.2) found the padding fix
+  is now **dead code**: `IdentityWallet::encrypt_account_label` + `pad_account_label`
+  (`network/account_labels.rs:19,49-64`) have **zero live callers**. The live path
+  (FFI `dashpay.rs:236-269` → `send_contact_request_with_external_signer`
+  `contact_requests.rs:374` → `sdk_writer` → rs-sdk) passes the label **unpadded**;
+  the SDK encrypts it and hard-rejects `<48` bytes (`rs-sdk/.../contact_request.rs:319-330`),
+  so a **1–15-char label errors the whole send**. The label is also **never decrypted
+  on receive** (`decrypt_account_label` is dead too). Likely orphaned by the seedless
+  `ContactCryptoProvider`/`sdk_writer` refactor. **Fix:** route the live send through
+  the padded helper (or move padding into the SDK), surface the decrypted label on
+  receive, and pin with a test on the *live* path (not the dead helper).
 
 ## P2 — parity gaps / hardening
 
