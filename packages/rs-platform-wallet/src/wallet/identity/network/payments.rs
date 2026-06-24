@@ -666,23 +666,27 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         );
         {
             let mut wm = self.wallet_manager.write().await;
-            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-                if let Some(managed) = info.identity_manager.managed_identity_mut(from_identity_id)
-                {
-                    // Propagate a persist failure: the tx is already
-                    // broadcast on-chain, but the local Sent entry + memo
-                    // has no on-chain recovery, so a silent drop would lose
-                    // the user's payment record. Surfacing it lets the UI
-                    // report the partial outcome (sent, but not recorded).
-                    managed
-                        .record_dashpay_payment(txid.to_string(), entry.clone(), &self.persister)
-                        .map_err(|e| {
-                            PlatformWalletError::Persistence(format!(
-                                "payment broadcast but not recorded locally: {e}"
-                            ))
-                        })?;
-                }
-            }
+            // A missing wallet info or unmanaged `from_identity_id` is a real
+            // state error, not a benign no-op: the tx is already broadcast
+            // on-chain but the local Sent entry + memo has no on-chain
+            // recovery, so swallowing the lookup miss here would lose the
+            // user's payment record with no signal. Fail loud (same rationale
+            // as the persist-failure propagation just below) so the UI can
+            // report the partial outcome (sent, but not recorded).
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let managed = info
+                .identity_manager
+                .managed_identity_mut(from_identity_id)
+                .ok_or(PlatformWalletError::IdentityNotFound(*from_identity_id))?;
+            managed
+                .record_dashpay_payment(txid.to_string(), entry.clone(), &self.persister)
+                .map_err(|e| {
+                    PlatformWalletError::Persistence(format!(
+                        "payment broadcast but not recorded locally: {e}"
+                    ))
+                })?;
         }
 
         Ok((txid, entry))

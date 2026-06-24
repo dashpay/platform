@@ -85,6 +85,13 @@ pub struct PersistenceCallbacks {
     /// accumulated writes (success → flush / save) or roll them
     /// back (failure → discard), making each Rust `store()` a
     /// single atomic transaction from the client's point of view.
+    ///
+    /// Returns 0 on success. A **non-zero** return means the commit
+    /// itself failed (e.g. the atomic `save()` threw and the staged
+    /// writes were rolled back); `store()` then returns `Err` so the
+    /// caller does not advance state against data that never reached
+    /// durable storage. (Unlike `on_changeset_begin_fn`, this return
+    /// is honored, not advisory.)
     pub on_changeset_end_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8, success: bool) -> i32,
     >,
@@ -1497,6 +1504,16 @@ impl PlatformWalletPersistence for FFIPersister {
             let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr(), round_success) };
             if result != 0 {
                 eprintln!("Changeset-end callback returned error code {}", result);
+                // The end callback is where the client COMMITS the round (e.g.
+                // the SwiftData atomic `save()`). A non-zero return means the
+                // commit failed and the staged writes were rolled back — the
+                // round never reached durable storage. Treat it as a
+                // persistence failure so `store()` returns `Err` and the caller
+                // does NOT advance / clear its in-memory state (pending queues,
+                // cleared drain entries, ignored-sender deltas) against data
+                // that was dropped. Otherwise the failure is silent and the
+                // dropped writes resurface or are lost with no signal.
+                round_success = false;
             }
         }
 
@@ -3932,12 +3949,31 @@ unsafe fn restore_dashpay_contacts(
     owner_id: &Identifier,
     managed: &mut ManagedIdentity,
 ) {
-    use platform_wallet::{ContactRequest, EstablishedContact};
-
     if spec.contacts.is_null() || spec.contacts_count == 0 {
         return;
     }
     let rows = slice::from_raw_parts(spec.contacts, spec.contacts_count);
+    apply_contact_rows(rows, owner_id, managed);
+}
+
+/// Pair the per-direction [`ContactRequestFFI`] rows back into the
+/// `ManagedIdentity`'s `sent` / `incoming` / `established` contact maps.
+/// Extracted from [`restore_dashpay_contacts`] so the FFI→Rust decode is
+/// unit-testable against rows built by the persist constructors (the other
+/// restore families have the same `apply_*_rows` seam). The persist side is
+/// tested field-by-field; this is the read-back half — where a dropped
+/// optional or a swapped key index would otherwise be invisible.
+///
+/// # Safety
+/// Each row's `*_ptr`/`*_len` byte buffers and C strings must be valid for
+/// the call (Swift owns them during load; tests own them via the persist
+/// constructors).
+unsafe fn apply_contact_rows(
+    rows: &[ContactRequestFFI],
+    owner_id: &Identifier,
+    managed: &mut ManagedIdentity,
+) {
+    use platform_wallet::{ContactRequest, EstablishedContact};
 
     /// Per-contact accumulator while pairing the direction rows.
     #[derive(Default)]
@@ -4901,5 +4937,115 @@ mod tests {
         // Per-sender suppression: the ignored sender is suppressed
         // regardless of accountReference (no per-ref discrimination).
         assert!(!managed.is_sender_ignored(&Identifier::from([0xEE; 32])));
+    }
+
+    /// Persist→restore round-trip for the contact maps. The persist
+    /// projection (`from_outgoing`/`from_incoming`/`from_established_*`) is
+    /// tested field-by-field, but the FFI→Rust read-back (`apply_contact_rows`)
+    /// was untested — so a dropped optional or a swapped key index on restore
+    /// would be invisible (the exact bug class that shipped on the parse side).
+    /// This builds rows via the SAME persist constructors the live path uses,
+    /// decodes them, and asserts field-by-field — including the
+    /// direction-specific `contact_account_label` (incoming-row only) and
+    /// distinct sender ≠ recipient key indices (a swap is otherwise invisible,
+    /// both `u32`).
+    #[test]
+    fn apply_contact_rows_round_trips_all_fields() {
+        use platform_wallet::ContactRequest;
+
+        let owner = Identifier::from([0x11; 32]);
+        let sent_c = Identifier::from([0xA1; 32]);
+        let in_c = Identifier::from([0xA2; 32]);
+        let estab_c = Identifier::from([0xA3; 32]);
+
+        let sent_req = ContactRequest::new(owner, sent_c, 3, 4, 11, vec![1u8; 96], 100, 1000);
+        let in_req = ContactRequest::new(in_c, owner, 5, 6, 22, vec![2u8; 96], 101, 1001);
+        let mut estab_out = ContactRequest::new(owner, estab_c, 7, 8, 33, vec![3u8; 96], 102, 1002);
+        estab_out.auto_accept_proof = Some(vec![9u8; 40]);
+        let mut estab_in = ContactRequest::new(estab_c, owner, 9, 10, 44, vec![4u8; 96], 103, 1003);
+        estab_in.encrypted_account_label = Some(vec![0x2au8; 48]);
+        estab_in.auto_accept_proof = Some(vec![8u8; 38]);
+
+        let mut rows = vec![
+            ContactRequestFFI::from_outgoing(owner.to_buffer(), sent_c.to_buffer(), &sent_req),
+            ContactRequestFFI::from_incoming(owner.to_buffer(), in_c.to_buffer(), &in_req),
+            ContactRequestFFI::from_established_outgoing(
+                owner.to_buffer(),
+                estab_c.to_buffer(),
+                &estab_out,
+                true,
+                Some("ally"),
+                Some("a note"),
+                true,
+            ),
+            ContactRequestFFI::from_established_incoming(
+                owner.to_buffer(),
+                estab_c.to_buffer(),
+                &estab_in,
+                true,
+                Some("ally"),
+                Some("a note"),
+                true,
+                Some("Main wallet"),
+            ),
+        ];
+
+        let identity_v0 = IdentityV0 {
+            id: owner,
+            public_keys: std::collections::BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        };
+        let mut managed = ManagedIdentity::new(Identity::V0(identity_v0), 0);
+
+        unsafe { apply_contact_rows(&rows, &owner, &mut managed) };
+
+        let s = managed
+            .sent_contact_requests
+            .get(&sent_c)
+            .expect("pending sent request restored");
+        assert_eq!(
+            (s.sender_key_index, s.recipient_key_index, s.account_reference),
+            (3, 4, 11)
+        );
+        let i = managed
+            .incoming_contact_requests
+            .get(&in_c)
+            .expect("pending incoming request restored");
+        assert_eq!(
+            (i.sender_key_index, i.recipient_key_index, i.account_reference),
+            (5, 6, 22)
+        );
+
+        let e = managed
+            .established_contacts
+            .get(&estab_c)
+            .expect("established contact restored");
+        assert_eq!(e.outgoing_request.auto_accept_proof, Some(vec![9u8; 40]));
+        assert_eq!(
+            e.incoming_request.encrypted_account_label,
+            Some(vec![0x2au8; 48]),
+            "the incoming encrypted label must survive read-back (the shipped-bug class)"
+        );
+        assert_eq!(e.incoming_request.auto_accept_proof, Some(vec![8u8; 38]));
+        assert_eq!(e.alias.as_deref(), Some("ally"));
+        assert_eq!(e.note.as_deref(), Some("a note"));
+        assert!(e.is_hidden);
+        assert!(e.payment_channel_broken);
+        assert_eq!(
+            e.contact_account_label.as_deref(),
+            Some("Main wallet"),
+            "contact_account_label must restore from the incoming row only"
+        );
+        // Key indices restored without a swap (incoming sender=9, recipient=10).
+        assert_eq!(
+            (
+                e.incoming_request.sender_key_index,
+                e.incoming_request.recipient_key_index
+            ),
+            (9, 10)
+        );
+
+        unsafe { free_contact_requests_ffi(rows.as_mut_ptr(), rows.len()) };
     }
 }

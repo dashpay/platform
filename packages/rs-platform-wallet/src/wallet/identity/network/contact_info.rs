@@ -582,7 +582,10 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         //    existing match → allocate the next sequential derivation index.
         //    Signer-present (publish), so we decrypt fresh — never guess the index.
         let (raw_docs, high_water) = self.fetch_contact_info_docs(identity_id).await?;
-        let mut existing: Option<(Identifier, u64, u32)> = None;
+        // (doc_id, revision, derivation_index, root_index) — `root_index` is
+        // kept so an update re-seals under the doc's ORIGINAL root, not a
+        // since-rotated current key (see the match below).
+        let mut existing: Option<(Identifier, u64, u32, u32)> = None;
         for raw in &raw_docs {
             // Each doc carries its own root index (our encryption key may have
             // rotated); build that doc's root path in Rust.
@@ -602,7 +605,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .await
             {
                 Ok(opened) if opened.contact_id == contact_id.to_buffer() => {
-                    existing = Some((raw.doc_id, raw.revision, raw.derivation_index));
+                    existing = Some((
+                        raw.doc_id,
+                        raw.revision,
+                        raw.derivation_index,
+                        raw.root_index,
+                    ));
                     break;
                 }
                 // Different contact, or a payload we can't open — not our target;
@@ -610,26 +618,37 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 _ => continue,
             }
         }
-        let (doc_id, revision, derivation_index) = match existing {
-            Some((id, rev, idx)) => (Some(id), rev + 1, idx),
+        let (doc_id, revision, derivation_index, write_root_id) = match existing {
+            // Update path: re-seal under the matched doc's ORIGINAL root index,
+            // not the current `root_key_id`. The contract's unique index is
+            // (ownerId, rootEncryptionKeyIndex, derivationEncryptionKeyIndex);
+            // if our encryption key rotated since the doc was written,
+            // re-rooting a Replace would move the doc's coordinate to
+            // (new_root, idx) and could collide with an independently-allocated
+            // doc there (Drive rejects the Replace). Keeping the original root
+            // holds the coordinate stable. (We can still derive the old root's
+            // keys — rotation disables the identity key but the HD tree still
+            // reproduces the scalar.)
+            Some((id, rev, idx, root_idx)) => (Some(id), rev + 1, idx, root_idx),
             None => {
                 // Allocate the next index from the high-water mark over ALL owned
                 // docs at THIS root (including skipped/undecryptable ones), not
                 // just the decryptable subset — otherwise a skipped doc's slot
                 // would collide on the unique index.
                 let next_index = high_water.get(&root_key_id).map(|m| m + 1).unwrap_or(0);
-                (None, dpp::document::INITIAL_REVISION, next_index)
+                (None, dpp::document::INITIAL_REVISION, next_index, root_key_id)
             }
         };
 
         // 4. Encrypt the payload via the signer — the two hardened-child AES keys
         //    are derived + wiped in the signer; only ciphertext returns. Root
-        //    path built in Rust at our current encryption key.
+        //    path built in Rust at the doc's own root (current key for a fresh
+        //    doc; the original root for an update — see above).
         let root_path = super::identity_auth_derivation_path_for_type(
             self.sdk.network,
             key_wallet::bip32::KeyDerivationType::ECDSA,
             identity_index,
-            root_key_id,
+            write_root_id,
         )?;
         let mut iv = [0u8; 16];
         thread_rng().fill_bytes(&mut iv);
@@ -650,7 +669,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         properties.insert("encToUserId".to_string(), Value::Bytes32(enc_to_user_id));
         properties.insert(
             "rootEncryptionKeyIndex".to_string(),
-            Value::U32(root_key_id),
+            Value::U32(write_root_id),
         );
         properties.insert(
             "derivationEncryptionKeyIndex".to_string(),

@@ -1227,26 +1227,29 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let account_reference = props
             .get("accountReference")
             .and_then(|v: &Value| v.to_integer::<u32>().ok());
+        // `to_binary_bytes()` (not `as_bytes()`, which matches only
+        // `Value::Bytes`) so the parse is robust to whatever byte-ish variant
+        // the document query yields (`Bytes`/`Bytes32`/`Array<U8>`/base64
+        // `Text`) — and stays symmetric with the send-side bookkeeping, which
+        // also uses `to_binary_bytes()`. A variant mismatch here would silently
+        // drop a field (the bug class this path already shipped once).
         let encrypted_public_key = props
             .get("encryptedPublicKey")
-            .and_then(|v: &Value| v.as_bytes())
-            .cloned();
+            .and_then(|v: &Value| v.to_binary_bytes().ok());
         // Optional DIP-15 auto-accept proof — read so the sweep can enqueue an
         // `AutoAccept` drain. Without this it would be dropped (the proof can't
         // be acted on if it never reaches the request), so the contact would only
         // ever be addable manually.
         let auto_accept_proof = props
             .get("autoAcceptProof")
-            .and_then(|v: &Value| v.as_bytes())
-            .cloned();
+            .and_then(|v: &Value| v.to_binary_bytes().ok());
         // Optional DIP-15 `encryptedAccountLabel` — the contact's label for the
         // account they shared. Read so the receive-side surfacing (decrypt +
         // "Their account" row) has something to decrypt; without this the sweep
         // silently drops the label and it never reaches the recipient.
         let encrypted_account_label = props
             .get("encryptedAccountLabel")
-            .and_then(|v: &Value| v.as_bytes())
-            .cloned();
+            .and_then(|v: &Value| v.to_binary_bytes().ok());
 
         match (
             sender_key_index,

@@ -46,6 +46,10 @@ struct DashPayTabView: View {
     @State private var showProfileView = false
     @State private var showProfileEditor = false
     @State private var pendingEditorAfterProfileView = false
+    /// Surfaces a failed/declined "finish setup" unlock so the banner tap
+    /// isn't a silent no-op (wrong seed, or a watch-only wallet with no
+    /// Keychain mnemonic).
+    @State private var unlockError: String?
 
     enum DashPaySegment: Hashable {
         case contacts, requests
@@ -194,6 +198,17 @@ struct DashPayTabView: View {
                 }
         }
         .environmentObject(contactMeta)
+        .alert(
+            "Couldn't finish setup",
+            isPresented: Binding(
+                get: { unlockError != nil },
+                set: { if !$0 { unlockError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(unlockError ?? "")
+        }
         .task(id: activeIdentity?.identityId) {
             loadOwnProfileFromCache()
             // Kick one sweep so a fresh launch shows current data
@@ -315,7 +330,21 @@ struct DashPayTabView: View {
                     systemImage: "lock.fill",
                     tint: .orange,
                     action: walletManager.wallet(for: walletId).map { wallet in
-                        { _ = try? walletManager.unlockWalletFromKeychain(wallet) }
+                        {
+                            // Don't swallow: a wrong-seed mismatch throws and a
+                            // watch-only wallet returns false — both must tell
+                            // the user why tapping "finish setup" did nothing.
+                            do {
+                                let unlocked = try walletManager.unlockWalletFromKeychain(wallet)
+                                if !unlocked {
+                                    unlockError = "This wallet is watch-only on this device "
+                                        + "(no mnemonic in the Keychain), so contact setup "
+                                        + "can't be finished here."
+                                }
+                            } catch {
+                                unlockError = error.localizedDescription
+                            }
+                        }
                     }
                 )
             }

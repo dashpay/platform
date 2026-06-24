@@ -1060,24 +1060,35 @@ public class PlatformWalletPersistenceHandler {
     /// kind callback, and the whole round is atomic from SwiftData's
     /// perspective: a crash between callbacks leaves the store in
     /// its pre-round state rather than half-applied.
-    func endChangeset(walletId: Data, success: Bool) {
+    /// Returns `true` iff the round's staged writes were durably committed
+    /// (`success && save()` succeeded). A `false` return — a per-kind failure,
+    /// or a `save()` that threw and was rolled back — is forwarded to Rust via
+    /// the C shim so `store()` reports a persistence failure instead of
+    /// silently advancing its in-memory state (pending queues, cleared drain
+    /// entries, ignored-sender deltas) against writes that never reached disk.
+    @discardableResult
+    func endChangeset(walletId: Data, success: Bool) -> Bool {
         onQueue {
             _ = walletId
             defer { self.inChangeset = false }
             if success {
                 do {
                     try backgroundContext.save()
+                    return true
                 } catch {
                     // The context still has the pending changes on
                     // its dirty list after a failed save; drop them so
                     // the next round starts clean. SQLite's WAL will
                     // only have committed data prior to this save, so
-                    // the user-visible store is consistent.
+                    // the user-visible store is consistent — but the
+                    // round did NOT commit, so report failure upward.
                     print("⚠️ endChangeset: save failed: \(error.localizedDescription)")
                     backgroundContext.rollback()
+                    return false
                 }
             } else {
                 backgroundContext.rollback()
+                return false
             }
         }
     }
@@ -5538,8 +5549,11 @@ private func changesetEndCallback(
         .fromOpaque(context)
         .takeUnretainedValue()
     let walletId = Data(bytes: walletIdPtr, count: 32)
-    handler.endChangeset(walletId: walletId, success: success)
-    return 0
+    // Forward the commit outcome: a failed/rolled-back save returns non-zero so
+    // Rust's `store()` reports a persistence failure (it would otherwise treat
+    // the round as durably committed and clear its pending state).
+    let committed = handler.endChangeset(walletId: walletId, success: success)
+    return committed ? 0 : 1
 }
 
 private func persistSyncStateCallback(
