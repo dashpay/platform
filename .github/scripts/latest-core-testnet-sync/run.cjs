@@ -428,11 +428,11 @@ async function main() {
     delete phaseEnv.GITHUB_TOKEN;
     delete phaseEnv.GH_TOKEN;
 
-    metadata.phase = 'core-sync';
+    metadata.phase = 'core-readiness';
     writeMetadata(metadata);
     await runCommand(
-      'core-sync',
-      process.env.LATEST_CORE_TESTNET_CORE_SYNC_COMMAND,
+      'core-readiness',
+      process.env.LATEST_CORE_TESTNET_CORE_READY_COMMAND,
       phaseEnv,
       timeoutMinutes,
     );

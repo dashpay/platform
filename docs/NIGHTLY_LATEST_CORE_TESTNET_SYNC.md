@@ -24,7 +24,7 @@ Detailed build, Core, and sync logs belong behind the status `target_url`, not i
 3. Run Platform sync on a normal sync runner using the synced Core baseline and freshly built Platform artifacts.
 4. Report only the final completed result back to this repository.
 
-Core sync should be stateful and warm. Platform build should be disposable and cache-heavy. Platform sync should be reproducible and log-rich.
+Core baseline maintenance should be owned by a preconfigured, stateful, warm Core system. Platform build should be disposable and cache-heavy. Platform sync should be reproducible and log-rich.
 
 ## Scheduling
 
@@ -42,9 +42,11 @@ The default timer runs nightly at 01:30 UTC with a 30 minute randomized delay. T
 
 The worker does not publish a pending or running commit status. It leaves the previous completed status in place while the new run is active, then publishes one final completed result when the run finishes.
 
+The Platform sync worker assumes the latest-Core testnet node/baseline already exists. It may run a readiness command to verify that baseline before building and syncing Platform, but it should not perform a full Core chain sync itself.
+
 The worker delegates host-specific work to environment variables:
 
-- `LATEST_CORE_TESTNET_CORE_SYNC_COMMAND`
+- `LATEST_CORE_TESTNET_CORE_READY_COMMAND`
 - `LATEST_CORE_TESTNET_PLATFORM_BUILD_COMMAND`
 - `LATEST_CORE_TESTNET_PLATFORM_SYNC_COMMAND`
 
@@ -65,7 +67,7 @@ Each phase command receives:
 
 The run directory should be used as the durable artifact location for phase logs and metadata.
 
-The GitHub token is used only by the parent worker process for final status publication. It is intentionally stripped from the environment passed to Core sync, Platform build, and Platform sync commands.
+The GitHub token is used only by the parent worker process for final status publication. It is intentionally stripped from the environment passed to Core readiness, Platform build, and Platform sync commands.
 
 ## Reporting Contract
 

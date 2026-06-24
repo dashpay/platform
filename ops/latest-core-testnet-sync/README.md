@@ -6,7 +6,7 @@ The worker:
 
 1. Updates and cleans a dedicated `dashpay/platform` checkout.
 2. Resolves the latest public Dash Core release.
-3. Runs the configured Core sync, Platform build, and Platform sync commands.
+3. Verifies the preconfigured latest-Core testnet baseline, then runs Platform build and Platform sync commands.
 4. Publishes one final commit status to the tested Platform commit:
    - `Sync Passed`
    - `Build Failed`
@@ -41,11 +41,13 @@ The installer validates that `PLATFORM_REPO_DIR` already exists as a writable gi
 Set these in `/etc/latest-core-testnet-sync.env`:
 
 - `GITHUB_TOKEN`
-- `LATEST_CORE_TESTNET_CORE_SYNC_COMMAND`
+- `LATEST_CORE_TESTNET_CORE_READY_COMMAND`
 - `LATEST_CORE_TESTNET_PLATFORM_BUILD_COMMAND`
 - `LATEST_CORE_TESTNET_PLATFORM_SYNC_COMMAND`
 
-The phase commands run from `PLATFORM_REPO_DIR` and receive:
+`LATEST_CORE_TESTNET_CORE_READY_COMMAND` should verify that the preconfigured Core node or baseline is on the selected `LATEST_CORE_VERSION` and synced far enough for the Platform sync run. It is not intended to do a full Core chain sync on the Platform worker.
+
+The worker commands run from `PLATFORM_REPO_DIR` and receive:
 
 - `LATEST_CORE_VERSION`
 - `PLATFORM_SHA`
@@ -53,7 +55,7 @@ The phase commands run from `PLATFORM_REPO_DIR` and receive:
 
 Write logs or machine-readable metadata into `LATEST_CORE_TESTNET_SYNC_RUN_DIR` so failures can be inspected without overloading the GitHub status panel.
 
-`GITHUB_TOKEN` and `GH_TOKEN` are stripped from phase command environments. They remain available only to the worker harness for publishing the final commit status.
+`GITHUB_TOKEN` and `GH_TOKEN` are stripped from worker command environments. They remain available only to the worker harness for publishing the final commit status.
 
 ## Operations
 
