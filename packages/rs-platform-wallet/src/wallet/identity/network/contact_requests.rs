@@ -665,7 +665,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         .to_string(),
                 )
             })?;
-        let contact_request = ContactRequest::new(
+        let mut contact_request = ContactRequest::new(
             *sender_identity_id,
             result.recipient_id,
             sender_key_index,
@@ -675,6 +675,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             result.document.created_at_core_block_height().unwrap_or(0),
             result.document.created_at().unwrap_or(0),
         );
+        // Mirror the broadcast doc's optional `encryptedAccountLabel` onto the
+        // local outgoing row so it matches what landed on Platform (same reason
+        // the 96-byte ciphertext is read off the doc above). Without this the
+        // sender's own row never reflects the label it just sent.
+        contact_request.encrypted_account_label = result
+            .document
+            .properties()
+            .get("encryptedAccountLabel")
+            .and_then(|v: &Value| v.to_binary_bytes().ok());
 
         {
             let mut wm = self.wallet_manager.write().await;
@@ -1230,6 +1239,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .get("autoAcceptProof")
             .and_then(|v: &Value| v.as_bytes())
             .cloned();
+        // Optional DIP-15 `encryptedAccountLabel` — the contact's label for the
+        // account they shared. Read so the receive-side surfacing (decrypt +
+        // "Their account" row) has something to decrypt; without this the sweep
+        // silently drops the label and it never reaches the recipient.
+        let encrypted_account_label = props
+            .get("encryptedAccountLabel")
+            .and_then(|v: &Value| v.as_bytes())
+            .cloned();
 
         match (
             sender_key_index,
@@ -1249,6 +1266,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     doc.created_at().unwrap_or(0),
                 );
                 request.auto_accept_proof = auto_accept_proof;
+                request.encrypted_account_label = encrypted_account_label;
                 Some(request)
             }
             _ => {
@@ -3202,6 +3220,62 @@ mod sweep_tests {
         // And the collapse is itself a fixpoint: re-collapsing yields the same.
         let again = newest_received_per_sender(collapsed.values().cloned());
         assert_eq!(again.get(&sender_id).map(|r| r.account_reference), Some(7));
+    }
+
+    /// **Receive-side label ingest (the sweep-parser drop bug).**
+    /// The recurring sweep parses received `contactRequest` docs via
+    /// `parse_contact_request_doc`. It must carry the optional DIP-15
+    /// `encryptedAccountLabel` onto the `ContactRequest` — otherwise the
+    /// label the sender attached (and which lands on-chain) is silently
+    /// dropped on ingest, so the receive-side surfacing has nothing to
+    /// decrypt. Pins that the field survives the parse (red before the
+    /// parser read it, green after).
+    #[test]
+    fn parse_contact_request_doc_carries_encrypted_account_label() {
+        use dpp::document::{Document, DocumentV0};
+        use dpp::platform_value::Value;
+        use std::collections::BTreeMap;
+
+        let sender = Identifier::from([2u8; 32]);
+        let recipient = Identifier::from([1u8; 32]);
+
+        let label_ct = vec![0x2au8; 48];
+        let mut properties = BTreeMap::new();
+        properties.insert("senderKeyIndex".to_string(), Value::U32(0));
+        properties.insert("recipientKeyIndex".to_string(), Value::U32(0));
+        properties.insert("accountReference".to_string(), Value::U32(5));
+        properties.insert("encryptedPublicKey".to_string(), Value::Bytes(vec![1u8; 96]));
+        properties.insert(
+            "encryptedAccountLabel".to_string(),
+            Value::Bytes(label_ct.clone()),
+        );
+
+        let doc = Document::V0(DocumentV0 {
+            id: Identifier::from([9u8; 32]),
+            owner_id: sender,
+            properties,
+            revision: None,
+            created_at: Some(123),
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: Some(456),
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        });
+
+        let parsed =
+            IdentityWallet::<SpvBroadcaster>::parse_contact_request_doc(&doc, sender, recipient)
+                .expect("a complete contactRequest doc must parse");
+        assert_eq!(
+            parsed.encrypted_account_label,
+            Some(label_ct),
+            "the sweep parser must carry encryptedAccountLabel onto the request, \
+             else the receive-side label surfacing has nothing to decrypt"
+        );
     }
 
     /// **Rotation version bump must read established contacts.**

@@ -156,10 +156,25 @@ copy the symmetric `alias`/`payment_channel_broken` both-rows pattern. Decrypt
 failures / non-printable garbage coerce to `None` (cosmetic — never breaks the
 channel); rotation pre-clears the field so it never goes stale. Surfaced through
 `ContactRequestFFI.contact_account_label` → `PersistentDashpayContactRequest
-.contactAccountLabel` → a read-only "Their account" row in `ContactDetailView`. Rust
-fully tested (306 platform-wallet + 118 FFI green); Swift mirrors `contactAlias`
-(iOS app-build verification pending). Backfill of pre-feature contacts deferred
-(dev-only; DashPay unreleased).
+.contactAccountLabel` → a read-only "Their account" row in `ContactDetailView`.
+Backfill of pre-feature contacts deferred (dev-only; DashPay unreleased).
+
+**On-device UAT (paloma, 2026-06-25) found a SECOND, decisive bug + fixed it.**
+The receive-side surfacing above had nothing to decrypt because the **recurring
+sweep's ingest parser `parse_contact_request_doc` silently dropped
+`encryptedAccountLabel`** (it read `encryptedPublicKey` + `autoAcceptProof` but not
+the label). The send always attached the label and the decrypt was always correct —
+the label just never reached the recipient's stored request. (This audit's earlier
+"ingest works" claim cited the *sent*-request parser at `:2515`, missing that the
+*received* path uses `parse_contact_request_doc`.) **Fix:** the parser now reads
+`encryptedAccountLabel`; the sender's local bookkeeping also stores it off the
+broadcast doc; and `AddContactView` gained an optional "Account label" field so
+labels can be sent in-app. Unit tests missed the bug (they built the incoming
+request *with* the label, bypassing the parser) — now pinned by
+`parse_contact_request_doc_carries_encrypted_account_label` (red→green). **Verified
+full e2e on paloma:** send (48-byte label on-chain) → fresh sweep ingest
+(`enc=48`) → accept decrypt (`contactAccountLabel="Bob savings acct"`, incoming row
+only / outgoing null) → ContactDetail shows "Their account: Bob savings acct".
 
 ---
 

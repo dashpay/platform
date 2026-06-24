@@ -45,6 +45,11 @@ struct AddContactView: View {
 
     @State private var idText = ""
 
+    /// Optional DIP-15 `encryptedAccountLabel` the sender attaches to the
+    /// receiving account they share. The recipient decrypts it and sees it
+    /// as the contact's "Their account" hint.
+    @State private var accountLabel = ""
+
     @State private var isSending = false
     @State private var errorMessage: String?
 
@@ -108,6 +113,7 @@ struct AddContactView: View {
 
                     if let recipient = resolvedRecipient {
                         previewSection(recipient: recipient)
+                        accountLabelSection
                         sendSection
                     }
 
@@ -340,6 +346,17 @@ struct AddContactView: View {
         }
     }
 
+    /// Optional account-label field (DIP-15 `encryptedAccountLabel`). Empty
+    /// → no label is sent. Shown once a recipient is resolved.
+    private var accountLabelSection: some View {
+        Section("Account label (optional)") {
+            TextField("e.g. Main wallet", text: $accountLabel)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier("dashpay.addContact.accountLabel")
+        }
+    }
+
     private var sendSection: some View {
         Section {
             Button {
@@ -434,9 +451,11 @@ struct AddContactView: View {
             do {
                 let wallet = try requireWallet()
                 let signer = KeychainSigner(modelContainer: modelContext.container)
+                let label = accountLabel.trimmingCharacters(in: .whitespacesAndNewlines)
                 _ = try await wallet.sendContactRequest(
                     senderIdentityId: identity.identityId,
                     recipientIdentityId: recipient,
+                    accountLabel: label.isEmpty ? nil : label,
                     signer: signer
                 )
                 onSent(recipient, mode == .dpns ? selectedResult?.fullName : nil)
