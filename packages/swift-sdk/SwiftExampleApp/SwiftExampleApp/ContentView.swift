@@ -515,10 +515,17 @@ struct ContentView: View {
         }
 
         do {
+            // Recovery restores an existing wallet that may have prior on-chain
+            // history (incl. DashPay payments). Scan from the wallet's persisted
+            // birth height when known (avoids re-scanning years of irrelevant
+            // history), falling back to genesis only for wallets that predate
+            // that metadata — never the current tip, which would skip the
+            // history recovery exists to recover.
             let managed = try recoveryManager.createWallet(
                 mnemonic: mnemonic,
                 network: restoredNetwork,
-                name: restoredName
+                name: restoredName,
+                birthHeight: restoredBirthHeight ?? 0
             )
             let walletIdMatch = managed.walletId
             let descriptor = FetchDescriptor<PersistentWallet>(

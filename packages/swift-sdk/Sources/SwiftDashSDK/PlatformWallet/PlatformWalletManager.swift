@@ -299,12 +299,21 @@ public class PlatformWalletManager: ObservableObject {
     /// property. If `name` is provided, writes it onto the persisted
     /// [`PersistentWallet`] row so the wallet detail view has a
     /// user-facing label.
+    ///
+    /// `birthHeight` controls the SPV historical-scan window. Pass `nil` for a
+    /// freshly **generated** mnemonic — the scan starts at the current chain tip
+    /// (nothing was funded before now). Pass `0` when **importing/restoring an
+    /// existing** mnemonic, so the wallet scans from genesis and sees funds
+    /// (including DashPay payments) received before this device knew the wallet;
+    /// without it, history — and the coreHeight rescan backfill — is clamped to
+    /// the tip. `Some(h)` pins a known funding height.
     @discardableResult
     public func createWallet(
         mnemonic: String,
         network: Network,
         name: String? = nil,
-        createDefaultAccounts: Bool = true
+        createDefaultAccounts: Bool = true,
+        birthHeight: UInt32? = nil
     ) throws -> ManagedPlatformWallet {
         try ensureConfigured()
         var walletHandle: Handle = NULL_HANDLE
@@ -314,11 +323,13 @@ public class PlatformWalletManager: ObservableObject {
         let accountOptions: UInt32 = createDefaultAccounts ? 1 : 0
 
         try mnemonic.withCString { mnemonicPtr in
-            try platform_wallet_manager_create_wallet_from_mnemonic(
+            try platform_wallet_manager_create_wallet_from_mnemonic_with_birth_height(
                 handle,
                 mnemonicPtr,
                 network.ffiValue,
                 accountOptions,
+                birthHeight != nil,
+                birthHeight ?? 0,
                 &walletHandle,
                 &walletId
             ).check()
@@ -334,12 +345,17 @@ public class PlatformWalletManager: ObservableObject {
     }
 
     /// Create a wallet from raw 64-byte seed bytes.
+    ///
+    /// See `createWallet(mnemonic:...)` for the `birthHeight` semantics: `nil`
+    /// scans from the current tip (fresh wallet), `0` scans from genesis
+    /// (imported/restored wallet that may have prior on-chain history).
     @discardableResult
     public func createWallet(
         seed: Data,
         network: Network,
         name: String? = nil,
-        createDefaultAccounts: Bool = true
+        createDefaultAccounts: Bool = true,
+        birthHeight: UInt32? = nil
     ) throws -> ManagedPlatformWallet {
         try ensureConfigured()
         guard seed.count == 64 else {
@@ -355,12 +371,14 @@ public class PlatformWalletManager: ObservableObject {
         let accountOptions: UInt32 = createDefaultAccounts ? 1 : 0
 
         try seed.withUnsafeBytes { seedPtr in
-            try platform_wallet_manager_create_wallet_from_seed(
+            try platform_wallet_manager_create_wallet_from_seed_with_birth_height(
                 handle,
                 network.ffiValue,
                 seedPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
                 UInt(seed.count),
                 accountOptions,
+                birthHeight != nil,
+                birthHeight ?? 0,
                 &walletHandle,
                 &walletId
             ).check()

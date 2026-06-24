@@ -828,10 +828,14 @@ struct WalletInfoView: View {
 
         do {
             let mgr = try walletManagerStore.backgroundManager(for: network)
+            // Enabling an existing wallet on another network: the mnemonic is
+            // pre-existing and may already have on-chain history there — scan
+            // from genesis (birthHeight 0) so prior funds/payments are seen.
             let created = try mgr.createWallet(
                 mnemonic: mnemonic,
                 network: network,
-                name: wallet.name ?? wallet.label
+                name: wallet.name ?? wallet.label,
+                birthHeight: 0
             )
             // Persist the mnemonic AND the per-wallet metadata under the
             // newly-enabled network's scoped walletId so that wallet is
