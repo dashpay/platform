@@ -122,6 +122,16 @@ public final class PersistentDashpayContactRequest {
     /// contact from the list. Defaulted for lightweight migration.
     public var contactHidden: Bool = false
 
+    /// The contact's decrypted DIP-15 `encryptedAccountLabel` — the label
+    /// the contact chose for the account they shared (a payment-routing
+    /// hint, e.g. "Main wallet"). **System-derived and read-only**, unlike
+    /// the owner-private `contactAlias`/`contactNote`: it is decrypted in
+    /// Rust from the contact's incoming request, so it is populated only on
+    /// the incoming-direction row (the outgoing row carries a label *we*
+    /// sent, which is not surfaced). Optional so existing rows ride the
+    /// lightweight migration.
+    public var contactAccountLabel: String?
+
     // MARK: - Relationships
 
     /// Owning identity — the wallet-managed identity this row's

@@ -1872,6 +1872,7 @@ public class PlatformWalletPersistenceHandler {
                     existing.contactAlias = entry.contactAlias
                     existing.contactNote = entry.contactNote
                     existing.contactHidden = entry.contactHidden
+                    existing.contactAccountLabel = entry.contactAccountLabel
                     if existing.owner !== owner {
                         existing.owner = owner
                     }
@@ -1894,6 +1895,7 @@ public class PlatformWalletPersistenceHandler {
                     row.contactAlias = entry.contactAlias
                     row.contactNote = entry.contactNote
                     row.contactHidden = entry.contactHidden
+                    row.contactAccountLabel = entry.contactAccountLabel
                     backgroundContext.insert(row)
                 }
             }
@@ -2071,6 +2073,9 @@ public class PlatformWalletPersistenceHandler {
         let contactNote: String?
         /// `contactInfo.displayHidden`.
         let contactHidden: Bool
+        /// The contact's decrypted account label — system-derived,
+        /// incoming-row only (nil on outgoing / pending rows).
+        let contactAccountLabel: String?
     }
 
     /// Owned snapshot of a `ContactRequestRemovalFFI` row. Carries
@@ -4803,6 +4808,11 @@ public class PlatformWalletPersistenceHandler {
                     if let note = contact.contactNote, !note.isEmpty {
                         row.note = UnsafePointer(duplicateCString(note, allocation: allocation))
                     }
+                    // Direction-specific: only the incoming row stored the
+                    // contact's label, so this is null on outgoing rows.
+                    if let label = contact.contactAccountLabel, !label.isEmpty {
+                        row.contact_account_label = UnsafePointer(duplicateCString(label, allocation: allocation))
+                    }
 
                     contactBuf[c] = row
                 }
@@ -6195,7 +6205,8 @@ private func persistContactsCallback(
                 paymentChannelBroken: e.payment_channel_broken,
                 contactAlias: e.alias.map { String(cString: $0) },
                 contactNote: e.note.map { String(cString: $0) },
-                contactHidden: e.is_hidden
+                contactHidden: e.is_hidden,
+                contactAccountLabel: e.contact_account_label.map { String(cString: $0) }
             ))
         }
     }

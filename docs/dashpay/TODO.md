@@ -123,9 +123,24 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
   duplicated the convention). Red→green test
   `account_label_is_always_a_valid_48_to_80_byte_field` pins both bounds + multi-byte +
   the exact-48 edge. (No live SDK change needed — it calls the primitive.)
-  - [ ] **Receive-side label surfacing (🟡 follow-up, feature):** the label is still
-    never decrypted/shown on receive (write-only). Needs an FFI accessor + UI; decrypt
-    works through the same primitive when wired.
+  - [~] **Receive-side label surfacing — IMPLEMENTED (2026-06-24).** Spec
+    `ACCOUNT_LABEL_SURFACING_SPEC.md` (5-lens reviewed; must-fixes folded). The
+    contact's label is now decrypted in Rust at the two signer-bearing register sites
+    (the drain `RegisterExternal` Ok-branch + `accept_register_external_validated`,
+    where the ECDH `shared` already lives) via `store_contact_account_label`, stored on
+    `EstablishedContact.contact_account_label` (derived field, mirrors
+    `payment_channel_broken` for transport). **Direction-specific**: derived strictly
+    from the *incoming* request and projected onto the **incoming FFI row only** (the
+    outgoing row carries a label *we* sent — never surfaced). Decrypt failures /
+    garbage / control-chars coerce to `None` (cosmetic; never breaks the channel).
+    Rotation pre-clears the field in `apply_rotated_incoming_request` so it never goes
+    stale. Surfaced through `ContactRequestFFI.contact_account_label` →
+    `PersistentDashpayContactRequest.contactAccountLabel` → a read-only "Their account"
+    row in `ContactDetailView`. Rust: 306 platform-wallet + 118 FFI tests green (incl.
+    incoming-vs-outgoing, undecryptable→None, rotation-reset, incoming-row-only FFI).
+    Swift: mechanical mirror of `contactAlias`; iOS app build verification pending.
+    **Backfill (Q-B): deferred** — pre-feature established contacts (dev devices only;
+    DashPay is unreleased) keep `None` until wipe + re-establish; zero production impact.
 
 ## P2 — parity gaps / hardening
 

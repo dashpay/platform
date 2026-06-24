@@ -2257,6 +2257,191 @@ mod tests {
         );
     }
 
+    /// Build a wallet with one owner identity (`[0x11;32]`) and one established
+    /// contact (`[0x22;32]`) whose incoming / outgoing requests carry the given
+    /// already-encrypted account-label ciphertexts. Returns the manager + the
+    /// owner/contact ids; the caller fetches the wallet to drive the helper.
+    async fn wallet_with_labeled_contact(
+        incoming_label: Option<Vec<u8>>,
+        outgoing_label: Option<Vec<u8>>,
+    ) -> (
+        Arc<PlatformWalletManager<RecordingPersister>>,
+        WalletId,
+        Identifier,
+        Identifier,
+    ) {
+        use crate::wallet::identity::{ContactRequest, EstablishedContact};
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0x11; 32]);
+        let contact = Identifier::from([0x22; 32]);
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let mut wm = iw.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+        info.identity_manager
+            .add_identity(bare_identity([0x11; 32]), 0, wallet_id, &p)
+            .expect("add owner");
+        let mut outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 200, 0);
+        outgoing.encrypted_account_label = outgoing_label;
+        let mut incoming = ContactRequest::new(contact, owner, 0, 0, 0, vec![0u8; 96], 100, 0);
+        incoming.encrypted_account_label = incoming_label;
+        info.identity_manager
+            .managed_identity_mut(&owner)
+            .expect("managed")
+            .established_contacts
+            .insert(contact, EstablishedContact::new(contact, outgoing, incoming));
+        drop(wm);
+
+        (manager, wallet_id, owner, contact)
+    }
+
+    /// Read back the stored `contact_account_label` for the test contact.
+    async fn stored_label(
+        manager: &PlatformWalletManager<RecordingPersister>,
+        wallet_id: &WalletId,
+        owner: &Identifier,
+        contact: &Identifier,
+    ) -> Option<String> {
+        let wallet = manager.get_wallet(wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let wm = iw.wallet_manager.read().await;
+        let label = wm
+            .get_wallet_info(wallet_id)
+            .and_then(|info| info.identity_manager.managed_identity(owner))
+            .and_then(|m| m.established_contacts.get(contact))
+            .and_then(|c| c.contact_account_label.clone());
+        label
+    }
+
+    /// DIP-15 §8.5 receive-side surfacing: the contact's `encryptedAccountLabel`
+    /// on their INCOMING request is decrypted with the ECDH shared key and
+    /// stored as `contact_account_label`. Re-running the helper is idempotent.
+    /// (Before the helper existed, the field stayed `None` — red→green.)
+    #[tokio::test]
+    async fn store_contact_account_label_surfaces_incoming_label() {
+        let shared = [0x55u8; 32];
+        let iv = [0x11u8; 16];
+        let ct = platform_encryption::encrypt_account_label(&shared, &iv, "Main wallet");
+        let (manager, wallet_id, owner, contact) =
+            wallet_with_labeled_contact(Some(ct), None).await;
+
+        let drive = || async {
+            let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+            wallet
+                .identity()
+                .store_contact_account_label(&owner, &contact, &shared)
+                .await;
+        };
+        drive().await;
+        assert_eq!(
+            stored_label(&manager, &wallet_id, &owner, &contact).await,
+            Some("Main wallet".to_string()),
+            "the contact's incoming account label must be decrypted and surfaced"
+        );
+        // Idempotent: a second pass yields the same value, no panic.
+        drive().await;
+        assert_eq!(
+            stored_label(&manager, &wallet_id, &owner, &contact).await,
+            Some("Main wallet".to_string()),
+        );
+    }
+
+    /// The label is direction-specific: the surfaced value comes from the
+    /// contact's INCOMING request, never our OUTGOING one (which carries a
+    /// label *we* chose). Pins that an outgoing label can't win.
+    #[tokio::test]
+    async fn store_contact_account_label_uses_incoming_not_outgoing() {
+        let shared = [0x55u8; 32];
+        let iv = [0x11u8; 16];
+        let theirs = platform_encryption::encrypt_account_label(&shared, &iv, "Their account");
+        let ours = platform_encryption::encrypt_account_label(&shared, &iv, "My own account");
+        let (manager, wallet_id, owner, contact) =
+            wallet_with_labeled_contact(Some(theirs), Some(ours)).await;
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        wallet
+            .identity()
+            .store_contact_account_label(&owner, &contact, &shared)
+            .await;
+
+        assert_eq!(
+            stored_label(&manager, &wallet_id, &owner, &contact).await,
+            Some("Their account".to_string()),
+            "the surfaced label must come from the contact's INCOMING request"
+        );
+    }
+
+    /// No label on the incoming request → nothing surfaced.
+    #[tokio::test]
+    async fn store_contact_account_label_no_label_is_none() {
+        let shared = [0x55u8; 32];
+        let (manager, wallet_id, owner, contact) =
+            wallet_with_labeled_contact(None, None).await;
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        wallet
+            .identity()
+            .store_contact_account_label(&owner, &contact, &shared)
+            .await;
+
+        assert_eq!(
+            stored_label(&manager, &wallet_id, &owner, &contact).await,
+            None,
+        );
+    }
+
+    /// Cosmetic-failure policy: an undecryptable ciphertext leaves the label
+    /// unset — never breaks the channel, never surfaces garbage.
+    #[tokio::test]
+    async fn store_contact_account_label_undecryptable_is_none() {
+        let shared = [0x55u8; 32];
+        // 50 bytes = 16-byte IV + 34-byte body (not block-aligned) → decrypt errors.
+        let (manager, wallet_id, owner, contact) =
+            wallet_with_labeled_contact(Some(vec![0u8; 50]), None).await;
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        wallet
+            .identity()
+            .store_contact_account_label(&owner, &contact, &shared)
+            .await;
+
+        assert_eq!(
+            stored_label(&manager, &wallet_id, &owner, &contact).await,
+            None,
+            "an undecryptable label must be left unset, not surfaced as garbage"
+        );
+    }
+
+    /// AES-CBC has no integrity, so a corrupt / non-conforming-sender ciphertext
+    /// can *decrypt* to valid UTF-8 that contains control characters. Unlike the
+    /// undecryptable case above (the `Err` arm), this exercises the `Ok`-with-
+    /// garbage **sanitize** branch: a printable-looking-but-control-laden label
+    /// must be coerced to `None` so the UI shows nothing rather than garbage.
+    #[tokio::test]
+    async fn store_contact_account_label_control_chars_coerced_to_none() {
+        let shared = [0x55u8; 32];
+        let iv = [0x11u8; 16];
+        // Decrypts cleanly to a string carrying a control character (bell).
+        let ct = platform_encryption::encrypt_account_label(&shared, &iv, "bad\u{07}label");
+        let (manager, wallet_id, owner, contact) =
+            wallet_with_labeled_contact(Some(ct), None).await;
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        wallet
+            .identity()
+            .store_contact_account_label(&owner, &contact, &shared)
+            .await;
+
+        assert_eq!(
+            stored_label(&manager, &wallet_id, &owner, &contact).await,
+            None,
+            "a label decrypting to control characters must be suppressed, not surfaced"
+        );
+    }
+
     /// The seedless drain's RegisterReceiving path: `register_contact_account`
     /// with a **precomputed** receiving xpub (the Keychain signer derived our
     /// friendship key) builds the `DashpayReceivingFunds` account without

@@ -1084,6 +1084,9 @@ impl PlatformWalletPersistence for FFIPersister {
                         established.alias.as_deref(),
                         established.note.as_deref(),
                         established.is_hidden,
+                        // Direction-specific: the contact's account label
+                        // rides only the incoming row.
+                        established.contact_account_label.as_deref(),
                     ));
                 }
                 let removed_sent: Vec<ContactRequestRemovalFFI> = contacts_cs
@@ -3945,6 +3948,7 @@ unsafe fn restore_dashpay_contacts(
         alias: Option<String>,
         note: Option<String>,
         is_hidden: bool,
+        contact_account_label: Option<String>,
     }
 
     let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
@@ -3989,6 +3993,10 @@ unsafe fn restore_dashpay_contacts(
             acc.outgoing = Some(request);
         } else {
             acc.incoming = Some(request);
+            // The contact's account label is direction-specific — it rides
+            // ONLY the incoming row, so take it from that row (never the
+            // outgoing one, which may carry a label we sent).
+            acc.contact_account_label = opt_string(row.contact_account_label);
         }
         // Relationship-level properties are replicated onto both rows
         // by the persist projection; OR / first-non-null is the safe
@@ -4012,6 +4020,7 @@ unsafe fn restore_dashpay_contacts(
                 contact.note = acc.note;
                 contact.is_hidden = acc.is_hidden;
                 contact.payment_channel_broken = acc.payment_channel_broken;
+                contact.contact_account_label = acc.contact_account_label;
                 managed.established_contacts.insert(contact_id, contact);
             }
             (Some(outgoing), None) => {

@@ -48,6 +48,22 @@ pub struct EstablishedContact {
     /// Defaults to `false`; a freshly established contact is never broken.
     #[cfg_attr(feature = "serde", serde(default))]
     pub payment_channel_broken: bool,
+
+    /// The contact's decrypted DIP-15 `encryptedAccountLabel` — the
+    /// human-readable label the contact attached to the receiving account
+    /// they shared (a payment-routing hint, e.g. "Main wallet"). Derived
+    /// during the external-account build by decrypting
+    /// **`incoming_request`**'s `encrypted_account_label` with the ECDH
+    /// shared key — never the outgoing request, which carries a label *we*
+    /// chose. `None` when the contact sent no label or it could not be
+    /// decrypted to printable text.
+    ///
+    /// Cosmetic: a decrypt failure never breaks the payment channel. Reset
+    /// to `None` on (re-)establish and on rotation so it is always
+    /// re-derived from the current incoming request rather than going
+    /// stale against new key material.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub contact_account_label: Option<String>,
 }
 
 impl EstablishedContact {
@@ -66,6 +82,7 @@ impl EstablishedContact {
             is_hidden: false,
             accepted_accounts: Vec::new(),
             payment_channel_broken: false,
+            contact_account_label: None,
         }
     }
 
@@ -101,6 +118,10 @@ impl EstablishedContact {
             // A new request superseded the old relationship — clear the
             // broken flag so the sweep gives the rebuilt channel a chance.
             payment_channel_broken: false,
+            // The label is a property of the (possibly new) incoming
+            // request, not user metadata — drop it so it is re-derived
+            // from the fresh request rather than carried over stale.
+            contact_account_label: None,
         }
     }
 
@@ -211,6 +232,7 @@ mod tests {
         existing.hide();
         existing.add_accepted_account(7);
         existing.payment_channel_broken = true;
+        existing.contact_account_label = Some("Stale label".to_string());
 
         // Re-establish with fresh request docs (newer timestamps).
         let mut newer_outgoing = create_test_outgoing_request();
@@ -234,6 +256,9 @@ mod tests {
         assert_eq!(reestablished.incoming_request.created_at, 2_000_000_001);
         // A superseding request clears the broken flag so the sweep retries.
         assert_eq!(reestablished.payment_channel_broken, false);
+        // The label is re-derived from the fresh incoming request, not
+        // carried over (it is a property of the request, not user metadata).
+        assert_eq!(reestablished.contact_account_label, None);
     }
 
     #[test]

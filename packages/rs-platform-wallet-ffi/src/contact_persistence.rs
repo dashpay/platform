@@ -126,6 +126,18 @@ pub struct ContactRequestFFI {
     /// `contactInfo.displayHidden` — whether the owner hid this
     /// contact. Established rows only; always `false` for pending.
     pub is_hidden: bool,
+    /// The contact's decrypted DIP-15 `encryptedAccountLabel` — the label
+    /// the contact chose for the account they shared. Heap-allocated
+    /// NUL-terminated UTF-8, or null when unset.
+    ///
+    /// Unlike [`Self::alias`]/[`Self::note`] (owner-private, symmetric
+    /// relationship metadata replicated onto both rows), this is
+    /// **direction-specific**: it is the *contact's* label, decrypted from
+    /// their incoming request, so it is stamped **only on the incoming
+    /// row** (the outgoing row carries a label *we* chose, which is not
+    /// surfaced) and is null on the outgoing and pending rows. Released by
+    /// [`free_contact_requests_ffi`].
+    pub contact_account_label: *const std::os::raw::c_char,
 }
 
 /// Composite identifier for [`ContactChangeSet::removed_sent`] and
@@ -201,10 +213,11 @@ pub struct ContactIgnoredSenderFFI {
 //   152..=159 alias                          *const c_char
 //   160..=167 note                           *const c_char
 //   168       is_hidden                      bool
-//   169..=175 (tail padding to alignment 8)
+//   169..=175 (padding to 8)
+//   176..=183 contact_account_label          *const c_char
 //
-// Total size = 176, alignment = 8 (from u64 / pointer fields).
-const _: [u8; 176] = [0u8; std::mem::size_of::<ContactRequestFFI>()];
+// Total size = 184, alignment = 8 (from u64 / pointer fields).
+const _: [u8; 184] = [0u8; std::mem::size_of::<ContactRequestFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<ContactRequestFFI>()];
 
 // Expected `ContactRequestRemovalFFI` layout: 64 bytes, alignment 1.
@@ -261,7 +274,7 @@ impl ContactRequestFFI {
         request: &platform_wallet::ContactRequest,
     ) -> Self {
         Self::from_parts(
-            owner_id, contact_id, true, request, false, None, None, false,
+            owner_id, contact_id, true, request, false, None, None, false, None,
         )
     }
 
@@ -273,7 +286,7 @@ impl ContactRequestFFI {
         request: &platform_wallet::ContactRequest,
     ) -> Self {
         Self::from_parts(
-            owner_id, contact_id, false, request, false, None, None, false,
+            owner_id, contact_id, false, request, false, None, None, false, None,
         )
     }
 
@@ -304,11 +317,16 @@ impl ContactRequestFFI {
             alias,
             note,
             is_hidden,
+            // The outgoing row never carries the contact's account label —
+            // it is direction-specific (incoming-only).
+            None,
         )
     }
 
     /// Sibling of [`Self::from_established_outgoing`] for the **incoming**
-    /// row of an established contact.
+    /// row of an established contact. Carries the contact's decrypted
+    /// account label (`contact_account_label`) — the one direction that
+    /// surfaces it.
     #[allow(clippy::too_many_arguments)]
     pub fn from_established_incoming(
         owner_id: [u8; 32],
@@ -318,6 +336,7 @@ impl ContactRequestFFI {
         alias: Option<&str>,
         note: Option<&str>,
         is_hidden: bool,
+        contact_account_label: Option<&str>,
     ) -> Self {
         Self::from_parts(
             owner_id,
@@ -328,6 +347,7 @@ impl ContactRequestFFI {
             alias,
             note,
             is_hidden,
+            contact_account_label,
         )
     }
 
@@ -341,6 +361,7 @@ impl ContactRequestFFI {
         alias: Option<&str>,
         note: Option<&str>,
         is_hidden: bool,
+        contact_account_label: Option<&str>,
     ) -> Self {
         let (encrypted_public_key, encrypted_public_key_len) =
             allocate_byte_buffer(&request.encrypted_public_key);
@@ -373,6 +394,7 @@ impl ContactRequestFFI {
             alias: allocate_c_string(alias),
             note: allocate_c_string(note),
             is_hidden,
+            contact_account_label: allocate_c_string(contact_account_label),
         }
     }
 }
@@ -449,6 +471,7 @@ pub unsafe fn free_contact_requests_ffi(entries: *mut ContactRequestFFI, count: 
         );
         free_c_string(&mut entry.alias);
         free_c_string(&mut entry.note);
+        free_c_string(&mut entry.contact_account_label);
     }
 }
 
@@ -610,6 +633,7 @@ mod tests {
             Some("ally"),
             Some("a note"),
             true,
+            None,
         );
         assert!(out.is_outgoing);
         assert!(!inc.is_outgoing);
@@ -639,6 +663,53 @@ mod tests {
         }
         assert!(out.alias.is_null(), "free must reclaim + null the alias");
         assert!(out.note.is_null());
+    }
+
+    /// The contact's decrypted account label is **direction-specific**:
+    /// unlike `payment_channel_broken`/`alias`/`note` (symmetric, both
+    /// rows), it is stamped ONLY on the incoming row (the contact's label)
+    /// and is null on the outgoing row (which would carry a label *we*
+    /// sent). Pins that the projection keeps the two apart, so a Swift
+    /// `@Query` row never mistakes our own label for the contact's.
+    #[test]
+    fn established_incoming_row_carries_account_label_outgoing_is_null() {
+        let request = sample_request();
+        let owner = [3u8; 32];
+        let contact = [4u8; 32];
+
+        let mut out = ContactRequestFFI::from_established_outgoing(
+            owner, contact, &request, false, None, None, false,
+        );
+        let mut inc = ContactRequestFFI::from_established_incoming(
+            owner,
+            contact,
+            &request,
+            false,
+            None,
+            None,
+            false,
+            Some("Main wallet"),
+        );
+
+        assert!(
+            out.contact_account_label.is_null(),
+            "the outgoing row must NOT carry the contact's account label"
+        );
+        let label = unsafe { std::ffi::CStr::from_ptr(inc.contact_account_label) };
+        assert_eq!(
+            label.to_str().unwrap(),
+            "Main wallet",
+            "the incoming row must carry the contact's decrypted account label"
+        );
+
+        unsafe {
+            free_contact_requests_ffi(&mut out as *mut ContactRequestFFI, 1);
+            free_contact_requests_ffi(&mut inc as *mut ContactRequestFFI, 1);
+        }
+        assert!(
+            inc.contact_account_label.is_null(),
+            "free must reclaim + null the account label"
+        );
     }
 
     /// `ContactIgnoredSenderFFI::new` must carry the `(owner, sender)`

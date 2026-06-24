@@ -376,6 +376,11 @@ impl ManagedIdentity {
                 );
                 contact.incoming_request = request;
                 contact.payment_channel_broken = false;
+                // The label belongs to the incoming request being replaced —
+                // drop it so the rebuilt external account re-derives it from
+                // the new request rather than showing the old label against
+                // fresh key material.
+                contact.contact_account_label = None;
                 cs.established.insert(
                     SentContactRequestKey {
                         owner_id,
@@ -630,6 +635,51 @@ mod tests {
         assert_eq!(managed.incoming_contact_requests.len(), 0);
         assert_eq!(managed.established_contacts.len(), 1);
         assert!(managed.established_contacts.contains_key(&contact_id));
+    }
+
+    /// DIP-15 §8.5 receive-side label: a contact's account label is derived
+    /// from their incoming request, so a rotation (new incoming request →
+    /// new key material, stale external account torn down + rebuilt) MUST
+    /// drop the old label — otherwise the rebuilt channel would show the old
+    /// contact's label. Pins that the in-place rotation path clears
+    /// `contact_account_label` where it clears `payment_channel_broken` (the
+    /// constructor-based reset is unreachable for an already-established
+    /// contact, so this is the load-bearing reset).
+    #[test]
+    fn rotation_resets_contact_account_label() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = Identifier::from([1u8; 32]);
+        let contact_id = Identifier::from([2u8; 32]);
+        let p = noop_persister();
+
+        // An established contact carrying a stale label and a broken channel.
+        let outgoing = create_contact_request(our_id, contact_id, 1000);
+        let incoming = create_contact_request(contact_id, our_id, 1001);
+        let mut established = EstablishedContact::new(contact_id, outgoing, incoming);
+        established.contact_account_label = Some("Old label".to_string());
+        established.payment_channel_broken = true;
+        managed.established_contacts.insert(contact_id, established);
+
+        // A superseding incoming request rotates the relationship.
+        let rotated = create_contact_request(contact_id, our_id, 2000);
+        let rekeyed = managed.apply_rotated_incoming_request(rotated, &p);
+
+        assert!(
+            rekeyed,
+            "a superseding incoming request must re-key the established contact"
+        );
+        let contact = managed
+            .established_contacts
+            .get(&contact_id)
+            .expect("still established after rotation");
+        assert_eq!(
+            contact.contact_account_label, None,
+            "rotation must drop the stale label so it re-derives from the new request"
+        );
+        assert!(
+            !contact.payment_channel_broken,
+            "rotation clears the broken flag (existing behavior, regression guard)"
+        );
     }
 
     #[test]

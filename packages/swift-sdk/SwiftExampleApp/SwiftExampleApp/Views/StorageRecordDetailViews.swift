@@ -412,6 +412,10 @@ struct DashpayContactRequestStorageDetailView: View {
                     value: record.encryptedAccountLabel.map { "\($0.count) bytes" } ?? "—"
                 )
                 FieldRow(
+                    label: "Account Label (decrypted)",
+                    value: record.contactAccountLabel ?? "—"
+                )
+                FieldRow(
                     label: "Auto-Accept Proof",
                     value: record.autoAcceptProof.map { "\($0.count) bytes" } ?? "—"
                 )

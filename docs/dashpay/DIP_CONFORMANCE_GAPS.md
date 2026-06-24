@@ -45,7 +45,7 @@
 | `$createdAtCoreBlockHeight` populated | 8.7 | ✅ **FULLY** | server-side `document_create_transition/v0/mod.rs:253-256`; client sends `None` `rs-sdk/.../contact_request.rs:478` |
 | DPNS name↔identity resolve/search/cache | 11 | 🟡 **PARTIAL** | works (`network/dpns.rs:281-362`); QR-build doesn't fall back to on-chain name |
 | **L1 block re-scan from `min(coreHeightCreatedAt)` on new contact** | **8.7, 12.6** | ❌ **MISSING** | never read to drive a rescan; SPV exposes no rescan entry point |
-| `encryptedAccountLabel` (48–80B, padded, decrypted) | 8.5 | 🟡 **PARTIAL** | live send **doesn't pad** (padding is dead code); never decrypted on receive |
+| `encryptedAccountLabel` (48–80B, padded, decrypted) | 8.5 | ✅ **FULLY** | send length-normalized in the crypto primitive (`account_label.rs`); receive decrypted + surfaced via `store_contact_account_label` (incoming-only) → `ContactDetailView` (`ACCOUNT_LABEL_SURFACING_SPEC.md`) |
 | `acceptedAccounts` + first-request bloom gating / flood mitigation | 8.4, 10.8 | ❌ **MISSING** | codec only; unpopulated + dropped on ingest |
 | Multi-account contacts (`Account ≠ 0`) | 7.1, 8.9 | 🟡 **DEFERRED** | `account_index` hardcoded `0`; blocked on upstream |
 | QR auto-accept (`autoAcceptProof`, `m/9'/5'/16'/expiry'`, BIP21/72 URI) | 8.13 | ✅ **FULLY** (iOS-first) | `crypto/auto_accept.rs`; see `QR_AUTO_ACCEPT_SPEC.md` |
@@ -143,10 +143,23 @@ the broadcast anymore (the review caught that the floor fix alone left a symmetr
 `>80` long-label failure). The dead `network/account_labels.rs` helper was deleted (it
 duplicated the convention). Red→green test
 `account_label_is_always_a_valid_48_to_80_byte_field` pins both bounds + multi-byte +
-the exact-48 boundary. **Still open (🟡, follow-up):** the label is never *decrypted/
-surfaced on receive* — it stays write-only. That's a feature (needs an FFI accessor +
-UI), not a send-blocking bug, and decrypt now works correctly through the same
-primitive when wired.
+the exact-48 boundary.
+
+**Receive-side surfacing — RESOLVED (2026-06-24, `ACCOUNT_LABEL_SURFACING_SPEC.md`,
+5-lens reviewed).** The label is now decrypted in Rust at the two signer-bearing
+register sites (drain `RegisterExternal` Ok-branch + `accept_register_external_validated`,
+where the ECDH `shared` already lives) and stored on
+`EstablishedContact.contact_account_label`. It is **direction-specific** — derived
+strictly from the *incoming* request and projected onto the **incoming FFI row only**
+(the outgoing row's label is one *we* sent and is never surfaced), so it does **not**
+copy the symmetric `alias`/`payment_channel_broken` both-rows pattern. Decrypt
+failures / non-printable garbage coerce to `None` (cosmetic — never breaks the
+channel); rotation pre-clears the field so it never goes stale. Surfaced through
+`ContactRequestFFI.contact_account_label` → `PersistentDashpayContactRequest
+.contactAccountLabel` → a read-only "Their account" row in `ContactDetailView`. Rust
+fully tested (306 platform-wallet + 118 FFI green); Swift mirrors `contactAlias`
+(iOS app-build verification pending). Backfill of pre-feature contacts deferred
+(dev-only; DashPay unreleased).
 
 ---
 
@@ -293,8 +306,9 @@ upstream guard-bypass method, not an SPV build.
    correctness/payment-loss item. Now scoped small: a wallet-side `synced_height`
    rewind on new-contact registration + one upstream `reset_wallet_synced_height_to`
    method; the dash-spv `FiltersManager` rescan engine already does the rest.
-2. **§1.2 account-label padding** — contained bug, but fix-or-reclassify so the
-   tracker stays trustworthy.
+2. **§1.2 account-label** — ✅ DONE. Send length-normalization fixed; receive-side
+   decryption + UI surfacing implemented (incoming-only) per
+   `ACCOUNT_LABEL_SURFACING_SPEC.md`. DIP-15 §8.5 now fully conforms.
 3. **DIP-16 deviations (§6.2)** — mostly intentional; if any is worth hardening it is
    #1 (consider sourcing proof-verification quorum keys from the local SPV engine) and
    #3 (height soft-consensus). Track, don't rush.

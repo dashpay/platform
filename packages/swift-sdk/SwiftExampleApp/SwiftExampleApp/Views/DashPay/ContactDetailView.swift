@@ -70,6 +70,15 @@ struct ContactDetailView: View {
         pairRows.compactMap(\.contactNote).first
     }
 
+    /// The contact's decrypted DIP-15 `encryptedAccountLabel` — the label
+    /// the contact chose for the account they shared (a payment-routing
+    /// hint). Read off the **incoming** row only: the outgoing row carries
+    /// a label *we* sent, which we don't surface. System-derived and
+    /// read-only, distinct from the owner-private `localAlias`/`localNote`.
+    private var contactAccountLabel: String? {
+        pairRows.first(where: { !$0.isOutgoing })?.contactAccountLabel
+    }
+
     private var dpnsHint: String? {
         contactMeta.dpnsHint(
             network: identity.network,
@@ -210,6 +219,20 @@ struct ContactDetailView: View {
                 Label(note, systemImage: "note.text")
                     .font(.caption)
                     .foregroundColor(.secondary)
+            }
+
+            // The contact's own label for the account they shared (DIP-15
+            // encryptedAccountLabel) — a read-only payment-routing hint,
+            // distinct from the owner-private alias/note above.
+            if let accountLabel = contactAccountLabel {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Their account")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Label(accountLabel, systemImage: "wallet.pass")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
         }
     }

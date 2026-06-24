@@ -1825,7 +1825,19 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         )
                         .await
                     {
-                        Ok(()) => cleared.push(entry.key()),
+                        Ok(()) => {
+                            // The external account is built; surface the
+                            // contact's account label from the same ECDH
+                            // shared key (best-effort, cosmetic — never fails
+                            // the drain).
+                            self.store_contact_account_label(
+                                &entry.owner_identity_id,
+                                &entry.contact_id,
+                                &shared,
+                            )
+                            .await;
+                            cleared.push(entry.key());
+                        }
                         Err(e) if e.is_permanent() => {
                             tracing::warn!(
                                 owner = %entry.owner_identity_id, contact = %entry.contact_id,
@@ -2159,6 +2171,85 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             tracing::error!("Failed to persist broken-channel changeset: {}", e);
         }
     }
+
+    /// Decrypt the contact's incoming `encryptedAccountLabel` with the ECDH
+    /// shared key and store the printable plaintext on the established
+    /// contact's `contact_account_label`. Best-effort and cosmetic: a missing
+    /// label, a decrypt/UTF-8 failure, or non-printable garbage leaves or sets
+    /// `None` — it never breaks the payment channel or fails the caller.
+    ///
+    /// The label is derived strictly from the **incoming** request (the label
+    /// the contact chose for the account they shared); the outgoing request
+    /// carries a label *we* sent and is never a source. AES-CBC has no
+    /// integrity, so a corrupt or non-conforming-sender ciphertext can unpad
+    /// into valid-UTF-8 garbage — empty / whitespace-only / control-char
+    /// results are coerced to `None` so the UI shows nothing rather than
+    /// garbage.
+    ///
+    /// Persisted via an `established` changeset entry — the same path as the
+    /// broken-channel flag. Self-contained locking: takes its own write guard,
+    /// and the decrypt is synchronous, so nothing awaits or re-locks under it.
+    /// The caller must hold no wallet-manager guard when invoking it.
+    pub(crate) async fn store_contact_account_label(
+        &self,
+        identity_id: &Identifier,
+        contact_id: &Identifier,
+        shared_key: &[u8; 32],
+    ) {
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+            return;
+        };
+        let Some(contact) = managed.established_contacts.get_mut(contact_id) else {
+            return;
+        };
+
+        // The contact's label rides their incoming request only.
+        let ciphertext = match &contact.incoming_request.encrypted_account_label {
+            Some(ct) => ct.clone(),
+            None => return,
+        };
+
+        let decrypted = match platform_encryption::decrypt_account_label(shared_key, &ciphertext) {
+            Ok(s) => {
+                let trimmed = s.trim();
+                if trimmed.is_empty() || trimmed.chars().any(char::is_control) {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            }
+            Err(e) => {
+                tracing::debug!(
+                    owner = %identity_id, contact = %contact_id, error = %e,
+                    "Could not decrypt the contact's account label; leaving it unset"
+                );
+                return;
+            }
+        };
+
+        // Idempotent — skip the changeset write when nothing changed.
+        if contact.contact_account_label == decrypted {
+            return;
+        }
+        contact.contact_account_label = decrypted;
+        let snapshot = contact.clone();
+
+        let mut cs = crate::changeset::ContactChangeSet::default();
+        cs.established.insert(
+            crate::changeset::SentContactRequestKey {
+                owner_id: *identity_id,
+                recipient_id: *contact_id,
+            },
+            snapshot,
+        );
+        if let Err(e) = self.persister.store(cs.into()) {
+            tracing::error!("Failed to persist account-label changeset: {}", e);
+        }
+    }
 }
 
 /// One established contact that needs its DashPay accounts (re)built
@@ -2421,7 +2512,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             shared,
         )
         .await
-        .map_err(RegisterExternalError::into_inner)
+        .map_err(RegisterExternalError::into_inner)?;
+
+        // The external account is built; surface the contact's account label
+        // from the same ECDH shared key (best-effort, cosmetic — a label
+        // failure never fails the accept).
+        self.store_contact_account_label(our_identity_id, contact_id, &shared)
+            .await;
+
+        Ok(())
     }
 
     /// Derive our DashPay receiving (friendship) xpub for `(our_identity,
