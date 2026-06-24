@@ -87,6 +87,19 @@ function sanitizePhaseEnv(env) {
   return sanitized;
 }
 
+function validatePlatformBranch(branch) {
+  const validBranchPattern = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
+  if (
+    !validBranchPattern.test(branch)
+    || branch.includes('..')
+    || branch.includes('//')
+    || branch.endsWith('/')
+    || branch.endsWith('.')
+  ) {
+    throw new Error(`PLATFORM_BRANCH contains unsupported characters or ref syntax: ${branch}`);
+  }
+}
+
 function killProcessGroup(child, signal) {
   try {
     process.kill(-child.pid, signal);
@@ -217,16 +230,20 @@ async function prepareWorkspace(metadata, timeoutMinutes) {
   const branch = process.env.PLATFORM_BRANCH || 'v3.1-dev';
   metadata.phase = 'workspace-prepare';
   writeMetadata(metadata);
+  validatePlatformBranch(branch);
 
   await runCommand(
     'workspace-prepare',
     [
-      `git fetch --prune origin ${JSON.stringify(branch)}`,
-      `git checkout ${JSON.stringify(branch)}`,
-      `git reset --hard origin/${JSON.stringify(branch)}`,
+      'git fetch --prune origin "$PLATFORM_BRANCH"',
+      'git checkout "$PLATFORM_BRANCH"',
+      'git reset --hard "origin/$PLATFORM_BRANCH"',
       'git clean -ffdx -e .latest-core-testnet-sync/',
     ].join('\n'),
-    sanitizePhaseEnv(process.env),
+    {
+      ...sanitizePhaseEnv(process.env),
+      PLATFORM_BRANCH: branch,
+    },
     timeoutMinutes,
   );
 
