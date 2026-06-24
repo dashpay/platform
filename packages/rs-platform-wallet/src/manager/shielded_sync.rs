@@ -148,6 +148,12 @@ pub struct ShieldedSyncManager {
     /// confirm the `!Send` loop fully exited before the host drops the
     /// runtime.
     background_join: StdMutex<Option<std::thread::JoinHandle<()>>>,
+    /// Manager-owned orphans list (shared `Arc`). On a tight
+    /// `stop()`→`start()` where the prior thread is wedged past the 1 s
+    /// reap backstop, [`start`](Self::start) parks the still-live handle
+    /// here (via [`reap_prior_or_park`](super::reap_prior_or_park))
+    /// instead of dropping it, so manager `shutdown()` accounts for it.
+    coordinator_orphans: super::CoordinatorOrphans,
     /// Monotonically increasing generation counter. Bumped on every
     /// `start()` so the exiting thread can tell whether its
     /// generation is still the active one before clearing
@@ -173,12 +179,14 @@ impl ShieldedSyncManager {
     pub fn new(
         event_manager: Arc<PlatformEventManager>,
         coordinator_slot: Arc<RwLock<Option<Arc<NetworkShieldedCoordinator>>>>,
+        coordinator_orphans: super::CoordinatorOrphans,
     ) -> Self {
         Self {
             event_manager,
             coordinator_slot,
             background_cancel: StdMutex::new(None),
             background_join: StdMutex::new(None),
+            coordinator_orphans,
             background_generation: AtomicU64::new(0),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
@@ -346,23 +354,15 @@ impl ShieldedSyncManager {
         // so is_finished() trips within a few milliseconds and the join is
         // near-instant. The 1 s deadline survives only as a genuine-wedge
         // backstop (e.g. a pass wedged in a Drop that never yields); if it
-        // fires we detach the already-cancelled thread to unblock start().
-        if let Some(h) = prior {
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-            while !h.is_finished() {
-                if std::time::Instant::now() >= deadline {
-                    tracing::warn!(
-                        "shielded-sync prior thread did not finish within 1 s \
-                         after cancellation; detaching to unblock start()"
-                    );
-                    break; // Drop h — detaches; thread was already cancelled.
-                }
-                std::thread::sleep(std::time::Duration::from_millis(5));
-            }
-            if h.is_finished() {
-                let _ = h.join(); // Reap resources; near-instant since finished.
-            }
-        }
+        // fires `reap_prior_or_park` parks the still-live, already-cancelled
+        // thread in the manager orphans list so `shutdown()` joins it and
+        // reports it non-clean rather than dropping it (residual UAF).
+        super::reap_prior_or_park(
+            prior,
+            &self.coordinator_orphans,
+            std::time::Duration::from_secs(1),
+            "shielded-sync",
+        );
     }
 
     /// Stop the background sync loop. No-op if not running.
@@ -601,7 +601,12 @@ mod tests {
     fn make_manager() -> Arc<ShieldedSyncManager> {
         let coordinator_slot = Arc::new(RwLock::new(None));
         let event_manager = Arc::new(PlatformEventManager::new(vec![]));
-        Arc::new(ShieldedSyncManager::new(event_manager, coordinator_slot))
+        let orphans = Arc::new(StdMutex::new(Vec::new()));
+        Arc::new(ShieldedSyncManager::new(
+            event_manager,
+            coordinator_slot,
+            orphans,
+        ))
     }
 
     /// Regression: a tight `stop()` → `start()` must reap the prior loop's

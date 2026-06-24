@@ -28,6 +28,22 @@ use crate::wallet::core::BalanceUpdateHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
+/// Shared list of coordinator OS threads that a tight `stop()`→`start()`
+/// reap had to detach past its 1 s wedge-backstop.
+///
+/// A coordinator's `start()` reap normally joins the prior thread within
+/// a few milliseconds. If that thread is genuinely wedged in a
+/// non-yielding `Drop` (vanishingly rare — the loop exits via a
+/// cancellable `select!`), [`reap_prior_or_park`] parks its still-live
+/// `JoinHandle` here instead of dropping it. The manager owns this list
+/// and shares a clone (`Arc`) with every coordinator, so
+/// [`PlatformWalletManager::shutdown`] can join everything parked here
+/// within its timeout and report
+/// [`CoordinatorThreadStatus::Detached`] if any thread is still alive —
+/// telling the host NOT to free a callback context the thread may still
+/// touch (closing a residual use-after-free window).
+pub(crate) type CoordinatorOrphans = Arc<std::sync::Mutex<Vec<std::thread::JoinHandle<()>>>>;
+
 /// Multi-wallet coordinator with SPV sync and event handling.
 ///
 /// Events are dispatched through [`PlatformEventManager`] to all registered
@@ -87,6 +103,11 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// is torn down.
     pub(super) event_adapter_cancel: CancellationToken,
     pub(super) event_adapter_join: tokio::sync::Mutex<Option<JoinHandle<()>>>,
+    /// Coordinator OS threads detached by a tight `stop()`→`start()`
+    /// reap (see [`CoordinatorOrphans`]). Shared (cloned `Arc`) with
+    /// every coordinator so their `start()` reaps can park a wedged
+    /// prior thread here, and drained/joined by [`shutdown`](Self::shutdown).
+    pub(super) coordinator_orphans: CoordinatorOrphans,
 }
 
 /// How one background coordinator thread terminated.
@@ -117,12 +138,24 @@ pub enum CoordinatorThreadStatus {
     /// the runtime was torn down before the join could run (unreachable
     /// in normal operation).
     Error(String),
+    /// At least one coordinator OS thread that an earlier tight
+    /// `stop()`→`start()` reap had to detach past its 1 s wedge-backstop
+    /// was still alive at the shutdown deadline.
+    ///
+    /// Such a thread was parked in the manager's [`CoordinatorOrphans`]
+    /// list (not silently dropped) precisely so this case is visible.
+    /// A still-live detached thread keeps an `Arc` to the host event
+    /// handler and may fire one final callback, so the host must NOT
+    /// free the callback context yet — this status keeps
+    /// [`is_clean`](Self::is_clean) `false` so the FFI `destroy` returns
+    /// `ErrorShutdownIncomplete` instead of `ok()`.
+    Detached,
 }
 
 impl CoordinatorThreadStatus {
     /// `true` only for a fully clean outcome: joined normally (`Ok`) or
-    /// never ran (`NotRunning`). `Stopped`, `Panicked`, `Timeout`, and
-    /// `Error` are all considered non-clean.
+    /// never ran (`NotRunning`). `Stopped`, `Panicked`, `Timeout`,
+    /// `Error`, and `Detached` are all considered non-clean.
     pub fn is_clean(&self) -> bool {
         matches!(self, Self::Ok | Self::NotRunning)
     }
@@ -148,19 +181,35 @@ pub struct CoordinatorExitStatus {
     pub shielded_sync: Option<CoordinatorThreadStatus>,
     /// Wallet-event adapter (a `tokio` task, not an OS thread).
     pub event_adapter: CoordinatorThreadStatus,
+    /// Aggregate status of any coordinator OS threads that an earlier
+    /// tight `stop()`→`start()` reap had to detach past its 1 s
+    /// wedge-backstop and park in the manager's [`CoordinatorOrphans`]
+    /// list.
+    ///
+    /// [`Ok`](CoordinatorThreadStatus::Ok) when none were detached (or
+    /// every detached thread has since joined cleanly);
+    /// [`Detached`](CoordinatorThreadStatus::Detached) when at least one
+    /// is still alive at the shutdown deadline. This is what keeps
+    /// [`all_clean`](Self::all_clean) honest for the wedge case the rest
+    /// of the teardown can't see — without it a detached-but-still-live
+    /// thread would let the host free a callback context the thread may
+    /// still touch (a residual use-after-free).
+    pub detached_threads: CoordinatorThreadStatus,
 }
 
 impl CoordinatorExitStatus {
-    /// `true` only when every worker is
+    /// `true` only when every worker — including any parked
+    /// [`detached_threads`](Self::detached_threads) — is
     /// [`Ok`](CoordinatorThreadStatus::Ok) or
     /// [`NotRunning`](CoordinatorThreadStatus::NotRunning); any
-    /// `Stopped`, `Panicked`, `Timeout`, or `Error` slot makes it
-    /// `false`.
+    /// `Stopped`, `Panicked`, `Timeout`, `Error`, or `Detached` slot
+    /// makes it `false`.
     pub fn all_clean(&self) -> bool {
         self.platform_address_sync.is_clean()
             && self.identity_sync.is_clean()
             && self.shielded_sync.as_ref().is_none_or(|s| s.is_clean())
             && self.event_adapter.is_clean()
+            && self.detached_threads.is_clean()
     }
 }
 
@@ -223,6 +272,138 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     }
 }
 
+/// Reap a coordinator's prior OS thread after a `stop()`→`start()`
+/// reschedule — or park it for [`PlatformWalletManager::shutdown`] if it
+/// is genuinely wedged.
+///
+/// Shared by all three coordinators' `start()` (identity / platform-
+/// address / shielded), called at the tail of `start()` *after* the
+/// `background_cancel` lock has been released, so the exiting prior
+/// thread's epilogue (which also takes that lock) can complete and the
+/// join lands in milliseconds.
+///
+/// `prior` was cancellation-signalled by the preceding `stop()`, so its
+/// `select!` loop exits and the thread finishes almost immediately. The
+/// `backstop` deadline fires only if the thread is wedged in a
+/// non-yielding `Drop` that never observes the cancellation (vanishingly
+/// rare). On that wedge we must NOT silently drop the still-live handle:
+/// the thread still holds an `Arc` to the host event handler and could
+/// fire a callback, so a later `destroy` that freed the host context
+/// would hit a use-after-free. Instead we park the handle in `orphans`
+/// so `shutdown()` joins it within its own timeout and reports
+/// [`CoordinatorThreadStatus::Detached`] if it is still alive — keeping
+/// [`CoordinatorExitStatus::all_clean`] honest.
+pub(crate) fn reap_prior_or_park(
+    prior: Option<std::thread::JoinHandle<()>>,
+    orphans: &CoordinatorOrphans,
+    backstop: std::time::Duration,
+    coordinator: &str,
+) {
+    let Some(handle) = prior else {
+        return;
+    };
+    let deadline = std::time::Instant::now() + backstop;
+    loop {
+        if handle.is_finished() {
+            // Near-instant since finished; reaps the thread's resources.
+            let _ = handle.join();
+            return;
+        }
+        if std::time::Instant::now() >= deadline {
+            tracing::warn!(
+                coordinator,
+                ?backstop,
+                "prior sync thread did not finish within the backstop after \
+                 cancellation; parking it in the manager orphans list for \
+                 shutdown() to join rather than detaching it"
+            );
+            // Park the still-live (but already-cancelled) handle so a
+            // later shutdown() can join it and report it non-clean,
+            // instead of dropping it and leaving a UAF window where the
+            // host frees a callback context the thread may still touch.
+            orphans
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(handle);
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+/// Drain the manager's [`CoordinatorOrphans`] list and classify how the
+/// parked threads ended, polling until `deadline`.
+///
+/// Threads land in the list only when a tight `stop()`→`start()` reap had
+/// to detach a prior coordinator thread past its 1 s wedge-backstop (see
+/// [`reap_prior_or_park`]). They were parked rather than dropped so this
+/// final teardown can account for them: a still-live detached thread
+/// keeps an `Arc` to the host event handler and could fire one last
+/// callback, so the host must not free its context until every such
+/// thread has exited.
+///
+/// Polls [`JoinHandle::is_finished`](std::thread::JoinHandle::is_finished)
+/// in 5 ms steps, yielding at each `.await` so a wrapping
+/// `tokio::time::timeout` can still interrupt it (no uncancellable
+/// blocking join — `join()` is only ever called on an already-finished
+/// handle). Returns:
+/// - [`Ok`](CoordinatorThreadStatus::Ok) — the list was empty, or every
+///   parked thread joined cleanly;
+/// - [`Panicked`](CoordinatorThreadStatus::Panicked) — a parked thread
+///   had panicked (and none were left alive at the deadline);
+/// - [`Detached`](CoordinatorThreadStatus::Detached) — at least one
+///   parked thread was still alive at `deadline`. Any still-live handles
+///   are re-parked so a later (idempotent) `shutdown()` can retry.
+pub(crate) async fn join_detached_orphans(
+    orphans: &CoordinatorOrphans,
+    deadline: std::time::Instant,
+) -> CoordinatorThreadStatus {
+    // Take the whole list out under the lock; we re-park any survivors
+    // at the deadline, but never hold the lock across an `.await`.
+    let mut pending: Vec<std::thread::JoinHandle<()>> = {
+        let mut guard = orphans.lock().unwrap_or_else(|e| e.into_inner());
+        std::mem::take(&mut *guard)
+    };
+    if pending.is_empty() {
+        return CoordinatorThreadStatus::Ok;
+    }
+
+    let mut panicked: Option<String> = None;
+    loop {
+        // Reap every thread that has finished this pass; retain the rest.
+        let mut still_live = Vec::with_capacity(pending.len());
+        for handle in pending.drain(..) {
+            if handle.is_finished() {
+                if let Err(payload) = handle.join() {
+                    // Keep the first panic message; a live `Detached`
+                    // thread still takes precedence at the deadline below.
+                    panicked.get_or_insert_with(|| panic_message(payload));
+                }
+            } else {
+                still_live.push(handle);
+            }
+        }
+        pending = still_live;
+
+        if pending.is_empty() {
+            return match panicked {
+                Some(msg) => CoordinatorThreadStatus::Panicked(msg),
+                None => CoordinatorThreadStatus::Ok,
+            };
+        }
+        if std::time::Instant::now() >= deadline {
+            // Re-park survivors so an idempotent re-`shutdown()` retries
+            // rather than losing track of a still-live thread.
+            orphans
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .extend(pending);
+            return CoordinatorThreadStatus::Detached;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+}
+
 /// Maximum time (seconds) the teardown paths — `shutdown()`,
 /// `clear_shielded`, and the FFI shielded-stop bridge — wait for one
 /// coordinator's quiesce+join to complete.
@@ -235,6 +416,23 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 /// (e.g. a blocking destructor); on timeout the coordinator slot reports
 /// [`CoordinatorThreadStatus::Timeout`] rather than hanging forever.
 pub const SHUTDOWN_JOIN_TIMEOUT_SECS: u64 = 30;
+
+/// Grace period (seconds) [`PlatformWalletManager::shutdown`] spends
+/// polling any parked [`CoordinatorOrphans`] before declaring a survivor
+/// [`Detached`](CoordinatorThreadStatus::Detached).
+///
+/// Unlike a live coordinator — whose `quiesce()` may legitimately spend
+/// seconds draining an in-flight pass, hence the 30 s
+/// [`SHUTDOWN_JOIN_TIMEOUT_SECS`] — an orphan is a thread an earlier reap
+/// already had to detach *because it was wedged past its 1 s backstop*.
+/// A healthy detached thread finishes within milliseconds of the
+/// cancellation it long ago received (so `is_finished()` is usually true
+/// on the first poll and the join is instant); one still alive after this
+/// grace is wedged in a non-yielding `Drop` and will not finish however
+/// long we wait. A short grace therefore separates "finishing" from
+/// "wedged" without stretching teardown, and reporting `Detached` is the
+/// conservative, UAF-safe outcome (the host delays freeing its context).
+pub(crate) const SHUTDOWN_ORPHAN_GRACE_SECS: u64 = 1;
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Create a new PlatformWalletManager.
@@ -275,6 +473,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             balance_handler,
         ]));
 
+        // Shared orphans list: a coordinator's `start()` reap parks here
+        // any prior thread it had to detach past its 1 s wedge-backstop,
+        // and `shutdown()` joins them. Every coordinator gets a clone of
+        // this same `Arc` so they all park into the one list the manager
+        // drains.
+        let coordinator_orphans: CoordinatorOrphans = Arc::new(std::sync::Mutex::new(Vec::new()));
+
         let spv = Arc::new(SpvRuntime::new(
             Arc::clone(&wallet_manager),
             Arc::clone(&event_manager),
@@ -282,10 +487,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let platform_address_sync = Arc::new(PlatformAddressSyncManager::new(
             Arc::clone(&wallets),
             Arc::clone(&event_manager),
+            Arc::clone(&coordinator_orphans),
         ));
         let identity_sync = Arc::new(IdentitySyncManager::new(
             Arc::clone(&sdk),
             Arc::clone(&persister),
+            Arc::clone(&coordinator_orphans),
         ));
         #[cfg(feature = "shielded")]
         let shielded_coordinator: Arc<
@@ -295,6 +502,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let shielded_sync = Arc::new(ShieldedSyncManager::new(
             Arc::clone(&event_manager),
             Arc::clone(&shielded_coordinator),
+            Arc::clone(&coordinator_orphans),
         ));
         Self {
             sdk,
@@ -313,6 +521,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             persister,
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
+            coordinator_orphans,
         }
     }
 
@@ -575,11 +784,26 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             },
         };
 
+        // Finally, account for any coordinator threads an earlier tight
+        // stop()→start() reap had to detach past its 1 s wedge-backstop.
+        // They were parked in `coordinator_orphans` (not dropped) so we
+        // can join them here; a survivor at the grace deadline reports
+        // `Detached`, which keeps `all_clean()` false so the FFI `destroy`
+        // returns `ErrorShutdownIncomplete` rather than letting the host
+        // free a callback context the live thread may still touch. The
+        // grace poll yields, so it never blocks teardown uncancellably.
+        let detached_threads = join_detached_orphans(
+            &self.coordinator_orphans,
+            std::time::Instant::now() + std::time::Duration::from_secs(SHUTDOWN_ORPHAN_GRACE_SECS),
+        )
+        .await;
+
         CoordinatorExitStatus {
             platform_address_sync,
             identity_sync,
             shielded_sync,
             event_adapter,
+            detached_threads,
         }
     }
 }
@@ -800,6 +1024,9 @@ mod tests {
         assert!(!CoordinatorThreadStatus::Panicked("boom".into()).is_clean());
         assert!(!CoordinatorThreadStatus::Timeout.is_clean());
         assert!(!CoordinatorThreadStatus::Error("infra".into()).is_clean());
+        // A detached-but-still-live coordinator thread is non-clean: the
+        // host must not free its callback context yet.
+        assert!(!CoordinatorThreadStatus::Detached.is_clean());
     }
 
     /// `all_clean()` on `CoordinatorExitStatus` is false whenever any
@@ -811,6 +1038,7 @@ mod tests {
             identity_sync: CoordinatorThreadStatus::NotRunning,
             shielded_sync: None,
             event_adapter: CoordinatorThreadStatus::Ok,
+            detached_threads: CoordinatorThreadStatus::Ok,
         };
         assert!(clean.all_clean());
 
@@ -819,6 +1047,7 @@ mod tests {
             identity_sync: CoordinatorThreadStatus::Ok,
             shielded_sync: None,
             event_adapter: CoordinatorThreadStatus::Ok,
+            detached_threads: CoordinatorThreadStatus::Ok,
         };
         assert!(!with_timeout.all_clean());
 
@@ -827,8 +1056,20 @@ mod tests {
             identity_sync: CoordinatorThreadStatus::Ok,
             shielded_sync: Some(CoordinatorThreadStatus::Stopped(Some("aborted".into()))),
             event_adapter: CoordinatorThreadStatus::Ok,
+            detached_threads: CoordinatorThreadStatus::Ok,
         };
         assert!(!with_stopped.all_clean());
+
+        // A still-live detached orphan alone makes the aggregate
+        // non-clean — the slot the rest of the teardown can't see.
+        let with_detached = CoordinatorExitStatus {
+            platform_address_sync: CoordinatorThreadStatus::Ok,
+            identity_sync: CoordinatorThreadStatus::Ok,
+            shielded_sync: None,
+            event_adapter: CoordinatorThreadStatus::Ok,
+            detached_threads: CoordinatorThreadStatus::Detached,
+        };
+        assert!(!with_detached.all_clean());
     }
 
     /// A cleanly-returning thread joins as `Ok`; an absent handle is
@@ -992,5 +1233,159 @@ mod tests {
              ({} panics across 10 iterations)",
             SHUTDOWN_PANICS.load(AO::SeqCst)
         );
+    }
+
+    /// Spawn a thread that parks until `release` is signalled (or the
+    /// sender drops), standing in for a coordinator thread wedged in a
+    /// non-yielding `Drop` that ignores the cancellation it received.
+    fn spawn_wedged_thread() -> (std::sync::mpsc::Sender<()>, std::thread::JoinHandle<()>) {
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let handle = std::thread::spawn(move || {
+            // Block here regardless of any cancellation, exactly like a
+            // Drop that never yields, until the test releases us.
+            let _ = release_rx.recv();
+        });
+        (release_tx, handle)
+    }
+
+    /// A prior coordinator thread that is still alive past the reap
+    /// backstop must be **parked in the orphans list**, not dropped —
+    /// otherwise `shutdown()` would never know it exists and could let the
+    /// host free a callback context the live thread still touches.
+    ///
+    /// Non-vacuous: if `reap_prior_or_park` dropped the wedged handle
+    /// (the old behavior) the list would stay empty and the length
+    /// assertion below would fail.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reap_prior_or_park_parks_wedged_thread() {
+        let orphans: CoordinatorOrphans = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (release_tx, wedged) = spawn_wedged_thread();
+
+        // `reap_prior_or_park` is synchronous and spins a std sleep until
+        // its backstop, so run it off the runtime workers. A short backstop
+        // (real `start()` uses 1 s) keeps the test fast.
+        let orphans_for_reap = Arc::clone(&orphans);
+        tokio::task::spawn_blocking(move || {
+            reap_prior_or_park(
+                Some(wedged),
+                &orphans_for_reap,
+                Duration::from_millis(100),
+                "test-coordinator",
+            );
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(
+            orphans.lock().unwrap().len(),
+            1,
+            "a prior thread wedged past the backstop must be parked, not dropped"
+        );
+
+        // Cleanup: release + join the parked thread so none leaks.
+        release_tx.send(()).unwrap();
+        let parked = orphans.lock().unwrap().pop().unwrap();
+        tokio::task::spawn_blocking(move || {
+            let _ = parked.join();
+        })
+        .await
+        .unwrap();
+    }
+
+    /// `join_detached_orphans` classifies the parked threads: empty list →
+    /// `Ok`; a survivor at the deadline → `Detached` (re-parked for a later
+    /// retry); once the survivor exits, a fresh join reports `Ok` and
+    /// drains the list.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn join_detached_orphans_reports_detached_then_ok() {
+        let orphans: CoordinatorOrphans = Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        // Nothing parked → clean.
+        assert_eq!(
+            join_detached_orphans(&orphans, std::time::Instant::now()).await,
+            CoordinatorThreadStatus::Ok
+        );
+
+        // Park a still-live thread; a short deadline elapses with it alive.
+        let (release_tx, wedged) = spawn_wedged_thread();
+        orphans.lock().unwrap().push(wedged);
+        let status = join_detached_orphans(
+            &orphans,
+            std::time::Instant::now() + Duration::from_millis(50),
+        )
+        .await;
+        assert_eq!(
+            status,
+            CoordinatorThreadStatus::Detached,
+            "a survivor at the deadline must report Detached"
+        );
+        assert_eq!(
+            orphans.lock().unwrap().len(),
+            1,
+            "a survivor must be re-parked so an idempotent re-shutdown retries"
+        );
+
+        // Release it; the next join reaps it cleanly and empties the list.
+        release_tx.send(()).unwrap();
+        let status = tokio::time::timeout(
+            Duration::from_secs(5),
+            join_detached_orphans(&orphans, std::time::Instant::now() + Duration::from_secs(5)),
+        )
+        .await
+        .expect("orphan join must complete once the thread is released");
+        assert_eq!(status, CoordinatorThreadStatus::Ok);
+        assert!(
+            orphans.lock().unwrap().is_empty(),
+            "a joined orphan must be drained from the list"
+        );
+    }
+
+    /// Headline regression: a coordinator thread detached past the reap
+    /// backstop and parked in the orphans list makes a subsequent
+    /// `shutdown()` report the result as **non-clean** — so the FFI
+    /// `destroy` returns `ErrorShutdownIncomplete` and the host delays
+    /// freeing the callback context the still-live thread may touch.
+    ///
+    /// Non-vacuous: if `join_detached_orphans` ignored the list (or the
+    /// orphan were dropped at reap instead of parked), `detached_threads`
+    /// would be `Ok` and `all_clean()` would be `true`, failing both
+    /// assertions.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn shutdown_reports_detached_orphan_as_non_clean() {
+        let manager = make_manager();
+
+        // Stand in for the genuine-wedge outcome: an earlier tight
+        // stop()→start() reap had to detach a still-live coordinator thread
+        // past its 1 s backstop, so `reap_prior_or_park` parked it here.
+        let (release_tx, wedged) = spawn_wedged_thread();
+        manager.coordinator_orphans.lock().unwrap().push(wedged);
+
+        let status = tokio::time::timeout(Duration::from_secs(10), manager.shutdown())
+            .await
+            .expect("shutdown must complete within bound");
+
+        assert_eq!(
+            status.detached_threads,
+            CoordinatorThreadStatus::Detached,
+            "a still-live detached orphan must surface as Detached"
+        );
+        assert!(
+            !status.all_clean(),
+            "all_clean() must be false while a detached coordinator thread is \
+             still alive: {status:?}"
+        );
+
+        // Cleanup: shutdown() re-parked the survivor; release + join it so
+        // no live thread leaks past the test. Pop into a local first so the
+        // std MutexGuard is not held across the await below.
+        release_tx.send(()).unwrap();
+        let parked = manager.coordinator_orphans.lock().unwrap().pop();
+        if let Some(parked) = parked {
+            tokio::task::spawn_blocking(move || {
+                let _ = parked.join();
+            })
+            .await
+            .unwrap();
+        }
     }
 }

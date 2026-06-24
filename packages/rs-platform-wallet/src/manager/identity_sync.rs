@@ -167,6 +167,12 @@ where
     /// confirm the `!Send` loop fully exited before the host drops the
     /// runtime.
     background_join: StdMutex<Option<std::thread::JoinHandle<()>>>,
+    /// Manager-owned orphans list (shared `Arc`). On a tight
+    /// `stop()`→`start()` where the prior thread is wedged past the 1 s
+    /// reap backstop, [`start`](Self::start) parks the still-live handle
+    /// here (via [`reap_prior_or_park`](super::reap_prior_or_park))
+    /// instead of dropping it, so manager `shutdown()` accounts for it.
+    coordinator_orphans: super::CoordinatorOrphans,
     /// Monotonically increasing generation counter. Incremented each
     /// time `start()` installs a new cancel token so the exiting
     /// thread can tell whether its token is still current.
@@ -206,12 +212,17 @@ where
     /// writes). The registry starts empty — call
     /// [`register_identity`](Self::register_identity) before
     /// [`start`](Self::start).
-    pub fn new(sdk: Arc<dash_sdk::Sdk>, persister: Arc<P>) -> Self {
+    pub fn new(
+        sdk: Arc<dash_sdk::Sdk>,
+        persister: Arc<P>,
+        coordinator_orphans: super::CoordinatorOrphans,
+    ) -> Self {
         Self {
             sdk,
             persister,
             background_cancel: StdMutex::new(None),
             background_join: StdMutex::new(None),
+            coordinator_orphans,
             background_generation: AtomicU64::new(0),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
@@ -498,23 +509,15 @@ where
         // so is_finished() trips within a few milliseconds and the join is
         // near-instant. The 1 s deadline survives only as a genuine-wedge
         // backstop (e.g. a pass wedged in a Drop that never yields); if it
-        // fires we detach the already-cancelled thread to unblock start().
-        if let Some(h) = prior {
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-            while !h.is_finished() {
-                if std::time::Instant::now() >= deadline {
-                    tracing::warn!(
-                        "identity-sync prior thread did not finish within 1 s \
-                         after cancellation; detaching to unblock start()"
-                    );
-                    break; // Drop h — detaches; thread was already cancelled.
-                }
-                std::thread::sleep(std::time::Duration::from_millis(5));
-            }
-            if h.is_finished() {
-                let _ = h.join(); // Reap resources; near-instant since finished.
-            }
-        }
+        // fires `reap_prior_or_park` parks the still-live, already-cancelled
+        // thread in the manager orphans list so `shutdown()` joins it and
+        // reports it non-clean rather than dropping it (residual UAF).
+        super::reap_prior_or_park(
+            prior,
+            &self.coordinator_orphans,
+            std::time::Duration::from_secs(1),
+            "identity-sync",
+        );
     }
 
     /// Stop the background sync loop. No-op if not running.
@@ -853,7 +856,8 @@ mod tests {
     fn make_manager() -> Arc<IdentitySyncManager<NoopPersister>> {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(NoopPersister);
-        Arc::new(IdentitySyncManager::new(sdk, persister))
+        let orphans = Arc::new(StdMutex::new(Vec::new()));
+        Arc::new(IdentitySyncManager::new(sdk, persister, orphans))
     }
 
     fn make_recording_manager() -> (
@@ -862,8 +866,13 @@ mod tests {
     ) {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(RecordingPersister::new());
+        let orphans = Arc::new(StdMutex::new(Vec::new()));
         (
-            Arc::new(IdentitySyncManager::new(sdk, Arc::clone(&persister))),
+            Arc::new(IdentitySyncManager::new(
+                sdk,
+                Arc::clone(&persister),
+                orphans,
+            )),
             persister,
         )
     }
