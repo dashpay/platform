@@ -1,0 +1,98 @@
+name: "Latest public Core testnet sync status"
+
+"on":
+  repository_dispatch:
+    types:
+      - latest-core-testnet-sync-completed
+  workflow_dispatch:
+    inputs:
+      status:
+        description: Final completed run status
+        required: true
+        type: choice
+        options:
+          - sync_passed
+          - build_failed
+          - sync_failed
+      target_sha:
+        description: Platform commit SHA to report against
+        required: false
+        type: string
+      target_url:
+        description: URL for run logs or status details
+        required: false
+        type: string
+      core_version:
+        description: Public Core version used by the run
+        required: false
+        type: string
+      platform_sha:
+        description: Platform commit SHA built and synced
+        required: false
+        type: string
+      completed_at:
+        description: Completion timestamp, preferably ISO 8601 UTC
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  report:
+    name: Report latest completed sync status
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish commit status
+        uses: actions/github-script@v7
+        env:
+          CLIENT_PAYLOAD: ${{ toJson(github.event.client_payload) }}
+        with:
+          script: |
+            const dispatchPayload = JSON.parse(process.env.CLIENT_PAYLOAD || '{}');
+            const payload = context.eventName === 'workflow_dispatch'
+              ? context.payload.inputs
+              : dispatchPayload;
+
+            const status = payload.status;
+            const labels = {
+              sync_passed: 'Sync Passed',
+              build_failed: 'Build Failed',
+              sync_failed: 'Sync Failed',
+            };
+
+            if (!Object.prototype.hasOwnProperty.call(labels, status)) {
+              core.setFailed(`Unsupported status: ${status || '<empty>'}`);
+              return;
+            }
+
+            const targetSha = payload.target_sha || payload.platform_sha || context.sha;
+            const state = status === 'sync_passed' ? 'success' : 'failure';
+            const label = labels[status];
+            const details = [
+              payload.core_version,
+              payload.platform_sha ? payload.platform_sha.slice(0, 12) : null,
+              payload.completed_at,
+            ].filter(Boolean).join(' ');
+            const description = `${label}${details ? ` - ${details}` : ''}`.slice(0, 140);
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: targetSha,
+              state,
+              context: 'Latest public Core testnet sync',
+              description,
+              target_url: payload.target_url || undefined,
+            });
+
+            await core.summary
+              .addHeading('Latest public Core testnet sync')
+              .addRaw(`Status: ${label}\n\n`)
+              .addRaw(`Target SHA: ${targetSha}\n\n`)
+              .addRaw(`Core version: ${payload.core_version || 'not provided'}\n\n`)
+              .addRaw(`Platform SHA: ${payload.platform_sha || targetSha}\n\n`)
+              .addRaw(`Completed at: ${payload.completed_at || 'not provided'}\n\n`)
+              .addRaw(`Details: ${payload.target_url || 'not provided'}\n`)
+              .write();
