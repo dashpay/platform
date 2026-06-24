@@ -247,9 +247,13 @@ impl SlotState {
 // ---------------------------------------------------------------------
 
 /// Shared lifecycle engine for background workers. See the module docs.
+///
+/// Parked orphans carry their originating key so a store-wiping path for
+/// one worker can gate on [`any_alive_for`](Self::any_alive_for) without
+/// being blocked by an unrelated worker still legitimately running.
 pub struct ThreadRegistry<K: RegistryKey> {
     slots: Mutex<BTreeMap<K, SlotState>>,
-    orphans: Mutex<Vec<WorkerHandle>>,
+    orphans: Mutex<Vec<(K, WorkerHandle)>>,
     reap_backstop: Duration,
 }
 
@@ -446,7 +450,7 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             match step {
                 Step::Classify(h) => return h.classify(),
                 Step::Park(h) => {
-                    self.lock_orphans().push(h);
+                    self.lock_orphans().push((key, h));
                     return WorkerStatus::Timeout;
                 }
                 Step::NotRunning => return WorkerStatus::NotRunning,
@@ -455,24 +459,34 @@ impl<K: RegistryKey> ThreadRegistry<K> {
         }
     }
 
-    /// Is any registered worker **or** parked orphan still alive?
-    /// Store-wiping paths must gate on this returning `false` before
-    /// destroying shared state. [F2 FIX]
+    /// Is any registered worker **or** parked orphan still alive across
+    /// the whole registry?
     pub fn any_alive(&self) -> bool {
         {
             let slots = self.lock_slots();
             for slot in slots.values() {
-                if slot.cancel.is_some() {
+                if slot_alive(slot) {
                     return true;
-                }
-                if let Some(handle) = &slot.handle {
-                    if !handle.is_finished() {
-                        return true;
-                    }
                 }
             }
         }
-        self.lock_orphans().iter().any(|h| !h.is_finished())
+        self.lock_orphans().iter().any(|(_, h)| !h.is_finished())
+    }
+
+    /// Is the worker for `key` — its live slot **or** any orphan parked
+    /// under that key — still alive? A store-wiping path scoped to one
+    /// worker must gate on this (rather than the registry-wide
+    /// [`any_alive`](Self::any_alive)) so an unrelated worker that is
+    /// legitimately running does not block the wipe. [F2 FIX]
+    pub fn any_alive_for(&self, key: K) -> bool {
+        if let Some(slot) = self.lock_slots().get(&key) {
+            if slot_alive(slot) {
+                return true;
+            }
+        }
+        self.lock_orphans()
+            .iter()
+            .any(|(k, h)| *k == key && !h.is_finished())
     }
 
     /// Reap parked orphans with a short grace; survivors are re-parked and
@@ -526,7 +540,7 @@ impl<K: RegistryKey> ThreadRegistry<K> {
         self.slots.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn lock_orphans(&self) -> std::sync::MutexGuard<'_, Vec<WorkerHandle>> {
+    fn lock_orphans(&self) -> std::sync::MutexGuard<'_, Vec<(K, WorkerHandle)>> {
         self.orphans.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -577,7 +591,7 @@ impl<K: RegistryKey> ThreadRegistry<K> {
                              backstop after cancellation; parking it as an orphan \
                              for teardown to join rather than detaching it"
                         );
-                        self.lock_orphans().push(WorkerHandle::OsThread(h));
+                        self.lock_orphans().push((key, WorkerHandle::OsThread(h)));
                         return;
                     }
                     std::thread::sleep(Duration::from_millis(5));
@@ -588,7 +602,7 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             // finished task is a no-op).
             task => {
                 if !task.is_finished() {
-                    self.lock_orphans().push(task);
+                    self.lock_orphans().push((key, task));
                 }
             }
         }
@@ -598,7 +612,7 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     /// status and the number of survivors re-parked for an idempotent
     /// retry.
     async fn reap_orphans_impl(&self, grace: Duration) -> (WorkerStatus, usize) {
-        let mut pending: Vec<WorkerHandle> = {
+        let mut pending: Vec<(K, WorkerHandle)> = {
             let mut guard = self.lock_orphans();
             std::mem::take(&mut *guard)
         };
@@ -612,14 +626,14 @@ impl<K: RegistryKey> ThreadRegistry<K> {
         let mut non_clean: Option<WorkerStatus> = None;
         loop {
             let mut still_live = Vec::with_capacity(pending.len());
-            for handle in pending.drain(..) {
+            for (key, handle) in pending.drain(..) {
                 if handle.is_finished() {
                     let status = handle.classify();
                     if !status.is_clean() {
                         non_clean.get_or_insert(status);
                     }
                 } else {
-                    still_live.push(handle);
+                    still_live.push((key, handle));
                 }
             }
             pending = still_live;
@@ -636,14 +650,19 @@ impl<K: RegistryKey> ThreadRegistry<K> {
         }
     }
 
-    /// Test-only seam: park a raw thread handle as an orphan. Used by
-    /// cross-crate regression tests (e.g. the wallet's F2 gate) that must
-    /// inject a wedged prior-generation thread without driving the full
-    /// restart-reap path.
+    /// Test-only seam: park a raw thread handle as an orphan under `key`.
+    /// Used by cross-crate regression tests (e.g. the wallet's F2 gate)
+    /// that must inject a wedged prior-generation thread without driving
+    /// the full restart-reap path.
     #[doc(hidden)]
-    pub fn park_orphan_for_test(&self, handle: std::thread::JoinHandle<()>) {
-        self.lock_orphans().push(WorkerHandle::OsThread(handle));
+    pub fn park_orphan_for_test(&self, key: K, handle: std::thread::JoinHandle<()>) {
+        self.lock_orphans().push((key, WorkerHandle::OsThread(handle)));
     }
+}
+
+/// `true` if a slot is running or holds an unfinished handle.
+fn slot_alive(slot: &SlotState) -> bool {
+    slot.cancel.is_some() || slot.handle.as_ref().is_some_and(|h| !h.is_finished())
 }
 
 /// Re-park guard for [`ThreadRegistry::quiesce`]. If the poll-join future
@@ -666,7 +685,7 @@ impl<K: RegistryKey> Drop for Repark<'_, K> {
             .get_mut(&self.key)
             .and_then(|slot| slot.handle.take());
         if let Some(handle) = handle {
-            self.reg.lock_orphans().push(handle);
+            self.reg.lock_orphans().push((self.key, handle));
         }
     }
 }
@@ -885,7 +904,7 @@ mod tests {
         let wedged = std::thread::spawn(move || {
             let _ = release_rx.recv();
         });
-        reg.park_orphan_for_test(wedged);
+        reg.park_orphan_for_test("orphan", wedged);
 
         assert_eq!(
             reg.reap_orphans(Duration::from_millis(50)).await,
@@ -1027,7 +1046,7 @@ mod tests {
         let wedged = std::thread::spawn(move || {
             let _ = release_rx.recv();
         });
-        reg.park_orphan_for_test(wedged);
+        reg.park_orphan_for_test("orphan", wedged);
         assert!(reg.any_alive());
 
         assert_eq!(reg.quiesce("alpha").await, WorkerStatus::Ok);
@@ -1037,6 +1056,41 @@ mod tests {
         release_tx.send(()).unwrap();
         let _ = reg.reap_orphans(Duration::from_secs(2)).await;
         assert!(!reg.any_alive());
+    }
+
+    /// `any_alive_for(key)` is scoped: an orphan parked under one key does
+    /// not make a different key look alive (the F2 gate must not be
+    /// blocked by unrelated workers).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn any_alive_for_is_key_scoped() {
+        let reg = ThreadRegistry::<&str>::new();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let wedged = std::thread::spawn(move || {
+            let _ = release_rx.recv();
+        });
+        reg.park_orphan_for_test("shielded", wedged);
+
+        // A live, unrelated worker.
+        start_clean(&reg, "identity", WorkerConfig::default());
+
+        assert!(reg.any_alive(), "registry-wide liveness sees both");
+        assert!(reg.any_alive_for("shielded"), "shielded orphan is alive");
+        assert!(
+            !reg.any_alive_for("address"),
+            "an unrelated key with no slot/orphan is not alive"
+        );
+
+        // The running 'identity' worker must not make 'shielded' look alive
+        // beyond its own orphan, and vice versa.
+        assert!(reg.any_alive_for("identity"), "running identity is alive");
+
+        release_tx.send(()).unwrap();
+        let _ = reg.reap_orphans(Duration::from_secs(2)).await;
+        assert!(
+            !reg.any_alive_for("shielded"),
+            "shielded clear once its orphan is reaped"
+        );
+        assert_eq!(reg.quiesce("identity").await, WorkerStatus::Ok);
     }
 
     /// TC-010 — `shutdown()` panics with a documented message on a
