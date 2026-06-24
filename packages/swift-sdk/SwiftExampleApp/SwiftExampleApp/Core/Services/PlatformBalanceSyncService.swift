@@ -195,46 +195,71 @@ class PlatformBalanceSyncService: ObservableObject {
     ///
     /// Plain [`clearDisplay`] only zeroes the in-memory `@Published`
     /// mirror, so the next sync resumed from the surviving watermark in
-    /// ~2s (the "Clear didn't work" symptom). This wipes all three
-    /// stores the synced data actually lives in, mirroring
+    /// ~2s (the "Clear didn't work" symptom). This wipes the stores the
+    /// synced data actually lives in, mirroring
     /// `ShieldedService.clearLocalState`: Rust-side reset FIRST (so the
     /// next sync can't re-persist stale rows), then the SwiftData wipe,
     /// then the published-mirror reset.
     ///
-    /// The Rust reset and the SwiftData delete are both network-wide
-    /// (every wallet) — the Clear button lives on the global Sync Status
-    /// surface, so its semantics are "blow away platform persistence",
-    /// not "scope to one wallet".
-    func clearLocalState(modelContext: ModelContext) async {
+    /// Scoped to the **active network**. The SwiftData store holds rows
+    /// for every network at once (the UI filters them by network), so a
+    /// blanket `delete(model:)` would also erase other networks' cached
+    /// platform state. `PersistentPlatformAddress` carries no network
+    /// column, so it's scoped via `walletIdsOnNetwork` — the same
+    /// wallet-id-per-network pivot the view uses;
+    /// `PersistentPlatformAddressesSyncState` is network-keyed and is
+    /// scoped by `networkRaw`. This matches the manager-level Rust reset,
+    /// which only touches the active network's registered wallets.
+    ///
+    /// Fails closed: if the Rust reset OR the SwiftData delete throws, it
+    /// surfaces the error in `lastError` and returns WITHOUT calling
+    /// `clearDisplay()` — the UI never shows a false "cleared" state over
+    /// data that is still on disk / in Rust memory.
+    func clearLocalState(
+        modelContext: ModelContext,
+        network: Network,
+        walletIdsOnNetwork: Set<Data>
+    ) async {
         // 1) Reset the Rust-owned state BEFORE touching disk. Without
         //    this the in-memory watermark survives and the next "Sync
         //    Now" resumes incrementally (fast) instead of doing a full
         //    rescan; a still-registered background pass could also
-        //    re-persist the rows we're about to delete. Best-effort —
-        //    failure logs but doesn't abort the wipe.
+        //    re-persist the rows we're about to delete. Fail closed —
+        //    the reset is load-bearing for the wipe, so abort (surfacing
+        //    the error) rather than leave a half-cleared state.
         if let walletManager {
             do {
                 try await walletManager.resetPlatformAddressSyncState()
             } catch {
-                SDKLogger.error(
-                    "PlatformBalanceSyncService.clearLocalState: resetPlatformAddressSyncState failed: \(error.localizedDescription)"
-                )
+                lastError = "Failed to reset platform-address sync state: \(error.localizedDescription)"
+                SDKLogger.error(lastError ?? "")
+                return
             }
         }
 
-        // 2) Delete every platform-address SwiftData row across all
-        //    wallets on this device: the cached per-address balances and
-        //    the network-scoped sync-state watermark.
+        // 2) Delete this network's platform-address rows: the cached
+        //    per-address balances (scoped via the network's wallet-id
+        //    set) and the network-keyed sync-state watermark.
         do {
-            try modelContext.delete(model: PersistentPlatformAddress.self)
-            try modelContext.delete(model: PersistentPlatformAddressesSyncState.self)
+            let addresses = try modelContext.fetch(FetchDescriptor<PersistentPlatformAddress>())
+            for row in addresses where walletIdsOnNetwork.contains(row.walletId) {
+                modelContext.delete(row)
+            }
+
+            let networkRaw = network.rawValue
+            let syncStates = try modelContext.fetch(FetchDescriptor<PersistentPlatformAddressesSyncState>())
+            for row in syncStates where row.networkRaw == networkRaw {
+                modelContext.delete(row)
+            }
+
             try modelContext.save()
         } catch {
             lastError = "Failed to wipe persisted platform-address state: \(error.localizedDescription)"
             SDKLogger.error(lastError ?? "")
+            return
         }
 
-        // 3) Zero the published display mirror.
+        // 3) Zero the published display mirror — only on full success.
         clearDisplay()
     }
 

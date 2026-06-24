@@ -374,7 +374,9 @@ var body: some View {
                         Button {
                             Task {
                                 await platformBalanceSyncService.clearLocalState(
-                                    modelContext: modelContext
+                                    modelContext: modelContext,
+                                    network: platformState.currentNetwork,
+                                    walletIdsOnNetwork: walletIdsOnNetwork
                                 )
                             }
                         } label: {
