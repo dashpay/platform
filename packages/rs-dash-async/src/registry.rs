@@ -122,9 +122,11 @@ impl<K: RegistryKey> ShutdownReport<K> {
 /// registry never owns domain semantics.
 ///
 /// The captured state must be `Send + Sync`; a `!Send` capture does not
-/// compile as a `DrainHook`:
+/// compile as a `DrainHook`. The fence is anchored to `E0277` (unsatisfied
+/// `Send` bound) so the test cannot pass vacuously on some unrelated
+/// compile error:
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use std::rc::Rc;
 /// use std::sync::Arc;
 /// use dash_async::DrainHook;
@@ -331,6 +333,18 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     /// Start a tokio-task worker for `Send` futures. Same restart-reap
     /// semantics as [`start_thread`](Self::start_thread); does not require
     /// a multi-thread runtime.
+    ///
+    // TODO(rs-dapi-adoption): runtime-flavor assert is asymmetric.
+    // `start_thread` and `shutdown` assert a multi-thread runtime (the
+    // OS-thread `block_on` needs the shared reactor), but `start_task` does
+    // not — a task only needs a runtime handle. So a TASK-ONLY consumer
+    // (rs-dapi, no `start_thread`) can register and run workers on a
+    // `current_thread` runtime, then panic LATE when it finally calls
+    // `shutdown()`. The wallet (which always uses `start_thread`) trips the
+    // assert at start, so it is unaffected. Fix when rs-dapi adopts the
+    // registry: either drop the assert from `shutdown` for all-task
+    // registries (track whether any OS-thread worker was ever started) or
+    // assert in `start_task` too and require multi-thread everywhere.
     pub fn start_task<F, Fut>(self: &Arc<Self>, key: K, cfg: WorkerConfig, body: F)
     where
         F: FnOnce(CancellationToken) -> Fut + Send + 'static,
@@ -498,6 +512,8 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     /// (drain-hook -> cancel -> join) run concurrently within a tier;
     /// orphan reap runs last. **Requires a multi-thread runtime.**
     pub async fn shutdown(&self) -> ShutdownReport<K> {
+        // TODO(rs-dapi-adoption): see `start_task` — this assert is the late
+        // panic point for a task-only consumer on a current_thread runtime.
         Self::assert_multi_thread("shutdown");
 
         // Snapshot keys grouped by weight. A `BTreeMap` iterates tiers in
