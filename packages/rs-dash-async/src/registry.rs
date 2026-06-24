@@ -132,8 +132,7 @@ impl<K: RegistryKey> ShutdownReport<K> {
 /// let _hook: DrainHook =
 ///     Arc::new(move || { let r = Rc::clone(&rc); Box::pin(async move { let _ = &r; }) });
 /// ```
-pub type DrainHook =
-    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+pub type DrainHook = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
 /// Default managed-join budget when a [`WorkerConfig`] does not override
 /// it. Pinned so an accidental change surfaces in tests.
@@ -518,7 +517,9 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             // quiesce() drives its own drain-hook -> cancel -> join, and
             // `join_all` polls them on one task so their drain hooks
             // interleave (equal-weight concurrency).
-            let drained = keys.into_iter().map(|key| async move { (key, self.quiesce(key).await) });
+            let drained = keys
+                .into_iter()
+                .map(|key| async move { (key, self.quiesce(key).await) });
             for (key, status) in futures::future::join_all(drained).await {
                 per_worker.insert(key, status);
             }
@@ -656,7 +657,8 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     /// the full restart-reap path.
     #[doc(hidden)]
     pub fn park_orphan_for_test(&self, key: K, handle: std::thread::JoinHandle<()>) {
-        self.lock_orphans().push((key, WorkerHandle::OsThread(handle)));
+        self.lock_orphans()
+            .push((key, WorkerHandle::OsThread(handle)));
     }
 }
 
@@ -741,9 +743,11 @@ mod tests {
         // budget can't fire here; the tiny outer timeout drops the quiesce
         // future mid-poll. A naive by-value-into-future impl would detach
         // the handle (orphans empty, any_alive false); the fix re-parks it.
-        let result =
-            tokio::time::timeout(Duration::from_millis(100), reg.quiesce("alpha")).await;
-        assert!(result.is_err(), "outer timeout must fire on the wedged worker");
+        let result = tokio::time::timeout(Duration::from_millis(100), reg.quiesce("alpha")).await;
+        assert!(
+            result.is_err(),
+            "outer timeout must fire on the wedged worker"
+        );
 
         assert!(reg.any_alive(), "re-parked handle keeps any_alive true");
         assert!(!reg.is_running("alpha"), "slot cleared (cancel taken)");
@@ -1006,7 +1010,12 @@ mod tests {
             "a",
             WorkerConfig {
                 weight: ShutdownWeight(0),
-                drain: Some(mk_hook("a_arrived", "a_passed", Arc::clone(&log), Arc::clone(&barrier))),
+                drain: Some(mk_hook(
+                    "a_arrived",
+                    "a_passed",
+                    Arc::clone(&log),
+                    Arc::clone(&barrier),
+                )),
                 ..WorkerConfig::default()
             },
         );
@@ -1015,7 +1024,12 @@ mod tests {
             "b",
             WorkerConfig {
                 weight: ShutdownWeight(0),
-                drain: Some(mk_hook("b_arrived", "b_passed", Arc::clone(&log), Arc::clone(&barrier))),
+                drain: Some(mk_hook(
+                    "b_arrived",
+                    "b_passed",
+                    Arc::clone(&log),
+                    Arc::clone(&barrier),
+                )),
                 ..WorkerConfig::default()
             },
         );
@@ -1050,7 +1064,10 @@ mod tests {
         assert!(reg.any_alive());
 
         assert_eq!(reg.quiesce("alpha").await, WorkerStatus::Ok);
-        assert!(reg.any_alive(), "orphan still contributes after slot drains");
+        assert!(
+            reg.any_alive(),
+            "orphan still contributes after slot drains"
+        );
         assert!(!reg.is_running("alpha"));
 
         release_tx.send(()).unwrap();

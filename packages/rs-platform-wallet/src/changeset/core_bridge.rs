@@ -19,10 +19,11 @@
 //!
 //! # Lifetime
 //!
-//! [`spawn_wallet_event_adapter`] returns a [`JoinHandle`]. The caller
-//! (typically `PlatformWalletManager`) keeps the handle for the
-//! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
-//! make the task exit cleanly.
+//! [`wallet_event_adapter_loop`] is the task body. The caller (typically
+//! `PlatformWalletManager`) registers it on the shared `ThreadRegistry`
+//! via `start_task`, which owns its [`JoinHandle`] and cancellation; on
+//! shutdown the registry fires the [`CancellationToken`] to make the task
+//! exit cleanly and joins it.
 
 use std::sync::Arc;
 
@@ -34,87 +35,82 @@ use key_wallet::Utxo;
 use key_wallet_manager::{WalletEvent, WalletId, WalletManager};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::RwLock;
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{CoreChangeSet, PlatformWalletChangeSet};
 use crate::changeset::traits::PlatformWalletPersistence;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
-/// Spawn the wallet-event subscriber task.
+/// The wallet-event subscriber loop (the task body owned by the registry).
 ///
-/// Subscribes to `wallet_manager.subscribe_events()` from inside the
-/// spawned task (so the call-site doesn't need to be on a tokio
-/// runtime), then loops dispatching events to the persister via
-/// [`PlatformWalletPersistence::store`]. Exits when `cancel` fires
-/// or the upstream broadcast channel closes.
+/// Subscribes to `wallet_manager.subscribe_events()` from inside the task
+/// (so the call-site doesn't need to be on a tokio runtime), then loops
+/// dispatching events to the persister via
+/// [`PlatformWalletPersistence::store`]. Exits when `cancel` fires or the
+/// upstream broadcast channel closes.
 ///
-/// Generic over `P` so the spawned task gets static-dispatch on
-/// every `persister.store(...)` call. Pass the manager's own
-/// `Arc<P>` (not the `Arc<dyn PlatformWalletPersistence>`
-/// coercion) to actually realize the static-dispatch win.
-pub fn spawn_wallet_event_adapter<P>(
+/// Generic over `P` so the task gets static-dispatch on every
+/// `persister.store(...)` call. Pass the manager's own `Arc<P>` (not the
+/// `Arc<dyn PlatformWalletPersistence>` coercion) to realize that win.
+pub async fn wallet_event_adapter_loop<P>(
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     persister: Arc<P>,
     cancel: CancellationToken,
-) -> JoinHandle<()>
-where
+) where
     P: PlatformWalletPersistence + 'static,
 {
-    tokio::spawn(async move {
-        let mut receiver = {
-            let guard = wallet_manager.read().await;
-            guard.subscribe_events()
-        };
-        tracing::debug!("wallet-event adapter task started");
+    let mut receiver = {
+        let guard = wallet_manager.read().await;
+        guard.subscribe_events()
+    };
+    tracing::debug!("wallet-event adapter task started");
 
-        loop {
-            tokio::select! {
-                recv = receiver.recv() => {
-                    match recv {
-                        Ok(event) => {
-                            let wallet_id = event.wallet_id();
-                            // For events that need to consult per-wallet
-                            // state (today only `TransactionInstantLocked`,
-                            // which checks finality before recording the IS
-                            // lock), grab a brief read lock on the manager.
-                            let core = build_core_changeset(&wallet_manager, &event).await;
-                            if core.is_empty_no_records() {
-                                // SyncHeightAdvanced for an unknown wallet,
-                                // empty BlockProcessed, etc. — nothing to
-                                // persist. Skip the round-trip.
-                                continue;
-                            }
-                            let cs = PlatformWalletChangeSet {
-                                core: Some(core),
-                                ..PlatformWalletChangeSet::default()
-                            };
-                            if let Err(e) = persister.store(wallet_id, cs) {
-                                tracing::warn!(
-                                    wallet_id = %hex::encode(wallet_id),
-                                    error = %e,
-                                    "Persister rejected core changeset; state will be re-emitted on next sync round"
-                                );
-                            }
+    loop {
+        tokio::select! {
+            recv = receiver.recv() => {
+                match recv {
+                    Ok(event) => {
+                        let wallet_id = event.wallet_id();
+                        // For events that need to consult per-wallet
+                        // state (today only `TransactionInstantLocked`,
+                        // which checks finality before recording the IS
+                        // lock), grab a brief read lock on the manager.
+                        let core = build_core_changeset(&wallet_manager, &event).await;
+                        if core.is_empty_no_records() {
+                            // SyncHeightAdvanced for an unknown wallet,
+                            // empty BlockProcessed, etc. — nothing to
+                            // persist. Skip the round-trip.
+                            continue;
                         }
-                        Err(RecvError::Closed) if cancel.is_cancelled() => break,
-                        Err(RecvError::Closed) => {
-                            tracing::error!("WalletEvent broadcast closed unexpectedly");
-                            break;
-                        }
-                        Err(RecvError::Lagged(n)) => {
+                        let cs = PlatformWalletChangeSet {
+                            core: Some(core),
+                            ..PlatformWalletChangeSet::default()
+                        };
+                        if let Err(e) = persister.store(wallet_id, cs) {
                             tracing::warn!(
-                                missed = n,
-                                "wallet-event adapter lagged on broadcast channel; some events were dropped"
+                                wallet_id = %hex::encode(wallet_id),
+                                error = %e,
+                                "Persister rejected core changeset; state will be re-emitted on next sync round"
                             );
                         }
                     }
+                    Err(RecvError::Closed) if cancel.is_cancelled() => break,
+                    Err(RecvError::Closed) => {
+                        tracing::error!("WalletEvent broadcast closed unexpectedly");
+                        break;
+                    }
+                    Err(RecvError::Lagged(n)) => {
+                        tracing::warn!(
+                            missed = n,
+                            "wallet-event adapter lagged on broadcast channel; some events were dropped"
+                        );
+                    }
                 }
-                _ = cancel.cancelled() => break,
             }
+            _ = cancel.cancelled() => break,
         }
-        tracing::debug!("wallet-event adapter task exiting");
-    })
+    }
+    tracing::debug!("wallet-event adapter task exiting");
 }
 
 /// Project an upstream [`WalletEvent`] into a [`CoreChangeSet`] suitable

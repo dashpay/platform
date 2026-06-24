@@ -49,16 +49,17 @@
 use std::collections::BTreeMap;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc, Mutex as StdMutex,
+    Arc,
 };
 
-use dash_async::AtomicFlagGuard;
+use dash_async::{AtomicFlagGuard, DrainHook, ThreadRegistry, WorkerConfig};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use super::WalletWorker;
 
 use dpp::balances::credits::TokenAmount;
 use dpp::prelude::Identifier;
 use tokio::sync::RwLock;
-use tokio_util::sync::CancellationToken;
 
 use dash_sdk::platform::tokens::identity_token_balances::{
     IdentityTokenBalances, IdentityTokenBalancesQuery,
@@ -160,23 +161,11 @@ where
     /// over `P` so every `persister.store(...)` call on the hot sync
     /// loop dispatches statically.
     persister: Arc<P>,
-    /// Cancel token for the background loop, if running.
-    background_cancel: StdMutex<Option<CancellationToken>>,
-    /// Join handle for the background loop's OS thread, if running.
-    /// Taken and joined by [`quiesce`](Self::quiesce) so shutdown can
-    /// confirm the `!Send` loop fully exited before the host drops the
-    /// runtime.
-    background_join: StdMutex<Option<std::thread::JoinHandle<()>>>,
-    /// Manager-owned orphans list (shared `Arc`). On a tight
-    /// `stop()`→`start()` where the prior thread is wedged past the 1 s
-    /// reap backstop, [`start`](Self::start) parks the still-live handle
-    /// here (via [`reap_prior_or_park`](super::reap_prior_or_park))
-    /// instead of dropping it, so manager `shutdown()` accounts for it.
-    coordinator_orphans: super::CoordinatorOrphans,
-    /// Monotonically increasing generation counter. Incremented each
-    /// time `start()` installs a new cancel token so the exiting
-    /// thread can tell whether its token is still current.
-    background_generation: AtomicU64,
+    /// Shared worker-lifecycle engine. `start` / `stop` / `is_running` /
+    /// `quiesce` delegate to it under the [`WalletWorker::IdentitySync`]
+    /// key; it owns the loop's cancel token, OS-thread join handle, the
+    /// restart reap-or-park, and the orphan list.
+    registry: Arc<ThreadRegistry<WalletWorker>>,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
     /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
@@ -215,15 +204,12 @@ where
     pub fn new(
         sdk: Arc<dash_sdk::Sdk>,
         persister: Arc<P>,
-        coordinator_orphans: super::CoordinatorOrphans,
+        registry: Arc<ThreadRegistry<WalletWorker>>,
     ) -> Self {
         Self {
             sdk,
             persister,
-            background_cancel: StdMutex::new(None),
-            background_join: StdMutex::new(None),
-            coordinator_orphans,
-            background_generation: AtomicU64::new(0),
+            registry,
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
             quiescing: AtomicBool::new(false),
@@ -339,10 +325,22 @@ where
 
     /// Whether the background loop is currently running.
     pub fn is_running(&self) -> bool {
-        self.background_cancel
-            .lock()
-            .map(|g| g.is_some())
-            .unwrap_or(false)
+        self.registry.is_running(WalletWorker::IdentitySync)
+    }
+
+    /// The drain barrier handed to the registry: raise the `quiescing`
+    /// gate so any pass past its `is_syncing` CAS bails. The registry then
+    /// cancels the loop and joins the thread (the join waits for the
+    /// in-flight pass to drop and `is_syncing` to clear), so the barrier
+    /// itself is instant and never blocks teardown.
+    fn drain_hook(self: &Arc<Self>) -> DrainHook {
+        let this = Arc::clone(self);
+        Arc::new(move || {
+            let this = Arc::clone(&this);
+            Box::pin(async move {
+                this.quiescing.store(true, Ordering::Release);
+            })
+        })
     }
 
     /// Whether a sync pass is in flight right now.
@@ -414,57 +412,32 @@ where
     /// The first pass runs immediately; subsequent passes fire every
     /// [`interval`](Self::interval).
     pub fn start(self: Arc<Self>) {
-        let mut cancel_guard = self
-            .background_cancel
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if cancel_guard.is_some() {
-            return;
-        }
+        // Reopen the quiescing gate so this (re)start's passes can run; a
+        // prior quiesce raised it via the drain hook.
+        self.quiescing.store(false, Ordering::Release);
 
-        // Take any handle left by a prior stop() call so we can reap it — but
-        // DON'T join it here, while we still hold background_cancel. stop()
-        // takes-and-cancels the token but never touches background_join, so a
-        // stop()→start() sequence would otherwise overwrite (detach) the old
-        // handle and shutdown() would miss that thread. Joining it under
-        // background_cancel would DEADLOCK the reap into its 1 s backstop: the
-        // exiting prior thread's epilogue also locks background_cancel (to
-        // clear its slot), so it would block on the lock we hold → never
-        // finish → get detached on the exact stop()→start() path the reap
-        // exists for. We install the new token + bump the generation below,
-        // release the lock, and only THEN reap (after this fn's tail).
-        let prior = self
-            .background_join
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take();
+        let cfg = WorkerConfig {
+            weight: super::COORDINATOR_WEIGHT,
+            join_budget: Duration::from_secs(super::SHUTDOWN_JOIN_TIMEOUT_SECS),
+            drain: Some(self.drain_hook()),
+        };
 
-        let cancel = CancellationToken::new();
-        *cancel_guard = Some(cancel.clone());
-        let my_gen = self.background_generation.fetch_add(1, Ordering::AcqRel) + 1;
-
+        // The loop drives `!Send` SDK futures via `Handle::block_on` on a
+        // dedicated OS thread (the registry spawns it). The handle is
+        // captured from this tokio context; the new thread is not itself a
+        // tokio worker. `biased` polls the cancel arm first, so a pass
+        // stalled on a hung SDK fetch is dropped at its `.await` the
+        // instant the registry cancels — clearing `is_syncing` promptly so
+        // the join lands inside the budget.
         let handle = tokio::runtime::Handle::current();
         let this = Arc::clone(&self);
-        let join = std::thread::Builder::new()
-            .name("identity-sync".into())
-            .spawn(move || {
+        self.registry
+            .start_thread(WalletWorker::IdentitySync, cfg, move |cancel| {
                 handle.block_on(async move {
                     loop {
                         if cancel.is_cancelled() {
                             break;
                         }
-
-                        // Race the in-flight pass against cancellation.
-                        // `stop()` / `quiesce()` cancel the token; with
-                        // `biased` the cancel arm is polled first, so a
-                        // pass stalled on a hung SDK fetch is dropped at
-                        // its `.await` the instant we cancel. Dropping the
-                        // `sync_now` future unwinds to the `is_syncing`
-                        // `AtomicFlagGuard` it holds, clearing the flag
-                        // promptly — so `quiesce()`'s drain loop frees and
-                        // the join lands well inside `shutdown()`'s
-                        // timeout. A stalled pass can no longer strand a
-                        // live `!Send` thread past `shutdown()`.
                         tokio::select! {
                             biased;
                             _ = cancel.cancelled() => break,
@@ -477,47 +450,8 @@ where
                             _ = cancel.cancelled() => break,
                         }
                     }
-
-                    // Only clear the slot if no newer start() has
-                    // installed a replacement token since we launched.
-                    if let Ok(mut guard) = this.background_cancel.lock() {
-                        if this.background_generation.load(Ordering::Acquire) == my_gen {
-                            *guard = None;
-                        }
-                    }
                 });
-            })
-            .expect("failed to spawn identity-sync thread");
-        // Store the join handle while still holding cancel_guard — a
-        // concurrent quiesce() must wait for this lock before calling
-        // stop(), so the handle is always stored before it can be taken.
-        *self
-            .background_join
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some(join);
-
-        // Release background_cancel BEFORE reaping the prior thread, so its
-        // epilogue can acquire the lock, observe the bumped generation, skip
-        // clearing our freshly-installed token, and return. Holding the lock
-        // across the join below is what would block the prior thread, spin
-        // the full 1 s deadline, and detach — the very stall this ordering
-        // removes.
-        drop(cancel_guard);
-
-        // Now reap the prior thread. It was already cancellation-signalled by
-        // stop(), and with the lock released its epilogue completes promptly,
-        // so is_finished() trips within a few milliseconds and the join is
-        // near-instant. The 1 s deadline survives only as a genuine-wedge
-        // backstop (e.g. a pass wedged in a Drop that never yields); if it
-        // fires `reap_prior_or_park` parks the still-live, already-cancelled
-        // thread in the manager orphans list so `shutdown()` joins it and
-        // reports it non-clean rather than dropping it (residual UAF).
-        super::reap_prior_or_park(
-            prior,
-            &self.coordinator_orphans,
-            std::time::Duration::from_secs(1),
-            "identity-sync",
-        );
+            });
     }
 
     /// Stop the background sync loop. No-op if not running.
@@ -529,14 +463,7 @@ where
     /// by manager shutdown so the host can free the persister context —
     /// use [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
-        if let Some(token) = self
-            .background_cancel
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-        {
-            token.cancel();
-        }
+        self.registry.cancel(WalletWorker::IdentitySync);
     }
 
     /// Cancel the background loop **and wait for any in-flight sync pass
@@ -564,24 +491,17 @@ where
     /// the `!Send` loop has stopped touching `tokio::time` before a
     /// one-shot host drops the runtime.
     pub async fn quiesce(&self) -> super::CoordinatorThreadStatus {
-        self.quiescing.store(true, Ordering::Release);
-        // RAII gate: resets `quiescing` on *every* exit path — a normal
-        // return, a timed-out `shutdown()` dropping this future, or a
-        // panic. Without it a quiesce that doesn't run to completion
-        // leaves the gate latched `true`, silently bailing every future
-        // pass. Reopening on drop is safe because `stop()` (below) has
-        // already cancelled the loop, so no new pass can start.
+        // RAII gate: reopen `quiescing` on *every* exit path — normal
+        // return, a dropped future, or a panic. The registry's drain hook
+        // raises it inside `quiesce` below; without this reset a quiesce
+        // that doesn't complete would leave the gate latched and silently
+        // bail every future pass. Reopening is safe because the loop has
+        // been cancelled, so no new pass can start.
         let _quiescing_gate = AtomicFlagGuard::new(&self.quiescing);
-        self.stop();
-        while self.is_syncing.load(Ordering::Acquire) {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        let handle = self
-            .background_join
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take();
-        super::join_coordinator_thread(handle).await
+        self.registry
+            .quiesce(WalletWorker::IdentitySync)
+            .await
+            .into()
     }
 
     /// Run one sync pass across every registered identity.
@@ -856,8 +776,8 @@ mod tests {
     fn make_manager() -> Arc<IdentitySyncManager<NoopPersister>> {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(NoopPersister);
-        let orphans = Arc::new(StdMutex::new(Vec::new()));
-        Arc::new(IdentitySyncManager::new(sdk, persister, orphans))
+        let registry = ThreadRegistry::new();
+        Arc::new(IdentitySyncManager::new(sdk, persister, registry))
     }
 
     fn make_recording_manager() -> (
@@ -866,12 +786,12 @@ mod tests {
     ) {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(RecordingPersister::new());
-        let orphans = Arc::new(StdMutex::new(Vec::new()));
+        let registry = ThreadRegistry::new();
         (
             Arc::new(IdentitySyncManager::new(
                 sdk,
                 Arc::clone(&persister),
-                orphans,
+                registry,
             )),
             persister,
         )
@@ -991,123 +911,6 @@ mod tests {
 
         mgr.set_interval(Duration::from_secs(120));
         assert_eq!(mgr.interval(), Duration::from_secs(120));
-    }
-
-    /// `quiesce()` must not return while a pass is in flight, and must
-    /// return promptly once the pass drains.
-    ///
-    /// Drives the real `is_syncing` lifecycle: a background task takes
-    /// the slot via the same `compare_exchange` the real `sync_now`
-    /// uses, holds it across a sleep (standing in for the pass body +
-    /// persister fan-out, which `sync_now` keeps the flag set across),
-    /// then clears it. We assert `quiesce()` is still pending while the
-    /// flag is held and completes after it falls — i.e. the falling edge
-    /// of `is_syncing` is what unblocks the barrier.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn quiesce_blocks_until_in_flight_pass_drains() {
-        let mgr = make_manager();
-
-        // Stand in for an in-flight `sync_now`: take the `is_syncing`
-        // slot exactly as the real pass does, hold it, then release.
-        let holder = Arc::clone(&mgr);
-        let pass = tokio::spawn(async move {
-            assert!(
-                holder
-                    .is_syncing
-                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                    .is_ok(),
-                "test should own the is_syncing slot"
-            );
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            holder.is_syncing.store(false, Ordering::Release);
-        });
-
-        // Give the holder task a chance to take the slot before we
-        // start draining.
-        while !mgr.is_syncing() {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-
-        let quiesce_fut = mgr.quiesce();
-        tokio::pin!(quiesce_fut);
-
-        // While the pass holds the flag, quiesce must stay pending.
-        tokio::select! {
-            _ = &mut quiesce_fut => panic!("quiesce returned while a pass was in flight"),
-            _ = tokio::time::sleep(Duration::from_millis(50)) => {}
-        }
-        assert!(mgr.is_syncing(), "pass should still be in flight");
-
-        // Once the pass drains, quiesce must return (well within a
-        // generous bound — it polls every 20ms).
-        tokio::time::timeout(Duration::from_secs(2), &mut quiesce_fut)
-            .await
-            .expect("quiesce did not return after the pass drained");
-
-        // The gate is reopened before quiesce returns.
-        assert!(!mgr.quiescing.load(Ordering::Acquire));
-        assert!(!mgr.is_syncing());
-        pass.await.unwrap();
-    }
-
-    /// Regression: a tight `stop()` → `start()` must reap the prior loop's
-    /// OS thread promptly, NOT stall on the 1 s detach backstop.
-    ///
-    /// The prior thread's exit epilogue locks `background_cancel` to
-    /// conditionally clear its slot. The earlier ordering held
-    /// `background_cancel` across the prior-handle join inside `start()`, so
-    /// on a back-to-back `stop()` → `start()` the exiting thread blocked on
-    /// that lock, never finished, and the reap spin-waited the full second
-    /// before detaching — a 1 s stall plus a transient untracked thread. The
-    /// fix installs the new token + generation, releases `background_cancel`,
-    /// and only then reaps, so the prior thread's epilogue runs and the join
-    /// lands in milliseconds.
-    ///
-    /// `stop()` and `start()` run back-to-back in one blocking closure
-    /// (mirroring the real call site) so `start()` re-acquires the lock
-    /// microseconds after `stop()` frees it — before the async-woken prior
-    /// thread can reach its epilogue. Against the old lock-held ordering this
-    /// reliably stalls ~1 s and fails the bound below.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn restart_after_stop_reaps_prior_thread() {
-        let mgr = make_manager();
-
-        // Launch the first loop and let its immediate (no-op, nothing
-        // registered) pass complete so the thread parks in the interval
-        // sleep, where cancellation lands cleanly.
-        Arc::clone(&mgr).start();
-        assert!(mgr.is_running());
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        // Back-to-back cancel-only stop + restart, off the runtime so the
-        // synchronous reap can't starve a worker. `start()` re-grabs
-        // background_cancel right after `stop()` frees it.
-        let restart = Arc::clone(&mgr);
-        let elapsed = tokio::task::spawn_blocking(move || {
-            restart.stop();
-            let started = std::time::Instant::now();
-            Arc::clone(&restart).start();
-            started.elapsed()
-        })
-        .await
-        .unwrap();
-
-        assert!(
-            elapsed < Duration::from_millis(500),
-            "stop()→start() stalled for {elapsed:?}: prior thread was not \
-             reaped promptly (background_cancel held across the join?)"
-        );
-        assert!(mgr.is_running(), "restart must leave the new loop tracked");
-
-        // Wind the new loop down so the test leaves no live !Send thread.
-        let status = tokio::time::timeout(Duration::from_secs(2), mgr.quiesce())
-            .await
-            .expect("cleanup quiesce did not complete within 2s after restart");
-        assert!(
-            status.is_clean(),
-            "cleanup quiesce ended non-cleanly: {status:?}"
-        );
-        assert!(!mgr.is_running());
     }
 
     /// A `sync_now()` invoked while `quiescing` is set must bail without

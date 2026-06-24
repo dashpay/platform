@@ -10,13 +10,12 @@ mod wallet_lifecycle;
 
 use std::sync::Arc;
 
+use dash_async::{ShutdownReport, ShutdownWeight, ThreadRegistry, WorkerConfig};
 use tokio::sync::{Notify, RwLock};
-use tokio::task::JoinHandle;
-use tokio_util::sync::CancellationToken;
 
 use key_wallet_manager::WalletManager;
 
-use crate::changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence};
+use crate::changeset::{wallet_event_adapter_loop, PlatformWalletPersistence};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
@@ -28,21 +27,29 @@ use crate::wallet::core::BalanceUpdateHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
-/// Shared list of coordinator OS threads that a tight `stop()`→`start()`
-/// reap had to detach past its 1 s wedge-backstop.
-///
-/// A coordinator's `start()` reap normally joins the prior thread within
-/// a few milliseconds. If that thread is genuinely wedged in a
-/// non-yielding `Drop` (vanishingly rare — the loop exits via a
-/// cancellable `select!`), [`reap_prior_or_park`] parks its still-live
-/// `JoinHandle` here instead of dropping it. The manager owns this list
-/// and shares a clone (`Arc`) with every coordinator, so
-/// [`PlatformWalletManager::shutdown`] can join everything parked here
-/// within its timeout and report
-/// [`CoordinatorThreadStatus::Detached`] if any thread is still alive —
-/// telling the host NOT to free a callback context the thread may still
-/// touch (closing a residual use-after-free window).
-pub(crate) type CoordinatorOrphans = Arc<std::sync::Mutex<Vec<std::thread::JoinHandle<()>>>>;
+/// Identity of a background worker on the manager's shared
+/// [`ThreadRegistry`]. The three periodic sync coordinators run as
+/// OS-thread workers (their SDK futures are `!Send`); the wallet-event
+/// adapter runs as a tokio task. Drained in ascending weight order on
+/// [`shutdown`](PlatformWalletManager::shutdown): the coordinators
+/// (weight 0) first, then the event adapter (weight 10) they store into.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum WalletWorker {
+    /// Platform-address (BLAST) balance sync loop.
+    PlatformAddressSync,
+    /// Per-identity token-state sync loop.
+    IdentitySync,
+    /// Shielded (Orchard) note sync loop.
+    ShieldedSync,
+    /// Wallet-event adapter task (sinks coordinator stores).
+    EventAdapter,
+}
+
+/// Teardown weight of the periodic sync coordinators — drained first.
+pub(crate) const COORDINATOR_WEIGHT: ShutdownWeight = ShutdownWeight(0);
+/// Teardown weight of the wallet-event adapter — drained after the
+/// coordinators that feed it.
+pub(crate) const EVENT_ADAPTER_WEIGHT: ShutdownWeight = ShutdownWeight(10);
 
 /// Multi-wallet coordinator with SPV sync and event handling.
 ///
@@ -98,16 +105,12 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     #[cfg(feature = "shielded")]
     pub(super) event_manager: Arc<PlatformEventManager>,
     pub(super) persister: Arc<P>,
-    /// Cancellation token + join handle for the wallet-event adapter
-    /// task. Held so [`shutdown`] can stop it cleanly when the manager
-    /// is torn down.
-    pub(super) event_adapter_cancel: CancellationToken,
-    pub(super) event_adapter_join: tokio::sync::Mutex<Option<JoinHandle<()>>>,
-    /// Coordinator OS threads detached by a tight `stop()`→`start()`
-    /// reap (see [`CoordinatorOrphans`]). Shared (cloned `Arc`) with
-    /// every coordinator so their `start()` reaps can park a wedged
-    /// prior thread here, and drained/joined by [`shutdown`](Self::shutdown).
-    pub(super) coordinator_orphans: CoordinatorOrphans,
+    /// Shared worker-lifecycle engine. Owns every background worker's
+    /// cancellation token + join handle, the restart reap-or-park, and the
+    /// orphan list. The coordinators hold a clone and register their loops
+    /// on it; the event adapter runs here as a tokio task. [`shutdown`]
+    /// drains it in weight order and joins every worker before returning.
+    pub(super) registry: Arc<ThreadRegistry<WalletWorker>>,
 }
 
 /// How one background coordinator thread terminated.
@@ -161,6 +164,25 @@ impl CoordinatorThreadStatus {
     }
 }
 
+/// Relocate a registry [`WorkerStatus`](dash_async::WorkerStatus) into the
+/// FFI-stable `CoordinatorThreadStatus`. The variant set and payloads are
+/// identical by construction, so this is a byte-stable 1:1 mapping — the
+/// FFI `destroy` / shielded-stop adapters keep reading the same shape.
+impl From<dash_async::WorkerStatus> for CoordinatorThreadStatus {
+    fn from(status: dash_async::WorkerStatus) -> Self {
+        use dash_async::WorkerStatus as W;
+        match status {
+            W::Ok => Self::Ok,
+            W::Stopped(reason) => Self::Stopped(reason),
+            W::Panicked(msg) => Self::Panicked(msg),
+            W::Timeout => Self::Timeout,
+            W::Detached => Self::Detached,
+            W::NotRunning => Self::NotRunning,
+            W::Error(msg) => Self::Error(msg),
+        }
+    }
+}
+
 /// Per-thread terminal status of every background worker, returned by
 /// [`PlatformWalletManager::shutdown`].
 ///
@@ -211,196 +233,36 @@ impl CoordinatorExitStatus {
             && self.event_adapter.is_clean()
             && self.detached_threads.is_clean()
     }
-}
 
-/// Join a coordinator's background OS thread and classify how it ended.
-///
-/// Called from each coordinator's `quiesce()` after cancelling the
-/// loop and draining any in-flight pass, so the thread is already on
-/// its way out and the join is near-instant. Joining while the runtime
-/// is still alive guarantees the `!Send` loop has stopped touching
-/// `tokio::time` before the host drops the runtime.
-///
-/// **Polling approach**: we poll [`JoinHandle::is_finished`] in 5 ms
-/// steps rather than wrapping `handle.join()` in
-/// [`spawn_blocking`](tokio::task::spawn_blocking). The
-/// `spawn_blocking` approach spawns a blocking-pool task that cannot be
-/// cancelled once started — so dropping the timeout future that wraps
-/// `quiesce()` would leave the blocking task alive and `handle.join()`
-/// still running, defeating the timeout boundary. Polling lets the
-/// executor yield at each `.await` step so `tokio::time::timeout`
-/// wrapping `quiesce()` can truly interrupt this call.
-///
-/// **Requires a multi-thread runtime.** Each coordinator's OS thread
-/// drives its loop via [`Handle::block_on`](tokio::runtime::Handle::block_on)
-/// and needs the runtime's timer/IO driver; a `current_thread` runtime
-/// can only service one `block_on` at a time, so joining one coordinator
-/// while the others (and `shutdown()` itself) are mid-`block_on` would
-/// deadlock. `shutdown()` asserts the multi-thread flavor up front.
-pub(crate) async fn join_coordinator_thread(
-    handle: Option<std::thread::JoinHandle<()>>,
-) -> CoordinatorThreadStatus {
-    let Some(handle) = handle else {
-        return CoordinatorThreadStatus::NotRunning;
-    };
-    // Poll until the thread exits. The coordinator was already cancelled
-    // (stop() fires before quiesce() calls us), so is_finished() becomes
-    // true nearly immediately — typically within a single 5 ms step.
-    loop {
-        if handle.is_finished() {
-            return match handle.join() {
-                Ok(()) => CoordinatorThreadStatus::Ok,
-                Err(payload) => CoordinatorThreadStatus::Panicked(panic_message(payload)),
-            };
-        }
-        // Yield to the executor so the outer tokio::time::timeout wrapping
-        // quiesce() can fire if the deadline has passed. Without this yield
-        // the loop would busy-spin and block the task.
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-    }
-}
-
-/// Best-effort extraction of a panic message from a joined thread/task
-/// payload (`&str` and `String` are the common cases).
-fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
-    if let Some(s) = payload.downcast_ref::<&str>() {
-        (*s).to_string()
-    } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "<non-string panic>".to_string()
-    }
-}
-
-/// Reap a coordinator's prior OS thread after a `stop()`→`start()`
-/// reschedule — or park it for [`PlatformWalletManager::shutdown`] if it
-/// is genuinely wedged.
-///
-/// Shared by all three coordinators' `start()` (identity / platform-
-/// address / shielded), called at the tail of `start()` *after* the
-/// `background_cancel` lock has been released, so the exiting prior
-/// thread's epilogue (which also takes that lock) can complete and the
-/// join lands in milliseconds.
-///
-/// `prior` was cancellation-signalled by the preceding `stop()`, so its
-/// `select!` loop exits and the thread finishes almost immediately. The
-/// `backstop` deadline fires only if the thread is wedged in a
-/// non-yielding `Drop` that never observes the cancellation (vanishingly
-/// rare). On that wedge we must NOT silently drop the still-live handle:
-/// the thread still holds an `Arc` to the host event handler and could
-/// fire a callback, so a later `destroy` that freed the host context
-/// would hit a use-after-free. Instead we park the handle in `orphans`
-/// so `shutdown()` joins it within its own timeout and reports
-/// [`CoordinatorThreadStatus::Detached`] if it is still alive — keeping
-/// [`CoordinatorExitStatus::all_clean`] honest.
-pub(crate) fn reap_prior_or_park(
-    prior: Option<std::thread::JoinHandle<()>>,
-    orphans: &CoordinatorOrphans,
-    backstop: std::time::Duration,
-    coordinator: &str,
-) {
-    let Some(handle) = prior else {
-        return;
-    };
-    let deadline = std::time::Instant::now() + backstop;
-    loop {
-        if handle.is_finished() {
-            // Near-instant since finished; reaps the thread's resources.
-            let _ = handle.join();
-            return;
-        }
-        if std::time::Instant::now() >= deadline {
-            tracing::warn!(
-                coordinator,
-                ?backstop,
-                "prior sync thread did not finish within the backstop after \
-                 cancellation; parking it in the manager orphans list for \
-                 shutdown() to join rather than detaching it"
-            );
-            // Park the still-live (but already-cancelled) handle so a
-            // later shutdown() can join it and report it non-clean,
-            // instead of dropping it and leaving a UAF window where the
-            // host frees a callback context the thread may still touch.
-            orphans
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .push(handle);
-            return;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
-}
-
-/// Drain the manager's [`CoordinatorOrphans`] list and classify how the
-/// parked threads ended, polling until `deadline`.
-///
-/// Threads land in the list only when a tight `stop()`→`start()` reap had
-/// to detach a prior coordinator thread past its 1 s wedge-backstop (see
-/// [`reap_prior_or_park`]). They were parked rather than dropped so this
-/// final teardown can account for them: a still-live detached thread
-/// keeps an `Arc` to the host event handler and could fire one last
-/// callback, so the host must not free its context until every such
-/// thread has exited.
-///
-/// Polls [`JoinHandle::is_finished`](std::thread::JoinHandle::is_finished)
-/// in 5 ms steps, yielding at each `.await` so a wrapping
-/// `tokio::time::timeout` can still interrupt it (no uncancellable
-/// blocking join — `join()` is only ever called on an already-finished
-/// handle). Returns:
-/// - [`Ok`](CoordinatorThreadStatus::Ok) — the list was empty, or every
-///   parked thread joined cleanly;
-/// - [`Panicked`](CoordinatorThreadStatus::Panicked) — a parked thread
-///   had panicked (and none were left alive at the deadline);
-/// - [`Detached`](CoordinatorThreadStatus::Detached) — at least one
-///   parked thread was still alive at `deadline`. Any still-live handles
-///   are re-parked so a later (idempotent) `shutdown()` can retry.
-pub(crate) async fn join_detached_orphans(
-    orphans: &CoordinatorOrphans,
-    deadline: std::time::Instant,
-) -> CoordinatorThreadStatus {
-    // Take the whole list out under the lock; we re-park any survivors
-    // at the deadline, but never hold the lock across an `.await`.
-    let mut pending: Vec<std::thread::JoinHandle<()>> = {
-        let mut guard = orphans.lock().unwrap_or_else(|e| e.into_inner());
-        std::mem::take(&mut *guard)
-    };
-    if pending.is_empty() {
-        return CoordinatorThreadStatus::Ok;
-    }
-
-    let mut panicked: Option<String> = None;
-    loop {
-        // Reap every thread that has finished this pass; retain the rest.
-        let mut still_live = Vec::with_capacity(pending.len());
-        for handle in pending.drain(..) {
-            if handle.is_finished() {
-                if let Err(payload) = handle.join() {
-                    // Keep the first panic message; a live `Detached`
-                    // thread still takes precedence at the deadline below.
-                    panicked.get_or_insert_with(|| panic_message(payload));
-                }
+    /// Build the FFI-stable exit status from the registry's weight-ordered
+    /// [`ShutdownReport`]. A worker absent from the report never ran, so it
+    /// maps to [`NotRunning`](CoordinatorThreadStatus::NotRunning); a
+    /// non-zero orphan-survivor count surfaces as
+    /// [`Detached`](CoordinatorThreadStatus::Detached), keeping
+    /// [`all_clean`](Self::all_clean) honest for a still-live wedged thread.
+    pub(crate) fn from_report(report: ShutdownReport<WalletWorker>) -> Self {
+        let worker = |key: WalletWorker| -> CoordinatorThreadStatus {
+            report
+                .per_worker
+                .get(&key)
+                .cloned()
+                .map(CoordinatorThreadStatus::from)
+                .unwrap_or(CoordinatorThreadStatus::NotRunning)
+        };
+        Self {
+            platform_address_sync: worker(WalletWorker::PlatformAddressSync),
+            identity_sync: worker(WalletWorker::IdentitySync),
+            #[cfg(feature = "shielded")]
+            shielded_sync: Some(worker(WalletWorker::ShieldedSync)),
+            #[cfg(not(feature = "shielded"))]
+            shielded_sync: None,
+            event_adapter: worker(WalletWorker::EventAdapter),
+            detached_threads: if report.detached > 0 {
+                CoordinatorThreadStatus::Detached
             } else {
-                still_live.push(handle);
-            }
+                CoordinatorThreadStatus::Ok
+            },
         }
-        pending = still_live;
-
-        if pending.is_empty() {
-            return match panicked {
-                Some(msg) => CoordinatorThreadStatus::Panicked(msg),
-                None => CoordinatorThreadStatus::Ok,
-            };
-        }
-        if std::time::Instant::now() >= deadline {
-            // Re-park survivors so an idempotent re-`shutdown()` retries
-            // rather than losing track of a still-live thread.
-            orphans
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .extend(pending);
-            return CoordinatorThreadStatus::Detached;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
     }
 }
 
@@ -449,14 +311,28 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let wallets = Arc::new(RwLock::new(std::collections::BTreeMap::new()));
         let lock_notify = Arc::new(Notify::new());
 
-        // Spawn the wallet-event adapter that translates upstream
-        // `WalletEvent`s into `CoreChangeSet`s and forwards them to
-        // the persister.
-        let event_adapter_cancel = CancellationToken::new();
-        let event_adapter_join = spawn_wallet_event_adapter(
-            Arc::clone(&wallet_manager),
-            Arc::clone(&persister),
-            event_adapter_cancel.clone(),
+        // Shared worker-lifecycle engine. The 1 s reap backstop (separate
+        // from the 30 s managed-join budget) is the grace a wedged prior
+        // thread gets before it is reported `Detached`.
+        let registry = ThreadRegistry::with_reap_backstop(std::time::Duration::from_secs(
+            SHUTDOWN_ORPHAN_GRACE_SECS,
+        ));
+
+        // Register the wallet-event adapter as a tokio task on the
+        // registry. It sinks the coordinators' stores, so it drains AFTER
+        // them (weight 10 vs the coordinators' 0).
+        let adapter_wallet_manager = Arc::clone(&wallet_manager);
+        let adapter_persister = Arc::clone(&persister);
+        registry.start_task(
+            WalletWorker::EventAdapter,
+            WorkerConfig {
+                weight: EVENT_ADAPTER_WEIGHT,
+                join_budget: std::time::Duration::from_secs(SHUTDOWN_JOIN_TIMEOUT_SECS),
+                drain: None,
+            },
+            move |cancel| {
+                wallet_event_adapter_loop(adapter_wallet_manager, adapter_persister, cancel)
+            },
         );
 
         // Build handler list: app handler + internal handlers.
@@ -473,13 +349,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             balance_handler,
         ]));
 
-        // Shared orphans list: a coordinator's `start()` reap parks here
-        // any prior thread it had to detach past its 1 s wedge-backstop,
-        // and `shutdown()` joins them. Every coordinator gets a clone of
-        // this same `Arc` so they all park into the one list the manager
-        // drains.
-        let coordinator_orphans: CoordinatorOrphans = Arc::new(std::sync::Mutex::new(Vec::new()));
-
         let spv = Arc::new(SpvRuntime::new(
             Arc::clone(&wallet_manager),
             Arc::clone(&event_manager),
@@ -487,12 +356,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let platform_address_sync = Arc::new(PlatformAddressSyncManager::new(
             Arc::clone(&wallets),
             Arc::clone(&event_manager),
-            Arc::clone(&coordinator_orphans),
+            Arc::clone(&registry),
         ));
         let identity_sync = Arc::new(IdentitySyncManager::new(
             Arc::clone(&sdk),
             Arc::clone(&persister),
-            Arc::clone(&coordinator_orphans),
+            Arc::clone(&registry),
         ));
         #[cfg(feature = "shielded")]
         let shielded_coordinator: Arc<
@@ -502,7 +371,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let shielded_sync = Arc::new(ShieldedSyncManager::new(
             Arc::clone(&event_manager),
             Arc::clone(&shielded_coordinator),
-            Arc::clone(&coordinator_orphans),
+            Arc::clone(&registry),
         ));
         Self {
             sdk,
@@ -519,9 +388,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             #[cfg(feature = "shielded")]
             event_manager,
             persister,
-            event_adapter_cancel,
-            event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
-            coordinator_orphans,
+            registry,
         }
     }
 
@@ -642,30 +509,32 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// - the coordinator's store reset itself fails.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
-        // Bound the quiesce with the same backstop `shutdown()` uses so a
-        // stalled in-flight pass can't hang Clear forever — cancellation
-        // makes the drain prompt; this timeout only matters if a pass's
-        // drop wedges. Unlike `shutdown()`, the terminal status is
-        // load-bearing HERE: a non-clean drain means the in-flight pass may
-        // still be running and could re-persist notes into the very store
-        // the `clear()` below is about to wipe. A timeout (the future was
-        // dropped at the deadline) is treated as the non-clean `Timeout`
-        // status, matching `shutdown()`'s backstop substitution.
-        let status = match tokio::time::timeout(
-            std::time::Duration::from_secs(SHUTDOWN_JOIN_TIMEOUT_SECS),
-            self.shielded_sync_manager.quiesce(),
-        )
-        .await
-        {
-            Ok(status) => status,
-            Err(_elapsed) => CoordinatorThreadStatus::Timeout,
-        };
+        // Quiesce the shielded loop: cancel it, drain any in-flight pass
+        // (incl. its persister fan-out), and join its OS thread. The
+        // registry bounds the join by the coordinator's own
+        // `SHUTDOWN_JOIN_TIMEOUT_SECS` budget — returning `Timeout` rather
+        // than hanging if a pass's drop wedges — so no outer timeout is
+        // needed here.
+        let status = self.shielded_sync_manager.quiesce().await;
+
         // Only commit the store wipe once the in-flight pass has fully
-        // drained. Otherwise refuse: a partial/timed-out drain could let a
-        // surviving pass write into a store we just cleared, desyncing the
-        // host's own wipe from a repopulated tree.
+        // drained. A partial/timed-out drain could let a surviving pass
+        // write into a store we just cleared, desyncing the host's own
+        // wipe from a repopulated tree.
         if !status.is_clean() {
             return Err(crate::error::PlatformWalletError::ShieldedShutdownIncomplete { status });
+        }
+        // [F2 FIX] Also refuse if a prior-generation shielded thread is
+        // still parked alive: it holds an `Arc` to the persister/store and
+        // could re-persist notes into the store we are about to wipe. The
+        // check is shielded-scoped, so the other coordinators / the
+        // always-on event adapter running normally do not block Clear.
+        if self.registry.any_alive_for(WalletWorker::ShieldedSync) {
+            return Err(
+                crate::error::PlatformWalletError::ShieldedShutdownIncomplete {
+                    status: CoordinatorThreadStatus::Detached,
+                },
+            );
         }
         if let Some(coord) = self.shielded_coordinator().await {
             coord.clear().await?;
@@ -673,163 +542,46 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         Ok(())
     }
 
-    /// Stop all background tasks and wait for them to exit.
+    /// Stop all background workers and wait for them to exit.
     ///
-    /// **Quiesces** the periodic coordinators
-    /// (`PlatformAddressSyncManager`, `IdentitySyncManager`,
-    /// `ShieldedSyncManager`) — cancelling each loop *and draining any
-    /// in-flight pass to completion*, including its persister /
-    /// host-callback fan-out — then drains the wallet-event adapter task.
-    /// Idempotent. Call before dropping the manager when a clean
-    /// shutdown is required (e.g. on app termination); a dirty drop
-    /// simply leaks the tasks until the runtime exits.
+    /// Delegates to the shared [`ThreadRegistry::shutdown`], which drains
+    /// in ascending weight order: the periodic coordinators (weight 0)
+    /// first — concurrently, since they share no lock — then the
+    /// wallet-event adapter (weight 10) that sinks their stores, then any
+    /// parked orphans. Each worker's drain raises its `quiescing` gate,
+    /// cancels the loop, and **joins** its OS thread / task, so when this
+    /// returns every `!Send` loop has fully exited. Idempotent.
     ///
     /// Ordering matters: cancel-only `stop()` would let a pass already
     /// inside `sync_now` keep running and call `persister.store(...)` /
-    /// fire a host completion callback after the FFI's `destroy`
-    /// returned and the host freed the persister / event-handler
-    /// context — a use-after-free. So we `quiesce()` the sync managers
-    /// FIRST (so no further persister store or host callback can start),
-    /// and only THEN cancel + join the event adapter, which is the sink
-    /// those stores feed into. The three coordinators are independent —
-    /// each `quiesce()` touches only its own state (its `quiescing` /
-    /// `is_syncing` atomics and its own `background_cancel` /
-    /// `background_join` mutexes) and joins its own OS thread, sharing no
-    /// lock — so they are drained *concurrently* via `tokio::join!`; only
-    /// the event-adapter teardown stays ordered strictly after them,
-    /// because it is the sink the coordinators store into.
+    /// fire a host completion callback after the FFI's `destroy` returned
+    /// and the host freed the persister / event-handler context — a
+    /// use-after-free. Quiescing the coordinators (weight 0) before the
+    /// event adapter (weight 10) closes that window: no further store can
+    /// start before its sink is torn down.
     ///
-    /// After each coordinator's `quiesce()` drains its in-flight pass,
-    /// this also **joins** the loop's OS thread, so when `shutdown()`
-    /// returns every `!Send` loop has fully exited. A host that drops the
-    /// tokio runtime right after `shutdown()` (one-shot / headless /
-    /// stdio) is therefore safe — no coordinator can still be polling
-    /// `tokio::time` on a shutting-down runtime. The returned
-    /// [`CoordinatorExitStatus`] reports per-thread how each worker ended.
+    /// A host that drops the tokio runtime right after `shutdown()`
+    /// (one-shot / headless / stdio) is therefore safe — no coordinator
+    /// can still be polling `tokio::time` on a shutting-down runtime. The
+    /// returned [`CoordinatorExitStatus`] reports per-worker how each ended.
     ///
     /// **Precondition: must be called from a multi-thread Tokio runtime.**
     /// Each coordinator's OS thread drives its loop via
-    /// [`Handle::block_on`](tokio::runtime::Handle::block_on) and needs
-    /// the runtime's timer/IO driver; a `current_thread` runtime can only
-    /// service one `block_on` at a time, so the join would deadlock. This
-    /// is asserted in both debug and release builds.
+    /// [`Handle::block_on`](tokio::runtime::Handle::block_on) and needs the
+    /// runtime's timer/IO driver; a `current_thread` runtime can only
+    /// service one `block_on` at a time, so the join would deadlock.
+    /// [`ThreadRegistry::shutdown`] asserts this in both debug and release.
     ///
-    /// Each coordinator quiesce+join is bounded by its own
-    /// [`SHUTDOWN_JOIN_TIMEOUT_SECS`] backstop. Because the three drain
-    /// concurrently, the worst-case wait collapses to ~that single
-    /// backstop instead of the sum of all three. `quiesce()` cancels
-    /// the loop, which aborts any in-flight pass at its `.await` point, so
-    /// the `is_syncing` drain clears promptly and the join normally lands
-    /// far inside the window — the deadline fires only if a pass's *drop*
-    /// itself wedges. On timeout the coordinator slot reports
-    /// [`CoordinatorThreadStatus::Timeout`] rather than hanging forever.
-    ///
-    /// The clear-on-panic half of that guarantee rides on unwinding, so
-    /// it holds under `panic = "unwind"`. Under the iOS `panic = "abort"`
-    /// release profiles a pass panic aborts the process outright (no
-    /// `Drop`, no status) — there is no live manager left to read a
-    /// status from.
+    /// Each worker's join is bounded by its own
+    /// [`SHUTDOWN_JOIN_TIMEOUT_SECS`] budget; on timeout its handle is
+    /// re-parked and the slot reports
+    /// [`CoordinatorThreadStatus::Timeout`] rather than hanging forever
+    /// (the F1 fix — a dropped/timed-out join can never detach a live
+    /// thread). The clear-on-panic half rides on unwinding, so it holds
+    /// under `panic = "unwind"`; under the iOS `panic = "abort"` profiles a
+    /// pass panic aborts the process outright.
     pub async fn shutdown(&self) -> CoordinatorExitStatus {
-        assert!(
-            matches!(
-                tokio::runtime::Handle::current().runtime_flavor(),
-                tokio::runtime::RuntimeFlavor::MultiThread
-            ),
-            "shutdown() requires a multi-thread Tokio runtime: each \
-             coordinator's OS thread drives its sync loop via \
-             Handle::block_on and needs the runtime's timer/IO driver, but \
-             a current_thread runtime can only drive one block_on at a time"
-        );
-
-        let timeout = std::time::Duration::from_secs(SHUTDOWN_JOIN_TIMEOUT_SECS);
-
-        // Drain the three independent periodic coordinators *concurrently*.
-        // Each quiesce() drains any in-flight pass AND joins its own OS
-        // thread, touching only that coordinator's own state (no shared
-        // lock), so racing them is sound and collapses the worst case from
-        // the sum of the three backstops to ~max(...). Each drain keeps its
-        // OWN inner `tokio::time::timeout`, so it still yields its own
-        // per-coordinator `CoordinatorThreadStatus` — a single outer timeout
-        // around the whole join! would flatten all three to `Timeout` and
-        // lose that detail.
-        let drain_platform_address = async {
-            tokio::time::timeout(timeout, self.platform_address_sync_manager.quiesce())
-                .await
-                .unwrap_or(CoordinatorThreadStatus::Timeout)
-        };
-        let drain_identity = async {
-            tokio::time::timeout(timeout, self.identity_sync_manager.quiesce())
-                .await
-                .unwrap_or(CoordinatorThreadStatus::Timeout)
-        };
-        #[cfg(feature = "shielded")]
-        let drain_shielded = async {
-            tokio::time::timeout(timeout, self.shielded_sync_manager.quiesce())
-                .await
-                .unwrap_or(CoordinatorThreadStatus::Timeout)
-        };
-
-        #[cfg(feature = "shielded")]
-        let (platform_address_sync, identity_sync, shielded_sync) = {
-            let (p, i, s) = tokio::join!(drain_platform_address, drain_identity, drain_shielded);
-            (p, i, Some(s))
-        };
-        #[cfg(not(feature = "shielded"))]
-        let (platform_address_sync, identity_sync, shielded_sync) = {
-            let (p, i) = tokio::join!(drain_platform_address, drain_identity);
-            (p, i, None)
-        };
-
-        // The event adapter is a tokio task (it sinks the coordinators'
-        // stores), so cancel + join it last — after the loops feeding it
-        // are gone.
-        self.event_adapter_cancel.cancel();
-        // Take the handle out into a local first so the `tokio::Mutex`
-        // guard doesn't stay held across the (up-to-30s) join `.await`
-        // below — a match scrutinee temporary would otherwise keep the
-        // guard alive for the whole match.
-        let event_adapter_handle = self.event_adapter_join.lock().await.take();
-        let event_adapter = match event_adapter_handle {
-            None => CoordinatorThreadStatus::NotRunning,
-            Some(handle) => match tokio::time::timeout(timeout, handle).await {
-                Ok(Ok(())) => CoordinatorThreadStatus::Ok,
-                // The returned status already carries this failure, and the
-                // FFI `destroy` adapter logs the aggregate once at the host
-                // layer — so don't double-log here.
-                Ok(Err(e)) => {
-                    if e.is_panic() {
-                        CoordinatorThreadStatus::Panicked(panic_message(e.into_panic()))
-                    } else {
-                        // Non-panic JoinError: task was cancelled or aborted —
-                        // not a clean exit, but also not a panic.
-                        CoordinatorThreadStatus::Stopped(Some(format!("{e}")))
-                    }
-                }
-                Err(_) => CoordinatorThreadStatus::Timeout,
-            },
-        };
-
-        // Finally, account for any coordinator threads an earlier tight
-        // stop()→start() reap had to detach past its 1 s wedge-backstop.
-        // They were parked in `coordinator_orphans` (not dropped) so we
-        // can join them here; a survivor at the grace deadline reports
-        // `Detached`, which keeps `all_clean()` false so the FFI `destroy`
-        // returns `ErrorShutdownIncomplete` rather than letting the host
-        // free a callback context the live thread may still touch. The
-        // grace poll yields, so it never blocks teardown uncancellably.
-        let detached_threads = join_detached_orphans(
-            &self.coordinator_orphans,
-            std::time::Instant::now() + std::time::Duration::from_secs(SHUTDOWN_ORPHAN_GRACE_SECS),
-        )
-        .await;
-
-        CoordinatorExitStatus {
-            platform_address_sync,
-            identity_sync,
-            shielded_sync,
-            event_adapter,
-            detached_threads,
-        }
+        CoordinatorExitStatus::from_report(self.registry.shutdown().await)
     }
 }
 
@@ -974,68 +726,6 @@ mod tests {
         assert!(status.all_clean());
     }
 
-    /// A coordinator thread that panics surfaces as `Panicked` rather
-    /// than being silently dropped.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn join_coordinator_thread_surfaces_panic() {
-        let handle = std::thread::spawn(|| panic!("boom in coordinator"));
-        match join_coordinator_thread(Some(handle)).await {
-            CoordinatorThreadStatus::Panicked(msg) => {
-                assert!(msg.contains("boom in coordinator"), "msg was {msg:?}");
-            }
-            other => panic!("expected Panicked, got {other:?}"),
-        }
-    }
-
-    /// A non-panic `JoinError` on the event adapter maps to `Stopped`, not
-    /// `Ok`, and is NOT considered clean. This covers the case where the
-    /// tokio task is cancelled or aborted rather than completing normally.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn event_adapter_non_panic_join_error_maps_to_stopped_and_is_not_clean() {
-        // Replace the real adapter handle with a guaranteed-pending task, then
-        // abort it. A `pending::<()>()` future can never complete on its own,
-        // so abort() always produces a non-panic JoinError — deterministically
-        // exercising the Stopped branch regardless of scheduler timing.
-        // (The original approach aborted the real adapter handle, which could
-        // race the task's own completion and silently yield `Ok` instead.)
-        let manager = make_manager();
-
-        // Drain and discard the real adapter (may already be finished).
-        let original = {
-            let mut guard = manager.event_adapter_join.lock().await;
-            guard.take()
-        };
-        if let Some(h) = original {
-            h.abort();
-            let _ = h.await;
-        }
-
-        // Install a permanently-pending task and abort it so the JoinError
-        // path in shutdown() is 100 % deterministic.
-        let pending = tokio::spawn(std::future::pending::<()>());
-        pending.abort();
-        *manager.event_adapter_join.lock().await = Some(pending);
-
-        let status = manager.shutdown().await;
-
-        // The aborted pending task always yields a non-panic JoinError →
-        // shutdown() maps it to Stopped.
-        assert!(
-            matches!(status.event_adapter, CoordinatorThreadStatus::Stopped(_)),
-            "expected Stopped from a non-panic JoinError, got {:?}",
-            status.event_adapter
-        );
-        assert!(
-            !status.event_adapter.is_clean(),
-            "Stopped must not count as clean"
-        );
-        // Coordinators were never started → their slots are clean.
-        assert_eq!(
-            status.platform_address_sync,
-            CoordinatorThreadStatus::NotRunning
-        );
-    }
-
     /// `Stopped` and `Timeout` are NOT clean; `Ok` and `NotRunning` ARE.
     /// Unit-tests the `is_clean` predicate directly so we don't need to
     /// trigger a real timeout (30s) in a deterministic test.
@@ -1097,36 +787,6 @@ mod tests {
         assert!(!with_detached.all_clean());
     }
 
-    /// A cleanly-returning thread joins as `Ok`; an absent handle is
-    /// `NotRunning`.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn join_coordinator_thread_ok_and_absent() {
-        let handle = std::thread::spawn(|| {});
-        assert_eq!(
-            join_coordinator_thread(Some(handle)).await,
-            CoordinatorThreadStatus::Ok
-        );
-        assert_eq!(
-            join_coordinator_thread(None).await,
-            CoordinatorThreadStatus::NotRunning
-        );
-    }
-
-    /// `join_coordinator_thread` uses `is_finished()` polling. Verify
-    /// it completes within a bounded time on a multi-thread runtime, as
-    /// `shutdown()` requires (and that it doesn't busy-spin indefinitely).
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn join_coordinator_thread_completes_within_deadline() {
-        let handle = std::thread::spawn(|| {});
-        let result = tokio::time::timeout(
-            Duration::from_secs(5),
-            join_coordinator_thread(Some(handle)),
-        )
-        .await
-        .expect("join_coordinator_thread must complete within 5 s");
-        assert_eq!(result, CoordinatorThreadStatus::Ok);
-    }
-
     /// `shutdown()` must wait for an in-flight sync pass to drain before
     /// joining the coordinator thread.
     ///
@@ -1185,8 +845,7 @@ mod tests {
     ///
     /// Uses `std::panic::catch_unwind` around `drop(runtime)` rather than
     /// a process-global panic hook; the hook would be live for seconds and
-    /// could swallow diagnostics from concurrently-running tests (e.g.
-    /// `join_coordinator_thread_surfaces_panic`).
+    /// could swallow diagnostics from other concurrently-running tests.
     #[test]
     fn shutdown_then_drop_runtime_does_not_panic() {
         static SHUTDOWN_PANICS: AtomicUsize = AtomicUsize::new(0);
@@ -1273,117 +932,26 @@ mod tests {
         (release_tx, handle)
     }
 
-    /// A prior coordinator thread that is still alive past the reap
-    /// backstop must be **parked in the orphans list**, not dropped —
-    /// otherwise `shutdown()` would never know it exists and could let the
-    /// host free a callback context the live thread still touches.
-    ///
-    /// Non-vacuous: if `reap_prior_or_park` dropped the wedged handle
-    /// (the old behavior) the list would stay empty and the length
-    /// assertion below would fail.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn reap_prior_or_park_parks_wedged_thread() {
-        let orphans: CoordinatorOrphans = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let (release_tx, wedged) = spawn_wedged_thread();
-
-        // `reap_prior_or_park` is synchronous and spins a std sleep until
-        // its backstop, so run it off the runtime workers. A short backstop
-        // (real `start()` uses 1 s) keeps the test fast.
-        let orphans_for_reap = Arc::clone(&orphans);
-        tokio::task::spawn_blocking(move || {
-            reap_prior_or_park(
-                Some(wedged),
-                &orphans_for_reap,
-                Duration::from_millis(100),
-                "test-coordinator",
-            );
-        })
-        .await
-        .unwrap();
-
-        assert_eq!(
-            orphans.lock().unwrap().len(),
-            1,
-            "a prior thread wedged past the backstop must be parked, not dropped"
-        );
-
-        // Cleanup: release + join the parked thread so none leaks.
-        release_tx.send(()).unwrap();
-        let parked = orphans.lock().unwrap().pop().unwrap();
-        tokio::task::spawn_blocking(move || {
-            let _ = parked.join();
-        })
-        .await
-        .unwrap();
-    }
-
-    /// `join_detached_orphans` classifies the parked threads: empty list →
-    /// `Ok`; a survivor at the deadline → `Detached` (re-parked for a later
-    /// retry); once the survivor exits, a fresh join reports `Ok` and
-    /// drains the list.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn join_detached_orphans_reports_detached_then_ok() {
-        let orphans: CoordinatorOrphans = Arc::new(std::sync::Mutex::new(Vec::new()));
-
-        // Nothing parked → clean.
-        assert_eq!(
-            join_detached_orphans(&orphans, std::time::Instant::now()).await,
-            CoordinatorThreadStatus::Ok
-        );
-
-        // Park a still-live thread; a short deadline elapses with it alive.
-        let (release_tx, wedged) = spawn_wedged_thread();
-        orphans.lock().unwrap().push(wedged);
-        let status = join_detached_orphans(
-            &orphans,
-            std::time::Instant::now() + Duration::from_millis(50),
-        )
-        .await;
-        assert_eq!(
-            status,
-            CoordinatorThreadStatus::Detached,
-            "a survivor at the deadline must report Detached"
-        );
-        assert_eq!(
-            orphans.lock().unwrap().len(),
-            1,
-            "a survivor must be re-parked so an idempotent re-shutdown retries"
-        );
-
-        // Release it; the next join reaps it cleanly and empties the list.
-        release_tx.send(()).unwrap();
-        let status = tokio::time::timeout(
-            Duration::from_secs(5),
-            join_detached_orphans(&orphans, std::time::Instant::now() + Duration::from_secs(5)),
-        )
-        .await
-        .expect("orphan join must complete once the thread is released");
-        assert_eq!(status, CoordinatorThreadStatus::Ok);
-        assert!(
-            orphans.lock().unwrap().is_empty(),
-            "a joined orphan must be drained from the list"
-        );
-    }
-
     /// Headline regression: a coordinator thread detached past the reap
     /// backstop and parked in the orphans list makes a subsequent
     /// `shutdown()` report the result as **non-clean** — so the FFI
     /// `destroy` returns `ErrorShutdownIncomplete` and the host delays
     /// freeing the callback context the still-live thread may touch.
     ///
-    /// Non-vacuous: if `join_detached_orphans` ignored the list (or the
-    /// orphan were dropped at reap instead of parked), `detached_threads`
-    /// would be `Ok` and `all_clean()` would be `true`, failing both
-    /// assertions.
+    /// Non-vacuous: if the registry dropped the orphan at reap instead of
+    /// parking it, `detached_threads` would be `Ok` and `all_clean()` would
+    /// be `true`, failing both assertions.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn shutdown_reports_detached_orphan_as_non_clean() {
         let manager = make_manager();
 
         // Stand in for the genuine-wedge outcome: an earlier tight
-        // stop()→start() reap had to detach a still-live coordinator thread
-        // past its 1 s backstop, so `reap_prior_or_park` parked it here.
+        // stop()->start() reap had to detach a still-live coordinator thread
+        // past its backstop, so the registry parked it as an orphan.
         let (release_tx, wedged) = spawn_wedged_thread();
-        manager.coordinator_orphans.lock().unwrap().push(wedged);
+        manager
+            .registry
+            .park_orphan_for_test(WalletWorker::ShieldedSync, wedged);
 
         let status = tokio::time::timeout(Duration::from_secs(10), manager.shutdown())
             .await
@@ -1400,17 +968,133 @@ mod tests {
              still alive: {status:?}"
         );
 
-        // Cleanup: shutdown() re-parked the survivor; release + join it so
-        // no live thread leaks past the test. Pop into a local first so the
-        // std MutexGuard is not held across the await below.
+        // Cleanup: shutdown() re-parked the survivor; release it and reap so
+        // no live thread leaks past the test.
         release_tx.send(()).unwrap();
-        let parked = manager.coordinator_orphans.lock().unwrap().pop();
-        if let Some(parked) = parked {
-            tokio::task::spawn_blocking(move || {
-                let _ = parked.join();
-            })
+        let _ = manager.registry.reap_orphans(Duration::from_secs(5)).await;
+    }
+
+    /// TC-002 (F2): `clear_shielded` must refuse while a prior-generation
+    /// shielded thread is parked alive — even though the current shielded
+    /// quiesce is clean and the other coordinators / the always-on event
+    /// adapter are legitimately running. Releasing + reaping the orphan
+    /// lets a retry succeed.
+    ///
+    /// Non-vacuous: against the pre-fix gate (only `!status.is_clean()`),
+    /// the clean `NotRunning` quiesce would pass the guard and wipe the
+    /// store under the live orphan — `clear_shielded` would return `Ok`.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn clear_shielded_refuses_while_shielded_orphan_alive() {
+        let manager = make_manager();
+
+        // Park a wedged thread under the ShieldedSync key: a prior-
+        // generation shielded thread an earlier reap could not join.
+        let (release_tx, wedged) = spawn_wedged_thread();
+        manager
+            .registry
+            .park_orphan_for_test(WalletWorker::ShieldedSync, wedged);
+
+        assert!(manager.registry.any_alive_for(WalletWorker::ShieldedSync));
+        assert!(!manager.shielded_sync_manager.is_running());
+
+        // Refuses: the live shielded orphan could re-persist into the store
+        // the wipe is about to clear.
+        let err = manager
+            .clear_shielded()
             .await
-            .unwrap();
-        }
+            .expect_err("clear_shielded must refuse while a shielded orphan is alive");
+        assert!(
+            matches!(
+                err,
+                crate::error::PlatformWalletError::ShieldedShutdownIncomplete { .. }
+            ),
+            "expected ShieldedShutdownIncomplete, got {err:?}"
+        );
+
+        // Release + reap the orphan; the shielded-scoped gate now clears and
+        // a retry succeeds (no shielded store configured → clear is a no-op).
+        release_tx.send(()).unwrap();
+        let _ = manager.registry.reap_orphans(Duration::from_secs(5)).await;
+        assert!(!manager.registry.any_alive_for(WalletWorker::ShieldedSync));
+        manager
+            .clear_shielded()
+            .await
+            .expect("clear_shielded must succeed once the orphan is reaped");
+    }
+
+    /// TC-015 (R5): `from_report` maps the registry's [`ShutdownReport`]
+    /// onto the FFI-stable `CoordinatorExitStatus` with identical field /
+    /// variant shape and `all_clean()` semantics. The full `WorkerStatus`
+    /// -> `CoordinatorThreadStatus` variant table is exercised.
+    #[test]
+    fn from_report_maps_to_ffi_stable_exit_status() {
+        use dash_async::WorkerStatus;
+        use std::collections::BTreeMap;
+
+        // All Ok, no orphans.
+        let per = BTreeMap::from([
+            (WalletWorker::PlatformAddressSync, WorkerStatus::Ok),
+            (WalletWorker::IdentitySync, WorkerStatus::Ok),
+            (WalletWorker::ShieldedSync, WorkerStatus::Ok),
+            (WalletWorker::EventAdapter, WorkerStatus::Ok),
+        ]);
+        let status = CoordinatorExitStatus::from_report(ShutdownReport {
+            per_worker: per,
+            detached: 0,
+        });
+        assert_eq!(status.platform_address_sync, CoordinatorThreadStatus::Ok);
+        assert_eq!(status.identity_sync, CoordinatorThreadStatus::Ok);
+        #[cfg(feature = "shielded")]
+        assert_eq!(status.shielded_sync, Some(CoordinatorThreadStatus::Ok));
+        #[cfg(not(feature = "shielded"))]
+        assert_eq!(status.shielded_sync, None);
+        assert_eq!(status.event_adapter, CoordinatorThreadStatus::Ok);
+        assert_eq!(status.detached_threads, CoordinatorThreadStatus::Ok);
+        assert!(status.all_clean());
+
+        // A surviving orphan -> Detached -> non-clean; absent workers ->
+        // NotRunning.
+        let status = CoordinatorExitStatus::from_report(ShutdownReport {
+            per_worker: BTreeMap::new(),
+            detached: 1,
+        });
+        assert_eq!(status.detached_threads, CoordinatorThreadStatus::Detached);
+        assert_eq!(
+            status.platform_address_sync,
+            CoordinatorThreadStatus::NotRunning
+        );
+        assert!(!status.all_clean());
+
+        // A per-worker Timeout propagates and is non-clean.
+        let per = BTreeMap::from([(WalletWorker::IdentitySync, WorkerStatus::Timeout)]);
+        let status = CoordinatorExitStatus::from_report(ShutdownReport {
+            per_worker: per,
+            detached: 0,
+        });
+        assert_eq!(status.identity_sync, CoordinatorThreadStatus::Timeout);
+        assert!(!status.all_clean());
+
+        // Full variant mapping table.
+        assert_eq!(
+            CoordinatorThreadStatus::from(WorkerStatus::Stopped(Some("x".into()))),
+            CoordinatorThreadStatus::Stopped(Some("x".into()))
+        );
+        assert_eq!(
+            CoordinatorThreadStatus::from(WorkerStatus::Panicked("p".into())),
+            CoordinatorThreadStatus::Panicked("p".into())
+        );
+        assert_eq!(
+            CoordinatorThreadStatus::from(WorkerStatus::Error("e".into())),
+            CoordinatorThreadStatus::Error("e".into())
+        );
+        assert_eq!(
+            CoordinatorThreadStatus::from(WorkerStatus::NotRunning),
+            CoordinatorThreadStatus::NotRunning
+        );
+        assert_eq!(
+            CoordinatorThreadStatus::from(WorkerStatus::Detached),
+            CoordinatorThreadStatus::Detached
+        );
     }
 }
