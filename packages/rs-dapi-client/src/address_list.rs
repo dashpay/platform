@@ -909,10 +909,13 @@ mod tests {
 
     /// After `ban_for`'s window expires the address re-enters rotation via
     /// `get_live_address`.  We verify both directions: the node is hidden during
-    /// an active window, and becomes live once the window passes.
+    /// an active window, and becomes live once the window has passed.
     ///
-    /// `ban_for` uses max-semantics (never shortens a longer active ban), so the
-    /// correct way to immediately release an active ban is `unban()`.
+    /// Window-expiry reinstatement is orthogonal to `unban()`: `get_live_address`
+    /// reinstates a node purely on `banned_until < now` regardless of `ban_count`,
+    /// so after expiry the node is live again while `is_banned()` (ban_count > 0)
+    /// is still true.  This is a different path from `unban()`, which also zeroes
+    /// `ban_count`.
     #[test]
     fn test_ban_for_address_re_enters_rotation_after_window_expires() {
         let mut list = AddressList::new();
@@ -926,11 +929,23 @@ mod tests {
             "node must be hidden during active ban window"
         );
 
-        // Unban explicitly — the correct way to immediately release a node.
-        assert!(list.unban(&addr));
+        // Simulate window expiry by back-dating banned_until — do NOT touch ban_count.
+        {
+            let mut guard = list.addresses.write().unwrap();
+            let status = guard.get_mut(&addr).expect("addr must be in list");
+            status.banned_until = Some(chrono::Utc::now() - Duration::from_secs(1));
+        }
+
+        // After window expiry the node must re-enter rotation …
         assert!(
             list.get_live_address().is_some(),
-            "address must re-enter rotation after unban"
+            "address must re-enter rotation after ban window expires"
+        );
+        // … but ban_count is still > 0, so is_banned() remains true.
+        // This distinguishes window-expiry from an explicit unban().
+        assert!(
+            list.is_banned(&addr),
+            "is_banned() must still be true after window expiry (ban_count not reset)"
         );
     }
 
