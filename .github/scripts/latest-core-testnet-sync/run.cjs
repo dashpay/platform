@@ -19,6 +19,19 @@ const STATUS_LABELS = {
   sync_failed: 'Sync Failed',
 };
 
+const DEFAULT_RESOLVE_TIMEOUT_MINUTES = 30;
+const DEFAULT_PHASE_TIMEOUT_MINUTES = 1440;
+const GITHUB_FETCH_TIMEOUT_MS = parsePositiveInteger(
+  process.env.LATEST_CORE_TESTNET_GITHUB_FETCH_TIMEOUT_MS,
+  60_000,
+  'LATEST_CORE_TESTNET_GITHUB_FETCH_TIMEOUT_MS',
+);
+const STATUS_PUBLISH_ATTEMPTS = parsePositiveInteger(
+  process.env.LATEST_CORE_TESTNET_STATUS_PUBLISH_ATTEMPTS,
+  3,
+  'LATEST_CORE_TESTNET_STATUS_PUBLISH_ATTEMPTS',
+);
+
 function now() {
   return new Date().toISOString();
 }
@@ -37,6 +50,67 @@ function writeMetadata(metadata) {
 
 function firstLine(value) {
   return value.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function parsePositiveMinutes(rawValue, fallback, name) {
+  if (rawValue === undefined || rawValue === null || String(rawValue).trim() === '') {
+    return fallback;
+  }
+
+  const value = Number(rawValue);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be a positive number, got: ${rawValue}`);
+  }
+
+  return value;
+}
+
+function parsePositiveInteger(rawValue, fallback, name) {
+  const value = parsePositiveMinutes(rawValue, fallback, name);
+  if (!Number.isInteger(value)) {
+    throw new Error(`${name} must be a positive integer, got: ${rawValue}`);
+  }
+
+  return value;
+}
+
+function sanitizePhaseEnv(env) {
+  const sanitized = { ...env };
+  delete sanitized.GITHUB_TOKEN;
+  delete sanitized.GH_TOKEN;
+  return sanitized;
+}
+
+function killProcessGroup(child, signal) {
+  try {
+    process.kill(-child.pid, signal);
+  } catch (error) {
+    if (error.code !== 'ESRCH') {
+      throw error;
+    }
+  }
+}
+
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, GITHUB_FETCH_TIMEOUT_MS);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function gitOutput(args) {
@@ -58,11 +132,12 @@ function resolveTargetSha() {
     || gitOutput(['rev-parse', 'HEAD']);
 }
 
-async function runCommand(name, command, env, timeoutMinutes) {
+async function runCommand(name, command, env, timeoutMinutes, options = {}) {
   if (!command || !command.trim()) {
     throw new Error(`Missing command for phase: ${name}`);
   }
 
+  const { captureStdout = false } = options;
   const logFileName = `${name}.log`;
   appendLog(logFileName, `$ ${command}\n\n`);
 
@@ -74,45 +149,92 @@ async function runCommand(name, command, env, timeoutMinutes) {
       cwd: repoRoot,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
     });
 
-    const timeout = setTimeout(() => {
-      child.kill('SIGTERM');
-      reject(new Error(`${name} timed out after ${timeoutMinutes} minutes`));
-    }, timeoutMs);
+    let timedOut = false;
+    let settled = false;
+    let killTimeout;
+    let stdout = '';
 
-    let output = '';
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      killProcessGroup(child, 'SIGTERM');
+      killTimeout = setTimeout(() => {
+        if (!settled) {
+          killProcessGroup(child, 'SIGKILL');
+        }
+      }, 30_000);
+    }, timeoutMs);
 
     child.stdout.on('data', (chunk) => {
       process.stdout.write(chunk);
-      output += chunk.toString();
+      if (captureStdout) {
+        stdout += chunk.toString();
+      }
       appendLog(logFileName, chunk.toString());
     });
 
     child.stderr.on('data', (chunk) => {
       process.stderr.write(chunk);
-      output += chunk.toString();
       appendLog(logFileName, chunk.toString());
     });
 
     child.on('error', (error) => {
+      settled = true;
       clearTimeout(timeout);
+      clearTimeout(killTimeout);
       reject(error);
     });
 
     child.on('close', (code, signal) => {
+      settled = true;
       clearTimeout(timeout);
+      clearTimeout(killTimeout);
       const durationSeconds = Math.round((Date.now() - startedAt) / 1000);
       appendLog(logFileName, `\nexit_code=${code} signal=${signal || ''} duration_seconds=${durationSeconds}\n`);
 
+      if (timedOut) {
+        reject(new Error(`${name} timed out after ${timeoutMinutes} minutes`));
+        return;
+      }
+
       if (code === 0) {
-        resolve({ output, durationSeconds });
+        resolve({ stdout, durationSeconds });
         return;
       }
 
       reject(new Error(`${name} exited with code ${code}${signal ? ` (${signal})` : ''}`));
     });
   });
+}
+
+async function prepareWorkspace(metadata, timeoutMinutes) {
+  if (process.env.LATEST_CORE_TESTNET_SKIP_WORKSPACE_PREP === '1') {
+    return;
+  }
+
+  const branch = process.env.PLATFORM_BRANCH || 'v3.1-dev';
+  metadata.phase = 'workspace-prepare';
+  writeMetadata(metadata);
+
+  await runCommand(
+    'workspace-prepare',
+    [
+      `git fetch --prune origin ${JSON.stringify(branch)}`,
+      `git checkout ${JSON.stringify(branch)}`,
+      `git reset --hard origin/${JSON.stringify(branch)}`,
+      'git clean -ffdx -e .latest-core-testnet-sync/',
+    ].join('\n'),
+    sanitizePhaseEnv(process.env),
+    timeoutMinutes,
+  );
+
+  const targetSha = resolveTargetSha();
+  metadata.target_sha = targetSha;
+  metadata.platform_sha = targetSha;
+  process.env.TARGET_SHA = targetSha;
+  writeMetadata(metadata);
 }
 
 async function resolveLatestCoreVersion(metadata) {
@@ -124,10 +246,15 @@ async function resolveLatestCoreVersion(metadata) {
     const result = await runCommand(
       'resolve-core-version',
       process.env.LATEST_CORE_TESTNET_CORE_VERSION_COMMAND,
-      process.env,
-      Number(process.env.LATEST_CORE_TESTNET_PHASE_TIMEOUT_MINUTES || 30),
+      sanitizePhaseEnv(process.env),
+      parsePositiveMinutes(
+        process.env.LATEST_CORE_TESTNET_RESOLVE_TIMEOUT_MINUTES,
+        DEFAULT_RESOLVE_TIMEOUT_MINUTES,
+        'LATEST_CORE_TESTNET_RESOLVE_TIMEOUT_MINUTES',
+      ),
+      { captureStdout: true },
     );
-    const version = firstLine(result.output);
+    const version = firstLine(result.stdout);
     if (!version) {
       throw new Error('Core version command did not print a version');
     }
@@ -135,7 +262,7 @@ async function resolveLatestCoreVersion(metadata) {
   }
 
   const releaseRepo = process.env.LATEST_CORE_RELEASE_REPO || 'dashpay/dash';
-  const response = await fetch(`https://api.github.com/repos/${releaseRepo}/releases`, {
+  const response = await fetchWithTimeout(`https://api.github.com/repos/${releaseRepo}/releases`, {
     headers: {
       Accept: 'application/vnd.github+json',
       'User-Agent': 'dash-platform-latest-core-testnet-sync',
@@ -144,7 +271,8 @@ async function resolveLatestCoreVersion(metadata) {
   });
 
   if (!response.ok) {
-    throw new Error(`Unable to fetch releases for ${releaseRepo}: HTTP ${response.status}`);
+    const errorBody = await response.text();
+    throw new Error(`Unable to fetch releases for ${releaseRepo}: HTTP ${response.status} ${errorBody}`);
   }
 
   const releases = await response.json();
@@ -175,7 +303,7 @@ function statusDescription(status, metadata) {
   return `${STATUS_LABELS[status]}${details ? ` - ${details}` : ''}`.slice(0, 140);
 }
 
-async function publishCommitStatus(status, metadata) {
+async function publishCommitStatusOnce(status, metadata) {
   if (process.env.SKIP_GITHUB_STATUS === '1') {
     console.log(`Skipping GitHub status publish: ${STATUS_LABELS[status]}`);
     return;
@@ -207,7 +335,7 @@ async function publishCommitStatus(status, metadata) {
     body.target_url = targetUrl;
   }
 
-  const response = await fetch(`https://api.github.com/repos/${repository}/statuses/${metadata.target_sha}`, {
+  const response = await fetchWithTimeout(`https://api.github.com/repos/${repository}/statuses/${metadata.target_sha}`, {
     method: 'POST',
     headers: {
       Accept: 'application/vnd.github+json',
@@ -219,15 +347,37 @@ async function publishCommitStatus(status, metadata) {
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Unable to publish commit status: HTTP ${response.status} ${body}`);
+    const errorBody = await response.text();
+    throw new Error(`Unable to publish commit status: HTTP ${response.status} ${errorBody}`);
   }
+}
+
+async function publishCommitStatus(status, metadata) {
+  let lastError;
+  for (let attempt = 1; attempt <= STATUS_PUBLISH_ATTEMPTS; attempt += 1) {
+    try {
+      await publishCommitStatusOnce(status, metadata);
+      return;
+    } catch (error) {
+      lastError = error;
+      console.error(`Commit status publish attempt ${attempt} failed: ${error.message}`);
+      if (attempt < STATUS_PUBLISH_ATTEMPTS) {
+        await sleep(2 ** attempt * 1000);
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 async function main() {
   ensureRunDir();
 
-  const timeoutMinutes = Number(process.env.LATEST_CORE_TESTNET_PHASE_TIMEOUT_MINUTES || 1440);
+  const timeoutMinutes = parsePositiveMinutes(
+    process.env.LATEST_CORE_TESTNET_PHASE_TIMEOUT_MINUTES,
+    DEFAULT_PHASE_TIMEOUT_MINUTES,
+    'LATEST_CORE_TESTNET_PHASE_TIMEOUT_MINUTES',
+  );
   const targetSha = resolveTargetSha();
   const metadata = {
     status: 'running',
@@ -244,6 +394,8 @@ async function main() {
   let finalStatus = 'sync_passed';
 
   try {
+    await prepareWorkspace(metadata, timeoutMinutes);
+
     metadata.core_version = await resolveLatestCoreVersion(metadata);
     writeMetadata(metadata);
 
@@ -253,6 +405,8 @@ async function main() {
       PLATFORM_SHA: metadata.platform_sha,
       LATEST_CORE_TESTNET_SYNC_RUN_DIR: runDir,
     };
+    delete phaseEnv.GITHUB_TOKEN;
+    delete phaseEnv.GH_TOKEN;
 
     metadata.phase = 'core-sync';
     writeMetadata(metadata);

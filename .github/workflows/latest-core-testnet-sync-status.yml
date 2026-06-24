@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Publish commit status
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           CLIENT_PAYLOAD: ${{ toJson(github.event.client_payload) }}
         with:
@@ -54,6 +54,11 @@ jobs:
             const payload = context.eventName === 'workflow_dispatch'
               ? context.payload.inputs
               : dispatchPayload;
+
+            if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+              core.setFailed('Missing repository_dispatch client_payload');
+              return;
+            }
 
             const status = payload.status;
             const labels = {
@@ -67,7 +72,35 @@ jobs:
               return;
             }
 
-            const targetSha = payload.target_sha || payload.platform_sha || context.sha;
+            const targetSha = String(payload.target_sha || payload.platform_sha || '').trim();
+            if (!/^[0-9a-f]{40}$/i.test(targetSha)) {
+              core.setFailed('target_sha or platform_sha must be an explicit 40-character commit SHA');
+              return;
+            }
+
+            await github.rest.repos.getCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: targetSha,
+            });
+
+            let targetUrl;
+            if (payload.target_url) {
+              let parsedUrl;
+              try {
+                parsedUrl = new URL(payload.target_url);
+              } catch (error) {
+                core.setFailed(`target_url must be a valid URL: ${error.message}`);
+                return;
+              }
+
+              if (parsedUrl.origin !== 'https://github.com') {
+                core.setFailed('target_url must use the https://github.com origin');
+                return;
+              }
+              targetUrl = parsedUrl.toString();
+            }
+
             const state = status === 'sync_passed' ? 'success' : 'failure';
             const label = labels[status];
             const details = [
@@ -84,7 +117,7 @@ jobs:
               state,
               context: 'Latest public Core testnet sync',
               description,
-              target_url: payload.target_url || undefined,
+              target_url: targetUrl || undefined,
             });
 
             await core.summary
@@ -94,5 +127,5 @@ jobs:
               .addRaw(`Core version: ${payload.core_version || 'not provided'}\n\n`)
               .addRaw(`Platform SHA: ${payload.platform_sha || targetSha}\n\n`)
               .addRaw(`Completed at: ${payload.completed_at || 'not provided'}\n\n`)
-              .addRaw(`Details: ${payload.target_url || 'not provided'}\n`)
+              .addRaw(`Details: ${targetUrl || 'not provided'}\n`)
               .write();

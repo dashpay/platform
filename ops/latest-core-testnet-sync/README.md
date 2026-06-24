@@ -4,7 +4,7 @@ The Platform sync can run for 16+ hours, so the long-running work belongs on a p
 
 The worker:
 
-1. Updates a dedicated `dashpay/platform` checkout.
+1. Updates and cleans a dedicated `dashpay/platform` checkout.
 2. Resolves the latest public Dash Core release.
 3. Runs the configured Core sync, Platform build, and Platform sync commands.
 4. Publishes one final commit status to the tested Platform commit:
@@ -33,7 +33,8 @@ sudo editor /etc/latest-core-testnet-sync.env
 sudo systemctl enable --now latest-core-testnet-sync.timer
 ```
 
-The checkout should be dedicated to this worker because `run-worker.sh` resets it to `origin/$PLATFORM_BRANCH` before every run.
+The checkout should be dedicated to this worker because the harness resets and cleans it to `origin/$PLATFORM_BRANCH` before every run.
+The installer validates that `PLATFORM_REPO_DIR` already exists as a writable git checkout for the `platform-sync` user.
 
 ## Required Configuration
 
@@ -51,6 +52,8 @@ The phase commands run from `PLATFORM_REPO_DIR` and receive:
 - `LATEST_CORE_TESTNET_SYNC_RUN_DIR`
 
 Write logs or machine-readable metadata into `LATEST_CORE_TESTNET_SYNC_RUN_DIR` so failures can be inspected without overloading the GitHub status panel.
+
+`GITHUB_TOKEN` and `GH_TOKEN` are stripped from phase command environments. They remain available only to the worker harness for publishing the final commit status.
 
 ## Operations
 
@@ -73,3 +76,4 @@ journalctl -u latest-core-testnet-sync.service -f
 ```
 
 Run artifacts are stored under `LATEST_CORE_TESTNET_LOG_DIR`.
+Run directories older than `LATEST_CORE_TESTNET_LOG_RETENTION_DAYS` are pruned by `run-worker.sh`; the default is 30 days.
