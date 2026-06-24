@@ -78,6 +78,23 @@
 {{?}}
       http_filters:
         # TODO: Introduce when stable https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/adaptive_concurrency_filter.html
+        # Filter order matters: cors and grpc_web MUST precede ratelimit so the
+        # over-limit RESOURCE_EXHAUSTED *local reply* gets CORS headers + grpc-web
+        # content-type framing on encode, letting browser (grpc-web) clients read
+        # RateLimit-Reset for the same node-backoff the native client does. A local
+        # reply only traverses encoder filters positioned ABOVE its generating
+        # filter (Envoy #11776), so ratelimit must come last (before router).
+        # TODO(verify on pinned Envoy build): the grpc_web encode behavior on a
+        # trailers-only over-limit local reply (keeps grpc-status+ratelimit-reset in
+        # HTTP headers vs reframing into a body trailer) is inferred from the
+        # gRPC-Web spec, not confirmed against dashmate's pinned image. Smoke-test
+        # before relying on browser parity (see PR #3951).
+        - name: envoy.filters.http.cors
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+        - name: envoy.filters.http.grpc_web
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_web.v3.GrpcWeb
         {{? it.platform.gateway.rateLimiter.enabled}}
         - name: envoy.filters.http.ratelimit
           typed_config:
@@ -96,12 +113,6 @@
                 timeout: 0.5s
               transport_api_version: V3
         {{?}}
-        - name: envoy.filters.http.grpc_web
-          typed_config:
-            "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_web.v3.GrpcWeb
-        - name: envoy.filters.http.cors
-          typed_config:
-            "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
         - name: envoy.filters.http.router
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -198,7 +209,7 @@
                 allow_methods: GET, PUT, DELETE, POST, OPTIONS
                 allow_headers: keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,custom-header-1,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,x-grpc-web,grpc-timeout
                 max_age: "1728000"
-                expose_headers: custom-header-1,grpc-status,grpc-message,code,drive-error-data-bin,dash-serialized-consensus-error-bin,stack-bin
+                expose_headers: custom-header-1,grpc-status,grpc-message,code,drive-error-data-bin,dash-serialized-consensus-error-bin,stack-bin,ratelimit-reset,ratelimit-limit,ratelimit-remaining
 
 static_resources:
   listeners:
