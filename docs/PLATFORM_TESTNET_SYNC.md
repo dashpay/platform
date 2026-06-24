@@ -1,12 +1,18 @@
 # Platform Testnet Sync
 
-This document defines the first repo-side contract for reporting Platform sync against the latest public Dash Core release on testnet.
+This document defines the repo-side reporting contract for Platform sync against the latest public Dash Core release on testnet.
 
-The visible GitHub status is intentionally the last completed run only. A currently running build or sync must not replace the useful completed result with a running state.
+The Platform sync worker and server infrastructure live outside this repository. This repository only owns the public status surface:
+
+- the `Platform Sync` README badge
+- the `Platform testnet sync status` workflow
+- the `Platform testnet sync` commit status context
 
 ## Visible Status
 
-The external orchestrator reports one commit status on the tested Platform commit:
+The visible status is intentionally the last completed run only. A currently running build or sync must not replace the useful completed result with a running state.
+
+The external worker reports one final completed status for the tested Platform commit:
 
 - Context: `Platform testnet sync`
 - Success state:
@@ -17,61 +23,9 @@ The external orchestrator reports one commit status on the tested Platform commi
 
 Detailed build, baseline, and sync logs belong behind the status `target_url`, not in the status description.
 
-## System Phases
+## Reporting Flow
 
-1. Maintain a long-lived testnet baseline on the latest public Dash Core release.
-2. Build Platform for the target `dashpay/platform` commit on a fast disposable builder.
-3. Run Platform sync on a normal sync runner using the synced testnet baseline and freshly built Platform artifacts.
-4. Report only the final completed result back to this repository.
-
-Testnet baseline maintenance should be owned by a preconfigured, stateful, warm testnet system. Platform build should be disposable and cache-heavy. Platform sync should be reproducible and log-rich.
-
-## Scheduling
-
-The long-running sync is owned by a persistent worker, not by a GitHub-hosted runner. Platform sync can take 16+ hours, which is too long for GitHub-hosted runner limits and too expensive to keep idle while waiting for chain progress.
-
-The worker assets live in `ops/platform-testnet-sync/`:
-
-- `install-worker.sh`
-- `run-worker.sh`
-- `platform-testnet-sync.service`
-- `platform-testnet-sync.timer`
-- `platform-testnet-sync.env.example`
-
-The default timer runs nightly at 01:30 UTC with a 30 minute randomized delay. The service uses a lock file, so overlapping runs exit without changing the visible GitHub status.
-
-The worker does not publish a pending or running commit status. It leaves the previous completed status in place while the new run is active, then publishes one final completed result when the run finishes.
-
-The Platform sync worker assumes the testnet baseline already exists. It may run a readiness command to verify that baseline before building and syncing Platform, but it should not perform baseline synchronization itself.
-
-The worker delegates host-specific work to environment variables:
-
-- `PLATFORM_TESTNET_SYNC_BASELINE_READY_COMMAND`
-- `PLATFORM_TESTNET_SYNC_PLATFORM_BUILD_COMMAND`
-- `PLATFORM_TESTNET_SYNC_PLATFORM_SYNC_COMMAND`
-
-Optional variables:
-
-- `PLATFORM_TESTNET_SYNC_CORE_VERSION_COMMAND` overrides release discovery. It must print the Core version/tag on stdout.
-- `PLATFORM_TESTNET_SYNC_PHASE_TIMEOUT_MINUTES` overrides the per-phase timeout. Defaults to 1440 minutes.
-- `PLATFORM_TESTNET_SYNC_RESOLVE_TIMEOUT_MINUTES` overrides the Core-version resolution command timeout. Defaults to 30 minutes.
-- `PLATFORM_TESTNET_SYNC_CORE_RELEASE_REPO` overrides the GitHub release source. Defaults to `dashpay/dash`.
-- `PLATFORM_TESTNET_SYNC_LOG_DIR` controls where run logs and metadata are written.
-- `PLATFORM_TESTNET_SYNC_TARGET_URL` links the GitHub status to durable logs or a run page.
-
-Each phase command receives:
-
-- `CORE_VERSION`
-- `PLATFORM_SHA`
-- `PLATFORM_TESTNET_SYNC_RUN_DIR`
-
-The run directory should be used as the durable artifact location for phase logs and metadata.
-
-The GitHub token is used only by the parent worker process for final status publication. It is intentionally stripped from the environment passed to baseline readiness, Platform build, and Platform sync commands.
-
-## Reporting Contract
-
-When a run completes, the orchestrator sends a `repository_dispatch` event:
+When a run completes, the external worker sends a `repository_dispatch` event to `dashpay/platform`:
 
 ```json
 {
@@ -93,20 +47,20 @@ Allowed `status` values:
 - `build_failed`
 - `sync_failed`
 
-Manual status testing is available through the `Platform testnet sync status` workflow's `workflow_dispatch` trigger with the same fields. The normal worker path reports directly through the GitHub commit statuses API.
+The workflow validates the target commit SHA, writes the `Platform testnet sync` commit status, and fails the workflow run for `build_failed` and `sync_failed` so the README badge reflects the final outcome.
 
-The dispatch credential should be held only by the persistent sync worker/operator account. The status workflow requires an explicit 40-character commit SHA that exists in `dashpay/platform`, and workflow-provided `target_url` values are limited to the `https://github.com` origin.
+Manual status testing is available through the `Platform testnet sync status` workflow's `workflow_dispatch` trigger with the same fields.
 
-## Log and Artifact Expectations
+## Expectations For The External Worker
 
-The `target_url` should lead to a run page or artifact bundle containing:
+The worker should:
 
-- selected public Core version and binary/image digest
-- target Platform commit and image digests
-- Core tip height/hash and sync health at run start
-- build logs
-- Platform service logs
-- Platform sync progress and terminal state
-- concise failure phase and reason
+- maintain or consume a synced latest-public-Core testnet baseline
+- build Platform for the target `dashpay/platform` commit
+- run Platform sync against that baseline
+- report only the final completed result to this repository
+- keep detailed logs and diagnostics outside this repository, linked through `target_url`
+
+The dispatch credential should be held only by the external worker/operator account. The status workflow requires an explicit 40-character commit SHA that exists in `dashpay/platform`, and workflow-provided `target_url` values are limited to the `https://github.com` origin.
 
 The GitHub status description stays short so the repo panel remains readable.

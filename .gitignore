@@ -102,6 +102,3 @@ __pycache__/
 
 # Security audit reports (local-only, not committed)
 audits/
-
-# Platform testnet sync local artifacts
-.platform-testnet-sync/
