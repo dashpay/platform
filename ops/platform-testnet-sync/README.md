@@ -1,12 +1,12 @@
-# Latest Public Core Testnet Sync Worker
+# Platform Testnet Sync Worker
 
 The Platform sync can run for 16+ hours, so the long-running work belongs on a persistent worker instead of a GitHub-hosted runner.
 
 The worker:
 
 1. Updates and cleans a dedicated `dashpay/platform` checkout.
-2. Resolves the latest public Dash Core release.
-3. Verifies the preconfigured latest-Core testnet baseline, then runs Platform build and Platform sync commands.
+2. Resolves the testnet baseline version from the latest public Dash Core release.
+3. Verifies the preconfigured testnet baseline, then runs Platform build and Platform sync commands.
 4. Publishes one final commit status to the tested Platform commit:
    - `Sync Passed`
    - `Build Failed`
@@ -27,10 +27,10 @@ sudo chown -R platform-sync:platform-sync /opt/dash-platform
 Then install the units:
 
 ```bash
-sudo /opt/dash-platform/ops/latest-core-testnet-sync/install-worker.sh
+sudo /opt/dash-platform/ops/platform-testnet-sync/install-worker.sh
 
-sudo editor /etc/latest-core-testnet-sync.env
-sudo systemctl enable --now latest-core-testnet-sync.timer
+sudo editor /etc/platform-testnet-sync.env
+sudo systemctl enable --now platform-testnet-sync.timer
 ```
 
 The checkout should be dedicated to this worker because the harness resets and cleans it to `origin/$PLATFORM_BRANCH` before every run.
@@ -38,22 +38,22 @@ The installer validates that `PLATFORM_REPO_DIR` already exists as a writable gi
 
 ## Required Configuration
 
-Set these in `/etc/latest-core-testnet-sync.env`:
+Set these in `/etc/platform-testnet-sync.env`:
 
 - `GITHUB_TOKEN`
-- `LATEST_CORE_TESTNET_CORE_READY_COMMAND`
-- `LATEST_CORE_TESTNET_PLATFORM_BUILD_COMMAND`
-- `LATEST_CORE_TESTNET_PLATFORM_SYNC_COMMAND`
+- `PLATFORM_TESTNET_SYNC_BASELINE_READY_COMMAND`
+- `PLATFORM_TESTNET_SYNC_PLATFORM_BUILD_COMMAND`
+- `PLATFORM_TESTNET_SYNC_PLATFORM_SYNC_COMMAND`
 
-`LATEST_CORE_TESTNET_CORE_READY_COMMAND` should verify that the preconfigured Core node or baseline is on the selected `LATEST_CORE_VERSION` and synced far enough for the Platform sync run. It is not intended to do a full Core chain sync on the Platform worker.
+`PLATFORM_TESTNET_SYNC_BASELINE_READY_COMMAND` should verify that the preconfigured baseline is on the selected `CORE_VERSION` and synced far enough for the Platform sync run. It is not intended to perform baseline synchronization on the Platform worker.
 
 The worker commands run from `PLATFORM_REPO_DIR` and receive:
 
-- `LATEST_CORE_VERSION`
+- `CORE_VERSION`
 - `PLATFORM_SHA`
-- `LATEST_CORE_TESTNET_SYNC_RUN_DIR`
+- `PLATFORM_TESTNET_SYNC_RUN_DIR`
 
-Write logs or machine-readable metadata into `LATEST_CORE_TESTNET_SYNC_RUN_DIR` so failures can be inspected without overloading the GitHub status panel.
+Write logs or machine-readable metadata into `PLATFORM_TESTNET_SYNC_RUN_DIR` so failures can be inspected without overloading the GitHub status panel.
 
 `GITHUB_TOKEN` and `GH_TOKEN` are stripped from worker command environments. They remain available only to the worker harness for publishing the final commit status.
 
@@ -62,20 +62,20 @@ Write logs or machine-readable metadata into `LATEST_CORE_TESTNET_SYNC_RUN_DIR` 
 Run immediately:
 
 ```bash
-sudo systemctl start latest-core-testnet-sync.service
+sudo systemctl start platform-testnet-sync.service
 ```
 
 Check timer:
 
 ```bash
-systemctl list-timers latest-core-testnet-sync.timer
+systemctl list-timers platform-testnet-sync.timer
 ```
 
 Follow logs:
 
 ```bash
-journalctl -u latest-core-testnet-sync.service -f
+journalctl -u platform-testnet-sync.service -f
 ```
 
-Run artifacts are stored under `LATEST_CORE_TESTNET_LOG_DIR`.
-Run directories older than `LATEST_CORE_TESTNET_LOG_RETENTION_DAYS` are pruned by `run-worker.sh`; the default is 30 days.
+Run artifacts are stored under `PLATFORM_TESTNET_SYNC_LOG_DIR`.
+Run directories older than `PLATFORM_TESTNET_SYNC_LOG_RETENTION_DAYS` are pruned by `run-worker.sh`; the default is 30 days.

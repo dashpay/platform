@@ -5,13 +5,13 @@ const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
 const repoRoot = process.env.PLATFORM_REPO_DIR || process.cwd();
-const runId = process.env.LATEST_CORE_TESTNET_RUN_ID
+const runId = process.env.PLATFORM_TESTNET_SYNC_RUN_ID
   || now().replace(/[:.]/g, '-');
-const runDir = process.env.LATEST_CORE_TESTNET_SYNC_RUN_DIR
-  || path.join(repoRoot, '.latest-core-testnet-sync', runId);
+const runDir = process.env.PLATFORM_TESTNET_SYNC_RUN_DIR
+  || path.join(repoRoot, '.platform-testnet-sync', runId);
 const metadataPath = path.join(runDir, 'run-metadata.json');
 
-const STATUS_CONTEXT = 'Latest public Core testnet sync';
+const STATUS_CONTEXT = 'Platform testnet sync';
 
 const STATUS_LABELS = {
   sync_passed: 'Sync Passed',
@@ -22,14 +22,14 @@ const STATUS_LABELS = {
 const DEFAULT_RESOLVE_TIMEOUT_MINUTES = 30;
 const DEFAULT_PHASE_TIMEOUT_MINUTES = 1440;
 const GITHUB_FETCH_TIMEOUT_MS = parsePositiveInteger(
-  process.env.LATEST_CORE_TESTNET_GITHUB_FETCH_TIMEOUT_MS,
+  process.env.PLATFORM_TESTNET_SYNC_GITHUB_FETCH_TIMEOUT_MS,
   60_000,
-  'LATEST_CORE_TESTNET_GITHUB_FETCH_TIMEOUT_MS',
+  'PLATFORM_TESTNET_SYNC_GITHUB_FETCH_TIMEOUT_MS',
 );
 const STATUS_PUBLISH_ATTEMPTS = parsePositiveInteger(
-  process.env.LATEST_CORE_TESTNET_STATUS_PUBLISH_ATTEMPTS,
+  process.env.PLATFORM_TESTNET_SYNC_STATUS_PUBLISH_ATTEMPTS,
   3,
-  'LATEST_CORE_TESTNET_STATUS_PUBLISH_ATTEMPTS',
+  'PLATFORM_TESTNET_SYNC_STATUS_PUBLISH_ATTEMPTS',
 );
 
 function now() {
@@ -223,7 +223,7 @@ async function runCommand(name, command, env, timeoutMinutes, options = {}) {
 }
 
 async function prepareWorkspace(metadata, timeoutMinutes) {
-  if (process.env.LATEST_CORE_TESTNET_SKIP_WORKSPACE_PREP === '1') {
+  if (process.env.PLATFORM_TESTNET_SYNC_SKIP_WORKSPACE_PREP === '1') {
     return;
   }
 
@@ -238,7 +238,7 @@ async function prepareWorkspace(metadata, timeoutMinutes) {
       'git fetch --prune origin "$PLATFORM_BRANCH"',
       'git checkout "$PLATFORM_BRANCH"',
       'git reset --hard "origin/$PLATFORM_BRANCH"',
-      'git clean -ffdx -e .latest-core-testnet-sync/',
+      'git clean -ffdx -e .platform-testnet-sync/',
     ].join('\n'),
     {
       ...sanitizePhaseEnv(process.env),
@@ -255,19 +255,19 @@ async function prepareWorkspace(metadata, timeoutMinutes) {
 }
 
 async function resolveLatestCoreVersion(metadata) {
-  if (process.env.LATEST_CORE_TESTNET_CORE_VERSION) {
-    return process.env.LATEST_CORE_TESTNET_CORE_VERSION;
+  if (process.env.PLATFORM_TESTNET_SYNC_CORE_VERSION) {
+    return process.env.PLATFORM_TESTNET_SYNC_CORE_VERSION;
   }
 
-  if (process.env.LATEST_CORE_TESTNET_CORE_VERSION_COMMAND) {
+  if (process.env.PLATFORM_TESTNET_SYNC_CORE_VERSION_COMMAND) {
     const result = await runCommand(
       'resolve-core-version',
-      process.env.LATEST_CORE_TESTNET_CORE_VERSION_COMMAND,
+      process.env.PLATFORM_TESTNET_SYNC_CORE_VERSION_COMMAND,
       sanitizePhaseEnv(process.env),
       parsePositiveMinutes(
-        process.env.LATEST_CORE_TESTNET_RESOLVE_TIMEOUT_MINUTES,
+        process.env.PLATFORM_TESTNET_SYNC_RESOLVE_TIMEOUT_MINUTES,
         DEFAULT_RESOLVE_TIMEOUT_MINUTES,
-        'LATEST_CORE_TESTNET_RESOLVE_TIMEOUT_MINUTES',
+        'PLATFORM_TESTNET_SYNC_RESOLVE_TIMEOUT_MINUTES',
       ),
       { captureStdout: true },
     );
@@ -278,11 +278,11 @@ async function resolveLatestCoreVersion(metadata) {
     return version;
   }
 
-  const releaseRepo = process.env.LATEST_CORE_RELEASE_REPO || 'dashpay/dash';
+  const releaseRepo = process.env.PLATFORM_TESTNET_SYNC_CORE_RELEASE_REPO || 'dashpay/dash';
   const response = await fetchWithTimeout(`https://api.github.com/repos/${releaseRepo}/releases`, {
     headers: {
       Accept: 'application/vnd.github+json',
-      'User-Agent': 'dash-platform-latest-core-testnet-sync',
+      'User-Agent': 'dash-platform-testnet-sync',
       ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
     },
   });
@@ -337,7 +337,7 @@ async function publishCommitStatusOnce(status, metadata) {
   }
 
   const targetUrl = metadata.target_url
-    || process.env.LATEST_CORE_TESTNET_TARGET_URL
+    || process.env.PLATFORM_TESTNET_SYNC_TARGET_URL
     || (process.env.GITHUB_RUN_ID
       ? `${process.env.GITHUB_SERVER_URL || 'https://github.com'}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}`
       : undefined);
@@ -358,7 +358,7 @@ async function publishCommitStatusOnce(status, metadata) {
       Accept: 'application/vnd.github+json',
       Authorization: `Bearer ${githubToken}`,
       'Content-Type': 'application/json',
-      'User-Agent': 'dash-platform-latest-core-testnet-sync',
+      'User-Agent': 'dash-platform-testnet-sync',
     },
     body: JSON.stringify(body),
   });
@@ -392,9 +392,9 @@ async function main() {
   ensureRunDir();
 
   const timeoutMinutes = parsePositiveMinutes(
-    process.env.LATEST_CORE_TESTNET_PHASE_TIMEOUT_MINUTES,
+    process.env.PLATFORM_TESTNET_SYNC_PHASE_TIMEOUT_MINUTES,
     DEFAULT_PHASE_TIMEOUT_MINUTES,
-    'LATEST_CORE_TESTNET_PHASE_TIMEOUT_MINUTES',
+    'PLATFORM_TESTNET_SYNC_PHASE_TIMEOUT_MINUTES',
   );
   const targetSha = resolveTargetSha();
   const metadata = {
@@ -421,18 +421,18 @@ async function main() {
 
     const phaseEnv = {
       ...process.env,
-      LATEST_CORE_VERSION: metadata.core_version,
+      CORE_VERSION: metadata.core_version,
       PLATFORM_SHA: metadata.platform_sha,
-      LATEST_CORE_TESTNET_SYNC_RUN_DIR: runDir,
+      PLATFORM_TESTNET_SYNC_RUN_DIR: runDir,
     };
     delete phaseEnv.GITHUB_TOKEN;
     delete phaseEnv.GH_TOKEN;
 
-    metadata.phase = 'core-readiness';
+    metadata.phase = 'baseline-readiness';
     writeMetadata(metadata);
     await runCommand(
-      'core-readiness',
-      process.env.LATEST_CORE_TESTNET_CORE_READY_COMMAND,
+      'baseline-readiness',
+      process.env.PLATFORM_TESTNET_SYNC_BASELINE_READY_COMMAND,
       phaseEnv,
       timeoutMinutes,
     );
@@ -441,7 +441,7 @@ async function main() {
     writeMetadata(metadata);
     await runCommand(
       'platform-build',
-      process.env.LATEST_CORE_TESTNET_PLATFORM_BUILD_COMMAND,
+      process.env.PLATFORM_TESTNET_SYNC_PLATFORM_BUILD_COMMAND,
       phaseEnv,
       timeoutMinutes,
     );
@@ -450,7 +450,7 @@ async function main() {
     writeMetadata(metadata);
     await runCommand(
       'platform-sync',
-      process.env.LATEST_CORE_TESTNET_PLATFORM_SYNC_COMMAND,
+      process.env.PLATFORM_TESTNET_SYNC_PLATFORM_SYNC_COMMAND,
       phaseEnv,
       timeoutMinutes,
     );

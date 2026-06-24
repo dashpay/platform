@@ -37,29 +37,29 @@ if ! runuser -u "${PLATFORM_SYNC_USER}" -- test -w "${PLATFORM_REPO_DIR}"; then
   exit 1
 fi
 
-install -d -o "${PLATFORM_SYNC_USER}" -g "${PLATFORM_SYNC_GROUP}" /var/lib/latest-core-testnet-sync
-install -d -o "${PLATFORM_SYNC_USER}" -g "${PLATFORM_SYNC_GROUP}" /var/log/latest-core-testnet-sync
+install -d -o "${PLATFORM_SYNC_USER}" -g "${PLATFORM_SYNC_GROUP}" /var/lib/platform-testnet-sync
+install -d -o "${PLATFORM_SYNC_USER}" -g "${PLATFORM_SYNC_GROUP}" /var/log/platform-testnet-sync
 
 install -m 0644 \
-  "${SCRIPT_DIR}/latest-core-testnet-sync.service" \
-  /etc/systemd/system/latest-core-testnet-sync.service
+  "${SCRIPT_DIR}/platform-testnet-sync.service" \
+  /etc/systemd/system/platform-testnet-sync.service
 install -m 0644 \
-  "${SCRIPT_DIR}/latest-core-testnet-sync.timer" \
-  /etc/systemd/system/latest-core-testnet-sync.timer
+  "${SCRIPT_DIR}/platform-testnet-sync.timer" \
+  /etc/systemd/system/platform-testnet-sync.timer
 
-if [[ ! -f /etc/latest-core-testnet-sync.env ]]; then
+if [[ ! -f /etc/platform-testnet-sync.env ]]; then
   install -m 0600 \
-    "${SCRIPT_DIR}/latest-core-testnet-sync.env.example" \
-    /etc/latest-core-testnet-sync.env
-  echo "Created /etc/latest-core-testnet-sync.env; fill it before enabling the timer."
+    "${SCRIPT_DIR}/platform-testnet-sync.env.example" \
+    /etc/platform-testnet-sync.env
+  echo "Created /etc/platform-testnet-sync.env; fill it before enabling the timer."
 else
-  chmod 0600 /etc/latest-core-testnet-sync.env
+  chmod 0600 /etc/platform-testnet-sync.env
 fi
 
 systemctl daemon-reload
 
-echo "Installed latest Core testnet sync worker units."
+echo "Installed Platform testnet sync worker units."
 echo "Next:"
-echo "  1. Edit /etc/latest-core-testnet-sync.env"
-echo "  2. Run: systemctl start latest-core-testnet-sync.service"
-echo "  3. Enable nightly timer: systemctl enable --now latest-core-testnet-sync.timer"
+echo "  1. Edit /etc/platform-testnet-sync.env"
+echo "  2. Run: systemctl start platform-testnet-sync.service"
+echo "  3. Enable nightly timer: systemctl enable --now platform-testnet-sync.timer"

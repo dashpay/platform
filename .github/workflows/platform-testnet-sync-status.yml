@@ -1,9 +1,9 @@
-name: "Latest public Core testnet sync status"
+name: "Platform testnet sync status"
 
 "on":
   repository_dispatch:
     types:
-      - latest-core-testnet-sync-completed
+      - platform-testnet-sync-completed
   workflow_dispatch:
     inputs:
       status:
@@ -115,13 +115,13 @@ jobs:
               repo: context.repo.repo,
               sha: targetSha,
               state,
-              context: 'Latest public Core testnet sync',
+              context: 'Platform testnet sync',
               description,
               target_url: targetUrl || undefined,
             });
 
             await core.summary
-              .addHeading('Latest public Core testnet sync')
+              .addHeading('Platform testnet sync')
               .addRaw(`Status: ${label}\n\n`)
               .addRaw(`Target SHA: ${targetSha}\n\n`)
               .addRaw(`Core version: ${payload.core_version || 'not provided'}\n\n`)
@@ -129,3 +129,7 @@ jobs:
               .addRaw(`Completed at: ${payload.completed_at || 'not provided'}\n\n`)
               .addRaw(`Details: ${targetUrl || 'not provided'}\n`)
               .write();
+
+            if (status !== 'sync_passed') {
+              core.setFailed(label);
+            }

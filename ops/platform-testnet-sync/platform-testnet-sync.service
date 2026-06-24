@@ -1,0 +1,14 @@
+[Unit]
+Description=Dash Platform testnet sync
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=platform-sync
+Group=platform-sync
+EnvironmentFile=/etc/platform-testnet-sync.env
+ExecStart=/bin/bash -lc 'cd "${PLATFORM_REPO_DIR:-/opt/dash-platform}" && exec ops/platform-testnet-sync/run-worker.sh'
+TimeoutStartSec=0
+StateDirectory=platform-testnet-sync
+LogsDirectory=platform-testnet-sync
