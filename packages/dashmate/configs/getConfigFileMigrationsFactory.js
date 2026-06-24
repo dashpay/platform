@@ -1520,13 +1520,17 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
-      '4.0.0-rc.2': (configFile) => {
+      '4.0.0': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             // Add responseHeaders toggle to rate limiter (default true so existing
             // deployments keep emitting RateLimit-* headers; rs-dapi-client depends
             // on RateLimit-Reset to apply precise ban windows instead of the
             // exponential health-ban ladder).
+            // Key is 4.0.0 (not 4.0.0-rc.2): rc.2 is already released so
+            // semver.gt('4.0.0-rc.2','4.0.0-rc.2') === false and the early-return
+            // would skip this migration for current rc.2 operators.  4.0.0 is
+            // gt above every 4.0.0-prerelease, so it fires on the final release.
             if (options.platform?.gateway?.rateLimiter
               && typeof options.platform.gateway.rateLimiter.responseHeaders === 'undefined') {
               options.platform.gateway.rateLimiter.responseHeaders = base.get('platform.gateway.rateLimiter.responseHeaders');
