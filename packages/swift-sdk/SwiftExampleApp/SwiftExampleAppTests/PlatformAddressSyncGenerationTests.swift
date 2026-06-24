@@ -90,4 +90,26 @@ final class PlatformAddressSyncGenerationTests: XCTestCase {
             "a superseded straggler must not overwrite the last valid event"
         )
     }
+
+    /// After a reset the retained published mirror must be dropped. The
+    /// generation guard only blocks *future* stale callbacks; the value
+    /// already held on `lastPlatformAddressSyncEvent` would otherwise replay to
+    /// a fresh `configure()` subscriber (Combine emits the current `@Published`
+    /// value on subscribe) and repaint the cleared sync-status UI.
+    func testResetPublishedMirrorDropsRetainedEvent() {
+        let manager = PlatformWalletManager()
+        manager.lastPlatformAddressSyncEvent = makeEvent(syncUnixSeconds: 7_000)
+        XCTAssertNotNil(manager.lastPlatformAddressSyncEvent)
+
+        manager.resetPlatformAddressPublishedMirror()
+
+        XCTAssertNil(
+            manager.lastPlatformAddressSyncEvent,
+            "reset must drop the retained completion so it can't replay on re-subscribe"
+        )
+        XCTAssertFalse(
+            manager.platformAddressSyncIsSyncing,
+            "reset must clear the syncing mirror so a re-subscribe doesn't replay a stale spinner"
+        )
+    }
 }

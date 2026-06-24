@@ -842,4 +842,19 @@ public class PlatformWalletManager: ObservableObject {
             }
         }
     }
+
+    /// Drop the platform-address published mirror after a reset/clear so a
+    /// later `configure()` re-subscribe — which Combine replays the current
+    /// `@Published` value to a fresh subscriber — can't repaint stale sync
+    /// state over a just-cleared UI.
+    ///
+    /// Lives here (not in the `…AddressSync` extension) because
+    /// `platformAddressSyncIsSyncing` is `private(set)`; the generation guard
+    /// only blocks *future* stale callbacks and can't un-publish a value
+    /// already held on these `@Published` properties. Called by
+    /// `resetPlatformAddressSyncState` after the Rust drain returns.
+    func resetPlatformAddressPublishedMirror() {
+        lastPlatformAddressSyncEvent = nil
+        platformAddressSyncIsSyncing = false
+    }
 }

@@ -262,5 +262,10 @@ extension PlatformWalletManager {
         // (and delivered onto the main actor after Clear) is dropped
         // instead of repainting the just-cleared sync-status UI.
         platformAddressSyncGeneration.bump()
+        // Drop the retained published mirror too: the generation guard only
+        // blocks future stale callbacks, but a later `configure()` would
+        // replay the current `@Published` value to its fresh subscriber and
+        // repaint the cleared UI.
+        resetPlatformAddressPublishedMirror()
     }
 }
