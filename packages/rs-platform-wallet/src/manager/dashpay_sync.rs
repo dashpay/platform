@@ -457,6 +457,20 @@ impl DashPaySyncManager {
             );
         }
 
+        // Local-only: DIP-15 §12.6 coreHeight backfill — lower SPV synced_height
+        // to re-scan for incoming payments that landed on a contact's receival
+        // address before it was watched (restore-from-seed / 2nd device /
+        // offline-accept→pay). After the reconcile above so newly established
+        // receival accounts are visible; a per-contact guard prevents
+        // re-triggering and thrashing the in-flight backfill.
+        if let Err(e) = identity.reconcile_dashpay_rescan().await {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "DashPay rescan reconcile failed"
+            );
+        }
+
         // Local-only: confirm `Pending` `Sent` payments the persisted core
         // record reports final (mined or InstantSend-locked).
         if let Err(e) = identity.reconcile_sent_payments().await {

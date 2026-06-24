@@ -61,6 +61,23 @@ pub struct ManagedIdentity {
     /// Map of established contacts (bidirectional relationships) keyed by contact identity ID
     pub established_contacts: BTreeMap<Identifier, EstablishedContact>,
 
+    /// Contacts for which a historical L1 rescan has already been triggered this
+    /// process lifetime (DIP-15 §12.6 coreHeight backfill). When the rescan
+    /// reconcile lowers the wallet's SPV `synced_height` to a contact's funding
+    /// height so the filter manager re-scans for payments that landed before the
+    /// receival address was watched, the contact is recorded here so the
+    /// recurring sweep does not re-lower the height every pass — which would
+    /// reset the in-flight backfill and prevent it from ever completing.
+    ///
+    /// In-memory only (never persisted): a relaunch clears it, and because
+    /// `synced_height` is restored at its monotonic high-water, an interrupted
+    /// backfill is re-triggered on the next launch — self-healing. The cost of
+    /// that reset is one historical re-match per launch while any contact is
+    /// funded below the tip; the compact filters are reused from disk (not
+    /// re-downloaded), so it is cheap. A persisted breadcrumb could make the
+    /// backfill durable across a crash if that ever becomes necessary.
+    pub dashpay_rescan_triggered: std::collections::BTreeSet<Identifier>,
+
     /// Map of sent contact requests (outgoing, not yet reciprocated) keyed by recipient ID
     pub sent_contact_requests: BTreeMap<Identifier, ContactRequest>,
 

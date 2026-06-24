@@ -93,6 +93,129 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         Ok(recorded)
     }
 
+    /// Re-scan L1 for incoming DashPay payments that landed on a contact's
+    /// receival address **before** that address was being watched (DIP-15 §8.7
+    /// + §12.6).
+    ///
+    /// Receival accounts are built lazily — after restore-from-seed, on a second
+    /// device, or in the offline-accept→pay window the account appears only once
+    /// the contact is established, by which point SPV has already scanned past
+    /// the contact's funding height. Those addresses then enter the compact
+    /// filter match set **forward-only**, so a payment in an already-scanned
+    /// block is silently missed.
+    ///
+    /// This lowers the wallet's SPV `synced_height` to the minimum
+    /// `$coreHeightCreatedAt` across established receival contacts that haven't
+    /// been rescanned yet — the filter manager (`dash-spv`) then re-downloads
+    /// nothing it already has, re-matches the now-larger script set, and
+    /// re-requests the matching blocks. Each contact is recorded in
+    /// [`ManagedIdentity::dashpay_rescan_triggered`] so the recurring sweep does
+    /// not re-lower the height every pass (which would reset the in-flight
+    /// backfill and keep it from ever completing). The guard is in-memory, so a
+    /// relaunch — where `synced_height` is restored at its high-water — safely
+    /// re-triggers an interrupted backfill.
+    ///
+    /// `synced_height` may regress here: that is safe because it is the
+    /// filter-scan checkpoint, decoupled from the monotonic
+    /// `last_processed_height`, and every persisted sync cursor is monotonic-max
+    /// guarded (see `docs/dashpay/CORE_HEIGHT_RESCAN_SPEC.md` §3.4). Only the
+    /// **receival** account matters — `DashpayExternalAccount` is outbound and
+    /// never receives. Returns the floor the height was lowered to, or `None`.
+    pub async fn reconcile_dashpay_rescan(&self) -> Result<Option<u32>, PlatformWalletError> {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return Ok(None);
+        };
+
+        let synced_height = info.core_wallet.synced_height();
+        // 0 means "scan from genesis / not yet started" — already a full
+        // historical scan, nothing to backfill toward.
+        if synced_height == 0 {
+            return Ok(None);
+        }
+
+        // (owner, contact) pairs that have a receival account — we can only
+        // watch a contact's incoming addresses once its receival account exists.
+        let receival_pairs: Vec<(Identifier, Identifier)> = info
+            .core_wallet
+            .accounts
+            .dashpay_receival_accounts
+            .keys()
+            .map(|k| {
+                (
+                    Identifier::from(k.user_identity_id),
+                    Identifier::from(k.friend_identity_id),
+                )
+            })
+            .collect();
+
+        // Candidates: established receival contacts not yet rescanned this
+        // lifetime whose funding height is below our scan tip. The floor is the
+        // minimum funding height — one rewind covers them all (deeper-funded
+        // contacts are in the watch set, so the backfill matches them too). The
+        // funding height is `min(outgoing, incoming)` of the pair: the channel
+        // is payable only once both requests exist, so the earlier of the two is
+        // the conservative-correct lower bound.
+        let mut floor: Option<u32> = None;
+        let mut to_mark: Vec<(Identifier, Identifier)> = Vec::new();
+        for (owner, contact) in receival_pairs {
+            let Some(managed) = info.identity_manager.managed_identity(&owner) else {
+                continue;
+            };
+            if managed.dashpay_rescan_triggered.contains(&contact) {
+                continue;
+            }
+            let Some(established) = managed.established_contacts.get(&contact) else {
+                continue;
+            };
+            let funding = established
+                .outgoing_request
+                .core_height_created_at
+                .min(established.incoming_request.core_height_created_at);
+            // Contacts funded below the tip need a backfill — their addresses
+            // weren't watched when those blocks were first scanned. Contacts
+            // funded at or after the tip are already covered by the ongoing
+            // forward scan (their addresses are watched from establishment).
+            // EITHER way the contact is now handled, so mark it: once the
+            // forward pointer later climbs past a still-forward-covered
+            // contact's funding height, the recurring sweep must NOT then
+            // rewind to it and redundantly re-scan an already-scanned range.
+            if funding < synced_height {
+                floor = Some(floor.map_or(funding, |cur| cur.min(funding)));
+            }
+            to_mark.push((owner, contact));
+        }
+
+        if to_mark.is_empty() {
+            return Ok(None);
+        }
+
+        // Lower the filter-scan checkpoint only when a contact is funded below
+        // the tip (otherwise every handled contact is forward-covered and we
+        // record the guard without rewinding). The engine clamps `floor` to its
+        // own header/birth floor, so no double-clamp here.
+        if let Some(floor) = floor {
+            info.core_wallet.update_synced_height(floor);
+        }
+        let triggered = to_mark.len();
+        for (owner, contact) in to_mark {
+            if let Some(managed) = info.identity_manager.managed_identity_mut(&owner) {
+                managed.dashpay_rescan_triggered.insert(contact);
+            }
+        }
+        if let Some(floor) = floor {
+            tracing::info!(
+                wallet_id = %hex::encode(self.wallet_id),
+                floor,
+                contacts = triggered,
+                "DashPay rescan: lowered SPV synced_height to backfill historical contact payments"
+            );
+        }
+        Ok(floor)
+    }
+
     /// Flip `Pending` `Sent` [`PaymentEntry`]s to `Confirmed` when the
     /// persisted core transaction record reports the transaction final.
     ///
@@ -1182,6 +1305,248 @@ mod tests {
             "ignore must propagate a persist failure (got {result:?}), \
              else the ignore is lost and the sender resurfaces"
         );
+    }
+
+    /// DIP-15 §12.6: when a contact's receival account is registered after SPV
+    /// has already scanned past the contact's funding height, the rescan
+    /// reconcile lowers `synced_height` to `min(outgoing, incoming)` funding so
+    /// the filter manager backfills the missed range — then a per-contact guard
+    /// makes it single-shot per lifetime, so the recurring sweep does NOT
+    /// re-lower the height and reset the in-flight backfill (which would keep it
+    /// from ever completing).
+    #[tokio::test]
+    async fn rescan_lowers_synced_height_to_funding_floor_then_is_idempotent() {
+        use crate::wallet::identity::{ContactRequest, EstablishedContact};
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+
+        iw.register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
+            .await
+            .expect("register receival account");
+
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+            // outgoing funded at 200, incoming at 100 -> floor 100.
+            let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 200, 0);
+            let incoming = ContactRequest::new(contact, owner, 0, 0, 0, vec![0u8; 96], 100, 0);
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .established_contacts
+                .insert(contact, EstablishedContact::new(contact, outgoing, incoming));
+            // Simulate a forward sync to height 1000.
+            info.core_wallet.update_synced_height(1000);
+        }
+
+        assert_eq!(
+            iw.reconcile_dashpay_rescan().await.expect("rescan"),
+            Some(100),
+            "first pass lowers to min(outgoing, incoming) funding height"
+        );
+        {
+            let wm = iw.wallet_manager.read().await;
+            assert_eq!(
+                wm.get_wallet_info(&wallet_id)
+                    .unwrap()
+                    .core_wallet
+                    .synced_height(),
+                100,
+                "synced_height lowered to the floor"
+            );
+        }
+
+        assert_eq!(
+            iw.reconcile_dashpay_rescan().await.expect("rescan 2"),
+            None,
+            "already-rescanned contact must not re-trigger (no backfill thrash)"
+        );
+        {
+            let wm = iw.wallet_manager.read().await;
+            assert_eq!(
+                wm.get_wallet_info(&wallet_id)
+                    .unwrap()
+                    .core_wallet
+                    .synced_height(),
+                100,
+                "height stays at the floor after the no-op pass"
+            );
+        }
+    }
+
+    /// Register a receival account for `(owner, contact)` and insert an
+    /// established contact funded at `out_height`/`in_height`. The owner managed
+    /// identity is added on first use.
+    async fn establish_receival_contact(
+        manager: &Arc<PlatformWalletManager<RecordingPersister>>,
+        persister: &Arc<RecordingPersister>,
+        wallet_id: WalletId,
+        owner: Identifier,
+        contact: Identifier,
+        out_height: u32,
+        in_height: u32,
+    ) {
+        use crate::wallet::identity::{ContactRequest, EstablishedContact};
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(persister) as _);
+        iw.register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
+            .await
+            .expect("register receival account");
+        let mut wm = iw.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+        if info.identity_manager.managed_identity(&owner).is_none() {
+            info.identity_manager
+                .add_identity(bare_identity(owner.to_buffer()), 0, wallet_id, &p)
+                .expect("add owner");
+        }
+        let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], out_height, 0);
+        let incoming = ContactRequest::new(contact, owner, 0, 0, 0, vec![0u8; 96], in_height, 0);
+        info.identity_manager
+            .managed_identity_mut(&owner)
+            .expect("managed")
+            .established_contacts
+            .insert(contact, EstablishedContact::new(contact, outgoing, incoming));
+    }
+
+    async fn set_synced_height(
+        manager: &Arc<PlatformWalletManager<RecordingPersister>>,
+        wallet_id: WalletId,
+        height: u32,
+    ) {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let mut wm = wallet.identity().wallet_manager.write().await;
+        wm.get_wallet_info_mut(&wallet_id)
+            .expect("info")
+            .core_wallet
+            .update_synced_height(height);
+    }
+
+    async fn synced_height(
+        manager: &Arc<PlatformWalletManager<RecordingPersister>>,
+        wallet_id: WalletId,
+    ) -> u32 {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let wm = wallet.identity().wallet_manager.read().await;
+        wm.get_wallet_info(&wallet_id)
+            .expect("info")
+            .core_wallet
+            .synced_height()
+    }
+
+    /// A contact established while the wallet was still catching up (funded at or
+    /// after the current tip) is covered by the ongoing forward scan, so the
+    /// rescan leaves `synced_height` alone — but it must MARK the contact so
+    /// that, once the forward pointer later climbs past the contact's funding
+    /// height, the recurring sweep does NOT redundantly rewind to an
+    /// already-scanned range.
+    #[tokio::test]
+    async fn rescan_does_not_redundantly_rewind_a_forward_covered_contact() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        // Funded at 500, but we have only synced to 450 — below the funding
+        // height, so a forward scan will cover it.
+        establish_receival_contact(&manager, &persister, wallet_id, owner, contact, 500, 500).await;
+        set_synced_height(&manager, wallet_id, 450).await;
+
+        let iw_wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        assert_eq!(
+            iw_wallet.identity().reconcile_dashpay_rescan().await.expect("rescan"),
+            None,
+            "funded above the tip -> no backfill"
+        );
+        assert_eq!(synced_height(&manager, wallet_id).await, 450, "height unchanged");
+
+        // Forward sync climbs past the funding height. The contact was marked,
+        // so the next sweep must not re-lower to 500.
+        set_synced_height(&manager, wallet_id, 600).await;
+        assert_eq!(
+            iw_wallet.identity().reconcile_dashpay_rescan().await.expect("rescan 2"),
+            None,
+            "forward-covered contact must not be redundantly rewound"
+        );
+        assert_eq!(synced_height(&manager, wallet_id).await, 600, "no redundant rewind");
+    }
+
+    /// Multiple contacts: the floor is the MINIMUM funding height across all
+    /// not-yet-rescanned receival contacts (one rewind covers them all), and a
+    /// later-discovered, older-funded contact re-lowers exactly once before the
+    /// per-contact guard quiesces (drip-feed must not thrash).
+    #[tokio::test]
+    async fn rescan_uses_min_funding_across_contacts_and_drip_feed_settles() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let c_a = Identifier::from([0xA1; 32]);
+        let c_b = Identifier::from([0xB2; 32]);
+        let c_c = Identifier::from([0xC3; 32]);
+
+        // Two contacts present at once (funded 300 and 100); tip at 1000.
+        establish_receival_contact(&manager, &persister, wallet_id, owner, c_a, 300, 300).await;
+        establish_receival_contact(&manager, &persister, wallet_id, owner, c_b, 100, 100).await;
+        set_synced_height(&manager, wallet_id, 1000).await;
+
+        let iw_wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        assert_eq!(
+            iw_wallet.identity().reconcile_dashpay_rescan().await.expect("rescan"),
+            Some(100),
+            "floor is the minimum funding height across all candidates"
+        );
+        assert_eq!(synced_height(&manager, wallet_id).await, 100);
+
+        // Both are marked -> a second pass is a no-op.
+        assert_eq!(
+            iw_wallet.identity().reconcile_dashpay_rescan().await.expect("rescan 2"),
+            None,
+            "all candidates marked -> no re-trigger"
+        );
+
+        // A newly discovered, older-funded contact re-lowers exactly once...
+        establish_receival_contact(&manager, &persister, wallet_id, owner, c_c, 50, 50).await;
+        assert_eq!(
+            iw_wallet.identity().reconcile_dashpay_rescan().await.expect("rescan 3"),
+            Some(50),
+            "a new older contact re-lowers to its funding height"
+        );
+        // ...then settles.
+        assert_eq!(
+            iw_wallet.identity().reconcile_dashpay_rescan().await.expect("rescan 4"),
+            None,
+            "drip-feed settles -> no further rewind"
+        );
+    }
+
+    /// `synced_height == 0` means "scan from genesis / not started" — already a
+    /// full historical scan, so the rescan is a no-op (the masking path the spec
+    /// warns about).
+    #[tokio::test]
+    async fn rescan_is_a_noop_when_synced_height_is_zero() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        establish_receival_contact(&manager, &persister, wallet_id, owner, contact, 100, 100).await;
+        set_synced_height(&manager, wallet_id, 0).await;
+
+        let iw_wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        assert_eq!(
+            iw_wallet.identity().reconcile_dashpay_rescan().await.expect("rescan"),
+            None,
+            "synced_height 0 -> no rescan"
+        );
+        assert_eq!(synced_height(&manager, wallet_id).await, 0);
     }
 
     /// A `Sent` payment must advance `Pending → Confirmed` once its
