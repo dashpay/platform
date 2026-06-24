@@ -172,6 +172,14 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
   My-QR view passes `identity.identityId` + the cached name (or "") and no longer bails on
   an empty cache. 4 layers (lib/FFI/wrapper/view); xcframework regenerated; app BUILD
   SUCCEEDED. On-device full-loop still rides a funded devnet. Keep `auto_accept.rs`.
+  - **Drain-signer-optional follow-up — DONE (`c6a9c4a32c`).** `ff2403d7a1` made the
+    identity document signer mandatory in `platform_wallet_drain_pending_contact_crypto`
+    (`check_ptr!(signer_handle)`), which broke the background **provider-only** drain
+    (deferred-crypto queue: account build + contactInfo decrypt) that runs without an
+    identity signer (seedless / pre-unlock, the needs-unlock flow). The signer is now
+    optional: null → run only the provider-derived ops and skip the `drain_auto_accepts`
+    pass; a real signer → do both. Compiles; FFI null-handling, no test (provider-only
+    drain firing without a crash is the real proof — on-device/devnet).
 - [ ] **DashPay Invitations (DIP-13) — NEXT (queued 2026-06-24).** The shipped,
   interoperable onboarding feature: an existing user funds an AssetLock and shares a
   `dashpay://invite?du=…&assetlocktx=…&pk=<WIF>&islock=…` deep-link (web fallback
