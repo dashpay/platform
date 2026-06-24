@@ -119,7 +119,12 @@ struct ContactRequestsView: View {
                             ForEach(incomingPending, id: \.contactIdentityId) { row in
                                 IncomingRequestRow(
                                     displayName: displayName(for: row.contactIdentityId),
-                                    avatarUrl: cachedProfile(row.contactIdentityId)?.avatarUrl,
+                                    // Privacy: do NOT load a pending (unsolicited) sender's
+                                    // avatar — it's a sender-chosen URL, and an AsyncImage GET
+                                    // before the user accepts would leak the recipient's IP /
+                                    // online status to the sender. Show initials until the
+                                    // contact is accepted (established rows load it normally).
+                                    avatarUrl: nil,
                                     createdAtMillis: row.createdAtMillis,
                                     isInFlight: inFlightIds.contains(row.contactIdentityId),
                                     errorMessage: rowErrors[row.contactIdentityId],

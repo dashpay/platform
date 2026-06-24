@@ -94,6 +94,14 @@ pub unsafe extern "C" fn managed_identity_get_dashpay_profile(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_profile);
     check_ptr!(out_has_profile);
+    // Zero-init the out-params before any fallible work so an early return
+    // (bad id, missing wallet) leaves a safe all-null struct rather than
+    // uninitialized memory — `DashPayProfileFFI` owns C-string pointers a
+    // caller might otherwise free on the error path.
+    unsafe {
+        *out_profile = DashPayProfileFFI::empty();
+        *out_has_profile = false;
+    }
 
     let option = MANAGED_IDENTITY_STORAGE
         .with_item(identity_handle, |identity| identity.dashpay_profile.clone());
@@ -121,6 +129,14 @@ pub unsafe extern "C" fn platform_wallet_get_dashpay_profile(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_profile);
     check_ptr!(out_has_profile);
+    // Zero-init the out-params before any fallible work so an early return
+    // (bad id, missing wallet) leaves a safe all-null struct rather than
+    // uninitialized memory — `DashPayProfileFFI` owns C-string pointers a
+    // caller might otherwise free on the error path.
+    unsafe {
+        *out_profile = DashPayProfileFFI::empty();
+        *out_has_profile = false;
+    }
 
     let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
 
@@ -159,6 +175,14 @@ pub unsafe extern "C" fn platform_wallet_get_contact_profile(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_profile);
     check_ptr!(out_has_profile);
+    // Zero-init the out-params before any fallible work so an early return
+    // (bad id, missing wallet) leaves a safe all-null struct rather than
+    // uninitialized memory — `DashPayProfileFFI` owns C-string pointers a
+    // caller might otherwise free on the error path.
+    unsafe {
+        *out_profile = DashPayProfileFFI::empty();
+        *out_has_profile = false;
+    }
 
     let owner = unwrap_result_or_return!(unsafe { read_identifier(owner_identity_id) });
     let contact = unwrap_result_or_return!(unsafe { read_identifier(contact_identity_id) });

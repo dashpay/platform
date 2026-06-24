@@ -241,6 +241,18 @@ pub unsafe extern "C" fn platform_wallet_send_contact_request_with_signer(
     let proof: Option<Vec<u8>> = if auto_accept_proof.is_null() || auto_accept_proof_len == 0 {
         None
     } else {
+        // Defense-in-depth: bound the copy at the DIP-15 auto-accept proof
+        // ceiling (102 bytes) BEFORE allocating, so a malformed binding or a
+        // hostile (ptr, len) pair can't force an oversized allocation. The SDK
+        // re-validates the exact 38..=102 range after this.
+        if auto_accept_proof_len > 102 {
+            return crate::error::PlatformWalletFFIResult::err(
+                crate::error::PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!(
+                    "auto_accept_proof length {auto_accept_proof_len} exceeds the DIP-15 maximum of 102 bytes"
+                ),
+            );
+        }
         Some(std::slice::from_raw_parts(auto_accept_proof, auto_accept_proof_len).to_vec())
     };
 
