@@ -105,18 +105,19 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
   run multiple DashPay accounts → it's the **same item as multi-account (P2)**. Remaining
   after #813 merges: bump the key-wallet rev + thread the real account through our callers
   (`register_contact_account(.., account)` etc., currently hardcoded `0`).
-- [~] **`encryptedAccountLabel` padded to ≥16 chars: REGRESSED — REOPEN** (was
-  `2419159bb3`). The re-audit (`DIP_CONFORMANCE_GAPS.md` §1.2) found the padding fix
-  is now **dead code**: `IdentityWallet::encrypt_account_label` + `pad_account_label`
-  (`network/account_labels.rs:19,49-64`) have **zero live callers**. The live path
-  (FFI `dashpay.rs:236-269` → `send_contact_request_with_external_signer`
-  `contact_requests.rs:374` → `sdk_writer` → rs-sdk) passes the label **unpadded**;
-  the SDK encrypts it and hard-rejects `<48` bytes (`rs-sdk/.../contact_request.rs:319-330`),
-  so a **1–15-char label errors the whole send**. The label is also **never decrypted
-  on receive** (`decrypt_account_label` is dead too). Likely orphaned by the seedless
-  `ContactCryptoProvider`/`sdk_writer` refactor. **Fix:** route the live send through
-  the padded helper (or move padding into the SDK), surface the decrypted label on
-  receive, and pin with a test on the *live* path (not the dead helper).
+- [x] **`encryptedAccountLabel` length normalization: FIXED (send side)** (was the
+  REGRESSED re-audit finding `DIP_CONFORMANCE_GAPS.md` §1.2). The DIP-15 normalization
+  now lives in the single primitive `platform_encryption::{encrypt,decrypt}_account_label`:
+  short/empty labels are space-padded to clear the 48-byte floor **and** over-long labels
+  are truncated (char-boundary) to stay under the 80-byte cap — so no host-supplied label
+  can error the broadcast (a code review caught the symmetric long-label `>80` failure the
+  floor fix alone left). The dead `network/account_labels.rs` helper was deleted (it
+  duplicated the convention). Red→green test
+  `account_label_is_always_a_valid_48_to_80_byte_field` pins both bounds + multi-byte +
+  the exact-48 edge. (No live SDK change needed — it calls the primitive.)
+  - [ ] **Receive-side label surfacing (🟡 follow-up, feature):** the label is still
+    never decrypted/shown on receive (write-only). Needs an FFI accessor + UI; decrypt
+    works through the same primitive when wired.
 
 ## P2 — parity gaps / hardening
 

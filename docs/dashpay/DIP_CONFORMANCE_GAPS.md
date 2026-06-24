@@ -132,9 +132,21 @@ reality:
   effectively write-only.
 
 A later refactor (the seedless `ContactCryptoProvider`/`sdk_writer` seam) appears to
-have orphaned the padded helper. **Fix:** route the live send through the padded
-helper (or move padding into the SDK), surface the decrypted label on receive, add a
-test on the *live* path, and correct the `TODO.md` claim.
+have orphaned the padded helper.
+
+**Resolution (2026-06-24) — send side ✅ fixed; receive surfacing 🟡 remaining.**
+The DIP-15 length normalization now lives in the single primitive
+`platform_encryption::{encrypt,decrypt}_account_label`: a short/empty label is
+space-padded to clear the 48-byte floor **and** an over-long label is truncated (on a
+char boundary) to stay under the 80-byte cap — so **no** host-supplied label can error
+the broadcast anymore (the review caught that the floor fix alone left a symmetric
+`>80` long-label failure). The dead `network/account_labels.rs` helper was deleted (it
+duplicated the convention). Red→green test
+`account_label_is_always_a_valid_48_to_80_byte_field` pins both bounds + multi-byte +
+the exact-48 boundary. **Still open (🟡, follow-up):** the label is never *decrypted/
+surfaced on receive* — it stays write-only. That's a feature (needs an FFI accessor +
+UI), not a send-blocking bug, and decrypt now works correctly through the same
+primitive when wired.
 
 ---
 
