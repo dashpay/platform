@@ -92,12 +92,13 @@ impl AddressStatus {
     ///
     /// Applies exponential backoff: the ban window is `base × e^ban_count`
     /// (where `ban_count` is the value *before* this call), and `banned_until`
-    /// is always reset to `now + window` regardless of any existing active ban.
-    /// This unconditional overwrite is intentional — each successive health
-    /// failure escalates the window, so re-basing is correct here.  The
-    /// no-shorten max-semantics invariant (see [`AddressStatus::ban_for`]) is
-    /// scoped to `ban_for → ban_for` interactions only and does not apply to
-    /// this method.
+    /// is always re-based to `now + window` unconditionally, regardless of any
+    /// existing active ban.  Concretely, a health failure on a node that already
+    /// holds a longer rate-limit window (set via [`AddressStatus::ban_for`]) will
+    /// re-base `banned_until` to the exponential value, which may be shorter.
+    /// This is intentional: the exponential health-ban ladder owns the window for
+    /// genuinely-unhealthy nodes; the no-shorten guarantee is deliberately scoped
+    /// to `ban_for → ban_for` sequences only.
     ///
     /// `ban_count` is incremented and `ban_reason` is updated unconditionally.
     /// The counter resets to 0 on [`AddressStatus::unban`].
@@ -125,6 +126,10 @@ impl AddressStatus {
     /// [`AddressStatus::ban_with_reason`] uses `60 s × e¹ ≈ 163 s` rather
     /// than the first-rung `60 s × e⁰ = 60 s`.  The counter resets to 0 on
     /// [`AddressStatus::unban`].
+    ///
+    /// Note: the no-shorten guard applies only to `ban_for → ban_for` call
+    /// sequences.  [`AddressStatus::ban_with_reason`] re-bases `banned_until`
+    /// unconditionally — see its docs for the intentional cross-method semantics.
     pub fn ban_for(&mut self, period: Duration, reason: Option<String>) {
         let advertised_until = chrono::Utc::now() + period;
         if self

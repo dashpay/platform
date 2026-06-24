@@ -271,6 +271,8 @@ fn test_ban_for_never_shortens_active_ban() {
     }
 
     // (b) SHORT then LONG — LONG must extend banned_until AND adopt ban_reason.
+    //     A trailing ban_for(SHORT) must then be a no-op (kills last-wins regression
+    //     in this direction; case (a) kills the symmetric MIN-wins regression).
     {
         let mut list = rs_dapi_client::AddressList::new();
         list.add(addr.clone());
@@ -282,14 +284,34 @@ fn test_ban_for_never_shortens_active_ban() {
         list.ban_for(&addr, short_period, Some("short-reason".into()));
         list.ban_for(&addr, long_period, Some("long-reason".into()));
 
-        let info = list.ban_info();
-        let entry = info.iter().find(|i| i.uri == addr.to_string()).unwrap();
+        // Snapshot banned_until after LONG extension.
+        let snapshot_after_long = list
+            .ban_info()
+            .into_iter()
+            .find(|i| i.uri == addr.to_string())
+            .unwrap()
+            .banned_until
+            .expect("banned_until set after LONG ban");
 
-        let until = entry.banned_until.expect("banned_until must be set");
-        let remaining = (until - before_long).num_milliseconds() as f64 / 1000.0;
+        let before_trailing = before_long; // already elapsed < 1 ms
+        let until_after_long = snapshot_after_long;
+        let remaining = (until_after_long - before_trailing).num_milliseconds() as f64 / 1000.0;
         assert!(
             remaining >= 299.0,
             "(b) SHORT→LONG must extend ban; remaining={remaining:.1}s, expected >=299s"
+        );
+
+        // Trailing SHORT — must not reduce the LONG window (last-wins guard).
+        list.ban_for(&addr, short_period, Some("trailing-short".into()));
+
+        let info = list.ban_info();
+        let entry = info.iter().find(|i| i.uri == addr.to_string()).unwrap();
+
+        // Exact equality: a last-wins impl would drop banned_until to ~30 s here.
+        assert_eq!(
+            entry.banned_until.expect("banned_until must still be set"),
+            snapshot_after_long,
+            "(b) trailing SHORT must not change banned_until set by LONG (last-wins regression guard)"
         );
         // ban_reason must be adopted from the LONG call (window was extended).
         assert_eq!(
