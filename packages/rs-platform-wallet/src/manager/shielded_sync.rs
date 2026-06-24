@@ -305,13 +305,20 @@ impl ShieldedSyncManager {
                     }
 
                     // Only clear `background_cancel` if the active
-                    // generation is still ours. Without this guard a
-                    // tight `stop()` → `start()` reschedule has the
-                    // exiting thread overwrite the *new* generation's
-                    // token, leaving the new loop running but
-                    // unreflectable via `is_running()` / `stop()`.
-                    if this.background_generation.load(Ordering::Acquire) == my_gen {
-                        if let Ok(mut guard) = this.background_cancel.lock() {
+                    // generation is still ours. Acquire the lock FIRST,
+                    // then read/compare `background_generation` under it
+                    // (matching identity_sync / platform_address_sync).
+                    // Reading the generation BEFORE locking opens a
+                    // stale-read TOCTOU: this exiting thread could observe
+                    // a pre-bump generation, then block on the lock until a
+                    // concurrent `start()` released it, and null the
+                    // freshly-installed token — leaving the new loop
+                    // running but unreflectable via `is_running()` /
+                    // `stop()`. `start()` bumps the generation while it
+                    // holds this same lock, so comparing under the lock
+                    // guarantees we observe the post-swap value.
+                    if let Ok(mut guard) = this.background_cancel.lock() {
+                        if this.background_generation.load(Ordering::Acquire) == my_gen {
                             *guard = None;
                         }
                     }
@@ -574,5 +581,81 @@ impl std::fmt::Debug for ShieldedSyncManager {
             .field("interval_secs", &self.interval_secs.load(Ordering::Acquire))
             .field("last_sync_unix", &self.last_sync_unix_seconds())
             .finish()
+    }
+}
+
+// The whole module is already `#[cfg(feature = "shielded")]`-gated at its
+// `mod` declaration (manager/mod.rs), so these tests compile only under that
+// feature — no extra per-test gate needed.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a manager over an **empty** coordinator slot wired to a
+    /// handler-less event manager. An empty slot makes every `sync_now`
+    /// pass a no-op (empty-coordinator handling returns immediately), so
+    /// the background loop parks in its interval sleep — exactly where
+    /// cancellation lands cleanly — without needing a live SDK / network.
+    /// That is all the start/stop/restart thread-lifecycle tests below
+    /// exercise.
+    fn make_manager() -> Arc<ShieldedSyncManager> {
+        let coordinator_slot = Arc::new(RwLock::new(None));
+        let event_manager = Arc::new(PlatformEventManager::new(vec![]));
+        Arc::new(ShieldedSyncManager::new(event_manager, coordinator_slot))
+    }
+
+    /// Regression: a tight `stop()` → `start()` must reap the prior loop's
+    /// OS thread promptly, NOT stall on the 1 s detach backstop.
+    ///
+    /// The prior thread's exit epilogue locks `background_cancel` to
+    /// conditionally clear its slot. The earlier ordering held
+    /// `background_cancel` across the prior-handle join inside `start()`, so
+    /// on a back-to-back `stop()` → `start()` the exiting thread blocked on
+    /// that lock, never finished, and the reap spin-waited the full second
+    /// before detaching — a 1 s stall plus a transient untracked thread. The
+    /// fix installs the new token + generation, releases `background_cancel`,
+    /// and only then reaps, so the prior thread's epilogue runs and the join
+    /// lands in milliseconds. Mirrors the identity-sync and
+    /// platform-address-sync siblings.
+    ///
+    /// `stop()` and `start()` run back-to-back in one blocking closure
+    /// (mirroring the real call site) so `start()` re-acquires the lock
+    /// microseconds after `stop()` frees it — before the async-woken prior
+    /// thread can reach its epilogue. Against the old lock-held ordering this
+    /// reliably stalls ~1 s and fails the bound below.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn restart_after_stop_reaps_prior_thread() {
+        let mgr = make_manager();
+
+        // Launch the first loop and let its immediate (no-op, empty
+        // coordinator) pass complete so the thread parks in the interval
+        // sleep, where cancellation lands cleanly.
+        Arc::clone(&mgr).start();
+        assert!(mgr.is_running());
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Back-to-back cancel-only stop + restart, off the runtime so the
+        // synchronous reap can't starve a worker. `start()` re-grabs
+        // background_cancel right after `stop()` frees it.
+        let restart = Arc::clone(&mgr);
+        let elapsed = tokio::task::spawn_blocking(move || {
+            restart.stop();
+            let started = std::time::Instant::now();
+            Arc::clone(&restart).start();
+            started.elapsed()
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "stop()→start() stalled for {elapsed:?}: prior thread was not \
+             reaped promptly (background_cancel held across the join?)"
+        );
+        assert!(mgr.is_running(), "restart must leave the new loop tracked");
+
+        // Wind the new loop down so the test leaves no live !Send thread.
+        mgr.quiesce().await;
+        assert!(!mgr.is_running());
     }
 }

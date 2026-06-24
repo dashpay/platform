@@ -125,13 +125,31 @@ pub enum PlatformWalletFFIResultCode {
     /// and could double-send if the original spend landed.
     ErrorShieldedSpendUnconfirmed = 18,
 
-    /// One or more background coordinator threads did not exit cleanly before
-    /// the 30 s join deadline. The host **must not** free the callback context
-    /// immediately — a lingering thread may still hold a reference to it and
-    /// fire one final callback. Either keep the context alive for a further
-    /// grace period, or accept the potential (but statistically tiny) race.
-    /// This is distinct from a normal operation error; the manager IS torn
-    /// down; the host should not retry `destroy`.
+    /// A background coordinator drain did not complete cleanly within the
+    /// join deadline — one or more `!Send` sync threads may still be alive
+    /// and still hold a reference to the host-owned callback context, so they
+    /// could fire one final callback through it. On this code the host **must
+    /// not** free the callback context immediately: either keep it alive for a
+    /// further grace period, or accept the (statistically tiny) race.
+    ///
+    /// Returned by three callers, which differ in whether the operation may
+    /// be **retried**:
+    /// - `platform_wallet_manager_destroy`: the manager **IS** torn down
+    ///   (removed from storage) regardless — do **not** retry `destroy`; the
+    ///   handle is already gone. Only the callback-context lifetime caveat
+    ///   above applies.
+    /// - `platform_wallet_manager_shielded_sync_stop`: the manager is **NOT**
+    ///   torn down — only the shielded loop's drain was non-clean. The host
+    ///   may retry the stop (or proceed to `destroy`); the handle stays valid.
+    /// - `platform_wallet_manager_shielded_clear`: the manager is **NOT** torn
+    ///   down and the store was left **intact** (Clear aborted before touching
+    ///   it). The host may retry the clear, and must **not** commit its own
+    ///   persistence wipe — doing so would desync the host's rows from the
+    ///   still-populated shared tree.
+    ///
+    /// Distinct from a normal operation error (the underlying operation may
+    /// well have made progress); the terminal coordinator status is rendered
+    /// into the result message.
     ErrorShutdownIncomplete = 19,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
