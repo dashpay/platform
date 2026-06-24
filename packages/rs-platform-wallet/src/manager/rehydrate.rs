@@ -209,7 +209,7 @@ pub fn apply_persisted_core_state(
             None => {
                 return Err(PlatformWalletError::RehydrationTopologyUnsupported {
                     wallet_id,
-                    utxo_count: core.new_utxos.len(),
+                    utxo_count: unspent.len(),
                 });
             }
         }
