@@ -306,7 +306,7 @@ function statusDescription(status, metadata) {
 async function publishCommitStatusOnce(status, metadata) {
   if (process.env.SKIP_GITHUB_STATUS === '1') {
     console.log(`Skipping GitHub status publish: ${STATUS_LABELS[status]}`);
-    return;
+    return 'skipped';
   }
 
   const githubToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
@@ -350,14 +350,15 @@ async function publishCommitStatusOnce(status, metadata) {
     const errorBody = await response.text();
     throw new Error(`Unable to publish commit status: HTTP ${response.status} ${errorBody}`);
   }
+
+  return 'published';
 }
 
 async function publishCommitStatus(status, metadata) {
   let lastError;
   for (let attempt = 1; attempt <= STATUS_PUBLISH_ATTEMPTS; attempt += 1) {
     try {
-      await publishCommitStatusOnce(status, metadata);
-      return;
+      return await publishCommitStatusOnce(status, metadata);
     } catch (error) {
       lastError = error;
       console.error(`Commit status publish attempt ${attempt} failed: ${error.message}`);
@@ -396,6 +397,8 @@ async function main() {
   try {
     await prepareWorkspace(metadata, timeoutMinutes);
 
+    metadata.phase = 'resolve-core-version';
+    writeMetadata(metadata);
     metadata.core_version = await resolveLatestCoreVersion(metadata);
     writeMetadata(metadata);
 
@@ -445,7 +448,22 @@ async function main() {
     metadata.status = finalStatus;
     metadata.completed_at = now();
     writeMetadata(metadata);
-    await publishCommitStatus(finalStatus, metadata);
+    try {
+      const publishResult = await publishCommitStatus(finalStatus, metadata);
+      if (publishResult === 'skipped') {
+        metadata.status_publish_skipped_at = now();
+      } else {
+        metadata.status_published_at = now();
+      }
+      delete metadata.status_publish_error;
+      delete metadata.status_publish_failed_at;
+    } catch (error) {
+      metadata.status_publish_error = error.message;
+      metadata.status_publish_failed_at = now();
+      writeMetadata(metadata);
+      throw error;
+    }
+    writeMetadata(metadata);
   }
 
   console.log(`${STATUS_CONTEXT}: ${STATUS_LABELS[finalStatus]}`);
