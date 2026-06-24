@@ -655,7 +655,13 @@ mod tests {
         assert!(mgr.is_running(), "restart must leave the new loop tracked");
 
         // Wind the new loop down so the test leaves no live !Send thread.
-        mgr.quiesce().await;
+        let status = tokio::time::timeout(Duration::from_secs(2), mgr.quiesce())
+            .await
+            .expect("cleanup quiesce did not complete within 2s after restart");
+        assert!(
+            status.is_clean(),
+            "cleanup quiesce ended non-cleanly: {status:?}"
+        );
         assert!(!mgr.is_running());
     }
 }
