@@ -693,9 +693,12 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
 /// completed entries (drained + auto-accepted) to `out_drained`.
 ///
 /// # Safety
-/// - `signer_handle` (the identity document signer) and `core_signer_handle`
-///   (the wallet-HD resolver) must each be valid, non-destroyed handles;
-///   ownership is retained by the caller for the duration of this call.
+/// - `signer_handle` (the identity document signer) is **optional**: pass null to
+///   run only the provider-derived ops (account build / contactInfo decrypt) and
+///   skip the auto-accept pass; pass a valid, non-destroyed `*mut SignerHandle`
+///   to also auto-accept proof-bearing inbound requests.
+/// - `core_signer_handle` (the wallet-HD resolver) must be a valid, non-destroyed
+///   handle. The caller retains ownership of both for the duration of this call.
 /// - `out_drained` must be a valid `*mut u32`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
@@ -704,11 +707,15 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
     core_signer_handle: *mut MnemonicResolverHandle,
     out_drained: *mut u32,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(signer_handle);
     check_ptr!(core_signer_handle);
     check_ptr!(out_drained);
 
-    let signer_addr = signer_handle as usize;
+    // The identity signer is optional — null means "provider-only drain".
+    let signer_addr = if signer_handle.is_null() {
+        0usize
+    } else {
+        signer_handle as usize
+    };
     let core_signer_addr = core_signer_handle as usize;
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
@@ -726,9 +733,14 @@ pub unsafe extern "C" fn platform_wallet_drain_pending_contact_crypto(
         };
         block_on_worker(async move {
             let drained = identity.drain_pending_contact_crypto(&provider).await;
-            // The auto-accept pass needs the identity signer for the reciprocal.
-            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-            let accepted = identity.drain_auto_accepts(signer, &provider).await;
+            // The auto-accept pass needs the identity signer for the reciprocal;
+            // skip it when no identity signer was supplied.
+            let accepted = if signer_addr != 0 {
+                let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+                identity.drain_auto_accepts(signer, &provider).await
+            } else {
+                0
+            };
             drained + accepted
         })
     });
