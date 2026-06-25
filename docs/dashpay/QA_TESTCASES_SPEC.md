@@ -197,15 +197,21 @@ truth (and on-chain for the payment).
 | DP-04 profile | ✅ | publicMessage updated on-chain → SwiftData (`QA fresh-build 16:10`) |
 | DP-05 view | ✅ | contacts / requests / profile rendered throughout |
 | DP-06 ignore | ✅ | registered a fresh identity (asset-lock funded, ChainLock proof) → sent Eve a request → Eve **ignored** it (→ ignored-senders) → **un-ignored** (reversed). Local-only mute |
-| DP-07 label | ✅ send; receive timing confirmed | label attached + broadcast; **decrypts on accept** (ingest carries encrypted bytes, plaintext appears once established) |
-| DP-08 QR | ✅ | Eve built `dash:?du=…&dapk=…`; SimA pasted + `sendContactRequestFromQR` broadcast |
-| DP-09 contactInfo | ✅ | Eve alias "QA Bestie" on Alice persisted; footer confirms ≥2-contact encrypted publish |
-| DP-10 backfill rescan | ✅ (mechanism, via logs) | the §12.6 rescan fired live: `platform_wallet…payments: DashPay rescan: lowered SPV synced_height … floor=51112` → `dash_spv…filters: Wallet synced_height 51112 fell below committed_height 52175, restarting scan`. No UI trigger (Manual tier); the full restore-from-seed payment-recovery remains a device exercise |
+| DP-07 label | ✅ fresh first-contact | Bob→**EveN** (fresh pair) labeled send; EveN accepted → decrypted "Their account" = the sent label. Confirms decrypt-on-accept end-to-end |
+| DP-08 QR | ✅ fresh first-contact | Alice built `dash:?du=…&dapk=…`; **EveN** pasted + `sendContactRequestFromQR`; Alice **auto-accepted** (reciprocal, no manual Accept) — *after unlocking Alice's wallet* (signer-backed drain; see note) |
+| DP-09 contactInfo | ✅ on-chain | log: `Published contactInfo document identity=Eve contact=Alice` — the `.published` outcome, not just local persist |
+| DP-10 backfill rescan | ✅ mechanism (logs) | the §12.6 rescan fired live: `DashPay rescan: lowered SPV synced_height … floor=51112` → `dash_spv…filters: synced_height 51112 fell below committed_height 52175, restarting scan`. No UI trigger (Manual tier); the full restore-from-seed payment-recovery remains a device exercise |
 
 **10/10 flows verified live on the fresh build** — DP-01..09 driven on-chain
-(SwiftData + chain), DP-10's backfill-rescan mechanism confirmed firing in the Rust
-logs (`reconcile_dashpay_rescan` → SPV filter re-scan). DP-06 needed a freshly
-registered identity (the existing 4-identity graph was saturated).
+(SwiftData + chain; DP-07/DP-08 via a freshly-registered unconnected identity to
+get clean first-contact pairs), DP-09's on-chain publish + DP-10's backfill-rescan
+both confirmed in the Rust logs.
+
+**Finding (DP-08):** the QR auto-accept *reciprocal* is signer-backed, so it only
+fires once the recipient's wallet is **unlocked** (the "N contacts waiting to finish
+setup → Unlock" drain). The request and auto-accept proof reach the recipient
+immediately, but the established reciprocal lands after unlock — so "auto-accept" is
+not fully hands-off. Worth surfacing in DIP-15 §8.13 expectations.
 
 Two plan corrections came out of the run: **DP-03** now records the Core-SPV
 precondition (a DashPay payment is an L1 broadcast — fails "SPV Client not started"
