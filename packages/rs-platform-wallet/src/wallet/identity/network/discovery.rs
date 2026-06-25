@@ -429,8 +429,14 @@ impl IdentityWallet {
                         // re-derive each signing key's private key — without
                         // this only the master key is materialized and the
                         // imported identity cannot sign with its HIGH /
-                        // CRITICAL authentication keys.
-                        managed.add_keys(key_decisions, &self.persister);
+                        // CRITICAL authentication keys. A failed persist here
+                        // would silently leave the identity watch-only after
+                        // restart, so surface it (matching `add_identity` above).
+                        managed.add_keys(key_decisions, &self.persister).map_err(|e| {
+                            PlatformWalletError::Persistence(format!(
+                                "identity keys not persisted during discovery: {e}"
+                            ))
+                        })?;
                     }
                     drop(wm_guard);
 

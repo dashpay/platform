@@ -282,7 +282,7 @@ impl ManagedIdentity {
         public_key: dpp::identity::IdentityPublicKey,
         derivation_breadcrumb: Option<crate::changeset::KeyDerivationBreadcrumb>,
         persister: &WalletPersister,
-    ) {
+    ) -> Result<(), crate::changeset::PersistenceError> {
         // Single-key form of [`Self::add_keys`] — one canonical
         // key-layering + changeset path so the two can't drift. This
         // entry point carries no secret (callers that have a verified
@@ -295,7 +295,7 @@ impl ManagedIdentity {
                 verified_scalar: None,
             }],
             persister,
-        );
+        )
     }
 
     /// Layer several `IdentityPublicKey`s onto this identity and emit ONE
@@ -312,11 +312,11 @@ impl ManagedIdentity {
         &mut self,
         keys: Vec<crate::changeset::KeyWithBreadcrumb>,
         persister: &WalletPersister,
-    ) {
+    ) -> Result<(), crate::changeset::PersistenceError> {
         use dpp::identity::accessors::IdentitySettersV0;
 
         if keys.is_empty() {
-            return;
+            return Ok(());
         }
         let identity_id = self.id();
         let mut current = self.identity.public_keys().clone();
@@ -366,9 +366,13 @@ impl ManagedIdentity {
             identity_keys: Some(keys_cs),
             ..Default::default()
         };
-        if let Err(e) = persister.store(cs) {
-            tracing::error!("Failed to persist changeset: {}", e);
-        }
+        // Surface the persist failure — these rows carry the per-key
+        // derivation breadcrumb + verified scalar that make an imported /
+        // restored identity signable. Swallowing a failed store here would
+        // leave the keys in memory but absent from the client store, so the
+        // identity comes back watch-only after restart with no signal.
+        persister.store(cs)?;
+        Ok(())
     }
 
     /// Stamp `disabled_at` on the public keys named by `key_ids` and
@@ -517,6 +521,25 @@ mod tests {
         }
     }
 
+    /// Persister whose every `store` fails — pins that a key-persist failure
+    /// is surfaced, not swallowed.
+    struct FailingPersister;
+    impl PlatformWalletPersistence for FailingPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Err(PersistenceError::backend("add_keys store armed to fail"))
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
     fn key(id: KeyID) -> IdentityPublicKey {
         IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id,
@@ -563,7 +586,8 @@ mod tests {
                 },
             ],
             &p,
-        );
+        )
+        .expect("add_keys persists in test");
 
         // Both keys landed in the DPP identity.
         assert_eq!(managed.identity.public_keys().len(), 2);
@@ -617,7 +641,9 @@ mod tests {
         let mut managed = ManagedIdentity::new(identity, 0);
         let persister = std::sync::Arc::new(CapturingPersister::default());
         let p = WalletPersister::new([0xAB; 32], std::sync::Arc::clone(&persister) as _);
-        managed.add_keys(Vec::new(), &p);
+        managed
+            .add_keys(Vec::new(), &p)
+            .expect("empty add_keys is a no-op Ok");
         assert!(
             persister.stores.lock().unwrap().is_empty(),
             "empty add_keys stores nothing"
@@ -647,7 +673,8 @@ mod tests {
                 verified_scalar: Some(zeroize::Zeroizing::new([0x22u8; 32])),
             }],
             &p,
-        );
+        )
+        .expect("add_keys persists in test");
 
         let stores = persister.stores.lock().unwrap();
         let upserts = &stores
@@ -663,6 +690,35 @@ mod tests {
         assert!(
             entry.private_key.is_none(),
             "a scalar without a breadcrumb must be dropped, not carried"
+        );
+    }
+
+    /// A failed key-persist must SURFACE as `Err`, not be swallowed — else an
+    /// imported / restored identity comes back watch-only after restart with no
+    /// signal. The pre-fix `add_keys` logged the error and returned `()`.
+    #[test]
+    fn add_keys_surfaces_persist_failure() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let wallet_id: WalletId = [0xAB; 32];
+        let p = WalletPersister::new(wallet_id, std::sync::Arc::new(FailingPersister) as _);
+
+        let result = managed.add_keys(
+            vec![crate::changeset::KeyWithBreadcrumb {
+                key: key(0),
+                breadcrumb: Some((wallet_id, 7, 0)),
+                verified_scalar: Some(zeroize::Zeroizing::new([0x33u8; 32])),
+            }],
+            &p,
+        );
+        assert!(
+            result.is_err(),
+            "a failed key-persist must surface, not be swallowed"
         );
     }
 

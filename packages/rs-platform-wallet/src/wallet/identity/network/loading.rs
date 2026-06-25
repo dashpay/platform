@@ -255,8 +255,14 @@ impl IdentityWallet {
             if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
                 managed.set_status(IdentityStatus::Active, &self.persister);
                 managed.wallet_id = Some(wallet_id);
-                // Breadcrumbs for every re-derivable key (was MASTER-only).
-                managed.add_keys(key_decisions, &self.persister);
+                // Breadcrumbs for every re-derivable key (was MASTER-only). A
+                // failed persist would silently leave the identity watch-only
+                // after restart, so surface it rather than swallow.
+                managed.add_keys(key_decisions, &self.persister).map_err(|e| {
+                    PlatformWalletError::Persistence(format!(
+                        "identity keys not persisted during load: {e}"
+                    ))
+                })?;
             }
         }
 
