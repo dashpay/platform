@@ -514,21 +514,53 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// **Host-serialization precondition**: the caller must not invoke
     /// `shielded_sync_start` for this manager concurrently with `clear`. A
-    /// concurrent direct `sync_now`/`sync_wallet` is held off (the quiescing
-    /// gate stays raised across the liveness check and the wipe), but a full
-    /// restart re-opens that gate as it spawns a fresh loop, so a `start`
-    /// racing `clear` can still re-persist into the wiped store. The wallet
-    /// UI drives these from one place; that ordering is the host's contract
-    /// until the registry grows a per-key clearing latch.
+    /// concurrent direct `sync_now`/`sync_wallet` is held off — the quiescing
+    /// gate is raised *continuously* for the whole clear (from before the
+    /// drain, across the liveness check, through the wipe), so such a pass
+    /// observes the gate and bails with no lapse. The one remaining residual
+    /// is a full `shielded_sync_start` racing `clear`: a restart spawns a
+    /// fresh loop and reopens the gate, so it could re-persist into the wiped
+    /// store. The wallet UI drives these from one place; that ordering is the
+    /// host's contract until the registry grows a per-key clearing latch.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
-        // Quiesce the shielded loop: cancel it, drain any in-flight pass
-        // (incl. its persister fan-out), and join its OS thread. The
-        // registry bounds the join by the coordinator's own
-        // `SHUTDOWN_JOIN_TIMEOUT_SECS` budget — returning `Timeout` rather
-        // than hanging if a pass's drop wedges — so no outer timeout is
-        // needed here.
-        let status = self.shielded_sync_manager.quiesce().await;
+        self.clear_shielded_inner(std::time::Duration::from_secs(SHUTDOWN_JOIN_TIMEOUT_SECS))
+            .await
+    }
+
+    /// [`clear_shielded`](Self::clear_shielded) with an explicit drain
+    /// deadline. Split out so tests can exercise the timeout path without
+    /// waiting the full production budget.
+    #[cfg(feature = "shielded")]
+    async fn clear_shielded_inner(
+        &self,
+        drain_timeout: std::time::Duration,
+    ) -> Result<(), crate::error::PlatformWalletError> {
+        // Raise and HOLD the shielded quiescing gate for the WHOLE clear,
+        // BEFORE quiescing — so the "no new pass" barrier never lapses
+        // between the drain, the liveness check, and the store wipe: a direct
+        // `sync_now`/`sync_wallet` landing anywhere in here observes the gate
+        // and bails instead of re-persisting into the store we are about to
+        // clear. `quiesce_under_held_gate` deliberately does NOT touch the
+        // gate (a single `AtomicFlagGuard` always clears the flag on drop, so
+        // letting `quiesce` manage it and re-raising afterwards would leave a
+        // window). The guard lowers the gate on return (every path).
+        let _clearing_gate = self.shielded_sync_manager.hold_quiescing_gate();
+
+        // Cancel the loop and drain any in-flight pass (incl. its persister
+        // fan-out). Bound the drain (mirroring `shielded_sync_stop`'s
+        // timeout) so a heavy direct pass cannot hang the host's Clear: on
+        // timeout the clear reports `Timeout` and aborts BEFORE the wipe,
+        // leaving the store intact.
+        let status = match tokio::time::timeout(
+            drain_timeout,
+            self.shielded_sync_manager.quiesce_under_held_gate(),
+        )
+        .await
+        {
+            Ok(status) => status,
+            Err(_elapsed) => CoordinatorThreadStatus::Timeout,
+        };
 
         // Only commit the store wipe once the in-flight pass has fully
         // drained. A partial/timed-out drain could let a surviving pass
@@ -537,20 +569,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         if !status.is_clean() {
             return Err(crate::error::PlatformWalletError::ShieldedShutdownIncomplete { status });
         }
-        // Hold the shielded quiescing gate raised across BOTH the liveness
-        // check below and the store wipe, so the gate guarding "no new pass"
-        // does not lapse between check and act: a direct `sync_now` /
-        // `sync_wallet` that lands here observes the gate and bails instead
-        // of writing into the store we are about to clear. The guard lowers
-        // the gate on return (every path), so a later start/sync works.
-        let _clearing_gate = self.shielded_sync_manager.hold_quiescing_gate();
 
-        // [F2 FIX] Also refuse if a prior-generation shielded thread is
-        // still parked alive: it holds an `Arc` to the persister/store and
-        // could re-persist notes into the store we are about to wipe. The
-        // check is shielded-scoped, so the other coordinators / the
-        // always-on event adapter running normally do not block Clear.
-        if self.registry.any_alive_for(WalletWorker::ShieldedSync) {
+        // Also refuse if a prior-generation shielded thread is still parked
+        // alive: it holds an `Arc` to the persister/store and could re-persist
+        // notes into the store we are about to wipe. The check is shielded-
+        // scoped (shares the `shielded_worker_alive` gate), so the other
+        // coordinators / the always-on event adapter running normally do not
+        // block Clear.
+        if self.shielded_worker_alive() {
             return Err(
                 crate::error::PlatformWalletError::ShieldedShutdownIncomplete {
                     status: CoordinatorThreadStatus::Detached,
@@ -1042,6 +1068,59 @@ mod tests {
             .clear_shielded()
             .await
             .expect("clear_shielded must succeed once the orphan is reaped");
+    }
+
+    /// SEC-001: `clear_shielded` must BOUND its in-flight-pass drain so a
+    /// heavy direct `sync_now`/`sync_wallet` that won't drain in time cannot
+    /// hang the host's Clear. On the drain deadline the clear reports
+    /// `ShieldedShutdownIncomplete` and aborts BEFORE the store wipe, leaving
+    /// the store intact.
+    ///
+    /// Non-vacuous: against an unbounded drain the held pass keeps
+    /// `is_syncing` set forever and `clear_shielded_inner` never returns — the
+    /// test's outer timeout fires and the `expect` below panics.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn clear_shielded_aborts_without_wiping_when_drain_times_out() {
+        let manager = Arc::new(make_manager());
+
+        // A direct sync pass already in flight (holds `is_syncing`); it never
+        // drains within the clear's drain budget.
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        let ssm = Arc::clone(&manager.shielded_sync_manager);
+        let pass_task = tokio::spawn(async move {
+            let _pass = ssm
+                .begin_pass_for_test()
+                .expect("direct pass enters the slot");
+            ready_tx.send(()).expect("signal in-flight");
+            release_rx.await.expect("await release");
+            // `_pass` drops here → is_syncing = false
+        });
+
+        ready_rx.await.expect("pass reached in-flight");
+        assert!(manager.shielded_sync_manager.is_syncing());
+
+        // Clear with a short drain budget: the held pass can't drain in time,
+        // so the clear must return ShieldedShutdownIncomplete — bounded, never
+        // hanging — and never reach the wipe.
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            manager.clear_shielded_inner(Duration::from_millis(100)),
+        )
+        .await
+        .expect("clear must return within its bounded drain, never hang");
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::PlatformWalletError::ShieldedShutdownIncomplete { .. })
+            ),
+            "bounded drain timeout must surface as ShieldedShutdownIncomplete, got {result:?}"
+        );
+
+        // Release the held pass and join.
+        release_tx.send(()).expect("release the pass");
+        pass_task.await.expect("pass task joined");
     }
 
     /// TC-015 (R5): `from_report` maps the registry's [`ShutdownReport`]

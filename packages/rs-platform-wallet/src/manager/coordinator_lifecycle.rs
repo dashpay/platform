@@ -147,39 +147,67 @@ impl CoordinatorLifecycle {
     /// The gate is raised **here**, not left to the registry's drain hook:
     /// `registry.quiesce` early-returns `NotRunning` without running the
     /// hook when no background-loop slot is registered, so a coordinator
-    /// with only direct `sync_now`/`sync_wallet` traffic (no running loop)
-    /// would never see the gate go up — and a direct pass landing
-    /// concurrently would slip past the barrier `clear_shielded`/`stop`
-    /// promise. Raising it ourselves makes the "no new pass" gate hold
-    /// regardless of whether a loop is registered, and preserves
-    /// gate-before-cancel: it is up before `registry.quiesce` issues any
-    /// cancel.
+    /// with only direct pass traffic (no running loop) would never see the
+    /// gate go up — and a direct pass landing concurrently would slip past
+    /// the barrier `clear_shielded`/`stop` promise. Raising it ourselves
+    /// makes the "no new pass" gate hold regardless of whether a loop is
+    /// registered, and preserves gate-before-cancel: it is up before
+    /// `registry.quiesce` issues any cancel.
+    ///
+    /// "Direct pass" here means the gated entry points that take the
+    /// `is_syncing` slot via [`begin_pass`](Self::begin_pass): every
+    /// coordinator's `sync_now`, plus the shielded coordinator's
+    /// `sync_wallet`. The platform-address coordinator's `sync_wallet` is
+    /// intentionally **ungated** (it never touches `is_syncing`; callers
+    /// that need exclusion gate themselves), so the gate/drain barrier does
+    /// not apply to it.
     pub(crate) async fn quiesce(&self) -> CoordinatorThreadStatus {
         // Gate up first (instant) and held until the guard drops on return.
         self.quiescing.store(true, Ordering::Release);
         let _quiescing_gate = AtomicFlagGuard::new(&self.quiescing);
+        self.cancel_join_and_drain().await
+    }
 
-        // Cancel + bounded join of the background loop (if any). A wedged
-        // loop pass surfaces here as a non-clean `Timeout` rather than
-        // hanging — its orphaned thread is tracked by the registry for
-        // teardown, so we must not wait on it below.
+    /// Like [`quiesce`](Self::quiesce) but for a caller that has **already**
+    /// raised the `quiescing` gate (via [`hold_quiescing_gate`](Self::hold_quiescing_gate))
+    /// and will keep holding it: this neither raises nor lowers the gate, so
+    /// a multi-step teardown (the shielded Clear flow) keeps the "no new
+    /// pass" barrier raised *continuously* across the drain, the orphan-
+    /// liveness check, and the store wipe — with no lapse for a direct
+    /// `sync_now`/`sync_wallet` to slip through and re-persist into the
+    /// store being cleared. (`quiesce`'s own RAII guard would lower the gate
+    /// the instant it returned, which is why Clear cannot just call it and
+    /// re-raise afterwards: a single shared `AtomicFlagGuard` always clears
+    /// the flag on drop, so the re-raise would leave a window.) Gate-before-
+    /// cancel still holds: the caller raised the gate before this runs.
+    #[cfg(any(test, feature = "shielded"))]
+    pub(crate) async fn quiesce_under_held_gate(&self) -> CoordinatorThreadStatus {
+        debug_assert!(
+            self.quiescing.load(Ordering::Acquire),
+            "quiesce_under_held_gate requires the caller to already hold the quiescing gate"
+        );
+        self.cancel_join_and_drain().await
+    }
+
+    /// Cancel + bounded-join the background loop (if any), then drain a
+    /// direct in-flight pass on a clean status. Assumes the `quiescing` gate
+    /// is **already raised** (by [`quiesce`](Self::quiesce)'s own guard or a
+    /// caller's hold guard) and does not touch it.
+    ///
+    /// A wedged loop pass surfaces from `registry.quiesce` as a non-clean
+    /// `Timeout` rather than hanging — its orphaned thread is tracked by the
+    /// registry for teardown, so the drain below must not wait on it. On a
+    /// clean status the only possible `is_syncing` holder is a direct
+    /// `sync_now`/`sync_wallet` that entered before the gate rose (with no
+    /// loop slot `registry.quiesce` joined nothing; with an idle loop it
+    /// joined a thread that was not the one holding the flag). The raised
+    /// gate keeps a new pass from starting, so the drain converges, and a
+    /// panicked pass clears the flag via its own RAII guard.
+    async fn cancel_join_and_drain(&self) -> CoordinatorThreadStatus {
         let status: CoordinatorThreadStatus = self.registry.quiesce(self.worker).await.into();
-
-        // Drain a *direct* in-flight pass the registry could not: with no
-        // loop slot, `registry.quiesce` returned `NotRunning` without
-        // joining anything; with an idle loop it joined a thread that was
-        // not the one holding `is_syncing`. Either way a `sync_now`/
-        // `sync_wallet` that entered before the gate rose may still be in
-        // flight. The gate keeps a new pass from starting, so this
-        // converges, and a panicked pass clears the flag via its own RAII
-        // guard. Only drain on a clean status: a non-clean one means a
-        // wedged loop pass is the `is_syncing` holder (its thread was
-        // orphaned, not joined), and waiting on it would reintroduce the
-        // shutdown stall the registry's bounded join exists to prevent.
         if status.is_clean() {
             self.drain_in_flight_pass().await;
         }
-
         status
     }
 
@@ -187,7 +215,9 @@ impl CoordinatorLifecycle {
     /// the `quiescing` gate already raised (so no new pass can start) and
     /// after the background loop has been cancel-joined (so the only
     /// possible holder is a direct, non-cancellable pass running to
-    /// completion). Mirrors the registry's 5ms poll cadence.
+    /// completion). Mirrors the registry's 5ms poll cadence. Unbounded by
+    /// design — the caller bounds the whole teardown (the FFI `stop` /
+    /// `clear` bridges wrap it in a `SHUTDOWN_JOIN_TIMEOUT_SECS` timeout).
     async fn drain_in_flight_pass(&self) {
         while self.is_syncing.load(Ordering::Acquire) {
             tokio::time::sleep(Duration::from_millis(5)).await;
@@ -318,5 +348,48 @@ mod tests {
         );
 
         pass_task.await.expect("pass task joined");
+    }
+
+    /// `quiesce_under_held_gate` must NOT lower the `quiescing` gate the
+    /// caller is holding — the mechanism that lets the shielded Clear flow
+    /// keep the "no new pass" barrier raised *continuously* across the
+    /// drain, the liveness check, and the store wipe. The plain
+    /// [`quiesce`](CoordinatorLifecycle::quiesce)'s own RAII guard would
+    /// lower it on return, leaving a window a direct pass could slip into
+    /// before Clear re-raised it. Must fail against a variant that delegates
+    /// to `quiesce` (whose guard clears the shared flag on drop).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn quiesce_under_held_gate_keeps_caller_gate_raised() {
+        let lifecycle = make_lifecycle();
+
+        // Caller (the Clear flow) raises and holds the gate before draining.
+        let hold = lifecycle.hold_quiescing_gate();
+        assert!(
+            lifecycle.quiescing.load(Ordering::Acquire),
+            "caller's hold raised the gate"
+        );
+
+        // Drain under the held gate (no loop registered → NotRunning); the
+        // gate must remain raised across the call.
+        let status = lifecycle.quiesce_under_held_gate().await;
+        assert_eq!(status, CoordinatorThreadStatus::NotRunning);
+        assert!(
+            lifecycle.quiescing.load(Ordering::Acquire),
+            "gate stays raised across the drain — no lapse for a direct pass"
+        );
+
+        // A direct pass attempting to begin during Clear (gate held) is
+        // refused: it bails after the CAS on the raised gate.
+        assert!(
+            lifecycle.begin_pass().is_none(),
+            "the continuously-held gate holds off a new direct pass"
+        );
+
+        // Once Clear's own guard drops, the gate reopens for later work.
+        drop(hold);
+        assert!(
+            !lifecycle.quiescing.load(Ordering::Acquire),
+            "gate reopens once the caller's hold guard drops"
+        );
     }
 }

@@ -278,6 +278,25 @@ impl ShieldedSyncManager {
         self.lifecycle.quiesce().await
     }
 
+    /// Drain + join **without touching the `quiescing` gate**, for a caller
+    /// (the Clear flow) that already holds it raised via
+    /// [`hold_quiescing_gate`](Self::hold_quiescing_gate) and keeps holding
+    /// it across the whole teardown. See
+    /// [`CoordinatorLifecycle::quiesce_under_held_gate`].
+    pub(crate) async fn quiesce_under_held_gate(&self) -> super::CoordinatorThreadStatus {
+        self.lifecycle.quiesce_under_held_gate().await
+    }
+
+    /// Test seam: enter a sync pass directly (claim `is_syncing` via the
+    /// pass gate) so a teardown test can stand in for a direct
+    /// `sync_now`/`sync_wallet` already in flight, without driving the real
+    /// (coordinator-backed) sync path. The returned guard clears the flag
+    /// on drop.
+    #[cfg(test)]
+    pub(crate) fn begin_pass_for_test(&self) -> Option<AtomicFlagGuard<'_>> {
+        self.lifecycle.begin_pass()
+    }
+
     /// Raise the `quiescing` gate and hold it raised until the returned
     /// guard drops. Where [`quiesce`](Self::quiesce) reopens the gate as
     /// soon as it returns, this lets a multi-step teardown (Clear) keep new
