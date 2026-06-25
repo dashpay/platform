@@ -697,6 +697,45 @@ mod tests {
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
 
+    /// The derivation-path scope-gate is the ONLY thing stopping
+    /// `export_auto_accept_private_key` from being a general raw-key
+    /// exfiltration primitive — it must hand back a scalar ONLY on a DIP-15
+    /// auto-accept path (`m/9'/coin'/16'/expiry'`) and reject every other path.
+    #[test]
+    fn export_auto_accept_private_key_gates_to_the_auto_accept_path() {
+        let resolver = make_resolver(english_resolve);
+        let signer =
+            unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+
+        // A well-formed auto-accept path exports its 32-byte scalar.
+        let auto_accept = DerivationPath::from_str("m/9'/1'/16'/123'").expect("valid path");
+        let scalar = signer
+            .export_auto_accept_private_key(&auto_accept)
+            .expect("a well-formed auto-accept path exports its scalar");
+        assert_ne!(*scalar, [0u8; 32], "exported scalar must be non-zero");
+
+        // Every non-auto-accept path MUST be rejected — otherwise a caller
+        // could exfiltrate an identity-auth or contactInfo signing key.
+        for bad in [
+            "m/9'/1'/5'/0'/0'/0'/0'", // identity-auth (feature 5', wrong length)
+            "m/8'/1'/16'/0'",         // wrong purpose (comps[0] != 9')
+            "m/9'/1'/15'/0'",         // wrong feature (comps[2] != 16')
+            "m/9'/1'/16'",            // too short (len != 4)
+            "m/9'/1'/16'/0'/0'",      // too long (len != 4)
+        ] {
+            let path = DerivationPath::from_str(bad).expect("valid path string");
+            assert!(
+                matches!(
+                    signer.export_auto_accept_private_key(&path),
+                    Err(MnemonicResolverSignerError::DerivationFailed(_))
+                ),
+                "non-auto-accept path {bad} must be rejected, not exported"
+            );
+        }
+
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
     #[tokio::test]
     async fn public_key_matches_sign_ecdsa_pubkey() {
         let resolver = make_resolver(english_resolve);
