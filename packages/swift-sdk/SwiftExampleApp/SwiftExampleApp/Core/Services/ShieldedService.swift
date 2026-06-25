@@ -536,11 +536,15 @@ class ShieldedService: ObservableObject {
     ///
     /// What it does NOT touch:
     ///   * The manager-wide shielded sync loop is `stopShieldedSync`'d
-    ///     first so the persister callback can't re-derive the
-    ///     rows we're deleting. It restarts on either of the two
-    ///     bind paths: [`manualSync`] self-binding (which calls
-    ///     `startShieldedSync()` after a successful self-rebind),
-    ///     or `rebindWalletScopedServices` firing on a navigation.
+    ///     first (cancel-only — signals cancel and returns), then the
+    ///     `clearShielded()` call below provides the actual drain
+    ///     barrier: it raises a continuously-held quiescing gate, joins
+    ///     the in-flight pass, and returns `errorShutdownIncomplete`
+    ///     instead of wiping if the join was non-clean. The loop
+    ///     restarts on either of the two bind paths: [`manualSync`]
+    ///     self-binding (which calls `startShieldedSync()` after a
+    ///     successful self-rebind), or `rebindWalletScopedServices`
+    ///     firing on a navigation.
     ///   * The per-network commitment-tree SQLite file at
     ///     `dbPath(for:)`. Earlier revisions of this helper
     ///     unlinked it for a "true clean slate", but with no

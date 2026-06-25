@@ -103,6 +103,7 @@ impl WorkerStatus {
 
 /// Aggregate result of [`ThreadRegistry::shutdown`].
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[must_use = "inspect all_clean() before freeing host callback context / dropping the runtime: a non-clean status flags a still-live worker or orphan"]
 pub struct ShutdownReport<K: RegistryKey> {
     /// Per-worker terminal status, keyed by worker id.
     pub per_worker: BTreeMap<K, WorkerStatus>,
@@ -366,6 +367,13 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     ///
     /// **Requires a multi-thread runtime**: the worker drives its loop
     /// via `Handle::block_on` and needs the shared timer/IO driver.
+    ///
+    /// **Blocks the calling thread on restart-reap**: when restarting a
+    /// key whose prior OS thread is still finishing, this call SPINS
+    /// SYNCHRONOUSLY for up to `WorkerConfig::reap_backstop` (default
+    /// `DEFAULT_REAP_BACKSTOP` = 1 s) waiting for the prior to exit. Do
+    /// not call it directly from an async context — drive it via
+    /// `tokio::task::spawn_blocking` or a dedicated host thread.
     ///
     /// # Panics
     ///
@@ -1500,7 +1508,9 @@ mod tests {
         let rt = Builder::new_current_thread().enable_all().build().unwrap();
         let reg = ThreadRegistry::<&str>::new();
         let result = catch_unwind(AssertUnwindSafe(|| {
-            rt.block_on(async { reg.shutdown().await });
+            // We're proving `shutdown()` panics — its return value is
+            // moot here, but `#[must_use]` requires an explicit drop.
+            let _ = rt.block_on(async { reg.shutdown().await });
         }));
         let payload = result.expect_err("shutdown must panic on current_thread");
         let msg = payload
@@ -1698,6 +1708,30 @@ mod tests {
         assert_eq!(reg.quiesce("a").await, WorkerStatus::Ok);
         assert!(reg.is_running("b"), "b still running after a drains");
         assert_eq!(reg.quiesce("b").await, WorkerStatus::Ok);
+    }
+
+    /// `cancel_all()` cancels every registered worker in one call; a
+    /// subsequent `quiesce` per key drains each one cleanly. Covers the
+    /// public method that has no in-tree caller yet (the rs-dapi-client
+    /// adoption will use it).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn cancel_all_signals_every_worker() {
+        let reg = ThreadRegistry::<&str>::new();
+        start_clean(&reg, "a", WorkerConfig::default());
+        start_clean(&reg, "b", WorkerConfig::default());
+        start_clean(&reg, "c", WorkerConfig::default());
+        assert!(reg.is_running("a") && reg.is_running("b") && reg.is_running("c"));
+
+        reg.cancel_all();
+        assert!(!reg.is_running("a"));
+        assert!(!reg.is_running("b"));
+        assert!(!reg.is_running("c"));
+
+        // All three drain cleanly — the cancel reached every worker.
+        assert_eq!(reg.quiesce("a").await, WorkerStatus::Ok);
+        assert_eq!(reg.quiesce("b").await, WorkerStatus::Ok);
+        assert_eq!(reg.quiesce("c").await, WorkerStatus::Ok);
+        assert!(!reg.any_alive());
     }
 
     /// GAP-005 — `WorkerConfig::default()` values are pinned.

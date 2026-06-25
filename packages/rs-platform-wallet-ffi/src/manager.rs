@@ -380,9 +380,8 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
                 PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
                 format!("coordinator(s) did not exit cleanly: {status:?}"),
             );
-        } else {
-            tracing::debug!(?status, "platform wallet coordinators joined cleanly");
         }
+        tracing::debug!(?status, "platform wallet coordinators joined cleanly");
     }
     PlatformWalletFFIResult::ok()
 }

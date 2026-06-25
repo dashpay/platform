@@ -154,10 +154,12 @@ public class PlatformWalletManager: ObservableObject {
         progressPollTask?.cancel()
         guard handle != NULL_HANDLE else { return }
 
-        // Tear down the Rust manager: signal both sync loops to cancel,
-        // then destroy. All three sync stops are cancel-only on the Rust
-        // side and never report an incomplete drain, so `discard()` them.
-        // The single join point is `destroy`.
+        // Tear down the Rust manager: signal the two host-driven sync
+        // loops (platform-address + shielded) to cancel and `discard()`
+        // them — both are cancel-only on the Rust side and never report
+        // an incomplete drain. Identity-sync and the event adapter are
+        // joined inside `destroy`, which is the single host-visible
+        // join point.
         platform_wallet_manager_platform_address_sync_stop(handle).discard()
         platform_wallet_manager_shielded_sync_stop(handle).discard()
 

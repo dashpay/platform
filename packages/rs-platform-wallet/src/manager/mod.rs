@@ -197,6 +197,7 @@ impl From<dash_async::WorkerStatus> for CoordinatorThreadStatus {
 /// `tokio::time` on a shutting-down runtime and panics with
 /// `A Tokio 1.x context was found, but it is being shutdown`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[must_use = "inspect all_clean() before freeing host callback context / dropping the runtime: a non-clean status flags a still-live coordinator or orphan"]
 pub struct CoordinatorExitStatus {
     /// Platform-address (BLAST) balance sync loop.
     pub platform_address_sync: CoordinatorThreadStatus,
@@ -268,9 +269,10 @@ impl CoordinatorExitStatus {
     }
 }
 
-/// Maximum time (seconds) the teardown paths — `shutdown()`,
-/// `clear_shielded`, and the FFI shielded-stop bridge — wait for one
-/// coordinator's quiesce+join to complete.
+/// Maximum time (seconds) the teardown paths — `shutdown()` and
+/// `clear_shielded` — wait for one coordinator's quiesce+join to
+/// complete. (The FFI `shielded_sync_stop` bridge is cancel-only and
+/// does not consume this budget.)
 ///
 /// This is a backstop, not the primary stop mechanism. `quiesce()`
 /// cancels the loop, which aborts any in-flight pass at its `.await`

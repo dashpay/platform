@@ -40,6 +40,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{CoreChangeSet, PlatformWalletChangeSet};
 use crate::changeset::traits::PlatformWalletPersistence;
+use crate::changeset::Merge;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// Bound on the on-cancel drain — caps how many buffered events the
@@ -138,7 +139,7 @@ async fn process_event<P>(
     // `TransactionInstantLocked`, which checks finality before recording
     // the IS lock), grab a brief read lock on the manager.
     let core = build_core_changeset(wallet_manager, &event).await;
-    if core.is_empty_no_records() {
+    if core.is_empty() {
         // SyncHeightAdvanced for an unknown wallet, empty BlockProcessed,
         // etc. — nothing to persist. Skip the round-trip.
         return;
@@ -173,7 +174,12 @@ where
     P: PlatformWalletPersistence + 'static,
 {
     let mut drained = 0;
-    while drained < budget {
+    let mut attempts = 0;
+    // `attempts` (not `drained`) bounds the loop so a sustained `Lagged`
+    // stream — which logs but produces no persisted event — still hits
+    // the cap and exits, preserving the bounded-teardown guarantee.
+    while attempts < budget {
+        attempts += 1;
         match receiver.try_recv() {
             Ok(event) => {
                 process_event(wallet_manager, persister, event).await;
@@ -188,9 +194,10 @@ where
             }
         }
     }
-    if drained == budget {
+    if attempts == budget {
         tracing::warn!(
             budget,
+            drained,
             "wallet-event adapter cancel-drain hit budget; further buffered events dropped"
         );
     }
@@ -295,11 +302,8 @@ async fn build_core_changeset(
             //
             // `ChainLockProcessed` fires every time the wallet's
             // `last_applied_chain_lock` advances (dashpay/rust-dashcore#769),
-            // even when no record was promoted — so a quiescent wallet's
-            // boundary advance is no longer invisible to this bridge.
-            // The earlier `TransactionsChainlocked`-only signal had a
-            // gap on the "metadata advanced but per-account empty"
-            // path; the new event closes it deterministically.
+            // so a quiescent wallet's boundary advance still reaches
+            // this bridge even when no record was promoted.
             CoreChangeSet {
                 last_applied_chain_lock: Some(chain_lock.clone()),
                 ..CoreChangeSet::default()
@@ -418,22 +422,4 @@ fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
             })
         })
         .collect()
-}
-
-impl CoreChangeSet {
-    /// Cheap "should we bother round-tripping the persister" check used
-    /// by the adapter to drop empty events without locking. Skips the
-    /// `is_empty()` walk over `instant_locks_for_non_final_records`
-    /// since that map is rarely populated and `Vec::is_empty` short-
-    /// circuits on the common case.
-    fn is_empty_no_records(&self) -> bool {
-        self.records.is_empty()
-            && self.spent_utxos.is_empty()
-            && self.new_utxos.is_empty()
-            && self.instant_locks_for_non_final_records.is_empty()
-            && self.last_processed_height.is_none()
-            && self.synced_height.is_none()
-            && self.last_applied_chain_lock.is_none()
-            && self.addresses_derived.is_empty()
-    }
 }
