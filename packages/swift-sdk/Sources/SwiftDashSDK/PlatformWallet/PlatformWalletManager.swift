@@ -94,17 +94,17 @@ public class PlatformWalletManager: ObservableObject {
     /// enqueue time and `handleShieldedSyncCompleted` drops any event whose
     /// snapshot no longer matches the current generation.
     ///
-    /// The Rust quiesce barrier guarantees no persistence after stop/clear,
-    /// but the completion callback is re-dispatched onto this `@MainActor`,
-    /// so a final, already-dispatched event can land just after stop/clear
-    /// returns. A plain boolean gate is bypassable: a caller can stop (set
-    /// the flag) and restart (clear the flag) in the same actor turn, which
-    /// re-opens the gate before the stale, previously-enqueued completion
-    /// task runs — so the old event leaks into the new run. Tying
-    /// suppression to a generation closes that race: the stale task carries
-    /// the pre-stop generation, the restart does not reset the counter, so
-    /// the snapshot mismatches and the event is dropped even on a same-turn
-    /// restart.
+    /// `stop` cancels the in-flight pass before its completion fires;
+    /// `clear` goes further with a full Rust-side quiesce. Either way, an
+    /// already-dispatched completion event can still land on this
+    /// `@MainActor` after stop/clear returns. A plain boolean gate is
+    /// bypassable: a caller can stop (set the flag) and restart (clear it)
+    /// in the same actor turn, re-opening the gate before the stale
+    /// completion task runs — so the old event leaks into the new run.
+    /// Tying suppression to a generation closes that race: the stale task
+    /// carries the pre-stop generation, the restart does not reset the
+    /// counter, so the snapshot mismatches and the event is dropped even
+    /// on a same-turn restart.
     ///
     /// `nonisolated` + lock-guarded so the FFI callback thread can snapshot
     /// it without hopping onto the main actor first.

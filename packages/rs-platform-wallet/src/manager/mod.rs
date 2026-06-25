@@ -238,16 +238,10 @@ impl CoordinatorExitStatus {
             && self.detached_threads.is_clean()
     }
 
-    /// Build the FFI-stable exit status from the registry's weight-ordered
-    /// [`ShutdownReport`]. A worker absent from the report never ran, so it
-    /// maps to [`NotRunning`](CoordinatorThreadStatus::NotRunning); a
-    /// non-zero orphan-survivor count surfaces as
-    /// [`Detached`](CoordinatorThreadStatus::Detached), keeping
-    /// [`all_clean`](Self::all_clean) honest for a still-live wedged thread.
-    /// A reaped orphan that finished within the grace but ended non-clean
-    /// (e.g. `Panicked`) surfaces through `orphan_status` — those are not
-    /// keyed in `per_worker`, so without that hop a panicked reaped orphan
-    /// would silently pass `all_clean()`.
+    /// Build the FFI-stable exit status from the registry's
+    /// [`ShutdownReport`]. Absent workers map to `NotRunning`; a non-zero
+    /// `detached` surfaces as `Detached`; otherwise `orphan_status` folds
+    /// through so a panicked reaped orphan does not pass `all_clean()`.
     pub(crate) fn from_report(report: ShutdownReport<WalletWorker>) -> Self {
         let worker = |key: WalletWorker| -> CoordinatorThreadStatus {
             report
@@ -268,10 +262,6 @@ impl CoordinatorExitStatus {
             detached_threads: if report.detached > 0 {
                 CoordinatorThreadStatus::Detached
             } else {
-                // Survivors at the grace deadline already surface as
-                // `Detached` above; otherwise fold the reaped-orphan
-                // terminal status through — `Ok` stays `Ok`, a panic /
-                // stop / error from a reaped orphan flips it non-clean.
                 CoordinatorThreadStatus::from(report.orphan_status)
             },
         }
@@ -556,10 +546,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let _clearing_gate = self.shielded_sync_manager.hold_quiescing_gate();
 
         // Cancel the loop and drain any in-flight pass (incl. its persister
-        // fan-out). Bound the drain (mirroring `shielded_sync_stop`'s
-        // timeout) so a heavy direct pass cannot hang the host's Clear: on
-        // timeout the clear reports `Timeout` and aborts BEFORE the wipe,
-        // leaving the store intact.
+        // fan-out). Bound the drain so a heavy direct pass cannot hang the
+        // host's Clear: on timeout the clear reports `Timeout` and aborts
+        // BEFORE the wipe, leaving the store intact.
         let status = match tokio::time::timeout(
             drain_timeout,
             self.shielded_sync_manager.quiesce_under_held_gate(),

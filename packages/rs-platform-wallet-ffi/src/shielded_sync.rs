@@ -67,46 +67,26 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_start(
 
 /// Stop the shielded sync manager. No-op if not running.
 ///
-/// **Cancel-only**: signals the loop to cancel and returns immediately,
-/// matching the `platform_address_sync_stop` and `identity_sync_stop`
-/// convention. An in-flight pass is cancelled mid-flight at its next
-/// `.await` (see [`ShieldedSyncManager::stop`]); a parked prior-generation
-/// orphan is **not** joined here.
+/// **Cancel-only**: signals the loop and returns immediately, matching
+/// `platform_address_sync_stop` / `identity_sync_stop`. An in-flight
+/// pass is cancelled mid-flight at its next `.await`; a parked prior-
+/// generation orphan is **not** joined here. Never returns
+/// `ErrorShutdownIncomplete` — the join-and-orphan-liveness gate that
+/// prevents a host UAF lives on `platform_wallet_manager_destroy` and
+/// `platform_wallet_manager_shielded_clear`, which are the host's
+/// contract points for "safe to free the callback context".
 ///
-/// This call therefore never returns `ErrorShutdownIncomplete`. The
-/// join-and-orphan-liveness gate that prevents a host UAF lives on
-/// [`platform_wallet_manager_destroy`] (and, for the Clear flow,
-/// `platform_wallet_manager_shielded_clear`) — that is the contract
-/// point at which the host learns whether it is safe to free the
-/// persister/event-handler callback context.
-///
-/// Rationale: before this change, `shielded_sync_stop` itself ran
-/// `quiesce()` (raising the `quiescing` gate via its own
-/// `AtomicFlagGuard`). A concurrent `shielded_clear` already holding the
-/// gate continuously would have that second guard's `Drop` lower the
-/// gate, opening a window for a new pass to slip past the "no new pass"
-/// barrier. Making stop cancel-only eliminates the second guard outright.
-///
-/// Caveat on host-observed events: a host that marshals events onto its
-/// own executor (e.g. Swift hops to `@MainActor`) may still observe an
-/// already-dispatched event land *after* this call returns — stop only
-/// requests cancellation, it does not wait for completion. Hosts that
-/// must ignore a trailing event should gate their handler on their own
-/// post-stop/post-clear state (the example app drops events while
-/// unbound).
-///
-/// [`ShieldedSyncManager::stop`]:
-///     platform_wallet::manager::shielded_sync::ShieldedSyncManager::stop
+/// Caveat: a host marshalling events onto its own executor (e.g. Swift
+/// hops to `@MainActor`) may still observe an already-dispatched event
+/// land after this returns; gate the handler on post-stop state if
+/// trailing events must be dropped (the example app does so).
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        // Cancel-only: signal the loop and return. The destroy / clear
-        // paths own the join + orphan-liveness gate that prevents a host
-        // UAF — keeping that ownership single-sourced avoids the
-        // concurrent-AtomicFlagGuard race that the prior quiesce-here
-        // design opened.
+        // Cancel-only by design: a second `AtomicFlagGuard` on `quiescing`
+        // here would race a continuously-held gate in `shielded_clear`.
         manager.shielded_sync().stop();
     });
     unwrap_option_or_return!(option);

@@ -282,16 +282,10 @@ impl Default for SlotState {
 }
 
 impl SlotState {
-    /// Atomically rotate the slot onto a new generation: hand back the
-    /// prior handle to the caller (to be parked / reaped after the lock is
-    /// released) and install a fresh cancellation token + this start's
-    /// teardown config. Returns the prior handle, the new cancellation
-    /// token, and the post-bump generation.
-    ///
-    /// Common to both worker kinds. `start_thread` calls this AFTER
-    /// snapshotting the pre-start config so a spawn failure can roll the
-    /// slot back to its prior state; `start_task` (no synchronous spawn
-    /// failure to roll back from) just calls it.
+    /// Rotate the slot onto a new generation: take the prior handle,
+    /// install a fresh cancellation token, bump generation, and write
+    /// `cfg`'s teardown config. Returns `(prior_handle, new_token,
+    /// new_generation)`.
     fn prepare(&mut self, cfg: WorkerConfig) -> (Option<WorkerHandle>, CancellationToken, u64) {
         let prior = self.handle.take();
         let token = CancellationToken::new();
@@ -594,11 +588,9 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             }
         };
 
-        // R2: gate-before-cancel — fully await the drain hook before the
-        // cancel signal is observed. Time it for observability so a hung
-        // drain is visible in traces; there is no hard timeout here (the
-        // caller bounds the whole teardown) — only the join-budget below
-        // can hard-fail the worker.
+        // R2: gate-before-cancel — drain hook fully awaited before the
+        // cancel signal fires. Timed for observability; no hard timeout
+        // here (the caller bounds teardown).
         if let Some(drain) = drain {
             let drain_started = Instant::now();
             drain().await;

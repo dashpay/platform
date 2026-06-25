@@ -101,11 +101,9 @@ pub async fn wallet_event_adapter_loop<P>(
                 }
             }
             _ = cancel.cancelled() => {
-                // T7: drain whatever events the upstream broadcast had
-                // already buffered before exiting. P2P does not replay
-                // IS-locks, so an event emitted between the producer's
-                // last `send` and the cancel arm firing here would
-                // otherwise be silently lost.
+                // Drain buffered events before exiting: P2P does not
+                // replay IS-locks, so an event emitted just before
+                // cancel would be silently lost without this drain.
                 let drained = drain_buffered_events(
                     &mut receiver,
                     &wallet_manager,
@@ -158,11 +156,13 @@ async fn process_event<P>(
     }
 }
 
-/// Drain at most `budget` already-buffered events from `receiver`, project
-/// each through [`process_event`], and return the count drained. Stops
-/// when the buffer empties, the channel closes, or the budget is hit.
-/// A `Lagged` notice is logged but not retried — the dropped events are
-/// already lost upstream.
+/// Drain at most `budget` buffered events from `receiver` through
+/// [`process_event`]. Returns the count drained. Stops on empty, closed
+/// channel, or budget exhaustion; logs a warning on `Lagged`.
+//
+// TODO: add a unit test covering this path — synthesise WalletEvents on
+// the broadcast, fire `cancel`, assert the drained count. Blocked on
+// the absence of an existing test scaffold for `wallet_event_adapter_loop`.
 async fn drain_buffered_events<P>(
     receiver: &mut Receiver<WalletEvent>,
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
