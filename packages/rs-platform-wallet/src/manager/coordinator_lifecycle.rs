@@ -141,11 +141,57 @@ impl CoordinatorLifecycle {
 
     /// Cancel the loop, drain any in-flight pass, and join the worker,
     /// returning its terminal status. Reopens the `quiescing` gate on every
-    /// exit path (the registry's drain hook raised it; reopening is safe
-    /// because the loop has been cancelled, so no new pass starts).
+    /// exit path (the gate is reset by the guard; reopening is safe because
+    /// the loop has been cancelled, so no new pass starts).
+    ///
+    /// The gate is raised **here**, not left to the registry's drain hook:
+    /// `registry.quiesce` early-returns `NotRunning` without running the
+    /// hook when no background-loop slot is registered, so a coordinator
+    /// with only direct `sync_now`/`sync_wallet` traffic (no running loop)
+    /// would never see the gate go up — and a direct pass landing
+    /// concurrently would slip past the barrier `clear_shielded`/`stop`
+    /// promise. Raising it ourselves makes the "no new pass" gate hold
+    /// regardless of whether a loop is registered, and preserves
+    /// gate-before-cancel: it is up before `registry.quiesce` issues any
+    /// cancel.
     pub(crate) async fn quiesce(&self) -> CoordinatorThreadStatus {
+        // Gate up first (instant) and held until the guard drops on return.
+        self.quiescing.store(true, Ordering::Release);
         let _quiescing_gate = AtomicFlagGuard::new(&self.quiescing);
-        self.registry.quiesce(self.worker).await.into()
+
+        // Cancel + bounded join of the background loop (if any). A wedged
+        // loop pass surfaces here as a non-clean `Timeout` rather than
+        // hanging — its orphaned thread is tracked by the registry for
+        // teardown, so we must not wait on it below.
+        let status: CoordinatorThreadStatus = self.registry.quiesce(self.worker).await.into();
+
+        // Drain a *direct* in-flight pass the registry could not: with no
+        // loop slot, `registry.quiesce` returned `NotRunning` without
+        // joining anything; with an idle loop it joined a thread that was
+        // not the one holding `is_syncing`. Either way a `sync_now`/
+        // `sync_wallet` that entered before the gate rose may still be in
+        // flight. The gate keeps a new pass from starting, so this
+        // converges, and a panicked pass clears the flag via its own RAII
+        // guard. Only drain on a clean status: a non-clean one means a
+        // wedged loop pass is the `is_syncing` holder (its thread was
+        // orphaned, not joined), and waiting on it would reintroduce the
+        // shutdown stall the registry's bounded join exists to prevent.
+        if status.is_clean() {
+            self.drain_in_flight_pass().await;
+        }
+
+        status
+    }
+
+    /// Poll until no sync pass holds `is_syncing`. Only sound to call with
+    /// the `quiescing` gate already raised (so no new pass can start) and
+    /// after the background loop has been cancel-joined (so the only
+    /// possible holder is a direct, non-cancellable pass running to
+    /// completion). Mirrors the registry's 5ms poll cadence.
+    async fn drain_in_flight_pass(&self) {
+        while self.is_syncing.load(Ordering::Acquire) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
     }
 
     /// Raise the `quiescing` gate and hold it raised until the returned
@@ -189,5 +235,88 @@ impl CoordinatorLifecycle {
             return None;
         }
         Some(guard)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::oneshot;
+
+    fn make_lifecycle() -> Arc<CoordinatorLifecycle> {
+        let registry = ThreadRegistry::<WalletWorker>::new();
+        Arc::new(CoordinatorLifecycle::new(
+            registry,
+            WalletWorker::IdentitySync,
+            60,
+        ))
+    }
+
+    /// With NO background loop registered, `quiesce` must still raise the
+    /// `quiescing` gate — so a concurrent direct `sync_now`/`sync_wallet`
+    /// that lands after it bails — and drain an already-in-flight direct
+    /// pass before returning. The registry's drain hook cannot cover this:
+    /// `registry.quiesce` early-returns `NotRunning` WITHOUT running the
+    /// hook when no loop slot exists, so the gate would otherwise never go
+    /// up and the in-flight pass would not be drained. Regression for the
+    /// `clear_shielded`/`stop` contract ("a concurrent direct
+    /// sync_now/sync_wallet is held off"). Must fail against the pre-fix
+    /// `quiesce` that only delegated to the registry.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn quiesce_raises_gate_and_drains_direct_pass_without_background_loop() {
+        let lifecycle = make_lifecycle();
+        assert!(
+            !lifecycle.is_running(),
+            "precondition: no background loop registered"
+        );
+
+        // A direct sync_now/sync_wallet pass already past `begin_pass`, held
+        // in flight on a task until we release it.
+        let (ready_tx, ready_rx) = oneshot::channel::<()>();
+        let (release_tx, release_rx) = oneshot::channel::<()>();
+        let lc_pass = Arc::clone(&lifecycle);
+        let pass_task = tokio::spawn(async move {
+            let _pass = lc_pass.begin_pass().expect("first pass enters the slot");
+            ready_tx.send(()).expect("signal in-flight");
+            release_rx.await.expect("await release");
+            // `_pass` drops here → is_syncing = false
+        });
+
+        ready_rx.await.expect("pass reached in-flight");
+        assert!(lifecycle.is_syncing(), "direct pass holds is_syncing");
+
+        // Drive `quiesce` concurrently: it must raise the gate, then block
+        // draining the in-flight pass.
+        let lc_q = Arc::clone(&lifecycle);
+        let quiesce_task = tokio::spawn(async move { lc_q.quiesce().await });
+
+        // Give `quiesce` time to raise the gate and enter the drain.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(
+            lifecycle.quiescing.load(Ordering::Acquire),
+            "quiesce must raise the gate even with no background loop registered"
+        );
+        assert!(
+            lifecycle.is_syncing(),
+            "in-flight direct pass still held; quiesce has not skipped the drain"
+        );
+        assert!(
+            !quiesce_task.is_finished(),
+            "quiesce must block until the in-flight pass drains"
+        );
+
+        // Release the pass; `quiesce` drains `is_syncing`, then returns.
+        release_tx.send(()).expect("release the pass");
+        let status = tokio::time::timeout(Duration::from_secs(2), quiesce_task)
+            .await
+            .expect("quiesce completes once the pass drains")
+            .expect("quiesce task joined");
+        assert_eq!(status, CoordinatorThreadStatus::NotRunning);
+        assert!(
+            !lifecycle.is_syncing(),
+            "is_syncing was drained before quiesce returned"
+        );
+
+        pass_task.await.expect("pass task joined");
     }
 }
