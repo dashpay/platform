@@ -31,7 +31,7 @@ A row's **primary** category is the §4 section it lives in. Some tests are **cr
 |---|---|---|
 | "test Essential, Platform-only" | `Tier=Essential AND Layer=Platform` | `ID-02, ID-03, ID-04, DPNS-01, DPNS-02, DPNS-03, DPNS-04` |
 | "test all Essential" | `Tier=Essential` | the core experience: `CORE-01..07`, `ID-01/02/03/04`, `DPNS-01/02/03/04`, `SH-01..06` |
-| "list the manual tests" | `Tier=Manual` | `CORE-08` (skip in automation; run on a physical device) |
+| "list the manual tests" | `Tier=Manual` | `CORE-08`, `DP-10` (skip in automation; run on a physical device) |
 | "smoke test the wallet" | `Category=Core AND Status=✅` | `CORE-01..CORE-09` |
 | "test all non-Uncommon Token tests" | `Category=Token AND Tier≠Uncommon` | `TOK-01..07`, `MW-02` (via §6 index) |
 | "exercise every token admin action" | `Category=Token AND Tier=Uncommon` | `TOK-08..TOK-16` |
@@ -265,12 +265,16 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 
 | ID | Action | Layer | Tier | Status | Entry point & test notes |
 |---|---|---|---|---|---|
-| DP-01 | Send contact request | Platform | Common | ✅ | `FriendsView` (AddFriendView) → `platform_wallet_send_contact_request_with_signer`. |
-| DP-02 | Accept contact request | Platform | Common | ✅ | `FriendsView` → `platform_wallet_accept_contact_request_with_signer`. |
-| DP-03 | Send DashPay payment to a contact | Platform | Common | ✅ | `FriendsView` → `platform_wallet_send_dashpay_payment`. |
-| DP-04 | Create / update DashPay profile | Platform | Common | ✅ | `IdentityDetailView` profile editor → `platform_wallet_create_or_update_dashpay_profile_with_signer`. |
-| DP-05 | View profile / contacts / requests | Platform | Common | ✅ | `FriendsView`, `EstablishedContact` (SwiftData). |
-| DP-06 | Reject contact request | Platform | Thorough | ✅ | `FriendsView` → `wallet.rejectContactRequest`. |
+| DP-01 | Send contact request | Platform | Common | ✅ | DashPay tab → **Add Contact** (toolbar button `dashpay.addContact`) → `AddContactView` (mode toggle `dashpay.addContact.mode`): by Identity ID (base58, 32-byte gated) or DPNS username (≥2-char live prefix search; not-found offers clear-and-retry `dashpay.addContact.retry`) → `platform_wallet_send_contact_request_with_signer`. Optimistic-send overlay until the request appears. |
+| DP-02 | Accept contact request | Platform | Common | ✅ | `ContactRequestsView` (Incoming) → **Accept** (`dashpay.request.accept`) → `platform_wallet_accept_contact_request_with_signer`. Contact moves to `ContactsView`; the bidirectional contact persists (both request-direction rows present for the pair). |
+| DP-03 | Send DashPay payment to a contact | Platform | Common | ✅ | `ContactDetailView` → **Send Dash** (`dashpay.detail.sendDash`) → `SendDashPayPaymentSheet` → `platform_wallet_send_dashpay_payment`. A DashPay payment is an **L1 transaction**, so it requires the **Core SPV client running** (`CORE-07`) — with SPV stopped the broadcast fails with "SPV error: SPV Client not started". Payment appears in the contact's Payments (txid). Send is disabled while the payment channel is broken — flagged on a permanent channel failure (e.g. the contact rotated their payment keys/addresses, or a request decrypt/validation failure) — showing "ask the contact to send a new request"; it re-enables when a fresh request arrives. |
+| DP-04 | Create / update DashPay profile | Platform | Common | ✅ | `DashPayProfileView` → **Edit** (`dashpay.profile.edit`) → `DashPayProfileEditorView` (`dashpay.profile.displayName` / `.publicMessage` / `.avatarUrl`) → `platform_wallet_create_or_update_dashpay_profile_with_signer`. Non-destructive update; avatar renders via `DashPayAvatarView` and the re-fetched profile carries the computed `avatarHash` + 8-byte dHash `avatarFingerprint`. |
+| DP-05 | View profile / contacts / requests | Platform | Common | ✅ | DashPay tab: `ContactsView` (established + search `dashpay.search`), `ContactRequestsView` (incoming/outgoing), `ContactDetailView`, `DashPayProfileView` — backed by `PersistentDashpayContactRequest` (SwiftData); established contacts are derived in-memory by joining each pair's incoming + outgoing request rows. |
+| DP-06 | Ignore a contact request (reversible local mute) | Platform | Thorough | ✅ | `ContactRequestsView` → **Ignore** (`dashpay.request.ignore`) → `wallet.ignoreContactSender`. The sender leaves the requests list and appears in `IgnoredContactsView` (un-ignore `dashpay.ignored.unignore` reverses it). Local-only, no on-chain artifact (R1 privacy); persists across relaunch. |
+| DP-07 | Attach `encryptedAccountLabel`; see contact's "Their account" on receive | Platform | Common | ✅ | DIP-15 §8.5. Send: `AddContactView` → **Account label** (`dashpay.addContact.accountLabel`) carried into `sendContactRequest(…accountLabel:)`. Receive: the counterparty's `ContactDetailView` shows a read-only **"Their account"** block (assert on visible text — no a11y id yet). Verify on a two-wallet loop (cf. `MW-03`): the ingested request carries the encrypted bytes, but the plaintext is decrypted **on accept** (the signer-bearing register step) and shown on the **incoming row only** (direction-specific). |
+| DP-08 | QR auto-accept (build "Add me" QR + add via pasted URI) | Platform | Thorough | ✅ | DIP-15 §8.13. Build: `DashPayProfileView` → **Add me (DIP-15 QR)** (`dashpay.profile.qrURI`, `du=…&dapk=…`, 1h validity — `AUTO_ACCEPT_TTL_SECS=3600`) via `buildAutoAcceptQR`. Add: DashPay tab → **Add via QR** (`dashpay.addViaQR`) → `AddViaQRSheet` (`dashpay.qr.uriField` / `dashpay.qr.send`) → `sendContactRequestFromQR`. Two-wallet: A builds the QR, B pastes the URI → the request is auto-accepted by A without A manually accepting (a distinct acceptance path from `DP-02`). The paste path is simulator-drivable; a camera scan yields the same string (Manual variant). |
+| DP-09 | Publish encrypted on-chain `contactInfo` (private contact metadata) | Platform | Thorough | ✅ | DIP-15 §10. `ContactDetailView` → edit **Alias** / **Note** / **Hide contact** (`dashpay.detail.aliasEdit` / `dashpay.detail.noteEdit` / `dashpay.detail.hideToggle`) → `saveContactInfo` → `platform_wallet_set_dashpay_contact_info_with_signer` (ECB `encToUserId` + CBC `privateData`). These fields are locally cached **and** published encrypted to Platform once the identity has **≥2 established contacts** (stated in the in-app footer) → outcomes `.published` / `.deferredUntilTwoContacts` / `.skippedWatchOnly`. |
+| DP-10 | Incoming-payment backfill rescan (restore-from-seed / pre-watch window) | Cross | Manual | ✅ | DIP-15 §8.7 / §12.6 (on the DIP-16 SPV base). No UI trigger — automatic in DashPay sync: `reconcile_dashpay_rescan` lowers SPV `synced_height` to `min($coreHeightCreatedAt)` across new receival contacts so the filter manager backfills. Pass: a DashPay payment that landed on a contact's address **before** it was watched (restore-from-seed / second device / the offline-accept→pay window) appears after restore + SPV sync. Environment-limited (must construct the skew window); the regression pin for the §12.6 payment-loss gap. |
 
 ### 4.11 Group — `Domain=Group`
 
@@ -323,17 +327,17 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Tier | Count (approx.) | Automatable? |
 |---|---|---|
 | Essential | 21 | yes |
-| Common | 31 | yes |
-| Thorough | 35 | yes |
+| Common | 32 | yes |
+| Thorough | 37 | yes |
 | Uncommon | 25 | yes |
-| Manual | 1 (`CORE-08`) | no — physical device |
+| Manual | 2 (`CORE-08`, `DP-10`) | no — physical device |
 
 **By layer (automatable only):**
 
 | Layer | Count (approx.) |
 |---|---|
 | Core | 17 |
-| Platform | ~72 |
+| Platform | ~75 |
 | Cross | 7 |
 | Shielded | 16 |
 
@@ -355,7 +359,7 @@ Membership of each feature category across **all** sections (primary section mem
 - **Document** — `DOC-01..14`, `MW-04`
 - **Token** — `TOK-01..16`, `MW-02`, `GRP-03`
 - **Shielded** — `SH-01..13`, `CORE-21`, `MW-06`, `MW-07`, `MW-11`
-- **DashPay** — `DP-01..06`, `MW-03`
+- **DashPay** — `DP-01..10`, `MW-03`
 - **Group** — `GRP-01..04`, `TOK-15`, `TOK-16`
 - **System / Diagnostics** — `SYS-01..06`
 
