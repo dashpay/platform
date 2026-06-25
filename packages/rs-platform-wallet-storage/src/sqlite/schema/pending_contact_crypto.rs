@@ -1,12 +1,12 @@
 //! `pending_contact_crypto` deferred-crypto queue writer + reader.
 //!
-//! The seedless background sweep enqueues contact-crypto ops it can't perform
+//! The signerless background sweep enqueues contact-crypto ops it can't perform
 //! without a signer; they're drained when one is available. The queue is
 //! persisted (a restore-from-Keychain is exactly when it's needed) as add/clear
 //! deltas on the changeset. Each row stores the bincode-serde
 //! [`PendingContactCrypto`] in `payload`; the `(owner, contact, kind)` columns
-//! mirror its dedup key for keyed deletes + the CHECK on `kind`. Secret-free —
-//! only ciphertext + public key indices ever reach here.
+//! mirror its dedup key for keyed deletes + the CHECK on `kind`. Holds nothing
+//! sensitive — only ciphertext + public key indices ever reach here.
 
 // `BTreeMap` + `Connection` are used only by the test/helper-gated reader.
 #[cfg(test)]
