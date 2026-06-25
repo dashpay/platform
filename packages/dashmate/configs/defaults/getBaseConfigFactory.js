@@ -241,6 +241,9 @@ export default function getBaseConfigFactory() {
             blacklist: [],
             whitelist: [],
             enabled: true,
+            responseHeaders: {
+              enabled: true,
+            },
           },
           ssl: {
             enabled: false,
