@@ -649,6 +649,7 @@ extension KeychainManager {
             kSecValueData as String: privateKey,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
             kSecAttrSynchronizable as String: false,
+            kSecAttrLabel as String: metadata.publicKey.lowercased(),
         ]
 
         if let accessGroup = accessGroup {
@@ -710,8 +711,8 @@ extension KeychainManager {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
-            kSecMatchLimit as String: kSecMatchLimitAll,
-            kSecReturnAttributes as String: true,
+            kSecAttrLabel as String: publicKeyHex.lowercased(),
+            kSecMatchLimit as String: kSecMatchLimitOne,
             kSecReturnData as String: true,
         ]
         if let accessGroup = accessGroup {
@@ -720,29 +721,8 @@ extension KeychainManager {
 
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let items = result as? [[String: Any]] else {
-            return nil
-        }
-
-        let decoder = JSONDecoder()
-        for item in items {
-            guard let account = item[kSecAttrAccount as String] as? String,
-                account.hasPrefix("identity_privkey.")
-            else {
-                continue
-            }
-            guard let metadataData = item[kSecAttrGeneric as String] as? Data,
-                let metadata = try? decoder.decode(IdentityPrivateKeyMetadata.self, from: metadataData)
-            else {
-                continue
-            }
-            // Case-insensitive hex compare — both producers downcase
-            // their hex but be defensive against future writers.
-            if metadata.publicKey.caseInsensitiveCompare(publicKeyHex) == .orderedSame {
-                return item[kSecValueData as String] as? Data
-            }
-        }
-        return nil
+        guard status == errSecSuccess else { return nil }
+        return result as? Data
     }
 
     /// Existence check for the wallet-derived identity-private-key

@@ -275,6 +275,10 @@ struct DocumentDetailView: View {
     private var availableActions: [DocumentAction] {
         var actions: [DocumentAction] = []
         let docType = documentTypeRow
+        // `tradeMode == 1` is DirectPurchase — the only mode that supports
+        // listing/buying — matching the marketplace gating in
+        // TransitionInputView (`$0.tradeMode == 1`).
+        let tradeable = (docType?.tradeMode ?? 0) == 1
 
         if ownerIsControlled {
             actions.append(.replace)
@@ -282,12 +286,18 @@ struct DocumentDetailView: View {
             if docType?.documentsTransferable == true {
                 actions.append(.transfer)
             }
-            if (docType?.tradeMode ?? 0) > 0 {
+            if tradeable {
                 actions.append(.setPrice)
             }
-        } else if (docType?.tradeMode ?? 0) > 0 && !nonOwnerControlledIdentities.isEmpty {
-            // Not the owner, but the wallet holds another identity that
-            // could buy a for-sale, tradeable document.
+        }
+        // Surface Purchase whenever the doc type is tradeable and the wallet
+        // holds a controlled identity that isn't the owner (the buyer ≠
+        // owner, and the buyer signs). This intentionally also covers a doc
+        // owned by another *controlled* identity — the two-identities-in-one
+        // -app flow — not just externally-owned docs, matching the doc
+        // comment above. The Purchase sheet resolves the real on-chain price
+        // / for-sale state and disables the button when it isn't for sale.
+        if tradeable && !nonOwnerControlledIdentities.isEmpty {
             actions.append(.purchase)
         }
         return actions
