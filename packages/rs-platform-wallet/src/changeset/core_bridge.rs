@@ -33,13 +33,20 @@ use key_wallet::managed_account::transaction_record::{OutputRole, TransactionRec
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
 use key_wallet_manager::{WalletEvent, WalletId, WalletManager};
-use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::broadcast::error::{RecvError, TryRecvError};
+use tokio::sync::broadcast::Receiver;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{CoreChangeSet, PlatformWalletChangeSet};
 use crate::changeset::traits::PlatformWalletPersistence;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
+
+/// Bound on the on-cancel drain — caps how many buffered events the
+/// adapter persists after cancellation before exiting. Sized well above
+/// the upstream broadcast capacity (currently 256) so a normal teardown
+/// drains everything, while a pathological flood can't stall shutdown.
+const CANCEL_DRAIN_BUDGET: usize = 4096;
 
 /// The wallet-event subscriber loop (the task body owned by the registry).
 ///
@@ -48,6 +55,14 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 /// dispatching events to the persister via
 /// [`PlatformWalletPersistence::store`]. Exits when `cancel` fires or the
 /// upstream broadcast channel closes.
+///
+/// On cancellation the adapter drains any events already buffered on the
+/// receiver before exiting (bounded by [`CANCEL_DRAIN_BUDGET`]). Without
+/// that drain, a `TransactionInstantLocked` (which P2P does not replay)
+/// emitted just before stop would be lost — the next sync subscribes
+/// fresh and only sees future events. Other event kinds (block-driven)
+/// are re-emitted on the next SPV resync from `last_processed_height`,
+/// but the drain treats them uniformly.
 ///
 /// Generic over `P` so the task gets static-dispatch on every
 /// `persister.store(...)` call. Pass the manager's own `Arc<P>` (not the
@@ -70,29 +85,7 @@ pub async fn wallet_event_adapter_loop<P>(
             recv = receiver.recv() => {
                 match recv {
                     Ok(event) => {
-                        let wallet_id = event.wallet_id();
-                        // For events that need to consult per-wallet
-                        // state (today only `TransactionInstantLocked`,
-                        // which checks finality before recording the IS
-                        // lock), grab a brief read lock on the manager.
-                        let core = build_core_changeset(&wallet_manager, &event).await;
-                        if core.is_empty_no_records() {
-                            // SyncHeightAdvanced for an unknown wallet,
-                            // empty BlockProcessed, etc. — nothing to
-                            // persist. Skip the round-trip.
-                            continue;
-                        }
-                        let cs = PlatformWalletChangeSet {
-                            core: Some(core),
-                            ..PlatformWalletChangeSet::default()
-                        };
-                        if let Err(e) = persister.store(wallet_id, cs) {
-                            tracing::warn!(
-                                wallet_id = %hex::encode(wallet_id),
-                                error = %e,
-                                "Persister rejected core changeset; state will be re-emitted on next sync round"
-                            );
-                        }
+                        process_event(&wallet_manager, persister.as_ref(), event).await;
                     }
                     Err(RecvError::Closed) if cancel.is_cancelled() => break,
                     Err(RecvError::Closed) => {
@@ -107,10 +100,101 @@ pub async fn wallet_event_adapter_loop<P>(
                     }
                 }
             }
-            _ = cancel.cancelled() => break,
+            _ = cancel.cancelled() => {
+                // T7: drain whatever events the upstream broadcast had
+                // already buffered before exiting. P2P does not replay
+                // IS-locks, so an event emitted between the producer's
+                // last `send` and the cancel arm firing here would
+                // otherwise be silently lost.
+                let drained = drain_buffered_events(
+                    &mut receiver,
+                    &wallet_manager,
+                    persister.as_ref(),
+                    CANCEL_DRAIN_BUDGET,
+                )
+                .await;
+                if drained > 0 {
+                    tracing::debug!(
+                        drained,
+                        "wallet-event adapter drained buffered events on cancel",
+                    );
+                }
+                break;
+            }
         }
     }
     tracing::debug!("wallet-event adapter task exiting");
+}
+
+/// Project a single event into the persister. Shared by the live loop
+/// and the on-cancel drain so they cannot drift in behaviour.
+async fn process_event<P>(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    persister: &P,
+    event: WalletEvent,
+) where
+    P: PlatformWalletPersistence + 'static,
+{
+    let wallet_id = event.wallet_id();
+    // For events that need to consult per-wallet state (today only
+    // `TransactionInstantLocked`, which checks finality before recording
+    // the IS lock), grab a brief read lock on the manager.
+    let core = build_core_changeset(wallet_manager, &event).await;
+    if core.is_empty_no_records() {
+        // SyncHeightAdvanced for an unknown wallet, empty BlockProcessed,
+        // etc. — nothing to persist. Skip the round-trip.
+        return;
+    }
+    let cs = PlatformWalletChangeSet {
+        core: Some(core),
+        ..PlatformWalletChangeSet::default()
+    };
+    if let Err(e) = persister.store(wallet_id, cs) {
+        tracing::warn!(
+            wallet_id = %hex::encode(wallet_id),
+            error = %e,
+            "Persister rejected core changeset; state will be re-emitted on next sync round"
+        );
+    }
+}
+
+/// Drain at most `budget` already-buffered events from `receiver`, project
+/// each through [`process_event`], and return the count drained. Stops
+/// when the buffer empties, the channel closes, or the budget is hit.
+/// A `Lagged` notice is logged but not retried — the dropped events are
+/// already lost upstream.
+async fn drain_buffered_events<P>(
+    receiver: &mut Receiver<WalletEvent>,
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    persister: &P,
+    budget: usize,
+) -> usize
+where
+    P: PlatformWalletPersistence + 'static,
+{
+    let mut drained = 0;
+    while drained < budget {
+        match receiver.try_recv() {
+            Ok(event) => {
+                process_event(wallet_manager, persister, event).await;
+                drained += 1;
+            }
+            Err(TryRecvError::Empty) | Err(TryRecvError::Closed) => break,
+            Err(TryRecvError::Lagged(n)) => {
+                tracing::warn!(
+                    missed = n,
+                    "wallet-event adapter lagged during cancel drain; some events were dropped"
+                );
+            }
+        }
+    }
+    if drained == budget {
+        tracing::warn!(
+            budget,
+            "wallet-event adapter cancel-drain hit budget; further buffered events dropped"
+        );
+    }
+    drained
 }
 
 /// Project an upstream [`WalletEvent`] into a [`CoreChangeSet`] suitable
