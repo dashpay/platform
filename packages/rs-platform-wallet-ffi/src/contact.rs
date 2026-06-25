@@ -97,7 +97,9 @@ pub unsafe extern "C" fn managed_identity_send_contact_request(
     let request = unwrap_option_or_return!(request_result);
 
     let option = MANAGED_IDENTITY_STORAGE.with_item_mut(identity_handle, |identity| {
-        identity.add_sent_contact_request(request, &ffi_noop_persister());
+        // In-memory managed-identity handle: `ffi_noop_persister` never writes,
+        // so the mutator's store is infallible here — no error to surface.
+        let _ = identity.add_sent_contact_request(request, &ffi_noop_persister());
     });
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
@@ -116,7 +118,9 @@ pub unsafe extern "C" fn managed_identity_accept_contact_request(
     let request = unwrap_option_or_return!(request_result);
 
     let option = MANAGED_IDENTITY_STORAGE.with_item_mut(identity_handle, |identity| {
-        identity.add_incoming_contact_request(request, &ffi_noop_persister());
+        // In-memory managed-identity handle: `ffi_noop_persister` never writes,
+        // so the mutator's store is infallible here — no error to surface.
+        let _ = identity.add_incoming_contact_request(request, &ffi_noop_persister());
     });
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()

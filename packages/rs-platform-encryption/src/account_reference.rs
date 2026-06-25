@@ -80,9 +80,18 @@ mod tests {
     fn account_reference_version_bits() {
         let secret_key = [1u8; 32];
         let compact = test_compact_xpub();
-        assert_eq!(calculate_account_reference(&secret_key, &compact, 0, 0) >> 28, 0);
-        assert_eq!(calculate_account_reference(&secret_key, &compact, 0, 1) >> 28, 1);
-        assert_eq!(calculate_account_reference(&secret_key, &compact, 0, 15) >> 28, 15);
+        assert_eq!(
+            calculate_account_reference(&secret_key, &compact, 0, 0) >> 28,
+            0
+        );
+        assert_eq!(
+            calculate_account_reference(&secret_key, &compact, 0, 1) >> 28,
+            1
+        );
+        assert_eq!(
+            calculate_account_reference(&secret_key, &compact, 0, 15) >> 28,
+            15
+        );
     }
 
     #[test]
@@ -150,11 +159,18 @@ mod tests {
     #[test]
     fn ask28_extraction_matches_ios_and_diverges_from_others() {
         let ask: [u8; 32] = std::array::from_fn(|i| i as u8);
-        assert_eq!(extract_ask28(&ask), 0x01c1_d1e1, "iOS dash-shared-core: be(ASK[28..32])>>4");
+        assert_eq!(
+            extract_ask28(&ask),
+            0x01c1_d1e1,
+            "iOS dash-shared-core: be(ASK[28..32])>>4"
+        );
         let android = u32::from_le_bytes([ask[0], ask[1], ask[2], ask[3]]) >> 4;
         let dip_literal = u32::from_be_bytes([ask[0], ask[1], ask[2], ask[3]]) >> 4;
         assert_eq!(android, 0x0030_2010, "kotlin-platform: le(ASK[0..4])>>4");
-        assert_eq!(dip_literal, 0x0000_1020, "dash-evo-tool / DIP literal: be(ASK[0..4])>>4");
+        assert_eq!(
+            dip_literal, 0x0000_1020,
+            "dash-evo-tool / DIP literal: be(ASK[0..4])>>4"
+        );
         assert_ne!(extract_ask28(&ask), android);
         assert_ne!(extract_ask28(&ask), dip_literal);
     }

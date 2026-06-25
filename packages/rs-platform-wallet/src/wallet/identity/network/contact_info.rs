@@ -345,11 +345,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 // `ContactInfoPrivateData` straight in — no field-by-field clone.
                 // Surface a persist failure rather than swallow it.
                 if managed
-                    .set_contact_metadata(
-                        &decrypted.contact_id,
-                        decrypted.data,
-                        &self.persister,
-                    )
+                    .set_contact_metadata(&decrypted.contact_id, decrypted.data, &self.persister)
                     .map_err(|e| {
                         PlatformWalletError::Persistence(format!(
                             "contactInfo metadata not persisted: {e}"
@@ -493,6 +489,11 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// trivially linkable to the pair's contactRequest); the local
     /// state still updates and the next edit after the second contact
     /// is established publishes normally.
+    // External-signer entry point: the contact key, the three metadata fields
+    // (alias / note / hidden), and the two signer/crypto handles are all
+    // distinct caller inputs the FFI passes through verbatim — bundling them
+    // would only move the argument list behind a single-use struct.
+    #[allow(clippy::too_many_arguments)]
     pub async fn set_contact_info_with_external_signer<S, C>(
         &self,
         identity_id: &Identifier,
@@ -661,7 +662,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 // just the decryptable subset — otherwise a skipped doc's slot
                 // would collide on the unique index.
                 let next_index = high_water.get(&root_key_id).map(|m| m + 1).unwrap_or(0);
-                (None, dpp::document::INITIAL_REVISION, next_index, root_key_id)
+                (
+                    None,
+                    dpp::document::INITIAL_REVISION,
+                    next_index,
+                    root_key_id,
+                )
             }
         };
 

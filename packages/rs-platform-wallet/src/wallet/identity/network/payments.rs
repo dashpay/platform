@@ -1024,7 +1024,12 @@ mod tests {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             wallet
                 .identity()
-                .register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
+                .register_contact_account(
+                    &owner,
+                    &contact,
+                    0,
+                    test_receiving_xpub(&owner, &contact),
+                )
                 .await
                 .expect("register_contact_account");
         }
@@ -1057,7 +1062,12 @@ mod tests {
             let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
             wallet
                 .identity()
-                .register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
+                .register_contact_account(
+                    &owner,
+                    &contact,
+                    0,
+                    test_receiving_xpub(&owner, &contact),
+                )
                 .await
                 .expect("re-register is a no-op");
         }
@@ -1295,7 +1305,8 @@ mod tests {
             info.identity_manager
                 .managed_identity_mut(&owner)
                 .expect("managed")
-                .add_incoming_contact_request(incoming, &p).expect("setup persists");
+                .add_incoming_contact_request(incoming, &p)
+                .expect("setup persists");
         }
 
         // Arm the persister to fail, then ignore: must return Err, NOT Ok.
@@ -1347,7 +1358,10 @@ mod tests {
                 .managed_identity_mut(&owner)
                 .expect("managed")
                 .established_contacts
-                .insert(contact, EstablishedContact::new(contact, outgoing, incoming));
+                .insert(
+                    contact,
+                    EstablishedContact::new(contact, outgoing, incoming),
+                );
             // Simulate a forward sync to height 1000.
             info.core_wallet.update_synced_height(1000);
         }
@@ -1419,7 +1433,10 @@ mod tests {
             .managed_identity_mut(&owner)
             .expect("managed")
             .established_contacts
-            .insert(contact, EstablishedContact::new(contact, outgoing, incoming));
+            .insert(
+                contact,
+                EstablishedContact::new(contact, outgoing, incoming),
+            );
     }
 
     async fn set_synced_height(
@@ -1468,21 +1485,37 @@ mod tests {
 
         let iw_wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         assert_eq!(
-            iw_wallet.identity().reconcile_dashpay_rescan().await.expect("rescan"),
+            iw_wallet
+                .identity()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan"),
             None,
             "funded above the tip -> no backfill"
         );
-        assert_eq!(synced_height(&manager, wallet_id).await, 450, "height unchanged");
+        assert_eq!(
+            synced_height(&manager, wallet_id).await,
+            450,
+            "height unchanged"
+        );
 
         // Forward sync climbs past the funding height. The contact was marked,
         // so the next sweep must not re-lower to 500.
         set_synced_height(&manager, wallet_id, 600).await;
         assert_eq!(
-            iw_wallet.identity().reconcile_dashpay_rescan().await.expect("rescan 2"),
+            iw_wallet
+                .identity()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan 2"),
             None,
             "forward-covered contact must not be redundantly rewound"
         );
-        assert_eq!(synced_height(&manager, wallet_id).await, 600, "no redundant rewind");
+        assert_eq!(
+            synced_height(&manager, wallet_id).await,
+            600,
+            "no redundant rewind"
+        );
     }
 
     /// Multiple contacts: the floor is the MINIMUM funding height across all
@@ -1504,7 +1537,11 @@ mod tests {
 
         let iw_wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         assert_eq!(
-            iw_wallet.identity().reconcile_dashpay_rescan().await.expect("rescan"),
+            iw_wallet
+                .identity()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan"),
             Some(100),
             "floor is the minimum funding height across all candidates"
         );
@@ -1512,7 +1549,11 @@ mod tests {
 
         // Both are marked -> a second pass is a no-op.
         assert_eq!(
-            iw_wallet.identity().reconcile_dashpay_rescan().await.expect("rescan 2"),
+            iw_wallet
+                .identity()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan 2"),
             None,
             "all candidates marked -> no re-trigger"
         );
@@ -1520,13 +1561,21 @@ mod tests {
         // A newly discovered, older-funded contact re-lowers exactly once...
         establish_receival_contact(&manager, &persister, wallet_id, owner, c_c, 50, 50).await;
         assert_eq!(
-            iw_wallet.identity().reconcile_dashpay_rescan().await.expect("rescan 3"),
+            iw_wallet
+                .identity()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan 3"),
             Some(50),
             "a new older contact re-lowers to its funding height"
         );
         // ...then settles.
         assert_eq!(
-            iw_wallet.identity().reconcile_dashpay_rescan().await.expect("rescan 4"),
+            iw_wallet
+                .identity()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan 4"),
             None,
             "drip-feed settles -> no further rewind"
         );
@@ -1546,7 +1595,11 @@ mod tests {
 
         let iw_wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         assert_eq!(
-            iw_wallet.identity().reconcile_dashpay_rescan().await.expect("rescan"),
+            iw_wallet
+                .identity()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan"),
             None,
             "synced_height 0 -> no rescan"
         );
@@ -2296,7 +2349,10 @@ mod tests {
             .managed_identity_mut(&owner)
             .expect("managed")
             .established_contacts
-            .insert(contact, EstablishedContact::new(contact, outgoing, incoming));
+            .insert(
+                contact,
+                EstablishedContact::new(contact, outgoing, incoming),
+            );
         drop(wm);
 
         (manager, wallet_id, owner, contact)
@@ -2382,8 +2438,7 @@ mod tests {
     #[tokio::test]
     async fn store_contact_account_label_no_label_is_none() {
         let shared = [0x55u8; 32];
-        let (manager, wallet_id, owner, contact) =
-            wallet_with_labeled_contact(None, None).await;
+        let (manager, wallet_id, owner, contact) = wallet_with_labeled_contact(None, None).await;
 
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         wallet
@@ -2601,7 +2656,8 @@ mod tests {
             async fn export_auto_accept_private_key(
                 &self,
                 _path: &key_wallet::bip32::DerivationPath,
-            ) -> Result<dashcore::secp256k1::SecretKey, crate::error::PlatformWalletError> {
+            ) -> Result<dashcore::secp256k1::SecretKey, crate::error::PlatformWalletError>
+            {
                 unimplemented!("auto-accept QR is a send-path method, not exercised by the drain")
             }
             async fn account_reference(
@@ -2710,7 +2766,10 @@ mod tests {
                 .expect("add owner");
         }
         let applied = iw.sync_contact_infos().await.expect("sync");
-        assert_eq!(applied, 0, "seedless sweep applies nothing inline — it defers");
+        assert_eq!(
+            applied, 0,
+            "seedless sweep applies nothing inline — it defers"
+        );
         let wm = iw.wallet_manager.read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("info");
         assert!(

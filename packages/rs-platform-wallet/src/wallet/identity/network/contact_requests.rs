@@ -298,9 +298,12 @@ impl SeedCryptoProvider {
                 PlatformWalletError::InvalidIdentityData(format!("test contactInfo index: {e}"))
             })?,
         ]);
-        let xprv = self.wallet.derive_extended_private_key(&path).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!("test contactInfo derive: {e}"))
-        })?;
+        let xprv = self
+            .wallet
+            .derive_extended_private_key(&path)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!("test contactInfo derive: {e}"))
+            })?;
         Ok(xprv.private_key.secret_bytes())
     }
 }
@@ -475,7 +478,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         // account-aware AND add a round-trip test before relaxing this.
         let account_index: u32 = 0;
         let contact_xpub_ext = self
-            .receiving_xpub_for(sender_identity_id, recipient_identity_id, account_index, crypto)
+            .receiving_xpub_for(
+                sender_identity_id,
+                recipient_identity_id,
+                account_index,
+                crypto,
+            )
             .await?;
         // DIP-15 *compact* 69-byte plaintext (parentFingerprint ‖ chainCode ‖
         // pubKey) — NOT `ExtendedPubKey::encode()`. The DashPay receiving path
@@ -557,15 +565,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let auto_accept_proof: Option<Vec<u8>> = match auto_accept_proof {
             AutoAcceptProofSource::None => None,
             AutoAcceptProofSource::Provided(p) => Some(p),
-            AutoAcceptProofSource::SignWithKey { secret_key, expiry } => {
-                Some(crate::wallet::identity::crypto::auto_accept::sign_auto_accept_proof(
+            AutoAcceptProofSource::SignWithKey { secret_key, expiry } => Some(
+                crate::wallet::identity::crypto::auto_accept::sign_auto_accept_proof(
                     &secret_key,
                     sender_identity_id,
                     recipient_identity_id,
                     account_reference,
                     expiry,
-                ))
-            }
+                ),
+            ),
         };
 
         // 5. Build the signing key reference for document signing.
@@ -2572,7 +2580,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 ))
             })?
         };
-        let shared = crypto.ecdh_shared_secret(&our_dec_path, &contact_pubkey).await?;
+        let shared = crypto
+            .ecdh_shared_secret(&our_dec_path, &contact_pubkey)
+            .await?;
 
         // Reuse the identity we just fetched for validation (no second
         // network round). The accept path surfaces any failure to the
@@ -2612,11 +2622,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             user_identity_id: our_identity_id.to_buffer(),
             friend_identity_id: contact_id.to_buffer(),
         };
-        let path = account_type.derivation_path(self.sdk.network).map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to build DashPay derivation path: {e}"
-            ))
-        })?;
+        let path = account_type
+            .derivation_path(self.sdk.network)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to build DashPay derivation path: {e}"
+                ))
+            })?;
         crypto.receiving_xpub(&path).await
     }
 }
@@ -3004,8 +3016,12 @@ mod sweep_tests {
             .managed_identity_mut(&our_id)
             .expect("managed identity");
         // Establish a contact via the state machine.
-        managed.add_incoming_contact_request(test_request(contact, our, 0), &p).expect("setup persists");
-        managed.add_sent_contact_request(test_request(our, contact, 0), &p).expect("setup persists");
+        managed
+            .add_incoming_contact_request(test_request(contact, our, 0), &p)
+            .expect("setup persists");
+        managed
+            .add_sent_contact_request(test_request(our, contact, 0), &p)
+            .expect("setup persists");
         assert_eq!(managed.established_contacts.len(), 1);
         (wallet, info)
     }
@@ -3137,7 +3153,9 @@ mod sweep_tests {
 
         // Ignore the sender and capture the resulting changeset.
         let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
-        managed.add_incoming_contact_request(test_request(sender, our, 0), &p).expect("setup persists");
+        managed
+            .add_incoming_contact_request(test_request(sender, our, 0), &p)
+            .expect("setup persists");
         let cs = managed.ignore_sender(&sender_id);
         let pcs = PlatformWalletChangeSet {
             contacts: Some(cs),
@@ -3299,7 +3317,10 @@ mod sweep_tests {
         properties.insert("senderKeyIndex".to_string(), Value::U32(0));
         properties.insert("recipientKeyIndex".to_string(), Value::U32(0));
         properties.insert("accountReference".to_string(), Value::U32(5));
-        properties.insert("encryptedPublicKey".to_string(), Value::Bytes(vec![1u8; 96]));
+        properties.insert(
+            "encryptedPublicKey".to_string(),
+            Value::Bytes(vec![1u8; 96]),
+        );
         properties.insert(
             "encryptedAccountLabel".to_string(),
             Value::Bytes(label_ct.clone()),
@@ -3369,7 +3390,9 @@ mod sweep_tests {
         // And a pending (not-yet-established) recipient still resolves via
         // the pending map; an unknown recipient is None.
         let pending = Identifier::from([9u8; 32]);
-        managed.add_sent_contact_request(test_request(our, 9, 4), &noop_persister()).expect("setup persists");
+        managed
+            .add_sent_contact_request(test_request(our, 9, 4), &noop_persister())
+            .expect("setup persists");
         assert_eq!(managed.prior_sent_account_reference(&pending), Some(4));
         assert_eq!(
             managed.prior_sent_account_reference(&Identifier::from([42u8; 32])),
@@ -3625,9 +3648,14 @@ mod contact_info_provider_tests {
             key_wallet::wallet::initialization::WalletAccountCreationOptions::None,
         )
         .expect("wallet");
-        let keys =
-            derive_contact_info_keys(&wallet, network, identity_index, root_key_id, derivation_index)
-                .expect("resident keys");
+        let keys = derive_contact_info_keys(
+            &wallet,
+            network,
+            identity_index,
+            root_key_id,
+            derivation_index,
+        )
+        .expect("resident keys");
         let enc_k: [u8; 32] = *keys.enc_to_user_id_key;
         let priv_k: [u8; 32] = *keys.private_data_key;
         let expected_enc = platform_encryption::encrypt_enc_to_user_id(&enc_k, &contact_id);
@@ -3651,8 +3679,14 @@ mod contact_info_provider_tests {
             )
             .await
             .expect("open");
-        assert_eq!(opened.contact_id, contact_id, "open recovers the contact id");
-        assert_eq!(opened.private_data, plaintext, "open recovers the private data");
+        assert_eq!(
+            opened.contact_id, contact_id,
+            "open recovers the contact id"
+        );
+        assert_eq!(
+            opened.private_data, plaintext,
+            "open recovers the private data"
+        );
     }
 
     /// The "needs unlock" count must track only the account-build ops

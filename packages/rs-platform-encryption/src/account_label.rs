@@ -172,7 +172,10 @@ mod tests {
 
         // Lower boundary: exactly 16 ASCII chars = 16 bytes -> 32 ciphertext + 16
         // IV = exactly 48.
-        assert_eq!(encrypt_account_label(&key, &iv, "sixteen-chars-16").len(), 48);
+        assert_eq!(
+            encrypt_account_label(&key, &iv, "sixteen-chars-16").len(),
+            48
+        );
 
         // Ceiling: an over-long label (ASCII and multi-byte) must never exceed 80.
         assert!(encrypt_account_label(&key, &iv, &"x".repeat(500)).len() <= 80);

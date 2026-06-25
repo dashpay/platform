@@ -256,9 +256,8 @@ impl DashPaySdkWriter for SdkWriter {
             fn(
                 &IdentityPublicKey,
                 u32,
-            ) -> std::future::Ready<
-                Result<dashcore::secp256k1::SecretKey, dash_sdk::Error>,
-            >,
+            )
+                -> std::future::Ready<Result<dashcore::secp256k1::SecretKey, dash_sdk::Error>>,
             _,
             _,
             _,

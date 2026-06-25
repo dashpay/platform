@@ -573,7 +573,9 @@ mod tests {
 
         let request = create_contact_request(sender_id, recipient_id, 1234567890);
 
-        managed.add_sent_contact_request(request.clone(), &p).expect("setup persists");
+        managed
+            .add_sent_contact_request(request.clone(), &p)
+            .expect("setup persists");
 
         // Should be in sent requests
         assert_eq!(managed.sent_contact_requests.len(), 1);
@@ -597,7 +599,9 @@ mod tests {
         let sender_id = Identifier::from([2u8; 32]);
         let p = noop_persister();
 
-        managed.add_incoming_contact_request(create_contact_request(sender_id, owner_id, 1234), &p).expect("setup persists");
+        managed
+            .add_incoming_contact_request(create_contact_request(sender_id, owner_id, 1234), &p)
+            .expect("setup persists");
         assert_eq!(managed.incoming_contact_requests.len(), 1);
 
         let cs = managed.ignore_sender(&sender_id);
@@ -627,7 +631,9 @@ mod tests {
 
         let request = create_contact_request(sender_id, recipient_id, 1234567890);
 
-        managed.add_incoming_contact_request(request.clone(), &p).expect("setup persists");
+        managed
+            .add_incoming_contact_request(request.clone(), &p)
+            .expect("setup persists");
 
         // Should be in incoming requests
         assert_eq!(managed.incoming_contact_requests.len(), 1);
@@ -645,14 +651,18 @@ mod tests {
 
         // Add sent request first
         let outgoing = create_contact_request(our_id, contact_id, 1234567890);
-        managed.add_sent_contact_request(outgoing, &p).expect("setup persists");
+        managed
+            .add_sent_contact_request(outgoing, &p)
+            .expect("setup persists");
 
         assert_eq!(managed.sent_contact_requests.len(), 1);
         assert_eq!(managed.established_contacts.len(), 0);
 
         // Add incoming request - should auto-establish
         let incoming = create_contact_request(contact_id, our_id, 1234567891);
-        managed.add_incoming_contact_request(incoming, &p).expect("setup persists");
+        managed
+            .add_incoming_contact_request(incoming, &p)
+            .expect("setup persists");
 
         // Requests should be moved to established contacts
         assert_eq!(managed.sent_contact_requests.len(), 0);
@@ -718,9 +728,10 @@ mod tests {
         let contact_id = Identifier::from([2u8; 32]);
         let outgoing = create_contact_request(our_id, contact_id, 1000);
         let incoming = create_contact_request(contact_id, our_id, 1001);
-        managed
-            .established_contacts
-            .insert(contact_id, EstablishedContact::new(contact_id, outgoing, incoming));
+        managed.established_contacts.insert(
+            contact_id,
+            EstablishedContact::new(contact_id, outgoing, incoming),
+        );
 
         let result = managed.set_contact_metadata(
             &contact_id,
@@ -747,14 +758,18 @@ mod tests {
 
         // Add incoming request first
         let incoming = create_contact_request(contact_id, our_id, 1234567890);
-        managed.add_incoming_contact_request(incoming, &p).expect("setup persists");
+        managed
+            .add_incoming_contact_request(incoming, &p)
+            .expect("setup persists");
 
         assert_eq!(managed.incoming_contact_requests.len(), 1);
         assert_eq!(managed.established_contacts.len(), 0);
 
         // Add sent request - should auto-establish
         let outgoing = create_contact_request(our_id, contact_id, 1234567891);
-        managed.add_sent_contact_request(outgoing, &p).expect("setup persists");
+        managed
+            .add_sent_contact_request(outgoing, &p)
+            .expect("setup persists");
 
         // Requests should be moved to established contacts
         assert_eq!(managed.sent_contact_requests.len(), 0);
@@ -771,7 +786,9 @@ mod tests {
         let p = noop_persister();
 
         let request = create_contact_request(sender_id, recipient_id, 1234567890);
-        managed.add_sent_contact_request(request.clone(), &p).expect("setup persists");
+        managed
+            .add_sent_contact_request(request.clone(), &p)
+            .expect("setup persists");
 
         assert_eq!(managed.sent_contact_requests.len(), 1);
 
@@ -804,7 +821,9 @@ mod tests {
         let p = noop_persister();
 
         let request = create_contact_request(sender_id, recipient_id, 1234567890);
-        managed.add_incoming_contact_request(request.clone(), &p).expect("setup persists");
+        managed
+            .add_incoming_contact_request(request.clone(), &p)
+            .expect("setup persists");
 
         assert_eq!(managed.incoming_contact_requests.len(), 1);
 
@@ -911,12 +930,16 @@ mod tests {
         let p = noop_persister();
 
         let request = create_contact_request(our_id, recipient_id, 1234567890);
-        managed.add_sent_contact_request(request.clone(), &p).expect("setup persists");
+        managed
+            .add_sent_contact_request(request.clone(), &p)
+            .expect("setup persists");
         assert_eq!(managed.sent_contact_requests.len(), 1);
 
         // Re-ingest the SAME sent request (recurring sweep). It must not
         // create a duplicate / phantom row.
-        managed.add_sent_contact_request(request, &p).expect("setup persists");
+        managed
+            .add_sent_contact_request(request, &p)
+            .expect("setup persists");
         assert_eq!(
             managed.sent_contact_requests.len(),
             1,
@@ -936,8 +959,12 @@ mod tests {
         let p = noop_persister();
 
         // Establish a contact and attach user metadata.
-        managed.add_incoming_contact_request(create_contact_request(contact_id, our_id, 1), &p).expect("setup persists");
-        managed.add_sent_contact_request(create_contact_request(our_id, contact_id, 2), &p).expect("setup persists");
+        managed
+            .add_incoming_contact_request(create_contact_request(contact_id, our_id, 1), &p)
+            .expect("setup persists");
+        managed
+            .add_sent_contact_request(create_contact_request(our_id, contact_id, 2), &p)
+            .expect("setup persists");
         assert_eq!(managed.established_contacts.len(), 1);
         let established = managed.established_contacts.get_mut(&contact_id).unwrap();
         established.set_alias("Alice".to_string());
@@ -946,7 +973,9 @@ mod tests {
 
         // Recurring sweep re-ingests our own sent request for an already
         // established contact — must not reset metadata.
-        managed.add_sent_contact_request(create_contact_request(our_id, contact_id, 3), &p).expect("setup persists");
+        managed
+            .add_sent_contact_request(create_contact_request(our_id, contact_id, 3), &p)
+            .expect("setup persists");
 
         let established = managed.established_contacts.get(&contact_id).unwrap();
         assert_eq!(established.alias, Some("Alice".to_string()));
@@ -967,8 +996,12 @@ mod tests {
         let p = noop_persister();
 
         // Establish, then attach metadata.
-        managed.add_incoming_contact_request(create_contact_request(contact_id, our_id, 1), &p).expect("setup persists");
-        managed.add_sent_contact_request(create_contact_request(our_id, contact_id, 2), &p).expect("setup persists");
+        managed
+            .add_incoming_contact_request(create_contact_request(contact_id, our_id, 1), &p)
+            .expect("setup persists");
+        managed
+            .add_sent_contact_request(create_contact_request(our_id, contact_id, 2), &p)
+            .expect("setup persists");
         let est = managed.established_contacts.get_mut(&contact_id).unwrap();
         est.set_alias("Bob".to_string());
 
@@ -977,7 +1010,9 @@ mod tests {
         managed
             .sent_contact_requests
             .insert(contact_id, create_contact_request(our_id, contact_id, 4));
-        managed.add_incoming_contact_request(create_contact_request(contact_id, our_id, 5), &p).expect("setup persists");
+        managed
+            .add_incoming_contact_request(create_contact_request(contact_id, our_id, 5), &p)
+            .expect("setup persists");
 
         let est = managed.established_contacts.get(&contact_id).unwrap();
         assert_eq!(
@@ -1000,7 +1035,9 @@ mod tests {
 
         let mut request = create_contact_request(sender_id, our_id, 1);
         request.account_reference = 0;
-        managed.add_incoming_contact_request(request, &p).expect("setup persists");
+        managed
+            .add_incoming_contact_request(request, &p)
+            .expect("setup persists");
         assert_eq!(managed.incoming_contact_requests.len(), 1);
 
         let cs = managed.ignore_sender(&sender_id);
@@ -1062,27 +1099,31 @@ mod tests {
 
         // Add multiple sent requests
         managed
-            .add_sent_contact_request(create_contact_request(our_id, contact1_id, 1234567890), &p).expect("setup persists");
+            .add_sent_contact_request(create_contact_request(our_id, contact1_id, 1234567890), &p)
+            .expect("setup persists");
         managed
-            .add_sent_contact_request(create_contact_request(our_id, contact2_id, 1234567891), &p).expect("setup persists");
+            .add_sent_contact_request(create_contact_request(our_id, contact2_id, 1234567891), &p)
+            .expect("setup persists");
 
         // Add incoming request that doesn't match sent
-        managed.add_incoming_contact_request(
-            create_contact_request(contact3_id, our_id, 1234567892),
-            &p,
-        )
-        .expect("setup persists");
+        managed
+            .add_incoming_contact_request(
+                create_contact_request(contact3_id, our_id, 1234567892),
+                &p,
+            )
+            .expect("setup persists");
 
         assert_eq!(managed.sent_contact_requests.len(), 2);
         assert_eq!(managed.incoming_contact_requests.len(), 1);
         assert_eq!(managed.established_contacts.len(), 0);
 
         // Add incoming from contact1 - should establish
-        managed.add_incoming_contact_request(
-            create_contact_request(contact1_id, our_id, 1234567893),
-            &p,
-        )
-        .expect("setup persists");
+        managed
+            .add_incoming_contact_request(
+                create_contact_request(contact1_id, our_id, 1234567893),
+                &p,
+            )
+            .expect("setup persists");
 
         assert_eq!(managed.sent_contact_requests.len(), 1); // Only contact2 left
         assert_eq!(managed.incoming_contact_requests.len(), 1); // Only contact3 left

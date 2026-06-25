@@ -417,5 +417,4 @@ mod tests {
         assert_eq!(birth_height_override_opt(false, 0), None);
         assert_eq!(birth_height_override_opt(false, 99), None);
     }
-
 }

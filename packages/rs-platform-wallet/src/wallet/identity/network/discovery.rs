@@ -432,11 +432,13 @@ impl IdentityWallet {
                         // CRITICAL authentication keys. A failed persist here
                         // would silently leave the identity watch-only after
                         // restart, so surface it (matching `add_identity` above).
-                        managed.add_keys(key_decisions, &self.persister).map_err(|e| {
-                            PlatformWalletError::Persistence(format!(
-                                "identity keys not persisted during discovery: {e}"
-                            ))
-                        })?;
+                        managed
+                            .add_keys(key_decisions, &self.persister)
+                            .map_err(|e| {
+                                PlatformWalletError::Persistence(format!(
+                                    "identity keys not persisted during discovery: {e}"
+                                ))
+                            })?;
                     }
                     drop(wm_guard);
 

@@ -509,7 +509,6 @@ impl MnemonicResolverCoreSigner {
             private_data,
         })
     }
-
 }
 
 /// Result of [`MnemonicResolverCoreSigner::contact_info_seal`].
@@ -950,7 +949,10 @@ mod tests {
         let (got_version, got_account) = signer
             .unmask_account_reference(&path, &compact_xpub, actual)
             .expect("signer unmasks the account reference");
-        assert_eq!(got_version, version, "version round-trips through the signer");
+        assert_eq!(
+            got_version, version,
+            "version round-trips through the signer"
+        );
         assert_eq!(
             got_account, account_index,
             "account index round-trips through the signer"

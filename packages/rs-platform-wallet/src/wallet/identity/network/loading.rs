@@ -258,11 +258,13 @@ impl IdentityWallet {
                 // Breadcrumbs for every re-derivable key (was MASTER-only). A
                 // failed persist would silently leave the identity watch-only
                 // after restart, so surface it rather than swallow.
-                managed.add_keys(key_decisions, &self.persister).map_err(|e| {
-                    PlatformWalletError::Persistence(format!(
-                        "identity keys not persisted during load: {e}"
-                    ))
-                })?;
+                managed
+                    .add_keys(key_decisions, &self.persister)
+                    .map_err(|e| {
+                        PlatformWalletError::Persistence(format!(
+                            "identity keys not persisted during load: {e}"
+                        ))
+                    })?;
             }
         }
 

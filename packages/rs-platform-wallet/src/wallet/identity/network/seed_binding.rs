@@ -126,7 +126,12 @@ mod tests {
         // Created external-signable (no resident key material), exactly the
         // persisted-restore posture the unlock check runs against.
         let wallet = manager
-            .create_wallet_from_seed_bytes(network, &seed, WalletAccountCreationOptions::Default, Some(0))
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
             .await
             .expect("wallet creation");
         assert!(
@@ -151,7 +156,12 @@ mod tests {
         let seed = seed_for(TEST_MNEMONIC);
 
         let wallet = manager
-            .create_wallet_from_seed_bytes(network, &seed, WalletAccountCreationOptions::Default, Some(0))
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
             .await
             .expect("wallet creation");
 
@@ -180,7 +190,12 @@ mod tests {
         let seed = seed_for(TEST_MNEMONIC);
 
         let wallet = manager
-            .create_wallet_from_seed_bytes(network, &seed, WalletAccountCreationOptions::None, Some(0))
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed,
+                WalletAccountCreationOptions::None,
+                Some(0),
+            )
             .await
             .expect("wallet creation");
         assert!(

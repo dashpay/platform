@@ -1030,10 +1030,7 @@ mod tests {
         for wc in &query.where_clauses {
             if wc.operator.is_range() {
                 assert!(
-                    query
-                        .order_by_clauses
-                        .iter()
-                        .any(|oc| oc.field == wc.field),
+                    query.order_by_clauses.iter().any(|oc| oc.field == wc.field),
                     "range clause on `{}` has no matching orderBy; DAPI rejects \
                      this with \"missing order by for range\"",
                     wc.field

@@ -623,7 +623,9 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
         let scalar = self
             .signer
             .export_auto_accept_private_key(path)
-            .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+            .map_err(|e| {
+                platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string())
+            })?;
         dashcore::secp256k1::SecretKey::from_slice(scalar.as_ref())
             .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
     }
@@ -686,7 +688,12 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
     ) -> Result<platform_wallet::ContactInfoOpened, platform_wallet::PlatformWalletError> {
         let opened = self
             .signer
-            .contact_info_open(root_path, derivation_index, enc_to_user_id, private_data_blob)
+            .contact_info_open(
+                root_path,
+                derivation_index,
+                enc_to_user_id,
+                private_data_blob,
+            )
             .map_err(|e| {
                 platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string())
             })?;
@@ -944,9 +951,8 @@ mod tests {
     /// fails first), so a non-null dummy pointer is safe here.
     #[test]
     fn verify_seed_binds_unknown_wallet_is_not_found() {
-        let dummy_signer = 1usize as *mut MnemonicResolverHandle;
-        let r =
-            unsafe { platform_wallet_verify_seed_binds_to_wallet(0xDEAD_BEEF, dummy_signer) };
+        let dummy_signer = std::ptr::dangling_mut::<MnemonicResolverHandle>();
+        let r = unsafe { platform_wallet_verify_seed_binds_to_wallet(0xDEAD_BEEF, dummy_signer) };
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
     }
 
@@ -954,8 +960,7 @@ mod tests {
     /// contract) before any wallet lookup.
     #[test]
     fn pending_contact_crypto_count_null_out_is_null_pointer() {
-        let r =
-            unsafe { platform_wallet_pending_contact_crypto_count(1, std::ptr::null_mut()) };
+        let r = unsafe { platform_wallet_pending_contact_crypto_count(1, std::ptr::null_mut()) };
         assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 
@@ -964,9 +969,7 @@ mod tests {
     #[test]
     fn pending_contact_crypto_count_unknown_wallet_is_not_found() {
         let mut count: u32 = 7;
-        let r = unsafe {
-            platform_wallet_pending_contact_crypto_count(0xDEAD_BEEF, &mut count)
-        };
+        let r = unsafe { platform_wallet_pending_contact_crypto_count(0xDEAD_BEEF, &mut count) };
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
         assert_eq!(count, 7, "out_count is untouched on a lookup miss");
     }

@@ -4678,7 +4678,7 @@ mod tests {
         let source = wallet
             .get_bip44_account(0)
             .expect("a Default-created wallet has BIP44 account 0");
-        let account_type = source.account_type.clone();
+        let account_type = source.account_type;
         let expected_xpub = source.account_xpub;
 
         // Store side: encode the xpub exactly as the callback producer does.
@@ -4698,9 +4698,13 @@ mod tests {
             decoded_xpub, expected_xpub,
             "the bincode round-trip must preserve the account xpub byte-for-byte"
         );
-        let restored =
-            Account::from_xpub(Some(wallet_id), restored_type, decoded_xpub, Network::Testnet)
-                .expect("Account::from_xpub on the restored xpub must succeed");
+        let restored = Account::from_xpub(
+            Some(wallet_id),
+            restored_type,
+            decoded_xpub,
+            Network::Testnet,
+        )
+        .expect("Account::from_xpub on the restored xpub must succeed");
         assert_eq!(
             restored.account_xpub, expected_xpub,
             "the restored account's xpub must equal the original — the key verify_seed_binds binds against"
@@ -5005,7 +5009,11 @@ mod tests {
             .get(&sent_c)
             .expect("pending sent request restored");
         assert_eq!(
-            (s.sender_key_index, s.recipient_key_index, s.account_reference),
+            (
+                s.sender_key_index,
+                s.recipient_key_index,
+                s.account_reference
+            ),
             (3, 4, 11)
         );
         let i = managed
@@ -5013,7 +5021,11 @@ mod tests {
             .get(&in_c)
             .expect("pending incoming request restored");
         assert_eq!(
-            (i.sender_key_index, i.recipient_key_index, i.account_reference),
+            (
+                i.sender_key_index,
+                i.recipient_key_index,
+                i.account_reference
+            ),
             (5, 6, 22)
         );
 

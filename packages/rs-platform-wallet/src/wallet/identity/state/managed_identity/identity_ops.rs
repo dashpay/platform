@@ -572,22 +572,23 @@ mod tests {
         // Key 0 is re-derivable (breadcrumb + verified scalar), key 1 is
         // watch-only (None).
         let scalar = zeroize::Zeroizing::new([0x11u8; 32]);
-        managed.add_keys(
-            vec![
-                crate::changeset::KeyWithBreadcrumb {
-                    key: key(0),
-                    breadcrumb: Some((wallet_id, 7, 0)),
-                    verified_scalar: Some(scalar.clone()),
-                },
-                crate::changeset::KeyWithBreadcrumb {
-                    key: key(1),
-                    breadcrumb: None,
-                    verified_scalar: None,
-                },
-            ],
-            &p,
-        )
-        .expect("add_keys persists in test");
+        managed
+            .add_keys(
+                vec![
+                    crate::changeset::KeyWithBreadcrumb {
+                        key: key(0),
+                        breadcrumb: Some((wallet_id, 7, 0)),
+                        verified_scalar: Some(scalar.clone()),
+                    },
+                    crate::changeset::KeyWithBreadcrumb {
+                        key: key(1),
+                        breadcrumb: None,
+                        verified_scalar: None,
+                    },
+                ],
+                &p,
+            )
+            .expect("add_keys persists in test");
 
         // Both keys landed in the DPP identity.
         assert_eq!(managed.identity.public_keys().len(), 2);
@@ -666,15 +667,16 @@ mod tests {
         let persister = std::sync::Arc::new(CapturingPersister::default());
         let p = WalletPersister::new([0xAB; 32], std::sync::Arc::clone(&persister) as _);
 
-        managed.add_keys(
-            vec![crate::changeset::KeyWithBreadcrumb {
-                key: key(0),
-                breadcrumb: None,
-                verified_scalar: Some(zeroize::Zeroizing::new([0x22u8; 32])),
-            }],
-            &p,
-        )
-        .expect("add_keys persists in test");
+        managed
+            .add_keys(
+                vec![crate::changeset::KeyWithBreadcrumb {
+                    key: key(0),
+                    breadcrumb: None,
+                    verified_scalar: Some(zeroize::Zeroizing::new([0x22u8; 32])),
+                }],
+                &p,
+            )
+            .expect("add_keys persists in test");
 
         let stores = persister.stores.lock().unwrap();
         let upserts = &stores

@@ -265,8 +265,7 @@ pub fn verify_auto_accept_proof(
         return Ok(false);
     };
     let secret_key = derive_auto_accept_private_key(wallet, network, timestamp)?;
-    let pubkey =
-        dashcore::secp256k1::PublicKey::from_secret_key(&Secp256k1::new(), &secret_key);
+    let pubkey = dashcore::secp256k1::PublicKey::from_secret_key(&Secp256k1::new(), &secret_key);
     Ok(verify_auto_accept_proof_with_pubkey(
         &pubkey,
         proof_bytes,
@@ -304,9 +303,7 @@ pub fn encode_auto_accept_key_blob(secret_key: &SecretKey, expiry: u32) -> Vec<u
 /// # Errors
 /// Rejects a blob that is not exactly 38 bytes, has a non-ECDSA key type,
 /// a key size other than 32, or an invalid scalar.
-pub fn decode_auto_accept_key_blob(
-    blob: &[u8],
-) -> Result<(SecretKey, u32), PlatformWalletError> {
+pub fn decode_auto_accept_key_blob(blob: &[u8]) -> Result<(SecretKey, u32), PlatformWalletError> {
     if blob.len() != KEY_BLOB_LEN {
         return Err(invalid(format!(
             "auto-accept key blob must be {KEY_BLOB_LEN} bytes, got {}",
@@ -554,16 +551,14 @@ mod tests {
         let owner_key =
             derive_auto_accept_private_key(&wallet, Network::Testnet, expiry).expect("derive");
         let blob = encode_auto_accept_key_blob(&owner_key, expiry);
-        let (handed_key, decoded_expiry) =
-            decode_auto_accept_key_blob(&blob).expect("decode blob");
+        let (handed_key, decoded_expiry) = decode_auto_accept_key_blob(&blob).expect("decode blob");
         assert_eq!(decoded_expiry, expiry);
 
         let proof = sign_auto_accept_proof(&handed_key, &scanner, &owner, account_ref, expiry);
         assert_eq!(proof.len(), 70);
         assert_eq!(auto_accept_proof_expiry(&proof), Some(expiry));
 
-        let pubkey =
-            dashcore::secp256k1::PublicKey::from_secret_key(&Secp256k1::new(), &owner_key);
+        let pubkey = dashcore::secp256k1::PublicKey::from_secret_key(&Secp256k1::new(), &owner_key);
         assert!(
             verify_auto_accept_proof_with_pubkey(&pubkey, &proof, &scanner, &owner, account_ref),
             "owner verifies the scanner's proof against its own re-derived pubkey"
@@ -572,7 +567,11 @@ mod tests {
         // Per-sender / per-account binding: a different sender or account fails.
         let other = Identifier::from([0x33u8; 32]);
         assert!(!verify_auto_accept_proof_with_pubkey(
-            &pubkey, &proof, &other, &owner, account_ref
+            &pubkey,
+            &proof,
+            &other,
+            &owner,
+            account_ref
         ));
         assert!(!verify_auto_accept_proof_with_pubkey(
             &pubkey, &proof, &scanner, &owner, 999
@@ -620,20 +619,30 @@ mod tests {
         assert_eq!(u2, "bobspizza");
         assert_eq!(b2, blob);
 
-        assert!(parse_dashpay_contact_uri("http:?du=x&dapk=y").is_err(), "scheme");
-        assert!(parse_dashpay_contact_uri("dash:?dapk=abc").is_err(), "no du");
+        assert!(
+            parse_dashpay_contact_uri("http:?du=x&dapk=y").is_err(),
+            "scheme"
+        );
+        assert!(
+            parse_dashpay_contact_uri("dash:?dapk=abc").is_err(),
+            "no du"
+        );
         assert!(parse_dashpay_contact_uri("dash:?du=x").is_err(), "no dapk");
         // '0','O','I','l' are not in the base58 alphabet → decode fails.
-        assert!(parse_dashpay_contact_uri("dash:?du=x&dapk=0OIl").is_err(), "bad b58");
+        assert!(
+            parse_dashpay_contact_uri("dash:?du=x&dapk=0OIl").is_err(),
+            "bad b58"
+        );
     }
 
     #[test]
     fn verify_with_pubkey_rejects_truncated_and_no_expiry() {
         let key = SecretKey::from_slice(&[0x05u8; 32]).unwrap();
-        let pubkey =
-            dashcore::secp256k1::PublicKey::from_secret_key(&Secp256k1::new(), &key);
+        let pubkey = dashcore::secp256k1::PublicKey::from_secret_key(&Secp256k1::new(), &key);
         let (s, r) = test_ids();
-        assert!(!verify_auto_accept_proof_with_pubkey(&pubkey, &[0u8; 3], &s, &r, 0));
+        assert!(!verify_auto_accept_proof_with_pubkey(
+            &pubkey, &[0u8; 3], &s, &r, 0
+        ));
         assert_eq!(auto_accept_proof_expiry(&[0u8; 3]), None);
     }
 }

@@ -463,7 +463,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     pub fn wallet_id(&self) -> &WalletId {
         &self.wallet_id
     }
-
 }
 
 #[cfg(test)]

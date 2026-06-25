@@ -293,7 +293,9 @@ mod tests {
             100000,
             1234567890,
         );
-        managed.add_incoming_contact_request(incoming_request, &p).expect("setup persists");
+        managed
+            .add_incoming_contact_request(incoming_request, &p)
+            .expect("setup persists");
 
         // Verify it's in incoming requests
         assert_eq!(managed.incoming_contact_requests.len(), 1);
@@ -310,7 +312,9 @@ mod tests {
             100000,
             1234567891,
         );
-        managed.add_sent_contact_request(outgoing_request, &p).expect("setup persists");
+        managed
+            .add_sent_contact_request(outgoing_request, &p)
+            .expect("setup persists");
 
         // Verify contact was established
         assert_eq!(managed.incoming_contact_requests.len(), 0);
@@ -339,7 +343,9 @@ mod tests {
             100000,
             1234567890,
         );
-        managed.add_sent_contact_request(outgoing_request, &p).expect("setup persists");
+        managed
+            .add_sent_contact_request(outgoing_request, &p)
+            .expect("setup persists");
 
         // Verify it's in sent requests
         assert_eq!(managed.sent_contact_requests.len(), 1);
@@ -356,7 +362,9 @@ mod tests {
             100000,
             1234567891,
         );
-        managed.add_incoming_contact_request(incoming_request, &p).expect("setup persists");
+        managed
+            .add_incoming_contact_request(incoming_request, &p)
+            .expect("setup persists");
 
         // Verify contact was established
         assert_eq!(managed.incoming_contact_requests.len(), 0);
@@ -385,7 +393,9 @@ mod tests {
             100000,
             1234567890,
         );
-        managed.add_sent_contact_request(outgoing_request, &p).expect("setup persists");
+        managed
+            .add_sent_contact_request(outgoing_request, &p)
+            .expect("setup persists");
 
         // Verify it stays in sent requests
         assert_eq!(managed.sent_contact_requests.len(), 1);
@@ -403,7 +413,9 @@ mod tests {
             100000,
             1234567891,
         );
-        managed.add_incoming_contact_request(incoming_request, &p).expect("setup persists");
+        managed
+            .add_incoming_contact_request(incoming_request, &p)
+            .expect("setup persists");
 
         // Verify both requests stay separate
         assert_eq!(managed.sent_contact_requests.len(), 1);
