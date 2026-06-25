@@ -26,7 +26,7 @@ Without `idb` the inspection workflows (screenshot + SwiftData + logs) still wor
 export PATH="$HOME/.local/bin:$PATH"
 UDID=$(xcrun simctl list devices booted | awk -F'[()]' '/Booted/ {print $2}')
 idb connect $UDID    # starts idb_companion alongside the running sim
-BUNDLE=org.dashfoundation.SwiftExampleApp
+BUNDLE=org.dashfoundation.DashDeveloperPro
 
 # === INSPECT ===
 xcrun simctl io booted screenshot /tmp/sim.png             # screenshot
@@ -278,8 +278,10 @@ If `idb connect` succeeds but `idb ui describe-all` returns a single root elemen
 The skill assumes the binary on the simulator is current. It's not, if you've built but forgotten to install. After every `./build_ios.sh --target sim` (or any code change), push the fresh artifact:
 
 ```bash
-BUNDLE=org.dashfoundation.SwiftExampleApp
-APP=$(find ~/Library/Developer/Xcode/DerivedData -name "${BUNDLE##*.}.app" -path "*Debug-iphonesimulator*" -not -path "*Index.noindex*" 2>/dev/null | head -1)
+BUNDLE=org.dashfoundation.DashDeveloperPro
+# The .app on disk is named after PRODUCT_NAME (still "SwiftExampleApp"), which
+# differs from the bundle id — find by the product name, launch by the bundle id.
+APP=$(find ~/Library/Developer/Xcode/DerivedData -name "SwiftExampleApp.app" -path "*Debug-iphonesimulator*" -not -path "*Index.noindex*" 2>/dev/null | head -1)
 xcrun simctl install booted "$APP"
 xcrun simctl launch booted "$BUNDLE"  # or terminate-then-launch to force a fresh process
 ```
