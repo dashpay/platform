@@ -15,21 +15,24 @@
 //! - [`start_task`](ThreadRegistry::start_task) — a tokio task, for
 //!   `Send` futures.
 //!
-//! # Why F1 and F2 cannot recur
+//! # Safety invariants
 //!
-//! - **F1** (timeout-dropped quiesce detaches a live thread): every join
-//!   path takes `&self`; the live join handle stays owned by the slot
-//!   and is never moved into a cancellable future's frame. A
+//! - **A timed-out or dropped quiesce never detaches a live thread.**
+//!   Every join path takes `&self`; the live join handle stays owned by
+//!   the slot and is never moved into a cancellable future's frame. A
 //!   dropped/timed-out [`quiesce`](ThreadRegistry::quiesce) therefore
 //!   cannot drop-and-detach the handle — on timeout (or on an external
 //!   drop) the handle is deterministically re-parked into the orphan
 //!   list, and the slot reports [`WorkerStatus::Timeout`], never a clean
 //!   `NotRunning`.
-//! - **F2** (store wipe races a parked prior-generation thread):
-//!   orphans live in the registry and [`any_alive`](ThreadRegistry::any_alive)
-//!   is the single liveness gate spanning live slots **and** parked
-//!   orphans. Every store-wiping path consults it, so a parked
-//!   still-live thread blocks the wipe.
+//! - **A store wipe cannot race a parked prior-generation thread.**
+//!   Orphans live in the registry and
+//!   [`any_alive_for`](ThreadRegistry::any_alive_for) is the key-scoped
+//!   liveness gate spanning a key's live slot **and** its parked orphans
+//!   (with [`any_alive`](ThreadRegistry::any_alive) the registry-wide
+//!   variant). A store-wiping path scoped to one worker consults the
+//!   key-scoped gate, so a parked still-live thread blocks the wipe of its
+//!   own worker's store without an unrelated worker blocking it.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -354,6 +357,17 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             // install the new token under this one lock so a prior
             // thread's epilogue observes the post-swap generation.
             let prior = slot.handle.take();
+            // Snapshot the slot's pre-start config so a spawn failure can roll
+            // the slot back to exactly its prior state: a re-installed prior
+            // worker must keep its OWN teardown config, not inherit the failed
+            // start's weight/drain/join_budget. Generation is rolled back too —
+            // the bump is only ever observed under this lock and a failed start
+            // spawns no thread to reference it, so the rollback is net-zero and
+            // the externally-visible generation stays monotonic.
+            let prev_generation = slot.generation;
+            let prev_weight = slot.weight;
+            let prev_join_budget = slot.join_budget;
+            let prev_drain = slot.drain.take();
             let token = CancellationToken::new();
             slot.cancel = Some(token.clone());
             slot.generation += 1;
@@ -378,36 +392,27 @@ impl<K: RegistryKey> ThreadRegistry<K> {
                 body(body_token);
             }) {
                 Ok(join) => {
-                    // Store the new handle, then park the prior into orphans
-                    // — both while still under THIS slot lock (R1: store
-                    // handle -> park prior -> drop guard -> THEN bounded
-                    // reap below).
+                    // Store the new handle, then park the prior into orphans —
+                    // both still under THIS slot lock, so `shutdown`'s
+                    // under-lock tier snapshot can never see the new slot
+                    // without also seeing the prior accounted (R1: store handle
+                    // -> park prior -> drop guard -> THEN bounded reap below).
+                    // See `park_prior_locked` for the lock-order rationale; the
+                    // bounded join stays out of the lock in `reap_parked_prior`.
                     slot.handle = Some(WorkerHandle::OsThread(join));
-                    // [F3 FIX] Park the prior UNDER the slot lock, before
-                    // releasing it. `shutdown` latches `closing` and
-                    // snapshots tiers under this same lock; parking here
-                    // means the take-prior + park-prior is atomic from its
-                    // view, so it can never observe the new slot without
-                    // also seeing the prior accounted in orphans. (The old
-                    // out-of-lock reap left a window: the prior was moved out
-                    // of the slot but not yet parked, so a shutdown
-                    // snapshotting in that gap reaped an empty orphan list
-                    // and reported clean while a wedged prior was still
-                    // live.) The bounded join stays OUT of the lock —
-                    // `reap_parked_prior` below. The `slots`->`orphans`
-                    // nesting this introduces is the only such nesting in the
-                    // module and is deadlock-free: no path acquires `slots`
-                    // while holding `orphans`.
                     self.park_prior_locked(key, prior)
                 }
                 Err(e) => {
-                    // Spawn failed (e.g. EAGAIN at the OS thread ceiling).
-                    // Roll back so the prior handle is never detached and
-                    // the slot is not left wedged "running": re-install
-                    // prior, clear the running flag. `generation` stays
-                    // bumped (it is only ever monotonic), which is harmless
-                    // — the next start reaps the re-installed prior. Nothing
-                    // was parked, so there is no prior to reap below.
+                    // Spawn failed (e.g. EAGAIN at the OS thread ceiling). Roll
+                    // the slot back to exactly its pre-start state: clear the
+                    // running flag, re-install the prior handle (never
+                    // detached), and restore the prior teardown config +
+                    // generation so nothing of the failed start lingers. The
+                    // re-installed prior keeps its own weight/drain/join_budget
+                    // for a later quiesce/shutdown, and generation returns to
+                    // its pre-bump value (the bump was never observed outside
+                    // this lock and spawned no thread). Nothing was parked, so
+                    // there is no prior to reap below.
                     tracing::error!(
                         ?key,
                         error = %e,
@@ -416,6 +421,10 @@ impl<K: RegistryKey> ThreadRegistry<K> {
                     );
                     slot.cancel = None;
                     slot.handle = prior;
+                    slot.generation = prev_generation;
+                    slot.weight = prev_weight;
+                    slot.drain = prev_drain;
+                    slot.join_budget = prev_join_budget;
                     None
                 }
             }
@@ -485,7 +494,7 @@ impl<K: RegistryKey> ThreadRegistry<K> {
                 body(body_token).await;
             });
             slot.handle = Some(WorkerHandle::Task(join));
-            // [F3 FIX] Park the prior UNDER this slot lock, same rationale as
+            // Park the prior UNDER this slot lock, same rationale as
             // `start_thread`: it keeps `shutdown`'s under-lock tier snapshot
             // from ever missing the prior. A task cannot be joined
             // synchronously, so there is no bounded reap here — a live prior
@@ -528,7 +537,7 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     /// budget. The live handle is owned by the slot and is **never** moved
     /// into this future's frame, so a dropped/timed-out call cannot detach
     /// it; on the managed timeout — or if this future is dropped
-    /// mid-poll — the handle is re-parked into the orphan list. [F1 FIX]
+    /// mid-poll — the handle is re-parked into the orphan list.
     pub async fn quiesce(&self, key: K) -> WorkerStatus {
         // Snapshot the drain hook + budget + generation, and bail early if
         // nothing is registered for this key. The generation is the anchor
@@ -629,7 +638,7 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     /// under that key — still alive? A store-wiping path scoped to one
     /// worker must gate on this (rather than the registry-wide
     /// [`any_alive`](Self::any_alive)) so an unrelated worker that is
-    /// legitimately running does not block the wipe. [F2 FIX]
+    /// legitimately running does not block the wipe.
     pub fn any_alive_for(&self, key: K) -> bool {
         if let Some(slot) = self.lock_slots().get(&key) {
             if slot_alive(slot) {
@@ -1671,6 +1680,75 @@ mod tests {
         assert!(!reg.any_alive());
     }
 
+    /// A thread-spawn failure must roll the slot back to its PRIOR config, not
+    /// leave the failed start's weight / drain / join_budget / generation
+    /// behind: the re-installed prior worker keeps its own teardown config for
+    /// a later quiesce/shutdown.
+    ///
+    /// Non-vacuous: against a partial rollback (only cancel/handle restored),
+    /// the slot would carry the failed start's weight/budget, a `None` drain,
+    /// and the bumped generation.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn spawn_failure_restores_prior_slot_config() {
+        let reg = ThreadRegistry::<&str>::new();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+
+        // gen-1 with a DISTINCTIVE config (drain hook + non-default weight and
+        // join budget). Wedged so it stays the live prior after cancel.
+        let hook: DrainHook = Arc::new(|| Box::pin(async {}));
+        let cfg1 = WorkerConfig {
+            weight: ShutdownWeight(7),
+            join_budget: Duration::from_secs(11),
+            drain: Some(hook),
+        };
+        reg.start_thread("k", cfg1, wedged_body(release_rx));
+        reg.cancel("k");
+        let gen_after_gen1 = reg.lock_slots().get("k").unwrap().generation;
+
+        // Failed restart with a DIFFERENT config; the rollback must discard it.
+        reg.force_spawn_failure.store(true, Ordering::Release);
+        let cfg2 = WorkerConfig {
+            weight: ShutdownWeight(99),
+            join_budget: Duration::from_secs(99),
+            drain: None,
+        };
+        reg.start_thread("k", cfg2, |_cancel| {});
+        reg.force_spawn_failure.store(false, Ordering::Release);
+
+        {
+            let slots = reg.lock_slots();
+            let slot = slots.get("k").expect("slot present");
+            assert_eq!(slot.weight, ShutdownWeight(7), "weight restored to prior");
+            assert_eq!(
+                slot.join_budget,
+                Duration::from_secs(11),
+                "join_budget restored to prior"
+            );
+            assert!(
+                slot.drain.is_some(),
+                "prior drain hook restored, not the failed start's None"
+            );
+            assert_eq!(
+                slot.generation, gen_after_gen1,
+                "generation rolled back to its pre-bump value"
+            );
+            assert!(
+                slot.cancel.is_none(),
+                "running flag cleared after failed spawn"
+            );
+            assert!(
+                slot.handle.is_some(),
+                "prior handle re-installed (alive), not detached"
+            );
+        }
+        assert!(reg.any_alive(), "live prior still accounted for");
+
+        // Recover: release + quiesce reaps the prior cleanly.
+        release_tx.send(()).unwrap();
+        assert_eq!(reg.quiesce("k").await, WorkerStatus::Ok);
+        assert!(!reg.any_alive());
+    }
+
     /// A panicking worker body still runs its epilogue (via the drop-guard),
     /// so `is_running()` reflects the crash and `start()` can relaunch the
     /// loop instead of silently no-op'ing.
@@ -1737,9 +1815,9 @@ mod tests {
         assert!(!reg.any_alive(), "nothing started post-shutdown");
     }
 
-    /// [F3 FIX] `start_thread` must park a restarted key's still-wedged prior
-    /// into the orphan list UNDER the slot lock — at the START of the
-    /// restart, not only after the out-of-lock reap backstop elapses.
+    /// `start_thread` must park a restarted key's still-wedged prior into the
+    /// orphan list UNDER the slot lock — at the START of the restart, not only
+    /// after the out-of-lock reap backstop elapses.
     /// Otherwise a `shutdown()` that snapshots tiers in the window between
     /// "prior taken out of the slot" and "prior parked" sees neither the
     /// prior (already moved out of the slot) nor an orphan, and reports
