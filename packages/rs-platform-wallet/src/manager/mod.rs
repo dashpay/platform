@@ -513,13 +513,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///   [`crate::error::PlatformWalletError::ShieldedShutdownIncomplete`]; or
     /// - the coordinator's store reset itself fails.
     ///
-    /// **Internal exclusion with [`ShieldedSyncManager::start`]**: a
-    /// clear/start latch is raised for the whole quiesce → liveness-check →
-    /// `coord.clear()` span, so any concurrent `start()` (e.g. a host racing
-    /// this call) becomes a no-op + warn log rather than spawning a fresh
-    /// loop that would reopen the registry's `quiescing` gate and write into
-    /// the store we're about to wipe. Direct `sync_now`/`sync_wallet` is
-    /// gated by that same `quiescing` flag, also held across the wipe. The
+    /// Internally exclusive with [`ShieldedSyncManager::start`]: a
+    /// clear/start latch is raised for the whole quiesce → liveness-check
+    /// → `coord.clear()` span. A `start()` whose latch load lands AFTER
+    /// the latch was raised becomes a no-op + warn log (the common race
+    /// the fix targets); a `start()` whose load beat the raise spawns
+    /// its loop, but the subsequent `quiesce()` then cancels and joins
+    /// it, and the `status.is_clean()` gate refuses the wipe if that
+    /// drain was non-clean. Either way the store is not written behind
+    /// our back. Direct `sync_now` / `sync_wallet` is gated by the same
+    /// registry-level `quiescing` flag, also held across the wipe. The
     /// host should restart shielded sync after Clear returns.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
@@ -1065,6 +1068,15 @@ mod tests {
             "expected ShieldedShutdownIncomplete, got {err:?}"
         );
 
+        // The orphan-error early return path must still have released the
+        // clearing latch — otherwise a follow-up start() (after the host
+        // recovers from the error) would be silently refused forever.
+        assert!(
+            !manager.shielded_sync_manager.is_clearing(),
+            "clear_shielded must drop the clearing latch on every exit path, \
+             including the orphan-alive early return"
+        );
+
         // Release + reap the orphan; the shielded-scoped gate now clears and
         // a retry succeeds (no shielded store configured → clear is a no-op).
         release_tx.send(()).unwrap();
@@ -1074,6 +1086,10 @@ mod tests {
             .clear_shielded()
             .await
             .expect("clear_shielded must succeed once the orphan is reaped");
+        assert!(
+            !manager.shielded_sync_manager.is_clearing(),
+            "clear_shielded must drop the clearing latch after a successful clear too"
+        );
     }
 
     /// SEC-001: `clear_shielded` must BOUND its in-flight-pass drain so a
