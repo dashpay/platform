@@ -343,11 +343,19 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             for decrypted in infos {
                 // `decrypted` is owned by the loop, so move its already-decoded
                 // `ContactInfoPrivateData` straight in — no field-by-field clone.
-                if managed.set_contact_metadata(
-                    &decrypted.contact_id,
-                    decrypted.data,
-                    &self.persister,
-                ) {
+                // Surface a persist failure rather than swallow it.
+                if managed
+                    .set_contact_metadata(
+                        &decrypted.contact_id,
+                        decrypted.data,
+                        &self.persister,
+                    )
+                    .map_err(|e| {
+                        PlatformWalletError::Persistence(format!(
+                            "contactInfo metadata not persisted: {e}"
+                        ))
+                    })?
+                {
                     applied += 1;
                 }
             }
@@ -458,7 +466,17 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .and_then(|info| info.identity_manager.managed_identity_mut(owner_id))
         {
             for (contact_id, data) in decoded {
-                if managed.set_contact_metadata(&contact_id, data, &self.persister) {
+                // Surface a persist failure: the caller's `Err` arm leaves this
+                // `ContactInfoDecrypt` entry queued so the alias/note re-applies
+                // next drain, instead of clearing the only retry hook.
+                if managed
+                    .set_contact_metadata(&contact_id, data, &self.persister)
+                    .map_err(|e| {
+                        PlatformWalletError::Persistence(format!(
+                            "contactInfo metadata not persisted: {e}"
+                        ))
+                    })?
+                {
                     applied += 1;
                 }
             }
@@ -515,7 +533,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .identity_manager
                 .managed_identity_mut(identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            if !managed.set_contact_metadata(contact_id, metadata.clone(), &self.persister) {
+            if !managed
+                .set_contact_metadata(contact_id, metadata.clone(), &self.persister)
+                .map_err(|e| {
+                    PlatformWalletError::Persistence(format!(
+                        "contactInfo metadata not persisted: {e}"
+                    ))
+                })?
+            {
                 return Err(PlatformWalletError::InvalidIdentityData(format!(
                     "Contact {contact_id} is not established for identity {identity_id}"
                 )));

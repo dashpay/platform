@@ -275,16 +275,20 @@ impl ManagedIdentity {
     /// on-platform `contactInfo` payloads through here so SwiftData mirrors
     /// either source. The wire field names (`alias_name` / `display_hidden`)
     /// map onto the domain names (`alias` / `is_hidden`) on the contact.
-    /// Returns `false` (no-op) when the contact isn't established.
+    /// `Ok(false)` = no-op (contact isn't established); `Ok(true)` = applied
+    /// (or unchanged, skipping the persist). `Err` = the change reached memory
+    /// but the persist failed — the caller MUST surface it so the drain leaves
+    /// the `ContactInfoDecrypt` queue entry in place. Swallowing here would lose
+    /// the alias/note on restart AND clear the only retry hook.
     pub fn set_contact_metadata(
         &mut self,
         contact_id: &Identifier,
         metadata: ContactInfoPrivateData,
         persister: &WalletPersister,
-    ) -> bool {
+    ) -> Result<bool, crate::changeset::PersistenceError> {
         let owner_id = self.id();
         let Some(contact) = self.established_contacts.get_mut(contact_id) else {
-            return false;
+            return Ok(false);
         };
         if contact.alias == metadata.alias_name
             && contact.note == metadata.note
@@ -292,7 +296,7 @@ impl ManagedIdentity {
         {
             // Unchanged — skip the persister round (the recurring sync
             // calls this for every decrypted doc on every pass).
-            return true;
+            return Ok(true);
         }
         contact.alias = metadata.alias_name;
         contact.note = metadata.note;
@@ -306,10 +310,8 @@ impl ManagedIdentity {
             },
             contact.clone(),
         );
-        if let Err(e) = persister.store(cs.into()) {
-            tracing::error!("Failed to persist changeset: {}", e);
-        }
-        true
+        persister.store(cs.into())?;
+        Ok(true)
     }
 
     /// Apply a **rotation** contact request (receive side, DIP-15
@@ -513,6 +515,32 @@ mod tests {
         WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence))
     }
 
+    /// A persister whose every `store` fails — pins that a mutator surfaces the
+    /// failure instead of swallowing it.
+    fn failing_persister() -> WalletPersister {
+        use crate::changeset::{
+            ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+        };
+        use crate::wallet::platform_wallet::WalletId;
+        struct Failing;
+        impl PlatformWalletPersistence for Failing {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Err(PersistenceError::backend("store armed to fail"))
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+        WalletPersister::new([0u8; 32], Arc::new(Failing))
+    }
+
     fn create_test_identity(id_bytes: [u8; 32]) -> ManagedIdentity {
         let identity_v0 = IdentityV0 {
             id: Identifier::from(id_bytes),
@@ -679,6 +707,36 @@ mod tests {
         assert!(
             !contact.payment_channel_broken,
             "rotation clears the broken flag (existing behavior, regression guard)"
+        );
+    }
+
+    /// A failed metadata persist must SURFACE as `Err`, not return `Ok(true)` —
+    /// else the alias/note is lost on restart AND the drain clears the only
+    /// retry hook. The pre-fix `set_contact_metadata` logged + returned `true`.
+    #[test]
+    fn set_contact_metadata_surfaces_persist_failure() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = Identifier::from([1u8; 32]);
+        let contact_id = Identifier::from([2u8; 32]);
+        let outgoing = create_contact_request(our_id, contact_id, 1000);
+        let incoming = create_contact_request(contact_id, our_id, 1001);
+        managed
+            .established_contacts
+            .insert(contact_id, EstablishedContact::new(contact_id, outgoing, incoming));
+
+        let result = managed.set_contact_metadata(
+            &contact_id,
+            ContactInfoPrivateData {
+                alias_name: Some("New alias".to_string()),
+                note: None,
+                display_hidden: false,
+                accepted_accounts: Vec::new(),
+            },
+            &failing_persister(),
+        );
+        assert!(
+            result.is_err(),
+            "a failed metadata persist must surface, not report success"
         );
     }
 
