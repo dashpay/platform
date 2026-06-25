@@ -370,6 +370,22 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
       shim with zero type-level consumers besides the `KeychainSigner` conformance. Decided
       it isn't worth a churn commit — keep it.
 
+  - [ ] **Bot re-review follow-ups (deferred; thepastaclaw 2026-06-25).** Two 🟡 suggestions
+    verified valid but scoped out — left as open PR threads for tracking:
+    - **Confirmed-absent contact profiles can't delete persisted Swift rows**
+      (`rs-platform-wallet-ffi/identity_persistence.rs` `allocate_contact_profile_rows`). A
+      present→absent profile (a contact who deletes their DashPay profile) leaves a stale
+      row, since the FFI emits only present rows and the Swift handler upserts. Needs an ABI
+      change — an `is_present: false` discriminator on `ContactProfileRowFFI` + a Swift DELETE
+      branch (or a parallel tombstone array). Deferred: rare trigger (profile deletion), and
+      the staleness is cosmetic + self-healing (a re-created profile re-emits a present row).
+    - **Profile refresh `checked_at_ms` not durable when content is unchanged**
+      (`wallet/identity/network/profile.rs` — `sync_contact_profiles` persists on
+      `any_changed` only). A cold start re-fetches unchanged profiles once. Bounded by the 1h
+      `CONTACT_PROFILE_REFRESH_MS` gate and self-correcting on that round. The
+      persist-on-content-change fixpoint is intentional; a debounced timestamp-persist (or a
+      per-owner heartbeat row) is the fix when picked up.
+
 - [ ] **§6b — restore the deferred-crypto queue into `PlatformWalletInfo` on load.**
   Reader `all_pending_contact_crypto` exists (`cfg(test)`-gated); blocked upstream by
   `persister.rs` `LOAD_UNIMPLEMENTED: ClientStartState::wallets` (no per-wallet
