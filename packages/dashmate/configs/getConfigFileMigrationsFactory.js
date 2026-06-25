@@ -1520,6 +1520,25 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '4.0.0-rc.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // Add responseHeaders toggle to rate limiter (default true so existing
+            // deployments keep emitting RateLimit-* headers; rs-dapi-client depends
+            // on RateLimit-Reset to apply precise ban windows instead of the
+            // exponential health-ban ladder).
+            // Keyed at the next release (4.0.0-rc.3), not the already-released
+            // rc.2: the runner skips fromVersion===toVersion, so a key equal to
+            // an operator's current version never fires. Backfill runs once the
+            // package bumps to rc.3 (mirrors the 3.1.0 migration added at 3.1.0-dev.1).
+            if (options.platform?.gateway?.rateLimiter
+              && typeof options.platform.gateway.rateLimiter.responseHeaders === 'undefined') {
+              options.platform.gateway.rateLimiter.responseHeaders = base.get('platform.gateway.rateLimiter.responseHeaders');
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 
