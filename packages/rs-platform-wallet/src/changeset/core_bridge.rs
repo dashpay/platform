@@ -33,7 +33,8 @@ use key_wallet::managed_account::transaction_record::{OutputRole, TransactionRec
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
 use key_wallet_manager::{WalletEvent, WalletId, WalletManager};
-use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::broadcast::error::{RecvError, TryRecvError};
+use tokio::sync::broadcast::Receiver;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
@@ -70,29 +71,7 @@ pub async fn wallet_event_adapter_loop<P>(
             recv = receiver.recv() => {
                 match recv {
                     Ok(event) => {
-                        let wallet_id = event.wallet_id();
-                        // For events that need to consult per-wallet
-                        // state (today only `TransactionInstantLocked`,
-                        // which checks finality before recording the IS
-                        // lock), grab a brief read lock on the manager.
-                        let core = build_core_changeset(&wallet_manager, &event).await;
-                        if core.is_empty_no_records() {
-                            // SyncHeightAdvanced for an unknown wallet,
-                            // empty BlockProcessed, etc. — nothing to
-                            // persist. Skip the round-trip.
-                            continue;
-                        }
-                        let cs = PlatformWalletChangeSet {
-                            core: Some(core),
-                            ..PlatformWalletChangeSet::default()
-                        };
-                        if let Err(e) = persister.store(wallet_id, cs) {
-                            tracing::warn!(
-                                wallet_id = %hex::encode(wallet_id),
-                                error = %e,
-                                "Persister rejected core changeset; state will be re-emitted on next sync round"
-                            );
-                        }
+                        dispatch_event(&wallet_manager, persister.as_ref(), event).await;
                     }
                     Err(RecvError::Closed) if cancel.is_cancelled() => break,
                     Err(RecvError::Closed) => {
@@ -107,10 +86,80 @@ pub async fn wallet_event_adapter_loop<P>(
                     }
                 }
             }
-            _ = cancel.cancelled() => break,
+            _ = cancel.cancelled() => {
+                // Drain anything already queued in the receiver before
+                // exit. Without this, events that the broadcast had
+                // already delivered (but the select hadn't yet polled)
+                // are dropped on cancellation — losing persistence work
+                // the upstream already committed to. Same dispatch /
+                // error handling as the live arm.
+                drain_pending_events(&mut receiver, &wallet_manager, persister.as_ref()).await;
+                break;
+            }
         }
     }
     tracing::debug!("wallet-event adapter task exiting");
+}
+
+/// Drain every event already buffered in `receiver` synchronously,
+/// dispatching each via [`dispatch_event`]. Used by the cancellation
+/// arm of the adapter loop so events the broadcast delivered before
+/// teardown are not dropped on exit. Lagged batches are logged and
+/// skipped (matching the live-loop policy); a closed channel ends
+/// the drain.
+async fn drain_pending_events<P>(
+    receiver: &mut Receiver<WalletEvent>,
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    persister: &P,
+) where
+    P: PlatformWalletPersistence + 'static,
+{
+    loop {
+        match receiver.try_recv() {
+            Ok(event) => dispatch_event(wallet_manager, persister, event).await,
+            Err(TryRecvError::Empty) | Err(TryRecvError::Closed) => break,
+            Err(TryRecvError::Lagged(n)) => {
+                tracing::warn!(
+                    missed = n,
+                    "wallet-event adapter lagged on broadcast channel during cancellation drain; some events were dropped"
+                );
+            }
+        }
+    }
+}
+
+/// Project a single [`WalletEvent`] into its [`CoreChangeSet`] and
+/// forward to the persister. Extracted so the live-recv path and the
+/// cancellation-drain path apply identical handling.
+async fn dispatch_event<P>(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    persister: &P,
+    event: WalletEvent,
+) where
+    P: PlatformWalletPersistence + 'static,
+{
+    let wallet_id = event.wallet_id();
+    // For events that need to consult per-wallet state (today only
+    // `TransactionInstantLocked`, which checks finality before recording
+    // the IS lock), grab a brief read lock on the manager.
+    let core = build_core_changeset(wallet_manager, &event).await;
+    if core.is_empty_no_records() {
+        // SyncHeightAdvanced for an unknown wallet, empty
+        // BlockProcessed, etc. — nothing to persist. Skip the
+        // round-trip.
+        return;
+    }
+    let cs = PlatformWalletChangeSet {
+        core: Some(core),
+        ..PlatformWalletChangeSet::default()
+    };
+    if let Err(e) = persister.store(wallet_id, cs) {
+        tracing::warn!(
+            wallet_id = %hex::encode(wallet_id),
+            error = %e,
+            "Persister rejected core changeset; state will be re-emitted on next sync round"
+        );
+    }
 }
 
 /// Project an upstream [`WalletEvent`] into a [`CoreChangeSet`] suitable
@@ -351,5 +400,133 @@ impl CoreChangeSet {
             && self.synced_height.is_none()
             && self.last_applied_chain_lock.is_none()
             && self.addresses_derived.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::sync::atomic::{AtomicUsize, Ordering as AO};
+    use tokio::sync::broadcast;
+
+    use crate::changeset::{ClientStartState, PersistenceError, PlatformWalletChangeSet};
+
+    struct CountingPersister(AtomicUsize);
+
+    impl PlatformWalletPersistence for CountingPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.0.fetch_add(1, AO::SeqCst);
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// `drain_pending_events` must dispatch every event already queued
+    /// in the receiver before returning. Guards against the
+    /// cancellation-arm bug where events the broadcast had delivered but
+    /// the `select!` hadn't yet polled were silently dropped at exit.
+    #[tokio::test]
+    async fn drain_pending_events_persists_queued_events() {
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(dashcore::Network::Testnet)));
+        let persister = CountingPersister(AtomicUsize::new(0));
+
+        let (tx, mut rx) = broadcast::channel::<WalletEvent>(16);
+        let wallet_id: WalletId = [1u8; 32];
+        // Queue three SyncHeightAdvanced events without polling rx;
+        // each maps to a non-empty CoreChangeSet (synced_height = Some).
+        for h in 100..103 {
+            tx.send(WalletEvent::SyncHeightAdvanced {
+                wallet_id,
+                height: h,
+            })
+            .unwrap();
+        }
+
+        drain_pending_events(&mut rx, &wallet_manager, &persister).await;
+        assert_eq!(
+            persister.0.load(AO::SeqCst),
+            3,
+            "every queued event must reach the persister before the drain returns"
+        );
+    }
+
+    /// Sanity check: an empty receiver returns immediately, no stores.
+    #[tokio::test]
+    async fn drain_pending_events_is_noop_on_empty_receiver() {
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(dashcore::Network::Testnet)));
+        let persister = CountingPersister(AtomicUsize::new(0));
+        let (_tx, mut rx) = broadcast::channel::<WalletEvent>(4);
+        drain_pending_events(&mut rx, &wallet_manager, &persister).await;
+        assert_eq!(persister.0.load(AO::SeqCst), 0);
+    }
+
+    /// End-to-end: events queued in the broadcast receiver at the moment
+    /// `cancel` fires must be dispatched before the adapter loop exits.
+    /// Cancels first, then pushes events through the WalletManager's
+    /// broadcast sender — the loop's `select!` is already biased toward
+    /// the cancel arm by then, so without the drain path every event
+    /// here would be silently dropped on exit.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn adapter_loop_drains_queued_events_on_cancel() {
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(dashcore::Network::Testnet)));
+        let persister = Arc::new(CountingPersister(AtomicUsize::new(0)));
+        let cancel = CancellationToken::new();
+
+        let wm_for_task = Arc::clone(&wallet_manager);
+        let persister_for_task = Arc::clone(&persister);
+        let cancel_for_task = cancel.clone();
+        let handle = tokio::spawn(async move {
+            wallet_event_adapter_loop(wm_for_task, persister_for_task, cancel_for_task).await;
+        });
+
+        // Wait for the loop to subscribe (it does so before the first
+        // recv()). A short poll is enough — the subscribe is sync inside
+        // the task.
+        for _ in 0..50 {
+            if wallet_manager.read().await.event_sender().receiver_count() > 0 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        assert!(
+            wallet_manager.read().await.event_sender().receiver_count() > 0,
+            "adapter loop should have subscribed by now"
+        );
+
+        // Cancel BEFORE sending. The next time the adapter polls, the
+        // cancel arm wins (the events end up sitting in the broadcast
+        // queue), so the drain path is what carries them through. The
+        // sends happen synchronously into the broadcast buffer.
+        cancel.cancel();
+        let sender = wallet_manager.read().await.event_sender().clone();
+        let wallet_id: WalletId = [7u8; 32];
+        for h in 200..205 {
+            sender
+                .send(WalletEvent::SyncHeightAdvanced {
+                    wallet_id,
+                    height: h,
+                })
+                .unwrap();
+        }
+
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), handle)
+            .await
+            .expect("adapter must exit promptly on cancel");
+
+        assert_eq!(
+            persister.0.load(AO::SeqCst),
+            5,
+            "drain path must dispatch every queued event before loop exit"
+        );
     }
 }
