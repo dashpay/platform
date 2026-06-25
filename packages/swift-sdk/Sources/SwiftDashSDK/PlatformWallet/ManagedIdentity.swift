@@ -458,6 +458,42 @@ public final class ManagedIdentity: @unchecked Sendable {
         return DashPayProfile(ffi: ffiProfile)
     }
 
+    /// Live in-memory DashPay sync state — collection counts + the high-water
+    /// sync cursors. The cursors are not persisted (they reset on cold restart),
+    /// so this live read is the only window onto them.
+    public struct DashPaySyncState: Sendable {
+        public let establishedContacts: UInt32
+        public let incomingRequests: UInt32
+        public let sentRequests: UInt32
+        public let ignoredSenders: UInt32
+        public let contactProfiles: UInt32
+        public let presentContactProfiles: UInt32
+        public let dashpayPayments: UInt32
+        public let hasDashPayProfile: Bool
+        /// `nil` when the cursor hasn't advanced yet (no sweep has fetched).
+        public let highWaterReceivedMs: UInt64?
+        public let highWaterSentMs: UInt64?
+    }
+
+    /// Read the live DashPay sync state for this managed identity. All scalars,
+    /// so nothing to free.
+    public func getDashPaySyncState() throws -> DashPaySyncState {
+        var ffi = DashPaySyncStateFFI()
+        try managed_identity_get_dashpay_sync_state(handle, &ffi).check()
+        return DashPaySyncState(
+            establishedContacts: ffi.established_contacts,
+            incomingRequests: ffi.incoming_requests,
+            sentRequests: ffi.sent_requests,
+            ignoredSenders: ffi.ignored_senders,
+            contactProfiles: ffi.contact_profiles,
+            presentContactProfiles: ffi.present_contact_profiles,
+            dashpayPayments: ffi.dashpay_payments,
+            hasDashPayProfile: ffi.has_dashpay_profile,
+            highWaterReceivedMs: ffi.has_high_water_received ? ffi.high_water_received_ms : nil,
+            highWaterSentMs: ffi.has_high_water_sent ? ffi.high_water_sent_ms : nil
+        )
+    }
+
     // MARK: - DashPay payment history
 
     /// Read this identity's DashPay payment history — the

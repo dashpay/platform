@@ -119,6 +119,72 @@ pub unsafe extern "C" fn managed_identity_get_dashpay_profile(
     PlatformWalletFFIResult::ok()
 }
 
+/// Live in-memory DashPay sync state for a [`ManagedIdentity`] — the collection
+/// counts plus the high-water sync cursors. All scalars (no heap), so no free
+/// is needed. The cursors are NOT persisted (they reset to `None` on cold
+/// restart), so reading the live handle is the only way to inspect them; the
+/// counts let a debugger compare the in-memory state against the persisted
+/// SwiftData rows.
+#[repr(C)]
+pub struct DashPaySyncStateFFI {
+    pub established_contacts: u32,
+    pub incoming_requests: u32,
+    pub sent_requests: u32,
+    pub ignored_senders: u32,
+    /// Total cached contact-profile entries (present + negative-cache).
+    pub contact_profiles: u32,
+    /// Of `contact_profiles`, how many hold a present profile (the rest are
+    /// confirmed-absent negative-cache entries).
+    pub present_contact_profiles: u32,
+    pub dashpay_payments: u32,
+    pub has_dashpay_profile: bool,
+    pub has_high_water_received: bool,
+    pub high_water_received_ms: u64,
+    pub has_high_water_sent: bool,
+    pub high_water_sent_ms: u64,
+}
+
+/// Read the live [`ManagedIdentity`] DashPay sync state — see
+/// [`DashPaySyncStateFFI`]. The cursors are in-memory only (not persisted).
+#[no_mangle]
+pub unsafe extern "C" fn managed_identity_get_dashpay_sync_state(
+    identity_handle: Handle,
+    out_state: *mut DashPaySyncStateFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_state);
+    let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
+        let (has_received, received) = match identity.high_water_received_ms {
+            Some(v) => (true, v),
+            None => (false, 0),
+        };
+        let (has_sent, sent) = match identity.high_water_sent_ms {
+            Some(v) => (true, v),
+            None => (false, 0),
+        };
+        DashPaySyncStateFFI {
+            established_contacts: identity.established_contacts.len() as u32,
+            incoming_requests: identity.incoming_contact_requests.len() as u32,
+            sent_requests: identity.sent_contact_requests.len() as u32,
+            ignored_senders: identity.ignored_senders.len() as u32,
+            contact_profiles: identity.contact_profiles.len() as u32,
+            present_contact_profiles: identity
+                .contact_profiles
+                .values()
+                .filter(|e| e.profile.is_some())
+                .count() as u32,
+            dashpay_payments: identity.dashpay_payments.len() as u32,
+            has_dashpay_profile: identity.dashpay_profile.is_some(),
+            has_high_water_received: has_received,
+            high_water_received_ms: received,
+            has_high_water_sent: has_sent,
+            high_water_sent_ms: sent,
+        }
+    });
+    let state = unwrap_option_or_return!(option);
+    unsafe { *out_state = state };
+    PlatformWalletFFIResult::ok()
+}
+
 /// Read the cached DashPay profile for a specific identity owned by a wallet.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_get_dashpay_profile(
