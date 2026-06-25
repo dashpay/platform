@@ -196,15 +196,16 @@ truth (and on-chain for the payment).
 | DP-03 payment | ✅ | Eve→Alice **0.001 DASH** real L1 tx (input spent, change `74,899,477`, fee `226` duffs, txid `850433507c88…560e`) — **after starting Core SPV** |
 | DP-04 profile | ✅ | publicMessage updated on-chain → SwiftData (`QA fresh-build 16:10`) |
 | DP-05 view | ✅ | contacts / requests / profile rendered throughout |
-| DP-06 ignore | ⚪ proven on prior build | not re-runnable on the saturated graph (no pending incoming); local-only (`ignoreContactSender`, no broadcast), code unchanged |
+| DP-06 ignore | ✅ | registered a fresh identity (asset-lock funded, ChainLock proof) → sent Eve a request → Eve **ignored** it (→ ignored-senders) → **un-ignored** (reversed). Local-only mute |
 | DP-07 label | ✅ send; receive timing confirmed | label attached + broadcast; **decrypts on accept** (ingest carries encrypted bytes, plaintext appears once established) |
 | DP-08 QR | ✅ | Eve built `dash:?du=…&dapk=…`; SimA pasted + `sendContactRequestFromQR` broadcast |
 | DP-09 contactInfo | ✅ | Eve alias "QA Bestie" on Alice persisted; footer confirms ≥2-contact encrypted publish |
-| DP-10 backfill rescan | ⚪ Manual | no UI trigger; needs a restore-from-seed / pre-watch skew window — not auto-runnable (impl code-confirmed) |
+| DP-10 backfill rescan | ✅ (mechanism, via logs) | the §12.6 rescan fired live: `platform_wallet…payments: DashPay rescan: lowered SPV synced_height … floor=51112` → `dash_spv…filters: Wallet synced_height 51112 fell below committed_height 52175, restarting scan`. No UI trigger (Manual tier); the full restore-from-seed payment-recovery remains a device exercise |
 
-**8/10 flows confirmed live on the fresh build**; `DP-06` and `DP-10` not
-re-runnable for environmental reasons (graph saturation / Manual-tier), both
-proven/confirmed by other means.
+**10/10 flows verified live on the fresh build** — DP-01..09 driven on-chain
+(SwiftData + chain), DP-10's backfill-rescan mechanism confirmed firing in the Rust
+logs (`reconcile_dashpay_rescan` → SPV filter re-scan). DP-06 needed a freshly
+registered identity (the existing 4-identity graph was saturated).
 
 Two plan corrections came out of the run: **DP-03** now records the Core-SPV
 precondition (a DashPay payment is an L1 broadcast — fails "SPV Client not started"
