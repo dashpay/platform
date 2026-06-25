@@ -207,19 +207,22 @@ pub struct CoordinatorExitStatus {
     pub shielded_sync: Option<CoordinatorThreadStatus>,
     /// Wallet-event adapter (a `tokio` task, not an OS thread).
     pub event_adapter: CoordinatorThreadStatus,
-    /// Aggregate status of any coordinator OS threads that an earlier
+    /// Terminal status of any coordinator OS threads that an earlier
     /// tight `stop()`→`start()` reap had to detach past its 1 s
     /// wedge-backstop and park in the shared [`ThreadRegistry`]'s orphan
     /// list.
     ///
-    /// [`Ok`](CoordinatorThreadStatus::Ok) when none were detached (or
-    /// every detached thread has since joined cleanly);
+    /// [`Ok`](CoordinatorThreadStatus::Ok) when none were parked (or
+    /// every parked thread joined cleanly);
     /// [`Detached`](CoordinatorThreadStatus::Detached) when at least one
-    /// is still alive at the shutdown deadline. This is what keeps
-    /// [`all_clean`](Self::all_clean) honest for the wedge case the rest
-    /// of the teardown can't see — without it a detached-but-still-live
-    /// thread would let the host free a callback context the thread may
-    /// still touch (a residual use-after-free).
+    /// is still alive at the shutdown deadline; any other non-clean
+    /// variant (e.g. [`Panicked`](CoordinatorThreadStatus::Panicked))
+    /// when a parked thread ran to completion but classified non-clean.
+    /// This is what keeps [`all_clean`](Self::all_clean) honest for the
+    /// wedge case the rest of the teardown can't see — without it a
+    /// detached-but-still-live or panicked parked thread would let the
+    /// host free a callback context the thread may still touch (a
+    /// residual use-after-free).
     pub detached_threads: CoordinatorThreadStatus,
 }
 
@@ -240,10 +243,12 @@ impl CoordinatorExitStatus {
 
     /// Build the FFI-stable exit status from the registry's weight-ordered
     /// [`ShutdownReport`]. A worker absent from the report never ran, so it
-    /// maps to [`NotRunning`](CoordinatorThreadStatus::NotRunning); a
-    /// non-zero orphan-survivor count surfaces as
-    /// [`Detached`](CoordinatorThreadStatus::Detached), keeping
-    /// [`all_clean`](Self::all_clean) honest for a still-live wedged thread.
+    /// maps to [`NotRunning`](CoordinatorThreadStatus::NotRunning); the
+    /// orphan reap's terminal status surfaces verbatim as
+    /// [`detached_threads`](Self::detached_threads), keeping
+    /// [`all_clean`](Self::all_clean) honest for both a still-live wedged
+    /// thread (`Detached`) and an orphan that ran to completion but
+    /// classified non-clean (`Panicked` / `Stopped`).
     pub(crate) fn from_report(report: ShutdownReport<WalletWorker>) -> Self {
         let worker = |key: WalletWorker| -> CoordinatorThreadStatus {
             report
@@ -261,11 +266,7 @@ impl CoordinatorExitStatus {
             #[cfg(not(feature = "shielded"))]
             shielded_sync: None,
             event_adapter: worker(WalletWorker::EventAdapter),
-            detached_threads: if report.detached > 0 {
-                CoordinatorThreadStatus::Detached
-            } else {
-                CoordinatorThreadStatus::Ok
-            },
+            detached_threads: report.orphan_status.into(),
         }
     }
 }
@@ -1142,6 +1143,7 @@ mod tests {
         let status = CoordinatorExitStatus::from_report(ShutdownReport {
             per_worker: per,
             detached: 0,
+            orphan_status: WorkerStatus::Ok,
         });
         assert_eq!(status.platform_address_sync, CoordinatorThreadStatus::Ok);
         assert_eq!(status.identity_sync, CoordinatorThreadStatus::Ok);
@@ -1158,6 +1160,7 @@ mod tests {
         let status = CoordinatorExitStatus::from_report(ShutdownReport {
             per_worker: BTreeMap::new(),
             detached: 1,
+            orphan_status: WorkerStatus::Detached,
         });
         assert_eq!(status.detached_threads, CoordinatorThreadStatus::Detached);
         assert_eq!(
@@ -1171,8 +1174,23 @@ mod tests {
         let status = CoordinatorExitStatus::from_report(ShutdownReport {
             per_worker: per,
             detached: 0,
+            orphan_status: WorkerStatus::Ok,
         });
         assert_eq!(status.identity_sync, CoordinatorThreadStatus::Timeout);
+        assert!(!status.all_clean());
+
+        // A finished-but-panicked orphan (detached==0, orphan_status non-clean)
+        // surfaces verbatim and fails all_clean — guards against the
+        // pre-fix bug where the orphan's status was discarded entirely.
+        let status = CoordinatorExitStatus::from_report(ShutdownReport {
+            per_worker: BTreeMap::new(),
+            detached: 0,
+            orphan_status: WorkerStatus::Panicked("orphan boom".into()),
+        });
+        assert_eq!(
+            status.detached_threads,
+            CoordinatorThreadStatus::Panicked("orphan boom".into())
+        );
         assert!(!status.all_clean());
 
         // Full variant mapping table.

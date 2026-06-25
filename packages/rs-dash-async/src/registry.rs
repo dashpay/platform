@@ -108,13 +108,21 @@ pub struct ShutdownReport<K: RegistryKey> {
     pub per_worker: BTreeMap<K, WorkerStatus>,
     /// Number of parked orphans still alive at the reap deadline.
     pub detached: usize,
+    /// Terminal status of the orphan reap pass: `Ok` if every parked
+    /// orphan joined cleanly, `Detached` if any survived past the
+    /// grace, `Panicked` / `Stopped` / `Error` if an orphan finished
+    /// non-cleanly. Preserved so an orphan that ran to completion but
+    /// e.g. panicked still fails [`all_clean`](Self::all_clean), even
+    /// when `detached == 0`.
+    pub orphan_status: WorkerStatus,
 }
 
 impl<K: RegistryKey> ShutdownReport<K> {
-    /// `true` only when every per-worker status is clean and no orphan
-    /// survived the reap.
+    /// `true` only when every per-worker status is clean and the orphan
+    /// reap is clean (no survivors past the grace and no non-clean
+    /// orphan classification).
     pub fn all_clean(&self) -> bool {
-        self.detached == 0 && self.per_worker.values().all(WorkerStatus::is_clean)
+        self.orphan_status.is_clean() && self.per_worker.values().all(WorkerStatus::is_clean)
     }
 }
 
@@ -705,11 +713,14 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             }
         }
 
-        // Account for parked orphans last.
-        let (_status, detached) = self.reap_orphans_impl(self.reap_backstop).await;
+        // Account for parked orphans last. Preserve the terminal status
+        // alongside the survivor count so an orphan that finished but
+        // classified non-clean (panic, abort) still fails `all_clean()`.
+        let (orphan_status, detached) = self.reap_orphans_impl(self.reap_backstop).await;
         ShutdownReport {
             per_worker,
             detached,
+            orphan_status,
         }
     }
 
@@ -1090,6 +1101,42 @@ mod tests {
         release_tx.send(()).unwrap();
         let _ = reg.reap_orphans(Duration::from_secs(5)).await;
         assert!(!reg.any_alive());
+    }
+
+    /// Orphan-status preservation: a parked orphan that finishes but
+    /// classifies non-clean (panic) must surface its status on the
+    /// `ShutdownReport`, and `all_clean()` must report `false` even though
+    /// no orphan survived the reap (`detached == 0`). Guards against the
+    /// pre-fix bug where `shutdown()` discarded the orphan reap status.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn shutdown_preserves_non_clean_orphan_status_when_no_survivors() {
+        let reg = ThreadRegistry::<&str>::new();
+        // Park an orphan thread that finishes immediately by panicking.
+        let panicker = std::thread::spawn(|| panic!("deliberate orphan panic"));
+        // Wait for the panicker to actually finish, so the reap sees it
+        // already-finished and classifies it without needing the grace.
+        while !panicker.is_finished() {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        reg.park_orphan_for_test("orphan_panic", panicker);
+
+        let report = tokio::time::timeout(Duration::from_secs(2), reg.shutdown())
+            .await
+            .expect("shutdown must complete within bound");
+        assert_eq!(
+            report.detached, 0,
+            "panicked orphan finished, so no survivor"
+        );
+        match &report.orphan_status {
+            WorkerStatus::Panicked(msg) => {
+                assert!(msg.contains("deliberate orphan panic"), "got {msg}");
+            }
+            other => panic!("expected Panicked orphan_status, got {other:?}"),
+        }
+        assert!(
+            !report.all_clean(),
+            "all_clean() must fail on a non-clean orphan status even at detached==0"
+        );
     }
 
     // ----- Group 3: registry unit suite -------------------------------
