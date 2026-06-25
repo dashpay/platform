@@ -154,25 +154,25 @@ public class PlatformWalletManager: ObservableObject {
         progressPollTask?.cancel()
         guard handle != NULL_HANDLE else { return }
 
-        // Tear down the Rust manager: cancel the address-sync loop, drain
-        // the shielded loop, then destroy. The first stop is cancel-only
-        // and never reports an incomplete drain, so we still `discard()` it.
+        // Tear down the Rust manager: signal both sync loops to cancel,
+        // then destroy. All three sync stops are cancel-only on the Rust
+        // side and never report an incomplete drain, so `discard()` them.
+        // The single join point is `destroy`.
         platform_wallet_manager_platform_address_sync_stop(handle).discard()
+        platform_wallet_manager_shielded_sync_stop(handle).discard()
 
-        // Capture the CODE (not just free the message) for the two calls
-        // that CAN report `.errorShutdownIncomplete`: `shielded_sync_stop`
-        // and `destroy`. Rust returns that code when a background
-        // coordinator did not drain within the join deadline, OR — for
-        // `shielded_sync_stop` — when the drain was clean but a prior-
-        // generation shielded thread is still parked alive as an orphan
-        // (a tight `stop()`→`start()` reap that had to detach it past the
-        // wedge backstop). In either case a lingering `!Send` coordinator
-        // thread may still hold the `passUnretained` context pointers Rust
-        // was handed for our `persistenceHandler` / `eventHandler` and fire
-        // ONE final callback through them. The contract: on that code the
-        // host must NOT free the callback context immediately.
-        let shieldedStopCode =
-            platform_wallet_manager_shielded_sync_stop(handle).discardReturningCode()
+        // Capture the CODE (not just free the message) for the one call
+        // that CAN report `.errorShutdownIncomplete`: `destroy`. Rust
+        // returns that code when a background coordinator did not drain
+        // within the join deadline, or when a prior-generation shielded
+        // thread is still parked alive as an orphan (a tight
+        // `stop()`→`start()` reap that had to detach it past the wedge
+        // backstop). In either case a lingering `!Send` coordinator
+        // thread may still hold the `passUnretained` context pointers
+        // Rust was handed for our `persistenceHandler` / `eventHandler`
+        // and fire ONE final callback through them. The contract: on
+        // that code the host must NOT free the callback context
+        // immediately.
         let destroyCode =
             platform_wallet_manager_destroy(handle).discardReturningCode()
 
@@ -190,8 +190,7 @@ public class PlatformWalletManager: ObservableObject {
         // bounded by how often a shutdown wedges (rare) and trades two small
         // objects for guaranteed callback safety, since an incomplete drain
         // gives no later signal that the lingering thread has finally exited.
-        if shieldedStopCode == .errorShutdownIncomplete
-            || destroyCode == .errorShutdownIncomplete {
+        if destroyCode == .errorShutdownIncomplete {
             if let persistenceHandler { _ = Unmanaged.passRetained(persistenceHandler) }
             if let eventHandler { _ = Unmanaged.passRetained(eventHandler) }
         }

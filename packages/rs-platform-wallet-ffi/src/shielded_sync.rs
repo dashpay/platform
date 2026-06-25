@@ -65,96 +65,51 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_start(
     PlatformWalletFFIResult::ok()
 }
 
-/// Stop the shielded sync manager and wait for any in-flight pass to
-/// drain before returning. No-op if not running.
+/// Stop the shielded sync manager. No-op if not running.
 ///
-/// Uses `quiesce` rather than cancel-only stop, so on a clean return: the
-/// loop is cancelled, no new pass will start, and any in-flight pass has
-/// fully drained — its **persistence callbacks have completed** (no
-/// note/sync-state row can be written after this returns) and its
-/// completion-event *dispatch* on the Rust side has run.
+/// **Cancel-only**: signals the loop to cancel and returns immediately,
+/// matching the `platform_address_sync_stop` and `identity_sync_stop`
+/// convention. An in-flight pass is cancelled mid-flight at its next
+/// `.await` (see [`ShieldedSyncManager::stop`]); a parked prior-generation
+/// orphan is **not** joined here.
 ///
-/// Returns `ErrorShutdownIncomplete` instead of `Success` in either of two
-/// cases, so `Success` accurately implies **no live shielded worker or
-/// orphan remains**:
-/// - the drain did not complete cleanly (the in-flight pass timed out on the
-///   join backstop, or the loop ended non-cleanly); or
-/// - the drain was clean but a prior-generation shielded thread is still
-///   parked alive as an orphan (a tight `stop()`->`start()` reap detached it
-///   past the wedge backstop).
+/// This call therefore never returns `ErrorShutdownIncomplete`. The
+/// join-and-orphan-liveness gate that prevents a host UAF lives on
+/// [`platform_wallet_manager_destroy`] (and, for the Clear flow,
+/// `platform_wallet_manager_shielded_clear`) — that is the contract
+/// point at which the host learns whether it is safe to free the
+/// persister/event-handler callback context.
 ///
-/// The terminal coordinator status is rendered into the result message. On
-/// this code the host must **not** free the callback context immediately — a
-/// lingering pass or parked orphan may still fire one final callback through
-/// it (symmetric with `platform_wallet_manager_destroy` and the shielded
-/// Clear flow).
+/// Rationale: before this change, `shielded_sync_stop` itself ran
+/// `quiesce()` (raising the `quiescing` gate via its own
+/// `AtomicFlagGuard`). A concurrent `shielded_clear` already holding the
+/// gate continuously would have that second guard's `Drop` lower the
+/// gate, opening a window for a new pass to slip past the "no new pass"
+/// barrier. Making stop cancel-only eliminates the second guard outright.
 ///
-/// Caveat on host-observed events: a host that marshals the completion
-/// callback onto its own executor (e.g. the Swift trampoline hops it to
-/// the `@MainActor`) may still observe that final, already-dispatched
-/// event land *after* this call returns — Rust controls when the event
-/// is dispatched, not when the host's run loop applies it. The drain
-/// guarantee above (no further persistence, no new pass) is the
-/// load-bearing part; hosts that must ignore a trailing UI event should
-/// gate their handler on their own post-stop/post-clear state (the
-/// example app drops events while unbound).
+/// Caveat on host-observed events: a host that marshals events onto its
+/// own executor (e.g. Swift hops to `@MainActor`) may still observe an
+/// already-dispatched event land *after* this call returns — stop only
+/// requests cancellation, it does not wait for completion. Hosts that
+/// must ignore a trailing event should gate their handler on their own
+/// post-stop/post-clear state (the example app drops events while
+/// unbound).
+///
+/// [`ShieldedSyncManager::stop`]:
+///     platform_wallet::manager::shielded_sync::ShieldedSyncManager::stop
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        let status = runtime().block_on(async {
-            // Bound the quiesce with the same backstop `shutdown()` uses so
-            // a stalled in-flight pass can't hang the host's stop call
-            // forever. Cancellation makes the drain prompt; this only
-            // matters if a pass's drop wedges. A timeout (the future was
-            // dropped at the deadline) is reported as the non-clean
-            // `Timeout` status, matching `shutdown()`'s backstop
-            // substitution, so the host learns the drain may be incomplete.
-            match tokio::time::timeout(
-                Duration::from_secs(platform_wallet::SHUTDOWN_JOIN_TIMEOUT_SECS),
-                manager.shielded_sync().quiesce(),
-            )
-            .await
-            {
-                Ok(status) => status,
-                Err(_elapsed) => platform_wallet::CoordinatorThreadStatus::Timeout,
-            }
-        });
-        // Capture orphan liveness while we still hold the manager: a clean
-        // quiesce drains the live slot but not a prior-generation thread
-        // parked as an orphan.
-        let shielded_alive = manager.shielded_worker_alive();
-        (status, shielded_alive)
+        // Cancel-only: signal the loop and return. The destroy / clear
+        // paths own the join + orphan-liveness gate that prevents a host
+        // UAF — keeping that ownership single-sourced avoids the
+        // concurrent-AtomicFlagGuard race that the prior quiesce-here
+        // design opened.
+        manager.shielded_sync().stop();
     });
-    let (status, shielded_alive) = unwrap_option_or_return!(option);
-    // Symmetric with `platform_wallet_manager_destroy`: a non-clean drain
-    // means the shielded loop may still hold a reference to the host-owned
-    // event-handler / persister context and could fire one final callback,
-    // so signal the host to defer freeing that context rather than returning
-    // ok() and inviting a use-after-free.
-    if !status.is_clean() {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
-            format!(
-                "shielded sync stop did not drain cleanly ({status:?}); \
-                 host must not free the callback context immediately"
-            ),
-        );
-    }
-    // Even on a clean drain, a parked prior-generation shielded thread may
-    // still be alive and holding the host's callback context — mirror
-    // `clear_shielded` / `destroy` and refuse the clean return so the host
-    // does not free that context out from under a lingering orphan.
-    if shielded_alive {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
-            "shielded sync stop drained cleanly but a prior-generation shielded \
-             worker is still parked alive; host must not free the callback \
-             context immediately"
-                .to_string(),
-        );
-    }
+    unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
 }
 

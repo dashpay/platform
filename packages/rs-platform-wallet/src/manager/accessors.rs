@@ -309,9 +309,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// This is the same shielded-scoped liveness gate
     /// [`clear_shielded`](Self::clear_shielded) consults; it is exposed so
-    /// the FFI `shielded_sync_stop` can refuse a misleading clean return
-    /// while a parked orphan lingers (symmetric with `clear_shielded` /
-    /// `destroy`).
+    /// FFI join points (`destroy`, `clear_shielded`) can refuse a
+    /// misleading clean return while a parked orphan lingers.
+    /// (`shielded_sync_stop` itself is cancel-only and never joins.)
     #[cfg(feature = "shielded")]
     pub fn shielded_worker_alive(&self) -> bool {
         self.registry
