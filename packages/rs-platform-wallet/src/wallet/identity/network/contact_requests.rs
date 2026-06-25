@@ -694,7 +694,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .identity_manager
                 .managed_identity_mut(sender_identity_id)
                 .ok_or(PlatformWalletError::IdentityNotFound(*sender_identity_id))?;
-            managed.add_sent_contact_request(contact_request.clone(), &self.persister);
+            managed
+                .add_sent_contact_request(contact_request.clone(), &self.persister)
+                .map_err(|e| {
+                    PlatformWalletError::Persistence(format!(
+                        "sent contact request not persisted: {e}"
+                    ))
+                })?;
         }
 
         // Register our receiving (friendship) account from the xpub the signer
@@ -1051,6 +1057,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 // this pass — their stale external accounts are torn down
                 // below so the build sweep re-registers from the new xpub.
                 let mut rotated_contacts: Vec<Identifier> = Vec::new();
+                // Track whether every ingest reached disk. A swallowed persist
+                // failure would let the cursor advance past a request that
+                // never persisted, so the next `$createdAt >` sweep would skip
+                // it. On failure we stop ingesting that direction and leave its
+                // cursor unadvanced so the next sweep re-fetches and retries.
+                let mut received_persist_ok = true;
+                let mut sent_persist_ok = true;
 
                 // (1) Ingest received requests.
                 //
@@ -1114,17 +1127,35 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         // established contact was re-keyed, queue the stale
                         // external account for teardown so the build sweep
                         // below re-registers it from the new xpub.
-                        if managed.apply_rotated_incoming_request(
+                        match managed.apply_rotated_incoming_request(
                             contact_request.clone(),
                             &self.persister,
                         ) {
-                            rotated_contacts.push(sender_id);
+                            Ok(true) => rotated_contacts.push(sender_id),
+                            Ok(false) => {}
+                            Err(e) => {
+                                tracing::error!(
+                                    recipient = %identity_id, error = %e,
+                                    "received-request rotation persist failed; leaving received cursor for retry"
+                                );
+                                received_persist_ok = false;
+                                break;
+                            }
                         }
                         all_requests.push(contact_request);
                         continue;
                     }
 
-                    managed.add_incoming_contact_request(contact_request.clone(), &self.persister);
+                    if let Err(e) = managed
+                        .add_incoming_contact_request(contact_request.clone(), &self.persister)
+                    {
+                        tracing::error!(
+                            recipient = %identity_id, error = %e,
+                            "received-request ingest persist failed; leaving received cursor for retry"
+                        );
+                        received_persist_ok = false;
+                        break;
+                    }
                     all_requests.push(contact_request);
                 }
 
@@ -1149,7 +1180,16 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     else {
                         continue;
                     };
-                    managed.add_sent_contact_request(contact_request, &self.persister);
+                    if let Err(e) =
+                        managed.add_sent_contact_request(contact_request, &self.persister)
+                    {
+                        tracing::error!(
+                            owner = %identity_id, error = %e,
+                            "sent-request ingest persist failed; leaving sent cursor for retry"
+                        );
+                        sent_persist_ok = false;
+                        break;
+                    }
                 }
 
                 // (2b) Tear down stale external accounts for contacts that
@@ -1175,18 +1215,24 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 }
 
                 // Advance the high-water cursors to the max `$createdAt`
-                // fetched this sweep, never below the current value. The
-                // received fetch reached here only on success; advance the
-                // sent cursor only if its fetch also succeeded. A mid-sweep
-                // fetch error therefore leaves that direction's cursor intact
-                // so the overlap re-fetches next sweep (no burying).
+                // fetched this sweep, never below the current value. Advance a
+                // direction's cursor only when BOTH its fetch succeeded AND
+                // every ingest reached disk — a mid-sweep fetch error or a
+                // persist failure leaves that cursor intact so the next sweep
+                // re-fetches and retries (no burying, no skip past an
+                // unpersisted request).
                 //
                 // Compare-and-advance (see `advance_if_unchanged`): a concurrent
                 // `unignore_sender` may have reset the cursor mid-sweep to force
                 // a re-fetch; this sweep's stale `max` must not clobber that.
-                managed.high_water_received_ms =
-                    advance_if_unchanged(managed.high_water_received_ms, hw_received, max_received);
-                if sent_ok {
+                if received_persist_ok {
+                    managed.high_water_received_ms = advance_if_unchanged(
+                        managed.high_water_received_ms,
+                        hw_received,
+                        max_received,
+                    );
+                }
+                if sent_ok && sent_persist_ok {
                     managed.high_water_sent_ms =
                         advance_if_unchanged(managed.high_water_sent_ms, hw_sent, max_sent);
                 }
@@ -2958,8 +3004,8 @@ mod sweep_tests {
             .managed_identity_mut(&our_id)
             .expect("managed identity");
         // Establish a contact via the state machine.
-        managed.add_incoming_contact_request(test_request(contact, our, 0), &p);
-        managed.add_sent_contact_request(test_request(our, contact, 0), &p);
+        managed.add_incoming_contact_request(test_request(contact, our, 0), &p).expect("setup persists");
+        managed.add_sent_contact_request(test_request(our, contact, 0), &p).expect("setup persists");
         assert_eq!(managed.established_contacts.len(), 1);
         (wallet, info)
     }
@@ -3091,7 +3137,7 @@ mod sweep_tests {
 
         // Ignore the sender and capture the resulting changeset.
         let managed = info.identity_manager.managed_identity_mut(&our_id).unwrap();
-        managed.add_incoming_contact_request(test_request(sender, our, 0), &p);
+        managed.add_incoming_contact_request(test_request(sender, our, 0), &p).expect("setup persists");
         let cs = managed.ignore_sender(&sender_id);
         let pcs = PlatformWalletChangeSet {
             contacts: Some(cs),
@@ -3323,7 +3369,7 @@ mod sweep_tests {
         // And a pending (not-yet-established) recipient still resolves via
         // the pending map; an unknown recipient is None.
         let pending = Identifier::from([9u8; 32]);
-        managed.add_sent_contact_request(test_request(our, 9, 4), &noop_persister());
+        managed.add_sent_contact_request(test_request(our, 9, 4), &noop_persister()).expect("setup persists");
         assert_eq!(managed.prior_sent_account_reference(&pending), Some(4));
         assert_eq!(
             managed.prior_sent_account_reference(&Identifier::from([42u8; 32])),
@@ -3349,12 +3395,16 @@ mod sweep_tests {
 
         // First apply: real re-key (returns true — caller tears down the account).
         assert!(
-            managed.apply_rotated_incoming_request(rotated.clone(), &p),
+            managed
+                .apply_rotated_incoming_request(rotated.clone(), &p)
+                .expect("rotation persists in test"),
             "first rotation must re-key the established contact"
         );
         // Second apply of the SAME request: no-op (returns false).
         assert!(
-            !managed.apply_rotated_incoming_request(rotated.clone(), &p),
+            !managed
+                .apply_rotated_incoming_request(rotated.clone(), &p)
+                .expect("rotation persists in test"),
             "re-applying an identical request must be a no-op (no re-key, no churn)"
         );
         let stored = info

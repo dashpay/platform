@@ -1043,7 +1043,7 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a owner")
-            .add_sent_contact_request(make_test_contact_request(1, 2), &p);
+            .add_sent_contact_request(make_test_contact_request(1, 2), &p).expect("setup persists");
 
         // Build the replay changeset from A's state: the request ended up in
         // `sent_contact_requests` (no auto-establishment because there was no
@@ -1095,7 +1095,7 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a owner")
-            .add_incoming_contact_request(make_test_contact_request(2, 1), &p);
+            .add_incoming_contact_request(make_test_contact_request(2, 1), &p).expect("setup persists");
 
         // Snapshot the incoming request changeset for B replay step 1.
         let incoming_req = make_test_contact_request(2, 1);
@@ -1115,7 +1115,7 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a owner")
-            .add_sent_contact_request(make_test_contact_request(1, 2), &p);
+            .add_sent_contact_request(make_test_contact_request(1, 2), &p).expect("setup persists");
 
         // After auto-establishment: A's established_contacts should have `other`.
         let a_established = info_a
@@ -1186,7 +1186,7 @@ mod tests {
             .identity_manager
             .managed_identity_mut(&owner)
             .expect("a")
-            .add_sent_contact_request(make_test_contact_request(1, 2), &p);
+            .add_sent_contact_request(make_test_contact_request(1, 2), &p).expect("setup persists");
         let mut insert_cs = ContactChangeSet::default();
         insert_cs.sent_requests.insert(
             SentContactRequestKey {

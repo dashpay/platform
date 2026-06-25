@@ -85,14 +85,14 @@ fn test_send_and_accept_contact_request_same_wallet() {
 
     // Identity A sends friend request to Identity B
     let request_a_to_b = create_contact_request(id_a, id_b, 0, 1234567890);
-    managed_a.add_sent_contact_request(request_a_to_b.clone(), &noop_persister());
+    managed_a.add_sent_contact_request(request_a_to_b.clone(), &noop_persister()).expect("setup persists");
 
     // Verify request is pending
     assert_eq!(managed_a.sent_contact_requests.len(), 1);
     assert_eq!(managed_a.established_contacts.len(), 0);
 
     // Identity B receives the request
-    managed_b.add_incoming_contact_request(request_a_to_b, &noop_persister());
+    managed_b.add_incoming_contact_request(request_a_to_b, &noop_persister()).expect("setup persists");
 
     // Verify B has incoming request
     assert_eq!(managed_b.incoming_contact_requests.len(), 1);
@@ -100,7 +100,7 @@ fn test_send_and_accept_contact_request_same_wallet() {
 
     // Identity B sends friend request back to Identity A
     let request_b_to_a = create_contact_request(id_b, id_a, 0, 1234567891);
-    managed_b.add_sent_contact_request(request_b_to_a.clone(), &noop_persister());
+    managed_b.add_sent_contact_request(request_b_to_a.clone(), &noop_persister()).expect("setup persists");
 
     // This should auto-establish on B's side
     assert_eq!(managed_b.sent_contact_requests.len(), 0);
@@ -109,7 +109,7 @@ fn test_send_and_accept_contact_request_same_wallet() {
     assert!(managed_b.established_contacts.contains_key(&id_a));
 
     // Identity A receives B's request
-    managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister());
+    managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister()).expect("setup persists");
 
     // This should auto-establish on A's side
     assert_eq!(managed_a.sent_contact_requests.len(), 0);
@@ -141,10 +141,10 @@ fn test_send_and_accept_contact_request_different_wallets() {
 
     // Identity 1 sends friend request to Identity 2
     let request_1_to_2 = create_contact_request(id_1, id_2, 0, 1234567900);
-    managed_1.add_sent_contact_request(request_1_to_2.clone(), &noop_persister());
+    managed_1.add_sent_contact_request(request_1_to_2.clone(), &noop_persister()).expect("setup persists");
 
     // Identity 2 receives the request
-    managed_2.add_incoming_contact_request(request_1_to_2, &noop_persister());
+    managed_2.add_incoming_contact_request(request_1_to_2, &noop_persister()).expect("setup persists");
 
     // Verify states before reciprocation
     assert_eq!(managed_1.sent_contact_requests.len(), 1);
@@ -152,13 +152,13 @@ fn test_send_and_accept_contact_request_different_wallets() {
 
     // Identity 2 sends friend request back
     let request_2_to_1 = create_contact_request(id_2, id_1, 0, 1234567901);
-    managed_2.add_sent_contact_request(request_2_to_1.clone(), &noop_persister());
+    managed_2.add_sent_contact_request(request_2_to_1.clone(), &noop_persister()).expect("setup persists");
 
     // Should auto-establish on identity 2's side
     assert_eq!(managed_2.established_contacts.len(), 1);
 
     // Identity 1 receives the reciprocal request
-    managed_1.add_incoming_contact_request(request_2_to_1, &noop_persister());
+    managed_1.add_incoming_contact_request(request_2_to_1, &noop_persister()).expect("setup persists");
 
     // Should auto-establish on identity 1's side
     assert_eq!(managed_1.established_contacts.len(), 1);
@@ -189,15 +189,18 @@ fn test_multiple_contact_requests_workflow() {
     managed_main.add_sent_contact_request(
         create_contact_request(id_main, id_friend1, 0, 1000),
         &noop_persister(),
-    );
+    )
+    .expect("setup persists");
     managed_main.add_sent_contact_request(
         create_contact_request(id_main, id_friend2, 0, 2000),
         &noop_persister(),
-    );
+    )
+    .expect("setup persists");
     managed_main.add_sent_contact_request(
         create_contact_request(id_main, id_friend3, 0, 3000),
         &noop_persister(),
-    );
+    )
+    .expect("setup persists");
 
     assert_eq!(managed_main.sent_contact_requests.len(), 3);
 
@@ -205,7 +208,8 @@ fn test_multiple_contact_requests_workflow() {
     managed_main.add_incoming_contact_request(
         create_contact_request(id_friend1, id_main, 0, 1001),
         &noop_persister(),
-    );
+    )
+    .expect("setup persists");
 
     assert_eq!(managed_main.sent_contact_requests.len(), 2); // friend2 and friend3 left
     assert_eq!(managed_main.established_contacts.len(), 1); // friend1 established
@@ -214,7 +218,8 @@ fn test_multiple_contact_requests_workflow() {
     managed_main.add_incoming_contact_request(
         create_contact_request(id_friend2, id_main, 0, 2001),
         &noop_persister(),
-    );
+    )
+    .expect("setup persists");
 
     assert_eq!(managed_main.sent_contact_requests.len(), 1); // only friend3 left
     assert_eq!(managed_main.established_contacts.len(), 2); // friend1 and friend2 established
@@ -224,7 +229,8 @@ fn test_multiple_contact_requests_workflow() {
     managed_main.add_incoming_contact_request(
         create_contact_request(id_stranger, id_main, 0, 9000),
         &noop_persister(),
-    );
+    )
+    .expect("setup persists");
 
     assert_eq!(managed_main.incoming_contact_requests.len(), 1);
     assert_eq!(managed_main.sent_contact_requests.len(), 1);
@@ -247,8 +253,8 @@ fn test_contact_alias_and_metadata() {
     let request_a_to_b = create_contact_request(id_a, id_b, 0, 1000);
     let request_b_to_a = create_contact_request(id_b, id_a, 0, 1001);
 
-    managed_a.add_sent_contact_request(request_a_to_b, &noop_persister());
-    managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister());
+    managed_a.add_sent_contact_request(request_a_to_b, &noop_persister()).expect("setup persists");
+    managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister()).expect("setup persists");
 
     // Contact should be established
     assert_eq!(managed_a.established_contacts.len(), 1);
@@ -297,7 +303,8 @@ fn test_reject_contact_request() {
     managed_a.add_incoming_contact_request(
         create_contact_request(id_b, id_a, 0, 1000),
         &noop_persister(),
-    );
+    )
+    .expect("setup persists");
 
     assert_eq!(managed_a.incoming_contact_requests.len(), 1);
 
@@ -323,7 +330,8 @@ fn test_cancel_sent_contact_request() {
     managed_a.add_sent_contact_request(
         create_contact_request(id_a, id_b, 0, 1000),
         &noop_persister(),
-    );
+    )
+    .expect("setup persists");
 
     assert_eq!(managed_a.sent_contact_requests.len(), 1);
 
@@ -349,12 +357,12 @@ fn test_contact_request_with_different_account_references() {
     // Send request with account reference 0
     let mut request_a_to_b = create_contact_request(id_a, id_b, 0, 1000);
     request_a_to_b.account_reference = 0;
-    managed_a.add_sent_contact_request(request_a_to_b.clone(), &noop_persister());
+    managed_a.add_sent_contact_request(request_a_to_b.clone(), &noop_persister()).expect("setup persists");
 
     // Receive reciprocal request with account reference 1
     let mut request_b_to_a = create_contact_request(id_b, id_a, 1, 1001);
     request_b_to_a.account_reference = 1;
-    managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister());
+    managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister()).expect("setup persists");
 
     // Should establish contact
     assert_eq!(managed_a.established_contacts.len(), 1);
@@ -387,16 +395,16 @@ fn test_concurrent_bidirectional_requests() {
     let request_a_to_b = create_contact_request(id_a, id_b, 0, 1000);
     let request_b_to_a = create_contact_request(id_b, id_a, 0, 1001);
 
-    managed_a.add_sent_contact_request(request_a_to_b.clone(), &noop_persister());
-    managed_b.add_sent_contact_request(request_b_to_a.clone(), &noop_persister());
+    managed_a.add_sent_contact_request(request_a_to_b.clone(), &noop_persister()).expect("setup persists");
+    managed_b.add_sent_contact_request(request_b_to_a.clone(), &noop_persister()).expect("setup persists");
 
     // Both have sent requests pending
     assert_eq!(managed_a.sent_contact_requests.len(), 1);
     assert_eq!(managed_b.sent_contact_requests.len(), 1);
 
     // Now they receive each other's requests
-    managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister());
-    managed_b.add_incoming_contact_request(request_a_to_b, &noop_persister());
+    managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister()).expect("setup persists");
+    managed_b.add_incoming_contact_request(request_a_to_b, &noop_persister()).expect("setup persists");
 
     // Both should have auto-established
     assert_eq!(managed_a.established_contacts.len(), 1);
@@ -427,8 +435,8 @@ fn test_rotation_request_rekeys_established_contact_and_clears_broken_flag() {
     // Establish A <-> B (A sent, then B's reciprocal arrives).
     let request_a_to_b = create_contact_request(id_a, id_b, 0, 1000);
     let request_b_to_a = create_contact_request(id_b, id_a, 0, 1001);
-    managed_a.add_sent_contact_request(request_a_to_b, &noop_persister());
-    managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister());
+    managed_a.add_sent_contact_request(request_a_to_b, &noop_persister()).expect("setup persists");
+    managed_a.add_incoming_contact_request(request_b_to_a, &noop_persister()).expect("setup persists");
     assert_eq!(managed_a.established_contacts.len(), 1);
 
     // Simulate a broken payment channel — e.g. the old request's
@@ -441,7 +449,9 @@ fn test_rotation_request_rekeys_established_contact_and_clears_broken_flag() {
 
     // B rotates: a new request with a different accountReference.
     let rotated = create_contact_request(id_b, id_a, 7, 2000);
-    let rekeyed = managed_a.apply_rotated_incoming_request(rotated.clone(), &noop_persister());
+    let rekeyed = managed_a
+        .apply_rotated_incoming_request(rotated.clone(), &noop_persister())
+        .expect("rotation persists in test");
 
     assert!(rekeyed, "an established contact must report re-keying");
     let contact = managed_a
@@ -465,9 +475,11 @@ fn test_rotation_request_rekeys_established_contact_and_clears_broken_flag() {
     let identity_c = create_test_identity([3u8; 32]);
     let id_c = identity_c.id();
     let pending = create_contact_request(id_c, id_a, 0, 3000);
-    managed_a.add_incoming_contact_request(pending, &noop_persister());
+    managed_a.add_incoming_contact_request(pending, &noop_persister()).expect("setup persists");
     let rotated_pending = create_contact_request(id_c, id_a, 4, 3001);
-    let rekeyed = managed_a.apply_rotated_incoming_request(rotated_pending, &noop_persister());
+    let rekeyed = managed_a
+        .apply_rotated_incoming_request(rotated_pending, &noop_persister())
+        .expect("rotation persists in test");
     assert!(
         !rekeyed,
         "pending (non-established) rotation is not a re-key"
@@ -486,7 +498,9 @@ fn test_rotation_request_rekeys_established_contact_and_clears_broken_flag() {
     // add_incoming_contact_request).
     let identity_d = create_test_identity([4u8; 32]);
     let stranger = create_contact_request(identity_d.id(), id_a, 0, 4000);
-    assert!(!managed_a.apply_rotated_incoming_request(stranger, &noop_persister()));
+    assert!(!managed_a
+        .apply_rotated_incoming_request(stranger, &noop_persister())
+        .expect("rotation persists in test"));
     assert!(!managed_a
         .incoming_contact_requests
         .contains_key(&identity_d.id()));

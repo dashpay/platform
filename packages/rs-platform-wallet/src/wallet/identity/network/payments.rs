@@ -1295,7 +1295,7 @@ mod tests {
             info.identity_manager
                 .managed_identity_mut(&owner)
                 .expect("managed")
-                .add_incoming_contact_request(incoming, &p);
+                .add_incoming_contact_request(incoming, &p).expect("setup persists");
         }
 
         // Arm the persister to fail, then ignore: must return Err, NOT Ok.
