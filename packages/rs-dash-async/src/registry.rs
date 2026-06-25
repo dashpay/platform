@@ -108,13 +108,21 @@ pub struct ShutdownReport<K: RegistryKey> {
     pub per_worker: BTreeMap<K, WorkerStatus>,
     /// Number of parked orphans still alive at the reap deadline.
     pub detached: usize,
+    /// Aggregate terminal status from the orphan reap. Reaped orphans are
+    /// not keyed in `per_worker`, so without this a panicked/errored orphan
+    /// that finished within the reap grace (`detached == 0`) would silently
+    /// pass `all_clean()`. First non-clean classification wins; `Ok` when
+    /// every reaped orphan was clean (or none were parked).
+    pub orphan_status: WorkerStatus,
 }
 
 impl<K: RegistryKey> ShutdownReport<K> {
-    /// `true` only when every per-worker status is clean and no orphan
-    /// survived the reap.
+    /// `true` only when every per-worker status is clean, every reaped
+    /// orphan was clean, and no orphan survived the reap.
     pub fn all_clean(&self) -> bool {
-        self.detached == 0 && self.per_worker.values().all(WorkerStatus::is_clean)
+        self.detached == 0
+            && self.orphan_status.is_clean()
+            && self.per_worker.values().all(WorkerStatus::is_clean)
     }
 }
 
@@ -148,6 +156,14 @@ pub const DEFAULT_JOIN_BUDGET: Duration = Duration::from_secs(30);
 
 /// Default orphan reap backstop (start-time reap and shutdown grace).
 pub const DEFAULT_REAP_BACKSTOP: Duration = Duration::from_secs(1);
+
+/// Threshold above which a per-worker drain hook is logged at WARN rather
+/// than DEBUG by [`ThreadRegistry::quiesce`]. Not a hard timeout — the
+/// caller still bounds the whole teardown — just a heuristic surface
+/// for a hung drain. Sized as 1/3 of the default join budget so a drain
+/// approaching the worker's join-budget ceiling is loud, while a normal
+/// few-millisecond drain stays quiet.
+pub const DRAIN_HOOK_WARN_THRESHOLD: Duration = Duration::from_secs(10);
 
 /// Per-worker registration options.
 pub struct WorkerConfig {
@@ -248,8 +264,12 @@ struct SlotState {
     join_budget: Duration,
 }
 
-impl SlotState {
-    fn dormant() -> Self {
+// Manual `Default` (not `#[derive(Default)]`): the derived impl would
+// initialise `join_budget` to `Duration::ZERO`, but the dormant slot must
+// carry [`DEFAULT_JOIN_BUDGET`] so a key created on first-touch (via
+// `BTreeMap::entry().or_default()`) is still join-bounded.
+impl Default for SlotState {
+    fn default() -> Self {
         Self {
             generation: 0,
             cancel: None,
@@ -258,6 +278,30 @@ impl SlotState {
             drain: None,
             join_budget: DEFAULT_JOIN_BUDGET,
         }
+    }
+}
+
+impl SlotState {
+    /// Atomically rotate the slot onto a new generation: hand back the
+    /// prior handle to the caller (to be parked / reaped after the lock is
+    /// released) and install a fresh cancellation token + this start's
+    /// teardown config. Returns the prior handle, the new cancellation
+    /// token, and the post-bump generation.
+    ///
+    /// Common to both worker kinds. `start_thread` calls this AFTER
+    /// snapshotting the pre-start config so a spawn failure can roll the
+    /// slot back to its prior state; `start_task` (no synchronous spawn
+    /// failure to roll back from) just calls it.
+    fn prepare(&mut self, cfg: WorkerConfig) -> (Option<WorkerHandle>, CancellationToken, u64) {
+        let prior = self.handle.take();
+        let token = CancellationToken::new();
+        self.cancel = Some(token.clone());
+        self.generation += 1;
+        let my_gen = self.generation;
+        self.weight = cfg.weight;
+        self.drain = cfg.drain;
+        self.join_budget = cfg.join_budget;
+        (prior, token, my_gen)
     }
 }
 
@@ -349,32 +393,28 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             if self.closing.load(Ordering::Acquire) {
                 return;
             }
-            let slot = slots.entry(key).or_insert_with(SlotState::dormant);
+            let slot = slots.entry(key).or_default();
             if slot.cancel.is_some() {
                 return;
             }
-            // Take the prior handle to reap below; bump generation and
-            // install the new token under this one lock so a prior
-            // thread's epilogue observes the post-swap generation.
-            let prior = slot.handle.take();
             // Snapshot the slot's pre-start config so a spawn failure can roll
             // the slot back to exactly its prior state: a re-installed prior
             // worker must keep its OWN teardown config, not inherit the failed
             // start's weight/drain/join_budget. Generation is rolled back too —
             // the bump is only ever observed under this lock and a failed start
             // spawns no thread to reference it, so the rollback is net-zero and
-            // the externally-visible generation stays monotonic.
+            // the externally-visible generation stays monotonic. The drain hook
+            // is taken here so `prepare` below can install `cfg.drain` cleanly;
+            // a spawn failure restores it via `slot.drain = prev_drain`.
             let prev_generation = slot.generation;
             let prev_weight = slot.weight;
             let prev_join_budget = slot.join_budget;
             let prev_drain = slot.drain.take();
-            let token = CancellationToken::new();
-            slot.cancel = Some(token.clone());
-            slot.generation += 1;
-            let my_gen = slot.generation;
-            slot.weight = cfg.weight;
-            slot.drain = cfg.drain;
-            slot.join_budget = cfg.join_budget;
+            // Rotate the slot atomically: take prior handle, install fresh
+            // cancellation token, bump generation, and write this start's
+            // teardown config — all under THIS slot lock so a prior thread's
+            // epilogue observes the post-swap generation.
+            let (prior, token, my_gen) = slot.prepare(cfg);
 
             let reg = Arc::clone(self);
             let body_token = token;
@@ -471,18 +511,13 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             if self.closing.load(Ordering::Acquire) {
                 return;
             }
-            let slot = slots.entry(key).or_insert_with(SlotState::dormant);
+            let slot = slots.entry(key).or_default();
             if slot.cancel.is_some() {
                 return;
             }
-            let prior = slot.handle.take();
-            let token = CancellationToken::new();
-            slot.cancel = Some(token.clone());
-            slot.generation += 1;
-            let my_gen = slot.generation;
-            slot.weight = cfg.weight;
-            slot.drain = cfg.drain;
-            slot.join_budget = cfg.join_budget;
+            // No spawn-failure rollback here: `tokio::spawn` panics rather
+            // than failing, so there is no Err arm to snapshot for.
+            let (prior, token, my_gen) = slot.prepare(cfg);
 
             let reg = Arc::clone(self);
             let body_token = token;
@@ -542,6 +577,13 @@ impl<K: RegistryKey> ThreadRegistry<K> {
         // Snapshot the drain hook + budget + generation, and bail early if
         // nothing is registered for this key. The generation is the anchor
         // for the supersede guard below.
+        //
+        // The inhabited check is raw (`cancel.is_some() || handle.is_some()`)
+        // rather than `slot_alive()`: a finished-but-unreaped handle must
+        // still be classified into its terminal status here, but
+        // `slot_alive()` treats `handle.is_finished()` as "not alive" and
+        // would short-circuit to `NotRunning` — incorrectly dropping the
+        // result on the floor.
         let (drain, budget, my_gen) = {
             let slots = self.lock_slots();
             match slots.get(&key) {
@@ -553,9 +595,29 @@ impl<K: RegistryKey> ThreadRegistry<K> {
         };
 
         // R2: gate-before-cancel — fully await the drain hook before the
-        // cancel signal is observed.
+        // cancel signal is observed. Time it for observability so a hung
+        // drain is visible in traces; there is no hard timeout here (the
+        // caller bounds the whole teardown) — only the join-budget below
+        // can hard-fail the worker.
         if let Some(drain) = drain {
+            let drain_started = Instant::now();
             drain().await;
+            let drain_elapsed = drain_started.elapsed();
+            if drain_elapsed >= DRAIN_HOOK_WARN_THRESHOLD {
+                tracing::warn!(
+                    ?key,
+                    elapsed_ms = drain_elapsed.as_millis() as u64,
+                    threshold_ms = DRAIN_HOOK_WARN_THRESHOLD.as_millis() as u64,
+                    "registry drain hook took longer than the warn threshold; \
+                     a slow drain hook delays the per-worker join budget"
+                );
+            } else {
+                tracing::debug!(
+                    ?key,
+                    elapsed_ms = drain_elapsed.as_millis() as u64,
+                    "registry drain hook completed",
+                );
+            }
         }
 
         // Signal-only cancel — but only if this is still the generation we
@@ -705,11 +767,14 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             }
         }
 
-        // Account for parked orphans last.
-        let (_status, detached) = self.reap_orphans_impl(self.reap_backstop).await;
+        // Account for parked orphans last. The terminal status is folded
+        // into the report so a panicked/errored reaped orphan that finished
+        // within the grace (`detached == 0`) still flips `all_clean()`.
+        let (orphan_status, detached) = self.reap_orphans_impl(self.reap_backstop).await;
         ShutdownReport {
             per_worker,
             detached,
+            orphan_status,
         }
     }
 
@@ -1198,6 +1263,58 @@ mod tests {
         );
         assert_eq!(orphan_len(&reg), 0);
         assert!(!reg.any_alive());
+    }
+
+    /// T5 regression — a reaped orphan whose body PANICKED (finishes within
+    /// the reap grace, so `detached == 0`) must surface in
+    /// `ShutdownReport::orphan_status` and flip `all_clean()`. Before the
+    /// fix, `shutdown()` discarded the reap status entirely: with
+    /// `per_worker` empty/clean and `detached == 0`, `all_clean()`
+    /// incorrectly returned true. The pre-fix non-vacuity check is
+    /// `orphan_status` itself — without the new field there is no place to
+    /// observe the panic, and `all_clean()` lies.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn t5_shutdown_report_surfaces_panicked_reaped_orphan() {
+        let reg = ThreadRegistry::<&str>::new();
+        // Park a panicking thread directly as an orphan via the test seam.
+        // The body panics immediately, so the thread is finished by the
+        // time `shutdown()` runs the reap and classifies as `Panicked`.
+        let panicker = std::thread::spawn(|| {
+            panic!("deliberate orphan-body panic");
+        });
+        reg.park_orphan_for_test("k", panicker);
+
+        let report = reg.shutdown().await;
+
+        assert_eq!(
+            report.detached, 0,
+            "panicked orphan finished within the reap grace"
+        );
+        assert!(
+            matches!(report.orphan_status, WorkerStatus::Panicked(_)),
+            "reaped orphan's panic must surface in orphan_status, got {:?}",
+            report.orphan_status
+        );
+        assert!(
+            !report.all_clean(),
+            "all_clean() must reflect the panicked reaped orphan, not pass it"
+        );
+        assert!(!reg.any_alive());
+    }
+
+    /// T5 regression complement — a clean reaped orphan (`Ok`) leaves
+    /// `all_clean()` true, so the new gate doesn't over-trigger on the
+    /// common case of orphans that drained cleanly within the grace.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn t5_shutdown_report_clean_reaped_orphan_is_clean() {
+        let reg = ThreadRegistry::<&str>::new();
+        let clean = std::thread::spawn(|| { /* exits cleanly */ });
+        reg.park_orphan_for_test("k", clean);
+
+        let report = reg.shutdown().await;
+        assert_eq!(report.detached, 0);
+        assert_eq!(report.orphan_status, WorkerStatus::Ok);
+        assert!(report.all_clean());
     }
 
     /// TC-007 — weight-ordered shutdown drains a lower tier before a higher

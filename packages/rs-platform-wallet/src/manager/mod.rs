@@ -244,6 +244,10 @@ impl CoordinatorExitStatus {
     /// non-zero orphan-survivor count surfaces as
     /// [`Detached`](CoordinatorThreadStatus::Detached), keeping
     /// [`all_clean`](Self::all_clean) honest for a still-live wedged thread.
+    /// A reaped orphan that finished within the grace but ended non-clean
+    /// (e.g. `Panicked`) surfaces through `orphan_status` — those are not
+    /// keyed in `per_worker`, so without that hop a panicked reaped orphan
+    /// would silently pass `all_clean()`.
     pub(crate) fn from_report(report: ShutdownReport<WalletWorker>) -> Self {
         let worker = |key: WalletWorker| -> CoordinatorThreadStatus {
             report
@@ -264,7 +268,11 @@ impl CoordinatorExitStatus {
             detached_threads: if report.detached > 0 {
                 CoordinatorThreadStatus::Detached
             } else {
-                CoordinatorThreadStatus::Ok
+                // Survivors at the grace deadline already surface as
+                // `Detached` above; otherwise fold the reaped-orphan
+                // terminal status through — `Ok` stays `Ok`, a panic /
+                // stop / error from a reaped orphan flips it non-clean.
+                CoordinatorThreadStatus::from(report.orphan_status)
             },
         }
     }
@@ -834,6 +842,64 @@ mod tests {
         assert!(!with_detached.all_clean());
     }
 
+    /// T5 boundary regression — a panicked reaped orphan (orphan finished
+    /// within the reap grace, so registry `detached == 0` but
+    /// `orphan_status` is `Panicked`) must flip `CoordinatorExitStatus`
+    /// non-clean too. Before the wallet-side propagation in `from_report`,
+    /// `detached_threads` was hard-coded to `Ok` whenever the survivor
+    /// count was zero — silently passing the panic. Folds the new
+    /// `ShutdownReport::orphan_status` through.
+    #[test]
+    fn t5_from_report_propagates_panicked_orphan_status() {
+        use dash_async::WorkerStatus;
+        use std::collections::BTreeMap;
+
+        // Build a synthetic ShutdownReport with no survivors but a
+        // non-clean reaped-orphan status. `per_worker` empty means every
+        // declared worker maps to `NotRunning`.
+        let report = ShutdownReport::<WalletWorker> {
+            per_worker: BTreeMap::new(),
+            detached: 0,
+            orphan_status: WorkerStatus::Panicked("orphan panic during reap".into()),
+        };
+
+        let status = CoordinatorExitStatus::from_report(report);
+        assert_eq!(
+            status.detached_threads,
+            CoordinatorThreadStatus::Panicked("orphan panic during reap".into()),
+            "panicked reaped-orphan status must surface through detached_threads",
+        );
+        assert!(
+            !status.all_clean(),
+            "CoordinatorExitStatus::all_clean() must reflect the propagated panic",
+        );
+    }
+
+    /// T5 complement — a clean reaped-orphan status (`Ok`) leaves the
+    /// aggregate clean. Guards against over-triggering the new propagation.
+    #[test]
+    fn t5_from_report_clean_orphan_status_stays_clean() {
+        use dash_async::WorkerStatus;
+        use std::collections::BTreeMap;
+
+        let mut per_worker = BTreeMap::new();
+        per_worker.insert(WalletWorker::PlatformAddressSync, WorkerStatus::Ok);
+        per_worker.insert(WalletWorker::IdentitySync, WorkerStatus::Ok);
+        #[cfg(feature = "shielded")]
+        per_worker.insert(WalletWorker::ShieldedSync, WorkerStatus::Ok);
+        per_worker.insert(WalletWorker::EventAdapter, WorkerStatus::Ok);
+
+        let report = ShutdownReport::<WalletWorker> {
+            per_worker,
+            detached: 0,
+            orphan_status: WorkerStatus::Ok,
+        };
+
+        let status = CoordinatorExitStatus::from_report(report);
+        assert_eq!(status.detached_threads, CoordinatorThreadStatus::Ok);
+        assert!(status.all_clean());
+    }
+
     /// `shutdown()` must wait for an in-flight sync pass to drain before
     /// joining the coordinator thread.
     ///
@@ -1142,6 +1208,7 @@ mod tests {
         let status = CoordinatorExitStatus::from_report(ShutdownReport {
             per_worker: per,
             detached: 0,
+            orphan_status: WorkerStatus::Ok,
         });
         assert_eq!(status.platform_address_sync, CoordinatorThreadStatus::Ok);
         assert_eq!(status.identity_sync, CoordinatorThreadStatus::Ok);
@@ -1154,10 +1221,13 @@ mod tests {
         assert!(status.all_clean());
 
         // A surviving orphan -> Detached -> non-clean; absent workers ->
-        // NotRunning.
+        // NotRunning. `orphan_status` carries `Detached` in the registry
+        // when survivors remain at the grace deadline, but the wallet
+        // surface uses the `detached > 0` count for that signal.
         let status = CoordinatorExitStatus::from_report(ShutdownReport {
             per_worker: BTreeMap::new(),
             detached: 1,
+            orphan_status: WorkerStatus::Detached,
         });
         assert_eq!(status.detached_threads, CoordinatorThreadStatus::Detached);
         assert_eq!(
@@ -1171,6 +1241,7 @@ mod tests {
         let status = CoordinatorExitStatus::from_report(ShutdownReport {
             per_worker: per,
             detached: 0,
+            orphan_status: WorkerStatus::Ok,
         });
         assert_eq!(status.identity_sync, CoordinatorThreadStatus::Timeout);
         assert!(!status.all_clean());
