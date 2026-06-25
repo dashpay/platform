@@ -339,7 +339,7 @@ impl<K: RegistryKey> ThreadRegistry<K> {
         F: FnOnce(CancellationToken) + Send + 'static,
     {
         Self::assert_multi_thread("start_thread");
-        let prior = {
+        let prior_tid = {
             let mut slots = self.lock_slots();
             // One-way teardown latch: refuse new workers once shutdown has
             // begun, under the same lock shutdown snapshots tiers with.
@@ -378,12 +378,27 @@ impl<K: RegistryKey> ThreadRegistry<K> {
                 body(body_token);
             }) {
                 Ok(join) => {
-                    // Store the handle while still under the slot lock; the
-                    // guard is released at the end of this block, BEFORE the
-                    // reap below (R1: store handle -> drop guard -> THEN
-                    // reap-or-park).
+                    // Store the new handle, then park the prior into orphans
+                    // — both while still under THIS slot lock (R1: store
+                    // handle -> park prior -> drop guard -> THEN bounded
+                    // reap below).
                     slot.handle = Some(WorkerHandle::OsThread(join));
-                    prior
+                    // [F3 FIX] Park the prior UNDER the slot lock, before
+                    // releasing it. `shutdown` latches `closing` and
+                    // snapshots tiers under this same lock; parking here
+                    // means the take-prior + park-prior is atomic from its
+                    // view, so it can never observe the new slot without
+                    // also seeing the prior accounted in orphans. (The old
+                    // out-of-lock reap left a window: the prior was moved out
+                    // of the slot but not yet parked, so a shutdown
+                    // snapshotting in that gap reaped an empty orphan list
+                    // and reported clean while a wedged prior was still
+                    // live.) The bounded join stays OUT of the lock —
+                    // `reap_parked_prior` below. The `slots`->`orphans`
+                    // nesting this introduces is the only such nesting in the
+                    // module and is deadlock-free: no path acquires `slots`
+                    // while holding `orphans`.
+                    self.park_prior_locked(key, prior)
                 }
                 Err(e) => {
                     // Spawn failed (e.g. EAGAIN at the OS thread ceiling).
@@ -391,7 +406,8 @@ impl<K: RegistryKey> ThreadRegistry<K> {
                     // the slot is not left wedged "running": re-install
                     // prior, clear the running flag. `generation` stays
                     // bumped (it is only ever monotonic), which is harmless
-                    // — the next start reaps the re-installed prior.
+                    // — the next start reaps the re-installed prior. Nothing
+                    // was parked, so there is no prior to reap below.
                     tracing::error!(
                         ?key,
                         error = %e,
@@ -407,10 +423,11 @@ impl<K: RegistryKey> ThreadRegistry<K> {
 
         // The prior thread was cancellation-signalled by a preceding
         // cancel(); with the slot lock released its epilogue completes
-        // promptly and the join lands in milliseconds. The backstop fires
-        // only on a genuine wedge, in which case the still-live handle is
+        // promptly and the join lands in milliseconds — `reap_parked_prior`
+        // then removes it from orphans and joins it. The backstop fires only
+        // on a genuine wedge, in which case the still-live handle is left
         // parked (not dropped) so teardown can account for it.
-        self.reap_prior_or_park(prior, key);
+        self.reap_parked_prior(key, prior_tid);
     }
 
     /// Start a tokio-task worker for `Send` futures. Same restart-reap
@@ -439,7 +456,7 @@ impl<K: RegistryKey> ThreadRegistry<K> {
         F: FnOnce(CancellationToken) -> Fut + Send + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
-        let prior = {
+        {
             let mut slots = self.lock_slots();
             // One-way teardown latch — see `start_thread`.
             if self.closing.load(Ordering::Acquire) {
@@ -468,9 +485,17 @@ impl<K: RegistryKey> ThreadRegistry<K> {
                 body(body_token).await;
             });
             slot.handle = Some(WorkerHandle::Task(join));
-            prior
-        };
-        self.reap_prior_or_park(prior, key);
+            // [F3 FIX] Park the prior UNDER this slot lock, same rationale as
+            // `start_thread`: it keeps `shutdown`'s under-lock tier snapshot
+            // from ever missing the prior. A task cannot be joined
+            // synchronously, so there is no bounded reap here — a live prior
+            // is parked for the async orphan reap (`reap_orphans` /
+            // `shutdown`) and a finished one is dropped. The returned thread
+            // id is unused: a task prior has none, and a (mixed-usage)
+            // OS-thread prior is likewise left to the async reap rather than
+            // spun on synchronously from this (possibly async) caller.
+            let _ = self.park_prior_locked(key, prior);
+        }
     }
 
     /// Whether a worker is currently registered and running for `key`.
@@ -731,43 +756,86 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             .spawn(closure)
     }
 
-    /// Reap a restarted key's prior worker — or park it if it is genuinely
-    /// wedged past the reap backstop. Must be called with no registry lock
-    /// held (it spins synchronously for an OS thread).
-    fn reap_prior_or_park(&self, prior: Option<WorkerHandle>, key: K) {
-        let Some(handle) = prior else {
+    /// Park a restarted key's prior handle into orphans. **Must be called
+    /// while the slot lock is held** — the resulting `slots`->`orphans`
+    /// nesting is the only such nesting in this module and is deadlock-free
+    /// (no path ever acquires `slots` while holding `orphans`, so there is no
+    /// cycle). Parking the prior here, rather than after the slot lock is
+    /// released, is what lets `shutdown`'s under-lock tier snapshot never
+    /// miss it: the take-prior and the park-prior are then atomic from
+    /// `shutdown`'s view. A finished task is dropped (detaching a finished
+    /// task is a no-op); a live task and any OS thread are parked. Returns
+    /// the parked OS thread's id so [`reap_parked_prior`](Self::reap_parked_prior)
+    /// can find and bounded-join it; tasks (reaped asynchronously) return
+    /// `None`.
+    fn park_prior_locked(
+        &self,
+        key: K,
+        prior: Option<WorkerHandle>,
+    ) -> Option<std::thread::ThreadId> {
+        match prior {
+            Some(WorkerHandle::OsThread(h)) => {
+                let tid = h.thread().id();
+                self.lock_orphans().push((key, WorkerHandle::OsThread(h)));
+                Some(tid)
+            }
+            Some(task) => {
+                if !task.is_finished() {
+                    self.lock_orphans().push((key, task));
+                }
+                None
+            }
+            None => None,
+        }
+    }
+
+    /// Bounded reap of an OS-thread prior that [`park_prior_locked`](Self::park_prior_locked)
+    /// parked under `key` at restart. Must be called with no registry lock
+    /// held (it spins synchronously). The instant the parked thread finishes
+    /// it is removed from orphans and joined — the join itself stays OUT of
+    /// any lock (only the bookkeeping is taken under the orphans lock). A
+    /// genuine wedge past the reap backstop is left parked, so teardown can
+    /// still account for it. No-op when no OS thread was parked (`None`), or
+    /// when the orphan was already taken by a concurrent reaper / `shutdown`
+    /// (which then owns the join).
+    fn reap_parked_prior(&self, key: K, prior_tid: Option<std::thread::ThreadId>) {
+        let Some(tid) = prior_tid else {
             return;
         };
-        match handle {
-            WorkerHandle::OsThread(h) => {
-                let deadline = Instant::now() + self.reap_backstop;
-                loop {
-                    if h.is_finished() {
-                        let _ = h.join();
-                        return;
-                    }
-                    if Instant::now() >= deadline {
+        let deadline = Instant::now() + self.reap_backstop;
+        loop {
+            // Bookkeeping under the orphans lock only: locate our parked
+            // prior by thread id and, once it has finished, take it out to
+            // join after the lock is released. Never hold the lock across the
+            // join.
+            let taken = {
+                let mut orphans = self.lock_orphans();
+                let pos = orphans.iter().position(|(k, h)| {
+                    *k == key && matches!(h, WorkerHandle::OsThread(t) if t.thread().id() == tid)
+                });
+                match pos {
+                    // Already taken by a concurrent reaper / shutdown: it owns
+                    // the join now.
+                    None => return,
+                    Some(i) if orphans[i].1.is_finished() => Some(orphans.remove(i).1),
+                    Some(_) if Instant::now() >= deadline => {
                         tracing::warn!(
                             ?key,
                             backstop = ?self.reap_backstop,
                             "prior worker thread did not finish within the reap \
-                             backstop after cancellation; parking it as an orphan \
-                             for teardown to join rather than detaching it"
+                             backstop after cancellation; leaving it parked as an \
+                             orphan for teardown to join rather than detaching it"
                         );
-                        self.lock_orphans().push((key, WorkerHandle::OsThread(h)));
                         return;
                     }
-                    std::thread::sleep(Duration::from_millis(5));
+                    Some(_) => None,
                 }
+            };
+            if let Some(WorkerHandle::OsThread(h)) = taken {
+                let _ = h.join();
+                return;
             }
-            // A task can't be joined synchronously here; park a still-live
-            // one for async reap. A finished one is dropped (detaching a
-            // finished task is a no-op).
-            task => {
-                if !task.is_finished() {
-                    self.lock_orphans().push((key, task));
-                }
-            }
+            std::thread::sleep(Duration::from_millis(5));
         }
     }
 
@@ -850,8 +918,12 @@ struct Repark<'a, K: RegistryKey> {
 impl<K: RegistryKey> Drop for Repark<'_, K> {
     fn drop(&mut self) {
         // Take the handle under the slot lock, release it, then push to
-        // orphans — never nest the two locks. Skip if a restart superseded
-        // our generation (the handle is the new worker's, not ours).
+        // orphans. This path holds only one lock at a time; the single
+        // sanctioned nesting in the module is `slots`->`orphans` in
+        // `park_prior_locked`, and nothing ever takes `slots` while holding
+        // `orphans`, so the ordering stays acyclic. Skip if a restart
+        // superseded our generation (the handle is the new worker's, not
+        // ours).
         let handle = self
             .reg
             .lock_slots()
@@ -1663,5 +1735,70 @@ mod tests {
             "start_task after shutdown is refused"
         );
         assert!(!reg.any_alive(), "nothing started post-shutdown");
+    }
+
+    /// [F3 FIX] `start_thread` must park a restarted key's still-wedged prior
+    /// into the orphan list UNDER the slot lock — at the START of the
+    /// restart, not only after the out-of-lock reap backstop elapses.
+    /// Otherwise a `shutdown()` that snapshots tiers in the window between
+    /// "prior taken out of the slot" and "prior parked" sees neither the
+    /// prior (already moved out of the slot) nor an orphan, and reports
+    /// clean while the wedged prior is still live and un-joined.
+    ///
+    /// Deterministic via a long backstop: with the fix the prior is
+    /// observable in orphans well before the backstop could elapse; the
+    /// pre-fix code parks it only at the end of the out-of-lock spin, so the
+    /// early assertion fails.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn start_thread_parks_wedged_prior_under_slot_lock_at_restart() {
+        // Long backstop so the under-lock parking is observable well before
+        // it could possibly elapse.
+        let reg = ThreadRegistry::with_reap_backstop(Duration::from_secs(10));
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+
+        // gen-1: wedged (ignores cancel), stays live until released.
+        reg.start_thread("k", WorkerConfig::default(), wedged_body(release_rx));
+        reg.cancel("k");
+
+        // gen-2 restart on a blocking thread: its bounded reap of the wedged
+        // gen-1 spins the (long) backstop, so start_thread does not return
+        // promptly. The fix parks gen-1 under the slot lock at the start of
+        // this call, before that spin.
+        let reg2 = Arc::clone(&reg);
+        let parent = Handle::current();
+        let restart = tokio::task::spawn_blocking(move || {
+            let handle = parent.clone();
+            reg2.start_thread("k", WorkerConfig::default(), move |cancel| {
+                handle.block_on(async move { cancel.cancelled().await });
+            });
+        });
+
+        // The wedged prior must appear in orphans far sooner than the 10s
+        // backstop — it was parked under the slot lock at restart.
+        let mut waited = Duration::ZERO;
+        while orphan_len(&reg) == 0 && waited < Duration::from_secs(2) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            waited += Duration::from_millis(10);
+        }
+        assert_eq!(
+            orphan_len(&reg),
+            1,
+            "wedged prior must be parked under the slot lock at restart, not \
+             only after the backstop spin"
+        );
+        assert!(reg.is_running("k"), "gen-2 installed under the same lock");
+
+        // Release the wedged prior: the restart's bounded reap then finds it
+        // finished, removes it from orphans, and joins it.
+        release_tx.send(()).unwrap();
+        restart.await.unwrap();
+        assert_eq!(
+            orphan_len(&reg),
+            0,
+            "finished prior removed from orphans by the bounded reap"
+        );
+
+        // gen-2 quiesces cleanly.
+        assert_eq!(reg.quiesce("k").await, WorkerStatus::Ok);
     }
 }
