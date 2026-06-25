@@ -71,7 +71,11 @@ final class DashPayContactPersistenceTests: XCTestCase {
             autoAcceptProof: nil,
             coreHeightCreatedAt: 1_234_567,
             createdAtMillis: 1_700_000_000_000,
-            paymentChannelBroken: paymentChannelBroken
+            paymentChannelBroken: paymentChannelBroken,
+            contactAlias: nil,
+            contactNote: nil,
+            contactHidden: false,
+            contactAccountLabel: nil
         )
     }
 
@@ -102,6 +106,103 @@ final class DashPayContactPersistenceTests: XCTestCase {
         return try context.fetch(
             FetchDescriptor<PersistentDashpayContactRequest>()
         )
+    }
+
+    private func fetchContactProfileRows() throws -> [PersistentDashpayContactProfile] {
+        let context = ModelContext(container)
+        return try context.fetch(
+            FetchDescriptor<PersistentDashpayContactProfile>()
+        )
+    }
+
+    /// Apply one identity persister round carrying only the given contact
+    /// profiles for the fixture owner — the seam `upsertDashpayContactProfiles`
+    /// runs under.
+    private func applyContactProfiles(
+        _ profiles: [PlatformWalletPersistenceHandler.ContactProfileSnapshot]
+    ) {
+        // Bracket the round like the FFI does: `endChangeset` is the only
+        // atomic `save()`, so a bare `persistIdentities` would stage the writes
+        // without committing them.
+        handler.beginChangeset(walletId: walletId)
+        handler.persistIdentities(
+            walletId: walletId,
+            upserts: [
+                PlatformWalletPersistenceHandler.IdentityEntrySnapshot(
+                    identityId: ownerId,
+                    balance: 0,
+                    revision: 0,
+                    identityIndex: nil,
+                    label: nil,
+                    status: 0,
+                    walletId: walletId,
+                    dpnsNames: [],
+                    dashpayProfile: nil,
+                    contactProfiles: profiles
+                )
+            ],
+            removed: []
+        )
+        handler.endChangeset(walletId: walletId, success: true)
+    }
+
+    // MARK: Contact-profile tombstone delete
+
+    /// A present profile upserts a row; a later `isPresent == false` tombstone
+    /// for the same contact DELETEs it — so a contact who removed their on-chain
+    /// DashPay profile can't leave a stale name/avatar behind.
+    func testContactProfileTombstoneDeletesPersistedRow() throws {
+        applyContactProfiles([
+            .init(
+                contactIdentityId: contactId,
+                isPresent: true,
+                displayName: "Carol",
+                bio: nil,
+                publicMessage: nil,
+                avatarUrl: nil,
+                avatarHash: nil,
+                avatarFingerprint: nil,
+                checkedAtMs: 111
+            )
+        ])
+        var rows = try fetchContactProfileRows()
+        XCTAssertEqual(rows.count, 1, "a present profile persists one row")
+        XCTAssertEqual(rows.first?.displayName, "Carol")
+
+        applyContactProfiles([
+            .init(
+                contactIdentityId: contactId,
+                isPresent: false,
+                displayName: nil,
+                bio: nil,
+                publicMessage: nil,
+                avatarUrl: nil,
+                avatarHash: nil,
+                avatarFingerprint: nil,
+                checkedAtMs: 222
+            )
+        ])
+        rows = try fetchContactProfileRows()
+        XCTAssertEqual(rows.count, 0, "a tombstone deletes the contact's stale profile row")
+    }
+
+    /// A tombstone for a contact that was never persisted is a clean no-op.
+    func testContactProfileTombstoneForUnknownContactIsNoop() throws {
+        applyContactProfiles([
+            .init(
+                contactIdentityId: contactId,
+                isPresent: false,
+                displayName: nil,
+                bio: nil,
+                publicMessage: nil,
+                avatarUrl: nil,
+                avatarHash: nil,
+                avatarFingerprint: nil,
+                checkedAtMs: 111
+            )
+        ])
+        let rows = try fetchContactProfileRows()
+        XCTAssertEqual(rows.count, 0, "deleting a never-persisted profile is a no-op")
     }
 
     // MARK: Upsert mapping
@@ -193,7 +294,11 @@ final class DashPayContactPersistenceTests: XCTestCase {
             autoAcceptProof: snapshot.autoAcceptProof,
             coreHeightCreatedAt: snapshot.coreHeightCreatedAt,
             createdAtMillis: snapshot.createdAtMillis,
-            paymentChannelBroken: snapshot.paymentChannelBroken
+            paymentChannelBroken: snapshot.paymentChannelBroken,
+            contactAlias: snapshot.contactAlias,
+            contactNote: snapshot.contactNote,
+            contactHidden: snapshot.contactHidden,
+            contactAccountLabel: snapshot.contactAccountLabel
         )
         applyContacts(upserts: [snapshot])
 
