@@ -360,9 +360,12 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
         // left alive to fire a callback against freed memory.
         // `shutdown()` is idempotent, so this is safe even if the host
         // already stopped some sync managers before calling destroy.
-        // It now joins the coordinator OS threads and returns their
-        // per-thread exit status; the C ABI exposes none of that, so we
-        // just log it (a panicked loop is worth surfacing) and drop it.
+        // It joins the coordinator OS threads and returns their per-
+        // thread exit status; a clean shutdown is logged and we return
+        // ok(), but a non-clean status (a coordinator that did not
+        // exit cleanly — panicked, timed out, or left a still-alive
+        // detached thread) is surfaced as `ErrorShutdownIncomplete` so
+        // the host knows NOT to free its callback context yet.
         let status = runtime().block_on(manager.shutdown());
         if !status.all_clean() {
             tracing::warn!(
