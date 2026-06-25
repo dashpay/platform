@@ -488,9 +488,6 @@ struct DashPayTabView: View {
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .foregroundColor(.primary)
-                        Text("Add a display name and avatar so contacts can find you.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
                     }
                     Spacer()
                     Image(systemName: "chevron.right")
