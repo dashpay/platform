@@ -513,16 +513,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///   [`crate::error::PlatformWalletError::ShieldedShutdownIncomplete`]; or
     /// - the coordinator's store reset itself fails.
     ///
-    /// **Host-serialization precondition**: the caller must not invoke
-    /// `shielded_sync_start` for this manager concurrently with `clear`. A
-    /// concurrent direct `sync_now`/`sync_wallet` is held off — the quiescing
-    /// gate is raised *continuously* for the whole clear (from before the
-    /// drain, across the liveness check, through the wipe), so such a pass
-    /// observes the gate and bails with no lapse. The one remaining residual
-    /// is a full `shielded_sync_start` racing `clear`: a restart spawns a
-    /// fresh loop and reopens the gate, so it could re-persist into the wiped
-    /// store. The wallet UI drives these from one place; that ordering is the
-    /// host's contract until the registry grows a per-key clearing latch.
+    /// **Internal exclusion with [`ShieldedSyncManager::start`]**: a
+    /// clear/start latch is raised for the whole quiesce → liveness-check →
+    /// `coord.clear()` span, so any concurrent `start()` (e.g. a host racing
+    /// this call) becomes a no-op + warn log rather than spawning a fresh
+    /// loop that would reopen the registry's `quiescing` gate and write into
+    /// the store we're about to wipe. Direct `sync_now`/`sync_wallet` is
+    /// gated by that same `quiescing` flag, also held across the wipe. The
+    /// host should restart shielded sync after Clear returns.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
         self.clear_shielded_inner(std::time::Duration::from_secs(SHUTDOWN_JOIN_TIMEOUT_SECS))
@@ -537,6 +535,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         drain_timeout: std::time::Duration,
     ) -> Result<(), crate::error::PlatformWalletError> {
+        // Raise the clear/start latch FIRST, before quiesce, so a `start()`
+        // racing this call is refused — without this, a freshly-spawned loop
+        // would reopen the `quiescing` gate we are about to hold and slip its
+        // first pass into the wiped store. The guard lowers the latch on
+        // return (every exit path).
+        let _start_latch = self.shielded_sync_manager.hold_clearing_latch();
+
         // Raise and HOLD the shielded quiescing gate for the WHOLE clear,
         // BEFORE quiescing — so the "no new pass" barrier never lapses
         // between the drain, the liveness check, and the store wipe: a direct
@@ -1122,6 +1127,52 @@ mod tests {
         // Release the held pass and join.
         release_tx.send(()).expect("release the pass");
         pass_task.await.expect("pass task joined");
+    }
+
+    /// `clear_shielded` and `ShieldedSyncManager::start` must be
+    /// mutually exclusive inside the wallet — relying only on the host
+    /// to serialize them lets a `start` racing `clear` reopen the
+    /// registry's `quiescing` gate and slip its first pass into the
+    /// store we're about to wipe.
+    ///
+    /// Direct surface check: while the clearing latch is held, `start()`
+    /// is refused (no-op + warn log), and once the latch drops a fresh
+    /// `start()` succeeds. End-to-end the latch is held across the
+    /// whole quiesce → liveness → clear span by `clear_shielded`, so a
+    /// concurrent `start()` is similarly refused throughout.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn shielded_start_is_refused_while_clearing_latch_held() {
+        let manager = make_manager();
+        let shielded = Arc::clone(&manager.shielded_sync_manager);
+
+        // No loop, no latch → start spawns the loop normally.
+        Arc::clone(&shielded).start();
+        assert!(
+            shielded.is_running(),
+            "baseline: start() without the latch must succeed"
+        );
+        // Tear down so the next start has a clean slot.
+        assert!(shielded.quiesce().await.is_clean());
+
+        // Raise the latch as `clear_shielded` does; `start()` is refused.
+        let latch = shielded.hold_clearing_latch();
+        assert!(shielded.is_clearing());
+        Arc::clone(&shielded).start();
+        assert!(
+            !shielded.is_running(),
+            "start() must be a no-op while the clear/start latch is held"
+        );
+
+        // Drop the latch; a fresh start succeeds.
+        drop(latch);
+        assert!(!shielded.is_clearing());
+        Arc::clone(&shielded).start();
+        assert!(
+            shielded.is_running(),
+            "start() must succeed once the clear/start latch drops"
+        );
+        assert!(shielded.quiesce().await.is_clean());
     }
 
     /// TC-015 (R5): `from_report` maps the registry's [`ShutdownReport`]

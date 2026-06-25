@@ -26,6 +26,7 @@
 //! [`configure_shielded`]: crate::manager::PlatformWalletManager::configure_shielded
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use dash_async::{AtomicFlagGuard, ThreadRegistry};
@@ -147,6 +148,18 @@ pub struct ShieldedSyncManager {
     /// half gives Clear / stop a real "no more host-visible mutations"
     /// barrier that cancel-only [`stop`](Self::stop) does not provide.
     lifecycle: CoordinatorLifecycle,
+    /// Internal clear/start exclusion latch. [`clear_shielded`] raises
+    /// it for the whole quiesce → liveness-check → `coord.clear()` span;
+    /// [`start`](Self::start) checks it before spawning the loop and
+    /// bails as a no-op when raised. Without this, the host's
+    /// serialization is the only guard, but the registry-level
+    /// `quiescing` gate that Clear holds is reopened by any concurrent
+    /// `start()` (which calls `lifecycle.reopen_quiescing_gate()`),
+    /// letting the freshly-spawned loop's first pass land in the store
+    /// Clear is about to wipe.
+    ///
+    /// [`clear_shielded`]: super::PlatformWalletManager::clear_shielded
+    clearing: Arc<AtomicBool>,
 }
 
 impl ShieldedSyncManager {
@@ -163,7 +176,26 @@ impl ShieldedSyncManager {
                 WalletWorker::ShieldedSync,
                 DEFAULT_SYNC_INTERVAL_SECS,
             ),
+            clearing: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Raise the clear/start exclusion latch and hold it raised until the
+    /// returned guard drops, so [`start`](Self::start) called concurrently
+    /// is refused (no-op + warn log). Called by
+    /// [`clear_shielded`](super::PlatformWalletManager::clear_shielded)
+    /// across the whole quiesce → liveness-check → `coord.clear()` span.
+    pub(super) fn hold_clearing_latch(&self) -> AtomicFlagGuard<'_> {
+        self.clearing.store(true, Ordering::Release);
+        AtomicFlagGuard::new(&self.clearing)
+    }
+
+    /// Whether [`clear_shielded`](super::PlatformWalletManager::clear_shielded)
+    /// is currently in its critical section. Visible to tests that want to
+    /// assert `start()` was refused.
+    #[cfg(test)]
+    pub(super) fn is_clearing(&self) -> bool {
+        self.clearing.load(Ordering::Acquire)
     }
 
     /// Set the polling interval. Clamped to a minimum of 1s.
@@ -201,7 +233,21 @@ impl ShieldedSyncManager {
     /// the underlying `dash-sdk` shielded-sync future is `!Send` (the
     /// GRPC client state isn't `Send + Sync`). Same trade-off as
     /// [`PlatformAddressSyncManager::start`](super::platform_address_sync::PlatformAddressSyncManager::start).
+    ///
+    /// Refused (no-op + warn log) while
+    /// [`clear_shielded`](super::PlatformWalletManager::clear_shielded)
+    /// holds the clear/start latch; otherwise reopening the registry-
+    /// level `quiescing` gate here would let this (re)start's first pass
+    /// write into the store Clear is about to wipe. The host should
+    /// restart shielded sync after Clear returns.
     pub fn start(self: Arc<Self>) {
+        if self.clearing.load(Ordering::Acquire) {
+            tracing::warn!(
+                "shielded sync start() refused — clear_shielded is in progress; \
+                 the host should restart shielded sync once clear returns"
+            );
+            return;
+        }
         // Reopen the quiescing gate so this (re)start's passes can run.
         self.lifecycle.reopen_quiescing_gate();
 
