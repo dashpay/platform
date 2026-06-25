@@ -123,7 +123,9 @@ impl CoordinatorLifecycle {
         Arc::new(move || {
             let quiescing = Arc::clone(&quiescing);
             Box::pin(async move {
-                quiescing.store(true, Ordering::Release);
+                // SeqCst: store-half of the `quiescing`<->`is_syncing`
+                // handshake (see `begin_pass`).
+                quiescing.store(true, Ordering::SeqCst);
             })
         })
     }
@@ -163,7 +165,9 @@ impl CoordinatorLifecycle {
     /// not apply to it.
     pub(crate) async fn quiesce(&self) -> CoordinatorThreadStatus {
         // Gate up first (instant) and held until the guard drops on return.
-        self.quiescing.store(true, Ordering::Release);
+        // SeqCst: store-half of the `quiescing`<->`is_syncing` handshake
+        // (see `begin_pass`).
+        self.quiescing.store(true, Ordering::SeqCst);
         let _quiescing_gate = AtomicFlagGuard::new(&self.quiescing);
         self.cancel_join_and_drain().await
     }
@@ -219,7 +223,11 @@ impl CoordinatorLifecycle {
     /// design — the caller bounds the whole teardown (the FFI `stop` /
     /// `clear` bridges wrap it in a `SHUTDOWN_JOIN_TIMEOUT_SECS` timeout).
     async fn drain_in_flight_pass(&self) {
-        while self.is_syncing.load(Ordering::Acquire) {
+        // SeqCst: load-half of the `quiescing`<->`is_syncing` handshake (see
+        // `begin_pass`). Pairs with `begin_pass`'s SeqCst CAS so a pass that
+        // claimed the slot just as the gate rose is observed here and waited
+        // out, rather than slipping past an unsynchronized read.
+        while self.is_syncing.load(Ordering::SeqCst) {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
     }
@@ -233,7 +241,10 @@ impl CoordinatorLifecycle {
     /// gate tests also exercise it.
     #[cfg(any(test, feature = "shielded"))]
     pub(crate) fn hold_quiescing_gate(&self) -> AtomicFlagGuard<'_> {
-        self.quiescing.store(true, Ordering::Release);
+        // SeqCst: store-half of the `quiescing`<->`is_syncing` handshake (see
+        // `begin_pass`). The Clear flow raises the gate through here, so this
+        // raise must be self-fencing just like `quiesce`'s.
+        self.quiescing.store(true, Ordering::SeqCst);
         AtomicFlagGuard::new(&self.quiescing)
     }
 
@@ -245,9 +256,22 @@ impl CoordinatorLifecycle {
     /// released before returning (the guard drops), so a later post-quiesce
     /// pass can still run.
     pub(crate) fn begin_pass(&self) -> Option<AtomicFlagGuard<'_>> {
+        // LOAD-BEARING MEMORY ORDERING: the `is_syncing` claim (this CAS) and
+        // the `quiescing` gate read below form a Dekker-style mutual-exclusion
+        // handshake with `quiesce`'s `store(quiescing) … load(is_syncing)`.
+        // The guarantee we need is that a teardown and a pass-entry can never
+        // BOTH miss each other — either this pass observes the raised gate and
+        // bails, or the drain observes our `is_syncing` claim and waits it
+        // out. That is a StoreLoad relationship across two distinct atomics,
+        // which Release/Acquire do NOT order; only SeqCst (a single total
+        // order over all four ops) does. So the CAS *store* here, the gate
+        // load here, and the matching `store(quiescing)` / `load(is_syncing)`
+        // on the teardown side are all `SeqCst`. (Today the lock `registry`
+        // takes would also fence this, but that is incidental — relying on it
+        // would make the handshake silently fragile to a lock-free refactor.)
         if self
             .is_syncing
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::Acquire)
             .is_err()
         {
             return None;
@@ -261,7 +285,8 @@ impl CoordinatorLifecycle {
         // A `quiesce` may have raised the gate between our CAS and here; if
         // so, bail (dropping `guard`, which clears the slot) so the drain
         // can complete and teardown gets a true "no further pass" barrier.
-        if self.quiescing.load(Ordering::Acquire) {
+        // SeqCst — load-half of the handshake described above.
+        if self.quiescing.load(Ordering::SeqCst) {
             return None;
         }
         Some(guard)
