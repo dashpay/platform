@@ -423,11 +423,14 @@ where
     /// Stop the background sync loop. No-op if not running.
     ///
     /// **Cancel-only**: requests cancellation and returns immediately. A
-    /// pass already inside `sync_now` keeps running to completion,
-    /// including its `persister.store(...)` fan-out. For a real "nothing
-    /// is running and nothing more will be persisted" barrier — required
-    /// by manager shutdown so the host can free the persister context —
-    /// use [`quiesce`](Self::quiesce).
+    /// pass already inside `sync_now` is **cancelled mid-flight** at its
+    /// next `.await` (the loop's `biased; cancel-first` select drops the
+    /// `sync_now` future, see `start`). `persister.store(...)` calls that
+    /// completed before the cancel landed are committed; any in-flight
+    /// store is abandoned. For a real "nothing is running and nothing
+    /// more will be persisted" barrier — required by manager shutdown so
+    /// the host can free the persister context — use
+    /// [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
         self.lifecycle.stop();
     }

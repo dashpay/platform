@@ -222,12 +222,14 @@ impl PlatformAddressSyncManager {
     /// Stop the background sync loop. No-op if not running.
     ///
     /// **Cancel-only**: requests cancellation and returns immediately. A
-    /// pass already inside `sync_now` keeps running to completion,
-    /// including its `on_platform_address_sync_completed` host-callback
-    /// dispatch. For a real "nothing is running and nothing more will
-    /// fire a host callback" barrier — required by manager shutdown so
-    /// the host can free the event-handler context — use
-    /// [`quiesce`](Self::quiesce).
+    /// pass already inside `sync_now` is **cancelled mid-flight** at its
+    /// next `.await` (the loop's `biased; cancel-first` select drops the
+    /// `sync_now` future, see `start`). The
+    /// `on_platform_address_sync_completed` host callback dispatch may
+    /// not fire if cancel lands before the callback. For a real "nothing
+    /// is running and nothing more will fire a host callback" barrier —
+    /// required by manager shutdown so the host can free the
+    /// event-handler context — use [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
         self.lifecycle.stop();
     }

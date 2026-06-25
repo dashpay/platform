@@ -243,10 +243,13 @@ impl ShieldedSyncManager {
     ///
     /// **Cancel-only**: this requests cancellation and returns
     /// immediately. A pass already inside `sync_now` /
-    /// `coordinator.sync()` keeps running to completion (including its
-    /// persister-callback fan-out). For a real "nothing is running and
-    /// nothing more will be persisted" barrier — required by Clear,
-    /// unregister, and rebind — use [`quiesce`](Self::quiesce).
+    /// `coordinator.sync()` is **cancelled mid-flight** at its next
+    /// `.await` (the loop's `biased; cancel-first` select drops the sync
+    /// future, see `start`). Persister-callback fan-out for already-
+    /// completed stores has fired; any in-flight store is abandoned.
+    /// For a real "nothing is running and nothing more will be
+    /// persisted" barrier — required by Clear, unregister, and rebind —
+    /// use [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
         self.lifecycle.stop();
     }
