@@ -167,9 +167,11 @@ pub struct IdentityEntryFFI {
 ///
 /// The profile-field block (`display_name` … `public_message`) is the
 /// SAME shape as the own-profile fields on [`IdentityEntryFFI`]; the
-/// only additions are the leading `contact_id` key and the trailing
-/// `checked_at_ms` self-heal timestamp. Confirmed-absent cache entries
-/// never reach this struct (see [`IdentityEntryFFI::contact_profiles`]).
+/// only additions are the leading `contact_id` key, the `is_present`
+/// discriminator, and the trailing `checked_at_ms` self-heal timestamp.
+/// Confirmed-absent cache entries DO reach this struct, as
+/// `is_present == false` tombstones (null strings / zeroed bytes) that
+/// tell Swift to delete the persisted row.
 ///
 /// All four `*const c_char` strings are heap-allocated via
 /// [`optional_c_string`] and owned by the parent [`IdentityEntryFFI`];
@@ -183,8 +185,15 @@ pub struct ContactProfileRowFFI {
     /// [`IdentityEntry::contact_profiles`] map key. Becomes the
     /// `contactIdentityId` half of the SwiftData row's compound key.
     pub contact_id: [u8; 32],
+    /// `true` for a present profile (all fields below are authoritative);
+    /// `false` for a confirmed-absent contact (every field below is
+    /// null/zeroed). An absent row tells Swift to DELETE any persisted row
+    /// for `contact_id` — a contact who removed their profile must not keep
+    /// showing a stale name/avatar. Without this, the persist side emits only
+    /// present profiles and the Swift upsert never learns about a deletion.
+    pub is_present: bool,
     /// Heap-allocated `displayName`; `null` when the source field was
-    /// `None`. Freed in [`free_identity_entry_ffi`].
+    /// `None` (or the row is absent). Freed in [`free_identity_entry_ffi`].
     pub display_name: *const c_char,
     /// Heap-allocated `bio`; `null` when `None`. Freed in
     /// [`free_identity_entry_ffi`].
@@ -605,9 +614,25 @@ fn allocate_contact_profile_rows(
     }
     let mut rows: Vec<ContactProfileRowFFI> = Vec::with_capacity(contact_profiles.len());
     for (contact_id, entry) in contact_profiles {
-        // Skip confirmed-absent entries — the negative cache is not
-        // persisted; it rebuilds on the next sweep.
+        // Confirmed-absent entry: emit an `is_present = false` tombstone row so
+        // Swift DELETEs any persisted row for this contact. A contact who
+        // removed their profile (present -> absent) must not keep showing a
+        // stale name/avatar — skipping the entry would leave the old upserted
+        // row untouched forever.
         let Some(profile) = entry.profile.as_ref() else {
+            rows.push(ContactProfileRowFFI {
+                contact_id: contact_id.to_buffer(),
+                is_present: false,
+                display_name: ptr::null(),
+                bio: ptr::null(),
+                avatar_url: ptr::null(),
+                avatar_hash: [0u8; 32],
+                avatar_hash_present: false,
+                avatar_fingerprint: [0u8; 8],
+                avatar_fingerprint_present: false,
+                public_message: ptr::null(),
+                checked_at_ms: entry.checked_at_ms,
+            });
             continue;
         };
         let (avatar_hash, avatar_hash_present) = match profile.avatar_hash {
@@ -620,6 +645,7 @@ fn allocate_contact_profile_rows(
         };
         rows.push(ContactProfileRowFFI {
             contact_id: contact_id.to_buffer(),
+            is_present: true,
             display_name: optional_c_string(profile.display_name.as_deref()),
             bio: optional_c_string(profile.bio.as_deref()),
             avatar_url: optional_c_string(profile.avatar_url.as_deref()),
@@ -631,10 +657,8 @@ fn allocate_contact_profile_rows(
             checked_at_ms: entry.checked_at_ms,
         });
     }
-    if rows.is_empty() {
-        // Every entry was confirmed-absent — nothing present to carry.
-        return (ptr::null(), 0);
-    }
+    // `rows` is non-empty here: the early return above covers the empty map,
+    // and every entry (present or absent) now pushes a row.
     let count = rows.len();
     let rows_ptr = Box::into_raw(rows.into_boxed_slice()) as *const ContactProfileRowFFI;
     (rows_ptr, count)
@@ -1058,6 +1082,92 @@ mod tests {
         assert!(!ffi.dashpay_profile_avatar_hash_present);
         assert!(!ffi.dashpay_profile_avatar_fingerprint_present);
         // Idempotent — second call must not double-free.
+        unsafe { free_identity_entry_ffi(&mut ffi) };
+    }
+
+    #[test]
+    fn contact_profile_rows_emit_present_and_absent_tombstone() {
+        use platform_wallet::{ContactProfileEntry, DashPayProfile};
+        // [7;32] (present) sorts before [8;32] (absent) in the BTreeMap, so the
+        // emitted rows are in that order.
+        let mut contact_profiles = std::collections::BTreeMap::new();
+        contact_profiles.insert(
+            Identifier::from([7u8; 32]),
+            ContactProfileEntry {
+                profile: Some(DashPayProfile {
+                    display_name: Some("Carol".to_string()),
+                    bio: None,
+                    avatar_url: None,
+                    avatar_hash: Some([0x11; 32]),
+                    avatar_fingerprint: None,
+                    public_message: None,
+                }),
+                checked_at_ms: 111,
+            },
+        );
+        contact_profiles.insert(
+            Identifier::from([8u8; 32]),
+            ContactProfileEntry {
+                profile: None,
+                checked_at_ms: 222,
+            },
+        );
+        let entry = IdentityEntry {
+            id: Identifier::from([9u8; 32]),
+            balance: 0,
+            revision: 0,
+            identity_index: Some(1),
+            last_updated_balance_block_time: None,
+            last_synced_keys_block_time: None,
+            dpns_names: Vec::new(),
+            contested_dpns_names: Vec::new(),
+            status: IdentityStatus::Active,
+            wallet_id: None,
+            dashpay_profile: None,
+            dashpay_payments: Default::default(),
+            contact_profiles,
+            ignored_senders: Default::default(),
+        };
+        let mut ffi = IdentityEntryFFI::from_entry(&entry);
+
+        // A confirmed-absent entry now rides as an `is_present == false`
+        // tombstone instead of being dropped — both entries are projected.
+        assert_eq!(ffi.contact_profiles_count, 2);
+        let rows =
+            unsafe { std::slice::from_raw_parts(ffi.contact_profiles, ffi.contact_profiles_count) };
+
+        let present = &rows[0];
+        assert_eq!(present.contact_id, [7u8; 32]);
+        assert!(present.is_present);
+        assert_eq!(
+            unsafe { std::ffi::CStr::from_ptr(present.display_name) }
+                .to_str()
+                .unwrap(),
+            "Carol"
+        );
+        assert!(present.avatar_hash_present);
+        assert_eq!(present.avatar_hash, [0x11; 32]);
+        assert!(!present.avatar_fingerprint_present);
+        assert_eq!(present.checked_at_ms, 111);
+
+        let absent = &rows[1];
+        assert_eq!(absent.contact_id, [8u8; 32]);
+        assert!(!absent.is_present);
+        assert!(absent.display_name.is_null());
+        assert!(absent.bio.is_null());
+        assert!(absent.avatar_url.is_null());
+        assert!(absent.public_message.is_null());
+        assert!(!absent.avatar_hash_present);
+        assert!(!absent.avatar_fingerprint_present);
+        // The self-heal timestamp must still ride so Swift can delete the stale
+        // row and the negative-cache backoff is preserved.
+        assert_eq!(absent.checked_at_ms, 222);
+
+        unsafe { free_identity_entry_ffi(&mut ffi) };
+        assert!(ffi.contact_profiles.is_null());
+        assert_eq!(ffi.contact_profiles_count, 0);
+        // Idempotent — second free (null strings on the tombstone included)
+        // must not double-free.
         unsafe { free_identity_entry_ffi(&mut ffi) };
     }
 

@@ -1222,12 +1222,11 @@ public class PlatformWalletPersistenceHandler {
             // Upsert the cached contact-profile rows for this identity.
             //
             // One row per contact (keyed by `(owner, contact)`), distinct
-            // from the own-profile upsert above. Rust projects only
-            // present profiles (the negative cache is skipped), so a
-            // contact missing from this flush does NOT mean its profile
-            // was removed — we mirror the own-profile + DPNS policy:
-            // insert/refresh, never cascade-prune. An empty array leaves
-            // any existing rows intact.
+            // from the own-profile upsert above. Rust emits a row only for
+            // contacts it (re)fetched this sweep — present ones upsert,
+            // confirmed-absent ones (`is_present == false`) delete. A
+            // contact simply MISSING from this flush is "no update" (not a
+            // delete). An empty array leaves any existing rows intact.
             if !entry.contactProfiles.isEmpty {
                 upsertDashpayContactProfiles(
                     identityRow: row,
@@ -1424,10 +1423,13 @@ public class PlatformWalletPersistenceHandler {
     /// a stale avatar. This is the same field-level overwrite the
     /// own-profile `upsertDashpayProfile` does, just per contact.
     ///
-    /// Append/refresh only: contacts absent from this flush keep their
-    /// existing rows (Rust projects only present profiles, so absence is
-    /// "no update", not "delete"). The cache cannot grow duplicate rows
-    /// for the same contact because of the `#Unique` compound key.
+    /// A contact NOT in this flush keeps its existing row (Rust emits a row
+    /// only for contacts it (re)fetched this sweep, so a missing snapshot is
+    /// "no update"). A contact present in the flush as a `isPresent == false`
+    /// tombstone is DELETED — that's a contact who removed their on-chain
+    /// profile, and the stale name/avatar must not survive. The cache cannot
+    /// grow duplicate rows for the same contact because of the `#Unique`
+    /// compound key.
     ///
     /// Runs on `serialQueue` — only called from inside
     /// `persistIdentities`'s `onQueue` body.
@@ -1444,6 +1446,14 @@ public class PlatformWalletPersistenceHandler {
                     contactIdentityId: contactIdentityId
                 )
             )
+            guard profile.isPresent else {
+                // Confirmed-absent: delete the stale row if one exists; a
+                // never-persisted contact is a no-op.
+                if let existing = try? backgroundContext.fetch(descriptor).first {
+                    backgroundContext.delete(existing)
+                }
+                continue
+            }
             if let existing = try? backgroundContext.fetch(descriptor).first {
                 existing.displayName = profile.displayName
                 existing.bio = profile.bio
@@ -2367,14 +2377,14 @@ public class PlatformWalletPersistenceHandler {
         /// implicit `$ownerId` is optional in the contract schema.
         let dashpayProfile: DashpayProfileSnapshot?
         /// Cached **contact** profiles for this identity — one per
-        /// **present** entry of the Rust `contact_profiles` map
+        /// (re)fetched entry of the Rust `contact_profiles` map
         /// (`IdentityEntryFFI.contact_profiles`). Distinct from
         /// `dashpayProfile` (the owner's own profile): these are
         /// contacts' public profiles, keyed by the contact's identity
-        /// id. Empty when no contact profile rode this flush; the
-        /// per-contact rows are upserted independently and a missing
-        /// snapshot leaves existing rows intact (append/refresh, never
-        /// cascade-prune — same policy as the own-profile + DPNS paths).
+        /// id. Empty when no contact profile rode this flush. Each row is
+        /// applied independently: a present one upserts, an
+        /// `isPresent == false` tombstone deletes, and a contact simply
+        /// missing from the array is left intact (no update).
         let contactProfiles: [ContactProfileSnapshot]
     }
 
@@ -2387,6 +2397,11 @@ public class PlatformWalletPersistenceHandler {
     /// leading `contactIdentityId` key and trailing `checkedAtMs`.
     struct ContactProfileSnapshot {
         let contactIdentityId: Data
+        /// `false` for a confirmed-absent contact (a tombstone row): the
+        /// persist side emits one so the upsert can DELETE the stale row for
+        /// a contact who removed their profile. `true` for a present profile
+        /// (all fields below are authoritative).
+        let isPresent: Bool
         let displayName: String?
         let bio: String?
         let publicMessage: String?
@@ -5821,9 +5836,9 @@ private func persistIdentitiesCallback(
             }
 
             // Walk the cached contact-profile rows into owned snapshots.
-            // Only present profiles are projected by Rust (the negative
-            // cache is skipped on the persist side), so every row here is
-            // a present profile. Each `*_present` sub-flag is checked
+            // Rust projects a row per (re)fetched contact — present
+            // profiles and `is_present == false` tombstones for
+            // confirmed-absent ones. Each `*_present` sub-flag is checked
             // individually because zero-valued payloads (empty strings,
             // all-zero hashes / fingerprints) are valid contract values.
             // The Rust-side `free_identity_entry_ffi` releases the row
@@ -5844,6 +5859,7 @@ private func persistIdentitiesCallback(
                     contactProfiles.append(
                         .init(
                             contactIdentityId: dataFromTuple32(row.contact_id),
+                            isPresent: row.is_present,
                             displayName: row.display_name.map { String(cString: $0) },
                             bio: row.bio.map { String(cString: $0) },
                             publicMessage: row.public_message.map { String(cString: $0) },

@@ -20,11 +20,14 @@ import SwiftData
 /// networks don't collide in a shared local store.
 ///
 /// Populated by the platform-wallet persister callback whenever an
-/// `IdentityEntry.contact_profiles` entry rides on the FFI changeset
-/// (one `ContactProfileRowFFI` per **present** profile — confirmed-absent
-/// negative-cache entries are not projected). Read back at load to
-/// rebuild the Rust `contact_profiles` map so the cache survives
-/// relaunch instead of refetching every contact on the first sweep.
+/// `IdentityEntry.contact_profiles` entry rides on the FFI changeset.
+/// A present profile (`ContactProfileRowFFI.is_present == true`) upserts
+/// this row; a confirmed-absent entry (`is_present == false`) DELETEs it,
+/// so a contact who removed their on-chain profile can't leave a stale
+/// name/avatar behind. Read back at load to rebuild the Rust
+/// `contact_profiles` map (present entries only — the negative cache
+/// re-derives on the first sweep) so the cache survives relaunch instead
+/// of refetching every contact.
 ///
 /// Cascade-deleted from `PersistentIdentity.contactProfiles` — losing
 /// the owner identity drops its cached contact profiles.
