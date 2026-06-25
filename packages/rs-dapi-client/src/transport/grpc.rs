@@ -146,6 +146,39 @@ impl CanRetry for dapi_grpc::tonic::Status {
                 | Unimplemented
         )
     }
+
+    /// Returns the Envoy-advertised ban duration for a `ResourceExhausted`
+    /// response, or `None` if this is not a rate-limit or carries no usable
+    /// `RateLimit-Reset` header.
+    ///
+    /// Envoy's global rate-limit filter emits `RateLimit-Reset: <seconds>` when
+    /// `LIMIT_RESPONSE_HEADERS_ENABLED=true` is set on the Lyft RLS container
+    /// (see `packages/dashmate/docker-compose.rate_limiter.yml`).  The value is
+    /// the whole-second count until the per-IP window resets.
+    ///
+    /// Parse rules (adversarial-input safe):
+    /// * Non-`ResourceExhausted` code → `None`.
+    /// * Header absent, non-numeric, or `0` → `None` (caller uses normal ban
+    ///   ladder).
+    /// * Valid positive integer → clamped to
+    ///   [`[MIN_RATE_LIMIT_BAN_SECS, MAX_RATE_LIMIT_BAN_SECS]`]
+    ///   (`dapi_client.rs`) and returned as `Some(Duration)`.
+    fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
+        use crate::dapi_client::{MAX_RATE_LIMIT_BAN_SECS, MIN_RATE_LIMIT_BAN_SECS};
+        use dapi_grpc::tonic::Code;
+        if self.code() != Code::ResourceExhausted {
+            return None;
+        }
+        let secs = self
+            .metadata()
+            .get("ratelimit-reset")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .filter(|&s| s > 0)?;
+        Some(std::time::Duration::from_secs(
+            secs.clamp(MIN_RATE_LIMIT_BAN_SECS, MAX_RATE_LIMIT_BAN_SECS),
+        ))
+    }
 }
 
 /// Macro to implement the `TransportRequest` trait for a given request type, response type, client type, and settings.

@@ -106,6 +106,12 @@ impl CanRetry for TransportError {
             TransportError::Grpc(status) => status.can_retry(),
         }
     }
+
+    fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
+        match self {
+            TransportError::Grpc(status) => status.rate_limit_ban_duration(),
+        }
+    }
 }
 
 /// Serialization of [TransportError].
@@ -210,6 +216,65 @@ mod tests {
 
         let non_retryable = TransportError::Grpc(dapi_grpc::tonic::Status::not_found("permanent"));
         assert!(!non_retryable.can_retry());
+    }
+
+    /// `rate_limit_ban_duration` returns `Some` only for `ResourceExhausted` with
+    /// a parseable positive `ratelimit-reset` header.  Every other code returns
+    /// `None` regardless of headers.
+    #[test]
+    fn test_tonic_status_rate_limit_ban_duration() {
+        use dapi_grpc::tonic::metadata::MetadataValue;
+
+        // ResourceExhausted + valid header → Some.
+        let mut status = dapi_grpc::tonic::Status::new(Code::ResourceExhausted, "429");
+        status
+            .metadata_mut()
+            .insert("ratelimit-reset", MetadataValue::try_from("30").unwrap());
+        assert_eq!(
+            status.rate_limit_ban_duration(),
+            Some(std::time::Duration::from_secs(30))
+        );
+
+        // ResourceExhausted without header → None.
+        let no_header = dapi_grpc::tonic::Status::new(Code::ResourceExhausted, "429");
+        assert!(no_header.rate_limit_ban_duration().is_none());
+
+        // Non-ResourceExhausted codes → None regardless.
+        for code in [
+            Code::Ok,
+            Code::Unavailable,
+            Code::Internal,
+            Code::DeadlineExceeded,
+        ] {
+            let mut s = dapi_grpc::tonic::Status::new(code, "x");
+            s.metadata_mut()
+                .insert("ratelimit-reset", MetadataValue::try_from("30").unwrap());
+            assert!(
+                s.rate_limit_ban_duration().is_none(),
+                "code {code:?} must return None"
+            );
+        }
+    }
+
+    #[test]
+    fn test_transport_error_rate_limit_ban_duration_delegates() {
+        use dapi_grpc::tonic::metadata::MetadataValue;
+
+        let mut status = dapi_grpc::tonic::Status::new(Code::ResourceExhausted, "429");
+        status
+            .metadata_mut()
+            .insert("ratelimit-reset", MetadataValue::try_from("45").unwrap());
+        let rate_limited = TransportError::Grpc(status);
+        assert_eq!(
+            rate_limited.rate_limit_ban_duration(),
+            Some(std::time::Duration::from_secs(45))
+        );
+        // Still retryable — rate-limit ban duration doesn't affect can_retry.
+        assert!(rate_limited.can_retry());
+
+        let unavailable = TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("down"));
+        assert!(unavailable.rate_limit_ban_duration().is_none());
+        assert!(unavailable.can_retry());
     }
 
     #[test]

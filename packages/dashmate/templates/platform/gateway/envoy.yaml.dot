@@ -33,6 +33,52 @@
         max_concurrent_streams: {{= it.platform.gateway.listeners.dapiAndDrive.http2.maxConcurrentStreams }}
       # Stream idle timeout
       stream_idle_timeout: 15s
+{{? it.platform.gateway.rateLimiter.enabled }}
+      # Make the grpc-web over-limit reply readable as a rate-limit BAN by browser
+      # (grpc-web/wasm) clients. The native gRPC over-limit local reply is HTTP 200
+      # + grpc-status:8 (trailers-only) because Envoy detects content-type
+      # application/grpc; the grpc-web request (application/grpc-web+proto) is NOT
+      # gRPC-detected, so `rate_limited_as_resource_exhausted` never tags it and the
+      # browser sees a bare HTTP 429 with no grpc-status -> tonic-web maps it to
+      # Unavailable, not ResourceExhausted, so rate_limit_ban_duration() returns None.
+      #
+      # This mapper rewrites ONLY the grpc-web over-limit local reply (status 429 AND
+      # request carried `x-grpc-web`, which the native and JSON-RPC paths never send)
+      # to status 200 + grpc-status:8. Because the reply is headers-only (empty body,
+      # end_stream on headers) the grpc_web encoder passes it through untouched
+      # (encodeHeaders returns Continue when end_stream=true), so grpc-status:8 and
+      # the existing ratelimit-reset header stay CO-LOCATED in the HTTP response
+      # headers. tonic-web's create_response then builds the Status (and its metadata,
+      # incl. ratelimit-reset) from those headers via Status::from_header_map without
+      # reading the body, giving browser clients the same ResourceExhausted +
+      # ratelimit-reset node-backoff the native client gets. CORS expose_headers
+      # already lists both grpc-status and ratelimit-reset (see virtual host below).
+      local_reply_config:
+        mappers:
+          - filter:
+              and_filter:
+                filters:
+                  - status_code_filter:
+                      comparison:
+                        op: EQ
+                        value:
+                          default_value: 429
+                          runtime_key: ratelimit_grpc_web_local_reply_status
+                  - header_filter:
+                      header:
+                        name: x-grpc-web
+                        present_match: true
+            status_code: 200
+            headers_to_add:
+              - header:
+                  key: grpc-status
+                  value: "8"
+                append_action: OVERWRITE_IF_EXISTS_OR_ADD
+              - header:
+                  key: grpc-message
+                  value: "rate limited"
+                append_action: OVERWRITE_IF_EXISTS_OR_ADD
+{{?}}
 {{? it.platform.gateway.log.accessLogs }}
       access_log:
       {{~ it.platform.gateway.log.accessLogs :log }}
@@ -78,6 +124,24 @@
 {{?}}
       http_filters:
         # TODO: Introduce when stable https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/adaptive_concurrency_filter.html
+        # Filter order matters: cors and grpc_web MUST precede ratelimit so the
+        # over-limit RESOURCE_EXHAUSTED *local reply* gets CORS headers + grpc-web
+        # content-type framing on encode, letting browser (grpc-web) clients read
+        # RateLimit-Reset for the same node-backoff the native client does. A local
+        # reply only traverses encoder filters positioned ABOVE its generating
+        # filter (Envoy #11776), so ratelimit must come last (before router).
+        # Live-verified on the pinned Envoy build (PR #3951): the grpc-web over-limit
+        # reply is trailers-only (HTTP 200 + grpc-status:8 + ratelimit-reset as HTTP
+        # headers, empty body — grpc_web leaves it untouched, no body trailer frame).
+        # The grpc-status:8 itself is synthesized by the local_reply_config mapper
+        # above (Envoy's gRPC detection ignores application/grpc-web), giving browser
+        # clients the same ResourceExhausted + ratelimit-reset node-backoff as native.
+        - name: envoy.filters.http.cors
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+        - name: envoy.filters.http.grpc_web
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_web.v3.GrpcWeb
         {{? it.platform.gateway.rateLimiter.enabled}}
         - name: envoy.filters.http.ratelimit
           typed_config:
@@ -96,12 +160,6 @@
                 timeout: 0.5s
               transport_api_version: V3
         {{?}}
-        - name: envoy.filters.http.grpc_web
-          typed_config:
-            "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_web.v3.GrpcWeb
-        - name: envoy.filters.http.cors
-          typed_config:
-            "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
         - name: envoy.filters.http.router
           typed_config:
             "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -198,7 +256,7 @@
                 allow_methods: GET, PUT, DELETE, POST, OPTIONS
                 allow_headers: keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,custom-header-1,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,x-grpc-web,grpc-timeout
                 max_age: "1728000"
-                expose_headers: custom-header-1,grpc-status,grpc-message,code,drive-error-data-bin,dash-serialized-consensus-error-bin,stack-bin
+                expose_headers: custom-header-1,grpc-status,grpc-message,code,drive-error-data-bin,dash-serialized-consensus-error-bin,stack-bin,ratelimit-reset,ratelimit-limit,ratelimit-remaining
 
 static_resources:
   listeners:

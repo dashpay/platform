@@ -13,6 +13,7 @@
 
 # Env file
 .env
+.env.*.bak
 
 # NYC test runner
 .nyc_output
