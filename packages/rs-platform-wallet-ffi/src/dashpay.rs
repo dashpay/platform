@@ -825,6 +825,11 @@ pub unsafe extern "C" fn platform_wallet_build_auto_accept_qr(
     check_ptr!(username);
     check_ptr!(core_signer_handle);
     check_ptr!(out_uri);
+    // Zero-init the out-param before any fallible work so an early return
+    // (bad id, bad UTF-8, missing wallet, async failure, interior-NUL URI)
+    // leaves a safe null rather than uninitialized memory the caller might
+    // free — same discipline as the profile getters.
+    unsafe { *out_uri = std::ptr::null_mut() };
 
     // `read_identifier` null-checks the pointer (matches the sibling QR FFIs).
     let owner = unwrap_result_or_return!(read_identifier(owner_identity_id));

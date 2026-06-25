@@ -1344,10 +1344,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 }
                 // Structural pre-check only (no signer here): DIP-15 size + the
                 // ECDSA key-type byte. The real ECDSA verify is in the drain.
+                // The lower bound is the exact ECDSA proof length —
+                // key_type(1) + timestamp(4) + sig_size(1) + signature(64) = 70
+                // — so a shorter 0x00-led byte run can't burn a drain
+                // round-trip before being discarded as malformed.
                 let structurally_ok = request
                     .auto_accept_proof
                     .as_deref()
-                    .is_some_and(|p| (38..=102).contains(&p.len()) && p[0] == 0x00);
+                    .is_some_and(|p| (70..=102).contains(&p.len()) && p[0] == 0x00);
                 if structurally_ok {
                     picked.push(*sender);
                     already += 1;
