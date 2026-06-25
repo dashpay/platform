@@ -370,21 +370,19 @@ audit (`DIP_CONFORMANCE_GAPS.md`). Prioritized; check off as done.
       shim with zero type-level consumers besides the `KeychainSigner` conformance. Decided
       it isn't worth a churn commit — keep it.
 
-  - [ ] **Bot re-review follow-ups (deferred; thepastaclaw 2026-06-25).** Two 🟡 suggestions
-    verified valid but scoped out — left as open PR threads for tracking:
-    - **Confirmed-absent contact profiles can't delete persisted Swift rows**
-      (`rs-platform-wallet-ffi/identity_persistence.rs` `allocate_contact_profile_rows`). A
-      present→absent profile (a contact who deletes their DashPay profile) leaves a stale
-      row, since the FFI emits only present rows and the Swift handler upserts. Needs an ABI
-      change — an `is_present: false` discriminator on `ContactProfileRowFFI` + a Swift DELETE
-      branch (or a parallel tombstone array). Deferred: rare trigger (profile deletion), and
-      the staleness is cosmetic + self-healing (a re-created profile re-emits a present row).
-    - **Profile refresh `checked_at_ms` not durable when content is unchanged**
-      (`wallet/identity/network/profile.rs` — `sync_contact_profiles` persists on
-      `any_changed` only). A cold start re-fetches unchanged profiles once. Bounded by the 1h
-      `CONTACT_PROFILE_REFRESH_MS` gate and self-correcting on that round. The
-      persist-on-content-change fixpoint is intentional; a debounced timestamp-persist (or a
-      per-owner heartbeat row) is the fix when picked up.
+  - [x] **Bot re-review follow-ups — DONE (thepastaclaw 2026-06-25).** Three 🟡 suggestions
+    fixed (security/FFI-auditor + Swift reviewed):
+    - [x] **Confirmed-absent contact profiles delete persisted Swift rows** (`03f1fdb13a`).
+      `allocate_contact_profile_rows` emits absent entries as `is_present = false` tombstone
+      rows on `ContactProfileRowFFI`; the Swift upsert deletes the row for any tombstone, so a
+      contact who removes their on-chain profile no longer leaves a stale name/avatar.
+    - [x] **Profile refresh `checked_at_ms` durable** (`24484f3355`). `sync_contact_profiles`
+      persists whenever a sweep refetched anything (1h-gated, paired with the fetch — no write
+      amplification), so cold start keeps the refresh-cache timestamps.
+    - [x] **Contact-request per-sweep page budget** (`9ce5723115`). `MAX_..._PAGES_PER_SWEEP =
+      50`; the `$createdAt` high-water cursor resumes a budgeted partial next sweep. The
+      complete server-side blocked-sender filter still needs a contract-level mechanism — see
+      the Contract-track item below.
 
 - [ ] **§6b — restore the deferred-crypto queue into `PlatformWalletInfo` on load.**
   Reader `all_pending_contact_crypto` exists (`cfg(test)`-gated); blocked upstream by
