@@ -74,13 +74,20 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_start(
 /// note/sync-state row can be written after this returns) and its
 /// completion-event *dispatch* on the Rust side has run.
 ///
-/// Returns `ErrorShutdownIncomplete` instead of `Success` when that drain
-/// did **not** complete cleanly (the in-flight pass timed out on the join
-/// backstop, or the loop ended non-cleanly). The terminal coordinator
-/// status is rendered into the result message. On this code the host must
-/// **not** free the callback context immediately — a lingering pass may
-/// still fire one final callback through it (symmetric with
-/// `platform_wallet_manager_destroy`).
+/// Returns `ErrorShutdownIncomplete` instead of `Success` in either of two
+/// cases, so `Success` accurately implies **no live shielded worker or
+/// orphan remains**:
+/// - the drain did not complete cleanly (the in-flight pass timed out on the
+///   join backstop, or the loop ended non-cleanly); or
+/// - the drain was clean but a prior-generation shielded thread is still
+///   parked alive as an orphan (a tight `stop()`->`start()` reap detached it
+///   past the wedge backstop).
+///
+/// The terminal coordinator status is rendered into the result message. On
+/// this code the host must **not** free the callback context immediately — a
+/// lingering pass or parked orphan may still fire one final callback through
+/// it (symmetric with `platform_wallet_manager_destroy` and the shielded
+/// Clear flow).
 ///
 /// Caveat on host-observed events: a host that marshals the completion
 /// callback onto its own executor (e.g. the Swift trampoline hops it to
@@ -96,7 +103,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(async {
+        let status = runtime().block_on(async {
             // Bound the quiesce with the same backstop `shutdown()` uses so
             // a stalled in-flight pass can't hang the host's stop call
             // forever. Cancellation makes the drain prompt; this only
@@ -113,9 +120,14 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
                 Ok(status) => status,
                 Err(_elapsed) => platform_wallet::CoordinatorThreadStatus::Timeout,
             }
-        })
+        });
+        // Capture orphan liveness while we still hold the manager: a clean
+        // quiesce drains the live slot but not a prior-generation thread
+        // parked as an orphan.
+        let shielded_alive = manager.shielded_worker_alive();
+        (status, shielded_alive)
     });
-    let status = unwrap_option_or_return!(option);
+    let (status, shielded_alive) = unwrap_option_or_return!(option);
     // Symmetric with `platform_wallet_manager_destroy`: a non-clean drain
     // means the shielded loop may still hold a reference to the host-owned
     // event-handler / persister context and could fire one final callback,
@@ -128,6 +140,19 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
                 "shielded sync stop did not drain cleanly ({status:?}); \
                  host must not free the callback context immediately"
             ),
+        );
+    }
+    // Even on a clean drain, a parked prior-generation shielded thread may
+    // still be alive and holding the host's callback context — mirror
+    // `clear_shielded` / `destroy` and refuse the clean return so the host
+    // does not free that context out from under a lingering orphan.
+    if shielded_alive {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
+            "shielded sync stop drained cleanly but a prior-generation shielded \
+             worker is still parked alive; host must not free the callback \
+             context immediately"
+                .to_string(),
         );
     }
     PlatformWalletFFIResult::ok()

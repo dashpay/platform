@@ -299,6 +299,25 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         Arc::clone(&self.shielded_sync_manager)
     }
 
+    /// Whether a shielded-sync worker is still alive — either its live
+    /// registry slot or a prior-generation thread parked as an orphan after
+    /// a tight `stop()`->`start()` reap had to detach it past the wedge
+    /// backstop. Such an orphan still holds an `Arc` to the persister /
+    /// event-handler context and may fire one final callback, so a clean
+    /// [`quiesce`](ShieldedSyncManager::quiesce) status alone does not prove
+    /// the shielded worker is gone.
+    ///
+    /// This is the same shielded-scoped liveness gate
+    /// [`clear_shielded`](Self::clear_shielded) consults; it is exposed so
+    /// the FFI `shielded_sync_stop` can refuse a misleading clean return
+    /// while a parked orphan lingers (symmetric with `clear_shielded` /
+    /// `destroy`).
+    #[cfg(feature = "shielded")]
+    pub fn shielded_worker_alive(&self) -> bool {
+        self.registry
+            .any_alive_for(super::WalletWorker::ShieldedSync)
+    }
+
     /// Get a clone of a wallet by its ID.
     pub async fn get_wallet(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
         let wallets = self.wallets.read().await;
