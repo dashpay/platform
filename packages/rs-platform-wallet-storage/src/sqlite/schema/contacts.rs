@@ -341,6 +341,10 @@ pub(crate) fn load_state(
                         is_hidden,
                         accepted_accounts,
                         payment_channel_broken,
+                        // System-derived incoming-only label; this backend has
+                        // no column for it, so it restores empty and re-derives
+                        // on the next contact-info sweep.
+                        contact_account_label: None,
                     },
                 );
             }

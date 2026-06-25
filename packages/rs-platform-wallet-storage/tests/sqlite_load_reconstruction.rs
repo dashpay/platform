@@ -546,6 +546,10 @@ fn established_contact(owner: u8, contact: u8) -> EstablishedContact {
         // Non-default so the round-trip test pins the new
         // `payment_channel_broken` column through write + read.
         payment_channel_broken: true,
+        // This backend has no column for the system-derived account label,
+        // so the read path always reconstructs it as `None`; keep the
+        // fixture `None` to match through the round-trip.
+        contact_account_label: None,
     }
 }
 

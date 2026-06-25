@@ -3335,7 +3335,7 @@ mod tests {
         use dashcore::secp256k1::{
             ecdsa, rand::rngs::OsRng, Message, PublicKey, Secp256k1, SecretKey,
         };
-        use key_wallet::bip32::DerivationPath;
+        use key_wallet::bip32::{DerivationPath, ExtendedPubKey};
         use key_wallet::signer::{Signer as KwSigner, SignerMethod};
 
         /// Fixed-key in-memory signer used only by this test. Mirrors how a
@@ -3369,6 +3369,13 @@ mod tests {
 
             async fn public_key(&self, _path: &DerivationPath) -> Result<PublicKey, Self::Error> {
                 Ok(self.public)
+            }
+
+            async fn extended_public_key(
+                &self,
+                _path: &DerivationPath,
+            ) -> Result<ExtendedPubKey, Self::Error> {
+                Err("FixedKeySigner does not derive extended public keys".to_string())
             }
         }
 

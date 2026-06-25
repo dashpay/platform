@@ -227,6 +227,10 @@ fn managed_identity_from_entry(
         // starts them at `None` so the next sweep does one safe full re-fetch.
         high_water_received_ms: None,
         high_water_sent_ms: None,
+        // Per-session guard tracking which contacts have already triggered a
+        // payment-history rescan; transient, so a cold restore starts empty
+        // and the next sweep re-evaluates.
+        dashpay_rescan_triggered: Default::default(),
     }
 }
 
