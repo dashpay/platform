@@ -700,7 +700,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 let Some(managed) = info.identity_manager.managed_identity_mut(&owner_id) else {
                     continue;
                 };
-                let mut any_changed = false;
                 for (contact_id, profile) in owner_results {
                     if apply_fetched_profile(
                         &mut managed.contact_profiles,
@@ -709,20 +708,24 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         now_ms,
                     ) {
                         written += 1;
-                        any_changed = true;
                     }
                 }
-                // Persist one changeset per owner, only when something changed —
-                // the refetch-all-each-sweep first cut stays a persistence
-                // fixpoint. A failed store self-heals on the next sweep.
-                if any_changed {
-                    if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                        tracing::warn!(
-                            owner = %owner_id,
-                            error = %e,
-                            "Failed to persist contact profiles; will retry next sweep"
-                        );
-                    }
+                // Persist one changeset per owner. Every owner reaching here had
+                // ≥1 profile (re)fetched this sweep, so `checked_at_ms` advanced
+                // for at least one contact — persist unconditionally, not only on
+                // content change, so the refresh-cache timestamps are durable. A
+                // cold start otherwise reverts each timestamp to the last
+                // content-changing sweep and re-fetches every still-fresh profile.
+                // No meaningful write amplification: the store is paired with the
+                // network fetch that just ran, and fetches are gated to once per
+                // `CONTACT_PROFILE_REFRESH_MS` per contact. A failed store
+                // self-heals on the next sweep.
+                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
+                    tracing::warn!(
+                        owner = %owner_id,
+                        error = %e,
+                        "Failed to persist contact profiles; will retry next sweep"
+                    );
                 }
             }
         }
