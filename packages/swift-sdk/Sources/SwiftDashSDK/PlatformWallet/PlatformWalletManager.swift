@@ -162,12 +162,15 @@ public class PlatformWalletManager: ObservableObject {
         // Capture the CODE (not just free the message) for the two calls
         // that CAN report `.errorShutdownIncomplete`: `shielded_sync_stop`
         // and `destroy`. Rust returns that code when a background
-        // coordinator did not drain within the join deadline — meaning a
-        // lingering `!Send` coordinator thread may still hold the
-        // `passUnretained` context pointers Rust was handed for our
-        // `persistenceHandler` / `eventHandler` and fire ONE final callback
-        // through them. The contract: on that code the host must NOT free
-        // the callback context immediately.
+        // coordinator did not drain within the join deadline, OR — for
+        // `shielded_sync_stop` — when the drain was clean but a prior-
+        // generation shielded thread is still parked alive as an orphan
+        // (a tight `stop()`→`start()` reap that had to detach it past the
+        // wedge backstop). In either case a lingering `!Send` coordinator
+        // thread may still hold the `passUnretained` context pointers Rust
+        // was handed for our `persistenceHandler` / `eventHandler` and fire
+        // ONE final callback through them. The contract: on that code the
+        // host must NOT free the callback context immediately.
         let shieldedStopCode =
             platform_wallet_manager_shielded_sync_stop(handle).discardReturningCode()
         let destroyCode =
