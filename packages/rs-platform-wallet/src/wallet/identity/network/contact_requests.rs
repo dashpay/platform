@@ -1019,10 +1019,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             };
 
             // Max `$createdAt` over docs FETCHED this sweep (not over docs that
-            // survive ingest's collapse/dedup) — the cursor records
-            // fetch-completeness. Reaching here means the received fetch
-            // exhausted without error, so its cursor may advance; the sent
-            // cursor advances only if `sent_ok`.
+            // survive ingest's collapse/dedup) — the cursor records how far this
+            // sweep got. The fetch returned without error, so the received
+            // cursor may advance to that max; the sent cursor advances only if
+            // `sent_ok`. The fetch is `$createdAt`-ascending and may stop at a
+            // per-sweep page budget, so this may be a partial — advancing to the
+            // max fetched is exactly what lets the next sweep resume the rest.
             let max_received = received_docs
                 .values()
                 .filter_map(|d| d.as_ref())
