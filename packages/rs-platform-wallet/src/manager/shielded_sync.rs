@@ -242,11 +242,20 @@ impl ShieldedSyncManager {
     /// Stop the background sync loop. No-op if not running.
     ///
     /// **Cancel-only**: this requests cancellation and returns
-    /// immediately. A pass already inside `sync_now` /
-    /// `coordinator.sync()` keeps running to completion (including its
-    /// persister-callback fan-out). For a real "nothing is running and
-    /// nothing more will be persisted" barrier — required by Clear,
-    /// unregister, and rebind — use [`quiesce`](Self::quiesce).
+    /// immediately. The signal is delivered, but `stop()` does not wait
+    /// for any in-flight pass to settle. Because [`start`](Self::start)'s
+    /// outer `select!` polls the cancel arm `biased` first, an in-flight
+    /// `sync_now()` / `coordinator.sync()` future may be dropped at its
+    /// next `.await` (the SDK fetch, the per-note trial-decryption, the
+    /// tree commit, the persister fan-out), in which case any side
+    /// effects past the dropped await do not run. It may equally have
+    /// already completed before the signal arrived. Either way, there is
+    /// no post-condition that all persistence has finished, and a fresh
+    /// pass started after this returns is still possible — for a real
+    /// "nothing is running and nothing more will be persisted" barrier —
+    /// required by Clear, unregister, and rebind — use
+    /// [`quiesce`](Self::quiesce) (or the manager-wide
+    /// [`shutdown`](super::PlatformWalletManager::shutdown)).
     pub fn stop(&self) {
         self.lifecycle.stop();
     }

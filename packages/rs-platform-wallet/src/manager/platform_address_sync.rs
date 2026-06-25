@@ -221,13 +221,21 @@ impl PlatformAddressSyncManager {
 
     /// Stop the background sync loop. No-op if not running.
     ///
-    /// **Cancel-only**: requests cancellation and returns immediately. A
-    /// pass already inside `sync_now` keeps running to completion,
-    /// including its `on_platform_address_sync_completed` host-callback
-    /// dispatch. For a real "nothing is running and nothing more will
-    /// fire a host callback" barrier — required by manager shutdown so
-    /// the host can free the event-handler context — use
-    /// [`quiesce`](Self::quiesce).
+    /// **Cancel-only**: requests cancellation and returns immediately.
+    /// The signal is delivered, but `stop()` does not wait for any
+    /// in-flight pass to settle. Because [`start`](Self::start)'s outer
+    /// `select!` polls the cancel arm `biased` first, an in-flight
+    /// `sync_now()` future may be dropped at its next `.await` (the SDK
+    /// fetch or the `on_platform_address_sync_completed` dispatch), in
+    /// which case the host callback for that pass may or may not have
+    /// fired. It may equally have already completed before the signal
+    /// arrived. Either way, there is no post-condition that no further
+    /// host callback fires, and a fresh pass started after this returns
+    /// is still possible — for a real "nothing is running and nothing
+    /// more will fire a host callback" barrier — required by manager
+    /// shutdown so the host can free the event-handler context — use
+    /// [`quiesce`](Self::quiesce) (or the manager-wide
+    /// [`shutdown`](super::PlatformWalletManager::shutdown)).
     pub fn stop(&self) {
         self.lifecycle.stop();
     }

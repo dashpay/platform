@@ -136,7 +136,12 @@ impl CoordinatorLifecycle {
         self.quiescing.store(false, Ordering::Release);
     }
 
-    /// Cancel-only stop: signal the loop and return immediately.
+    /// Cancel-only stop: signal the loop and return immediately. Does
+    /// NOT wait for an in-flight pass to settle; the loop's outer
+    /// `select!` is `biased` toward the cancel arm, so an in-flight pass
+    /// may be dropped at its next `.await` (and any post-await side
+    /// effects in that pass do not run). Use [`quiesce`](Self::quiesce)
+    /// for a real "fully drained" barrier.
     pub(crate) fn stop(&self) {
         self.registry.cancel(self.worker);
     }
