@@ -203,7 +203,7 @@ struct AddContactView: View {
                     .accessibilityIdentifier("dashpay.addContact.retry")
                 }
             case .found(let results):
-                ForEach(results, id: \.identityId) { result in
+                ForEach(results) { result in
                     Button {
                         selectedResult = result
                         errorMessage = nil
@@ -223,7 +223,7 @@ struct AddContactView: View {
                                     .foregroundColor(.secondary)
                             }
                             Spacer()
-                            if selectedResult?.identityId == result.identityId {
+                            if selectedResult == result {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.blue)
                             }

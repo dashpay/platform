@@ -1323,9 +1323,13 @@ extension ManagedPlatformWallet {
 
 /// Simple search-result struct surfaced by `searchDpnsNames`. Mirrors
 /// the Rust `DpnsSearchResultFFI` row shape in a Sendable Swift value.
-public struct DpnsSearchResult: Sendable, Equatable {
+public struct DpnsSearchResult: Sendable, Equatable, Identifiable {
     public let identityId: Identifier
     public let fullName: String
+    /// Unique per row: a single identity can own several names that
+    /// match a prefix, and a contested name shares `fullName` across
+    /// contenders — so neither field alone is unique. Combine both.
+    public var id: String { "\(fullName)|\(identityId.toBase58String())" }
 }
 
 extension ManagedPlatformWallet {
