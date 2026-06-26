@@ -911,6 +911,11 @@ DashPayTabView (NavigationStack)
 ├─ Active-identity picker (top) — most DashPay UIs assume one active identity;
 │     menu of the wallet's managed identities (DPNS name → truncated id).
 ├─ Profile header card  → tap → ProfileView / ProfileEditorView
+│     (empty state → "Set up your DashPay profile" CTA → ProfileEditorView)
+├─ Username prompt card  → "Register a username" → RegisterNameView
+│     (shown only when an on-chain DPNS check confirms the active identity
+│      has no name; explains that without a username people can't find you
+│      by name, and that the profile display name is cosmetic, not searchable)
 ├─ Segmented control:  [ Contacts | Requests ]
 │   ├─ Contacts  → ContactsView (@Query established)
 │   │     row tap → ContactDetailView → "Send Dash" / alias / note / hide
@@ -932,6 +937,20 @@ Wire DashPay sync into the `.task` of `DashPayTabView` and/or the existing globa
 - Editor: `Form` with `displayName` (≤25), `publicMessage` (≤140), `avatarUrl`;
   live char counters; on save fetch avatar bytes for DIP-15 hash/fingerprint; call
   `createDashPayProfile` / `updateDashPayProfile(…signer:)`.
+
+**Username prompt** (`usernamePromptCard`, below the profile header)
+- A second setup CTA, independent of the profile one: shown when the active
+  identity has **no DPNS username** (confirmed by an on-chain `dpnsGetUsername`
+  check in `.task` + on app-foreground, so an identity that already has one —
+  just not yet cached, or registered meanwhile on another device — is never
+  nagged; mirrors `IdentitiesView`'s lazy fetch. A found name is persisted and
+  saved; a definitive empty result shows the card; a thrown error retries.
+  Residual: a name registered on another device *while the user sits on this
+  tab* clears on the next tab switch / app-foreground). Tap → `RegisterNameView`.
+  Copy makes the username-vs-profile distinction explicit: a **username** is the
+  searchable handle people type to add you (contact search); the profile
+  **display name** is cosmetic and not searchable. On registration the Rust path
+  persists `dpnsName`, so the prompt hides reactively via `@Query`.
 
 **ContactsView**
 - `@Query` established contacts (joined to `PersistentDashpayProfile` for

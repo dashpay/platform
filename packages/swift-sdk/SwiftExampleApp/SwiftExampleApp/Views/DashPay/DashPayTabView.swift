@@ -47,6 +47,14 @@ struct DashPayTabView: View {
     @State private var showProfileView = false
     @State private var showProfileEditor = false
     @State private var pendingEditorAfterProfileView = false
+
+    /// DPNS-username prompt state. `showRegisterName` drives the
+    /// registration sheet. `usernameResolvedIds` holds identities for
+    /// which an on-chain lookup has *confirmed* no name — the prompt only
+    /// shows for those, so an identity that has a username we simply
+    /// hadn't cached yet never gets nagged to register one.
+    @State private var showRegisterName = false
+    @State private var usernameResolvedIds: Set<Data> = []
     /// Surfaces a failed/declined "finish setup" unlock so the banner tap
     /// isn't a silent no-op (wrong seed, or a watch-only wallet with no
     /// Keychain mnemonic).
@@ -211,11 +219,34 @@ struct DashPayTabView: View {
                         .environmentObject(walletManager)
                     }
                 }
+                .sheet(isPresented: $showRegisterName) {
+                    if let identity = activeIdentity {
+                        // RegisterNameView brings its own NavigationView +
+                        // Cancel toolbar; the Rust register path queues an
+                        // IdentityChangeSet that persists the new dpnsName,
+                        // so this prompt hides reactively — the onRegistered
+                        // callback is a no-op here.
+                        RegisterNameView(identity: identity, onRegistered: { _ in })
+                            .environmentObject(walletManager)
+                            .environmentObject(appState)
+                    }
+                }
         }
         .environmentObject(contactMeta)
         .onAppear { tabVisible = true; refreshSyncCadence() }
         .onDisappear { tabVisible = false; refreshSyncCadence() }
-        .onChange(of: scenePhase) { _, _ in refreshSyncCadence() }
+        .onChange(of: scenePhase) { _, phase in
+            refreshSyncCadence()
+            // Re-confirm the username on app-foreground: `.task` already
+            // re-runs on tab re-appearance, but a name registered on
+            // another device while the user sits on this tab would
+            // otherwise keep the "register a username" prompt up until
+            // the next tab switch. (A name registered in-app hides the
+            // prompt immediately via @Query.)
+            if phase == .active {
+                Task { await resolveUsernameIfNeeded(for: activeIdentity) }
+            }
+        }
         .alert(
             "Couldn't finish setup",
             isPresented: Binding(
@@ -235,6 +266,7 @@ struct DashPayTabView: View {
             // this a no-op sentinel return.
             _ = try? await walletManager.dashPaySyncNow()
             loadOwnProfileFromCache()
+            await resolveUsernameIfNeeded(for: activeIdentity)
         }
         .onChange(of: walletManager.dashPaySyncIsSyncing) { _, syncing in
             // Re-read the own-profile cache after every completed
@@ -284,6 +316,8 @@ struct DashPayTabView: View {
                 }
 
                 profileHeaderCard(identity: identity)
+
+                usernamePromptCard(identity: identity)
 
                 dashPayBalanceRow(identity: identity)
 
@@ -523,6 +557,56 @@ struct DashPayTabView: View {
         }
     }
 
+    // MARK: - Username (DPNS) prompt
+
+    /// Prompt to register a DPNS username — the searchable handle other
+    /// users type to find and add you. Shown only once an on-chain check
+    /// has confirmed the active identity has no name (see
+    /// `resolveUsernameIfNeeded`), so an identity that already has one is
+    /// never nagged. Distinct from the profile card: the profile's
+    /// display name is cosmetic and not searchable.
+    @ViewBuilder
+    private func usernamePromptCard(identity: PersistentIdentity) -> some View {
+        let hasName = (identity.mainDpnsName ?? identity.dpnsName)
+            .map { !$0.isEmpty } ?? false
+        if !hasName, usernameResolvedIds.contains(identity.identityId) {
+            Button {
+                showRegisterName = true
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "at.badge.plus")
+                        .font(.title2)
+                        .foregroundColor(.blue)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Register a username")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                        Text(
+                            "Without a username, people can't find you by name to send "
+                                + "a request. Your profile name is just a display name — "
+                                + "it isn't searchable."
+                        )
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(12)
+                .background(Color.blue.opacity(0.06))
+                .cornerRadius(12)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .accessibilityIdentifier("dashpay.usernamePrompt")
+        }
+    }
+
     // MARK: - DashPay balance
 
     /// Funds received from contacts — the sum of this identity's
@@ -598,6 +682,44 @@ struct DashPayTabView: View {
                 avatarHash: persisted.avatarHash,
                 avatarFingerprint: persisted.avatarFingerprint
             )
+        }
+    }
+
+    /// Confirm whether the active identity has a DPNS username, so the
+    /// "register a username" prompt only nags identities that genuinely
+    /// have none. If a name exists on-chain but wasn't cached, persist it
+    /// (the prompt stays hidden); if the lookup definitively returns
+    /// none, mark the id resolved so the prompt can show. A thrown error
+    /// (offline / transient) leaves it unresolved to retry on a later
+    /// pass — we never prompt on an unverified guess. Mirrors the lazy
+    /// DPNS fetch in `IdentitiesView`.
+    private func resolveUsernameIfNeeded(for identity: PersistentIdentity?) async {
+        guard let identity else { return }
+        if let name = identity.mainDpnsName ?? identity.dpnsName, !name.isEmpty {
+            return
+        }
+        guard let sdk = appState.sdk else { return }
+        do {
+            let usernames = try await sdk.dpnsGetUsername(
+                identityId: identity.identityIdBase58,
+                limit: 1
+            )
+            if let label = usernames.first?["label"] as? String, !label.isEmpty {
+                PersistentIdentity.updateDpnsName(
+                    in: modelContext,
+                    identityId: identity.identityId,
+                    dpnsName: label
+                )
+                // updateDpnsName leaves persistence to the caller (matches
+                // IdentitiesView's lazy fetch) — flush so a name we just
+                // re-discovered survives a kill before the next autosave.
+                try? modelContext.save()
+            } else {
+                usernameResolvedIds.insert(identity.identityId)
+            }
+        } catch {
+            // Unverified (offline / transient) — leave unresolved so a
+            // later pass retries rather than nagging on a guess.
         }
     }
 
