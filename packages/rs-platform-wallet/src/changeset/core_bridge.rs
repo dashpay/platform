@@ -51,16 +51,22 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 /// no funds index (`AccountType::index() == None`) and never emit
 /// `Received`/`Change` UTXOs, so they never warn.
 fn warn_if_non_default_account(record: &TransactionRecord) {
-    if let Some(index) = record.account_type.index() {
-        if index != 0 {
-            tracing::warn!(
-                account_index = index,
-                txid = %record.txid,
-                "non-default account UTXO persisted under account_index 0; \
-                 per-account grouping is approximate"
-            );
-        }
+    if let Some(index) = non_default_account_index(record) {
+        tracing::warn!(
+            account_index = index,
+            txid = %record.txid,
+            "non-default account UTXO persisted under account_index 0; \
+             per-account grouping is approximate"
+        );
     }
+}
+
+/// The record's funds account index when it is a *non-default* (index != 0)
+/// funds account, else `None`. Identity/provider account types carry no
+/// funds index (`index() == None`) and never emit `Received`/`Change`
+/// UTXOs, so they yield `None`.
+fn non_default_account_index(record: &TransactionRecord) -> Option<u32> {
+    record.account_type.index().filter(|&index| index != 0)
 }
 
 /// Spawn the wallet-event subscriber task.
@@ -193,11 +199,26 @@ async fn build_core_changeset(
         } => {
             let mut cs = CoreChangeSet::default();
             // Inserted records bring fresh UTXOs and may consume previous
-            // ones — warn on a non-default account, but always project.
+            // ones — always project. Non-default-account records are tallied
+            // and surfaced in a single aggregated warn after the loop (rather
+            // than one warn per record) to keep a busy block quiet.
+            let mut non_default_count = 0usize;
+            let mut non_default_sample: Option<dashcore::Txid> = None;
             for r in inserted {
-                warn_if_non_default_account(r);
+                if non_default_account_index(r).is_some() {
+                    non_default_count += 1;
+                    non_default_sample.get_or_insert(r.txid);
+                }
                 cs.new_utxos.extend(derive_new_utxos(r));
                 cs.spent_utxos.extend(derive_spent_utxos(r));
+            }
+            if non_default_count > 0 {
+                tracing::warn!(
+                    non_default_count,
+                    sample_txid = ?non_default_sample,
+                    "non-default account UTXO(s) persisted under account_index 0; \
+                     per-account grouping is approximate"
+                );
             }
             // Updated records (re-confirmation, IS-lock applied to a known
             // mempool tx, etc.) don't usually change UTXO topology — the

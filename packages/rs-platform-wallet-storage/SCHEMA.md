@@ -11,9 +11,9 @@ chain.
 ## What it stores — and the boundary
 
 The persister stores **public** wallet-state material (UTXOs, transactions,
-account registrations, address pools, identities, identity public keys,
-contacts, asset locks, token balances, DashPay overlays, and
-platform-address sync snapshots) in a SQLite database managed by
+account registrations, identities, identity public keys, contacts, asset
+locks, token balances, DashPay overlays, and platform-address sync
+snapshots) in a SQLite database managed by
 [refinery](https://crates.io/crates/refinery) migrations.
 
 **No secrets are stored here.** Mnemonics, seeds, and raw private keys never
@@ -37,20 +37,18 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The 23 tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
+The 21 tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
-Account registrations, address-pool snapshots, transactions, UTXOs, instant locks, derived addresses, and SPV sync state.
+Account registrations, transactions, UTXOs, instant locks, and SPV sync state.
 
 ```mermaid
 erDiagram
     WALLETS ||--o{ ACCOUNT_REGISTRATIONS : "registers"
-    WALLETS ||--o{ ACCOUNT_ADDRESS_POOLS : "snapshots"
     WALLETS ||--o{ CORE_TRANSACTIONS : "records"
     WALLETS ||--o{ CORE_UTXOS : "owns"
     WALLETS ||--o{ CORE_INSTANT_LOCKS : "holds"
-    WALLETS ||--o{ CORE_DERIVED_ADDRESSES : "derives"
     WALLETS ||--o| CORE_SYNC_STATE : "tracks"
     CORE_TRANSACTIONS ||--o{ CORE_UTXOS : "spends"
 
@@ -65,14 +63,6 @@ erDiagram
         TEXT account_type PK "standard_bip44 | standard_bip32 | coinjoin | identity_registration | ..."
         INTEGER account_index PK
         BLOB account_xpub_bytes "bincode-encoded AccountRegistrationEntry"
-    }
-
-    ACCOUNT_ADDRESS_POOLS {
-        BLOB wallet_id PK
-        TEXT account_type PK
-        INTEGER account_index PK
-        TEXT pool_type PK "external | internal | absent | absent_hardened"
-        BLOB snapshot_blob "bincode-encoded AccountAddressPoolEntry"
     }
 
     CORE_TRANSACTIONS {
@@ -100,16 +90,6 @@ erDiagram
         BLOB wallet_id PK
         BLOB txid PK
         BLOB islock_blob "bincode-encoded InstantLock"
-    }
-
-    CORE_DERIVED_ADDRESSES {
-        BLOB wallet_id PK
-        TEXT account_type PK
-        INTEGER account_index PK "owning account; also the value the read returns"
-        TEXT pool_type PK "external | internal | absent | absent_hardened"
-        INTEGER derivation_index PK
-        TEXT address UK "bech32 / Base58 address string"
-        INTEGER used "0 | 1"
     }
 
     CORE_SYNC_STATE {
@@ -365,14 +345,6 @@ lookups without blob decoding.
 - PK: `(wallet_id, account_type, account_index)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 
-### `account_address_pools`
-
-Address-pool snapshot per `(wallet, account, pool_type)`. `pool_type` is
-one of `external`, `internal`, `absent`, `absent_hardened`.
-
-- PK: `(wallet_id, account_type, account_index, pool_type)`.
-- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
-
 ### `core_transactions`
 
 One row per transaction the wallet has seen. `height`, `block_hash`, and
@@ -400,50 +372,6 @@ Instant-lock blobs for transactions that are broadcast but not yet
 finalized. Rows are removed when the transaction becomes confirmed.
 
 - PK: `(wallet_id, txid)`.
-- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
-
-### `core_derived_addresses`
-
-A live-fed indexed read-cache the UTXO writer joins to resolve a UTXO's
-`account_index` by address. The authoritative manifest is
-`account_address_pools` (kept complete and in-band by the
-`core_bridge` emitter); this table is the fast B-tree probe in front of it.
-Fed by exactly one source:
-
-- **Live `addresses_derived` events** — written before UTXOs in the same
-  transaction so the writer sees fresh rows.
-
-UTXO resolution for an unspent UTXO:
-
-1. **Cache hit** — resolve from this table.
-2. **Cache miss, manifest hit** — fall back to `account_address_pools`
-   (the in-band snapshot is applied earlier in the same tx). Resolved.
-3. **Miss in both** — a genuinely undeclared address (not ours, or an SPV
-   gap-limit edge). The writer **skips** it (with a `warn`) so one
-   unresolvable row never aborts a whole flush; its balance re-warms once
-   the address is later derived.
-
-(The spent-only synthetic-row path is exempt: a spent row uses an inert
-`account_index` placeholder and is excluded from reads.)
-
-A live `addresses_derived` entry whose address is absent from the manifest
-is a **fatal** `DerivedIndexInvariantViolated` — the emitter must attach
-the pool snapshot in-band with every derivation, so this can only fire on
-an emitter bug, never on a benign gap.
-
-> The non-ECDSA pool gap (BLS/EdDSA addresses are dropped from the event
-> projection, so they never produce an `addresses_derived` entry) cannot
-> manifest here: only ECDSA Standard/CoinJoin External/Internal addresses
-> are ever classified `Received`/`Change`, so a non-ECDSA address can never
-> be a `new_utxos` UTXO address. This is an upstream classifier property
-> (`key-wallet` `account_checker`), not enforceable at the storage layer.
-
-- PK: `(wallet_id, account_type, account_index, pool_type, derivation_index)` — the BIP32
-  leaf identity (one row per derived address).
-- `UNIQUE(wallet_id, address)` — the read-index invariant (one
-  account_index per address); its index also backs the address lookup, so
-  no separate index is needed. `address` is a derived attribute, never a
-  key, so every collision surfaces loud.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 
 ### `core_sync_state`
@@ -626,28 +554,24 @@ before the address exists.
 
 ## Enum-domain CHECK constraints
 
-Eight TEXT columns carry a `CHECK (col IN (...))` across five enum
-domains — `account_type` is reused in three tables. The IN-list is built
-at migration time from `pub(crate) const *_LABELS` arrays declared next
-to each writer function. Four domains mirror an upstream Rust enum; the
-fifth (`contacts.state`) is a synthetic lifecycle label naming which
-`ContactChangeSet` slot a row came from:
+Four TEXT columns carry a `CHECK (col IN (...))` across four enum
+domains. The IN-list is built at migration time from
+`pub(crate) const *_LABELS` arrays declared next to each writer function.
+Three domains mirror an upstream Rust enum; the fourth (`contacts.state`)
+is a synthetic lifecycle label naming which `ContactChangeSet` slot a row
+came from:
 
 | Table | Column | Source-of-truth const |
 |---|---|---|
 | `wallets` | `network` | `sqlite::schema::wallets::NETWORK_LABELS` |
 | `account_registrations` | `account_type` | `sqlite::schema::accounts::ACCOUNT_TYPE_LABELS` |
-| `account_address_pools` | `account_type` | `sqlite::schema::accounts::ACCOUNT_TYPE_LABELS` |
-| `account_address_pools` | `pool_type` | `sqlite::schema::accounts::POOL_TYPE_LABELS` |
-| `core_derived_addresses` | `account_type` | `sqlite::schema::accounts::ACCOUNT_TYPE_LABELS` |
-| `core_derived_addresses` | `pool_type` | `sqlite::schema::accounts::POOL_TYPE_LABELS` |
 | `asset_locks` | `status` | `sqlite::schema::asset_locks::ASSET_LOCK_STATUS_LABELS` |
 | `contacts` | `state` | `sqlite::schema::contacts::CONTACT_STATE_LABELS` |
 
 The const arrays are the single source of truth shared by the writer
 mapping functions (`network_to_str`, `account_type_db_label`,
-`pool_type_db_label`, `status_str`, `contact_state_db_label`) and the
-migration's CHECK clauses.
+`status_str`, `contact_state_db_label`) and the migration's CHECK
+clauses.
 Per-module `*_labels_match_enum` unit tests enforce set-equality
 between each const and the writer's codomain — drift (a renamed/added
 upstream variant) fails the test rather than landing as silent garbage
@@ -656,10 +580,9 @@ in this document; the source files are canonical.
 
 ### Upstream-enum coupling
 
-Three of the persisted enums live in the external `rust-dashcore`
-crate (`key_wallet::Network`, `key_wallet::account::AccountType`,
-`key_wallet::managed_account::address_pool::AddressPoolType`); the
-fourth (`platform_wallet::wallet::asset_lock::tracked::AssetLockStatus`)
+Two of the persisted enums live in the external `rust-dashcore`
+crate (`key_wallet::Network`, `key_wallet::account::AccountType`); the
+third (`platform_wallet::wallet::asset_lock::tracked::AssetLockStatus`)
 is in-tree and carries a `# Schema coupling` rustdoc block.
 
 Because the upstream definitions cannot be edited from this repository,
@@ -676,7 +599,7 @@ mechanisms working together:
 
 TODO(rust-dashcore): once the upstream `key_wallet` crate is vendored
 or the project gains push access there, mirror the in-tree
-`AssetLockStatus` `# Schema coupling` doc block on the three upstream
+`AssetLockStatus` `# Schema coupling` doc block on the two upstream
 enums so a developer editing them upstream sees the constraint without
 having to grep this repo.
 
@@ -720,4 +643,4 @@ having to grep this repo.
 
 | Version | File | Description |
 |---|---|---|
-| V001 | `V001__initial.rs` | Full schema: all 23 tables (including the six `meta_*` per-object metadata tables), every index, and six triggers (`setnull_core_utxos_on_tx_delete` + the five `meta_*` soft-cascade triggers) |
+| V001 | `V001__initial.rs` | Full schema: all 21 tables (including the six `meta_*` per-object metadata tables), every index, and six triggers (`setnull_core_utxos_on_tx_delete` + the five `meta_*` soft-cascade triggers) |

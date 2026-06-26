@@ -120,9 +120,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // UTXOs but no funds account hard-fails here rather than
             // reconstructing a silent zero balance.
             let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
-            if let Err(e) =
-                super::rehydrate::apply_persisted_core_state(&mut wallet_info, &core_state)
-            {
+            if let Err(e) = super::rehydrate::apply_persisted_core_state(
+                &mut wallet_info,
+                &account_manifest,
+                &core_state,
+            ) {
                 load_error = Some(e);
                 break 'load;
             }

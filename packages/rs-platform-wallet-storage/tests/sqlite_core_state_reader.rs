@@ -15,10 +15,23 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Utxo;
 use platform_wallet::changeset::{
-    CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
+    AccountRegistrationEntry, CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet_storage::sqlite::schema::core_state;
 use platform_wallet_storage::WalletStorageError;
+
+/// Keyless account manifest the rehydration path resolves xpubs from.
+fn manifest_for(wallet: &Wallet) -> Vec<AccountRegistrationEntry> {
+    wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .map(|a| AccountRegistrationEntry {
+            account_type: a.account_type,
+            account_xpub: a.account_xpub,
+        })
+        .collect()
+}
 
 fn reopen(path: &std::path::Path) -> platform_wallet_storage::SqlitePersister {
     platform_wallet_storage::SqlitePersister::open(
@@ -102,8 +115,12 @@ fn rt2_nonzero_balance_survives_reopen() {
     // rehydration path) and assert the wallet balance is the persisted
     // amount — NOT a silent zero.
     let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
-    platform_wallet::manager::rehydrate::apply_persisted_core_state(&mut info, &core)
-        .expect("BIP44 reconstruction must not error");
+    platform_wallet::manager::rehydrate::apply_persisted_core_state(
+        &mut info,
+        &manifest_for(&wallet),
+        &core,
+    )
+    .expect("BIP44 reconstruction must not error");
     let bal = WalletInfoInterface::balance(&info);
     let total = bal.confirmed() + bal.unconfirmed() + bal.immature() + bal.locked();
     assert_eq!(
@@ -258,8 +275,12 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
     assert_eq!(core.new_utxos.len(), 1);
 
     let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
-    platform_wallet::manager::rehydrate::apply_persisted_core_state(&mut info, &core)
-        .expect("CoinJoin-only reconstruction must not error");
+    platform_wallet::manager::rehydrate::apply_persisted_core_state(
+        &mut info,
+        &manifest_for(&wallet),
+        &core,
+    )
+    .expect("CoinJoin-only reconstruction must not error");
     let bal = WalletInfoInterface::balance(&info);
     let total = bal.confirmed() + bal.unconfirmed() + bal.immature() + bal.locked();
     assert_eq!(

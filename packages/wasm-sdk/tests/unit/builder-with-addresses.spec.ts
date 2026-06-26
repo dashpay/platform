@@ -162,16 +162,15 @@ describe('WasmSdkBuilder', () => {
           [TEST_ADDRESS_1],
           'testnet',
         );
-        // `withVersion(1)` requests a version below the network protocol-version
-        // floor. The SDK never operates below that floor, so an explicit sub-floor
-        // pin is raised to it — the requested `1` surfaces as the (higher) testnet
-        // floor, not `1`.
+        // `withVersion(1)` pins the SDK to platform version 1 exactly.
+        // Pinned versions are not clamped to the network floor — the caller
+        // takes responsibility for the version they specify.
         builder = builder.withVersion(1);
         expect(builder).to.be.an.instanceof(sdk.WasmSdkBuilder);
         const built = await builder.build();
         expect(built).to.be.an.instanceof(sdk.WasmSdk);
         expect(built.version()).to.be.a('number');
-        expect(built.version()).to.be.greaterThan(1);
+        expect(built.version()).to.equal(1);
         built.free();
       });
 
@@ -189,8 +188,8 @@ describe('WasmSdkBuilder', () => {
         const built = await builder.build();
         expect(built).to.be.an.instanceof(sdk.WasmSdk);
         expect(built.version()).to.be.a('number');
-        // Sub-floor pin (1) is raised to the network protocol-version floor.
-        expect(built.version()).to.be.greaterThan(1);
+        // Pinned to version 1 — pinned versions are used as-is, not clamped.
+        expect(built.version()).to.equal(1);
         built.free();
       });
     });

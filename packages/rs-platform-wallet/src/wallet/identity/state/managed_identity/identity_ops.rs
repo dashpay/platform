@@ -7,6 +7,7 @@ use crate::wallet::persister::WalletPersister;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
+use dpp::identity::{KeyID, TimestampMillis};
 use dpp::prelude::Identifier;
 use dpp::util::hash::ripemd160_sha256;
 use std::collections::BTreeMap;
@@ -285,6 +286,111 @@ impl ManagedIdentity {
                 derivation_indices,
             },
         );
+        let cs = crate::changeset::PlatformWalletChangeSet {
+            identities: Some(self.snapshot_changeset()),
+            identity_keys: Some(keys_cs),
+            ..Default::default()
+        };
+        if let Err(e) = persister.store(cs) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
+    }
+
+    /// Stamp `disabled_at` on the public keys named by `key_ids` and
+    /// emit a single-key [`IdentityKeysChangeSet`] upsert per affected
+    /// key — the disable-side counterpart to [`Self::add_key`].
+    ///
+    /// Mirrors `add_key`'s persistence shape: the matching
+    /// `IdentityPublicKey` records are mutated in place on the DPP
+    /// `Identity` (so every signing / introspection path sees the
+    /// disabled flag immediately) and a combined changeset is persisted
+    /// so the client's `PersistentPublicKey.disabledAt` rows flip
+    /// without a network re-fetch. Each emitted entry reuses the same
+    /// `(wallet_id, identity_index, key_index)` derivation breadcrumb
+    /// `add_key` carries, so the client re-derives idempotently and
+    /// keeps the key's existing private-key linkage rather than
+    /// dropping it on the upsert. Out-of-wallet identities (no
+    /// derivation context) emit a breadcrumb-less entry, matching
+    /// their watch-only state.
+    ///
+    /// `key_ids` not present on the identity are skipped (logged) and
+    /// no changeset is emitted when nothing matched. `disabled_at` is
+    /// the timestamp stamped on every matching key — callers pass the
+    /// local broadcast time; the next Platform refresh reconciles it to
+    /// the authoritative on-chain block time.
+    ///
+    /// Does **not** touch the identity revision — the caller bumps it
+    /// alongside the update transition.
+    pub fn disable_keys(
+        &mut self,
+        key_ids: &[KeyID],
+        disabled_at: TimestampMillis,
+        persister: &WalletPersister,
+    ) {
+        use dpp::identity::accessors::IdentitySettersV0;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+
+        let identity_id = self.id();
+
+        // Reconstruct the derivation breadcrumb from the cached
+        // wallet/identity slot. Wallet-owned identities carry both
+        // halves; out-of-wallet ones have neither (and no private key
+        // to preserve), so they fall through to a watch-only entry.
+        let breadcrumb = match (self.wallet_id, self.identity_index) {
+            (Some(wallet_id), Some(identity_index)) => Some((wallet_id, identity_index)),
+            _ => None,
+        };
+
+        // Operate on a clone of the key map, mirroring `add_key`, then
+        // write it back once all matching keys have been stamped.
+        let mut keys = self.identity.public_keys().clone();
+        let mut keys_cs = IdentityKeysChangeSet::default();
+
+        for &key_id in key_ids {
+            let Some(public_key) = keys.get_mut(&key_id) else {
+                tracing::warn!(
+                    identity = %identity_id,
+                    key_id,
+                    "disable_keys: key id not present on identity; skipping",
+                );
+                continue;
+            };
+
+            public_key.set_disabled_at(disabled_at);
+            let public_key_hash = pubkey_hash_of(public_key);
+
+            let (wallet_id, derivation_indices) = match breadcrumb {
+                Some((wallet_id, identity_index)) => (
+                    Some(wallet_id),
+                    Some(crate::changeset::IdentityKeyDerivationIndices {
+                        identity_index,
+                        key_index: key_id,
+                    }),
+                ),
+                None => (None, None),
+            };
+
+            keys_cs.upserts.insert(
+                (identity_id, key_id),
+                IdentityKeyEntry {
+                    identity_id,
+                    key_id,
+                    public_key: public_key.clone(),
+                    public_key_hash,
+                    wallet_id,
+                    derivation_indices,
+                },
+            );
+        }
+
+        // Nothing matched — leave state untouched rather than churning a
+        // no-op changeset.
+        if keys_cs.upserts.is_empty() {
+            return;
+        }
+
+        self.identity.set_public_keys(keys);
+
         let cs = crate::changeset::PlatformWalletChangeSet {
             identities: Some(self.snapshot_changeset()),
             identity_keys: Some(keys_cs),

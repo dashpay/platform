@@ -819,6 +819,102 @@ pub unsafe extern "C" fn dash_sdk_signer_destroy(handle: *mut SignerHandle) {
     let _ = Box::from_raw(handle as *mut VTableSigner);
 }
 
+/// Query whether the supplied signer can sign for a given identity public
+/// key, WITHOUT pulling any private-key material across the FFI.
+///
+/// This exists so the Swift SDK can keep its key-selection *policy* (ranking
+/// candidates by purpose / security level) in Swift while delegating the
+/// *availability* decision — "does this exact signer hold private material
+/// for this key?" — to the signer that will actually be used at sign time.
+/// Before this export existed, the only way to learn availability was to let
+/// Rust invoke the vtable's `can_sign_with` slot internally during signing,
+/// which forced Swift to preflight against a *separate* store
+/// (`KeychainManager.shared`). That coupling silently mis-judged any signer
+/// not backed by the shared Keychain (a raw-key `createSigner`, a
+/// hardware-backed callback signer, or a `KeychainSigner` bound to a
+/// different `KeychainManager`). This export removes that coupling: the
+/// preflight asks the supplied signer directly.
+///
+/// The verdict naturally covers BOTH inner `VTableSigner` variants:
+/// - `Inner::Callback` forwards `(pubkey_bytes, key_type)` through the
+///   vtable's `can_sign_with` slot, identical to the wire encoding used by
+///   `sign_async` (raw pubkey bytes + `KeyType` discriminant byte).
+/// - `Inner::Native` delegates to the wrapped Rust `Signer`, which compares
+///   the key material it holds.
+///
+/// `key_type` is the `dpp::identity::KeyType` discriminant byte (0–4). This
+/// FFI is for *identity* public keys only; the `0xFF` platform-address tag
+/// (and any other out-of-range byte) returns `false`.
+///
+/// Returns `false` (never aborts) on any of: null `signer`, an out-of-range
+/// `key_type`, or a signer that reports it cannot sign.
+///
+/// # Safety
+/// - `signer` must be a valid `*const SignerHandle` previously returned by
+///   this SDK (e.g. `dash_sdk_signer_create*` /
+///   `dash_sdk_signer_create_from_private_key`) and not yet destroyed. It may
+///   be null, in which case this returns `false`.
+/// - `pubkey_bytes` must point to at least `pubkey_len` readable bytes, OR be
+///   null with `pubkey_len == 0`. The bytes are only read for the duration of
+///   this call and are not retained.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_signer_can_sign(
+    signer: *const SignerHandle,
+    pubkey_bytes: *const u8,
+    pubkey_len: usize,
+    key_type: u8,
+) -> bool {
+    if signer.is_null() {
+        return false;
+    }
+
+    // This FFI is for identity public keys only. `KeyType::try_from` rejects
+    // anything outside 0–4 (including the 0xFF platform-address tag), so an
+    // out-of-range byte fails closed.
+    let key_type = match dash_sdk::dpp::identity::KeyType::try_from(key_type) {
+        Ok(kt) => kt,
+        Err(_) => return false,
+    };
+
+    let bytes = if pubkey_bytes.is_null() {
+        Vec::new()
+    } else {
+        // SAFETY: caller guarantees `pubkey_bytes` is valid for `pubkey_len`
+        // readable bytes (documented contract above).
+        std::slice::from_raw_parts(pubkey_bytes, pubkey_len).to_vec()
+    };
+
+    // A `*const SignerHandle` is really a `*const VTableSigner` (see
+    // `dash_sdk_signer_destroy`, which `Box::from_raw`s it as `*mut
+    // VTableSigner`). SAFETY: caller guarantees the handle is valid and not
+    // destroyed; we only borrow it, we do not take ownership.
+    let vtable_signer = &*(signer as *const VTableSigner);
+
+    // Reconstruct a minimal IdentityPublicKey. Only `data` + `key_type` are
+    // load-bearing: the Callback variant reads exactly those two via the
+    // vtable slot, and the Native variant compares the key material. The
+    // id / purpose / security_level are irrelevant to `can_sign_with` — same
+    // shape as `make_dummy_key()` in the tests below.
+    let ipk = {
+        use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dash_sdk::dpp::identity::{Purpose, SecurityLevel};
+        use dash_sdk::dpp::platform_value::BinaryData;
+
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type,
+            read_only: false,
+            data: BinaryData::new(bytes),
+            disabled_at: None,
+            contract_bounds: None,
+        })
+    };
+
+    <VTableSigner as Signer<IdentityPublicKey>>::can_sign_with(vtable_signer, &ipk)
+}
+
 /// Free bytes that were allocated with `malloc`/`calloc`.
 ///
 /// Kept for backwards compatibility with older FFI code that exchanges
@@ -850,6 +946,7 @@ pub fn signer_handle_from_single_key(signer: SingleKeySigner) -> *mut SignerHand
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dash_sdk::dpp::identity::KeyType;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     /// Global flag set by the completion invocation during tests so we can
@@ -929,6 +1026,16 @@ mod tests {
         true
     }
 
+    /// Test can-sign callback that always reports the key is NOT available.
+    unsafe extern "C" fn test_cannot_sign(
+        _signer: *const c_void,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
+    ) -> bool {
+        false
+    }
+
     /// Test destroy callback (no-op).
     unsafe extern "C" fn test_destroy(_signer: *mut c_void) {}
 
@@ -959,6 +1066,98 @@ mod tests {
         // SAFETY: we just produced the vtable with Box::into_raw and we take
         // ownership of it here (owns_vtable = true) so it will be freed on drop.
         unsafe { VTableSigner::from_callback(std::ptr::null_mut(), vtable_ptr, true) }
+    }
+
+    /// Build a callback-backed signer with a specific `can_sign_with` slot,
+    /// so the `dash_sdk_signer_can_sign` tests can pin the vtable verdict.
+    fn make_signer_with_can_sign(can_sign_with: CanSignCallback) -> VTableSigner {
+        let vtable = Box::new(SignerVTable {
+            sign_async: test_sign_async_sync,
+            can_sign_with,
+            destroy: test_destroy,
+        });
+        let vtable_ptr = Box::into_raw(vtable);
+        // SAFETY: vtable just produced via Box::into_raw; owns_vtable = true
+        // frees it on drop.
+        unsafe { VTableSigner::from_callback(std::ptr::null_mut(), vtable_ptr, true) }
+    }
+
+    #[test]
+    fn can_sign_ffi_round_trips_vtable_true_verdict() {
+        let signer = make_signer_with_can_sign(test_can_sign);
+        let handle = Box::into_raw(Box::new(signer)) as *const SignerHandle;
+        let pubkey = [0u8; 33];
+        // SAFETY: handle is a freshly-boxed VTableSigner; pubkey is 33 bytes.
+        let verdict = unsafe {
+            dash_sdk_signer_can_sign(
+                handle,
+                pubkey.as_ptr(),
+                pubkey.len(),
+                KeyType::ECDSA_SECP256K1 as u8,
+            )
+        };
+        assert!(verdict, "true vtable verdict must round-trip as true");
+        // SAFETY: reclaim the boxed signer.
+        unsafe { dash_sdk_signer_destroy(handle as *mut SignerHandle) };
+    }
+
+    #[test]
+    fn can_sign_ffi_round_trips_vtable_false_verdict() {
+        let signer = make_signer_with_can_sign(test_cannot_sign);
+        let handle = Box::into_raw(Box::new(signer)) as *const SignerHandle;
+        let pubkey = [0u8; 33];
+        // SAFETY: handle is a freshly-boxed VTableSigner; pubkey is 33 bytes.
+        let verdict = unsafe {
+            dash_sdk_signer_can_sign(
+                handle,
+                pubkey.as_ptr(),
+                pubkey.len(),
+                KeyType::ECDSA_SECP256K1 as u8,
+            )
+        };
+        assert!(!verdict, "false vtable verdict must round-trip as false");
+        // SAFETY: reclaim the boxed signer.
+        unsafe { dash_sdk_signer_destroy(handle as *mut SignerHandle) };
+    }
+
+    #[test]
+    fn can_sign_ffi_null_signer_is_false() {
+        let pubkey = [0u8; 33];
+        // SAFETY: null signer is an explicitly-documented input; returns false.
+        let verdict = unsafe {
+            dash_sdk_signer_can_sign(
+                std::ptr::null(),
+                pubkey.as_ptr(),
+                pubkey.len(),
+                KeyType::ECDSA_SECP256K1 as u8,
+            )
+        };
+        assert!(!verdict, "null signer must yield false");
+    }
+
+    #[test]
+    fn can_sign_ffi_out_of_range_key_type_is_false() {
+        // A `true`-returning vtable would say yes — but an out-of-range
+        // key_type (e.g. the 0xFF platform-address tag) must fail closed
+        // BEFORE the vtable is ever consulted.
+        let signer = make_signer_with_can_sign(test_can_sign);
+        let handle = Box::into_raw(Box::new(signer)) as *const SignerHandle;
+        let pubkey = [0u8; 20];
+        // SAFETY: handle valid; pubkey is 20 bytes.
+        let verdict = unsafe {
+            dash_sdk_signer_can_sign(
+                handle,
+                pubkey.as_ptr(),
+                pubkey.len(),
+                SIGNER_KEY_TYPE_PLATFORM_ADDRESS_HASH,
+            )
+        };
+        assert!(
+            !verdict,
+            "out-of-range key_type must yield false even with a true-returning vtable"
+        );
+        // SAFETY: reclaim the boxed signer.
+        unsafe { dash_sdk_signer_destroy(handle as *mut SignerHandle) };
     }
 
     #[tokio::test]

@@ -57,8 +57,8 @@ pub fn apply(
     // `addresses_derived` is intentionally NOT persisted here. The iOS
     // address registry is fed by the FFI `addresses_derived` callback (fired
     // before the UTXO changeset in the same round), and UTXO attribution is
-    // hardcoded to the default account (index 0), so the storage layer no
-    // longer keeps a derived-address lookup table.
+    // hardcoded to the default account (index 0); the storage layer keeps no
+    // derived-address lookup table.
     if !cs.new_utxos.is_empty() {
         let mut stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
         for utxo in &cs.new_utxos {
@@ -121,10 +121,11 @@ const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         spent = excluded.spent";
 
 /// Account index written for every `core_utxos` row. The product uses only
-/// the default account (index 0); a non-default funds account is rejected
-/// upstream by the `core_bridge` single-account guard, so the writer never
-/// resolves per-UTXO attribution. The one reader (`list_unspent_utxos`
-/// per-account grouping) groups everything under 0.
+/// the default account (index 0); a non-default funds account causes
+/// `core_bridge::warn_if_non_default_account` to emit a `warn!` log but
+/// the record is still persisted under index 0 (dropping it would
+/// undercount the balance and lose funds). The one reader
+/// (`list_unspent_utxos` per-account grouping) groups everything under 0.
 const CORE_UTXO_ACCOUNT_INDEX: i64 = 0;
 
 /// Upsert one `core_utxos` row. `account_index` is the hardcoded default
