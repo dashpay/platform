@@ -11,6 +11,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// `panic = "unwind"` (the default). Under `panic = "abort"` — e.g. the
 /// iOS release profiles — a panic aborts the process immediately and no
 /// `Drop` runs; there is simply no "after" left for the flag to gate.
+/// When the binary is built with `panic = "abort"`, constructing a
+/// [`ThreadRegistry`](crate::ThreadRegistry) emits a one-shot
+/// `tracing::warn!` so operators can audit the risk.
 #[must_use = "AtomicFlagGuard clears the flag on drop; binding to `_` or using as a statement drops it immediately"]
 pub struct AtomicFlagGuard<'a>(&'a AtomicBool);
 

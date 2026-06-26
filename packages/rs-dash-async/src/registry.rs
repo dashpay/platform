@@ -353,6 +353,12 @@ impl<K: RegistryKey> std::fmt::Debug for ThreadRegistry<K> {
     }
 }
 
+/// Process-wide latch for the panic=abort startup warn. Hoisted out of the
+/// constructor so the in-crate regression test can assert it tripped without
+/// peeking at function-local state.
+#[cfg(panic = "abort")]
+static PANIC_ABORT_WARNED: std::sync::Once = std::sync::Once::new();
+
 impl<K: RegistryKey> ThreadRegistry<K> {
     /// New registry with the default reap backstop ([`DEFAULT_REAP_BACKSTOP`]).
     pub fn new() -> Arc<Self> {
@@ -361,7 +367,27 @@ impl<K: RegistryKey> ThreadRegistry<K> {
 
     /// New registry with an explicit orphan reap backstop (the wallet
     /// uses 1s — the same grace separates "finishing" from "wedged").
+    ///
+    /// Under `panic = "abort"` builds (e.g. iOS release profiles) this
+    /// constructor emits a single startup-time `tracing::warn!` so
+    /// operators can audit the risk that an `EpilogueGuard` /
+    /// `AtomicFlagGuard` panic during teardown aborts the process before
+    /// `Drop` can release the orphan-liveness gate. The warn is fired at
+    /// most once per process via [`std::sync::Once`].
     pub fn with_reap_backstop(backstop: Duration) -> Arc<Self> {
+        // Stable Rust has no runtime API to query the active panic strategy,
+        // so the gate is compile-time. iOS release builds intentionally pick
+        // abort — this is observability, not a hard error.
+        #[cfg(panic = "abort")]
+        PANIC_ABORT_WARNED.call_once(|| {
+            tracing::warn!(
+                "dash-async registry built with panic=abort: an EpilogueGuard or \
+                 AtomicFlagGuard panic during teardown aborts the process instead \
+                 of unwinding, so the orphan-liveness gate may stay held — see \
+                 registry.rs / atomic.rs doc caveats. iOS release builds choose \
+                 abort intentionally; non-iOS targets should prefer panic=unwind."
+            );
+        });
         Arc::new(Self {
             slots: Mutex::new(BTreeMap::new()),
             orphans: Mutex::new(Vec::new()),
@@ -1094,7 +1120,9 @@ impl<K: RegistryKey> Drop for Repark<'_, K> {
 /// Panic-strategy caveat (same as `AtomicFlagGuard`): the clear-on-panic
 /// half relies on `Drop` running while the stack unwinds, so it holds under
 /// `panic = "unwind"`. Under `panic = "abort"` a worker panic aborts the
-/// process and there is no "after" to gate.
+/// process and there is no "after" to gate. When the binary is built with
+/// `panic = "abort"`, [`ThreadRegistry::with_reap_backstop`] emits a
+/// one-shot `tracing::warn!` so operators can audit the risk.
 struct EpilogueGuard<K: RegistryKey> {
     reg: Arc<ThreadRegistry<K>>,
     key: K,
@@ -2255,5 +2283,43 @@ mod tests {
 
         // gen-2 quiesces cleanly.
         assert_eq!(reg.quiesce("k").await, WorkerStatus::Ok);
+    }
+
+    /// PR #3954 thread #5 — `with_reap_backstop` MUST emit a one-shot
+    /// `tracing::warn!` when compiled under `panic = "abort"` so an operator
+    /// can audit the orphan-liveness-gate risk documented on `EpilogueGuard`
+    /// and `AtomicFlagGuard`. The check is build-cfg-pinned: this test only
+    /// exists under abort builds and serves as a compile-gate canary — if
+    /// the cfg block in `with_reap_backstop` is ever removed, this test
+    /// disappears with it and CI loses the signal.
+    ///
+    /// Functional assertion is on the process-wide `Once` latch, which is
+    /// the most reliable artifact we can probe without subscribing to
+    /// tracing from a `#[test]`.
+    #[cfg(panic = "abort")]
+    #[test]
+    fn with_reap_backstop_emits_panic_abort_warn_under_abort_builds() {
+        let _reg = ThreadRegistry::<&'static str>::with_reap_backstop(Duration::from_secs(1));
+        assert!(
+            super::PANIC_ABORT_WARNED.is_completed(),
+            "with_reap_backstop must trip the panic=abort warn latch on first call"
+        );
+        // Second construction must NOT re-fire — `Once` guarantees this, but
+        // we exercise it to lock the one-shot contract into the test.
+        let _reg2 = ThreadRegistry::<&'static str>::with_reap_backstop(Duration::from_secs(1));
+        assert!(super::PANIC_ABORT_WARNED.is_completed());
+    }
+
+    /// Sentinel for the no-op cfg branch: under `panic = "unwind"` (the
+    /// dev-profile default) `EpilogueGuard`'s `Drop` runs and releases the
+    /// orphan slot, so the operator warn is unnecessary. This test just
+    /// proves the unwind branch compiles and `with_reap_backstop` keeps
+    /// behaving like a plain constructor — no observable warn-related state
+    /// to assert because the gated `static` doesn't exist on this build.
+    #[cfg(not(panic = "abort"))]
+    #[test]
+    fn with_reap_backstop_no_warn_under_unwind() {
+        let reg = ThreadRegistry::<&'static str>::with_reap_backstop(Duration::from_millis(250));
+        assert!(!reg.any_alive(), "fresh registry has no live workers");
     }
 }
