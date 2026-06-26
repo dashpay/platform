@@ -17,11 +17,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use dash_async::{AtomicFlagGuard, DrainHook, ThreadRegistry, WorkerConfig};
+use dash_async::{AtomicFlagGuard, DrainHook, ThreadRegistry, WorkerConfig, WorkerStatus};
 
-use super::{
-    CoordinatorThreadStatus, WalletWorker, COORDINATOR_WEIGHT, SHUTDOWN_JOIN_TIMEOUT_SECS,
-};
+use super::{WalletWorker, COORDINATOR_WEIGHT, SHUTDOWN_JOIN_TIMEOUT_SECS};
 
 /// Shared lifecycle state and pass-gating protocol for one periodic sync
 /// coordinator. Each coordinator embeds one of these and delegates its
@@ -197,7 +195,7 @@ impl CoordinatorLifecycle {
     /// intentionally **ungated** (it never touches `is_syncing`; callers
     /// that need exclusion gate themselves), so the gate/drain barrier does
     /// not apply to it.
-    pub(crate) async fn quiesce(&self) -> CoordinatorThreadStatus {
+    pub(crate) async fn quiesce(&self) -> WorkerStatus {
         // Gate up first (instant) and held until the guard drops on return.
         // SeqCst: store-half of the `quiescing`<->`is_syncing` handshake
         // (see `begin_pass`).
@@ -219,7 +217,7 @@ impl CoordinatorLifecycle {
     /// the flag on drop, so the re-raise would leave a window.) Gate-before-
     /// cancel still holds: the caller raised the gate before this runs.
     #[cfg(any(test, feature = "shielded"))]
-    pub(crate) async fn quiesce_under_held_gate(&self) -> CoordinatorThreadStatus {
+    pub(crate) async fn quiesce_under_held_gate(&self) -> WorkerStatus {
         debug_assert!(
             self.quiescing.load(Ordering::Acquire),
             "quiesce_under_held_gate requires the caller to already hold the quiescing gate"
@@ -241,8 +239,8 @@ impl CoordinatorLifecycle {
     /// joined a thread that was not the one holding the flag). The raised
     /// gate keeps a new pass from starting, so the drain converges, and a
     /// panicked pass clears the flag via its own RAII guard.
-    async fn cancel_join_and_drain(&self) -> CoordinatorThreadStatus {
-        let status: CoordinatorThreadStatus = self.registry.quiesce(self.worker).await.into();
+    async fn cancel_join_and_drain(&self) -> WorkerStatus {
+        let status = self.registry.quiesce(self.worker).await;
         if status.is_clean() {
             self.drain_in_flight_pass().await;
         }
@@ -400,7 +398,7 @@ mod tests {
             .await
             .expect("quiesce completes once the pass drains")
             .expect("quiesce task joined");
-        assert_eq!(status, CoordinatorThreadStatus::NotRunning);
+        assert_eq!(status, WorkerStatus::NotRunning);
         assert!(
             !lifecycle.is_syncing(),
             "is_syncing was drained before quiesce returned"
@@ -431,7 +429,7 @@ mod tests {
         // Drain under the held gate (no loop registered → NotRunning); the
         // gate must remain raised across the call.
         let status = lifecycle.quiesce_under_held_gate().await;
-        assert_eq!(status, CoordinatorThreadStatus::NotRunning);
+        assert_eq!(status, WorkerStatus::NotRunning);
         assert!(
             lifecycle.quiescing.load(Ordering::Acquire),
             "gate stays raised across the drain — no lapse for a direct pass"

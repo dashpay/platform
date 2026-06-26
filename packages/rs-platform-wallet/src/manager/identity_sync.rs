@@ -431,7 +431,7 @@ where
     /// while the runtime is still alive is what lets the manager promise
     /// the `!Send` loop has stopped touching `tokio::time` before a
     /// one-shot host drops the runtime.
-    pub async fn quiesce(&self) -> super::CoordinatorThreadStatus {
+    pub async fn quiesce(&self) -> dash_async::WorkerStatus {
         self.lifecycle.quiesce().await
     }
 

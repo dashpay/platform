@@ -638,7 +638,7 @@ mod tests {
     #[test]
     fn shielded_shutdown_incomplete_maps_to_dedicated_code() {
         let err = PlatformWalletError::ShieldedShutdownIncomplete {
-            status: platform_wallet::CoordinatorThreadStatus::Timeout,
+            status: platform_wallet::WorkerStatus::Timeout,
         };
         let rendered = err.to_string();
         let result: PlatformWalletFFIResult = err.into();

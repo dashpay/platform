@@ -249,17 +249,14 @@ pub enum PlatformWalletError {
     /// host's wiped rows from a repopulated tree and gate-skipping every
     /// re-downloaded position on the next cold resync. The host **must not**
     /// commit its own persistence wipe; retry Clear once the pass settles.
-    /// Carries the terminal [`CoordinatorThreadStatus`] for diagnostics.
-    ///
-    /// [`CoordinatorThreadStatus`]: crate::manager::CoordinatorThreadStatus
+    /// Carries the terminal [`WorkerStatus`](dash_async::WorkerStatus) for
+    /// diagnostics.
     #[error(
         "shielded clear aborted: sync coordinator did not drain cleanly \
          ({status:?}); commitment-tree store left intact so an in-flight pass \
          cannot re-persist into a wiped store — retry once the pass settles"
     )]
-    ShieldedShutdownIncomplete {
-        status: crate::manager::CoordinatorThreadStatus,
-    },
+    ShieldedShutdownIncomplete { status: dash_async::WorkerStatus },
 }
 
 /// Check whether an SDK error indicates that an InstantSend lock proof was

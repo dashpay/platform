@@ -256,7 +256,7 @@ impl ShieldedSyncManager {
     /// while the runtime is still alive is what lets the manager promise
     /// the `!Send` loop has stopped touching `tokio::time` before a
     /// one-shot host drops the runtime.
-    pub async fn quiesce(&self) -> super::CoordinatorThreadStatus {
+    pub async fn quiesce(&self) -> dash_async::WorkerStatus {
         self.lifecycle.quiesce().await
     }
 
@@ -265,7 +265,7 @@ impl ShieldedSyncManager {
     /// [`hold_quiescing_gate`](Self::hold_quiescing_gate) and keeps holding
     /// it across the whole teardown. See
     /// [`CoordinatorLifecycle::quiesce_under_held_gate`].
-    pub(crate) async fn quiesce_under_held_gate(&self) -> super::CoordinatorThreadStatus {
+    pub(crate) async fn quiesce_under_held_gate(&self) -> dash_async::WorkerStatus {
         self.lifecycle.quiesce_under_held_gate().await
     }
 

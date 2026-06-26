@@ -11,6 +11,8 @@ mod wallet_lifecycle;
 
 use std::sync::Arc;
 
+#[cfg(any(test, feature = "shielded"))]
+use dash_async::WorkerStatus;
 use dash_async::{ShutdownReport, ShutdownWeight, ThreadRegistry, WorkerConfig};
 use tokio::sync::{Notify, RwLock};
 
@@ -114,161 +116,6 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     pub(super) registry: Arc<ThreadRegistry<WalletWorker>>,
 }
 
-/// How one background coordinator thread terminated.
-///
-/// The three periodic coordinators run their loops on dedicated OS
-/// threads (the SDK futures are `!Send`, so they ride
-/// [`Handle::block_on`](tokio::runtime::Handle::block_on) rather than
-/// `tokio::spawn`). [`PlatformWalletManager::shutdown`] joins each
-/// thread and reports how it ended so a host can tell a clean wind-down
-/// from a panicked loop instead of silently dropping the thread.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CoordinatorThreadStatus {
-    /// The loop exited and its thread/task joined cleanly.
-    Ok,
-    /// The thread/task exited for a non-panic reason that is not a clean
-    /// return — e.g. a tokio task was cancelled or aborted. Carries a
-    /// reason string when one is available.
-    Stopped(Option<String>),
-    /// The thread/task panicked; carries the best-effort panic message.
-    Panicked(String),
-    /// The join did not complete within [`SHUTDOWN_JOIN_TIMEOUT_SECS`].
-    Timeout,
-    /// No thread/task was running to join — never started, or already
-    /// joined by a previous `shutdown()`.
-    NotRunning,
-    /// Infrastructural join failure that is neither a timeout nor a
-    /// panic — e.g. the `spawn_blocking` task itself failed because
-    /// the runtime was torn down before the join could run (unreachable
-    /// in normal operation).
-    Error(String),
-    /// At least one coordinator OS thread that an earlier tight
-    /// `stop()`→`start()` reap had to detach past its 1 s wedge-backstop
-    /// was still alive at the shutdown deadline.
-    ///
-    /// Such a thread was parked in the shared [`ThreadRegistry`]'s orphan
-    /// list (not silently dropped) precisely so this case is visible.
-    /// A still-live detached thread keeps an `Arc` to the host event
-    /// handler and may fire one final callback, so the host must NOT
-    /// free the callback context yet — this status keeps
-    /// [`is_clean`](Self::is_clean) `false` so the FFI `destroy` returns
-    /// `ErrorShutdownIncomplete` instead of `ok()`.
-    Detached,
-}
-
-impl CoordinatorThreadStatus {
-    /// `true` only for a fully clean outcome: joined normally (`Ok`) or
-    /// never ran (`NotRunning`). `Stopped`, `Panicked`, `Timeout`,
-    /// `Error`, and `Detached` are all considered non-clean.
-    pub fn is_clean(&self) -> bool {
-        matches!(self, Self::Ok | Self::NotRunning)
-    }
-}
-
-/// Relocate a registry [`WorkerStatus`](dash_async::WorkerStatus) into the
-/// FFI-stable `CoordinatorThreadStatus`. The variant sets and payloads
-/// correspond 1:1, so the body is an exhaustive by-name `From` match that
-/// the compiler keeps total. The two enums intentionally keep their own
-/// declaration order and carry no `#[repr]`, so this is a match, never a
-/// layout-compatible cast — the FFI `destroy` / shielded-stop adapters keep
-/// reading the same logical shape.
-impl From<dash_async::WorkerStatus> for CoordinatorThreadStatus {
-    fn from(status: dash_async::WorkerStatus) -> Self {
-        use dash_async::WorkerStatus as W;
-        match status {
-            W::Ok => Self::Ok,
-            W::Stopped(reason) => Self::Stopped(reason),
-            W::Panicked(msg) => Self::Panicked(msg),
-            W::Timeout => Self::Timeout,
-            W::Detached => Self::Detached,
-            W::NotRunning => Self::NotRunning,
-            W::Error(msg) => Self::Error(msg),
-        }
-    }
-}
-
-/// Per-thread terminal status of every background worker, returned by
-/// [`PlatformWalletManager::shutdown`].
-///
-/// A host that drops its tokio runtime right after `shutdown()`
-/// (one-shot / headless / stdio) reads this to confirm each `!Send`
-/// coordinator loop fully wound down on its OS thread *before* the
-/// runtime goes away — closing the race where a still-polling loop hits
-/// `tokio::time` on a shutting-down runtime and panics with
-/// `A Tokio 1.x context was found, but it is being shutdown`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[must_use = "inspect all_clean() before freeing host callback context / dropping the runtime: a non-clean status flags a still-live coordinator or orphan"]
-pub struct CoordinatorExitStatus {
-    /// Platform-address (BLAST) balance sync loop.
-    pub platform_address_sync: CoordinatorThreadStatus,
-    /// Per-identity token-state sync loop.
-    pub identity_sync: CoordinatorThreadStatus,
-    /// Shielded (Orchard) note sync loop. `None` in builds without the
-    /// `shielded` feature (the coordinator does not exist).
-    pub shielded_sync: Option<CoordinatorThreadStatus>,
-    /// Wallet-event adapter (a `tokio` task, not an OS thread).
-    pub event_adapter: CoordinatorThreadStatus,
-    /// Aggregate status of any coordinator OS threads that an earlier
-    /// tight `stop()`→`start()` reap had to detach past its 1 s
-    /// wedge-backstop and park in the shared [`ThreadRegistry`]'s orphan
-    /// list.
-    ///
-    /// [`Ok`](CoordinatorThreadStatus::Ok) when none were detached (or
-    /// every detached thread has since joined cleanly);
-    /// [`Detached`](CoordinatorThreadStatus::Detached) when at least one
-    /// is still alive at the shutdown deadline. This is what keeps
-    /// [`all_clean`](Self::all_clean) honest for the wedge case the rest
-    /// of the teardown can't see — without it a detached-but-still-live
-    /// thread would let the host free a callback context the thread may
-    /// still touch (a residual use-after-free).
-    pub detached_threads: CoordinatorThreadStatus,
-}
-
-impl CoordinatorExitStatus {
-    /// `true` only when every worker — including any parked
-    /// [`detached_threads`](Self::detached_threads) — is
-    /// [`Ok`](CoordinatorThreadStatus::Ok) or
-    /// [`NotRunning`](CoordinatorThreadStatus::NotRunning); any
-    /// `Stopped`, `Panicked`, `Timeout`, `Error`, or `Detached` slot
-    /// makes it `false`.
-    pub fn all_clean(&self) -> bool {
-        self.platform_address_sync.is_clean()
-            && self.identity_sync.is_clean()
-            && self.shielded_sync.as_ref().is_none_or(|s| s.is_clean())
-            && self.event_adapter.is_clean()
-            && self.detached_threads.is_clean()
-    }
-
-    /// Build the FFI-stable exit status from the registry's
-    /// [`ShutdownReport`]. Absent workers map to `NotRunning`; a non-zero
-    /// `detached` surfaces as `Detached`; otherwise `orphan_status` folds
-    /// through so a panicked reaped orphan does not pass `all_clean()`.
-    pub(crate) fn from_report(report: ShutdownReport<WalletWorker>) -> Self {
-        let worker = |key: WalletWorker| -> CoordinatorThreadStatus {
-            report
-                .per_worker
-                .get(&key)
-                .cloned()
-                .map(CoordinatorThreadStatus::from)
-                .unwrap_or(CoordinatorThreadStatus::NotRunning)
-        };
-        Self {
-            platform_address_sync: worker(WalletWorker::PlatformAddressSync),
-            identity_sync: worker(WalletWorker::IdentitySync),
-            #[cfg(feature = "shielded")]
-            shielded_sync: Some(worker(WalletWorker::ShieldedSync)),
-            #[cfg(not(feature = "shielded"))]
-            shielded_sync: None,
-            event_adapter: worker(WalletWorker::EventAdapter),
-            detached_threads: if report.detached > 0 {
-                CoordinatorThreadStatus::Detached
-            } else {
-                CoordinatorThreadStatus::from(report.orphan_status)
-            },
-        }
-    }
-}
-
 /// Maximum time (seconds) the teardown paths — `shutdown()` and
 /// `clear_shielded` — wait for one coordinator's quiesce+join to
 /// complete. (The FFI `shielded_sync_stop` bridge is cancel-only and
@@ -280,12 +127,12 @@ impl CoordinatorExitStatus {
 /// drain clears promptly and the join normally lands far inside this
 /// window. The deadline fires only if a pass's *drop* itself wedges
 /// (e.g. a blocking destructor); on timeout the coordinator slot reports
-/// [`CoordinatorThreadStatus::Timeout`] rather than hanging forever.
+/// [`WorkerStatus::Timeout`] rather than hanging forever.
 pub const SHUTDOWN_JOIN_TIMEOUT_SECS: u64 = 30;
 
 /// Grace period (seconds) [`PlatformWalletManager::shutdown`] spends
 /// polling any orphans parked in the shared [`ThreadRegistry`] before
-/// declaring a survivor [`Detached`](CoordinatorThreadStatus::Detached).
+/// declaring a survivor [`Detached`](WorkerStatus::Detached).
 ///
 /// Unlike a live coordinator — whose `quiesce()` may legitimately spend
 /// seconds draining an in-flight pass, hence the 30 s
@@ -558,7 +405,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         .await
         {
             Ok(status) => status,
-            Err(_elapsed) => CoordinatorThreadStatus::Timeout,
+            Err(_elapsed) => WorkerStatus::Timeout,
         };
 
         // Only commit the store wipe once the in-flight pass has fully
@@ -578,7 +425,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         if self.shielded_worker_alive() {
             return Err(
                 crate::error::PlatformWalletError::ShieldedShutdownIncomplete {
-                    status: CoordinatorThreadStatus::Detached,
+                    status: WorkerStatus::Detached,
                 },
             );
         }
@@ -609,7 +456,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// A host that drops the tokio runtime right after `shutdown()`
     /// (one-shot / headless / stdio) is therefore safe — no coordinator
     /// can still be polling `tokio::time` on a shutting-down runtime. The
-    /// returned [`CoordinatorExitStatus`] reports per-worker how each ended.
+    /// returned [`ShutdownReport`] reports per-worker how each ended.
     ///
     /// **Precondition: must be called from a multi-thread Tokio runtime.**
     /// Each coordinator's OS thread drives its loop via
@@ -621,13 +468,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Each worker's join is bounded by its own
     /// [`SHUTDOWN_JOIN_TIMEOUT_SECS`] budget; on timeout its handle is
     /// re-parked and the slot reports
-    /// [`CoordinatorThreadStatus::Timeout`] rather than hanging forever
+    /// [`WorkerStatus::Timeout`] rather than hanging forever
     /// (the F1 fix — a dropped/timed-out join can never detach a live
     /// thread). The clear-on-panic half rides on unwinding, so it holds
     /// under `panic = "unwind"`; under the iOS `panic = "abort"` profiles a
     /// pass panic aborts the process outright.
-    pub async fn shutdown(&self) -> CoordinatorExitStatus {
-        CoordinatorExitStatus::from_report(self.registry.shutdown().await)
+    pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
+        self.registry.shutdown().await
     }
 }
 
@@ -728,47 +575,63 @@ mod tests {
         let status = tokio::time::timeout(Duration::from_secs(10), manager.shutdown())
             .await
             .expect("shutdown join must complete within bound");
-        assert_eq!(status.platform_address_sync, CoordinatorThreadStatus::Ok);
-        assert_eq!(status.identity_sync, CoordinatorThreadStatus::Ok);
+        assert_eq!(
+            status.per_worker.get(&WalletWorker::PlatformAddressSync),
+            Some(&WorkerStatus::Ok)
+        );
+        assert_eq!(
+            status.per_worker.get(&WalletWorker::IdentitySync),
+            Some(&WorkerStatus::Ok)
+        );
         #[cfg(feature = "shielded")]
-        assert_eq!(status.shielded_sync, Some(CoordinatorThreadStatus::Ok));
+        assert_eq!(
+            status.per_worker.get(&WalletWorker::ShieldedSync),
+            Some(&WorkerStatus::Ok)
+        );
         #[cfg(not(feature = "shielded"))]
-        assert_eq!(status.shielded_sync, None);
-        assert_eq!(status.event_adapter, CoordinatorThreadStatus::Ok);
+        assert!(status.per_worker.get(&WalletWorker::ShieldedSync).is_none());
+        assert_eq!(
+            status.per_worker.get(&WalletWorker::EventAdapter),
+            Some(&WorkerStatus::Ok)
+        );
         assert!(status.all_clean());
 
         // Handles consumed by the first join → nothing left to join.
         let again = manager.shutdown().await;
         assert_eq!(
-            again.platform_address_sync,
-            CoordinatorThreadStatus::NotRunning
+            again.per_worker.get(&WalletWorker::PlatformAddressSync),
+            Some(&WorkerStatus::NotRunning)
         );
-        assert_eq!(again.identity_sync, CoordinatorThreadStatus::NotRunning);
-        assert_eq!(again.event_adapter, CoordinatorThreadStatus::NotRunning);
+        assert_eq!(
+            again.per_worker.get(&WalletWorker::IdentitySync),
+            Some(&WorkerStatus::NotRunning)
+        );
+        assert_eq!(
+            again.per_worker.get(&WalletWorker::EventAdapter),
+            Some(&WorkerStatus::NotRunning)
+        );
         assert!(again.all_clean());
     }
 
-    /// Never-started coordinators report `NotRunning` (no thread to
-    /// join). The event adapter is spawned in `new`, so it still joins
-    /// `Ok`.
+    /// Never-started coordinators are absent from the report — the registry
+    /// only keys workers it actually registered, so a coordinator whose
+    /// `start()` never ran has no `per_worker` entry. The event adapter is
+    /// spawned in `new`, so it still joins `Ok`. Absent workers do not affect
+    /// `all_clean()`.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn shutdown_without_starting_reports_not_running() {
         let manager = make_manager();
 
         let status = manager.shutdown().await;
+        assert!(!status
+            .per_worker
+            .contains_key(&WalletWorker::PlatformAddressSync));
+        assert!(!status.per_worker.contains_key(&WalletWorker::IdentitySync));
+        assert!(!status.per_worker.contains_key(&WalletWorker::ShieldedSync));
         assert_eq!(
-            status.platform_address_sync,
-            CoordinatorThreadStatus::NotRunning
+            status.per_worker.get(&WalletWorker::EventAdapter),
+            Some(&WorkerStatus::Ok)
         );
-        assert_eq!(status.identity_sync, CoordinatorThreadStatus::NotRunning);
-        #[cfg(feature = "shielded")]
-        assert_eq!(
-            status.shielded_sync,
-            Some(CoordinatorThreadStatus::NotRunning)
-        );
-        #[cfg(not(feature = "shielded"))]
-        assert_eq!(status.shielded_sync, None);
-        assert_eq!(status.event_adapter, CoordinatorThreadStatus::Ok);
         assert!(status.all_clean());
     }
 
@@ -776,101 +639,106 @@ mod tests {
     /// Unit-tests the `is_clean` predicate directly so we don't need to
     /// trigger a real timeout (30s) in a deterministic test.
     #[test]
-    fn coordinator_thread_status_clean_predicate() {
-        assert!(CoordinatorThreadStatus::Ok.is_clean());
-        assert!(CoordinatorThreadStatus::NotRunning.is_clean());
+    fn worker_status_clean_predicate() {
+        assert!(WorkerStatus::Ok.is_clean());
+        assert!(WorkerStatus::NotRunning.is_clean());
 
-        assert!(!CoordinatorThreadStatus::Stopped(None).is_clean());
-        assert!(!CoordinatorThreadStatus::Stopped(Some("cancelled".into())).is_clean());
-        assert!(!CoordinatorThreadStatus::Panicked("boom".into()).is_clean());
-        assert!(!CoordinatorThreadStatus::Timeout.is_clean());
-        assert!(!CoordinatorThreadStatus::Error("infra".into()).is_clean());
+        assert!(!WorkerStatus::Stopped(None).is_clean());
+        assert!(!WorkerStatus::Stopped(Some("cancelled".into())).is_clean());
+        assert!(!WorkerStatus::Panicked("boom".into()).is_clean());
+        assert!(!WorkerStatus::Timeout.is_clean());
+        assert!(!WorkerStatus::Error("infra".into()).is_clean());
         // A detached-but-still-live coordinator thread is non-clean: the
         // host must not free its callback context yet.
-        assert!(!CoordinatorThreadStatus::Detached.is_clean());
+        assert!(!WorkerStatus::Detached.is_clean());
     }
 
-    /// `all_clean()` on `CoordinatorExitStatus` is false whenever any
-    /// slot is non-clean.
+    /// `all_clean()` on the `ShutdownReport` that `shutdown()` returns is
+    /// false whenever any per-worker slot is non-clean, a reaped orphan was
+    /// non-clean, or an orphan survived the reap (`detached > 0`).
     #[test]
-    fn coordinator_exit_status_all_clean() {
-        let clean = CoordinatorExitStatus {
-            platform_address_sync: CoordinatorThreadStatus::Ok,
-            identity_sync: CoordinatorThreadStatus::NotRunning,
-            shielded_sync: None,
-            event_adapter: CoordinatorThreadStatus::Ok,
-            detached_threads: CoordinatorThreadStatus::Ok,
+    fn shutdown_report_all_clean() {
+        use std::collections::BTreeMap;
+
+        let clean = ShutdownReport::<WalletWorker> {
+            per_worker: BTreeMap::from([
+                (WalletWorker::PlatformAddressSync, WorkerStatus::Ok),
+                (WalletWorker::IdentitySync, WorkerStatus::NotRunning),
+                (WalletWorker::EventAdapter, WorkerStatus::Ok),
+            ]),
+            detached: 0,
+            orphan_status: WorkerStatus::Ok,
         };
         assert!(clean.all_clean());
 
-        let with_timeout = CoordinatorExitStatus {
-            platform_address_sync: CoordinatorThreadStatus::Timeout,
-            identity_sync: CoordinatorThreadStatus::Ok,
-            shielded_sync: None,
-            event_adapter: CoordinatorThreadStatus::Ok,
-            detached_threads: CoordinatorThreadStatus::Ok,
+        let with_timeout = ShutdownReport::<WalletWorker> {
+            per_worker: BTreeMap::from([
+                (WalletWorker::PlatformAddressSync, WorkerStatus::Timeout),
+                (WalletWorker::IdentitySync, WorkerStatus::Ok),
+                (WalletWorker::EventAdapter, WorkerStatus::Ok),
+            ]),
+            detached: 0,
+            orphan_status: WorkerStatus::Ok,
         };
         assert!(!with_timeout.all_clean());
 
-        let with_stopped = CoordinatorExitStatus {
-            platform_address_sync: CoordinatorThreadStatus::Ok,
-            identity_sync: CoordinatorThreadStatus::Ok,
-            shielded_sync: Some(CoordinatorThreadStatus::Stopped(Some("aborted".into()))),
-            event_adapter: CoordinatorThreadStatus::Ok,
-            detached_threads: CoordinatorThreadStatus::Ok,
+        let with_stopped = ShutdownReport::<WalletWorker> {
+            per_worker: BTreeMap::from([
+                (WalletWorker::PlatformAddressSync, WorkerStatus::Ok),
+                (WalletWorker::IdentitySync, WorkerStatus::Ok),
+                (
+                    WalletWorker::ShieldedSync,
+                    WorkerStatus::Stopped(Some("aborted".into())),
+                ),
+                (WalletWorker::EventAdapter, WorkerStatus::Ok),
+            ]),
+            detached: 0,
+            orphan_status: WorkerStatus::Ok,
         };
         assert!(!with_stopped.all_clean());
 
         // A still-live detached orphan alone makes the aggregate
         // non-clean — the slot the rest of the teardown can't see.
-        let with_detached = CoordinatorExitStatus {
-            platform_address_sync: CoordinatorThreadStatus::Ok,
-            identity_sync: CoordinatorThreadStatus::Ok,
-            shielded_sync: None,
-            event_adapter: CoordinatorThreadStatus::Ok,
-            detached_threads: CoordinatorThreadStatus::Detached,
+        let with_detached = ShutdownReport::<WalletWorker> {
+            per_worker: BTreeMap::from([
+                (WalletWorker::PlatformAddressSync, WorkerStatus::Ok),
+                (WalletWorker::IdentitySync, WorkerStatus::Ok),
+                (WalletWorker::EventAdapter, WorkerStatus::Ok),
+            ]),
+            detached: 1,
+            orphan_status: WorkerStatus::Detached,
         };
         assert!(!with_detached.all_clean());
     }
 
     /// T5 boundary regression — a panicked reaped orphan (orphan finished
-    /// within the reap grace, so registry `detached == 0` but
-    /// `orphan_status` is `Panicked`) must flip `CoordinatorExitStatus`
-    /// non-clean too. Before the wallet-side propagation in `from_report`,
-    /// `detached_threads` was hard-coded to `Ok` whenever the survivor
-    /// count was zero — silently passing the panic. Folds the new
-    /// `ShutdownReport::orphan_status` through.
+    /// within the reap grace, so `detached == 0` but `orphan_status` is
+    /// `Panicked`) must still make the report non-clean. Without
+    /// `orphan_status` folding into `all_clean()`, a survivor count of zero
+    /// would silently pass the panic.
     #[test]
-    fn t5_from_report_propagates_panicked_orphan_status() {
-        use dash_async::WorkerStatus;
+    fn t5_panicked_orphan_status_makes_report_non_clean() {
         use std::collections::BTreeMap;
 
-        // Build a synthetic ShutdownReport with no survivors but a
-        // non-clean reaped-orphan status. `per_worker` empty means every
-        // declared worker maps to `NotRunning`.
+        // No survivors, but a non-clean reaped-orphan status. An empty
+        // `per_worker` means no worker slot is itself non-clean, so the
+        // verdict rides entirely on `orphan_status`.
         let report = ShutdownReport::<WalletWorker> {
             per_worker: BTreeMap::new(),
             detached: 0,
             orphan_status: WorkerStatus::Panicked("orphan panic during reap".into()),
         };
 
-        let status = CoordinatorExitStatus::from_report(report);
-        assert_eq!(
-            status.detached_threads,
-            CoordinatorThreadStatus::Panicked("orphan panic during reap".into()),
-            "panicked reaped-orphan status must surface through detached_threads",
-        );
         assert!(
-            !status.all_clean(),
-            "CoordinatorExitStatus::all_clean() must reflect the propagated panic",
+            !report.all_clean(),
+            "all_clean() must reflect a panicked reaped-orphan status",
         );
     }
 
-    /// T5 complement — a clean reaped-orphan status (`Ok`) leaves the
-    /// aggregate clean. Guards against over-triggering the new propagation.
+    /// T5 complement — a clean reaped-orphan status (`Ok`) leaves the report
+    /// clean. Guards against over-triggering the orphan-status fold.
     #[test]
-    fn t5_from_report_clean_orphan_status_stays_clean() {
-        use dash_async::WorkerStatus;
+    fn t5_clean_orphan_status_keeps_report_clean() {
         use std::collections::BTreeMap;
 
         let mut per_worker = BTreeMap::new();
@@ -886,9 +754,7 @@ mod tests {
             orphan_status: WorkerStatus::Ok,
         };
 
-        let status = CoordinatorExitStatus::from_report(report);
-        assert_eq!(status.detached_threads, CoordinatorThreadStatus::Ok);
-        assert!(status.all_clean());
+        assert!(report.all_clean());
     }
 
     /// `shutdown()` must wait for an in-flight sync pass to drain before
@@ -926,8 +792,8 @@ mod tests {
             .expect("shutdown must complete within 5 s");
 
         assert_eq!(
-            status.platform_address_sync,
-            CoordinatorThreadStatus::Ok,
+            status.per_worker.get(&WalletWorker::PlatformAddressSync),
+            Some(&WorkerStatus::Ok),
             "coordinator must join cleanly after drain"
         );
         assert!(
@@ -1009,8 +875,14 @@ mod tests {
             // Brief settle — any stray thread activity surfaces here.
             std::thread::sleep(Duration::from_millis(50));
 
-            assert_eq!(status.platform_address_sync, CoordinatorThreadStatus::Ok);
-            assert_eq!(status.identity_sync, CoordinatorThreadStatus::Ok);
+            assert_eq!(
+                status.per_worker.get(&WalletWorker::PlatformAddressSync),
+                Some(&WorkerStatus::Ok)
+            );
+            assert_eq!(
+                status.per_worker.get(&WalletWorker::IdentitySync),
+                Some(&WorkerStatus::Ok)
+            );
             assert!(status.all_clean(), "workers did not wind down: {status:?}");
         }
 
@@ -1043,8 +915,8 @@ mod tests {
     /// freeing the callback context the still-live thread may touch.
     ///
     /// Non-vacuous: if the registry dropped the orphan at reap instead of
-    /// parking it, `detached_threads` would be `Ok` and `all_clean()` would
-    /// be `true`, failing both assertions.
+    /// parking it, `detached` would be `0` and `all_clean()` would be
+    /// `true`, failing both assertions.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn shutdown_reports_detached_orphan_as_non_clean() {
         let manager = make_manager();
@@ -1062,9 +934,8 @@ mod tests {
             .expect("shutdown must complete within bound");
 
         assert_eq!(
-            status.detached_threads,
-            CoordinatorThreadStatus::Detached,
-            "a still-live detached orphan must surface as Detached"
+            status.detached, 1,
+            "a still-live detached orphan must surface in the survivor count"
         );
         assert!(
             !status.all_clean(),
@@ -1180,83 +1051,58 @@ mod tests {
         pass_task.await.expect("pass task joined");
     }
 
-    /// TC-015 (R5): `from_report` maps the registry's [`ShutdownReport`]
-    /// onto the FFI-stable `CoordinatorExitStatus` with identical field /
-    /// variant shape and `all_clean()` semantics. The full `WorkerStatus`
-    /// -> `CoordinatorThreadStatus` variant table is exercised.
+    /// The [`ShutdownReport`] that `shutdown()` returns reads per-worker by
+    /// key, surfaces a surviving orphan through `detached`, and folds all
+    /// three signals (per-worker status, `detached`, `orphan_status`) into
+    /// `all_clean()`.
     #[test]
-    fn from_report_maps_to_ffi_stable_exit_status() {
-        use dash_async::WorkerStatus;
+    fn shutdown_report_per_worker_shape_and_all_clean() {
         use std::collections::BTreeMap;
 
         // All Ok, no orphans.
-        let per = BTreeMap::from([
-            (WalletWorker::PlatformAddressSync, WorkerStatus::Ok),
-            (WalletWorker::IdentitySync, WorkerStatus::Ok),
-            (WalletWorker::ShieldedSync, WorkerStatus::Ok),
-            (WalletWorker::EventAdapter, WorkerStatus::Ok),
-        ]);
-        let status = CoordinatorExitStatus::from_report(ShutdownReport {
-            per_worker: per,
+        let report = ShutdownReport::<WalletWorker> {
+            per_worker: BTreeMap::from([
+                (WalletWorker::PlatformAddressSync, WorkerStatus::Ok),
+                (WalletWorker::IdentitySync, WorkerStatus::Ok),
+                (WalletWorker::ShieldedSync, WorkerStatus::Ok),
+                (WalletWorker::EventAdapter, WorkerStatus::Ok),
+            ]),
             detached: 0,
             orphan_status: WorkerStatus::Ok,
-        });
-        assert_eq!(status.platform_address_sync, CoordinatorThreadStatus::Ok);
-        assert_eq!(status.identity_sync, CoordinatorThreadStatus::Ok);
-        #[cfg(feature = "shielded")]
-        assert_eq!(status.shielded_sync, Some(CoordinatorThreadStatus::Ok));
-        #[cfg(not(feature = "shielded"))]
-        assert_eq!(status.shielded_sync, None);
-        assert_eq!(status.event_adapter, CoordinatorThreadStatus::Ok);
-        assert_eq!(status.detached_threads, CoordinatorThreadStatus::Ok);
-        assert!(status.all_clean());
+        };
+        assert_eq!(
+            report.per_worker.get(&WalletWorker::PlatformAddressSync),
+            Some(&WorkerStatus::Ok)
+        );
+        assert_eq!(
+            report.per_worker.get(&WalletWorker::EventAdapter),
+            Some(&WorkerStatus::Ok)
+        );
+        assert!(report.all_clean());
 
-        // A surviving orphan -> Detached -> non-clean; absent workers ->
-        // NotRunning. `orphan_status` carries `Detached` in the registry
-        // when survivors remain at the grace deadline, but the wallet
-        // surface uses the `detached > 0` count for that signal.
-        let status = CoordinatorExitStatus::from_report(ShutdownReport {
+        // A surviving orphan -> detached > 0 -> non-clean; an absent worker
+        // has no `per_worker` entry.
+        let report = ShutdownReport::<WalletWorker> {
             per_worker: BTreeMap::new(),
             detached: 1,
             orphan_status: WorkerStatus::Detached,
-        });
-        assert_eq!(status.detached_threads, CoordinatorThreadStatus::Detached);
-        assert_eq!(
-            status.platform_address_sync,
-            CoordinatorThreadStatus::NotRunning
-        );
-        assert!(!status.all_clean());
+        };
+        assert_eq!(report.detached, 1);
+        assert!(!report
+            .per_worker
+            .contains_key(&WalletWorker::PlatformAddressSync));
+        assert!(!report.all_clean());
 
-        // A per-worker Timeout propagates and is non-clean.
-        let per = BTreeMap::from([(WalletWorker::IdentitySync, WorkerStatus::Timeout)]);
-        let status = CoordinatorExitStatus::from_report(ShutdownReport {
-            per_worker: per,
+        // A per-worker Timeout is read back by key and is non-clean.
+        let report = ShutdownReport::<WalletWorker> {
+            per_worker: BTreeMap::from([(WalletWorker::IdentitySync, WorkerStatus::Timeout)]),
             detached: 0,
             orphan_status: WorkerStatus::Ok,
-        });
-        assert_eq!(status.identity_sync, CoordinatorThreadStatus::Timeout);
-        assert!(!status.all_clean());
-
-        // Full variant mapping table.
+        };
         assert_eq!(
-            CoordinatorThreadStatus::from(WorkerStatus::Stopped(Some("x".into()))),
-            CoordinatorThreadStatus::Stopped(Some("x".into()))
+            report.per_worker.get(&WalletWorker::IdentitySync),
+            Some(&WorkerStatus::Timeout)
         );
-        assert_eq!(
-            CoordinatorThreadStatus::from(WorkerStatus::Panicked("p".into())),
-            CoordinatorThreadStatus::Panicked("p".into())
-        );
-        assert_eq!(
-            CoordinatorThreadStatus::from(WorkerStatus::Error("e".into())),
-            CoordinatorThreadStatus::Error("e".into())
-        );
-        assert_eq!(
-            CoordinatorThreadStatus::from(WorkerStatus::NotRunning),
-            CoordinatorThreadStatus::NotRunning
-        );
-        assert_eq!(
-            CoordinatorThreadStatus::from(WorkerStatus::Detached),
-            CoordinatorThreadStatus::Detached
-        );
+        assert!(!report.all_clean());
     }
 }
