@@ -195,18 +195,25 @@ class PlatformBalanceSyncService: ObservableObject {
     ///
     /// Plain [`clearDisplay`] only zeroes the in-memory `@Published`
     /// mirror, so the next sync resumed from the surviving watermark in
-    /// ~2s (the "Clear didn't work" symptom). This wipes the stores the
+    /// ~2s (the "Clear didn't work" symptom). This clears the stores the
     /// synced data actually lives in, mirroring
     /// `ShieldedService.clearLocalState`: Rust-side reset FIRST (so the
-    /// next sync can't re-persist stale rows), then the SwiftData wipe,
+    /// next sync can't re-persist stale rows), then the SwiftData clear,
     /// then the published-mirror reset.
     ///
+    /// The `PersistentPlatformAddress` rows are **zeroed in place, not
+    /// deleted** — they carry durable derivation metadata that no sync
+    /// re-emits in-session and that the balance callback only updates
+    /// (never creates), so deleting them would leave the UI empty until
+    /// app restart. Only the volatile balance/sync fields are cleared;
+    /// the network-keyed `PersistentPlatformAddressesSyncState` watermark
+    /// row is deleted to force a full rescan.
+    ///
     /// Scoped to the **active network**. The SwiftData store holds rows
-    /// for every network at once (the UI filters them by network), so a
-    /// blanket `delete(model:)` would also erase other networks' cached
-    /// platform state. `PersistentPlatformAddress` carries no network
-    /// column, so it's scoped via `walletIdsOnNetwork` — the same
-    /// wallet-id-per-network pivot the view uses;
+    /// for every network at once (the UI filters them by network), so
+    /// clearing must not touch other networks' state. `PersistentPlatformAddress`
+    /// carries no network column, so it's scoped via `walletIdsOnNetwork`
+    /// — the same wallet-id-per-network pivot the view uses;
     /// `PersistentPlatformAddressesSyncState` is network-keyed and is
     /// scoped by `networkRaw`. This matches the manager-level Rust reset,
     /// which only touches the active network's registered wallets.
@@ -237,15 +244,35 @@ class PlatformBalanceSyncService: ObservableObject {
             }
         }
 
-        // 2) Delete this network's platform-address rows: the cached
-        //    per-address balances (scoped via the network's wallet-id
-        //    set) and the network-keyed sync-state watermark.
+        // 2) Zero the volatile balance/sync fields of this network's
+        //    address rows IN PLACE — do NOT delete them. A
+        //    `PersistentPlatformAddress` row is durable derivation state
+        //    (bech32m address, 20-byte hash, 33-byte public key,
+        //    account/address index, derivation path), not just a balance
+        //    cache. The BLAST balance callback `persistAddressBalances`
+        //    only *updates* existing rows (it skips by `addressHash` when
+        //    the row is missing), and no sync re-emits the rows in-session:
+        //    Rust's `reset_sync_state` preserves the address bijection, so
+        //    there is no pool extension to re-fire the address-emit path.
+        //    Deleting would therefore leave the next "Sync Now" with
+        //    nothing to upsert against — balances (and the spend/signing
+        //    derivation lookups) would stay gone until an app restart
+        //    re-seeds the rows. Zeroing clears what the user sees while
+        //    keeping the metadata the rescan needs.
         do {
             let addresses = try modelContext.fetch(FetchDescriptor<PersistentPlatformAddress>())
             for row in addresses where walletIdsOnNetwork.contains(row.walletId) {
-                modelContext.delete(row)
+                row.balance = 0
+                row.nonce = 0
+                row.isUsed = false
+                row.firstSeenHeight = 0
+                row.lastSeenHeight = 0
+                row.lastUpdated = Date()
             }
 
+            // The sync-state watermark is pure volatile sync state (no
+            // durable metadata) and is what actually forces a full rescan,
+            // so delete it outright — the next sync re-creates it.
             let networkRaw = network.rawValue
             let syncStates = try modelContext.fetch(FetchDescriptor<PersistentPlatformAddressesSyncState>())
             for row in syncStates where row.networkRaw == networkRaw {
@@ -254,7 +281,7 @@ class PlatformBalanceSyncService: ObservableObject {
 
             try modelContext.save()
         } catch {
-            lastError = "Failed to wipe persisted platform-address state: \(error.localizedDescription)"
+            lastError = "Failed to clear persisted platform-address state: \(error.localizedDescription)"
             SDKLogger.error(lastError ?? "")
             return
         }
