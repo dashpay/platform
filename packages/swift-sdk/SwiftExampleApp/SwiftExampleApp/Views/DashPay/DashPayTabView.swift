@@ -551,21 +551,35 @@ struct DashPayTabView: View {
 
     // MARK: - Actions
 
-    /// Synchronously read the active identity's cached DashPay
-    /// profile off the wallet handle. Lock-free; no network.
+    /// Resolve the active identity's DashPay profile. Prefers the live
+    /// wallet-handle cache (freshest), but falls back to the PERSISTED
+    /// profile so an identity that already has a profile never shows the
+    /// "set up profile" CTA just because its profile hasn't been synced
+    /// into the in-memory cache this session — which happens on cold
+    /// restore or right after switching the picker among many identities.
+    /// `PersistentIdentity.dashpayProfile` is the source of truth for
+    /// "does this identity have a profile"; the persister only writes it
+    /// after a profile has been created/synced. Lock-free; no network.
     private func loadOwnProfileFromCache() {
-        guard let identity = activeIdentity,
-              let walletId = identity.wallet?.walletId,
-              let wallet = walletManager.wallet(for: walletId) else {
+        guard let identity = activeIdentity else {
             ownProfile = nil
             return
         }
-        do {
-            let managed = try wallet.managedIdentity(identityId: identity.identityId)
-            ownProfile = try managed.getDashPayProfile()
-        } catch {
-            // identityNotFound right after a fresh register is
-            // expected; keep whatever we last showed.
+        if let walletId = identity.wallet?.walletId,
+           let wallet = walletManager.wallet(for: walletId),
+           let managed = try? wallet.managedIdentity(identityId: identity.identityId),
+           let cached = try? managed.getDashPayProfile() {
+            ownProfile = cached
+            return
+        }
+        ownProfile = identity.dashpayProfile.map { persisted in
+            DashPayProfile(
+                displayName: persisted.displayName,
+                publicMessage: persisted.publicMessage,
+                avatarUrl: persisted.avatarUrl,
+                avatarHash: persisted.avatarHash,
+                avatarFingerprint: persisted.avatarFingerprint
+            )
         }
     }
 
