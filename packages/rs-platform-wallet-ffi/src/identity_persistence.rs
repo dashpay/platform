@@ -1251,6 +1251,51 @@ mod tests {
         assert!(!ffi.private_key_is_some);
     }
 
+    /// A discovered key carries its derivation breadcrumb to the client WITHOUT
+    /// a scalar: `wallet_id` + `(identity_index, key_index)` cross the FFI so the
+    /// client can rebuild the DIP-9 path and derive-sign on demand, while
+    /// `private_key_is_some` is false and the secret buffer stays zeroed. This
+    /// is the shape a seedless discovery emits — proof the breadcrumb is
+    /// independent of any carried scalar.
+    #[test]
+    fn test_identity_key_entry_ffi_breadcrumb_without_scalar() {
+        let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 2,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0xCD; 33]),
+            disabled_at: None,
+        });
+        let entry = IdentityKeyEntry {
+            identity_id: Identifier::from([4u8; 32]),
+            key_id: 2,
+            public_key,
+            public_key_hash: [0x55; 20],
+            wallet_id: Some([0x1B; 32]),
+            derivation_indices: Some(IdentityKeyDerivationIndices {
+                identity_index: 7,
+                key_index: 2,
+            }),
+            // Breadcrumb present, but NO carried scalar.
+            private_key: None,
+        };
+        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
+        // The breadcrumb crosses in full ...
+        assert!(ffi.wallet_id_is_some);
+        assert_eq!(ffi.wallet_id, [0x1B; 32]);
+        assert!(ffi.derivation_indices_is_some);
+        assert_eq!(ffi.identity_index, 7);
+        assert_eq!(ffi.key_index, 2);
+        // ... with no secret material.
+        assert!(!ffi.private_key_is_some);
+        assert_eq!(ffi.private_key, [0u8; 32]);
+        unsafe { free_identity_key_entry_ffi(&mut ffi) };
+        assert!(ffi.public_key_data_ptr.is_null());
+    }
+
     #[test]
     fn test_identity_key_entry_ffi_watch_only() {
         let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {

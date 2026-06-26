@@ -381,4 +381,63 @@ mod tests {
         assert_eq!(err, SIGN_WITH_RESOLVER_ERR_UNSUPPORTED_KEY_TYPE);
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
+
+    /// The resolver path signs with the EXACT key the DIP-9 identity-auth path
+    /// derives: the produced signature verifies against the compressed pubkey
+    /// derived independently at the same path from the same mnemonic. This is
+    /// the evidence that identity-key signing needs no dedicated FFI — the
+    /// generic path primitive produces a correct, key-bound signature for a
+    /// `m/9'/coin'/5'/0'/0'/identity'/key'` path just as it does for addresses.
+    #[test]
+    fn signs_dip9_identity_path_with_the_derived_key() {
+        use key_wallet::bip32::ExtendedPubKey;
+
+        // identity_index = 3, key_index = 2.
+        let path_str = "m/9'/1'/5'/0'/0'/3'/2'";
+        let resolver = make_resolver(english_resolve);
+        let path = CString::new(path_str).unwrap();
+        let wallet_id = [0u8; 32];
+        let data = b"identity state transition bytes";
+
+        // Independently derive the compressed pubkey at the same path from the
+        // same mnemonic the resolver returns.
+        let mnemonic = parse_mnemonic_any_language(ENGLISH_PHRASE).expect("mnemonic");
+        let seed = mnemonic.to_seed("");
+        let secp = Secp256k1::new();
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master");
+        let derived = master
+            .derive_priv(&secp, &DerivationPath::from_str(path_str).unwrap())
+            .expect("derive");
+        let expected_pubkey = ExtendedPubKey::from_priv(&secp, &derived)
+            .public_key
+            .serialize();
+
+        let mut sig_buf = [0u8; 128];
+        let mut sig_len: usize = 0;
+        let mut err: u8 = 0;
+        let rc = unsafe {
+            dash_sdk_sign_with_mnemonic_resolver_and_path(
+                resolver,
+                wallet_id.as_ptr(),
+                path.as_ptr(),
+                data.as_ptr(),
+                data.len(),
+                0, // ECDSA_SECP256K1
+                FFINetwork::Testnet,
+                sig_buf.as_mut_ptr(),
+                sig_buf.len(),
+                &mut sig_len,
+                &mut err,
+            )
+        };
+        assert_eq!(rc, 0);
+        assert_eq!(err, SIGN_WITH_RESOLVER_OK);
+        dash_sdk::dpp::dashcore::signer::verify_data_signature(
+            data,
+            &sig_buf[..sig_len],
+            &expected_pubkey,
+        )
+        .expect("signature must verify against the key derived at the DIP-9 path");
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
 }

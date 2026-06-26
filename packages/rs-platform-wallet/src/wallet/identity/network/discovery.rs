@@ -668,10 +668,10 @@ mod tests {
     /// An on-chain key typed `ECDSA_HASH160` (data = the 20-byte hash of
     /// the pubkey) is matched by its hash — `validate_private_key_bytes`
     /// covers both ECDSA representations. (Uncompressed 65-byte ECDSA keys
-    /// are deliberately NOT tested: Platform rejects them at registration
-    /// with `UncompressedPublicKeyNotAllowedError`, so they can't be a valid
-    /// on-chain key; compressed-only matching is correct and consensus-
-    /// consistent.)
+    /// are deliberately NOT tested: the wallet only ever derives the
+    /// compressed pubkey form, so an uncompressed externally-registered key
+    /// is simply not wallet-derivable and stays watch-only by graceful
+    /// non-match — not because the protocol forbids such keys.)
     #[test]
     fn breadcrumb_decisions_matches_hash160_key() {
         use dpp::util::hash::ripemd160_sha256;
@@ -707,5 +707,93 @@ mod tests {
             decisions[0].verified_scalar.is_some(),
             "HASH160 key carries its verified scalar"
         );
+    }
+
+    /// Decide key ownership from the candidate's compressed PUBLIC key alone,
+    /// reproducing `IdentityPublicKey::validate_private_key_bytes` without the
+    /// secret scalar: an `ECDSA_SECP256K1` key matches when the on-chain data
+    /// equals the 33-byte compressed pubkey; an `ECDSA_HASH160` key matches
+    /// when `ripemd160_sha256` of that pubkey equals the on-chain 20-byte
+    /// hash. Any other key type (BLS/EdDSA, or an uncompressed ECDSA key the
+    /// wallet never derives) never matches.
+    fn pubkey_reproduces(on_chain_key: &IdentityPublicKey, candidate_pubkey: &[u8; 33]) -> bool {
+        use dpp::util::hash::ripemd160_sha256;
+        match on_chain_key.key_type() {
+            KeyType::ECDSA_SECP256K1 => {
+                on_chain_key.data().as_slice() == candidate_pubkey.as_slice()
+            }
+            KeyType::ECDSA_HASH160 => {
+                ripemd160_sha256(candidate_pubkey.as_slice()).as_slice()
+                    == on_chain_key.data().as_slice()
+            }
+            _ => false,
+        }
+    }
+
+    /// The ownership decision derived from the candidate's PUBLIC key is
+    /// byte-for-byte identical to the one `validate_private_key_bytes` derives
+    /// from the secret scalar — for a matching `ECDSA_SECP256K1` key, a
+    /// matching `ECDSA_HASH160` key, and a foreign (non-reproducible) key.
+    /// This pins the equivalence that lets discovery verify ownership without
+    /// ever materializing the scalar.
+    #[test]
+    fn pubkey_verify_matches_scalar_verify_for_every_key() {
+        use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+        use dpp::util::hash::ripemd160_sha256;
+
+        let master = test_master();
+        let network = Network::Testnet;
+        let identity_index = 0u32;
+
+        // key_id 1 derives the pubkey behind the on-chain HASH160 key; key_id 9'/9
+        // is an unrelated slot standing in for a FOREIGN key the wallet can't own.
+        let kp1 =
+            derive_ecdsa_identity_auth_keypair_from_master(&master, network, 0, 1).expect("derive");
+        let kp_foreign =
+            derive_ecdsa_identity_auth_keypair_from_master(&master, network, 9, 9).expect("derive");
+        let kp0 =
+            derive_ecdsa_identity_auth_keypair_from_master(&master, network, 0, 0).expect("derive");
+
+        let hash160_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(ripemd160_sha256(&kp1.public_key).to_vec()),
+            disabled_at: None,
+        });
+
+        // (on-chain key, the (0, key_id) slot whose candidate is checked, expected).
+        let cases: Vec<(IdentityPublicKey, u32, bool)> = vec![
+            (ecdsa_auth_key(0, kp0.public_key.to_vec()), 0, true),
+            (hash160_key, 1, true),
+            (ecdsa_auth_key(2, kp_foreign.public_key.to_vec()), 2, false),
+        ];
+
+        for (on_chain_key, key_id, expected) in &cases {
+            let candidate = derive_ecdsa_identity_auth_keypair_from_master(
+                &master,
+                network,
+                identity_index,
+                *key_id,
+            )
+            .expect("derive candidate");
+
+            let scalar_decision = on_chain_key
+                .validate_private_key_bytes(&candidate.private_key, network)
+                .unwrap_or(false);
+            let pubkey_decision = pubkey_reproduces(on_chain_key, &candidate.public_key);
+
+            assert_eq!(
+                scalar_decision, pubkey_decision,
+                "pubkey-verify diverged from scalar-verify for key {key_id}"
+            );
+            assert_eq!(
+                pubkey_decision, *expected,
+                "unexpected ownership decision for key {key_id}"
+            );
+        }
     }
 }
