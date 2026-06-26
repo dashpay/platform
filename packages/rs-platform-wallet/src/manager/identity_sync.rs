@@ -381,43 +381,15 @@ where
     /// The first pass runs immediately; subsequent passes fire every
     /// [`interval`](Self::interval).
     pub fn start(self: Arc<Self>) {
-        // Reopen the quiescing gate so this (re)start's passes can run; a
-        // prior quiesce raised it via the drain hook.
-        self.lifecycle.reopen_quiescing_gate();
-
-        let cfg = self.lifecycle.worker_config();
-
-        // The loop drives `!Send` SDK futures via `Handle::block_on` on a
-        // dedicated OS thread (the registry spawns it). The handle is
-        // captured from this tokio context; the new thread is not itself a
-        // tokio worker. `biased` polls the cancel arm first, so a pass
-        // stalled on a hung SDK fetch is dropped at its `.await` the
-        // instant the registry cancels — clearing `is_syncing` promptly so
-        // the join lands inside the budget.
-        let handle = tokio::runtime::Handle::current();
-        let this = Arc::clone(&self);
-        self.lifecycle
-            .registry()
-            .start_thread(self.lifecycle.worker(), cfg, move |cancel| {
-                handle.block_on(async move {
-                    loop {
-                        if cancel.is_cancelled() {
-                            break;
-                        }
-                        tokio::select! {
-                            biased;
-                            _ = cancel.cancelled() => break,
-                            _ = this.sync_now() => {}
-                        }
-
-                        let interval = this.interval();
-                        tokio::select! {
-                            _ = tokio::time::sleep(interval) => {}
-                            _ = cancel.cancelled() => break,
-                        }
-                    }
-                });
-            });
+        let pass_self = Arc::clone(&self);
+        let interval_self = Arc::clone(&self);
+        self.lifecycle.spawn_periodic_loop(
+            move || {
+                let this = Arc::clone(&pass_self);
+                async move { this.sync_now().await }
+            },
+            move || interval_self.interval(),
+        );
     }
 
     /// Stop the background sync loop. No-op if not running.

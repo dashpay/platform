@@ -54,16 +54,6 @@ impl CoordinatorLifecycle {
         }
     }
 
-    /// The shared worker-lifecycle engine this coordinator's loop runs on.
-    pub(crate) fn registry(&self) -> &Arc<ThreadRegistry<WalletWorker>> {
-        &self.registry
-    }
-
-    /// This coordinator's registry key.
-    pub(crate) fn worker(&self) -> WalletWorker {
-        self.worker
-    }
-
     /// Set the polling interval. Clamped to a minimum of 1s.
     pub(crate) fn set_interval(&self, interval: Duration) {
         let secs = interval.as_secs().max(1);
@@ -128,6 +118,50 @@ impl CoordinatorLifecycle {
                 quiescing.store(true, Ordering::SeqCst);
             })
         })
+    }
+
+    /// Spawn the standard coordinator loop on the registry: reopen the
+    /// quiescing gate, take the worker config, and drive
+    /// `biased; cancel-first` select! of `pass()` followed by an
+    /// `interval()` sleep — both arms break on cancellation. The loop
+    /// runs inside `Handle::block_on` on a fresh OS thread (so `pass`
+    /// can yield `!Send` SDK futures); cancellation drops an in-flight
+    /// `pass()` at its next `.await`.
+    ///
+    /// Replaces the previously-triplicated loop body in
+    /// `IdentitySyncManager::start`, `PlatformAddressSyncManager::start`,
+    /// and `ShieldedSyncManager::start`. Each coordinator now passes a
+    /// thunk that captures its `Arc<Self>` and calls its own `sync_now`.
+    pub(crate) fn spawn_periodic_loop<F, Fut, I>(&self, pass: F, interval: I)
+    where
+        F: Fn() -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = ()>,
+        I: Fn() -> Duration + Send + 'static,
+    {
+        self.reopen_quiescing_gate();
+        let cfg = self.worker_config();
+        let handle = tokio::runtime::Handle::current();
+        let registry = Arc::clone(&self.registry);
+        let worker = self.worker;
+        registry.start_thread(worker, cfg, move |cancel| {
+            handle.block_on(async move {
+                loop {
+                    if cancel.is_cancelled() {
+                        break;
+                    }
+                    tokio::select! {
+                        biased;
+                        _ = cancel.cancelled() => break,
+                        _ = pass() => {}
+                    }
+                    let sleep_for = interval();
+                    tokio::select! {
+                        _ = tokio::time::sleep(sleep_for) => {}
+                        _ = cancel.cancelled() => break,
+                    }
+                }
+            });
+        });
     }
 
     /// Reopen the `quiescing` gate so a (re)start's passes can run; a prior
