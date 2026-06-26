@@ -371,6 +371,7 @@ struct SendDashPayPaymentSheet: View {
                 )
                 successTxid = txid
                 onSent()
+                kickDashPaySync(walletManager)
                 // Small settle-in before dismissing so the user
                 // sees the confirmation row. Mirrors the pattern in
                 // `RegisterNameView`.

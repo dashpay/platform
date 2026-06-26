@@ -55,6 +55,13 @@ struct DashPayTabView: View {
         case contacts, requests
     }
 
+    /// Background sync cadence. While the DashPay tab is foreground we
+    /// poll fast so a contact's request / acceptance / payment surfaces
+    /// in near real time; we relax to the standard interval when the tab
+    /// is backgrounded so an idle app isn't sweeping every few seconds.
+    private static let foregroundSyncSeconds: UInt64 = 4
+    private static let backgroundSyncSeconds: UInt64 = 15
+
     init(network: Network, selectedTab: Binding<RootTab>) {
         self.network = network
         _selectedTab = selectedTab
@@ -198,6 +205,8 @@ struct DashPayTabView: View {
                 }
         }
         .environmentObject(contactMeta)
+        .onAppear { setSyncCadence(foreground: true) }
+        .onDisappear { setSyncCadence(foreground: false) }
         .alert(
             "Couldn't finish setup",
             isPresented: Binding(
@@ -592,6 +601,18 @@ struct DashPayTabView: View {
             _ = try? await walletManager.dashPaySyncNow()
         }
     }
+
+    /// Tune the background sync loop's cadence to the tab's visibility:
+    /// fast while DashPay is foreground, relaxed when it's backgrounded.
+    /// Driven from the NavigationStack's appear/disappear, so navigating
+    /// into a child screen or presenting a sheet (which don't fire the
+    /// stack's `onDisappear`) keeps the fast cadence. Best-effort — a
+    /// not-yet-configured manager just keeps its current interval.
+    private func setSyncCadence(foreground: Bool) {
+        try? walletManager.setDashPaySyncInterval(
+            seconds: foreground ? Self.foregroundSyncSeconds : Self.backgroundSyncSeconds
+        )
+    }
 }
 
 // MARK: - Empty-state helper
@@ -705,6 +726,7 @@ private struct AddViaQRSheet: View {
                     uri: trimmed,
                     signer: signer
                 )
+                kickDashPaySync(walletManager)
                 dismiss()
             } catch {
                 errorMessage = error.localizedDescription

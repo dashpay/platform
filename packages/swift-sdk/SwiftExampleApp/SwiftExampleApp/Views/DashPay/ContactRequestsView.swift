@@ -229,6 +229,7 @@ struct ContactRequestsView: View {
                 // Optimistic removal — the persister will promote the
                 // pair to established shortly.
                 removedOverlayIds.insert(contactId)
+                kickDashPaySync(walletManager)
             } catch {
                 rowErrors[contactId] = "Accept failed: \(error.localizedDescription)"
             }

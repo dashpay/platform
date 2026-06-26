@@ -459,6 +459,7 @@ struct AddContactView: View {
                     signer: signer
                 )
                 onSent(recipient, mode == .dpns ? selectedResult?.fullName : nil)
+                kickDashPaySync(walletManager)
                 dismiss()
             } catch {
                 errorMessage = error.localizedDescription
@@ -485,6 +486,7 @@ struct AddContactView: View {
                 }
                 let signer = KeychainSigner(modelContainer: modelContext.container)
                 _ = try await wallet.acceptContactRequest(request, signer: signer)
+                kickDashPaySync(walletManager)
                 dismiss()
             } catch {
                 errorMessage = "Accept failed: \(error.localizedDescription)"
