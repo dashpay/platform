@@ -26,7 +26,7 @@ Without `idb` the inspection workflows (screenshot + SwiftData + logs) still wor
 export PATH="$HOME/.local/bin:$PATH"
 UDID=$(xcrun simctl list devices booted | awk -F'[()]' '/Booted/ {print $2}')
 idb connect $UDID    # starts idb_companion alongside the running sim
-BUNDLE=org.dashfoundation.SwiftExampleApp
+BUNDLE=org.dashfoundation.DashDeveloperPro
 
 # === INSPECT ===
 xcrun simctl io booted screenshot /tmp/sim.png             # screenshot
@@ -292,7 +292,7 @@ PY
 
 Then poll for arrival (the faucet tx must confirm/IS-lock before SPV credits it):
 ```bash
-DATA=$(xcrun simctl get_app_container booted org.dashfoundation.SwiftExampleApp data)
+DATA=$(xcrun simctl get_app_container booted org.dashfoundation.DashDeveloperPro data)
 STORE="$DATA/Library/Application Support/default.store"
 for i in {1..40}; do
   bal=$(sqlite3 "$STORE" "SELECT COALESCE(SUM(ZAMOUNT),0) FROM ZPERSISTENTTXO WHERE ZISSPENT=0;")
@@ -338,8 +338,10 @@ If `idb connect` succeeds but `idb ui describe-all` returns a single root elemen
 The skill assumes the binary on the simulator is current. It's not, if you've built but forgotten to install. After every `build_ios.sh --target sim` (or any code change), push the fresh artifact. With MULTIPLE simulators booted, install to each by **UDID** (`booted` is ambiguous with >1 sim):
 
 ```bash
-BUNDLE=org.dashfoundation.SwiftExampleApp
-APP=$(find ~/Library/Developer/Xcode/DerivedData -name "${BUNDLE##*.}.app" -path "*Debug-iphonesimulator*" -not -path "*Index.noindex*" 2>/dev/null | head -1)
+BUNDLE=org.dashfoundation.DashDeveloperPro
+# The .app on disk is named after PRODUCT_NAME (still "SwiftExampleApp"), which
+# differs from the bundle id — find by the product name, launch by the bundle id.
+APP=$(find ~/Library/Developer/Xcode/DerivedData -name "SwiftExampleApp.app" -path "*Debug-iphonesimulator*" -not -path "*Index.noindex*" 2>/dev/null | head -1)
 for UDID in $(xcrun simctl list devices booted | grep -oiE '[0-9A-F-]{36}'); do
   xcrun simctl install "$UDID" "$APP"
   xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null
