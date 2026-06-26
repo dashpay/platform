@@ -29,6 +29,7 @@ mod keyring;
 mod secret;
 mod store;
 mod validate;
+mod wire;
 
 pub use envelope::MAX_PLAINTEXT_LEN;
 pub use error::{IoError, OsKeyringErrorKind, SecretStoreError};
