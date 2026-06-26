@@ -256,6 +256,60 @@ SELECT ZIDENTITYINDEXRAW AS slot, ZSTATUSRAW AS status
 
 Within-store contrast eliminates a class of "did I really install the new build?" doubts — if the histogram changed for the row you just created but not for the 20 pre-existing ones, the new code is provably running.
 
+### K — Auto-fund a testnet wallet from the in-app faucet (no manual faucet visit)
+
+For e2e flows that need Core funds on **testnet** (identity registration, DashPay
+payments), the Receive screen has a built-in faucet button — tap it instead of
+visiting a web faucet by hand. It sends ~1 tDASH to the wallet's current Core
+receive address via `faucet.thepasta.org` (`ReceiveAddressView.requestFromTestnetFaucet`
+→ `TestnetFaucet().requestCoreDash`).
+
+Preconditions (the button is conditionally rendered):
+- The app must be on the **Core tab** and the SDK on the **testnet** network
+  (`selectedTab == .core && currentNetwork == .testnet`). It's hidden on
+  mainnet / devnet / regtest.
+- A valid receive address must be shown (a wallet exists + synced enough to derive one).
+
+Drive it by its **stable accessibility id** `receive.testnetFaucetButton` (don't
+rely on the visible label — it doubles as a status toast: "Get 1 tDASH — Testnet
+Faucet" → "Solving captcha…" → "Sent N tDASH! tx: …", or a web-fallback toast on
+rate-limit/failure):
+
+```bash
+UDID=$(xcrun simctl list devices booted | awk -F'[()]' '/Booted/ {print $2}')
+idb ui describe-all --udid "$UDID" > /tmp/tree.json
+# tap the element whose AXUniqueId == "receive.testnetFaucetButton"
+LABEL_ID="receive.testnetFaucetButton" UDID="$UDID" python3 << 'PY'
+import json, os, subprocess
+items = json.load(open('/tmp/tree.json'))
+m = next((it for it in items if it.get('AXUniqueId') == os.environ['LABEL_ID'] and it.get('enabled')), None)
+if not m: raise SystemExit('faucet button not found — on Core tab + testnet? wallet synced?')
+fr = m['frame']; x, y = int(fr['x']+fr['width']/2), int(fr['y']+fr['height']/2)
+subprocess.run([os.path.expanduser('~/.local/bin/idb'),'ui','tap','--udid',os.environ['UDID'],str(x),str(y)], check=True)
+print(f'tapped faucet at ({x},{y})')
+PY
+```
+
+Then poll for arrival (the faucet tx must confirm/IS-lock before SPV credits it):
+```bash
+DATA=$(xcrun simctl get_app_container booted org.dashfoundation.SwiftExampleApp data)
+STORE="$DATA/Library/Application Support/default.store"
+for i in {1..40}; do
+  bal=$(sqlite3 "$STORE" "SELECT COALESCE(SUM(ZAMOUNT),0) FROM ZPERSISTENTTXO WHERE ZISSPENT=0;")
+  echo "[$i] unspent duffs=$bal"; [ "${bal:-0}" -gt 0 ] && break; sleep 6
+done
+```
+
+Notes:
+- **Rate-limited / captcha failure** falls back to opening the *web* faucet in
+  Safari and copying the address to the clipboard — if the toast says "opened web
+  faucet", the in-app send did NOT happen; either wait out the rate limit and
+  re-tap, or fund the copied address manually.
+- ~1 tDASH per call; for a two-party DashPay test (fund both wallets) tap it once
+  per wallet from each wallet's Receive screen.
+- This is a Core (L1) funding tool. Platform credits (identity top-up) still come
+  from an asset-lock of these Core funds — fund first, then register/top-up.
+
 ## Setup checklist
 
 Run before any session that needs UI control:
