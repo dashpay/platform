@@ -1,11 +1,14 @@
 //! Tier-2 envelope wire format — bincode-encoded `Envelope` / `Payload`
 //! plus the [`wrap`] / [`wrap_with_params`] / [`unwrap`] API.
 //!
-//! Encoder lives here; the decoder (and the strict fail-closed dispatch
-//! table) is filled in by T-3. Every byte that crosses the AEAD seam is
-//! produced by `bincode::encode_to_vec` against [`WIRE_CONFIG`], so a
-//! future config drift surfaces in the golden-vector tests, not in
-//! silently corrupted blobs.
+//! Every byte that crosses the AEAD seam is produced by
+//! `bincode::encode_to_vec` against [`WIRE_CONFIG`], so a future config
+//! drift surfaces in the golden-vector tests, not in silently corrupted
+//! blobs. Decoding goes through [`DECODE_CONFIG`] — the same
+//! configuration with a byte limit, so a hostile blob declaring a
+//! multi-GiB length prefix is rejected before any allocation.
+
+use bincode::config::{BigEndian, Configuration, Limit, Varint};
 
 use crate::secrets::error::SecretStoreError;
 use crate::secrets::file::crypto::{self, KdfParams, NONCE_LEN, SALT_LEN};
@@ -65,6 +68,18 @@ pub(crate) const MAX_ENVELOPE_OVERHEAD: usize = 112;
 /// enveloped bytes always fit the backend vault's own `MAX_SECRET_LEN`
 /// `put_bytes` cap.
 pub const MAX_PLAINTEXT_LEN: usize = MAX_SECRET_LEN - MAX_ENVELOPE_OVERHEAD;
+
+/// Decode-side budget: caps the bytes the bincode decoder will consume
+/// from a single envelope. Defends against a hostile blob whose
+/// length-prefix bytes declare a multi-GiB `Vec<u8>`. Encoding stays on
+/// the no-limit `WIRE_CONFIG` so legitimate outputs (always `<=
+/// MAX_SECRET_LEN`) are never refused. Equal to the on-disk cap.
+const DECODE_BUDGET: usize = MAX_SECRET_LEN + MAX_ENVELOPE_OVERHEAD;
+
+/// Bincode decode config = encoder's config with the
+/// [`DECODE_BUDGET`] limit applied.
+const DECODE_CONFIG: Configuration<BigEndian, Varint, Limit<DECODE_BUDGET>> =
+    WIRE_CONFIG.with_limit::<DECODE_BUDGET>();
 
 /// Wrap `plaintext` for `(wallet_id, label)` using the shipped default
 /// Argon2 target when a password is supplied.
@@ -140,7 +155,8 @@ pub(crate) fn wrap_with_params(
 }
 
 /// Bincode-encode the scheme-1 AAD against [`WIRE_CONFIG`]. Shared by
-/// the encoder and the (T-3) decoder so the two cannot disagree.
+/// [`wrap_with_params`] and [`unwrap_password_payload`] so the encode
+/// and decode AADs cannot drift apart.
 pub(crate) fn encode_tier2_aad(
     wallet_id: &WalletId,
     label: &str,
@@ -165,6 +181,93 @@ pub(crate) fn encode_tier2_aad(
 /// keeps the (possibly plaintext-bearing) scheme-0 buffer zeroizing.
 fn encode_envelope(envelope: &Envelope) -> Vec<u8> {
     bincode::encode_to_vec(envelope, WIRE_CONFIG).expect("Envelope encode is infallible")
+}
+
+/// Unwrap `blob` for `(wallet_id, label)`, applying the strict
+/// fail-closed read.
+///
+/// `password` carries the caller's protection assertion — never the
+/// blob's scheme byte. Decode errors (truncated, garbage bytes, unknown
+/// enum tag) collapse to `Corruption`; an envelope version this build
+/// does not recognise yields `UnsupportedEnvelopeVersion` ahead of
+/// dispatch.
+///
+/// | `password` | `payload` | result |
+/// |---|---|---|
+/// | `Some(pw)` | `Password { .. }` | the secret, or `WrongPassword` on tag fail |
+/// | `Some(pw)` | `Unprotected(_)` | `ExpectedProtectedButUnsealed` (strip/downgrade) |
+/// | `None`     | `Password { .. }` | `NeedsPassword` (never ciphertext) |
+/// | `None`     | `Unprotected(pt)` | the secret |
+pub(crate) fn unwrap(
+    wallet_id: &WalletId,
+    label: &str,
+    password: Option<&SecretString>,
+    blob: &[u8],
+) -> Result<SecretBytes, SecretStoreError> {
+    let (envelope, _) = bincode::decode_from_slice::<Envelope, _>(blob, DECODE_CONFIG)
+        .map_err(|_| SecretStoreError::Corruption)?;
+
+    if envelope.version != ENVELOPE_VERSION {
+        // `found` keeps the historical u8 — the error API stayed u8 for
+        // back-compat; an out-of-range u32 wraps but the decoder above
+        // already accepts every u32 so this only narrows the diagnostic.
+        return Err(SecretStoreError::UnsupportedEnvelopeVersion {
+            found: envelope.version as u8,
+        });
+    }
+
+    match (envelope.payload, password) {
+        (Payload::Unprotected(plaintext), None) => Ok(SecretBytes::new(plaintext)),
+        // Caller asserted protection but blob is unprotected: strip /
+        // downgrade — fail closed, never return the bytes.
+        (Payload::Unprotected(_), Some(_)) => Err(SecretStoreError::ExpectedProtectedButUnsealed),
+        (Payload::Password { .. }, None) => Err(SecretStoreError::NeedsPassword),
+        (
+            Payload::Password {
+                kdf,
+                salt,
+                nonce,
+                ciphertext,
+            },
+            Some(pw),
+        ) => unwrap_password_payload(wallet_id, label, pw, kdf, salt, nonce, &ciphertext),
+    }
+}
+
+/// Decrypt a `Payload::Password` body. The KDF params, salt and nonce
+/// come from the (attacker-controllable) envelope; `enforce_bounds`
+/// AND a stricter per-read `default_target` ceiling gate the params
+/// BEFORE `derive_key` allocates.
+fn unwrap_password_payload(
+    wallet_id: &WalletId,
+    label: &str,
+    password: &SecretString,
+    kdf_encoded: KdfParamsEncoded,
+    salt: [u8; SALT_LEN],
+    nonce: [u8; NONCE_LEN],
+    ciphertext: &[u8],
+) -> Result<SecretBytes, SecretStoreError> {
+    // (a) Wider Argon2 floors/ceilings — refuses an inflated header
+    // before any allocation.
+    let kdf = KdfParams::try_from(kdf_encoded)?;
+    // (b) Per-read ceiling tighter than `enforce_bounds`: a header
+    // declaring more memory than this build's shipped target is also
+    // refused before `derive_key` allocates. Closes the gap between
+    // `ARGON2_MAX_M_KIB` (1 GiB) and the shipped 64 MiB default.
+    if kdf.m_kib > KdfParams::default_target().m_kib {
+        return Err(SecretStoreError::KdfFailure);
+    }
+    // (c) AAD binds identity + header — the same bytes the encoder
+    // produced, by construction.
+    let aad = encode_tier2_aad(wallet_id, label, kdf_encoded, &salt);
+    let key = crypto::derive_key(password, &salt, kdf)?;
+    match crypto::open(&key, &nonce, &aad, ciphertext) {
+        Ok(plaintext) => Ok(plaintext),
+        // Tag failure (wrong password, relocated blob, header tamper):
+        // no plaintext ever materialises (CWE-347).
+        Err(SecretStoreError::Decrypt) => Err(SecretStoreError::WrongPassword),
+        Err(e) => Err(e),
+    }
 }
 
 /// Test-only deterministic encoder: takes pre-supplied `salt` and
@@ -245,7 +348,6 @@ mod tests {
     }
 
     /// TC-033 — blank object password rejected at enrol (wrap-side).
-    /// The unwrap-side blank-pw guard lives on a sibling branch.
     #[test]
     fn blank_object_password_rejected_at_wrap() {
         for blank in [SecretString::empty(), pw(""), pw("   "), pw("\t\n")] {
@@ -288,7 +390,7 @@ mod tests {
 
     /// TC-035 (size-budget half) — scheme-1 accepts plaintext at the
     /// exact MAX_PLAINTEXT_LEN boundary; the enveloped bytes fit the
-    /// backend cap. The round-trip half lands in T-3.
+    /// backend cap. The round-trip half is `scheme1_at_cap_round_trips_within_backend_cap`.
     #[test]
     fn scheme1_at_cap_envelope_fits_backend_cap() {
         let p = pw("pw");
@@ -363,5 +465,478 @@ mod tests {
             MAX_ENVELOPE_OVERHEAD,
             actual
         );
+    }
+
+    // ===== Decoder: dispatch / wire-flip / fuzz / property =====
+
+    use crate::secrets::file::crypto::{ARGON2_MAX_M_KIB, ARGON2_MAX_T};
+    use crate::secrets::wire::config::WIRE_CONFIG;
+    use subtle::ConstantTimeEq;
+
+    /// Decode a real envelope so wire-flip tests can mutate one field
+    /// and re-encode.
+    fn decode(blob: &[u8]) -> Envelope {
+        bincode::decode_from_slice::<Envelope, _>(blob, WIRE_CONFIG)
+            .unwrap()
+            .0
+    }
+
+    fn encode(envelope: &Envelope) -> Vec<u8> {
+        bincode::encode_to_vec(envelope, WIRE_CONFIG).unwrap()
+    }
+
+    /// Build a fresh scheme-1 envelope (under wid(1)/"seed"/pw=`p`) and
+    /// hand back the bytes for mutation tests.
+    fn scheme1_blob(p: &SecretString) -> Vec<u8> {
+        wrap_with_params(&wid(1), "seed", Some(p), b"seed", floor())
+            .unwrap()
+            .expose_secret()
+            .to_vec()
+    }
+
+    /// TC-001 — scheme-0 round-trip preserves plaintext.
+    #[test]
+    fn scheme0_round_trip_preserves_plaintext() {
+        let blob = wrap(&wid(1), "seed", None, b"top secret seed bytes").unwrap();
+        let got = unwrap(&wid(1), "seed", None, blob.expose_secret()).unwrap();
+        assert_eq!(got.expose_secret(), b"top secret seed bytes");
+    }
+
+    /// TC-002 — scheme-1 round-trip preserves plaintext.
+    #[test]
+    fn scheme1_round_trip_preserves_plaintext() {
+        let p = pw("hunter2");
+        let blob = wrap_with_params(
+            &wid(7),
+            "seed",
+            Some(&p),
+            b"correct horse battery staple",
+            floor(),
+        )
+        .unwrap();
+        assert_ne!(blob.expose_secret(), b"correct horse battery staple");
+        let got = unwrap(&wid(7), "seed", Some(&p), blob.expose_secret()).unwrap();
+        assert_eq!(got.expose_secret(), b"correct horse battery staple");
+    }
+
+    /// TC-003 — scheme-1 produces a fresh salt + nonce per wrap.
+    #[test]
+    fn scheme1_uses_fresh_salt_and_nonce_per_wrap() {
+        let p = pw("pw");
+        let a = scheme1_blob(&p);
+        let b = scheme1_blob(&p);
+        let (sa, na) = match decode(&a).payload {
+            Payload::Password { salt, nonce, .. } => (salt, nonce),
+            _ => panic!("scheme-1 wrap must yield Password"),
+        };
+        let (sb, nb) = match decode(&b).payload {
+            Payload::Password { salt, nonce, .. } => (salt, nonce),
+            _ => panic!("scheme-1 wrap must yield Password"),
+        };
+        assert_ne!(sa, sb, "salt must be fresh per wrap");
+        assert_ne!(na, nb, "nonce must be fresh per wrap");
+    }
+
+    /// TC-004 — wrong object password yields WrongPassword.
+    #[test]
+    fn wrong_password_fails_closed() {
+        let blob = scheme1_blob(&pw("right"));
+        let err = unwrap(&wid(1), "seed", Some(&pw("wrong")), &blob).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::WrongPassword),
+            "got {err:?}"
+        );
+    }
+
+    /// Mutate the `Payload::Password` body in-place via decode → patch
+    /// → encode. Returns the new blob.
+    fn mutate_scheme1(
+        blob: &[u8],
+        patch: impl FnOnce(&mut KdfParamsEncoded, &mut [u8; SALT_LEN], &mut [u8; NONCE_LEN]),
+    ) -> Vec<u8> {
+        let mut env = decode(blob);
+        match env.payload {
+            Payload::Password {
+                ref mut kdf,
+                ref mut salt,
+                ref mut nonce,
+                ..
+            } => patch(kdf, salt, nonce),
+            _ => panic!("mutate_scheme1 expects a Password payload"),
+        }
+        encode(&env)
+    }
+
+    /// TC-005 — wire-flip of kdf.m_kib (in-bounds shift) yields WrongPassword.
+    #[test]
+    fn wire_flip_kdf_m_kib_fails_closed() {
+        let p = pw("pw");
+        let blob = scheme1_blob(&p);
+        let tampered = mutate_scheme1(&blob, |kdf, _, _| {
+            kdf.m_kib = ARGON2_MIN_M_KIB + 1024;
+        });
+        let err = unwrap(&wid(1), "seed", Some(&p), &tampered).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::WrongPassword),
+            "got {err:?}"
+        );
+    }
+
+    /// TC-006 — wire-flip of kdf.t (in-bounds shift) yields WrongPassword.
+    #[test]
+    fn wire_flip_kdf_t_fails_closed() {
+        let p = pw("pw");
+        let blob = scheme1_blob(&p);
+        let tampered = mutate_scheme1(&blob, |kdf, _, _| {
+            kdf.t = ARGON2_MIN_T + 1;
+        });
+        let err = unwrap(&wid(1), "seed", Some(&p), &tampered).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::WrongPassword),
+            "got {err:?}"
+        );
+    }
+
+    /// TC-007 — wire-flip of kdf.id to an unknown value is rejected by
+    /// `enforce_bounds` BEFORE `derive_key` allocates.
+    #[test]
+    fn wire_flip_kdf_id_unknown_rejected_pre_derive() {
+        let p = pw("pw");
+        let blob = scheme1_blob(&p);
+        let tampered = mutate_scheme1(&blob, |kdf, _, _| {
+            kdf.id = 7;
+        });
+        let err = unwrap(&wid(1), "seed", Some(&p), &tampered).unwrap_err();
+        assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
+    }
+
+    /// TC-008 — wire-flip of salt[0] yields WrongPassword.
+    #[test]
+    fn wire_flip_salt_fails_closed() {
+        let p = pw("pw");
+        let blob = scheme1_blob(&p);
+        let tampered = mutate_scheme1(&blob, |_, salt, _| {
+            salt[0] ^= 0x01;
+        });
+        let err = unwrap(&wid(1), "seed", Some(&p), &tampered).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::WrongPassword),
+            "got {err:?}"
+        );
+    }
+
+    /// TC-009 — wire-flip of nonce[0] yields WrongPassword.
+    #[test]
+    fn wire_flip_nonce_fails_closed() {
+        let p = pw("pw");
+        let blob = scheme1_blob(&p);
+        let tampered = mutate_scheme1(&blob, |_, _, nonce| {
+            nonce[0] ^= 0x01;
+        });
+        let err = unwrap(&wid(1), "seed", Some(&p), &tampered).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::WrongPassword),
+            "got {err:?}"
+        );
+    }
+
+    /// TC-010 — re-binding the unwrap to a different wallet_id rejects.
+    #[test]
+    fn relocation_across_wallet_id_rejected() {
+        let p = pw("pw");
+        let blob = wrap_with_params(&wid(0xA), "seed", Some(&p), b"seed", floor()).unwrap();
+        let err = unwrap(&wid(0xB), "seed", Some(&p), blob.expose_secret()).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::WrongPassword),
+            "got {err:?}"
+        );
+    }
+
+    /// TC-011 — re-binding the unwrap to a different label rejects.
+    #[test]
+    fn relocation_across_label_rejected() {
+        let p = pw("pw");
+        let blob = wrap_with_params(&wid(1), "labelA", Some(&p), b"seed", floor()).unwrap();
+        let err = unwrap(&wid(1), "labelB", Some(&p), blob.expose_secret()).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::WrongPassword),
+            "got {err:?}"
+        );
+    }
+
+    /// TC-012 — wire-flip of envelope.version (via re-encode) is gated
+    /// to UnsupportedEnvelopeVersion before AAD bind.
+    #[test]
+    fn wire_flip_version_rejected_pre_aad() {
+        let blob = scheme1_blob(&pw("pw"));
+        let mut env = decode(&blob);
+        env.version = 2;
+        let tampered = encode(&env);
+        let err = unwrap(&wid(1), "seed", Some(&pw("pw")), &tampered).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                SecretStoreError::UnsupportedEnvelopeVersion { found: 2 }
+            ),
+            "got {err:?}"
+        );
+    }
+
+    /// TC-013 — forged `Payload::Unprotected` with ciphertext bytes +
+    /// `Some(pw)` redirects to ExpectedProtectedButUnsealed.
+    #[test]
+    fn wire_flip_scheme_dispatch_redirects_safely() {
+        let env = Envelope {
+            version: ENVELOPE_VERSION,
+            payload: Payload::Unprotected(vec![0xDEu8; 32]),
+        };
+        let blob = encode(&env);
+        let err = unwrap(&wid(1), "seed", Some(&pw("pw")), &blob).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::ExpectedProtectedButUnsealed),
+            "got {err:?}"
+        );
+    }
+
+    /// TC-017 — truncated blob (< minimum envelope length) yields
+    /// Corruption.
+    #[test]
+    fn truncated_blob_yields_corruption() {
+        let blob = scheme1_blob(&pw("pw"));
+        let cut = blob.len() / 2;
+        let err = unwrap(&wid(1), "seed", Some(&pw("pw")), &blob[..cut]).unwrap_err();
+        assert!(matches!(err, SecretStoreError::Corruption), "got {err:?}");
+    }
+
+    /// TC-018 — random-byte blob yields Corruption (both arms).
+    #[test]
+    fn random_garbage_yields_corruption() {
+        let garbage = b"NOTANEVELOPE.........................";
+        let err = unwrap(&wid(1), "seed", None, garbage).unwrap_err();
+        assert!(matches!(err, SecretStoreError::Corruption), "got {err:?}");
+        let err = unwrap(&wid(1), "seed", Some(&pw("pw")), garbage).unwrap_err();
+        assert!(matches!(err, SecretStoreError::Corruption), "got {err:?}");
+    }
+
+    /// TC-019 — a manually-built envelope at version=2 fails closed
+    /// regardless of password.
+    #[test]
+    fn unsupported_version_rejected_for_any_password() {
+        let env = Envelope {
+            version: 2,
+            payload: Payload::Unprotected(b"x".to_vec()),
+        };
+        let blob = encode(&env);
+        for arg in [None, Some(&pw("pw"))] {
+            let err = unwrap(&wid(1), "seed", arg, &blob).unwrap_err();
+            assert!(
+                matches!(
+                    err,
+                    SecretStoreError::UnsupportedEnvelopeVersion { found: 2 }
+                ),
+                "got {err:?}"
+            );
+        }
+    }
+
+    /// TC-020 — a hand-crafted byte stream with an unknown payload
+    /// enum tag yields Corruption (bincode's natural fail-closed).
+    #[test]
+    fn unknown_scheme_discriminant_yields_corruption() {
+        // envelope.version = 1 (varint = 0x01) then a Payload enum tag
+        // of 7 (varint = 0x07) — the two-variant enum decode rejects.
+        let blob = [0x01u8, 0x07];
+        let err = unwrap(&wid(1), "seed", None, &blob).unwrap_err();
+        assert!(matches!(err, SecretStoreError::Corruption), "got {err:?}");
+    }
+
+    /// TC-021 — Some(pw) + scheme-0 yields ExpectedProtectedButUnsealed.
+    #[test]
+    fn some_pw_on_scheme0_fails_closed() {
+        let blob = wrap(&wid(1), "seed", None, b"attacker-seed").unwrap();
+        let err = unwrap(&wid(1), "seed", Some(&pw("pw")), blob.expose_secret()).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::ExpectedProtectedButUnsealed),
+            "got {err:?}"
+        );
+    }
+
+    /// TC-022 — None + scheme-1 yields NeedsPassword.
+    #[test]
+    fn none_pw_on_scheme1_yields_needs_password() {
+        let blob = scheme1_blob(&pw("pw"));
+        let err = unwrap(&wid(1), "seed", None, &blob).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::NeedsPassword),
+            "got {err:?}"
+        );
+    }
+
+    /// TC-023 — inflated KDF param rejected by `enforce_bounds` before
+    /// `derive_key` allocates (a ~4 TiB allocation would OOM the test).
+    #[test]
+    fn kdf_enforce_bounds_rejects_before_derive() {
+        let p = pw("pw");
+        let blob = scheme1_blob(&p);
+        let tampered = mutate_scheme1(&blob, |kdf, _, _| {
+            kdf.m_kib = u32::MAX;
+        });
+        let err = unwrap(&wid(1), "seed", Some(&p), &tampered).unwrap_err();
+        assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
+
+        let tampered = mutate_scheme1(&blob, |kdf, _, _| {
+            kdf.t = ARGON2_MAX_T + 1;
+        });
+        let err = unwrap(&wid(1), "seed", Some(&p), &tampered).unwrap_err();
+        assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
+    }
+
+    /// TC-024 — per-read `default_target` ceiling rejects an envelope
+    /// whose `m_kib` exceeds the shipped target even when still inside
+    /// `enforce_bounds`. Catches inflated headers BEFORE `derive_key`.
+    #[test]
+    fn per_read_default_target_ceiling_rejects_inflated_header() {
+        let p = pw("pw");
+        let blob = scheme1_blob(&p);
+        let bumped = KdfParams::default_target().m_kib * 2;
+        // Sanity: the bumped value stays inside the wider enforce_bounds
+        // ceiling, so only the per-read gate can refuse it.
+        assert!(bumped <= ARGON2_MAX_M_KIB);
+        let tampered = mutate_scheme1(&blob, |kdf, _, _| {
+            kdf.m_kib = bumped;
+        });
+        let err = unwrap(&wid(1), "seed", Some(&p), &tampered).unwrap_err();
+        assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
+    }
+
+    /// TC-031 — round-tripped secret matches the original under a
+    /// constant-time compare.
+    #[test]
+    fn round_trip_is_constant_time_equal() {
+        let p = pw("pw");
+        let original = SecretBytes::from_slice(b"seed material");
+        let blob =
+            wrap_with_params(&wid(1), "seed", Some(&p), original.expose_secret(), floor()).unwrap();
+        let got = unwrap(&wid(1), "seed", Some(&p), blob.expose_secret()).unwrap();
+        assert!(bool::from(got.ct_eq(&original)));
+    }
+
+    /// TC-035 (round-trip half) — scheme-1 at exact MAX_PLAINTEXT_LEN
+    /// round-trips and the enveloped bytes fit the backend cap.
+    #[test]
+    fn scheme1_at_cap_round_trips_within_backend_cap() {
+        let p = pw("pw");
+        let pt = vec![0x5Au8; MAX_PLAINTEXT_LEN];
+        let blob = wrap_with_params(&wid(1), "seed", Some(&p), &pt, floor()).unwrap();
+        assert!(blob.len() <= MAX_SECRET_LEN);
+        let got = unwrap(&wid(1), "seed", Some(&p), blob.expose_secret()).unwrap();
+        assert_eq!(got.expose_secret(), &pt[..]);
+    }
+
+    /// TC-036 — value rollback is intentionally NOT defended.
+    #[test]
+    fn value_rollback_is_not_defended() {
+        let p = pw("pw");
+        let old = wrap_with_params(&wid(1), "seed", Some(&p), b"OLD-VALUE", floor()).unwrap();
+        let _new = wrap_with_params(&wid(1), "seed", Some(&p), b"NEW-VALUE", floor()).unwrap();
+        let got = unwrap(&wid(1), "seed", Some(&p), old.expose_secret()).unwrap();
+        assert_eq!(got.expose_secret(), b"OLD-VALUE");
+    }
+
+    /// TC-032 — random byte mutations and truncations never panic;
+    /// every outcome is a permitted typed variant.
+    #[test]
+    fn fuzz_byte_mutation_and_truncation_never_panics() {
+        let p = pw("fuzz-pw");
+        let valid = scheme1_blob(&p);
+        // Pristine envelope unwraps cleanly.
+        assert_eq!(
+            unwrap(&wid(1), "seed", Some(&p), &valid)
+                .unwrap()
+                .expose_secret(),
+            b"seed"
+        );
+
+        let mut state: u32 = 0x9E37_79B9;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+
+        let assert_typed = |arg: Option<&SecretString>, buf: &[u8]| {
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                unwrap(&wid(1), "seed", arg, buf)
+            }))
+            .expect("unwrap must never panic on hostile input");
+            match res {
+                Ok(_)
+                | Err(SecretStoreError::Corruption)
+                | Err(SecretStoreError::WrongPassword)
+                | Err(SecretStoreError::NeedsPassword)
+                | Err(SecretStoreError::ExpectedProtectedButUnsealed)
+                | Err(SecretStoreError::UnsupportedEnvelopeVersion { .. })
+                | Err(SecretStoreError::KdfFailure) => {}
+                Err(other) => panic!("unexpected error variant: {other:?}"),
+            }
+        };
+
+        for i in 0..2_000 {
+            let mut buf = valid.clone();
+            let flips = 1 + (next() % 4) as usize;
+            for _ in 0..flips {
+                let idx = (next() as usize) % buf.len();
+                buf[idx] ^= (next() & 0xFF) as u8;
+            }
+            // None path every iteration (cheap, no derive).
+            assert_typed(None, &buf);
+            // Some path on a representative subset (each may derive).
+            if i % 16 == 0 {
+                assert_typed(Some(&p), &buf);
+            }
+        }
+
+        // Truncation at every offset — a short read must never panic.
+        for cut in 0..valid.len() {
+            assert_typed(None, &valid[..cut]);
+            assert_typed(Some(&p), &valid[..cut]);
+        }
+    }
+
+    // TC-040 — proptest: no single-byte flip surfaces the plaintext.
+    // Minimises to the offset that breaks coverage if one exists.
+    proptest::proptest! {
+        #[test]
+        fn prop_single_byte_flip_never_yields_plaintext(
+            (offset, mask) in (0usize..200usize, 1u8..=255u8),
+        ) {
+            // Re-built per case so the proptest harness can shrink
+            // independently of the host RNG.
+            let plaintext: &[u8] = b"goldfinch";
+            let p = pw("pw");
+            let valid = wrap_with_params(&wid(1), "seed", Some(&p), plaintext, floor())
+                .unwrap()
+                .expose_secret()
+                .to_vec();
+            if offset >= valid.len() {
+                // Out-of-bounds offset → skip via prop_assume so proptest
+                // shrinks toward in-bounds offsets.
+                proptest::prop_assume!(offset < valid.len());
+            }
+            let mut buf = valid.clone();
+            buf[offset] ^= mask;
+            match unwrap(&wid(1), "seed", Some(&p), &buf) {
+                Ok(secret) => {
+                    proptest::prop_assert_ne!(
+                        secret.expose_secret(),
+                        plaintext,
+                        "single-byte flip at offset {} surfaced the plaintext",
+                        offset
+                    );
+                }
+                Err(_) => { /* any typed error is fine */ }
+            }
+        }
     }
 }
