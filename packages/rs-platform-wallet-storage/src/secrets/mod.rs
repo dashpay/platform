@@ -21,6 +21,13 @@
 //! This `src/secrets/` tree is the sole secret-bearing module:
 //! `tests/secrets_scan.rs` exempts it, so it owns its own review
 //! discipline via `tests/secrets_guard.rs`.
+//!
+//! Cryptographic wire format lives in [`mod@wire`]: the Tier-2
+//! envelope (`wire::envelope`) and the three AAD constructions
+//! (`wire::aad`) are bincode-encoded against a single `WIRE_CONFIG`, so
+//! a future bincode-config drift is caught by the golden-vector tests
+//! in `wire::envelope::tests` rather than silently corrupting every
+//! stored blob.
 
 mod envelope;
 mod error;

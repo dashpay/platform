@@ -703,8 +703,8 @@ mod tests {
             );
         }
 
-        // Raw, non-envelope bytes → Corruption (the legacy magic-less
-        // tolerance path is gone — every read goes through bincode).
+        // Raw, non-envelope bytes → Corruption under either password
+        // arg: every read goes through the bincode decoder.
         b.place_raw(&w, "raw", b"raw-bytes-not-a-valid-envelope");
         for arg in [None, Some(&pw)] {
             assert!(
