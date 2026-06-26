@@ -145,12 +145,13 @@ impl SecretStore {
         self.get_secret(service, label, None)
     }
 
-    /// Read the opaque bytes stored under `(service, label)`, or `Ok(None)`
-    /// if absent — the raw backend value (a Tier-2 envelope once writes go
-    /// through [`set_secret`](SecretStore::set_secret), or a legacy raw
-    /// value). The typed-vs-SPI distinction is preserved exactly as the
-    /// pre-Tier-2 path did. This is the shared seam under [`get`] and
-    /// [`get_secret`]; it does NOT interpret the envelope.
+    /// Read the opaque bytes stored under `(service, label)`, or
+    /// `Ok(None)` if absent — the raw backend value, always a Tier-2
+    /// envelope (writes go through
+    /// [`set_secret`](SecretStore::set_secret)). The typed-vs-SPI
+    /// distinction is preserved exactly as the pre-Tier-2 path did. This
+    /// is the shared seam under [`get`] and [`get_secret`]; it does NOT
+    /// interpret the envelope.
     ///
     /// [`get`]: SecretStore::get
     fn get_raw(
@@ -199,12 +200,12 @@ impl SecretStore {
     ///
     /// - `Some(pw)` + a protected blob → the secret (or
     ///   [`WrongPassword`](SecretStoreError::WrongPassword) on tag fail);
-    /// - `Some(pw)` + a non-protected blob (unprotected / legacy raw) →
+    /// - `Some(pw)` + an unprotected blob →
     ///   [`ExpectedProtectedButUnsealed`](SecretStoreError::ExpectedProtectedButUnsealed)
     ///   — a strip/downgrade, refused, no bytes returned;
     /// - `None` + a protected blob →
     ///   [`NeedsPassword`](SecretStoreError::NeedsPassword) (never ciphertext);
-    /// - `None` + an unprotected / legacy raw blob → the secret.
+    /// - `None` + an unprotected blob → the secret.
     ///
     /// **Documented residual:** an attacker who ALSO rewrites the
     /// consumer's trusted DB so the caller passes `None` for a stripped
@@ -687,40 +688,35 @@ mod tests {
             b.name
         );
 
-        // magic-present-but-truncated + None → Corruption.
-        let mut trunc = envelope::MAGIC.to_vec();
-        trunc.push(envelope::ENVELOPE_VERSION); // no scheme byte
-        b.place_raw(&w, "broken", &trunc);
-        assert!(
-            matches!(
-                b.store.get_secret(&w, "broken", None).unwrap_err(),
-                SecretStoreError::Corruption
-            ),
-            "[{}] truncated-with-magic + None",
-            b.name
-        );
+        // Truncated envelope (below the bincode minimum) → Corruption,
+        // both with and without a password — no magic byte to peek at.
+        b.place_raw(&w, "broken", &[0x01]);
+        for arg in [None, Some(&pw)] {
+            assert!(
+                matches!(
+                    b.store.get_secret(&w, "broken", arg).unwrap_err(),
+                    SecretStoreError::Corruption
+                ),
+                "[{}] truncated envelope ({:?})",
+                b.name,
+                arg.map(|_| "Some")
+            );
+        }
 
-        // magic-less legacy raw + None → returns the bytes (legacy
-        // tolerance); + Some(pw) → fails closed, so the strict rule holds.
-        b.place_raw(&w, "legacy", b"raw-legacy-seed-no-magic");
-        assert_eq!(
-            b.store
-                .get_secret(&w, "legacy", None)
-                .unwrap()
-                .unwrap()
-                .expose_secret(),
-            b"raw-legacy-seed-no-magic",
-            "[{}] legacy magic-less + None",
-            b.name
-        );
-        assert!(
-            matches!(
-                b.store.get_secret(&w, "legacy", Some(&pw)).unwrap_err(),
-                SecretStoreError::ExpectedProtectedButUnsealed
-            ),
-            "[{}] legacy magic-less + Some",
-            b.name
-        );
+        // Raw, non-envelope bytes → Corruption (the legacy magic-less
+        // tolerance path is gone — every read goes through bincode).
+        b.place_raw(&w, "raw", b"raw-bytes-not-a-valid-envelope");
+        for arg in [None, Some(&pw)] {
+            assert!(
+                matches!(
+                    b.store.get_secret(&w, "raw", arg).unwrap_err(),
+                    SecretStoreError::Corruption
+                ),
+                "[{}] raw non-envelope bytes ({:?})",
+                b.name,
+                arg.map(|_| "Some")
+            );
+        }
 
         // absent entry → Ok(None) under either arg (deletion = DoS).
         assert!(b.store.get_secret(&w, "absent", None).unwrap().is_none());
@@ -882,18 +878,27 @@ mod tests {
         run_upgrade_confusion(&os_backend());
     }
 
-    /// An in-place scheme-byte flip (protected→unprotected). Some(pw) is caught by
-    /// the strict rule regardless. None reads the body as scheme-0 opaque
-    /// bytes (never the real seed) — a known residual, dominated by the
-    /// consumer-DB residual; pinned, not "fixed".
+    /// A scheme-flip from `Password` → `Unprotected`: `Some(pw)` is
+    /// caught by the strict rule regardless; `None` reads the body as
+    /// scheme-0 opaque bytes (never the real seed) — a known residual,
+    /// dominated by the consumer-DB residual; pinned, not "fixed".
     fn run_scheme_flip(b: &Backend) {
+        use crate::secrets::wire::config::WIRE_CONFIG;
+        use crate::secrets::wire::envelope::{Envelope, Payload};
+
         let w = wid(6);
         let pw = SecretString::new("pw");
-        let mut blob = protected(&w, "x", "pw", b"real-seed");
-        let scheme_off = envelope::MAGIC.len() + 1;
-        assert_eq!(blob[scheme_off], envelope::SCHEME_PASSWORD);
-        blob[scheme_off] = envelope::SCHEME_UNPROTECTED;
-        b.place_raw(&w, "x", &blob);
+        let blob = protected(&w, "x", "pw", b"real-seed");
+        let (env, _): (Envelope, usize) = bincode::decode_from_slice(&blob, WIRE_CONFIG).unwrap();
+        let flipped = match env.payload {
+            Payload::Password { ciphertext, .. } => Envelope {
+                version: env.version,
+                payload: Payload::Unprotected(ciphertext),
+            },
+            Payload::Unprotected(_) => panic!("protected() must yield a Password payload"),
+        };
+        let flipped_blob = bincode::encode_to_vec(&flipped, WIRE_CONFIG).unwrap();
+        b.place_raw(&w, "x", &flipped_blob);
 
         assert!(matches!(
             b.store.get_secret(&w, "x", Some(&pw)).unwrap_err(),

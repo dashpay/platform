@@ -20,11 +20,11 @@ pub enum SecretStoreError {
     #[error("wrong passphrase")]
     WrongPassphrase,
 
-    /// Tier-2 strip/downgrade guard: the caller asserted — by supplying an object
-    /// password — that this object MUST be password-protected, but the
-    /// stored value is a well-formed UNPROTECTED envelope (scheme-0) or a
-    /// legacy magic-less raw value, i.e. a strip/downgrade. **Fails
-    /// closed:** the stored bytes are NEVER returned (CWE-757/CWE-345).
+    /// Tier-2 strip/downgrade guard: the caller asserted — by supplying
+    /// an object password — that this object MUST be password-protected,
+    /// but the stored value is a well-formed UNPROTECTED envelope
+    /// (scheme-0), i.e. a strip/downgrade. **Fails closed:** the stored
+    /// bytes are NEVER returned (CWE-757/CWE-345).
     #[error("expected a password-protected secret but the stored value is unprotected")]
     ExpectedProtectedButUnsealed,
 
@@ -74,19 +74,17 @@ pub enum SecretStoreError {
         found: u32,
     },
 
-    /// A Tier-2 secret envelope carried the magic but a `version` (or, at a
-    /// known version, a `scheme`) this build does not understand. Fails
-    /// closed REGARDLESS of the password argument — an unparseable future
-    /// format can be neither safely unwrapped nor safely treated as
-    /// unprotected, so it is refused both ways. Mirrors
-    /// [`VersionUnsupported`] for the vault format.
+    /// A Tier-2 secret envelope decoded with a `version` this build does
+    /// not understand. Fails closed REGARDLESS of the password argument
+    /// — an unparseable future format can be neither safely unwrapped
+    /// nor safely treated as unprotected, so it is refused both ways.
+    /// Mirrors [`VersionUnsupported`] for the vault format.
     ///
     /// [`VersionUnsupported`]: SecretStoreError::VersionUnsupported
     #[error("unsupported secret envelope version {found}")]
     UnsupportedEnvelopeVersion {
         /// The envelope `version` byte read from the (unauthenticated)
-        /// header. An unknown `scheme` under a known version reports the
-        /// known version byte (a forward-incompatible scheme).
+        /// header.
         found: u8,
     },
 

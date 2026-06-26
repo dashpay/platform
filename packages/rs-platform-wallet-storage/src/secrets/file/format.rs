@@ -37,6 +37,9 @@ use serde::{Deserialize, Serialize};
 
 use super::crypto::{KdfParams, NONCE_LEN, SALT_LEN};
 use crate::secrets::error::SecretStoreError;
+use crate::secrets::wire::aad::{EntryAad, VerifyAad};
+use crate::secrets::wire::config::{ENTRY_DOMAIN_V2, VERIFY_DOMAIN_V2, WIRE_CONFIG};
+use crate::secrets::wire::kdf::KdfParamsEncoded;
 
 pub(crate) const FORMAT_VERSION: u32 = 1;
 pub(crate) const KDF_ID_ARGON2ID: u8 = 1;
@@ -45,17 +48,6 @@ pub(crate) const KDF_ID_ARGON2ID: u8 = 1;
 /// verification token. Its only purpose is the AEAD tag check; the
 /// value itself is not secret.
 pub(crate) const VERIFY_CONSTANT: &[u8] = b"PWSVAULT-VERIFY-v1";
-
-/// AAD slot label for the verification token. The leading NUL keeps it
-/// disjoint from every allowlisted entry label, so the token can never
-/// alias a real entry's AAD.
-pub(crate) const VERIFY_LABEL: &str = "\0verify";
-
-/// Sentinel wallet id for the verify-token AAD slot. Keeps the AAD shape
-/// identical to entry AAD without aliasing a real wallet: even a real
-/// `[0u8; 32]` id yields a different AAD because [`VERIFY_LABEL`] differs
-/// from any allowlisted label.
-const VERIFY_WALLET_ID: [u8; 32] = [0u8; 32];
 
 /// Minimum AEAD ciphertext length: the Poly1305 tag is always present
 /// even for an empty plaintext, so any `verify_ct`/`ciphertext` shorter
@@ -96,43 +88,43 @@ pub(crate) struct EntryBody {
     pub ciphertext: Vec<u8>,
 }
 
-/// Canonical length-prefixed AAD binding ciphertext to its slot:
-/// `format_version ‖ wallet_id ‖ label`. A blob moved to another slot, or
-/// a rolled-back `format_version`, fails the tag.
+/// Canonical AAD binding a vault entry's ciphertext to its slot:
+/// `domain ‖ format_version ‖ wallet_id ‖ label`, bincode-encoded
+/// against [`WIRE_CONFIG`]. A blob moved to another slot, or one
+/// version-rolled-back, fails the tag.
 ///
 /// Determinism invariant: AAD is built solely from this typed triple,
 /// never from serialized JSON bytes or key order. `format_version` is
-/// always the compiled-in [`FORMAT_VERSION`]; the JSON `version` field is
-/// a dispatch gate only and is never routed into AAD.
+/// always the compiled-in [`FORMAT_VERSION`]; the JSON `version` field
+/// is a dispatch gate only and is never routed into AAD.
 pub(crate) fn aad(format_version: u32, wallet_id: &[u8; 32], label: &str) -> Vec<u8> {
-    let lb = label.as_bytes();
-    let mut v = Vec::with_capacity(4 + 4 + 32 + 4 + lb.len());
-    v.extend_from_slice(&format_version.to_le_bytes());
-    v.extend_from_slice(&(wallet_id.len() as u32).to_le_bytes());
-    v.extend_from_slice(wallet_id);
-    v.extend_from_slice(&(lb.len() as u32).to_le_bytes());
-    v.extend_from_slice(lb);
-    v
+    bincode::encode_to_vec(
+        EntryAad {
+            domain: ENTRY_DOMAIN_V2,
+            format_version,
+            wallet_id: *wallet_id,
+            label,
+        },
+        WIRE_CONFIG,
+    )
+    .expect("EntryAad encode is infallible")
 }
 
-/// AAD for the verify-token. Reuses the entry-AAD construction (sentinel
-/// wallet id + NUL-prefixed [`VERIFY_LABEL`], disjoint from any real
-/// slot), then binds the KDF header: `salt` plus a length-prefixed LE
-/// encoding of (`id`, `m_kib`, `t`, `p`).
-///
-/// Folding the header in makes the token authenticate the salt + KDF
-/// params it was derived under, so header tamper / KDF downgrade is
-/// detected fail-closed (it surfaces as `WrongPassphrase` because a
-/// tampered header also yields a different derived key).
+/// AAD for the verify-token: bincode-encoded `VerifyAad` binding the
+/// vault-wide salt + KDF header against the verify domain tag. A
+/// tampered header yields a different AAD AND a different derived key,
+/// so the token surfaces `WrongPassphrase`.
 pub(crate) fn verify_aad(format_version: u32, salt: &[u8; SALT_LEN], kdf: &KdfParams) -> Vec<u8> {
-    let mut v = aad(format_version, &VERIFY_WALLET_ID, VERIFY_LABEL);
-    v.extend_from_slice(&(salt.len() as u32).to_le_bytes());
-    v.extend_from_slice(salt);
-    v.extend_from_slice(&[kdf.id]);
-    v.extend_from_slice(&kdf.m_kib.to_le_bytes());
-    v.extend_from_slice(&kdf.t.to_le_bytes());
-    v.extend_from_slice(&kdf.p.to_le_bytes());
-    v
+    bincode::encode_to_vec(
+        VerifyAad {
+            domain: VERIFY_DOMAIN_V2,
+            format_version,
+            salt: *salt,
+            kdf: KdfParamsEncoded::from(*kdf),
+        },
+        WIRE_CONFIG,
+    )
+    .expect("VerifyAad encode is infallible")
 }
 
 /// Serde helpers encoding `Vec<u8>` as lowercase hex. Hex is already a
@@ -248,70 +240,6 @@ pub(crate) fn deserialize(buf: &[u8]) -> Result<Vault, SecretStoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn aad_binds_slot() {
-        let w = [1u8; 32];
-        assert_ne!(aad(1, &w, "a"), aad(1, &w, "b"));
-        assert_ne!(aad(1, &w, "a"), aad(2, &w, "a"));
-        assert_ne!(aad(1, &w, "a"), aad(1, &[2u8; 32], "a"));
-        // Length-prefix defeats `"a"+"bc"` vs `"ab"+"c"` ambiguity.
-        assert_ne!(aad(1, &w, "ab"), {
-            let mut v = aad(1, &w, "a");
-            v.extend_from_slice(b"b");
-            v
-        });
-    }
-
-    #[test]
-    fn verify_aad_disjoint_from_every_entry_aad() {
-        // VERIFY_LABEL starts with NUL (allowlist-forbidden), so no real
-        // entry's AAD can collide — even on the all-zero wallet id.
-        let salt = [7u8; SALT_LEN];
-        let kdf = KdfParams::default_target();
-        let v = verify_aad(FORMAT_VERSION, &salt, &kdf);
-        assert_ne!(v, aad(FORMAT_VERSION, &VERIFY_WALLET_ID, "seed"));
-        assert_ne!(v, aad(FORMAT_VERSION, &[1u8; 32], "seed"));
-    }
-
-    #[test]
-    fn verify_aad_binds_salt_and_kdf_params() {
-        // The verify-token AAD authenticates the salt + KDF header, so a
-        // flipped salt or an in-bounds KDF-param shift yields a different
-        // AAD (and hence a token-tag failure at verify).
-        let salt = [7u8; SALT_LEN];
-        let kdf = KdfParams::default_target();
-        let base = verify_aad(FORMAT_VERSION, &salt, &kdf);
-
-        let mut salt2 = salt;
-        salt2[0] ^= 0x01;
-        assert_ne!(base, verify_aad(FORMAT_VERSION, &salt2, &kdf));
-
-        assert_ne!(
-            base,
-            verify_aad(
-                FORMAT_VERSION,
-                &salt,
-                &KdfParams {
-                    m_kib: kdf.m_kib / 2,
-                    ..kdf
-                }
-            )
-        );
-        assert_ne!(
-            base,
-            verify_aad(
-                FORMAT_VERSION,
-                &salt,
-                &KdfParams {
-                    t: kdf.t - 1,
-                    ..kdf
-                }
-            )
-        );
-        // Identical inputs are deterministic.
-        assert_eq!(base, verify_aad(FORMAT_VERSION, &salt, &kdf));
-    }
 
     fn test_vault(wallets: BTreeMap<String, BTreeMap<String, EntryBody>>) -> Vault {
         Vault {

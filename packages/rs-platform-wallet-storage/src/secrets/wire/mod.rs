@@ -29,10 +29,6 @@
 //! (`PWSEV-TIER2-AAD-v1` and the implicitly-untagged
 //! `secrets/file/format.rs::aad` / `verify_aad` outputs).
 #![deny(missing_docs)]
-// Type-only scaffolding before the encoder/decoder is wired in. The
-// consumers in `envelope.rs` reference every item once the module is
-// complete.
-#![allow(dead_code)]
 
 pub(crate) mod aad;
 pub(crate) mod config;
