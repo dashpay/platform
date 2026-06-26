@@ -1,17 +1,13 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! `WalletStorageError::is_transient` + `error_kind_str` exhaustiveness
-//! check via a wildcard-free `match`, plus the boundary mapping of
-//! `FlushRetryable` into `PersistenceError::Backend`.
+//! `WalletStorageError::is_transient` + `error_kind_str` exhaustiveness,
+//! plus the boundary mapping of `FlushRetryable` into
+//! `PersistenceError::Backend`.
 //!
-//! The check is structured as a `match` over `&WalletStorageError`
-//! that covers every variant explicitly. There is NO `_` arm — when a
-//! future variant lands on `WalletStorageError`, this file refuses to
-//! compile until the author adds a classification + tag here too.
-//! Combined with the wildcard-free matches in
-//! `error::is_transient` / `error::error_kind_str` and the workspace
-//! ban on `#[non_exhaustive]` for this enum, the policy is enforced
-//! at the type system level end-to-end.
+//! The check is a wildcard-free `match` with one arm per variant (no
+//! `_`), so a new `WalletStorageError` variant fails to compile here
+//! until it is classified — mirroring the matches in `error::is_transient`
+//! / `error::error_kind_str`.
 
 use std::path::PathBuf;
 
@@ -96,15 +92,9 @@ fn samples() -> Vec<WalletStorageError> {
         sqlite_disk_full(),
         sqlite_io_failure(),
         sqlite_oom(),
-        // Migration uses an internal refinery error — we cannot easily
-        // synthesise one without a full runner. The `Migration(_)` arm
-        // in the match below uses a lazily-generated value via
-        // `unimplemented_variant_marker` since the test body never
-        // reads the inner error. We construct a different concrete
-        // variant whose match arm is `Migration` — see comment in arm.
-        // Skipped from samples because refinery::Error has no public
-        // `From` we can lean on; the arm is still exhaustively
-        // covered by the match itself.
+        // Migration wraps a refinery error with no public constructor, so
+        // it can't be synthesised here. It's omitted from the samples but
+        // the `Migration(_)` arm below still keeps the match exhaustive.
         WalletStorageError::IntegrityCheckFailed {
             report: "rows missing".into(),
         },
@@ -145,6 +135,20 @@ fn samples() -> Vec<WalletStorageError> {
             limit_bytes: 16 * 1024 * 1024,
         },
         WalletStorageError::ForeignKeysNotEnforced,
+        WalletStorageError::JournalModeNotApplied {
+            requested: "WAL",
+            actual: "delete".into(),
+        },
+        WalletStorageError::SchemaHistoryMalformed {
+            reason: "bad applied_on",
+        },
+        WalletStorageError::NotAWalletDb {
+            expected: 0x504C_5754,
+            found: 0,
+        },
+        WalletStorageError::AlreadyOpen {
+            path: PathBuf::from("/x/w.db"),
+        },
         WalletStorageError::LockPoisoned,
         WalletStorageError::RestoreDestinationLocked,
         WalletStorageError::InvalidWalletIdHex {
@@ -153,12 +157,8 @@ fn samples() -> Vec<WalletStorageError> {
         WalletStorageError::InvalidWalletIdLength { actual: 10 },
         WalletStorageError::ConfigInvalid { reason: "bad knob" },
         WalletStorageError::IdentityEntryIdMismatch,
-        WalletStorageError::UtxoAddressNotDerived {
-            address: "yMockAddress".into(),
-        },
         // BincodeEncode / BincodeDecode / HashDecode / ConsensusCodec
-        // need real upstream errors — synthesise minimal ones via the
-        // public constructors / `From` impls.
+        // need real upstream errors; omitted but covered by their arms.
         WalletStorageError::BlobDecode {
             reason: "bad shape",
         },
@@ -183,13 +183,9 @@ fn samples() -> Vec<WalletStorageError> {
     ]
 }
 
-/// wildcard-free exhaustiveness gate.
-///
-/// The body is a `match` over `&WalletStorageError` with one arm per
-/// variant — NO `_` arm, NO `..` rest patterns over enum variants.
-/// Adding a new variant to `WalletStorageError` triggers a compile
-/// error here AND in `error::is_transient`; the two failures together
-/// keep the classification policy honest.
+/// Wildcard-free exhaustiveness gate: each variant's expected
+/// `(is_transient, error_kind_str)` pair is asserted via a `match` with
+/// no `_` arm.
 #[test]
 fn tc_p2_005_is_transient_table() {
     fn classify(err: &WalletStorageError) -> (bool, &'static str) {
@@ -246,8 +242,13 @@ fn tc_p2_005_is_transient_table() {
                 (false, "asset_lock_entry_mismatch")
             }
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
-            WalletStorageError::UtxoAddressNotDerived { .. } => (false, "utxo_address_not_derived"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
+            WalletStorageError::JournalModeNotApplied { .. } => (false, "journal_mode_not_applied"),
+            WalletStorageError::SchemaHistoryMalformed { .. } => {
+                (false, "schema_history_malformed")
+            }
+            WalletStorageError::NotAWalletDb { .. } => (false, "not_a_wallet_db"),
+            WalletStorageError::AlreadyOpen { .. } => (false, "already_open"),
             WalletStorageError::IntegerOverflow { .. } => (false, "integer_overflow"),
         }
     }
@@ -305,9 +306,9 @@ fn tc_p2_010_boundary_error_mapping() {
         "missing wallet_id hex prefix: {outer}"
     );
 
-    // Walk the typed source chain to the inner rusqlite payload —
-    // post- the source is `Box<dyn Error + Send + Sync>` so
-    // the chain is preserved structurally, not just stringified.
+    // Walk the typed source chain to the inner rusqlite payload: the
+    // source is `Box<dyn Error + Send + Sync>`, so the chain is preserved
+    // structurally, not just stringified.
     let mut chain = String::new();
     let mut cur: Option<&(dyn std::error::Error + 'static)> = source.source();
     while let Some(e) = cur {

@@ -1,22 +1,39 @@
 //! Single connection-open choke-point.
 //!
-//! `PRAGMA foreign_keys` is per-connection and resets to OFF on every
-//! open — it is not persisted in the database file, and no compile-time
-//! knob in `libsqlite3-sys`'s bundled build forces it on. Enforcement is
-//! therefore a runtime discipline: every connection that mutates rows
-//! must enable it, and we must *prove* it took, because the pragma
-//! silently no-ops on a SQLite built without FK support.
-//!
-//! Every library connection-open site routes through [`open_conn`] so
-//! there is exactly one place that owns flags + FK enforcement. The CLI
-//! binary's read-only `peek_schema_version` probe opens directly — it
-//! never mutates rows, so FK enforcement is moot, and `open_conn` is
-//! `pub(crate)` (not reachable from the separate bin target).
+//! `PRAGMA foreign_keys` is per-connection, defaults to OFF on every open,
+//! and silently no-ops on a SQLite built without FK support — so every
+//! writer connection must enable it and read it back to prove it took.
+//! All library opens route through [`open_conn`]; the CLI's read-only
+//! `peek_schema_version` probe opens directly (no mutations, and
+//! `open_conn` is `pub(crate)`, unreachable from the bin target).
 
 use rusqlite::{Connection, OpenFlags};
 use std::path::Path;
 
 use crate::sqlite::error::WalletStorageError;
+
+/// Magic stamped into the SQLite header `application_id` (offset 68) by
+/// `V001__initial`. ASCII `"PLWT"` (Platform Wallet) big-endian. A
+/// refinery-versioned DB whose `application_id` does not equal this is a
+/// foreign SQLite database, not a wallet-storage DB.
+pub(crate) const APPLICATION_ID: i32 = 0x504C_5754;
+
+/// Read the header `application_id` and assert it equals
+/// [`APPLICATION_ID`]. Returns [`WalletStorageError::NotAWalletDb`] on
+/// mismatch. The caller decides WHEN to run this — `open()` runs it
+/// pre-migration on a refinery-versioned DB; `restore_from` runs it on
+/// the staged copy. A brand-new (unmigrated) DB reports `0` and is the
+/// caller's responsibility to skip (V001 stamps the real value).
+pub(crate) fn assert_wallet_application_id(conn: &Connection) -> Result<(), WalletStorageError> {
+    let found: i32 = conn.pragma_query_value(None, "application_id", |row| row.get(0))?;
+    if found != APPLICATION_ID {
+        return Err(WalletStorageError::NotAWalletDb {
+            expected: APPLICATION_ID,
+            found,
+        });
+    }
+    Ok(())
+}
 
 /// How the opened connection will be used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,10 +52,9 @@ pub(crate) enum Access {
 /// For [`Access::ReadWrite`], enables `PRAGMA foreign_keys = ON` and
 /// reads it back, returning [`WalletStorageError::ForeignKeysNotEnforced`]
 /// if the result is not `1`. For [`Access::ReadOnly`], opens with
-/// `SQLITE_OPEN_READ_ONLY` and performs no pragma. URI filename parsing
-/// is deliberately not enabled: the crate never constructs `file:` URIs,
-/// and leaving it off keeps a path from ever smuggling query parameters
-/// (e.g. `?mode=rwc`) that could defeat the read-only intent.
+/// `SQLITE_OPEN_READ_ONLY` and performs no pragma. URI filename parsing is
+/// deliberately left off so a path can't smuggle query parameters (e.g.
+/// `?mode=rwc`) that defeat the read-only intent.
 pub(crate) fn open_conn(path: &Path, access: Access) -> Result<Connection, WalletStorageError> {
     let conn = match access {
         Access::ReadWrite => Connection::open(path)?,
@@ -77,10 +93,8 @@ mod tests {
         assert_eq!(on, 1, "read-back must observe FK enforcement is on");
     }
 
-    /// The hard-error variant the read-back returns when the pragma is a
-    /// no-op is wired and reachable. We can't build a FK-less SQLite in
-    /// the bundled build, so assert the typed error renders the intended
-    /// message rather than truncating the contract to "untestable".
+    /// The bundled build can't produce a FK-less SQLite, so assert the
+    /// read-back error variant at least renders its intended message.
     #[test]
     fn foreign_keys_not_enforced_variant_renders() {
         let err = WalletStorageError::ForeignKeysNotEnforced;

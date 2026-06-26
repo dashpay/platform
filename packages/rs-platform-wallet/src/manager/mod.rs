@@ -4,7 +4,9 @@ pub mod accessors;
 mod coordinator_lifecycle;
 pub mod identity_sync;
 mod load;
+pub mod load_outcome;
 pub mod platform_address_sync;
+pub mod rehydrate;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
 mod wallet_lifecycle;
@@ -98,14 +100,18 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     #[cfg(feature = "shielded")]
     pub(super) shielded_coordinator:
         Arc<RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>>,
-    /// Shared `PlatformEventManager` — held on the manager so
-    /// `configure_shielded` can install a per-chunk progress handler
-    /// onto the freshly-created `NetworkShieldedCoordinator` that
-    /// forwards into `on_shielded_sync_progress`. Sub-managers
+    /// Shared `PlatformEventManager`, retained on the manager for the
+    /// two callers that fan out platform-wallet events directly:
+    /// `load_from_persistor` surfaces per-wallet
+    /// [`PlatformEvent`](crate::events::PlatformEvent) skip
+    /// notifications to the app handler, and (under the `shielded`
+    /// feature) `configure_shielded` installs a per-chunk progress
+    /// handler onto the freshly-created `NetworkShieldedCoordinator`
+    /// that forwards into `on_shielded_sync_progress`. Sub-managers
     /// (`SpvRuntime`, `PlatformAddressSyncManager`, etc.) hold their
-    /// own clones already, so `configure_shielded` is the only reader of
-    /// this retained handle — hence it is `shielded`-gated.
-    #[cfg(feature = "shielded")]
+    /// own clones already. Retained unconditionally because
+    /// `load_from_persistor` reads it regardless of the `shielded`
+    /// feature.
     pub(super) event_manager: Arc<PlatformEventManager>,
     pub(super) persister: Arc<P>,
     /// Shared worker-lifecycle engine. Owns every background worker's
@@ -236,7 +242,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
             shielded_coordinator,
-            #[cfg(feature = "shielded")]
             event_manager,
             persister,
             registry,

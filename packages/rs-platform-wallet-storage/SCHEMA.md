@@ -23,7 +23,7 @@ see [SECRETS.md](./SECRETS.md).
 
 ## How integrity is kept
 
-Schema evolution is version-gated by refinery. Every read-write connection turns on `PRAGMA foreign_keys = ON` at open time (`src/sqlite/conn.rs`), so every `ON DELETE CASCADE` clause is active. Deleting a `wallet_metadata` row cleans that wallet's metadata along two paths:
+Schema evolution is version-gated by refinery. Every read-write connection turns on `PRAGMA foreign_keys = ON` at open time (`src/sqlite/conn.rs`), so every `ON DELETE CASCADE` clause is active. Deleting a `wallets` row cleans that wallet's metadata along two paths:
 
 - **`wallet_id`-scoped meta** (`meta_wallet`, `meta_contact`, `meta_platform_address`) carries a `wallet_id` column, so `cascade_meta_on_wallet_delete` brooms it directly — regardless of the lifecycle state of any typed parent and even for rows written ahead of (or without) a typed parent.
 - **identity-scoped meta** (`meta_identity`, `meta_token`) carries no `wallet_id` — only `identity_id` (+ `token_id`). It is cleaned by `cascade_meta_on_identity_delete` (AFTER DELETE ON `identities`), which fires for the wallet's own identities when the FK cascade removes them on a wallet delete.
@@ -37,7 +37,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The 23 tables are split into five domain diagrams below. `WALLET_METADATA` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
+The 23 tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -45,16 +45,16 @@ Account registrations, address-pool snapshots, transactions, UTXOs, instant lock
 
 ```mermaid
 erDiagram
-    WALLET_METADATA ||--o{ ACCOUNT_REGISTRATIONS : "registers"
-    WALLET_METADATA ||--o{ ACCOUNT_ADDRESS_POOLS : "snapshots"
-    WALLET_METADATA ||--o{ CORE_TRANSACTIONS : "records"
-    WALLET_METADATA ||--o{ CORE_UTXOS : "owns"
-    WALLET_METADATA ||--o{ CORE_INSTANT_LOCKS : "holds"
-    WALLET_METADATA ||--o{ CORE_DERIVED_ADDRESSES : "derives"
-    WALLET_METADATA ||--o| CORE_SYNC_STATE : "tracks"
+    WALLETS ||--o{ ACCOUNT_REGISTRATIONS : "registers"
+    WALLETS ||--o{ ACCOUNT_ADDRESS_POOLS : "snapshots"
+    WALLETS ||--o{ CORE_TRANSACTIONS : "records"
+    WALLETS ||--o{ CORE_UTXOS : "owns"
+    WALLETS ||--o{ CORE_INSTANT_LOCKS : "holds"
+    WALLETS ||--o{ CORE_DERIVED_ADDRESSES : "derives"
+    WALLETS ||--o| CORE_SYNC_STATE : "tracks"
     CORE_TRANSACTIONS ||--o{ CORE_UTXOS : "spends"
 
-    WALLET_METADATA {
+    WALLETS {
         BLOB wallet_id PK "32-byte WalletId"
         TEXT network "mainnet | testnet | devnet | regtest"
         INTEGER birth_height "SPV scan start height"
@@ -62,7 +62,7 @@ erDiagram
 
     ACCOUNT_REGISTRATIONS {
         BLOB wallet_id PK
-        TEXT account_type PK "standard | coinjoin | identity_registration | ..."
+        TEXT account_type PK "standard_bip44 | standard_bip32 | coinjoin | identity_registration | ..."
         INTEGER account_index PK
         BLOB account_xpub_bytes "bincode-encoded AccountRegistrationEntry"
     }
@@ -105,9 +105,10 @@ erDiagram
     CORE_DERIVED_ADDRESSES {
         BLOB wallet_id PK
         TEXT account_type PK
-        TEXT address PK "bech32 / Base58 address string"
-        INTEGER account_index
-        TEXT derivation_path "pool_type/derivation_index"
+        INTEGER account_index PK "owning account; also the value the read returns"
+        TEXT pool_type PK "external | internal | absent | absent_hardened"
+        INTEGER derivation_index PK
+        TEXT address UK "bech32 / Base58 address string"
         INTEGER used "0 | 1"
     }
 
@@ -125,17 +126,18 @@ erDiagram
 
 ## Diagram 2 — Identities + DashPay (Platform L2 identity tree)
 
-Platform identities, their public keys, token balances, and DashPay profiles/payments. Identity-owned tables have no direct `wallet_id` column; cascade flows `wallet_metadata → identities → child`.
+Platform identities, their public keys, token balances, and DashPay profiles/payments. Most identity-owned tables have no direct `wallet_id` column and cascade via `wallets → identities → child`; `identity_keys` is the exception — it carries its own `wallet_id` column and two `ON DELETE CASCADE` FKs (one to `wallets`, one to `identities`).
 
 ```mermaid
 erDiagram
-    WALLET_METADATA ||--o{ IDENTITIES : "parents"
+    WALLETS ||--o{ IDENTITIES : "parents"
+    WALLETS ||--o{ IDENTITY_KEYS : "owns"
     IDENTITIES ||--o{ IDENTITY_KEYS : "has"
     IDENTITIES ||--o{ TOKEN_BALANCES : "holds"
     IDENTITIES ||--o| DASHPAY_PROFILES : "has"
     IDENTITIES ||--o{ DASHPAY_PAYMENTS_OVERLAY : "overlays"
 
-    WALLET_METADATA {
+    WALLETS {
         BLOB wallet_id PK "32-byte WalletId"
         TEXT network
         INTEGER birth_height
@@ -144,16 +146,18 @@ erDiagram
     IDENTITIES {
         BLOB identity_id PK "32-byte Platform Identifier"
         BLOB wallet_id FK "NULL = orphan identity (no parent wallet yet)"
-        INTEGER wallet_index "BIP-32 index; NULL for out-of-wallet identities"
+        INTEGER identity_index "BIP-32 index; NULL for out-of-wallet identities"
         BLOB entry_blob "bincode-encoded IdentityEntry"
         INTEGER tombstoned "0 | 1 (logical delete)"
     }
 
     IDENTITY_KEYS {
+        BLOB wallet_id PK "32-byte WalletId"
         BLOB identity_id PK
         INTEGER key_id PK "KeyID"
         BLOB public_key_blob "bincode-encoded IdentityKeyWire (public material only)"
         BLOB public_key_hash "20-byte HASH160 of the key"
+        BLOB derivation_blob "reserved typed projection; always NULL today"
     }
 
     TOKEN_BALANCES {
@@ -181,10 +185,10 @@ One unified table for all three states of a DashPay contact relationship — the
 
 ```mermaid
 erDiagram
-    WALLET_METADATA ||--o{ CONTACTS : "has"
+    WALLETS ||--o{ CONTACTS : "has"
     IDENTITIES ||--o{ CONTACTS : "relates"
 
-    WALLET_METADATA {
+    WALLETS {
         BLOB wallet_id PK "32-byte WalletId"
         TEXT network
         INTEGER birth_height
@@ -221,11 +225,11 @@ Platform P2PKH address pool with its sync watermark, and the asset-lock lifecycl
 
 ```mermaid
 erDiagram
-    WALLET_METADATA ||--o{ PLATFORM_ADDRESSES : "tracks"
-    WALLET_METADATA ||--o| PLATFORM_ADDRESS_SYNC : "syncs"
-    WALLET_METADATA ||--o{ ASSET_LOCKS : "issues"
+    WALLETS ||--o{ PLATFORM_ADDRESSES : "tracks"
+    WALLETS ||--o| PLATFORM_ADDRESS_SYNC : "syncs"
+    WALLETS ||--o{ ASSET_LOCKS : "issues"
 
-    WALLET_METADATA {
+    WALLETS {
         BLOB wallet_id PK "32-byte WalletId"
         TEXT network
         INTEGER birth_height
@@ -267,7 +271,7 @@ table per [`ObjectId`](./src/kv.rs) variant. `meta_global` has no parent
 and survives wallet deletion. The other five carry **no foreign key**:
 metadata may be written before its parent object is synced into its
 typed table. `AFTER DELETE` triggers provide a soft cascade so metadata
-never outlives its wallet. Deleting a `wallet_metadata` row brooms every
+never outlives its wallet. Deleting a `wallets` row brooms every
 wallet-scoped `meta_*` row by `wallet_id` directly, and the FK cascade
 through `identities` brooms the identity-scoped `meta_*` rows by
 `identity_id`; both legs key on the id alone, so cleanup is independent
@@ -278,9 +282,9 @@ edges below denote trigger-based cleanup, not an FK relationship.
 
 ```mermaid
 erDiagram
-    WALLET_METADATA ||..o{ META_WALLET : "trigger cleanup (by wallet_id)"
-    WALLET_METADATA ||..o{ META_CONTACT : "trigger cleanup (by wallet_id)"
-    WALLET_METADATA ||..o{ META_PLATFORM_ADDRESS : "trigger cleanup (by wallet_id)"
+    WALLETS ||..o{ META_WALLET : "trigger cleanup (by wallet_id)"
+    WALLETS ||..o{ META_CONTACT : "trigger cleanup (by wallet_id)"
+    WALLETS ||..o{ META_PLATFORM_ADDRESS : "trigger cleanup (by wallet_id)"
     IDENTITIES ||..o{ META_IDENTITY : "trigger cleanup (by identity_id)"
     IDENTITIES ||..o{ META_TOKEN : "trigger cleanup (by identity_id)"
 
@@ -291,7 +295,7 @@ erDiagram
     }
 
     META_WALLET {
-        BLOB wallet_id PK "no FK; trigger cleanup on wallet_metadata delete"
+        BLOB wallet_id PK "no FK; trigger cleanup on wallets delete"
         TEXT key PK
         BLOB value
         INTEGER updated_at
@@ -313,7 +317,7 @@ erDiagram
     }
 
     META_CONTACT {
-        BLOB wallet_id PK "no FK; trigger cleanup on wallet_metadata delete"
+        BLOB wallet_id PK "no FK; trigger cleanup on wallets delete"
         BLOB owner_id PK
         BLOB contact_id PK
         TEXT key PK
@@ -322,7 +326,7 @@ erDiagram
     }
 
     META_PLATFORM_ADDRESS {
-        BLOB wallet_id PK "no FK; trigger cleanup on wallet_metadata delete"
+        BLOB wallet_id PK "no FK; trigger cleanup on wallets delete"
         BLOB address PK
         TEXT key PK
         BLOB value
@@ -342,7 +346,7 @@ erDiagram
 
 ## Tables
 
-### `wallet_metadata`
+### `wallets`
 
 Root anchor for every per-wallet table. Deleting a row cascades to all
 direct children; identity-owned children cascade through `identities`.
@@ -359,7 +363,7 @@ the typed `account_type` / `account_index` columns mirror it for SQL
 lookups without blob decoding.
 
 - PK: `(wallet_id, account_type, account_index)`.
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 
 ### `account_address_pools`
 
@@ -367,7 +371,7 @@ Address-pool snapshot per `(wallet, account, pool_type)`. `pool_type` is
 one of `external`, `internal`, `absent`, `absent_hardened`.
 
 - PK: `(wallet_id, account_type, account_index, pool_type)`.
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 
 ### `core_transactions`
 
@@ -376,7 +380,7 @@ One row per transaction the wallet has seen. `height`, `block_hash`, and
 is `1` once block context is present.
 
 - PK: `(wallet_id, txid)`.
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 - Index: `idx_core_transactions_height(wallet_id, height)`.
 
 ### `core_utxos`
@@ -387,7 +391,7 @@ by a trigger when its referenced `core_transactions` row is deleted
 NOT NULL `wallet_id` column).
 
 - PK: `(wallet_id, outpoint)`.
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 - Index: `idx_core_utxos_spent(wallet_id, spent)`.
 
 ### `core_instant_locks`
@@ -396,16 +400,51 @@ Instant-lock blobs for transactions that are broadcast but not yet
 finalized. Rows are removed when the transaction becomes confirmed.
 
 - PK: `(wallet_id, txid)`.
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 
 ### `core_derived_addresses`
 
-Address-to-account-index map. Written before UTXOs in the same
-transaction so the UTXO writer can resolve `account_index` by address.
+A live-fed indexed read-cache the UTXO writer joins to resolve a UTXO's
+`account_index` by address. The authoritative manifest is
+`account_address_pools` (kept complete and in-band by the
+`core_bridge` emitter); this table is the fast B-tree probe in front of it.
+Fed by exactly one source:
 
-- PK: `(wallet_id, account_type, address)`.
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
-- Index: `idx_core_derived_addresses_addr(wallet_id, address)`.
+- **Live `addresses_derived` events** — written before UTXOs in the same
+  transaction so the writer sees fresh rows.
+
+UTXO resolution for an unspent UTXO:
+
+1. **Cache hit** — resolve from this table.
+2. **Cache miss, manifest hit** — fall back to `account_address_pools`
+   (the in-band snapshot is applied earlier in the same tx). Resolved.
+3. **Miss in both** — a genuinely undeclared address (not ours, or an SPV
+   gap-limit edge). The writer **skips** it (with a `warn`) so one
+   unresolvable row never aborts a whole flush; its balance re-warms once
+   the address is later derived.
+
+(The spent-only synthetic-row path is exempt: a spent row uses an inert
+`account_index` placeholder and is excluded from reads.)
+
+A live `addresses_derived` entry whose address is absent from the manifest
+is a **fatal** `DerivedIndexInvariantViolated` — the emitter must attach
+the pool snapshot in-band with every derivation, so this can only fire on
+an emitter bug, never on a benign gap.
+
+> The non-ECDSA pool gap (BLS/EdDSA addresses are dropped from the event
+> projection, so they never produce an `addresses_derived` entry) cannot
+> manifest here: only ECDSA Standard/CoinJoin External/Internal addresses
+> are ever classified `Received`/`Change`, so a non-ECDSA address can never
+> be a `new_utxos` UTXO address. This is an upstream classifier property
+> (`key-wallet` `account_checker`), not enforceable at the storage layer.
+
+- PK: `(wallet_id, account_type, account_index, pool_type, derivation_index)` — the BIP32
+  leaf identity (one row per derived address).
+- `UNIQUE(wallet_id, address)` — the read-index invariant (one
+  account_index per address); its index also backs the address lookup, so
+  no separate index is needed. `address` is a derived attribute, never a
+  key, so every collision surfaces loud.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 
 ### `core_sync_state`
 
@@ -414,7 +453,7 @@ One row per wallet, holding monotonically-advancing SPV sync watermarks.
 block is processed.
 
 - PK: `wallet_id` (single-row-per-wallet).
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 
 ### `identities`
 
@@ -424,7 +463,7 @@ NULL means the identity was written before a parent wallet was registered
 marks a logical delete; the row is retained for cascade integrity.
 
 - PK: `identity_id`.
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE` (nullable).
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE` (nullable).
 - Index: `idx_identities_wallet(wallet_id)`.
 
 ### `identity_keys`
@@ -432,11 +471,14 @@ marks a logical delete; the row is retained for cascade integrity.
 Public identity keys only — no private material. The
 `public_key_blob` is a custom wire format (`IdentityKeyWire`) that
 pre-encodes the `IdentityPublicKey` via bincode 2 native `Encode/Decode`
-to work around a serde-tag incompatibility.
+to work around a serde-tag incompatibility. `derivation_blob` is a
+reserved column for a future typed projection and is always NULL today
+(derivation indices live inside `public_key_blob`).
 
-- PK: `(identity_id, key_id)`.
+- PK: `(wallet_id, identity_id, key_id)`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 - FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.
-- Index: `idx_identity_keys_identity(identity_id)`.
+- Index: `idx_identity_keys_wallet_identity(wallet_id, identity_id)`.
 
 ### `contacts`
 
@@ -451,7 +493,7 @@ hold a bincode-encoded `ContactRequest`; `accepted_accounts` holds a
 bincode-encoded `Vec<u32>`.
 
 - PK: `(wallet_id, owner_id, contact_id)`.
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 - `state` CHECK: sourced from `sqlite::schema::contacts::CONTACT_STATE_LABELS`.
 
 ### `platform_addresses`
@@ -461,7 +503,7 @@ HASH160; `balance` and `nonce` are the last-synced values from the
 Platform layer.
 
 - PK: `(wallet_id, address)`.
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 
 ### `platform_address_sync`
 
@@ -469,22 +511,27 @@ Per-wallet watermark for platform address sync. All three height/timestamp
 fields advance monotonically (new values are `max(current, incoming)`).
 
 - PK: `wallet_id` (single-row-per-wallet).
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 
 ### `asset_locks`
 
 Lifecycle tracking for asset-lock outpoints. `status` is a queryable
 text column; `lifecycle_blob` carries the full `AssetLockEntry`. Consumed
-locks are removed via `AssetLockChangeSet::removed`, not retained with a
-consumed status.
+locks are **retained permanently** with `status = 'consumed'` (an upsert,
+never a `DELETE` — they are not routed through `AssetLockChangeSet::removed`),
+so the full lifecycle history stays on disk and remains visible via the
+unfiltered inspection reader (`schema::asset_locks::list_active`). The
+rehydration feed reads through `schema::asset_locks::load_unconsumed`, which
+filters at the SQL level (`status NOT IN ('consumed')`), so a spent one-shot
+lock is never resurrected as actionable.
 
 - PK: `(wallet_id, outpoint)`.
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 
 ### `token_balances`
 
 Per-identity token balance cache, keyed by `(identity_id, token_id)`.
-Cascade flows `wallet_metadata → identities → token_balances` through the
+Cascade flows `wallets → identities → token_balances` through the
 nullable `identities.wallet_id` link; no direct `wallet_id` column exists.
 
 - PK: `(identity_id, token_id)`.
@@ -524,7 +571,7 @@ Unlike every other per-wallet table, the five typed `meta_*` tables carry
 host apps can attach metadata independently of sync ordering (and a
 global-config persister can write to typed scopes whose parent tables
 stay empty). Cleanup is instead a soft cascade. Deleting a
-`wallet_metadata` row fires a wallet-rooted `AFTER DELETE` trigger that
+`wallets` row fires a wallet-rooted `AFTER DELETE` trigger that
 brooms the wallet-scoped tables (`meta_wallet`, `meta_contact`,
 `meta_platform_address`) by `wallet_id`, and the FK cascade through
 `identities` fires a per-identity trigger that brooms `meta_identity` +
@@ -546,7 +593,7 @@ Global metadata with no parent — survives every wallet delete.
 Per-wallet metadata. Writable before the wallet exists.
 
 - PK: `(wallet_id, key)`.
-- No FK. Cleanup: `cascade_meta_on_wallet_delete` (AFTER DELETE ON `wallet_metadata`, by `wallet_id`).
+- No FK. Cleanup: `cascade_meta_on_wallet_delete` (AFTER DELETE ON `wallets`, by `wallet_id`).
 
 #### `meta_identity`
 
@@ -567,7 +614,7 @@ Per-token-balance metadata. Writable before the token balance exists.
 Per-contact metadata for any lifecycle state. Writable before the contact exists.
 
 - PK: `(wallet_id, owner_id, contact_id, key)`.
-- No FK. Cleanup: `cascade_meta_on_wallet_delete` (AFTER DELETE ON `wallet_metadata`, by `wallet_id`) on a wallet delete, plus `cascade_meta_contact_on_contact_delete` (AFTER DELETE ON `contacts`, any state) for a direct contact delete.
+- No FK. Cleanup: `cascade_meta_on_wallet_delete` (AFTER DELETE ON `wallets`, by `wallet_id`) on a wallet delete, plus `cascade_meta_contact_on_contact_delete` (AFTER DELETE ON `contacts`, any state) for a direct contact delete.
 
 #### `meta_platform_address`
 
@@ -575,23 +622,25 @@ Per-platform-address metadata. `address` is an opaque `BLOB`. Writable
 before the address exists.
 
 - PK: `(wallet_id, address, key)`.
-- No FK. Cleanup: `cascade_meta_on_wallet_delete` (AFTER DELETE ON `wallet_metadata`, by `wallet_id`) on a wallet delete, plus `cascade_meta_platform_address_on_address_delete` (AFTER DELETE ON `platform_addresses`) for a direct address delete.
+- No FK. Cleanup: `cascade_meta_on_wallet_delete` (AFTER DELETE ON `wallets`, by `wallet_id`) on a wallet delete, plus `cascade_meta_platform_address_on_address_delete` (AFTER DELETE ON `platform_addresses`) for a direct address delete.
 
 ## Enum-domain CHECK constraints
 
-Six TEXT columns carry a `CHECK (col IN (...))` clause whose IN-list is
-built at migration time from `pub(crate) const *_LABELS` arrays declared
-next to each writer function. Five mirror an upstream Rust enum; the
-sixth (`contacts.state`) is a synthetic lifecycle label naming which
+Eight TEXT columns carry a `CHECK (col IN (...))` across five enum
+domains — `account_type` is reused in three tables. The IN-list is built
+at migration time from `pub(crate) const *_LABELS` arrays declared next
+to each writer function. Four domains mirror an upstream Rust enum; the
+fifth (`contacts.state`) is a synthetic lifecycle label naming which
 `ContactChangeSet` slot a row came from:
 
 | Table | Column | Source-of-truth const |
 |---|---|---|
-| `wallet_metadata` | `network` | `sqlite::schema::wallet_meta::NETWORK_LABELS` |
+| `wallets` | `network` | `sqlite::schema::wallets::NETWORK_LABELS` |
 | `account_registrations` | `account_type` | `sqlite::schema::accounts::ACCOUNT_TYPE_LABELS` |
 | `account_address_pools` | `account_type` | `sqlite::schema::accounts::ACCOUNT_TYPE_LABELS` |
 | `account_address_pools` | `pool_type` | `sqlite::schema::accounts::POOL_TYPE_LABELS` |
 | `core_derived_addresses` | `account_type` | `sqlite::schema::accounts::ACCOUNT_TYPE_LABELS` |
+| `core_derived_addresses` | `pool_type` | `sqlite::schema::accounts::POOL_TYPE_LABELS` |
 | `asset_locks` | `status` | `sqlite::schema::asset_locks::ASSET_LOCK_STATUS_LABELS` |
 | `contacts` | `state` | `sqlite::schema::contacts::CONTACT_STATE_LABELS` |
 
@@ -634,13 +683,17 @@ having to grep this repo.
 ## Foreign-key conventions
 
 - All direct-child `wallet_id` columns are `BLOB(32)` references to
-  `wallet_metadata.wallet_id` with `ON DELETE CASCADE`.
+  `wallets.wallet_id` with `ON DELETE CASCADE`.
 - `identities.wallet_id` is the single nullable FK: NULL means orphan
   (no parent wallet registered yet). The orphan-to-parented promotion
   uses `COALESCE(identities.wallet_id, excluded.wallet_id)` on upsert.
-- Identity-owned tables (`identity_keys`, `token_balances`,
-  `dashpay_profiles`, `dashpay_payments_overlay`) have no `wallet_id`
-  column. Cascade reaches them via `identities(identity_id)`.
+- Identity-owned tables (`token_balances`, `dashpay_profiles`,
+  `dashpay_payments_overlay`) have no `wallet_id` column. Cascade reaches
+  them via `identities(identity_id)`.
+- `identity_keys` is the exception among identity-owned tables: it carries
+  a `wallet_id BLOB NOT NULL` column and two `ON DELETE CASCADE` FKs
+  (`wallet_id → wallets`, `identity_id → identities`), so a delete on
+  either parent cascades to it.
 - `core_utxos.spent_in_txid` is cleared by the `setnull_core_utxos_on_tx_delete`
   trigger rather than a native `ON DELETE SET NULL` FK, because SQLite would null
   every column of a composite FK on SET NULL — including the NOT NULL `wallet_id`.
@@ -657,7 +710,7 @@ having to grep this repo.
 | Trigger | Fires | Action |
 |---|---|---|
 | `setnull_core_utxos_on_tx_delete` | AFTER DELETE ON `core_transactions` | NULL `core_utxos.spent_in_txid` for the deleted tx |
-| `cascade_meta_on_wallet_delete` | AFTER DELETE ON `wallet_metadata` | delete `meta_wallet`, `meta_contact`, `meta_platform_address` rows by `wallet_id` |
+| `cascade_meta_on_wallet_delete` | AFTER DELETE ON `wallets` | delete `meta_wallet`, `meta_contact`, `meta_platform_address` rows by `wallet_id` |
 | `cascade_meta_on_identity_delete` | AFTER DELETE ON `identities` | delete `meta_identity`, `meta_token` rows by `identity_id` |
 | `cascade_meta_token_on_token_balance_delete` | AFTER DELETE ON `token_balances` | delete matching `meta_token` rows (direct balance delete) |
 | `cascade_meta_contact_on_contact_delete` | AFTER DELETE ON `contacts` | delete matching `meta_contact` rows (any state; direct contact delete) |

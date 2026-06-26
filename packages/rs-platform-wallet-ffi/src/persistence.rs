@@ -3377,11 +3377,59 @@ fn build_wallet_start_state(
     // status without rebroadcasting.
     let unused_asset_locks = build_unused_asset_locks(entry)?;
 
+    // Project the reconstructed `wallet` + `wallet_info` into the
+    // keyless `ClientWalletStartState` the persister contract requires
+    // (SECRETS.md: no `Wallet`/seed crosses `load()`). The manager
+    // rebuilds a watch-only wallet from this manifest via
+    // `Wallet::new_watch_only` and applies this `core_state` projection.
+    // Signing happens later via the on-demand
+    // `sign_with_mnemonic_resolver` path, which fail-closed gates the
+    // resolver-supplied seed against the loaded `wallet_id`. The
+    // locally-built `wallet` is dropped — it was only needed to shape
+    // the account collection / UTXO routing above.
+    let account_manifest: Vec<AccountRegistrationEntry> = wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .map(|a| AccountRegistrationEntry {
+            account_type: a.account_type,
+            account_xpub: a.account_xpub,
+        })
+        .collect();
+    let new_utxos: Vec<key_wallet::Utxo> = wallet_info
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .flat_map(|acct| acct.utxos.values().cloned())
+        .collect();
+    let core_state = platform_wallet::changeset::CoreChangeSet {
+        new_utxos,
+        last_processed_height: (wallet_info.metadata.last_processed_height > 0)
+            .then_some(wallet_info.metadata.last_processed_height),
+        synced_height: (wallet_info.metadata.synced_height > 0)
+            .then_some(wallet_info.metadata.synced_height),
+        ..Default::default()
+    };
+
+    // `contacts` / `identity_keys` are the PR-3 keyless feed the
+    // manager layers onto the managed identities via
+    // `apply_contacts_and_keys`. The iOS path does NOT use them:
+    // identity PUBLIC keys are already reconstructed straight into
+    // `Identity.public_keys` by `build_wallet_identity_bucket` (feeding
+    // the slot too would double-apply), and `WalletRestoreEntryFFI`
+    // carries no contacts back from Swift on load — surfacing them
+    // would need a new cross-boundary struct field + Swift wiring,
+    // tracked as a follow-up. Empty slots make `apply_contacts_and_keys`
+    // a no-op for this path, preserving the established iOS behaviour.
     let wallet_state = ClientWalletStartState {
-        wallet,
-        wallet_info,
+        network,
+        birth_height: entry.birth_height,
+        account_manifest,
+        core_state,
         identity_manager,
         unused_asset_locks,
+        contacts: Default::default(),
+        identity_keys: Default::default(),
     };
 
     let platform_address_state = if per_account.is_empty()

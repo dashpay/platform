@@ -10,6 +10,22 @@ pub enum PlatformWalletError {
     #[error("Wallet creation failed: {0}")]
     WalletCreation(String),
 
+    /// The persisted wallet has UTXOs to restore but no funds-bearing
+    /// account in its reconstructed account collection to hold them.
+    /// Fail-closed rather than reconstructing a silent zero balance —
+    /// the no-silent-zero mandate. Carries only the (public) wallet id
+    /// and the dropped-UTXO count, never key material.
+    #[error(
+        "rehydration topology unsupported for wallet {}: {utxo_count} persisted UTXO(s) but no funds-bearing account",
+        hex::encode(wallet_id)
+    )]
+    RehydrationTopologyUnsupported {
+        /// The wallet whose topology could not hold the persisted UTXOs.
+        wallet_id: [u8; 32],
+        /// How many persisted UTXOs would have been silently dropped.
+        utxo_count: usize,
+    },
+
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),
 

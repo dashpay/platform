@@ -148,93 +148,17 @@ impl PlatformWalletInfo {
             }
         }
 
-        // 2b. Identity keys. Runs after the scalar identity pass so
-        //     the owning ManagedIdentity is guaranteed to exist before
-        //     we layer keys into it. Upserts land first, then removals,
-        //     matching the discipline used across the rest of this
-        //     function. Orphan entries (owner not in the wallet) are
-        //     logged and skipped by the per-entry apply helpers.
-        if let Some(keys_cs) = identity_keys {
-            let crate::changeset::IdentityKeysChangeSet { upserts, removed } = keys_cs;
-            // Thread the wallet network through so the key-apply
-            // path can reproduce DIP-9 derivation paths for any
-            // entry that carries `(wallet_id, derivation_indices)`.
-            let network = wallet.network;
-            for (_key, entry) in upserts {
-                self.identity_manager
-                    .apply_identity_key_entry(entry, network);
-            }
-            for (identity_id, key_id) in removed {
-                self.identity_manager
-                    .apply_identity_key_removal(&identity_id, key_id);
-            }
-        }
-
-        // 3. Contacts. Each entry routes to its owning ManagedIdentity by
-        //    `(owner, contact)` key; orphans (owner not in the wallet)
-        //    are logged and skipped. Trivial map ops (sent / incoming
-        //    insert and remove) are inlined here — no helper earns its
-        //    name for a single `insert` / `shift_remove` call. Only
-        //    `apply_established_contact` is a method because it has
-        //    real logic (drops both pending sides per the contract).
-        if let Some(contact_cs) = contacts {
-            let crate::changeset::ContactChangeSet {
-                sent_requests,
-                removed_sent,
-                incoming_requests,
-                removed_incoming,
-                established,
-            } = contact_cs;
-
-            for (key, entry) in sent_requests {
-                match self.identity_manager.managed_identity_mut(&key.owner_id) {
-                    Some(managed) => {
-                        managed
-                            .sent_contact_requests
-                            .insert(entry.request.recipient_id, entry.request);
-                    }
-                    None => tracing::warn!(
-                        owner = %key.owner_id,
-                        "skipping sent contact request during apply: owner identity not in wallet"
-                    ),
-                }
-            }
-            for (key, entry) in incoming_requests {
-                match self.identity_manager.managed_identity_mut(&key.owner_id) {
-                    Some(managed) => {
-                        managed
-                            .incoming_contact_requests
-                            .insert(entry.request.sender_id, entry.request);
-                    }
-                    None => tracing::warn!(
-                        owner = %key.owner_id,
-                        "skipping incoming contact request during apply: owner identity not in wallet"
-                    ),
-                }
-            }
-            for key in removed_sent {
-                if let Some(managed) = self.identity_manager.managed_identity_mut(&key.owner_id) {
-                    managed.sent_contact_requests.remove(&key.recipient_id);
-                }
-            }
-            for key in removed_incoming {
-                if let Some(managed) = self.identity_manager.managed_identity_mut(&key.owner_id) {
-                    managed.incoming_contact_requests.remove(&key.sender_id);
-                }
-            }
-            // Established promotions — drop any matching pending
-            // entries on both sides per the auto-establishment contract.
-            for (key, established) in established {
-                match self.identity_manager.managed_identity_mut(&key.owner_id) {
-                    Some(managed) => {
-                        managed.apply_established_contact(established);
-                    }
-                    None => tracing::warn!(
-                        owner = %key.owner_id,
-                        "skipping established contact during apply: owner identity not in wallet"
-                    ),
-                }
-            }
+        // 2b/3. Identity keys + contacts. Keys are layered before
+        //       contacts so a contact entry never lands before its
+        //       owner's keys; orphans are logged and skipped. Single
+        //       source of truth shared with the persister rehydration
+        //       path (`load_from_persistor`).
+        if identity_keys.is_some() || contacts.is_some() {
+            self.identity_manager.apply_contacts_and_keys(
+                contacts.unwrap_or_default(),
+                identity_keys.unwrap_or_default(),
+                wallet.network,
+            );
         }
 
         // 3b. DashPay profile/payment overlays. Applied AFTER identities

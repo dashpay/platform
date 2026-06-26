@@ -1,15 +1,21 @@
-//! `account_registrations` + `account_address_pools` writers + readers.
+//! `account_registrations` writer + keyless reader (platform-payment
+//! registrations and the rehydration account-manifest oracle).
 
 use std::collections::BTreeMap;
 
 use key_wallet::bip32::ExtendedPubKey;
 use rusqlite::{params, Connection, Transaction};
 
-use platform_wallet::changeset::{AccountAddressPoolEntry, AccountRegistrationEntry};
+use platform_wallet::changeset::AccountRegistrationEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
+use crate::sqlite::schema::blob::impl_persistable_blob;
+
+// PUBLIC material only: the account-registration xpub manifest reaching
+// the `account_xpub_bytes` blob column.
+impl_persistable_blob!(AccountRegistrationEntry);
 
 /// Decoded `platform_payment` account registration: the DIP-17 account
 /// index and its extended public key, recovered from the bincode-serde
@@ -22,20 +28,16 @@ fn decode_platform_payment_row(
     account_index: i64,
     xpub_bytes: &[u8],
 ) -> Result<PlatformPaymentRegistration, WalletStorageError> {
-    let account_index =
-        u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
-            field: "account_registrations.account_index",
-            value: account_index as u64,
-            target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-        })?;
+    let account_index = crate::sqlite::util::safe_cast::i64_to_u32(
+        "account_registrations.account_index",
+        account_index,
+    )?;
     let entry: AccountRegistrationEntry = blob::decode(xpub_bytes)?;
     Ok((account_index, entry.account_xpub))
 }
 
-/// Every `platform_payment` account registration for one wallet, decoded
-/// into `(account_index, xpub)`. The xpub is recovered from the
-/// bincode-serde `AccountRegistrationEntry` `apply_registrations` writes
-/// into `account_xpub_bytes`.
+/// Every `platform_payment` registration for one wallet, decoded into
+/// `(account_index, xpub)`.
 #[cfg(any(test, feature = "__test-helpers"))]
 pub(crate) fn list_platform_payment_registrations(
     conn: &Connection,
@@ -99,10 +101,8 @@ pub fn apply_registrations(
     if entries.is_empty() {
         return Ok(());
     }
-    // `account_xpub_bytes` carries the bincode-serde encoded
-    // `AccountRegistrationEntry` (xpub + account_type). The
-    // separate `account_type` / `account_index` columns mirror
-    // the entry for direct SQL lookups.
+    // `account_xpub_bytes` holds the encoded `AccountRegistrationEntry`; the
+    // separate `account_type` / `account_index` columns mirror it for SQL.
     let mut stmt = tx.prepare_cached(
         "INSERT INTO account_registrations \
                 (wallet_id, account_type, account_index, account_xpub_bytes) \
@@ -124,52 +124,43 @@ pub fn apply_registrations(
     Ok(())
 }
 
-pub fn apply_pools(
-    tx: &Transaction<'_>,
+/// Read every `account_registrations` row for `wallet_id` into a keyless
+/// [`AccountRegistrationEntry`] manifest — the rehydration account-set oracle
+/// (which accounts to re-derive + the per-account xpubs the wrong-account gate
+/// checks). PUBLIC material only (xpub + account type), no `Wallet` minted.
+/// Ordered by `(account_type, account_index)` for determinism; a row that
+/// fails to decode is a hard [`WalletStorageError`].
+pub fn load_state(
+    conn: &Connection,
     wallet_id: &WalletId,
-    entries: &[AccountAddressPoolEntry],
-) -> Result<(), WalletStorageError> {
-    if entries.is_empty() {
-        return Ok(());
-    }
-    let mut stmt = tx.prepare_cached(
-        "INSERT INTO account_address_pools \
-                (wallet_id, account_type, account_index, pool_type, snapshot_blob) \
-             VALUES (?1, ?2, ?3, ?4, ?5) \
-             ON CONFLICT(wallet_id, account_type, account_index, pool_type) DO UPDATE SET \
-                snapshot_blob = excluded.snapshot_blob",
+) -> Result<Vec<AccountRegistrationEntry>, WalletStorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT account_xpub_bytes FROM account_registrations \
+         WHERE wallet_id = ?1 ORDER BY account_type, account_index",
     )?;
-    for entry in entries {
-        let account_type = account_type_db_label(&entry.account_type);
-        let account_index = account_index(&entry.account_type);
-        let pool_type = pool_type_db_label(&entry.pool_type);
-        let payload = blob::encode(entry)?;
-        stmt.execute(params![
-            wallet_id.as_slice(),
-            account_type,
-            i64::from(account_index),
-            pool_type,
-            payload,
-        ])?;
+    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+        row.get::<_, Vec<u8>>(0)
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        let payload = r?;
+        out.push(blob::decode::<AccountRegistrationEntry>(&payload)?);
     }
-    Ok(())
+    Ok(out)
 }
 
-/// Single source of truth for the `account_type` TEXT-column domain
-/// across `account_registrations`, `account_address_pools`, and
-/// `core_derived_addresses`.
+/// Source of truth for the `account_registrations.account_type` TEXT domain,
+/// mirroring [`key_wallet::account::AccountType`].
+/// `migrations/V001__initial.rs` interpolates it into the table's
+/// `CHECK (account_type IN (...))`; `account_type_labels_match_enum` keeps it
+/// in sync with [`account_type_db_label`].
 ///
-/// Mirrors every variant of [`key_wallet::account::AccountType`]
-/// (writer side: [`account_type_db_label`]). The migration in
-/// `migrations/V001__initial.rs` interpolates this array into the
-/// `CHECK (account_type IN (...))` clause on each of those tables, so
-/// an unknown label is rejected at insert time rather than landing as
-/// silent garbage. The `account_type_labels_match_enum` unit test
-/// below enforces set-equality between this array and the writer's
-/// output — drift (a renamed/added variant) becomes a failing test,
-/// not a runtime divergence between Rust and SQLite.
+/// `Standard` maps to two distinct labels by `StandardAccountType` variant
+/// (`"standard_bip44"` / `"standard_bip32"`) so BIP44 and BIP32 standard
+/// accounts with the same index never collide on their shared PK columns.
 pub(crate) const ACCOUNT_TYPE_LABELS: &[&str] = &[
-    "standard",
+    "standard_bip44",
+    "standard_bip32",
     "coinjoin",
     "identity_registration",
     "identity_topup",
@@ -186,30 +177,23 @@ pub(crate) const ACCOUNT_TYPE_LABELS: &[&str] = &[
     "platform_payment",
 ];
 
-/// Single source of truth for the `account_address_pools.pool_type`
-/// TEXT-column domain.
+/// Stable database label for an `AccountType` variant (the `Debug` impl is not
+/// a stable format; this match is the contract). An added upstream variant
+/// fails this match's exhaustiveness check at compile time.
 ///
-/// Mirrors every variant of
-/// [`key_wallet::managed_account::address_pool::AddressPoolType`]
-/// (writer side: [`pool_type_db_label`]). See [`ACCOUNT_TYPE_LABELS`]
-/// for the broader rationale and the parity-test contract.
-pub(crate) const POOL_TYPE_LABELS: &[&str] = &["external", "internal", "absent", "absent_hardened"];
-
-/// Stable database label for an `AccountType` variant.
-///
-/// Used for the `account_type` text column on `account_registrations`,
-/// `account_address_pools`, and `core_derived_addresses`. The
-/// `Debug` impl on `AccountType` is NOT a stable serialisation
-/// format; this match is the contract. Variants identical in
-/// label are distinguished by the companion `account_index` column.
-///
-/// Adding a variant to upstream `AccountType` makes this match
-/// exhaustive-check fail at compile time, forcing an explicit label
-/// decision rather than silent garbage.
+/// `Standard` maps to two distinct labels by `StandardAccountType` so BIP44
+/// and BIP32 accounts with the same `index` never collapse onto the same PK.
 pub(crate) fn account_type_db_label(at: &key_wallet::account::AccountType) -> &'static str {
-    use key_wallet::account::AccountType;
+    use key_wallet::account::{AccountType, StandardAccountType};
     match at {
-        AccountType::Standard { .. } => "standard",
+        AccountType::Standard {
+            standard_account_type: StandardAccountType::BIP44Account,
+            ..
+        } => "standard_bip44",
+        AccountType::Standard {
+            standard_account_type: StandardAccountType::BIP32Account,
+            ..
+        } => "standard_bip32",
         AccountType::CoinJoin { .. } => "coinjoin",
         AccountType::IdentityRegistration => "identity_registration",
         AccountType::IdentityTopUp { .. } => "identity_topup",
@@ -227,24 +211,8 @@ pub(crate) fn account_type_db_label(at: &key_wallet::account::AccountType) -> &'
     }
 }
 
-/// Stable database label for an `AddressPoolType` variant.
-pub(crate) fn pool_type_db_label(
-    pool: &key_wallet::managed_account::address_pool::AddressPoolType,
-) -> &'static str {
-    use key_wallet::managed_account::address_pool::AddressPoolType;
-    match pool {
-        AddressPoolType::External => "external",
-        AddressPoolType::Internal => "internal",
-        AddressPoolType::Absent => "absent",
-        AddressPoolType::AbsentHardened => "absent_hardened",
-    }
-}
-
-/// Numeric account index embedded in an `AccountType`.
-///
-/// Persisted in the `account_index` column of `account_registrations`,
-/// `account_address_pools`, and `core_derived_addresses` (the last of
-/// which is the script→account lookup the UTXO writer joins against).
+/// Numeric account index embedded in an `AccountType`, persisted in the
+/// `account_registrations.account_index` column.
 pub(crate) fn account_index(at: &key_wallet::account::AccountType) -> u32 {
     use key_wallet::account::AccountType;
     match at {
@@ -271,17 +239,20 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    /// Exhaustive sample of every [`key_wallet::account::AccountType`]
-    /// variant. The match arm in the loop below uses no wildcard, so
-    /// an upstream-added variant becomes a compile error here and
-    /// forces the developer to extend the sample list (and the
-    /// matching arm in `account_type_db_label` / [`ACCOUNT_TYPE_LABELS`]).
+    /// Every [`key_wallet::account::AccountType`] variant; the wildcard-free
+    /// match below fails to compile if upstream adds one. `Standard` appears
+    /// twice — once per `StandardAccountType` — because both map to distinct
+    /// labels.
     fn all_account_type_variants() -> Vec<key_wallet::account::AccountType> {
         use key_wallet::account::{AccountType, StandardAccountType};
         let variants = vec![
             AccountType::Standard {
                 index: 0,
                 standard_account_type: StandardAccountType::BIP44Account,
+            },
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP32Account,
             },
             AccountType::CoinJoin { index: 0 },
             AccountType::IdentityRegistration,
@@ -311,9 +282,6 @@ mod tests {
                 key_class: 0,
             },
         ];
-        // Compile-time exhaustiveness gate: an added upstream variant
-        // makes this match fail to compile and forces the sample list
-        // (and `account_type_db_label`) to be updated.
         for v in &variants {
             match v {
                 AccountType::Standard { .. }
@@ -336,25 +304,6 @@ mod tests {
         variants
     }
 
-    fn all_pool_type_variants() -> Vec<key_wallet::managed_account::address_pool::AddressPoolType> {
-        use key_wallet::managed_account::address_pool::AddressPoolType;
-        let variants = vec![
-            AddressPoolType::External,
-            AddressPoolType::Internal,
-            AddressPoolType::Absent,
-            AddressPoolType::AbsentHardened,
-        ];
-        for v in &variants {
-            match v {
-                AddressPoolType::External
-                | AddressPoolType::Internal
-                | AddressPoolType::Absent
-                | AddressPoolType::AbsentHardened => {}
-            }
-        }
-        variants
-    }
-
     #[test]
     fn account_type_labels_match_enum() {
         let from_writer: HashSet<&'static str> = all_account_type_variants()
@@ -365,20 +314,6 @@ mod tests {
         assert_eq!(
             from_writer, from_const,
             "ACCOUNT_TYPE_LABELS ({:?}) drifted from account_type_db_label codomain ({:?})",
-            from_const, from_writer
-        );
-    }
-
-    #[test]
-    fn pool_type_labels_match_enum() {
-        let from_writer: HashSet<&'static str> = all_pool_type_variants()
-            .iter()
-            .map(pool_type_db_label)
-            .collect();
-        let from_const: HashSet<&'static str> = POOL_TYPE_LABELS.iter().copied().collect();
-        assert_eq!(
-            from_writer, from_const,
-            "POOL_TYPE_LABELS ({:?}) drifted from pool_type_db_label codomain ({:?})",
             from_const, from_writer
         );
     }

@@ -1,36 +1,66 @@
 //! Per-wallet portion of [`ClientStartState`](crate::changeset::ClientStartState).
 //!
-//! Everything a single wallet contributes to the startup snapshot: the
-//! key-wallet [`Wallet`] + [`ManagedWalletInfo`] pair, a lean
-//! identity-manager snapshot, and still-unused asset locks bucketed by
-//! account index.
+//! **Keyless by type.** This carries everything needed to *reconstruct*
+//! a watch-only wallet — network, birth height, the account manifest,
+//! the rebuilt core-state projection, identities, filtered asset locks —
+//! but **no** [`Wallet`](key_wallet::Wallet) and no seed. The persister
+//! can never mint a `Wallet`; the manager rebuilds a watch-only one via
+//! [`Wallet::new_watch_only`](key_wallet::wallet::Wallet::new_watch_only)
+//! from the manifest, applies this state, and defers signing-key
+//! derivation to the on-demand sign path
+//! ([`sign_with_mnemonic_resolver`] and its siblings).
+//!
+//! [`sign_with_mnemonic_resolver`]: https://docs.rs/rs-platform-wallet-ffi/
 
 use std::collections::BTreeMap;
 
 use crate::changeset::identity_manager_start_state::IdentityManagerStartState;
+use crate::changeset::{
+    AccountRegistrationEntry, ContactChangeSet, CoreChangeSet, IdentityKeysChangeSet,
+};
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 use dashcore::OutPoint;
-use key_wallet::wallet::ManagedWalletInfo;
-use key_wallet::Wallet;
+use key_wallet::Network;
 
-/// Per-wallet slice of the startup snapshot.
+/// Keyless per-wallet slice of the startup snapshot.
 ///
-/// Used as the value type in [`ClientStartState::wallets`](crate::changeset::ClientStartState::wallets).
+/// Used as the value type in
+/// [`ClientStartState::wallets`](crate::changeset::ClientStartState::wallets).
+/// The structural absence of a `Wallet`/seed field is the SECRETS.md
+/// boundary, enforced by type rather than convention.
 #[derive(Debug)]
 pub struct ClientWalletStartState {
-    /// The key-wallet [`Wallet`] to rehydrate on startup. Carries the
-    /// HD key material and account configuration the rest of the
-    /// per-wallet state hangs off of.
-    pub wallet: Wallet,
-    /// Managed wallet info holding non-key-material state (balances,
-    /// account metadata, UTXO set, etc.) for this wallet.
-    pub wallet_info: ManagedWalletInfo,
+    /// Network the wallet is bound to (from `wallet_metadata`).
+    pub network: Network,
+    /// Best estimate of the chain tip at creation time (`0` = scan
+    /// from genesis / unknown).
+    pub birth_height: u32,
+    /// Keyless account manifest — the account-set oracle for building the
+    /// watch-only wallet (one watch-only account per entry's xpub).
+    pub account_manifest: Vec<AccountRegistrationEntry>,
+    /// Keyless projection of the persisted core rows (UTXOs, tx
+    /// records, IS-locks, sync watermarks, `last_applied_chain_lock`).
+    /// The manager applies this onto a fresh
+    /// `ManagedWalletInfo::from_wallet` skeleton built from the
+    /// watch-only wallet. Rebuilt by the `core_state::load_state` reader
+    /// (item B).
+    pub core_state: CoreChangeSet,
     /// Lean snapshot of this wallet's
-    /// [`IdentityManager`](crate::wallet::identity::IdentityManager):
-    /// owned + watched identities, primary selection, and the
-    /// gap-limit scan watermark.
+    /// [`IdentityManager`](crate::wallet::identity::IdentityManager).
     pub identity_manager: IdentityManagerStartState,
-    /// Asset locks that have not yet been consumed by an identity
-    /// registration / top-up, keyed by account index → outpoint.
+    /// Asset locks not yet consumed by an identity registration /
+    /// top-up, keyed by account index → outpoint. Terminal `Consumed`
+    /// rows are already filtered out by the asset-lock reader.
     pub unused_asset_locks: BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>>,
+    /// Persisted DashPay contact state (sent/received requests +
+    /// established contacts) to layer onto the rehydrated managed
+    /// identities. PUBLIC material — `removed_*` are always empty
+    /// (deletes never reach storage as rows). Routed by the manager
+    /// after `IdentityManager::from`, mirroring the runtime apply path.
+    pub contacts: ContactChangeSet,
+    /// Persisted per-identity PUBLIC key entries (no private key
+    /// material) to layer onto the rehydrated managed identities so
+    /// `Identity.public_keys` is populated at load time instead of
+    /// only after the next sync. `removed` is always empty.
+    pub identity_keys: IdentityKeysChangeSet,
 }
