@@ -235,11 +235,14 @@ impl SecretStore {
     /// - **change:** `current = Some(old)`, `new = Some(pw_new)`;
     /// - **remove:** `current = Some(old)`, `new = None`.
     ///
-    /// An absent object is a no-op (`Ok(())`). The rewrite is the same-slot
-    /// overwrite of [`set_secret`], so a crash between the read and the
-    /// commit leaves the prior value intact and readable under `current`.
-    /// After a successful call the consumer MUST update its own trusted
-    /// protection-status record (the protection expectation lives there).
+    /// An absent object returns [`Err(NoEntry)`][SecretStoreError::NoEntry] —
+    /// `reprotect` is operational; absence means the caller's protection-status
+    /// record disagrees with the backend, which is a signal not to be silently
+    /// dropped. The rewrite is the same-slot overwrite of [`set_secret`], so a
+    /// crash between the read and the commit leaves the prior value intact
+    /// and readable under `current`. After a successful call the consumer MUST
+    /// update its own trusted protection-status record (the protection
+    /// expectation lives there).
     ///
     /// **No recovery:** changing or removing requires the `current`
     /// password; if it is lost the object cannot be re-protected or read,
@@ -256,23 +259,25 @@ impl SecretStore {
         new: Option<&SecretString>,
     ) -> Result<(), SecretStoreError> {
         let Some(secret) = self.get_secret(service, label, current)? else {
-            return Ok(());
+            return Err(SecretStoreError::NoEntry);
         };
         self.set_secret(service, label, &secret, new)
     }
 
-    /// Delete the secret stored under `(service, label)`. Absent entries
-    /// are a no-op (`Ok(())`), so deletion is idempotent.
-    pub fn delete(&self, service: &WalletId, label: &str) -> Result<(), SecretStoreError> {
+    /// Delete the secret stored under `(service, label)`.
+    ///
+    /// Returns `Ok(true)` if a credential was removed, `Ok(false)` if no
+    /// credential existed under `(service, label)`. Idempotent for callers
+    /// that don't care — `.delete(...)?;` still discards the bool;
+    /// race-detecting callers can `match delete()?`.
+    pub fn delete(&self, service: &WalletId, label: &str) -> Result<bool, SecretStoreError> {
         match self {
-            Self::File(s) => {
-                s.delete_bytes(service, label)?;
-                Ok(())
-            }
+            Self::File(s) => s.delete_bytes(service, label),
             Self::Os(store) => {
                 let entry = build_os(store, service, label)?;
                 match entry.delete_credential() {
-                    Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
+                    Ok(()) => Ok(true),
+                    Err(KeyringError::NoEntry) => Ok(false),
                     Err(e) => Err(map_spi(e)),
                 }
             }
@@ -320,9 +325,7 @@ impl std::fmt::Debug for SecretStore {
 /// The [`File`](SecretStore::File) arm never reaches this projection.
 fn map_spi(e: KeyringError) -> SecretStoreError {
     match e {
-        KeyringError::NoEntry => SecretStoreError::OsKeyring {
-            kind: OsKeyringErrorKind::NoEntry,
-        },
+        KeyringError::NoEntry => SecretStoreError::NoEntry,
         KeyringError::NoStorageAccess(_) => SecretStoreError::OsKeyring {
             kind: OsKeyringErrorKind::NoStorageAccess,
         },
@@ -387,17 +390,31 @@ mod tests {
     }
 
     #[test]
-    fn delete_is_idempotent() {
+    fn delete_returns_false_on_absent_true_on_present() {
         let dir = tempfile::tempdir().unwrap();
         let s = file_store(dir.path());
-        // Absent → Ok, no error.
-        s.delete(&wid(1), "seed").unwrap();
+        // Absent → Ok(false), no error.
+        assert!(!s.delete(&wid(1), "seed").unwrap());
         s.set(&wid(1), "seed", &SecretBytes::from_slice(b"x"))
             .unwrap();
-        s.delete(&wid(1), "seed").unwrap();
+        // Present → Ok(true).
+        assert!(s.delete(&wid(1), "seed").unwrap());
         assert!(s.get(&wid(1), "seed").unwrap().is_none());
-        // Second delete on the now-absent entry is still Ok.
-        s.delete(&wid(1), "seed").unwrap();
+        // Second delete on the now-absent entry is Ok(false).
+        assert!(!s.delete(&wid(1), "seed").unwrap());
+    }
+
+    #[test]
+    fn reprotect_absent_returns_no_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = file_store(dir.path());
+        let err = s
+            .reprotect(&wid(1), "seed", None, Some(&SecretString::new("pw")))
+            .unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::NoEntry),
+            "expected NoEntry on absent reprotect, got {err:?}"
+        );
     }
 
     #[test]
