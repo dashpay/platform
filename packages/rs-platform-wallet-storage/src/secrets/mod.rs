@@ -29,7 +29,6 @@
 //! in `wire::envelope::tests` rather than silently corrupting every
 //! stored blob.
 
-mod envelope;
 mod error;
 mod file;
 mod keyring;
@@ -38,7 +37,6 @@ mod store;
 mod validate;
 mod wire;
 
-pub use envelope::MAX_PLAINTEXT_LEN;
 pub use error::{IoError, OsKeyringErrorKind, SecretStoreError};
 pub use file::{
     EncryptedFileCredential, EncryptedFileStore, MAX_SECRET_LEN, MAX_VAULT_SIZE_BYTES,
@@ -48,3 +46,4 @@ pub use keyring::default_credential_store;
 pub use secret::{SecretBytes, SecretString, MIN_PASSPHRASE_LEN};
 pub use store::SecretStore;
 pub use validate::WalletId;
+pub use wire::envelope::MAX_PLAINTEXT_LEN;

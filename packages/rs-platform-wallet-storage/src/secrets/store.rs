@@ -12,10 +12,10 @@ use std::sync::Arc;
 use keyring_core::api::CredentialStoreApi;
 use keyring_core::{Entry, Error as KeyringError};
 
-use super::envelope;
 use super::error::{OsKeyringErrorKind, SecretStoreError};
 use super::secret::{SecretBytes, SecretString};
 use super::validate::WalletId;
+use super::wire::envelope;
 use super::{default_credential_store, EncryptedFileStore, MAX_SECRET_LEN, SERVICE_PREFIX};
 
 /// A passphrase-or-OS-keyring backed store for wallet secret material.
