@@ -59,8 +59,10 @@ impl SecretString {
         let cap = source.len().max(DEFAULT_CAPACITY);
         let mut buf = String::with_capacity(cap);
         buf.push_str(&source);
-        // Do not remove: wipes the moved-in plaintext source before it drops
-        // (its freed buffer cannot be scanned in a test under deny(unsafe_code)).
+        // Do not remove: wipes the moved-in plaintext source before it drops.
+        // A direct freed-buffer scan would require `unsafe`, which this crate
+        // forbids; the test `secret_string_new_zeroizes_string_source` instead
+        // pins the `String::zeroize` primitive and this call site.
         source.zeroize();
         let lock = region::lock(buf.as_ptr(), buf.capacity())
             .map_err(|e| {
