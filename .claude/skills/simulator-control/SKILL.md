@@ -327,18 +327,29 @@ If `idb connect` hangs, clear stale companion processes: `pkill -f idb_companion
 
 If `idb connect` succeeds but `idb ui describe-all` returns a single root element with empty bounds (`{{0, 0}, {0, 0}}`) — companion is connected but desynced from the simulator UI tree. Same fix as the hang case: `pkill -f idb_companion && idb connect $UDID`. A successful re-connection shows the real app frame (e.g. `{{0, 0}, {402, 874}}` for iPhone 17 Pro) as the root element.
 
+### Build for the simulator (canonical command)
+
+**To build the app for the simulator, run `bash packages/swift-sdk/build_ios.sh --target sim`** (from the repo root) — or `bash build_ios.sh --target sim` from `packages/swift-sdk/`. This is THE sim build: it compiles the Rust → iOS-sim `DashSDKFFI.xcframework`, the `SwiftDashSDK` package, and the `SwiftExampleApp` app (warnings-as-errors), ending in `** BUILD SUCCEEDED **`. Don't hand-run `xcodebuild` / `swift build` for a sim build — `build_ios.sh --target sim` wires the xcframework + flags correctly. (`--target all` adds device + macOS slices; `--target mac` is macOS-only and leaves the xcframework WITHOUT a sim slice — never use it for sim work.)
+
+**Never run two builds against the same worktree's DerivedData at once** (e.g. a background build + the user's own `build_ios.sh`) — concurrent `xcodebuild` corrupts the build DB (`error: unable to attach DB` → `** BUILD FAILED **`). If the user may be building, build in an isolated `git worktree` (separate DerivedData + target dir). See [[feedback-parallel-agents-need-worktrees]].
+
 ### Install the latest build before driving the UI
 
-The skill assumes the binary on the simulator is current. It's not, if you've built but forgotten to install. After every `./build_ios.sh --target sim` (or any code change), push the fresh artifact:
+The skill assumes the binary on the simulator is current. It's not, if you've built but forgotten to install. After every `build_ios.sh --target sim` (or any code change), push the fresh artifact. With MULTIPLE simulators booted, install to each by **UDID** (`booted` is ambiguous with >1 sim):
 
 ```bash
 BUNDLE=org.dashfoundation.SwiftExampleApp
 APP=$(find ~/Library/Developer/Xcode/DerivedData -name "${BUNDLE##*.}.app" -path "*Debug-iphonesimulator*" -not -path "*Index.noindex*" 2>/dev/null | head -1)
-xcrun simctl install booted "$APP"
-xcrun simctl launch booted "$BUNDLE"  # or terminate-then-launch to force a fresh process
+for UDID in $(xcrun simctl list devices booted | grep -oiE '[0-9A-F-]{36}'); do
+  xcrun simctl install "$UDID" "$APP"
+  xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null
+  xcrun simctl launch "$UDID" "$BUNDLE"
+done
 ```
 
-Without this step, idb taps still hit the OLD binary's UI and your verification is meaningless. Pair with a clean `git status` + `git log -1` check before running any post-fix manual test pass.
+For a **two-party DashPay test**, boot two sims (`xcrun simctl boot <udid>`), install the same build on both, and use a distinct identity/wallet per sim. Drive each by passing `--udid <that sim>` to every `idb` command.
+
+Without this step, idb taps still hit the OLD binary's UI and your verification is meaningless. Pair with a clean `git status` + `git log -1` check before any post-fix manual test pass.
 
 ## Pitfalls
 
