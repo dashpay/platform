@@ -168,15 +168,29 @@ impl ManagedIdentity {
         entry: crate::wallet::identity::PaymentEntry,
         persister: &WalletPersister,
     ) -> Result<(), crate::changeset::PersistenceError> {
-        self.dashpay_payments.insert(tx_id, entry);
+        // Insert, snapshot, persist — but roll the change back if the store
+        // fails so in-memory state stays equal to the persisted state.
+        // Otherwise a caller's `contains_key` retry guard sees the
+        // un-persisted entry and skips the next sweep's re-attempt, permanently
+        // dropping a Sent entry + memo that has no on-chain recovery (the
+        // self-healing sweep callers re-derive Received from UTXOs next pass).
+        // A failed overwrite restores the previous entry rather than deleting
+        // it. Either way the persist result is returned, not swallowed: the
+        // user-initiated send path (`send_payment`) surfaces it in the UI.
+        let previous = self.dashpay_payments.insert(tx_id.clone(), entry);
         let cs = self.snapshot_changeset();
-        // Returns the persist result instead of swallowing it. The
-        // user-initiated send path (`send_payment`) propagates it so a
-        // failed write surfaces in the UI rather than silently dropping a
-        // Sent entry + memo that has no on-chain recovery. The self-healing
-        // sweep callers (live recorder / reconcile of Received) log and
-        // continue — the next sweep re-derives those from UTXOs.
-        persister.store(cs.into())
+        if let Err(e) = persister.store(cs.into()) {
+            match previous {
+                Some(prev) => {
+                    self.dashpay_payments.insert(tx_id, prev);
+                }
+                None => {
+                    self.dashpay_payments.remove(&tx_id);
+                }
+            }
+            return Err(e);
+        }
+        Ok(())
     }
 
     /// All DashPay payments to or from `contact_id` (keyed by txid), newest
@@ -721,6 +735,69 @@ mod tests {
         assert!(
             result.is_err(),
             "a failed key-persist must surface, not be swallowed"
+        );
+    }
+
+    /// A failed payment persist must NOT strand the entry in memory — else a
+    /// caller's `contains_key` retry guard skips the next sweep's re-attempt
+    /// and the Sent entry + memo (no on-chain recovery) is permanently lost.
+    /// Pre-fix, `record_dashpay_payment` inserted before persisting, so a
+    /// failed store left the entry in memory.
+    #[test]
+    fn record_dashpay_payment_rolls_back_fresh_on_persist_failure() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let p = WalletPersister::new([0xAB; 32], std::sync::Arc::new(FailingPersister) as _);
+        let alice = Identifier::from([0xAA; 32]);
+
+        let result = managed.record_dashpay_payment(
+            "tx1".into(),
+            PaymentEntry::new_sent(alice, 100, Some("rent".into())),
+            &p,
+        );
+        assert!(result.is_err(), "a failed payment persist must surface");
+        assert!(
+            !managed.dashpay_payments.contains_key("tx1"),
+            "a failed persist must not strand the entry in memory, else the \
+             contains_key retry guard skips the re-attempt"
+        );
+    }
+
+    /// A failed *overwrite* (e.g. Pending→Confirmed) must restore the previous
+    /// entry, not leave the un-persisted new value (or delete the row).
+    #[test]
+    fn record_dashpay_payment_restores_previous_on_failed_overwrite() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let p = WalletPersister::new([0xAB; 32], std::sync::Arc::new(FailingPersister) as _);
+        let alice = Identifier::from([0xAA; 32]);
+
+        // Pre-existing (persisted) entry.
+        managed
+            .dashpay_payments
+            .insert("tx1".into(), PaymentEntry::new_sent(alice, 100, None));
+
+        // Overwrite attempt fails to persist → previous must survive intact.
+        let result = managed.record_dashpay_payment(
+            "tx1".into(),
+            PaymentEntry::new_sent(alice, 999, Some("changed".into())),
+            &p,
+        );
+        assert!(result.is_err());
+        let kept = managed.dashpay_payments.get("tx1").expect("previous survives");
+        assert_eq!(
+            kept.amount_duffs, 100,
+            "a failed overwrite must restore the previous entry, not the un-persisted new value"
         );
     }
 
