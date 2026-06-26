@@ -1018,22 +1018,33 @@ From `research/05` §5 / `SwiftExampleApp/CLAUDE.md`:
 - **Realtime cadence (foreground-fast / background-slow)** — the G12 background
   loop runs on a tunable interval (`setDashPaySyncInterval`, clamped ≥ 1s Rust-side;
   default = `backgroundSyncSeconds` = 15s). The DashPay tab drops it to
-  `foregroundSyncSeconds` = 4s while it is on screen and restores 15s when it
-  leaves, driven from the tab's **NavigationStack** `onAppear`/`onDisappear` — so
-  drilling into a contact detail or presenting a sheet (neither fires the stack's
-  `onDisappear`) keeps the fast cadence, and only a *tab switch* relaxes it. This
-  keeps an idle backgrounded app from sweeping every few seconds while making
-  incoming requests / acceptances / payments surface in near real time when the
-  user is actually looking. Best-effort: a not-yet-configured manager keeps its
-  current interval.
+  `foregroundSyncSeconds` = 4s at *effective foreground* — the tab is on screen
+  **and** the app is active — and restores 15s otherwise. "On screen" is driven
+  from the tab's **NavigationStack** `onAppear`/`onDisappear` (so drilling into a
+  contact detail or presenting a sheet, neither of which fires the stack's
+  `onDisappear`, keeps the fast cadence; only a *tab switch* relaxes it); "app
+  active" is driven from `scenePhase`, so backgrounding the app while on the tab
+  also relaxes to 15s. The cadence acts only on transitions. This keeps neither an
+  inactive tab nor a backgrounded app sweeping every few seconds, while incoming
+  requests / acceptances / payments surface in near real time when the user is
+  actually looking. **Entry kick:** `setDashPaySyncInterval` only takes effect on
+  the loop's *next* sleep (it stores an atomic, no wakeup — `dashpay_sync.rs:157`),
+  so entering the foreground also fires one `kickDashPaySync` — otherwise a tab
+  re-entry could wait out a leftover up-to-15s sleep before the first fast tick.
+  (A Rust-side `Notify` on `set_interval` would shorten the in-flight sleep
+  directly; deferred as an internal refinement — the entry kick achieves the same
+  user-visible result app-side.) Best-effort: a not-yet-configured manager keeps
+  its current interval.
 - **Post-mutation sync kick** — after a local mutation (send request, accept,
   send-via-QR, pay) the handler fires a non-blocking `dashPaySyncNow()`
   (`kickDashPaySync`) so the counterparty's state and the established pair converge
-  immediately instead of after the next poll tick. Non-blocking: the sheet
-  dismisses right away and the Rust manager folds an in-flight pass into a no-op
-  (the single sync-in-progress signal above). Complements, doesn't replace, the
-  optimistic `@Query` overlay — the overlay covers the sender's own row, the kick
-  pulls the other side.
+  promptly instead of waiting a full poll tick. Non-blocking: the sheet dismisses
+  right away and the Rust manager folds an in-flight pass into a no-op (the single
+  sync-in-progress signal above). *Bounded, not instant:* if a pass was already
+  running when the mutation landed, the kick no-ops and convergence waits for the
+  next tick (≤ the foreground 4s) rather than enqueuing a coalesced re-run.
+  Complements, doesn't replace, the optimistic `@Query` overlay — the overlay
+  covers the sender's own row, the kick pulls the other side.
 - **Success feedback** — reuse the existing inline success pattern
   (`SendDashPayPaymentSheet`'s green inline text); no new toast component in M2
   (the app has no shared toast — only a clipboard `CopiedToast`).
@@ -1156,12 +1167,15 @@ suite (PR #3727) which stacks the same way:
   contacts/profiles without an explicit FFI call — including for an identity with
   zero watched tokens (assert via the bank harness over a couple of sweeps).
 - **dp_006b (foreground-fast cadence + post-mutation kick, §6.4):** entering the
-  DashPay tab lowers the sweep interval to 4s and leaving restores 15s
-  (`setDashPaySyncInterval` round-trips through the FFI); a send/accept fires an
-  extra `dashPaySyncNow()` that no-ops when a pass is already in flight. UI-level
-  cadence is covered by a manual two-sim e2e (the interval is a wall-clock timing
-  property the simulator harness can't assert deterministically); the FFI
-  set-interval/sync-now round-trip is unit-tested Rust-side.
+  DashPay tab lowers the sweep interval to 4s **and fires one immediate sweep**
+  (because `set_interval` only applies on the loop's next sleep); leaving the tab
+  *or backgrounding the app while on it* restores 15s (`setDashPaySyncInterval`
+  round-trips through the FFI). A send/accept fires an extra `dashPaySyncNow()`
+  that no-ops when a pass is already in flight. UI-level cadence + the
+  scenePhase/tab-visibility state machine + the entry kick are covered by a manual
+  two-sim e2e — these are SwiftUI-lifecycle/wall-clock timing properties the
+  simulator harness can't assert deterministically; the FFI set-interval/sync-now
+  round-trip is unit-tested Rust-side.
 
 ### 7.2 Swift — `SwiftTests` + `SwiftExampleAppUITests`
 

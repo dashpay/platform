@@ -15,6 +15,7 @@ struct DashPayTabView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
 
     /// All persisted identities on the active network. Filtered down
     /// to wallet-backed, on-network identities in `eligibleIdentities`.
@@ -50,6 +51,13 @@ struct DashPayTabView: View {
     /// isn't a silent no-op (wrong seed, or a watch-only wallet with no
     /// Keychain mnemonic).
     @State private var unlockError: String?
+
+    /// Effective-foreground tracking for the sync cadence: the tab is on
+    /// screen (`tabVisible`) **and** the app is active (`scenePhase`).
+    /// `syncForeground` is the last cadence we applied, so we only act on
+    /// transitions (and kick at most once per entry).
+    @State private var tabVisible = false
+    @State private var syncForeground = false
 
     enum DashPaySegment: Hashable {
         case contacts, requests
@@ -205,8 +213,9 @@ struct DashPayTabView: View {
                 }
         }
         .environmentObject(contactMeta)
-        .onAppear { setSyncCadence(foreground: true) }
-        .onDisappear { setSyncCadence(foreground: false) }
+        .onAppear { tabVisible = true; refreshSyncCadence() }
+        .onDisappear { tabVisible = false; refreshSyncCadence() }
+        .onChange(of: scenePhase) { _, _ in refreshSyncCadence() }
         .alert(
             "Couldn't finish setup",
             isPresented: Binding(
@@ -602,16 +611,32 @@ struct DashPayTabView: View {
         }
     }
 
-    /// Tune the background sync loop's cadence to the tab's visibility:
-    /// fast while DashPay is foreground, relaxed when it's backgrounded.
-    /// Driven from the NavigationStack's appear/disappear, so navigating
-    /// into a child screen or presenting a sheet (which don't fire the
-    /// stack's `onDisappear`) keeps the fast cadence. Best-effort — a
-    /// not-yet-configured manager just keeps its current interval.
-    private func setSyncCadence(foreground: Bool) {
+    /// Tune the background sync loop's cadence to *effective foreground* =
+    /// the tab is on screen AND the app is active. Fast (4s) while the
+    /// user is actually looking, relaxed (15s) otherwise — so neither a
+    /// tab switch nor app-backgrounding leaves an idle app sweeping every
+    /// few seconds. Driven from the NavigationStack's appear/disappear
+    /// (so drilling into a child screen or presenting a sheet, which don't
+    /// fire the stack's `onDisappear`, keep the fast cadence) plus
+    /// `scenePhase`.
+    ///
+    /// On entering the foreground we also kick one sweep:
+    /// `setDashPaySyncInterval` only takes effect on the loop's *next*
+    /// sleep, so without the kick a tab re-entry could wait out a leftover
+    /// long sleep before the first fast tick. Acts only on transitions, so
+    /// the kick fires at most once per entry. Best-effort — a
+    /// not-yet-configured manager keeps its interval, and the kick no-ops
+    /// when a pass is already in flight.
+    private func refreshSyncCadence() {
+        let foreground = tabVisible && scenePhase == .active
+        guard foreground != syncForeground else { return }
+        syncForeground = foreground
         try? walletManager.setDashPaySyncInterval(
             seconds: foreground ? Self.foregroundSyncSeconds : Self.backgroundSyncSeconds
         )
+        if foreground {
+            kickDashPaySync(walletManager)
+        }
     }
 }
 
