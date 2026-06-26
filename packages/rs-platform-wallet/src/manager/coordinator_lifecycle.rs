@@ -205,6 +205,18 @@ impl CoordinatorLifecycle {
     /// that need exclusion gate themselves), so the gate/drain barrier does
     /// not apply to it.
     pub(crate) async fn quiesce(&self) -> WorkerStatus {
+        // If a concurrent `clear_shielded` is mid-flight for our key,
+        // the clear is holding the same `quiescing` atomic raised
+        // continuously via `hold_quiescing_gate`. The local
+        // `AtomicFlagGuard` below would unconditionally lower that gate
+        // on Drop — lapsing the clear's "no new pass" barrier and
+        // letting a direct `sync_now`/`sync_wallet` slip in to re-
+        // persist into the wiping store. Bail before installing the
+        // guard; the in-flight clear is already draining + joining the
+        // worker under its own gate.
+        if self.registry.is_clearing(self.worker) {
+            return WorkerStatus::NotRunning;
+        }
         // Gate up first (instant) and held until the guard drops on return.
         // SeqCst: store-half of the `quiescing`<->`is_syncing` handshake
         // (see `begin_pass`).

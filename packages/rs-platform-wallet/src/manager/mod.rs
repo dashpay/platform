@@ -1108,6 +1108,59 @@ mod tests {
         let _ = manager.shutdown().await;
     }
 
+    /// SEC-002 continuity under concurrent public `quiesce()` during
+    /// clear: `CoordinatorLifecycle::quiesce` (reachable via
+    /// `ShieldedSyncManager::quiesce`, which is `pub(crate)` but routes
+    /// out via `shielded_sync_arc`) must NOT install its local
+    /// `AtomicFlagGuard` on `quiescing` while a clear is mid-flight —
+    /// the guard's Drop would lower the gate `clear_shielded` is
+    /// holding continuously.
+    ///
+    /// Non-vacuous: against the pre-fix `quiesce` (which always
+    /// constructed an `AtomicFlagGuard` and dropped it on return), the
+    /// gate would be `false` after the racing quiesce returned.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn shielded_quiesce_during_clear_preserves_quiescing_gate() {
+        use std::sync::atomic::Ordering;
+
+        let manager = make_manager();
+
+        // Acquire BOTH guards `clear_shielded_inner` holds.
+        let _clearing_latch = manager.registry.hold_clearing(WalletWorker::ShieldedSync);
+        let _clearing_gate = manager.shielded_sync_manager.hold_quiescing_gate();
+        assert!(
+            manager
+                .shielded_sync_manager
+                .quiescing_load_for_test(Ordering::SeqCst),
+            "precondition: gate raised by the held clearing guard"
+        );
+
+        // A racing quiesce arrives (no background loop registered, so
+        // pre-fix quiesce would early-return NotRunning AFTER dropping
+        // its locally-installed AtomicFlagGuard, lowering the gate).
+        let status = manager.shielded_sync_manager.quiesce().await;
+        assert_eq!(
+            status,
+            dash_async::WorkerStatus::NotRunning,
+            "racing quiesce should observe the clearing latch and bail"
+        );
+
+        // Gate stays UP. Pre-fix this would be `false` because the
+        // local AtomicFlagGuard's Drop lowered it.
+        assert!(
+            manager
+                .shielded_sync_manager
+                .quiescing_load_for_test(Ordering::SeqCst),
+            "gate must remain raised: racing public quiesce must not lower clear_shielded's continuously-held gate",
+        );
+
+        // Cleanup.
+        drop(_clearing_gate);
+        drop(_clearing_latch);
+        let _ = manager.shutdown().await;
+    }
+
     /// SEC-001: `clear_shielded` must BOUND its in-flight-pass drain so a
     /// heavy direct `sync_now`/`sync_wallet` that won't drain in time cannot
     /// hang the host's Clear. On the drain deadline the clear reports
