@@ -34,8 +34,13 @@
 //! by zeroize + mlock. The derived AEAD key stays resident in a
 //! [`SecretBytes`] (to avoid per-op Argon2) and is zeroized on Drop.
 
-mod crypto;
-mod format;
+// `pub(super)` (= visible within `crate::secrets`) so the Tier-2
+// `envelope` module — a sibling of `file` under `secrets` — can reuse the
+// shared Argon2id/XChaCha primitives and `KDF_ID_ARGON2ID` without
+// duplicating crypto. Items inside stay `pub(crate)`/`pub(in …file)`, so
+// nothing escapes the secrets tree (see the crypto.rs module doc).
+pub(super) mod crypto;
+pub(super) mod format;
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -52,7 +57,7 @@ use format::{EntryBody, Vault};
 
 use super::error::SecretStoreError;
 
-use super::secret::{SecretBytes, SecretString};
+use super::secret::{SecretBytes, SecretString, MIN_PASSPHRASE_LEN};
 use super::validate::{validated_label, WalletId};
 
 /// Service-prefix for vault entries: the full `service` string is
@@ -134,7 +139,34 @@ impl EncryptedFileStore {
         path: impl AsRef<Path>,
         passphrase: SecretString,
     ) -> Result<Self, SecretStoreError> {
-        let path = path.as_ref().to_path_buf();
+        // Tier-1 baseline: reject a blank passphrase (empty / all-whitespace)
+        // BEFORE touching the filesystem. A blank passphrase derives a key
+        // from a public salt only — obfuscation, not confidentiality
+        // (obfuscation, not confidentiality). This is an INTENDED behavioural break for any caller
+        // that relied on `SecretString::empty()`; a deliberate keyless vault
+        // must use [`open_unprotected`](Self::open_unprotected). No vault
+        // file is created or altered for a blank passphrase.
+        reject_weak_passphrase(&passphrase)?;
+        Self::open_inner(path.as_ref(), passphrase)
+    }
+
+    /// Open (or create) a **deliberately keyless** vault — the only door
+    /// that accepts no passphrase. The vault key is derived from an empty
+    /// passphrase under the public salt, so this is **obfuscation, not
+    /// confidentiality**: use it only where the stored secrets carry their
+    /// own Tier-2 object password, or as a staging step before
+    /// [`rekey`](Self::rekey) to a real passphrase. This is the explicit
+    /// keyless door, distinct from [`open`](Self::open) (which now rejects a
+    /// blank passphrase).
+    pub fn open_unprotected(path: impl AsRef<Path>) -> Result<Self, SecretStoreError> {
+        Self::open_inner(path.as_ref(), SecretString::empty())
+    }
+
+    /// Shared open/create core for [`open`](Self::open) and
+    /// [`open_unprotected`](Self::open_unprotected). Does NOT apply the
+    /// blank-passphrase guard — the public doors decide that.
+    fn open_inner(path: &Path, passphrase: SecretString) -> Result<Self, SecretStoreError> {
+        let path = path.to_path_buf();
 
         // Materialize the parent so the lock-sidecar open and vault
         // create do not fail on a not-yet-existing dir.
@@ -199,6 +231,11 @@ impl EncryptedFileStore {
     /// new passphrase + fresh salt, so paying ~hundreds of ms inside the
     /// critical section would needlessly stall unrelated put/get ops.
     pub fn rekey(&self, new_passphrase: SecretString) -> Result<(), SecretStoreError> {
+        // Reject a blank target passphrase: `rekey` always advances to a
+        // REAL passphrase (the empty→real migration uses this). The resident
+        // vault, key, and on-disk file are untouched on rejection. To make a
+        // vault keyless, use `open_unprotected` on a fresh path instead.
+        reject_weak_passphrase(&new_passphrase)?;
         let (new_vault, new_key) = build_fresh_vault(&new_passphrase)?;
         lock_inner(&self.inner).rekey(new_vault, new_key, new_passphrase)
     }
@@ -464,6 +501,18 @@ fn lock_path_for(path: &Path) -> PathBuf {
     let mut s = path.to_path_buf().into_os_string();
     s.push(".lock");
     PathBuf::from(s)
+}
+
+/// Reject a blank (empty / all-whitespace) or sub-floor passphrase →
+/// [`SecretStoreError::BlankPassphrase`]. The floor is the coarse
+/// [`MIN_PASSPHRASE_LEN`] (1 today = merely non-blank); the real entropy
+/// policy is the consumer's (see `SECRETS.md`). A blank check alone closes
+/// the length term keeps the floor wired for a future bump.
+fn reject_weak_passphrase(passphrase: &SecretString) -> Result<(), SecretStoreError> {
+    if passphrase.is_blank() || passphrase.trimmed().len() < MIN_PASSPHRASE_LEN {
+        return Err(SecretStoreError::BlankPassphrase);
+    }
+    Ok(())
 }
 
 /// Build a fresh entry-less vault (random salt, default Argon2 params,
@@ -1424,6 +1473,174 @@ mod tests {
                 .all(|w| w != b"PLAINTEXTNEEDLE"),
             "plaintext leaked into vault file"
         );
+    }
+
+    /// The no-plaintext-at-rest guarantee also holds through the public
+    /// `SecretStore::set` path (which writes an unprotected envelope sealed
+    /// under the vault key), not just the raw SPI entry path.
+    #[test]
+    fn no_plaintext_in_vault_file_via_secret_store_set() {
+        use crate::secrets::SecretStore;
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let store = SecretStore::file(&path, SecretString::new("pw-correct")).unwrap();
+        store
+            .set(
+                &wid(1),
+                "seed",
+                &SecretBytes::from_slice(b"PLAINTEXTNEEDLE"),
+            )
+            .unwrap();
+        let raw = fs::read(&path).unwrap();
+        assert!(
+            raw.windows(b"PLAINTEXTNEEDLE".len())
+                .all(|w| w != b"PLAINTEXTNEEDLE"),
+            "plaintext leaked into vault file via SecretStore::set"
+        );
+    }
+
+    /// A blank passphrase is rejected at `open` →
+    /// `BlankPassphrase`; no vault file (or lock sidecar) is created.
+    #[test]
+    fn open_rejects_blank_passphrase() {
+        for blank in [
+            SecretString::empty(),
+            SecretString::new(""),
+            SecretString::new("   "),
+            SecretString::new("\t\n"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = vault_path(dir.path());
+            let err = EncryptedFileStore::open(&path, blank).unwrap_err();
+            assert!(
+                matches!(err, SecretStoreError::BlankPassphrase),
+                "blank passphrase must be rejected, got {err:?}"
+            );
+            assert!(!path.exists(), "no vault file for a blank passphrase");
+            assert!(
+                !lock_path_for(&path).exists(),
+                "no lock sidecar for a blank passphrase"
+            );
+        }
+    }
+
+    /// A blank passphrase is rejected at `rekey`; the resident
+    /// vault, key, and on-disk file are UNCHANGED — the original passphrase
+    /// still reads every entry, live and after reopen.
+    #[test]
+    fn rekey_rejects_blank_passphrase_vault_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let s = store_at(&path); // real "pw-correct"
+        entry(&s, wid(1), "seed").set_secret(b"v1").unwrap();
+        for blank in [SecretString::empty(), SecretString::new("   ")] {
+            let err = s.rekey(blank).unwrap_err();
+            assert!(
+                matches!(err, SecretStoreError::BlankPassphrase),
+                "blank rekey must be rejected, got {err:?}"
+            );
+        }
+        // Old passphrase still reads the entry, live…
+        assert_eq!(entry(&s, wid(1), "seed").get_secret().unwrap(), b"v1");
+        // …and after a clean reopen under the original passphrase.
+        drop(s);
+        let s2 = store_at(&path);
+        assert_eq!(entry(&s2, wid(1), "seed").get_secret().unwrap(), b"v1");
+    }
+
+    /// `open_unprotected` permits a deliberate keyless vault that
+    /// round-trips; a real-passphrase `open` of that keyless vault then
+    /// fails with `WrongPassphrase` (it is keyless, not real-pass).
+    #[test]
+    fn open_unprotected_permits_keyless_vault() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        {
+            let s = EncryptedFileStore::open_unprotected(&path).unwrap();
+            entry(&s, wid(1), "seed")
+                .set_secret(b"keyless-seed")
+                .unwrap();
+        }
+        {
+            let s = EncryptedFileStore::open_unprotected(&path).unwrap();
+            assert_eq!(
+                entry(&s, wid(1), "seed").get_secret().unwrap(),
+                b"keyless-seed"
+            );
+        }
+        let err = EncryptedFileStore::open(&path, SecretString::new("real")).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::WrongPassphrase),
+            "real-pass open of a keyless vault must fail, got {err:?}"
+        );
+    }
+
+    /// Empty→real passphrase migration via `rekey`. After rekey,
+    /// `open(real)` reads every entry; the keyless door no longer opens it;
+    /// no `.bak`/`.tmp` residue beside the vault.
+    #[test]
+    fn empty_to_real_rekey_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        {
+            let s = EncryptedFileStore::open_unprotected(&path).unwrap();
+            entry(&s, wid(1), "seed").set_secret(b"migrate-me").unwrap();
+            s.rekey(SecretString::new("real-pass")).unwrap();
+            // The live handle keeps working post-rekey.
+            assert_eq!(
+                entry(&s, wid(1), "seed").get_secret().unwrap(),
+                b"migrate-me"
+            );
+        }
+        // Reopen under the real passphrase reads the entry.
+        {
+            let s = EncryptedFileStore::open(&path, SecretString::new("real-pass")).unwrap();
+            assert_eq!(
+                entry(&s, wid(1), "seed").get_secret().unwrap(),
+                b"migrate-me"
+            );
+        }
+        // The keyless door no longer opens it.
+        let err = EncryptedFileStore::open_unprotected(&path).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::WrongPassphrase),
+            "keyless open after migration must fail, got {err:?}"
+        );
+        // No .bak / .tmp residue (mirrors rekey_reencrypts_and_old_passphrase_fails).
+        for sibling in fs::read_dir(dir.path()).unwrap().flatten() {
+            let name = sibling.file_name();
+            let name = name.to_string_lossy();
+            assert!(
+                !name.ends_with(".bak") && !name.ends_with(".tmp"),
+                "unexpected residue: {name}"
+            );
+        }
+    }
+
+    /// Crash-safety: a disk-write failure mid-rekey leaves the
+    /// pre-rekey keyless vault intact and readable via `open_unprotected`
+    /// (mirrors rekey_does_not_corrupt_on_disk_temp_failure).
+    #[cfg(unix)]
+    #[test]
+    fn empty_to_real_rekey_crash_safe_stays_keyless() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let s = EncryptedFileStore::open_unprotected(&path).unwrap();
+        entry(&s, wid(1), "seed").set_secret(b"keyless").unwrap();
+
+        // Read-only parent → the rekey atomic temp-write fails.
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o500)).unwrap();
+        let err = s.rekey(SecretString::new("real-pass")).unwrap_err();
+        assert!(matches!(err, SecretStoreError::Io(_)), "got {err:?}");
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+
+        // The live handle still serves the pre-rekey keyless vault…
+        assert_eq!(entry(&s, wid(1), "seed").get_secret().unwrap(), b"keyless");
+        // …and on disk it is still the keyless vault.
+        drop(s);
+        let s2 = EncryptedFileStore::open_unprotected(&path).unwrap();
+        assert_eq!(entry(&s2, wid(1), "seed").get_secret().unwrap(), b"keyless");
     }
 
     #[test]

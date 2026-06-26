@@ -20,6 +20,41 @@ pub enum SecretStoreError {
     #[error("wrong passphrase")]
     WrongPassphrase,
 
+    /// Tier-2 strip/downgrade guard: the caller asserted — by supplying
+    /// an object password — that this object MUST be password-protected,
+    /// but the stored value is a well-formed UNPROTECTED envelope
+    /// (scheme-0), i.e. a strip/downgrade. **Fails closed:** the stored
+    /// bytes are NEVER returned (CWE-757/CWE-345).
+    #[error("expected a password-protected secret but the stored value is unprotected")]
+    ExpectedProtectedButUnsealed,
+
+    /// Tier-2: a valid password-protected (scheme-1) envelope was read
+    /// with NO object password supplied. Never returns ciphertext.
+    #[error("secret is password-protected; a password is required")]
+    NeedsPassword,
+
+    /// Tier-2: the object password failed the envelope's AEAD tag. Carries
+    /// **no** plaintext and no source (CWE-347). Distinct from
+    /// [`WrongPassphrase`] (the Tier-1 vault passphrase). On the
+    /// [`SecretStore::Os`] arm a tag failure may also indicate keychain
+    /// corruption rather than a wrong password — documented in
+    /// `SECRETS.md`; one AEAD tag cannot disambiguate the two.
+    ///
+    /// [`WrongPassphrase`]: SecretStoreError::WrongPassphrase
+    /// [`SecretStore::Os`]: crate::secrets::SecretStore::Os
+    #[error("wrong object password")]
+    WrongPassword,
+
+    /// A vault passphrase (Tier-1 `open`/`rekey`) or an object password
+    /// (Tier-2 enrol) was blank — empty or all-whitespace — rejected via
+    /// [`SecretString::is_blank`]. CWE-521.
+    ///
+    /// [`SecretString::is_blank`]: crate::secrets::SecretString::is_blank
+    #[error(
+        "passphrase must not be blank; for a deliberately keyless file vault use open_unprotected"
+    )]
+    BlankPassphrase,
+
     /// AEAD tag failure on a stored entry (or rekey re-encrypt) *after*
     /// the header verify-token passed: the entry ciphertext is corrupt or
     /// tampered, **not** a wrong passphrase. No plaintext (CWE-347).
@@ -39,6 +74,20 @@ pub enum SecretStoreError {
         found: u32,
     },
 
+    /// A Tier-2 secret envelope decoded with a `version` this build does
+    /// not understand. Fails closed REGARDLESS of the password argument
+    /// — an unparseable future format can be neither safely unwrapped
+    /// nor safely treated as unprotected, so it is refused both ways.
+    /// Mirrors [`VersionUnsupported`] for the vault format.
+    ///
+    /// [`VersionUnsupported`]: SecretStoreError::VersionUnsupported
+    #[error("unsupported secret envelope version {found}")]
+    UnsupportedEnvelopeVersion {
+        /// The envelope `version` byte read from the (unauthenticated)
+        /// header.
+        found: u8,
+    },
+
     /// The vault file was malformed (bad magic, truncated header, bad
     /// record framing) — no plaintext was produced.
     #[error("malformed vault file")]
@@ -48,6 +97,17 @@ pub enum SecretStoreError {
     /// (CWE-22/CWE-20).
     #[error("invalid label")]
     InvalidLabel,
+
+    /// No credential exists under `(service, label)` on either arm. Returned
+    /// by mutators that need an entry to operate on (e.g. [`reprotect`]) so
+    /// absence is a signal, not a silent no-op — caller's protection-status
+    /// record disagreeing with the backend must not be swallowed. Surfaced
+    /// by the file arm when `delete_bytes` reports `Ok(false)` and by the
+    /// OS arm when [`keyring_core::Error::NoEntry`] bubbles out.
+    ///
+    /// [`reprotect`]: crate::secrets::SecretStore::reprotect
+    #[error("no entry under (service, label)")]
+    NoEntry,
 
     /// A pre-existing vault file had permissions looser than `0600`.
     /// Refuse rather than tighten-and-trust.
@@ -186,8 +246,6 @@ impl From<std::io::Error> for IoError {
 /// [`SecretStore::Os`]: crate::secrets::SecretStore::Os
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OsKeyringErrorKind {
-    /// `keyring_core::Error::NoEntry`.
-    NoEntry,
     /// `keyring_core::Error::NoStorageAccess` (store locked / inaccessible).
     NoStorageAccess,
     /// `keyring_core::Error::NoDefaultStore` (no reachable backend).
@@ -203,7 +261,6 @@ pub enum OsKeyringErrorKind {
 impl std::fmt::Display for OsKeyringErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            Self::NoEntry => "no entry",
             Self::NoStorageAccess => "storage inaccessible",
             Self::NoDefaultStore => "no default store",
             Self::BadStoreFormat => "bad store format",
@@ -231,11 +288,18 @@ impl From<std::io::Error> for SecretStoreError {
 /// seam. Lossy by design — the lossless typed path is the
 /// [`SecretStore`](crate::secrets::SecretStore) API.
 ///
-/// - [`WrongPassphrase`] / [`AlreadyLocked`] ride in
+/// - [`WrongPassphrase`] / [`AlreadyLocked`] and the Tier-2 credential /
+///   protection states ([`NeedsPassword`], [`WrongPassword`],
+///   [`ExpectedProtectedButUnsealed`], [`BlankPassphrase`]) ride in
 ///   [`KeyringError::NoStorageAccess`] with the typed error boxed as the
 ///   source, recoverable via
 ///   `err.source().and_then(|s| s.downcast_ref::<SecretStoreError>())`.
-/// - The format/crypto group collapses into
+///   These are all "the caller must act on a credential/expectation to
+///   proceed" states, so lossless recovery lets an SPI consumer react
+///   precisely.
+/// - The format/crypto group — including [`UnsupportedEnvelopeVersion`]
+///   (a fail-closed forward-format incompatibility, mirroring
+///   [`VersionUnsupported`]) — collapses into
 ///   [`KeyringError::BadStoreFormat`] (a static secret-free string — that
 ///   variant has no box slot).
 /// - [`InvalidLabel`] → `KeyringError::Invalid("user", _)`;
@@ -243,16 +307,28 @@ impl From<std::io::Error> for SecretStoreError {
 ///
 /// [`WrongPassphrase`]: SecretStoreError::WrongPassphrase
 /// [`AlreadyLocked`]: SecretStoreError::AlreadyLocked
+/// [`NeedsPassword`]: SecretStoreError::NeedsPassword
+/// [`WrongPassword`]: SecretStoreError::WrongPassword
+/// [`ExpectedProtectedButUnsealed`]: SecretStoreError::ExpectedProtectedButUnsealed
+/// [`BlankPassphrase`]: SecretStoreError::BlankPassphrase
+/// [`UnsupportedEnvelopeVersion`]: SecretStoreError::UnsupportedEnvelopeVersion
+/// [`VersionUnsupported`]: SecretStoreError::VersionUnsupported
 /// [`InvalidLabel`]: SecretStoreError::InvalidLabel
 /// [`Io`]: SecretStoreError::Io
 impl From<SecretStoreError> for KeyringError {
     fn from(e: SecretStoreError) -> Self {
         use SecretStoreError as E;
         match e {
-            E::WrongPassphrase | E::AlreadyLocked => KeyringError::NoStorageAccess(Box::new(e)),
+            E::WrongPassphrase
+            | E::AlreadyLocked
+            | E::NeedsPassword
+            | E::WrongPassword
+            | E::ExpectedProtectedButUnsealed
+            | E::BlankPassphrase => KeyringError::NoStorageAccess(Box::new(e)),
             E::Corruption
             | E::KdfFailure
             | E::VersionUnsupported { .. }
+            | E::UnsupportedEnvelopeVersion { .. }
             | E::MalformedVault
             | E::InsecurePermissions { .. }
             | E::InsecureParentDir { .. }
@@ -264,6 +340,7 @@ impl From<SecretStoreError> for KeyringError {
             E::InvalidLabel => {
                 KeyringError::Invalid("user".to_string(), "label allowlist violation".to_string())
             }
+            E::NoEntry => KeyringError::NoEntry,
             E::Io(io) => KeyringError::PlatformFailure(Box::new(io.source)),
         }
     }
@@ -383,6 +460,102 @@ mod tests {
         // nothing to downcast.
         assert!(matches!(&k, KeyringError::BadStoreFormat(s) if !s.is_empty()));
         assert!(k.source().is_none());
+        assert!(!format!("{k}").contains("plaintext"));
+    }
+
+    /// The five new variants exist, are constructable, render
+    /// distinct non-empty messages, and the Tier-2 `WrongPassword` is NOT
+    /// the Tier-1 `WrongPassphrase` (nor is the unseal error `Corruption`).
+    #[test]
+    fn new_variants_exist_and_are_distinct() {
+        use SecretStoreError as E;
+        assert_ne!(E::WrongPassword.to_string(), E::WrongPassphrase.to_string());
+        assert_ne!(
+            E::ExpectedProtectedButUnsealed.to_string(),
+            E::Corruption.to_string()
+        );
+        let msgs: std::collections::HashSet<String> = [
+            E::NeedsPassword.to_string(),
+            E::WrongPassword.to_string(),
+            E::BlankPassphrase.to_string(),
+            E::ExpectedProtectedButUnsealed.to_string(),
+            E::UnsupportedEnvelopeVersion { found: 2 }.to_string(),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(msgs.len(), 5, "all five messages must be distinct");
+    }
+
+    /// Display + Debug render static, secret-free text. The
+    /// version variant surfaces the (non-secret) version byte and nothing
+    /// more.
+    #[test]
+    fn new_variants_carry_no_secret_in_display() {
+        use SecretStoreError as E;
+        assert_eq!(
+            E::NeedsPassword.to_string(),
+            "secret is password-protected; a password is required"
+        );
+        assert_eq!(E::WrongPassword.to_string(), "wrong object password");
+        assert_eq!(
+            E::BlankPassphrase.to_string(),
+            "passphrase must not be blank; for a deliberately keyless file vault use open_unprotected"
+        );
+        assert_eq!(
+            E::ExpectedProtectedButUnsealed.to_string(),
+            "expected a password-protected secret but the stored value is unprotected"
+        );
+        assert_eq!(
+            E::UnsupportedEnvelopeVersion { found: 7 }.to_string(),
+            "unsupported secret envelope version 7"
+        );
+        // Debug is non-empty and free of plaintext-ish tokens for all.
+        for e in [
+            E::NeedsPassword,
+            E::WrongPassword,
+            E::BlankPassphrase,
+            E::ExpectedProtectedButUnsealed,
+            E::UnsupportedEnvelopeVersion { found: 7 },
+        ] {
+            let rendered = format!("{e} {e:?}");
+            assert!(!rendered.contains("plaintext"));
+        }
+    }
+
+    /// The four Tier-2 credential /
+    /// protection states project to a recoverable `NoStorageAccess` with
+    /// the typed error losslessly downcast-able, leaking no secret.
+    #[test]
+    fn tier2_state_errors_project_to_recoverable_no_storage_access() {
+        for original in [
+            SecretStoreError::NeedsPassword,
+            SecretStoreError::WrongPassword,
+            SecretStoreError::ExpectedProtectedButUnsealed,
+            SecretStoreError::BlankPassphrase,
+        ] {
+            let want = original.to_string();
+            let k: KeyringError = original.into();
+            assert!(!format!("{k}").contains("plaintext"));
+            match &k {
+                KeyringError::NoStorageAccess(src) => {
+                    let recovered = src.downcast_ref::<SecretStoreError>();
+                    assert!(
+                        matches!(recovered, Some(e) if e.to_string() == want),
+                        "expected recoverable {want}, got {recovered:?}"
+                    );
+                }
+                other => panic!("expected NoStorageAccess for {want}, got {other:?}"),
+            }
+        }
+    }
+
+    /// `UnsupportedEnvelopeVersion` projects to the
+    /// secret-free `BadStoreFormat` group (forward-format incompat,
+    /// mirroring `VersionUnsupported`).
+    #[test]
+    fn unsupported_envelope_version_projects_to_bad_store_format() {
+        let k: KeyringError = SecretStoreError::UnsupportedEnvelopeVersion { found: 9 }.into();
+        assert!(matches!(k, KeyringError::BadStoreFormat(_)));
         assert!(!format!("{k}").contains("plaintext"));
     }
 

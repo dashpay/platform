@@ -21,6 +21,13 @@
 //! This `src/secrets/` tree is the sole secret-bearing module:
 //! `tests/secrets_scan.rs` exempts it, so it owns its own review
 //! discipline via `tests/secrets_guard.rs`.
+//!
+//! Cryptographic wire format lives in [`mod@wire`]: the Tier-2
+//! envelope (`wire::envelope`) and the three AAD constructions
+//! (`wire::aad`) are bincode-encoded against a single `WIRE_CONFIG`, so
+//! a future bincode-config drift is caught by the golden-vector tests
+//! in `wire::envelope::tests` rather than silently corrupting every
+//! stored blob.
 
 mod error;
 mod file;
@@ -28,6 +35,7 @@ mod keyring;
 mod secret;
 mod store;
 mod validate;
+mod wire;
 
 pub use error::{IoError, OsKeyringErrorKind, SecretStoreError};
 pub use file::{
@@ -35,6 +43,7 @@ pub use file::{
     SERVICE_PREFIX,
 };
 pub use keyring::default_credential_store;
-pub use secret::{SecretBytes, SecretString};
+pub use secret::{SecretBytes, SecretString, MIN_PASSPHRASE_LEN};
 pub use store::SecretStore;
 pub use validate::WalletId;
+pub use wire::envelope::MAX_PLAINTEXT_LEN;
