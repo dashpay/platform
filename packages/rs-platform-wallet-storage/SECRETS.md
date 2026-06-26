@@ -251,8 +251,10 @@ rollback protection.
 `reprotect(service, label, current, new)` does it in one same-slot
 unwrap→rewrap→overwrite: read under the `current` expectation (so a strip
 is caught before any rewrite), then write under `new` — `None`→`Some` adds,
-`Some`→`Some` changes, `Some`→`None` removes. An absent object is a no-op
-(`Ok(())`). The rewrite is a same-slot overwrite — atomic on the file arm,
+`Some`→`Some` changes, `Some`→`None` removes. An absent object returns
+`Err(SecretStoreError::NoEntry)` — `reprotect` is operational, so absence
+means the caller's protection-status record disagrees with the backend and
+must not be silently dropped. The rewrite is a same-slot overwrite — atomic on the file arm,
 and on the OS arm inheriting the backend's single-item-replace contract —
 so a crash between the read and the commit leaves the prior value intact
 and readable under `current`. **After a successful call the consumer MUST
