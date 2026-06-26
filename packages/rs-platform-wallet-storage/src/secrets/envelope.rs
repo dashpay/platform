@@ -264,6 +264,13 @@ fn unwrap_scheme1(
         // payload — corrupt, not a strip.
         return Err(SecretStoreError::Corruption);
     }
+    // Mirror wrap's invariant: a blank object password is rejected on read
+    // as well as enrol, so a backend-write attacker who plants a scheme-1
+    // envelope sealed under the blank password cannot inject plaintext into
+    // a caller that accidentally forwards Some(empty).
+    if password.is_blank() {
+        return Err(SecretStoreError::BlankPassphrase);
+    }
     let kdf = decode_kdf(&body[..KDF_FIELD_LEN]);
     // Gate the inflated/unknown header BEFORE any derivation/alloc.
     kdf.enforce_bounds()?;
@@ -594,6 +601,24 @@ mod tests {
                 "got {err:?}"
             );
         }
+    }
+
+    /// Symmetric guard on the read side: a `Some(blank)` password reaching
+    /// `unwrap_scheme1` is refused with `BlankPassphrase` BEFORE any KDF or
+    /// AEAD work — never `WrongPassword`, never `Decrypt`, never plaintext.
+    /// Pins the contract that closes the asymmetry where a backend-write
+    /// attacker could plant a scheme-1 envelope sealed under the blank
+    /// password and have a caller that accidentally forwards
+    /// `Some(SecretString::empty())` accept attacker-controlled plaintext.
+    #[test]
+    fn unwrap_scheme1_rejects_some_blank_password() {
+        // Well-formed scheme-1 envelope sealed under a NON-blank password.
+        let blob = wrap_p(&wid(1), "seed", Some(&pw("good")), b"seed", floor());
+        let err = unwrap(&wid(1), "seed", Some(&SecretString::empty()), &blob).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::BlankPassphrase),
+            "blank object password must be refused before KDF/AEAD, got {err:?}"
+        );
     }
 
     /// The plaintext is capped at `MAX_PLAINTEXT_LEN` (`MAX_SECRET_LEN −
