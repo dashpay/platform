@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dash_async::{
-    AtomicFlagGuard, DrainHook, RefcountedFlagGuard, ThreadRegistry, WorkerConfig, WorkerStatus,
+    AtomicFlagGuard, RefcountedFlagGuard, ThreadRegistry, WorkerConfig, WorkerStatus,
 };
 
 use super::{WalletWorker, COORDINATOR_WEIGHT, SHUTDOWN_JOIN_TIMEOUT_SECS};
@@ -32,12 +32,10 @@ pub(crate) struct CoordinatorLifecycle {
     worker: WalletWorker,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
-    /// Refcounted "no new pass" gate: raised iff count > 0. `Arc` so the
-    /// registry drain hook (a `'static` closure) can capture a clone and
-    /// raise the gate from inside `quiesce`. Refcount semantics let the two
-    /// teardown paths — the public `quiesce()`'s local guard and the Clear
-    /// flow's `hold_quiescing_gate` — compose without one path's Drop
-    /// lowering the other path's barrier.
+    /// Refcounted "no new pass" gate: raised iff count > 0. Refcount
+    /// semantics let the two teardown paths — the public `quiesce()`'s
+    /// local guard and the Clear flow's `hold_quiescing_gate` — compose
+    /// without one path's Drop lowering the other path's barrier.
     quiescing: Arc<AtomicUsize>,
     last_sync_unix: AtomicU64,
 }
@@ -99,35 +97,23 @@ impl CoordinatorLifecycle {
     }
 
     /// The registry config a coordinator starts its loop with: coordinator
-    /// teardown weight, the shared join budget, and the `quiescing`-raising
-    /// drain hook.
+    /// teardown weight and the shared join budget. No registry-side drain
+    /// hook is installed: the lifecycle's own [`quiesce`](Self::quiesce)
+    /// holds the gate via a [`RefcountedFlagGuard`] across the whole drain
+    /// (cancellation-safe — its `Drop` runs on every exit path including a
+    /// future dropped at an outer `await`), and
+    /// [`quiesce_under_held_gate`](Self::quiesce_under_held_gate) requires
+    /// the caller to already hold one. A registry-side hook would do its
+    /// `fetch_add` inside `registry.quiesce` while the matching `fetch_sub`
+    /// lived past the same `await` — under a `tokio::time::timeout` wrap
+    /// (e.g. `clear_shielded_inner`) a timeout firing mid-drain leaked the
+    /// hook's contribution forever, silently disabling the coordinator.
     pub(crate) fn worker_config(&self) -> WorkerConfig {
         WorkerConfig {
             weight: COORDINATOR_WEIGHT,
             join_budget: Duration::from_secs(SHUTDOWN_JOIN_TIMEOUT_SECS),
-            drain: Some(self.drain_hook()),
+            drain: None,
         }
-    }
-
-    /// Drain hook handed to the registry: raise the `quiescing` gate so any
-    /// pass past its `is_syncing` CAS bails. The registry then cancels the
-    /// loop and joins the thread, so the barrier itself is instant.
-    ///
-    /// One-shot raise paired with a matching decrement in
-    /// [`cancel_join_and_drain`](Self::cancel_join_and_drain): the registry
-    /// fires the hook exactly once per quiesce, so the hook's contribution
-    /// to the refcount must be released there to avoid leaking across
-    /// coordinator restarts.
-    fn drain_hook(&self) -> DrainHook {
-        let quiescing = Arc::clone(&self.quiescing);
-        Arc::new(move || {
-            let quiescing = Arc::clone(&quiescing);
-            Box::pin(async move {
-                // SeqCst: store-half of the `quiescing`<->`is_syncing`
-                // handshake (see `begin_pass`).
-                quiescing.fetch_add(1, Ordering::SeqCst);
-            })
-        })
     }
 
     /// Spawn the standard coordinator loop on the registry: take the
@@ -193,15 +179,14 @@ impl CoordinatorLifecycle {
     /// the gate's overall state determined by whatever other holders
     /// (e.g. the Clear flow's `hold_quiescing_gate`) are still in scope.
     ///
-    /// The gate is raised **here**, not left to the registry's drain hook:
-    /// `registry.quiesce` early-returns `NotRunning` without running the
-    /// hook when no background-loop slot is registered, so a coordinator
-    /// with only direct pass traffic (no running loop) would never see the
-    /// gate go up — and a direct pass landing concurrently would slip past
-    /// the barrier `clear_shielded`/`stop` promise. Raising it ourselves
-    /// makes the "no new pass" gate hold regardless of whether a loop is
-    /// registered, and preserves gate-before-cancel: it is up before
-    /// `registry.quiesce` issues any cancel.
+    /// The gate is raised **here**, by the lifecycle itself — there is no
+    /// registry-side drain hook. The guard's `Drop` is cancellation-safe
+    /// (it runs on every exit path including a future dropped at an outer
+    /// `await`), so the gate is reliably released exactly once per call
+    /// and the "no new pass" barrier holds regardless of whether a
+    /// background-loop slot is registered. Gate-before-cancel is
+    /// preserved: the raise is synchronous and lives above the
+    /// `registry.quiesce` await that issues any cancel.
     ///
     /// Refcount semantics close the prior TOCTOU between the `is_clearing`
     /// short-circuit and the gate-guard install: even if a Clear lands in
@@ -259,14 +244,19 @@ impl CoordinatorLifecycle {
     }
 
     /// Cancel + bounded-join the background loop (if any), then drain a
-    /// direct in-flight pass on a clean status. Assumes the `quiescing` gate
-    /// is **already raised** (by [`quiesce`](Self::quiesce)'s own guard or a
-    /// caller's hold guard) and does not touch it.
+    /// direct in-flight pass on a clean status. Assumes the `quiescing`
+    /// gate is **already raised** by the caller: [`quiesce`](Self::quiesce)
+    /// installs its own local [`RefcountedFlagGuard`] in scope across the
+    /// whole `await`, and [`quiesce_under_held_gate`](Self::quiesce_under_held_gate)
+    /// requires the caller to hold one. Either guard's `Drop` runs on
+    /// every exit path — including a future dropped at an outer `await`
+    /// (e.g. a `tokio::time::timeout` firing mid-drain) — so the gate is
+    /// released exactly once per teardown, no matter how the call unwinds.
     ///
     /// A wedged loop pass surfaces from `registry.quiesce` as a non-clean
-    /// `Timeout` rather than hanging — its orphaned thread is tracked by the
-    /// registry for teardown, so the drain below must not wait on it. On a
-    /// clean status the only possible `is_syncing` holder is a direct
+    /// `Timeout` rather than hanging — its orphaned thread is tracked by
+    /// the registry for teardown, so the drain below must not wait on it.
+    /// On a clean status the only possible `is_syncing` holder is a direct
     /// `sync_now`/`sync_wallet` that entered before the gate rose (with no
     /// loop slot `registry.quiesce` joined nothing; with an idle loop it
     /// joined a thread that was not the one holding the flag). The raised
@@ -274,17 +264,6 @@ impl CoordinatorLifecycle {
     /// panicked pass clears the flag via its own RAII guard.
     async fn cancel_join_and_drain(&self) -> WorkerStatus {
         let status = self.registry.quiesce(self.worker).await;
-        // Pairs with `drain_hook`'s `fetch_add`: the registry fires the
-        // hook exactly when a slot is inhabited (status != NotRunning),
-        // so the matching decrement runs only in that case. Without the
-        // condition, a no-slot quiesce (drain hook never fires) would
-        // lower the gate past the caller's local guard (or the Clear
-        // flow's held guard) — exactly the lapse the refcount design is
-        // here to prevent. With it, the hook's contribution releases
-        // cleanly and never leaks across coordinator restarts.
-        if status != WorkerStatus::NotRunning {
-            self.quiescing.fetch_sub(1, Ordering::SeqCst);
-        }
         if status.is_clean() {
             self.drain_in_flight_pass().await;
         }
@@ -612,5 +591,122 @@ mod tests {
             !lifecycle.quiescing_load_for_test(Ordering::Acquire),
             "gate reopens once the last holder drops"
         );
+    }
+
+    /// Regression: a timeout / forced cancellation that drops the
+    /// `lifecycle.quiesce()` future mid-drain must NOT leak the `quiescing`
+    /// refcount. With a registry-side `drain_hook` whose `fetch_add` ran
+    /// inside the registry's quiesce, but whose matching `fetch_sub` lived
+    /// past the inner `.await` in `cancel_join_and_drain`, the outer drop
+    /// would unwind the local guard's contribution while leaving the hook's
+    /// contribution stranded — count permanently `+1`, gate stuck raised,
+    /// every future `begin_pass` would bail and the coordinator would be
+    /// silently dead for the rest of the process. The wallet's
+    /// `clear_shielded_inner` wraps `quiesce_under_held_gate()` in a
+    /// `tokio::time::timeout`, so this is the live cancellation path.
+    ///
+    /// Non-vacuous: against the prior commit (drain hook present) the
+    /// post-cancel count stays at `1` and the assertion below times out;
+    /// with the hook dropped (this fix), only the lifecycle's own
+    /// `RefcountedFlagGuard` is in play and its `Drop` runs on the
+    /// cancellation unwind, returning the count to `0`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn quiesce_cancellation_during_drain_does_not_leak_quiescing_refcount() {
+        let lifecycle = make_lifecycle();
+
+        // Register a background loop whose `pass` blocks the OS thread via
+        // `std::thread::sleep` once it is in flight — flagging
+        // `pass_entered` so the test can wait for the loop body to be
+        // committed before driving teardown. With the OS thread parked
+        // inside `pass`, the loop's biased `select!` cannot observe the
+        // cancel signal and the registry's join poll loop sits waiting —
+        // owning the mid-drain window we need to drop the future on top of.
+        //
+        // Without the `pass_entered` handshake, the OS thread can race
+        // teardown: `spawn_periodic_loop` returns before the thread has
+        // even reached the loop body, so `registry.quiesce` can fire its
+        // cancel signal before the thread enters `select!`. The `biased;
+        // cancel.cancelled() => break,` arm then wins on first poll — pass
+        // never runs, the thread exits cleanly, status comes back as `Ok`,
+        // and the matching `fetch_sub` in `cancel_join_and_drain` runs.
+        // Result: pre-fix doesn't leak in that race and the assertion is
+        // vacuously satisfied. Waiting for `pass_entered` closes the race.
+        let pass_entered = Arc::new(AtomicBool::new(false));
+        let pass_release = Arc::new(AtomicBool::new(false));
+        let pass_entered_c = Arc::clone(&pass_entered);
+        let pass_release_c = Arc::clone(&pass_release);
+        lifecycle.spawn_periodic_loop(
+            move || {
+                let entered = Arc::clone(&pass_entered_c);
+                let release = Arc::clone(&pass_release_c);
+                async move {
+                    entered.store(true, Ordering::Release);
+                    while !release.load(Ordering::Acquire) {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                }
+            },
+            || Duration::from_secs(60),
+        );
+
+        // Wait for the OS thread to be IN `pass` (past `select!`'s biased
+        // cancel arm), so a cancel signal from the upcoming `quiesce`
+        // cannot win the select before the loop body runs.
+        let start = std::time::Instant::now();
+        while !pass_entered.load(Ordering::Acquire) {
+            if start.elapsed() > Duration::from_secs(2) {
+                pass_release.store(true, Ordering::Release);
+                panic!("background loop never entered `pass`");
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+
+        // Drive `quiesce` on a separate task so we can abort its future
+        // mid-drain — simulating the `clear_shielded_inner`
+        // `tokio::time::timeout` firing inside `registry.quiesce`.
+        let lc_q = Arc::clone(&lifecycle);
+        let quiesce_task = tokio::spawn(async move { lc_q.quiesce().await });
+
+        // Wait for the lifecycle's local guard to raise the gate, then give
+        // the registry's drain hook room to run (it would also raise the
+        // gate, pre-fix). 50ms is generous: the hook is `fetch_add` + a
+        // boxed empty future — microseconds — and the join poll's 5ms
+        // cadence means the registry is sitting in the join wait by now.
+        let start = std::time::Instant::now();
+        while !lifecycle.quiescing_load_for_test(Ordering::Acquire) {
+            if start.elapsed() > Duration::from_secs(2) {
+                pass_release.store(true, Ordering::Release);
+                panic!("quiesce never raised the gate");
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Cancel mid-drain — the OS thread is still parked in
+        // `std::thread::sleep`, the registry is still polling the join
+        // wait. Pre-fix, the drain hook has already run its `fetch_add`;
+        // the matching `fetch_sub` lives past the registry await and never
+        // gets a chance to run.
+        quiesce_task.abort();
+        let _ = quiesce_task.await;
+
+        // Assert the refcount returns to 0 within a generous window. With
+        // the leak, it stays at `1` forever and this loop times out.
+        let start = std::time::Instant::now();
+        while lifecycle.quiescing_load_for_test(Ordering::Acquire) {
+            if start.elapsed() > Duration::from_millis(500) {
+                let leaked = lifecycle.quiescing.load(Ordering::Acquire);
+                pass_release.store(true, Ordering::Release);
+                panic!(
+                    "quiescing refcount leaked past cancellation: count = {leaked} \
+                     (expected 0 once the dropped future's guards unwound)"
+                );
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+
+        // Cleanup: release the pass so the OS thread observes cancel and
+        // exits before the test runtime is dropped.
+        pass_release.store(true, Ordering::Release);
     }
 }
