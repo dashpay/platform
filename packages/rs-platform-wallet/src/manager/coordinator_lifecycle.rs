@@ -134,6 +134,17 @@ impl CoordinatorLifecycle {
         Fut: std::future::Future<Output = ()>,
         I: Fn() -> Duration + Send + 'static,
     {
+        // Bail before lowering the gate when our key is in the registry's
+        // clearing set: a concurrent `clear_shielded` is holding both the
+        // per-key latch AND the quiescing gate continuously. `start_thread`
+        // below would refuse the start (latch), but `reopen_quiescing_gate`
+        // is the wallet-side flag — the registry latch does not protect it.
+        // Without this check we'd lower the gate `clear_shielded` is
+        // counting on, opening a window for a direct `sync_now`/`sync_wallet`
+        // to slip past `begin_pass` and re-persist into the wiping store.
+        if self.registry.is_clearing(self.worker) {
+            return;
+        }
         self.reopen_quiescing_gate();
         let cfg = self.worker_config();
         let handle = tokio::runtime::Handle::current();
@@ -276,6 +287,13 @@ impl CoordinatorLifecycle {
         // raise must be self-fencing just like `quiesce`'s.
         self.quiescing.store(true, Ordering::SeqCst);
         AtomicFlagGuard::new(&self.quiescing)
+    }
+
+    /// Test-only read of the `quiescing` flag. Used by regression tests
+    /// that assert the gate stays raised across a refused (re)start.
+    #[cfg(test)]
+    pub(crate) fn quiescing_load_for_test(&self, ordering: Ordering) -> bool {
+        self.quiescing.load(ordering)
     }
 
     /// Enter a sync pass. Atomically claims the `is_syncing` slot, then

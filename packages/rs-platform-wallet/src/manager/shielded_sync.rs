@@ -288,6 +288,14 @@ impl ShieldedSyncManager {
         self.lifecycle.hold_quiescing_gate()
     }
 
+    /// Test-only read of the underlying `quiescing` flag. Used by
+    /// regression tests asserting gate-continuity under concurrent
+    /// (re)starts during a Clear.
+    #[cfg(test)]
+    pub(crate) fn quiescing_load_for_test(&self, ordering: std::sync::atomic::Ordering) -> bool {
+        self.lifecycle.quiescing_load_for_test(ordering)
+    }
+
     /// Run one sync pass across every registered wallet.
     ///
     /// `force` is propagated to each wallet's

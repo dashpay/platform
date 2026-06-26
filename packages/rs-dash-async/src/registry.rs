@@ -612,6 +612,15 @@ impl<K: RegistryKey> ThreadRegistry<K> {
         }
     }
 
+    /// Whether `key` is currently in the clearing set (a
+    /// [`ClearingGuard`] is held for it). Exposed so a coordinator can
+    /// observe the latch BEFORE side-effects that would otherwise leak
+    /// into the clear flow (e.g. lowering a continuously-held quiescing
+    /// gate) even when its `start_thread`/`start_task` would be refused.
+    pub fn is_clearing(&self, key: K) -> bool {
+        self.lock_clearing().contains(&key)
+    }
+
     /// Await this worker's drain hook, cancel it, then join within its
     /// budget. The live handle is owned by the slot and is **never** moved
     /// into this future's frame, so a dropped/timed-out call cannot detach

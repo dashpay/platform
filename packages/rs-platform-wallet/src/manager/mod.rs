@@ -1048,6 +1048,61 @@ mod tests {
         let _ = manager.shutdown().await;
     }
 
+    /// SEC-002 continuity under concurrent (re)start during clear: when
+    /// `clear_shielded` holds both the per-key clearing latch AND the
+    /// quiescing gate continuously, a racing `shielded_sync().start()`
+    /// must NOT lower the gate even though `start_thread` is refused.
+    /// Without the `is_clearing` short-circuit in
+    /// `CoordinatorLifecycle::spawn_periodic_loop`, the start path's
+    /// `reopen_quiescing_gate` call lowers the gate before the latch
+    /// check refuses the spawn — opening a window where a direct
+    /// `sync_now`/`sync_wallet` via `begin_pass` would observe the
+    /// lowered gate and slip past the clear's "no new pass" barrier.
+    ///
+    /// Non-vacuous: against the pre-fix `spawn_periodic_loop` (reopen
+    /// → start_thread, latch checked only in start_thread), the gate
+    /// would be `false` after the refused start.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn shielded_start_during_clear_preserves_quiescing_gate() {
+        use std::sync::atomic::Ordering;
+
+        let manager = make_manager();
+
+        // Acquire BOTH guards `clear_shielded_inner` holds: the per-key
+        // registry latch + the wallet-side quiescing gate.
+        let _clearing_latch = manager.registry.hold_clearing(WalletWorker::ShieldedSync);
+        let _clearing_gate = manager.shielded_sync_manager.hold_quiescing_gate();
+        assert!(
+            manager
+                .shielded_sync_manager
+                .quiescing_load_for_test(Ordering::SeqCst),
+            "precondition: gate raised by the held clearing guard"
+        );
+
+        // A racing (re)start arrives.
+        manager.shielded_sync_manager.clone().start();
+
+        // start_thread is refused by the latch, as before...
+        assert!(
+            !manager.shielded_sync_manager.is_running(),
+            "registry latch must refuse the start"
+        );
+        // ...and the gate stays UP. Pre-fix this would be `false` because
+        // `spawn_periodic_loop` lowered the gate before the latch check.
+        assert!(
+            manager
+                .shielded_sync_manager
+                .quiescing_load_for_test(Ordering::SeqCst),
+            "gate must remain raised: refused start must not lower clear_shielded's continuously-held gate",
+        );
+
+        // Cleanup — drop the guards in reverse order before shutdown.
+        drop(_clearing_gate);
+        drop(_clearing_latch);
+        let _ = manager.shutdown().await;
+    }
+
     /// SEC-001: `clear_shielded` must BOUND its in-flight-pass drain so a
     /// heavy direct `sync_now`/`sync_wallet` that won't drain in time cannot
     /// hang the host's Clear. On the drain deadline the clear reports
