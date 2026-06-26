@@ -128,12 +128,19 @@ public class PlatformWalletManager: ObservableObject {
     internal private(set) var handle: Handle = NULL_HANDLE
 
     /// Retained for the lifetime of the FFI handle so the callback
-    /// context pointer remains valid.
-    private var persistenceHandler: PlatformWalletPersistenceHandler?
+    /// context pointer remains valid. `nonisolated(unsafe)` so the
+    /// nonisolated `deinit` can `passRetained` the handler on an
+    /// incomplete-shutdown without Swift 6 strict-concurrency rejecting
+    /// the cross-isolation access — the FFI lifetime contract makes the
+    /// access safe (the handler is only ever read after the Rust side
+    /// has signalled the worker is wedged + the wrapper class itself is
+    /// being destroyed).
+    nonisolated(unsafe) private var persistenceHandler: PlatformWalletPersistenceHandler?
 
     /// Retained for the lifetime of the FFI handle so the event-handler
-    /// context pointer remains valid.
-    private var eventHandler: PlatformWalletEventHandler?
+    /// context pointer remains valid. See `persistenceHandler` for the
+    /// `nonisolated(unsafe)` rationale.
+    nonisolated(unsafe) private var eventHandler: PlatformWalletEventHandler?
 
     /// Background task that polls SPV progress.
     private var progressPollTask: Task<Void, Never>?
