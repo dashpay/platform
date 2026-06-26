@@ -399,10 +399,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // between the drain, the liveness check, and the store wipe: a direct
         // `sync_now`/`sync_wallet` landing anywhere in here observes the gate
         // and bails instead of re-persisting into the store we are about to
-        // clear. `quiesce_under_held_gate` deliberately does NOT touch the
-        // gate (a single `AtomicFlagGuard` always clears the flag on drop, so
-        // letting `quiesce` manage it and re-raising afterwards would leave a
-        // window). The guard lowers the gate on return (every path).
+        // clear. The refcount semantics on `quiescing` mean this guard's
+        // contribution stays live across any racing public `quiesce()` —
+        // neither party's Drop can lower the other's barrier. The guard
+        // releases its own ref on return (every path).
         let _clearing_gate = self.shielded_sync_manager.hold_quiescing_gate();
 
         // Cancel the loop and drain any in-flight pass (incl. its persister
@@ -1057,16 +1057,12 @@ mod tests {
     /// `clear_shielded` holds both the per-key clearing latch AND the
     /// quiescing gate continuously, a racing `shielded_sync().start()`
     /// must NOT lower the gate even though `start_thread` is refused.
-    /// Without the `is_clearing` short-circuit in
-    /// `CoordinatorLifecycle::spawn_periodic_loop`, the start path's
-    /// `reopen_quiescing_gate` call lowers the gate before the latch
-    /// check refuses the spawn — opening a window where a direct
-    /// `sync_now`/`sync_wallet` via `begin_pass` would observe the
-    /// lowered gate and slip past the clear's "no new pass" barrier.
-    ///
-    /// Non-vacuous: against the pre-fix `spawn_periodic_loop` (reopen
-    /// → start_thread, latch checked only in start_thread), the gate
-    /// would be `false` after the refused start.
+    /// Under refcount semantics on `quiescing`, the start path never
+    /// touches the gate at all — only properly-paired guard holders raise
+    /// or lower it — so the Clear flow's `hold_quiescing_gate` ref keeps
+    /// the gate up across the refused start. The `is_clearing` short-
+    /// circuit in `CoordinatorLifecycle::spawn_periodic_loop` remains as
+    /// defense-in-depth, skipping the wasted setup work.
     #[cfg(feature = "shielded")]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn shielded_start_during_clear_preserves_quiescing_gate() {
@@ -1111,10 +1107,12 @@ mod tests {
     /// SEC-002 continuity under concurrent public `quiesce()` during
     /// clear: `CoordinatorLifecycle::quiesce` (reachable via
     /// `ShieldedSyncManager::quiesce`, which is `pub(crate)` but routes
-    /// out via `shielded_sync_arc`) must NOT install its local
-    /// `AtomicFlagGuard` on `quiescing` while a clear is mid-flight —
-    /// the guard's Drop would lower the gate `clear_shielded` is
-    /// holding continuously.
+    /// out via `shielded_sync_arc`) must NOT lower the gate `clear_shielded`
+    /// is holding continuously. The `is_clearing` short-circuit covers the
+    /// ordering where the clearing latch is acquired before quiesce arrives;
+    /// the refcount semantics on `quiescing` cover the racy ordering where
+    /// `is_clearing` returns false at check time and the clear lands in
+    /// the ns-window before the local guard install.
     ///
     /// Non-vacuous: against the pre-fix `quiesce` (which always
     /// constructed an `AtomicFlagGuard` and dropped it on return), the
@@ -1138,7 +1136,10 @@ mod tests {
 
         // A racing quiesce arrives (no background loop registered, so
         // pre-fix quiesce would early-return NotRunning AFTER dropping
-        // its locally-installed AtomicFlagGuard, lowering the gate).
+        // its locally-installed `AtomicFlagGuard`, lowering the gate).
+        // Under the refcount design, the `is_clearing` short-circuit
+        // fires here (clearing latch is held) and quiesce returns
+        // without raising/lowering anything.
         let status = manager.shielded_sync_manager.quiesce().await;
         assert_eq!(
             status,
@@ -1147,7 +1148,7 @@ mod tests {
         );
 
         // Gate stays UP. Pre-fix this would be `false` because the
-        // local AtomicFlagGuard's Drop lowered it.
+        // local `AtomicFlagGuard`'s Drop lowered it.
         assert!(
             manager
                 .shielded_sync_manager

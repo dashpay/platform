@@ -12,7 +12,7 @@ mod block_on;
 #[cfg(not(target_arch = "wasm32"))]
 mod registry;
 
-pub use atomic::AtomicFlagGuard;
+pub use atomic::{AtomicFlagGuard, RefcountedFlagGuard};
 pub use block_on::{block_on, AsyncError};
 #[cfg(not(target_arch = "wasm32"))]
 pub use registry::{

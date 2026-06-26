@@ -28,7 +28,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use dash_async::{AtomicFlagGuard, ThreadRegistry};
+#[cfg(test)]
+use dash_async::AtomicFlagGuard;
+use dash_async::{RefcountedFlagGuard, ThreadRegistry};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::RwLock;
@@ -280,11 +282,12 @@ impl ShieldedSyncManager {
     }
 
     /// Raise the `quiescing` gate and hold it raised until the returned
-    /// guard drops. Where [`quiesce`](Self::quiesce) reopens the gate as
-    /// soon as it returns, this lets a multi-step teardown (Clear) keep new
-    /// direct `sync_now` / `sync_wallet` passes off across a check-then-wipe
-    /// so the "no new pass" guarantee does not lapse between the two steps.
-    pub(crate) fn hold_quiescing_gate(&self) -> AtomicFlagGuard<'_> {
+    /// guard drops. Under refcount semantics multiple holders compose, so
+    /// this lets a multi-step teardown (Clear) keep new direct `sync_now` /
+    /// `sync_wallet` passes off across a check-then-wipe even when a racing
+    /// public `quiesce()` lands inside the window — neither party's Drop
+    /// can lower the other's barrier.
+    pub(crate) fn hold_quiescing_gate(&self) -> RefcountedFlagGuard<'_> {
         self.lifecycle.hold_quiescing_gate()
     }
 
