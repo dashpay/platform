@@ -100,6 +100,17 @@ pub enum SecretStoreError {
     #[error("invalid label")]
     InvalidLabel,
 
+    /// No credential exists under `(service, label)` on either arm. Returned
+    /// by mutators that need an entry to operate on (e.g. [`reprotect`]) so
+    /// absence is a signal, not a silent no-op — caller's protection-status
+    /// record disagreeing with the backend must not be swallowed. Surfaced
+    /// by the file arm when `delete_bytes` reports `Ok(false)` and by the
+    /// OS arm when [`keyring_core::Error::NoEntry`] bubbles out.
+    ///
+    /// [`reprotect`]: crate::secrets::SecretStore::reprotect
+    #[error("no entry under (service, label)")]
+    NoEntry,
+
     /// A pre-existing vault file had permissions looser than `0600`.
     /// Refuse rather than tighten-and-trust.
     #[error("vault file has insecure permissions")]
@@ -237,8 +248,6 @@ impl From<std::io::Error> for IoError {
 /// [`SecretStore::Os`]: crate::secrets::SecretStore::Os
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OsKeyringErrorKind {
-    /// `keyring_core::Error::NoEntry`.
-    NoEntry,
     /// `keyring_core::Error::NoStorageAccess` (store locked / inaccessible).
     NoStorageAccess,
     /// `keyring_core::Error::NoDefaultStore` (no reachable backend).
@@ -254,7 +263,6 @@ pub enum OsKeyringErrorKind {
 impl std::fmt::Display for OsKeyringErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            Self::NoEntry => "no entry",
             Self::NoStorageAccess => "storage inaccessible",
             Self::NoDefaultStore => "no default store",
             Self::BadStoreFormat => "bad store format",
@@ -334,6 +342,7 @@ impl From<SecretStoreError> for KeyringError {
             E::InvalidLabel => {
                 KeyringError::Invalid("user".to_string(), "label allowlist violation".to_string())
             }
+            E::NoEntry => KeyringError::NoEntry,
             E::Io(io) => KeyringError::PlatformFailure(Box::new(io.source)),
         }
     }
