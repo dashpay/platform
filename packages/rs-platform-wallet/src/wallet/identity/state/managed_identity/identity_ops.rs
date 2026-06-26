@@ -794,7 +794,10 @@ mod tests {
             &p,
         );
         assert!(result.is_err());
-        let kept = managed.dashpay_payments.get("tx1").expect("previous survives");
+        let kept = managed
+            .dashpay_payments
+            .get("tx1")
+            .expect("previous survives");
         assert_eq!(
             kept.amount_duffs, 100,
             "a failed overwrite must restore the previous entry, not the un-persisted new value"

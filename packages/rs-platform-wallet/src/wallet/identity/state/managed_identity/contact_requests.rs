@@ -808,7 +808,10 @@ mod tests {
 
         // First attempt fails to persist → surfaces as Err.
         let r1 = managed.set_contact_metadata(&contact_id, meta.clone(), &failing_persister());
-        assert!(r1.is_err(), "first attempt must surface the persist failure");
+        assert!(
+            r1.is_err(),
+            "first attempt must surface the persist failure"
+        );
 
         // Retry with the SAME metadata against a working persister. The fix
         // (persist-before-commit) leaves memory unchanged on the failed
