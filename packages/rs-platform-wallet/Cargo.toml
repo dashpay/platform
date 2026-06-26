@@ -49,7 +49,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 zeroize = "1"
 
 # Shielded pool (optional, behind `shielded` feature)
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "5eb7a5380a6e974513343352acfd6b30a8c1f87c", optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "fc814983d4d36c6ea049642556b9a31ab8d4dfaa", optional = true }
 # Direct `rusqlite` access so `FileBackedShieldedStore::open_path` can set
 # WAL + synchronous=NORMAL pragmas before handing the connection to
 # `ClientPersistentCommitmentTree`. Version locked to match the rev grovedb
@@ -111,8 +111,16 @@ default = ["bls", "eddsa"]
 bls = ["key-wallet/bls", "key-wallet-manager/bls"]
 eddsa = ["key-wallet/eddsa", "key-wallet-manager/eddsa"]
 shielded = ["dep:grovedb-commitment-tree", "dep:rusqlite", "dep:zip32", "dep:futures", "dash-sdk/shielded", "dpp/shielded-client"]
-# Opt-in serde derives on the changeset types. Activates `key-wallet/serde`,
-# `key-wallet-manager/serde`, and `dash-sdk/serde`. `dpp` derives serde unconditionally.
+# Opt-in serde derives on the changeset types in `src/changeset/` plus
+# the per-identity / DashPay scalar types those changesets carry.
+# Activates `key-wallet/serde` (which transitively activates
+# `dashcore/serde` and `dash-network/serde`) so every leaf type in a
+# changeset payload — `TransactionRecord`, `Utxo`, `InstantLock`,
+# `AccountType`, `AddressInfo`, `ExtendedPubKey`, `Network` — has a
+# working `serde::Serialize`/`Deserialize` impl. `dpp` derives serde
+# unconditionally; `key-wallet-manager/serde` covers `DerivedAddress`
+# and friends; `dash-sdk/serde` surfaces serde on SDK-owned types
+# reachable from changeset payloads.
 serde = [
     "dep:serde",
     "key-wallet/serde",

@@ -563,7 +563,10 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// pre-extracted `[Data]` of the same `pubkeyBytes` values, kept
     /// separately so the recursive helper doesn't need to see the
     /// full Swift wrapper struct).
-    fileprivate static func withPubkeyFFIArray<R>(
+    // `internal` (not `fileprivate`) so the shielded identity-create-from-pool wrapper in
+    // `PlatformWalletManagerShieldedSync.swift` can reuse this exact `[IdentityPubkeyFFI]` pinning
+    // helper rather than duplicating the recursive lifetime dance.
+    static func withPubkeyFFIArray<R>(
         _ pubkeys: [IdentityPubkey],
         buffers: [Data],
         _ body: (UnsafePointer<IdentityPubkeyFFI>?, Int) -> R
@@ -746,12 +749,34 @@ extension ManagedPlatformWallet {
     ///     Pass `nil` to defer to the Rust default
     ///     (`IDENTITY_GAP_LIMIT`, currently 5) so the preview
     ///     aligns with the scan window `discoverIdentities` walks.
+    ///   - storage: `WalletStorage` instance used by the resolver
+    ///     callback to read the BIP-39 mnemonic from iOS Keychain.
+    ///     Defaults to a fresh `WalletStorage()` — overridable for
+    ///     tests.
     ///
     /// - Throws: `PlatformWalletError` if the wallet handle is
     ///   invalid or Rust-side derivation fails.
+    ///
+    /// # Key source: chosen by wallet capability (Rust-side)
+    ///
+    /// A [`MnemonicResolver`] is always passed, but Rust decides whether
+    /// to use it based on the in-process wallet's shape — it's a
+    /// *capability*, not a command. For wallets that hold resident
+    /// private keys (e.g. created from a raw seed via
+    /// `createWallet(seed:)`, or whose mnemonic was never persisted to
+    /// `WalletStorage`), Rust derives the preview rows from the
+    /// in-process wallet and never consults the resolver. The resolver
+    /// is consulted only when the in-process wallet lacks resident keys
+    /// (the iOS Keychain-backed `ExternalSignable` shape whose seed
+    /// lives in Keychain, not in the `WalletManager`): Rust resolves the
+    /// mnemonic on demand (keyed by this wallet's own `walletId`) and
+    /// derives the rows from it — the same mechanism the scan and
+    /// registration use. The local `resolver` is pinned across the
+    /// synchronous FFI call with `withExtendedLifetime`.
     public func previewIdentityRegistrationKeys(
         startIndex: UInt32 = 0,
-        count: UInt32? = nil
+        count: UInt32? = nil,
+        storage: WalletStorage = WalletStorage()
     ) throws -> [IdentityRegistrationKeyPreview] {
         // `-1` tells Rust to pick the crate-level IDENTITY_GAP_LIMIT
         // default. Any supplied value passes through as-is, clamped
@@ -764,59 +789,73 @@ extension ManagedPlatformWallet {
             countOrNeg1 = -1
         }
 
-        var out = IdentityKeyPreviewsFFI()
-        let result = platform_wallet_preview_identity_registration_keys(
-            handle,
-            startIndex,
-            countOrNeg1,
-            &out
-        )
-        // Free the Rust-owned array whether we succeeded or bailed
-        // out — the free function is a no-op on the zero struct.
-        defer { platform_wallet_preview_identity_registration_keys_free(&out) }
+        // The resolver reads the mnemonic from iOS Keychain on demand,
+        // pinned by Rust to this wallet handle's own `walletId`. Its FFI
+        // ctx is a `passUnretained` pointer (see the type's "Lifetime
+        // contract"), and Swift object lifetimes end at last use — not
+        // at scope end — so the last use of `resolver` (evaluating
+        // `resolver.handle` as an argument) would otherwise let ARC
+        // deallocate it while Rust is still mid-call, dangling the ctx.
+        // `withExtendedLifetime` pins it for the whole synchronous FFI
+        // call + result marshalling. Same shape as `discoverIdentities`.
+        let resolver = MnemonicResolver(storage: storage)
 
-        try result.check()
+        return try withExtendedLifetime(resolver) {
+            var out = IdentityKeyPreviewsFFI()
+            let result = platform_wallet_preview_identity_registration_keys(
+                handle,
+                resolver.handle,
+                startIndex,
+                countOrNeg1,
+                &out
+            )
+            // Free the Rust-owned array whether we succeeded or bailed
+            // out — the free function is a no-op on the zero struct.
+            defer { platform_wallet_preview_identity_registration_keys_free(&out) }
 
-        guard let base = out.items, out.count > 0 else {
-            return []
-        }
+            try result.check()
 
-        var previews: [IdentityRegistrationKeyPreview] = []
-        previews.reserveCapacity(Int(out.count))
-        for i in 0..<Int(out.count) {
-            let row = base[i]
-
-            let path: String = row.derivation_path.map { String(cString: $0) } ?? ""
-            let wif: String = row.private_key_wif.map { String(cString: $0) } ?? ""
-
-            let pubData: Data
-            let pubHex: String
-            if let pubPtr = row.public_key, row.public_key_len > 0 {
-                pubData = Data(bytes: pubPtr, count: Int(row.public_key_len))
-                pubHex = pubData.map { String(format: "%02x", $0) }.joined()
-            } else {
-                pubData = Data()
-                pubHex = ""
+            guard let base = out.items, out.count > 0 else {
+                return []
             }
 
-            // Inline 32-byte tuple → owned `Data`. We copy because
-            // the underlying tuple is freed when the FFI struct is
-            // released by the deferred free call.
-            var pkTuple = row.private_key_bytes
-            let pkData = withUnsafeBytes(of: &pkTuple) { Data($0) }
+            var previews: [IdentityRegistrationKeyPreview] = []
+            previews.reserveCapacity(Int(out.count))
+            for i in 0..<Int(out.count) {
+                let row = base[i]
 
-            previews.append(
-                IdentityRegistrationKeyPreview(
-                    identityIndex: row.identity_index,
-                    derivationPath: path,
-                    publicKeyData: pubData,
-                    publicKeyHex: pubHex,
-                    privateKeyWIF: wif,
-                    privateKeyData: pkData
+                let path: String = row.derivation_path.map { String(cString: $0) } ?? ""
+                let wif: String = row.private_key_wif.map { String(cString: $0) } ?? ""
+
+                let pubData: Data
+                let pubHex: String
+                if let pubPtr = row.public_key, row.public_key_len > 0 {
+                    pubData = Data(bytes: pubPtr, count: Int(row.public_key_len))
+                    pubHex = pubData.map { String(format: "%02x", $0) }.joined()
+                } else {
+                    pubData = Data()
+                    pubHex = ""
+                }
+
+                // Inline 32-byte tuple → owned `Data`. We copy because
+                // the underlying tuple is freed when the FFI struct is
+                // released by the deferred free call.
+                var pkTuple = row.private_key_bytes
+                let pkData = withUnsafeBytes(of: &pkTuple) { Data($0) }
+
+                previews.append(
+                    IdentityRegistrationKeyPreview(
+                        identityIndex: row.identity_index,
+                        derivationPath: path,
+                        publicKeyData: pubData,
+                        publicKeyHex: pubHex,
+                        privateKeyWIF: wif,
+                        privateKeyData: pkData
+                    )
                 )
-            )
+            }
+            return previews
         }
-        return previews
     }
 
     /// Derive a single ECDSA identity-authentication keypair at an
@@ -1135,38 +1174,147 @@ extension ManagedPlatformWallet {
     ///   - gapLimit: Maximum consecutive empty identity indices to
     ///     tolerate before stopping. Defaults to the Rust default
     ///     (`IDENTITY_GAP_LIMIT`, currently 5) when omitted.
+    ///   - storage: `WalletStorage` instance used by the resolver
+    ///     callback to read the BIP-39 mnemonic from iOS Keychain.
+    ///     Defaults to a fresh `WalletStorage()` — overridable for
+    ///     tests.
     /// - Returns: The identifiers of any identities the scan
     ///   discovered that weren't already in the local manager.
     ///   Identities already tracked are not re-reported.
+    ///
+    /// # Key source: chosen by wallet capability (Rust-side)
+    ///
+    /// A [`MnemonicResolver`] is always passed to the FFI, but Rust
+    /// decides whether to use it based on the in-process wallet's shape
+    /// — it's a *capability*, not a command. iOS Keychain-backed
+    /// `ExternalSignable` wallets keep their seed in Keychain, not in
+    /// the `WalletManager`, so the resident derive would fail with
+    /// `External signable wallet has no private key`; for those, Rust
+    /// resolves the mnemonic on demand (keyed by this wallet's own
+    /// `walletId`) and derives the scan keys from it — the same
+    /// mechanism identity registration uses. The resolver is consulted
+    /// only when the in-process wallet lacks resident keys: wallets that
+    /// hold resident private keys (e.g. created from a raw seed via
+    /// `createWallet(seed:)`, or whose mnemonic was never persisted to
+    /// `WalletStorage`) keep scanning via the in-process derive and
+    /// never touch the resolver. No mnemonic / derivation pipeline runs
+    /// in Swift; this stays a thin bridge per `swift-sdk/CLAUDE.md`.
     public func discoverIdentities(
         startIndex: UInt32? = nil,
-        gapLimit: UInt32? = nil
+        gapLimit: UInt32? = nil,
+        storage: WalletStorage = WalletStorage()
     ) async throws -> [Identifier] {
         let handle = self.handle
         let startArg: Int64 = startIndex.map(Int64.init) ?? -1
         let gapArg: UInt32 = gapLimit ?? 0
+        // The resolver reads the mnemonic from iOS Keychain on demand;
+        // Rust pins it to this wallet handle's own `walletId`, so no
+        // wallet-id argument is passed. `MnemonicResolver` is
+        // `@unchecked Sendable`; capture it in the detached closure and
+        // wrap the FFI call in `withExtendedLifetime` so ARC keeps it
+        // alive for the synchronous call's duration (its FFI ctx is a
+        // `passUnretained` pointer — see the type's "Lifetime
+        // contract").
+        let resolver = MnemonicResolver(storage: storage)
         return try await Task.detached(priority: .userInitiated) {
             () -> [Identifier] in
-            var found = DiscoveredIdentityIdsFFI()
-            let result = platform_wallet_discover_identities(
-                handle,
-                startArg,
-                gapArg,
-                &found
-            )
-            defer { platform_wallet_discover_identities_free(&found) }
-            try result.check()
-            guard let base = found.ids, found.count > 0 else {
-                return []
+            try withExtendedLifetime(resolver) {
+                var found = DiscoveredIdentityIdsFFI()
+                let result = platform_wallet_discover_identities(
+                    handle,
+                    resolver.handle,
+                    startArg,
+                    gapArg,
+                    &found
+                )
+                defer { platform_wallet_discover_identities_free(&found) }
+                try result.check()
+                guard let base = found.ids, found.count > 0 else {
+                    return []
+                }
+                var ids: [Identifier] = []
+                ids.reserveCapacity(Int(found.count))
+                for i in 0..<Int(found.count) {
+                    var tuple = base[i]
+                    let data = Swift.withUnsafeBytes(of: &tuple) { Data($0) }
+                    ids.append(data)
+                }
+                return ids
             }
-            var ids: [Identifier] = []
-            ids.reserveCapacity(Int(found.count))
-            for i in 0..<Int(found.count) {
-                var tuple = base[i]
-                let data = Swift.withUnsafeBytes(of: &tuple) { Data($0) }
-                ids.append(data)
+        }.value
+    }
+
+    /// Load the identity registered for this wallet at a single,
+    /// known BIP-9 identity index and fold it into the local identity
+    /// manager.
+    ///
+    /// Derives the MASTER authentication public key at key index 0 for
+    /// the given `identityIndex` and asks Platform "is there an identity
+    /// registered with this pubkey hash?" (unique-hash lookup). Unlike
+    /// `discoverIdentities`, this probes exactly ONE index rather than
+    /// gap-limit scanning a range — the two share the same DIP-9 MASTER
+    /// slot, so they resolve the same identity at the same index. If an
+    /// identity is found it is persisted via the existing identity
+    /// persister callback, so SwiftData `@Query` views refresh
+    /// automatically once this call returns.
+    ///
+    /// - Parameters:
+    ///   - identityIndex: The BIP-9 identity index to probe.
+    ///   - storage: `WalletStorage` instance used by the resolver
+    ///     callback to read the BIP-39 mnemonic from iOS Keychain.
+    ///     Defaults to a fresh `WalletStorage()` — overridable for
+    ///     tests.
+    /// - Returns: The identifier of the identity registered at
+    ///   `identityIndex`, or `nil` if none is registered there.
+    ///
+    /// # Key source: chosen by wallet capability (Rust-side)
+    ///
+    /// A [`MnemonicResolver`] is always passed to the FFI, but Rust
+    /// decides whether to use it based on the in-process wallet's shape
+    /// — it's a *capability*, not a command. iOS Keychain-backed
+    /// `ExternalSignable` wallets keep their seed in Keychain, not in
+    /// the `WalletManager`, so the resident derive would fail with
+    /// `External signable wallet has no private key`; for those, Rust
+    /// resolves the mnemonic on demand (keyed by this wallet's own
+    /// `walletId`) and derives the probe key from it — the same
+    /// mechanism identity discovery and registration use. Wallets that
+    /// hold resident private keys keep probing via the in-process
+    /// derive and never touch the resolver. No mnemonic / derivation
+    /// pipeline runs in Swift; this stays a thin bridge per
+    /// `swift-sdk/CLAUDE.md`.
+    public func loadIdentity(
+        atIndex identityIndex: UInt32,
+        storage: WalletStorage = WalletStorage()
+    ) async throws -> Identifier? {
+        let handle = self.handle
+        // The resolver reads the mnemonic from iOS Keychain on demand;
+        // Rust pins it to this wallet handle's own `walletId`, so no
+        // wallet-id argument is passed. `MnemonicResolver` is
+        // `@unchecked Sendable`; capture it in the detached closure and
+        // wrap the FFI call in `withExtendedLifetime` so ARC keeps it
+        // alive for the synchronous call's duration (its FFI ctx is a
+        // `passUnretained` pointer — see the type's "Lifetime
+        // contract").
+        let resolver = MnemonicResolver(storage: storage)
+        return try await Task.detached(priority: .userInitiated) {
+            () -> Identifier? in
+            try withExtendedLifetime(resolver) {
+                var found = false
+                var idBytes = [UInt8](repeating: 0, count: 32)
+                let result = idBytes.withUnsafeMutableBufferPointer {
+                    idBuf -> PlatformWalletFFIResult in
+                    platform_wallet_load_identity_at_index(
+                        handle,
+                        resolver.handle,
+                        identityIndex,
+                        &found,
+                        idBuf.baseAddress!
+                    )
+                }
+                try result.check()
+                guard found else { return nil }
+                return Data(idBytes)
             }
-            return ids
         }.value
     }
 }
@@ -2324,6 +2472,576 @@ extension ManagedPlatformWallet {
 
             try result.check()
             return Data(contractIdBytes)
+        }.value
+    }
+
+    /// Update an existing data contract owned by `ownerIdentityId`
+    /// and broadcast the change to Platform.
+    ///
+    /// Companion to `createDataContract`. The wallet fetches the
+    /// live contract from Platform, bumps its version, and applies
+    /// the supplied schemas / config at the next version — the
+    /// caller does NOT track contract version state. Every JSON
+    /// input has the same shape as `createDataContract`.
+    ///
+    /// `contractId` is the id of the existing contract to update.
+    /// Returns the (unchanged) contract id of the updated contract.
+    ///
+    /// Lifetime contract: the `signer` instance MUST stay alive for
+    /// the duration of the `await` (Rust holds a `passUnretained`
+    /// ctx pointer to the underlying `KeychainSigner`). A
+    /// `_ = signer` keepalive at the call site is the canonical way
+    /// to pin it.
+    public func updateDataContract(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentSchemasJSON: String,
+        tokenSchemasJSON: String? = nil,
+        groupsJSON: String? = nil,
+        keywordsJSON: String? = nil,
+        description: String? = nil,
+        contractConfigJSON: String? = nil,
+        signer: KeychainSigner
+    ) async throws -> Identifier {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            // Pin every borrowed payload across the FFI call: the
+            // owner-id + contract-id bytes, the required documents
+            // string, and each optional JSON / description string.
+            // Rust dereferences the C-string pointers synchronously
+            // inside `block_on_worker`, so the `withCString` scopes
+            // here are sufficient — the pointers don't need to
+            // outlive the call.
+            _ = signer
+            var contractIdBytes = [UInt8](repeating: 0, count: 32)
+
+            let result = ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                    documentSchemasJSON.withCString { docsPtr in
+                        Self.withOptionalCString(tokenSchemasJSON) { tokensPtr in
+                            Self.withOptionalCString(groupsJSON) { groupsPtr in
+                                Self.withOptionalCString(keywordsJSON) { keywordsPtr in
+                                    Self.withOptionalCString(description) { descriptionPtr in
+                                        Self.withOptionalCString(contractConfigJSON) { configPtr in
+                                            contractIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                                platform_wallet_update_data_contract_with_signer(
+                                                    handle,
+                                                    ownerBp.baseAddress!,
+                                                    contractBp.baseAddress!,
+                                                    docsPtr,
+                                                    tokensPtr,
+                                                    groupsPtr,
+                                                    keywordsPtr,
+                                                    descriptionPtr,
+                                                    configPtr,
+                                                    signerHandle,
+                                                    outBp.baseAddress!
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            return Data(contractIdBytes)
+        }.value
+    }
+
+    /// Create + broadcast a new revision-1 document on `contractId`'s
+    /// `documentType`, owned by `ownerIdentityId`. Returns the 32-byte
+    /// document id and the confirmed document's canonical query-side
+    /// JSON once Platform confirms the transition.
+    ///
+    /// The returned JSON is DPP's canonical representation of the
+    /// confirmed document (system fields `$id`/`$ownerId`/timestamps/
+    /// `$revision` with identifiers as base58 strings, only populated
+    /// fields present) — what a DOC-01 query would return. Callers
+    /// persist this verbatim so the local cache matches the on-chain
+    /// document rather than the user's raw form input.
+    ///
+    /// Routes through `IdentityWallet::create_document_with_signer`
+    /// (via `platform_wallet_create_document_with_signer`), the
+    /// production document-create path. The Rust side fetches the
+    /// on-chain contract, builds the document from `propertiesJSON`,
+    /// selects an AUTHENTICATION + ECDSA key whose security level
+    /// satisfies the document type's requirement, broadcasts on the
+    /// platform-wallet 8 MB worker stack, and waits for confirmation.
+    /// This deliberately does NOT use the rs-sdk-ffi test-signer
+    /// builder path (`dash_sdk_document_create` /
+    /// `dash_sdk_document_put_to_platform_and_wait`): per
+    /// `swift-sdk/CLAUDE.md`, the state-transition flow lives in the
+    /// `platform-wallet` library and the signing key never crosses
+    /// into Swift logic.
+    ///
+    /// `propertiesJSON` is a JSON object keyed by property name.
+    /// Byte-array fields must be encoded as hex strings and identifier
+    /// fields as base58 strings (the Rust schema-driven sanitize step
+    /// converts them to native bytes / identifiers). Pass `"{}"` for a
+    /// document type with no required properties.
+    ///
+    /// Lifetime contract: the `signer` instance MUST stay alive for the
+    /// duration of the synchronous FFI call inside this async wrapper
+    /// (Rust holds a `passUnretained` ctx pointer to the underlying
+    /// `KeychainSigner`). The wrapper pins it with
+    /// `withExtendedLifetime(signer)` around the full marshalling chain —
+    /// a bare `_ = signer` is unreliable (the optimizer may elide it).
+    public func createDocument(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        propertiesJSON: String,
+        signer: KeychainSigner
+    ) async throws -> (Identifier, String) {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            // Pin every borrowed payload across the FFI call: the
+            // owner-id + contract-id bytes, the document-type name,
+            // and the properties JSON. Rust dereferences the
+            // C-string pointers synchronously inside
+            // `block_on_worker`, so the `withCString` scopes here are
+            // sufficient — the pointers don't need to outlive the
+            // call.
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+            // Receives an owned canonical-document JSON C string on
+            // success; freed with `platform_wallet_string_free` below.
+            var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
+
+            // Pin `signer` for the whole FFI call. A bare `_ = signer` is
+            // unreliable folklore — the optimizer may elide it in -O and
+            // release the signer before Rust dereferences `signerHandle`
+            // (especially in a detached task), causing a use-after-free.
+            // `withExtendedLifetime` guarantees it, matching the other
+            // `*_with_signer` wrappers in this file.
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            propertiesJSON.withCString { propsPtr in
+                                documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                    platform_wallet_create_document_with_signer(
+                                        handle,
+                                        ownerBp.baseAddress!,
+                                        contractBp.baseAddress!,
+                                        typePtr,
+                                        propsPtr,
+                                        signerHandle,
+                                        outBp.baseAddress!,
+                                        &documentJsonPtr
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            // Take ownership of the JSON and release the Rust allocation.
+            defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
+            // On a successful broadcast the Rust side always writes the
+            // canonical JSON; a null pointer here is an FFI/ABI contract
+            // violation. Fail loudly rather than persist an empty body as
+            // if it were the canonical document.
+            guard let jsonPtr = documentJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "create_document_with_signer returned no canonical document JSON"
+                )
+            }
+            let canonicalJSON = String(cString: jsonPtr)
+            return (Data(documentIdBytes), canonicalJSON)
+        }.value
+    }
+
+    /// Replace + broadcast `documentId`'s properties on `contractId`'s
+    /// `documentType`, owned by `ownerIdentityId`, signed with the
+    /// explicit AUTHENTICATION + ECDSA key `signingKeyId`. Returns the
+    /// 32-byte document id and the confirmed document's canonical
+    /// query-side JSON (now at the bumped revision) once Platform
+    /// confirms the transition.
+    ///
+    /// Sibling to `createDocument`. Routes through
+    /// `IdentityWallet::replace_document_with_signer` (via
+    /// `platform_wallet_document_replace`): the Rust side fetches the
+    /// current document, applies `propertiesJSON` (the full replacement
+    /// property object, same hex/base58 encoding rules as create),
+    /// bumps the revision, validates `signingKeyId` is an
+    /// AUTHENTICATION + ECDSA key on the owner, broadcasts on the
+    /// platform-wallet 8 MB worker stack, and waits for confirmation.
+    /// The signing key never crosses into Swift logic — the
+    /// `KeychainSigner` trampoline services the signature on demand.
+    /// Callers persist the returned JSON verbatim so the local cache
+    /// matches the on-chain document.
+    ///
+    /// Lifetime contract: identical to `createDocument` — the `signer`
+    /// is pinned with `withExtendedLifetime` across the synchronous FFI
+    /// call (Rust holds a `passUnretained` ctx pointer to the
+    /// underlying `KeychainSigner`).
+    public func replaceDocument(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        documentId: Identifier,
+        propertiesJSON: String,
+        signingKeyId: UInt32,
+        signer: KeychainSigner
+    ) async throws -> (Identifier, String) {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+            var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
+
+            // Pin `signer` for the whole FFI call (see `createDocument`
+            // for why a bare `_ = signer` is unreliable under -O).
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            documentBytes.withUnsafeBufferPointer { docBp -> PlatformWalletFFIResult in
+                                propertiesJSON.withCString { propsPtr in
+                                    documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                        platform_wallet_document_replace(
+                                            handle,
+                                            ownerBp.baseAddress!,
+                                            contractBp.baseAddress!,
+                                            typePtr,
+                                            docBp.baseAddress!,
+                                            propsPtr,
+                                            signingKeyId,
+                                            signerHandle,
+                                            outBp.baseAddress!,
+                                            &documentJsonPtr
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
+            guard let jsonPtr = documentJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "document_replace returned no canonical document JSON"
+                )
+            }
+            let canonicalJSON = String(cString: jsonPtr)
+            return (Data(documentIdBytes), canonicalJSON)
+        }.value
+    }
+
+    /// Delete + broadcast `documentId` on `contractId`'s `documentType`,
+    /// owned by `ownerIdentityId`, signed with the explicit
+    /// AUTHENTICATION + ECDSA key `signingKeyId`. Returns the deleted
+    /// document's 32-byte id once Platform confirms the transition.
+    ///
+    /// Sibling to `createDocument`. Routes through
+    /// `IdentityWallet::delete_document_with_signer` (via
+    /// `platform_wallet_document_delete`). Delete returns no document
+    /// body, so there is no canonical JSON — callers remove the local
+    /// `PersistentDocument` row by id.
+    public func deleteDocument(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        documentId: Identifier,
+        signingKeyId: UInt32,
+        signer: KeychainSigner
+    ) async throws -> Identifier {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            documentBytes.withUnsafeBufferPointer { docBp -> PlatformWalletFFIResult in
+                                documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                    platform_wallet_document_delete(
+                                        handle,
+                                        ownerBp.baseAddress!,
+                                        contractBp.baseAddress!,
+                                        typePtr,
+                                        docBp.baseAddress!,
+                                        signingKeyId,
+                                        signerHandle,
+                                        outBp.baseAddress!
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            return Data(documentIdBytes)
+        }.value
+    }
+
+    /// Transfer + broadcast `documentId` on `contractId`'s
+    /// `documentType`, from `ownerIdentityId` to `recipientId`, signed
+    /// with the explicit AUTHENTICATION + ECDSA key `signingKeyId`.
+    /// Returns the 32-byte document id and the confirmed document's
+    /// canonical JSON (now reflecting the new owner) once Platform
+    /// confirms the transition.
+    ///
+    /// Sibling to `createDocument`. Routes through
+    /// `IdentityWallet::transfer_document_with_signer` (via
+    /// `platform_wallet_document_transfer`). Only valid for a document
+    /// type whose schema marks it `transferable`; the caller gates the
+    /// action against that flag.
+    public func transferDocument(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        documentId: Identifier,
+        recipientId: Identifier,
+        signingKeyId: UInt32,
+        signer: KeychainSigner
+    ) async throws -> (Identifier, String) {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let recipientBytes: [UInt8] = recipientId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+            var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
+
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            documentBytes.withUnsafeBufferPointer { docBp -> PlatformWalletFFIResult in
+                                recipientBytes.withUnsafeBufferPointer { recipBp -> PlatformWalletFFIResult in
+                                    documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                        platform_wallet_document_transfer(
+                                            handle,
+                                            ownerBp.baseAddress!,
+                                            contractBp.baseAddress!,
+                                            typePtr,
+                                            docBp.baseAddress!,
+                                            recipBp.baseAddress!,
+                                            signingKeyId,
+                                            signerHandle,
+                                            outBp.baseAddress!,
+                                            &documentJsonPtr
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
+            guard let jsonPtr = documentJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "document_transfer returned no canonical document JSON"
+                )
+            }
+            let canonicalJSON = String(cString: jsonPtr)
+            return (Data(documentIdBytes), canonicalJSON)
+        }.value
+    }
+
+    /// Set (update) the trade price of `documentId` on `contractId`'s
+    /// `documentType` to `price` credits, owned by `ownerIdentityId`,
+    /// signed with the explicit AUTHENTICATION + ECDSA key
+    /// `signingKeyId`. Returns the 32-byte document id and the confirmed
+    /// document's canonical JSON (now carrying `$price`) once Platform
+    /// confirms the transition.
+    ///
+    /// Sibling to `createDocument`. Routes through
+    /// `IdentityWallet::set_document_price_with_signer` (via
+    /// `platform_wallet_document_set_price`). Only valid for a document
+    /// type whose schema enables a trade mode; the caller gates the
+    /// action against that flag.
+    public func setDocumentPrice(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        documentId: Identifier,
+        price: UInt64,
+        signingKeyId: UInt32,
+        signer: KeychainSigner
+    ) async throws -> (Identifier, String) {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+            var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
+
+            let result = withExtendedLifetime(signer) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            documentBytes.withUnsafeBufferPointer { docBp -> PlatformWalletFFIResult in
+                                documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                    platform_wallet_document_set_price(
+                                        handle,
+                                        ownerBp.baseAddress!,
+                                        contractBp.baseAddress!,
+                                        typePtr,
+                                        docBp.baseAddress!,
+                                        price,
+                                        signingKeyId,
+                                        signerHandle,
+                                        outBp.baseAddress!,
+                                        &documentJsonPtr
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
+            guard let jsonPtr = documentJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "document_set_price returned no canonical document JSON"
+                )
+            }
+            let canonicalJSON = String(cString: jsonPtr)
+            return (Data(documentIdBytes), canonicalJSON)
+        }.value
+    }
+
+    /// Purchase + broadcast for-sale `documentId` on `contractId`'s
+    /// `documentType` for `price` credits, with `purchaserId` as the
+    /// buyer (and new owner), signed with the explicit AUTHENTICATION +
+    /// ECDSA key `signingKeyId` resolved on the purchaser. Returns the
+    /// 32-byte document id and the confirmed document's canonical JSON
+    /// (now owned by the purchaser) once Platform confirms the
+    /// transition.
+    ///
+    /// Sibling to `createDocument`. Routes through
+    /// `IdentityWallet::purchase_document_with_signer` (via
+    /// `platform_wallet_document_purchase`). Consensus rejects a
+    /// purchase where the buyer is the current owner — the caller's UI
+    /// gates against that self-buy case.
+    public func purchaseDocument(
+        purchaserId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        documentId: Identifier,
+        price: UInt64,
+        signingKeyId: UInt32,
+        signer: KeychainSigner
+    ) async throws -> (Identifier, String) {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let purchaserBytes: [UInt8] = purchaserId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+            var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
+
+            let result = withExtendedLifetime(signer) {
+                purchaserBytes.withUnsafeBufferPointer { purchaserBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            documentBytes.withUnsafeBufferPointer { docBp -> PlatformWalletFFIResult in
+                                documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                    platform_wallet_document_purchase(
+                                        handle,
+                                        purchaserBp.baseAddress!,
+                                        contractBp.baseAddress!,
+                                        typePtr,
+                                        docBp.baseAddress!,
+                                        price,
+                                        signingKeyId,
+                                        signerHandle,
+                                        outBp.baseAddress!,
+                                        &documentJsonPtr
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            try result.check()
+            defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
+            guard let jsonPtr = documentJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "document_purchase returned no canonical document JSON"
+                )
+            }
+            let canonicalJSON = String(cString: jsonPtr)
+            return (Data(documentIdBytes), canonicalJSON)
         }.value
     }
 

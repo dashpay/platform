@@ -179,7 +179,7 @@ export default function getBaseConfigFactory() {
         },
         gateway: {
           docker: {
-            image: 'dashpay/envoy:1.30.2-impr.1',
+            image: 'dashpay/envoy:1.35.11-impr.1',
           },
           maxConnections: 1000,
           maxHeapSizeInBytes: 125000000, // 1 Gb
@@ -241,6 +241,9 @@ export default function getBaseConfigFactory() {
             blacklist: [],
             whitelist: [],
             enabled: true,
+            responseHeaders: {
+              enabled: true,
+            },
           },
           ssl: {
             enabled: false,

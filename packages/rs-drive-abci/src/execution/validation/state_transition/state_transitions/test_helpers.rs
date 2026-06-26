@@ -591,6 +591,7 @@ pub fn insert_dummy_encrypted_notes(platform: &TempPlatform<MockCoreRPCLike>, co
                 &[SHIELDED_NOTES_KEY],
                 cmx,
                 dummy_rho,
+                [0u8; 32], // dummy cv_net (test helper; not OVK-recovered)
                 ciphertext,
                 Some(&transaction),
                 grove_version,

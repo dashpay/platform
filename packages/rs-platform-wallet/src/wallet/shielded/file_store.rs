@@ -19,7 +19,9 @@ use std::sync::Mutex;
 
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
 
-use super::store::{ShieldedNote, ShieldedStore, SubwalletId, SubwalletState};
+use super::store::{
+    ShieldedNote, ShieldedOutgoingNote, ShieldedStore, SubwalletId, SubwalletState,
+};
 use crate::wallet::platform_wallet::WalletId;
 
 /// Error type for [`FileBackedShieldedStore`].
@@ -180,6 +182,73 @@ impl ShieldedStore for FileBackedShieldedStore {
             .unwrap_or(false))
     }
 
+    fn record_outgoing_note(
+        &mut self,
+        id: SubwalletId,
+        note: &ShieldedOutgoingNote,
+    ) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .entry(id)
+            .or_default()
+            .record_outgoing_note(note))
+    }
+
+    fn get_outgoing_notes(
+        &self,
+        id: SubwalletId,
+    ) -> Result<Vec<ShieldedOutgoingNote>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::outgoing_notes)
+            .unwrap_or_default())
+    }
+
+    fn save_activity(
+        &mut self,
+        id: SubwalletId,
+        entry: &super::activity::ShieldedActivityEntry,
+    ) -> Result<(), Self::Error> {
+        self.subwallets.entry(id).or_default().save_activity(entry);
+        Ok(())
+    }
+
+    fn get_activity(
+        &self,
+        id: SubwalletId,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<super::activity::ShieldedActivityEntry>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(|sw| sw.activity_page(offset, limit))
+            .unwrap_or_default())
+    }
+
+    fn get_activity_by_entry_id(
+        &self,
+        id: SubwalletId,
+        entry_id: &[u8; 32],
+    ) -> Result<Option<super::activity::ShieldedActivityEntry>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .and_then(|sw| sw.activity_by_id(entry_id)))
+    }
+
+    fn get_activity_ids(
+        &self,
+        id: SubwalletId,
+    ) -> Result<std::collections::BTreeSet<[u8; 32]>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::activity_ids)
+            .unwrap_or_default())
+    }
+
     fn append_commitment(&mut self, cmx: &[u8; 32], marked: bool) -> Result<(), Self::Error> {
         let retention: Retention<u32> = if marked {
             Retention::Marked
@@ -256,23 +325,6 @@ impl ShieldedStore for FileBackedShieldedStore {
         index: u64,
     ) -> Result<(), Self::Error> {
         self.subwallets.entry(id).or_default().last_synced_index = index;
-        Ok(())
-    }
-
-    fn nullifier_checkpoint(&self, id: SubwalletId) -> Result<Option<(u64, u64)>, Self::Error> {
-        Ok(self
-            .subwallets
-            .get(&id)
-            .and_then(|sw| sw.nullifier_checkpoint))
-    }
-
-    fn set_nullifier_checkpoint(
-        &mut self,
-        id: SubwalletId,
-        height: u64,
-        timestamp: u64,
-    ) -> Result<(), Self::Error> {
-        self.subwallets.entry(id).or_default().nullifier_checkpoint = Some((height, timestamp));
         Ok(())
     }
 

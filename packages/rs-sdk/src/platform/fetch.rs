@@ -176,7 +176,7 @@ where
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
         let settings = sdk.query_settings();
         let owned_rich: <Self as Fetch>::Query = query.query(&settings)?;
-        // INTENTIONAL(CMT-008, #3711): For the common case `Self::Query = Self::Request`,
+        // INTENTIONAL(#3711): For the common case `Self::Query = Self::Request`,
         // the blanket `Query<T> for T` impl turns the `query.query(settings)` step into a
         // pure clone of the same owned request. Real but micro-cost (~63 impls hit
         // this path). Specializing via a `fn encode_request_owned()` default method on
@@ -415,19 +415,4 @@ impl Fetch for drive_proof_verifier::types::ShieldedEncryptedNotes {
 impl Fetch for drive_proof_verifier::types::ShieldedNullifierStatuses {
     type Query = platform_proto::GetShieldedNullifiersRequest;
     type Request = platform_proto::GetShieldedNullifiersRequest;
-}
-
-impl Fetch for drive_proof_verifier::types::NullifiersTrunkState {
-    type Query = platform_proto::GetNullifiersTrunkStateRequest;
-    type Request = platform_proto::GetNullifiersTrunkStateRequest;
-}
-
-impl Fetch for drive_proof_verifier::types::RecentNullifierChanges {
-    type Query = platform_proto::GetRecentNullifierChangesRequest;
-    type Request = platform_proto::GetRecentNullifierChangesRequest;
-}
-
-impl Fetch for drive_proof_verifier::types::RecentCompactedNullifierChanges {
-    type Query = platform_proto::GetRecentCompactedNullifierChangesRequest;
-    type Request = platform_proto::GetRecentCompactedNullifierChangesRequest;
 }

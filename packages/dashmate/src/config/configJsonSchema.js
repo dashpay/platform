@@ -690,8 +690,22 @@ export default {
                 enabled: {
                   type: 'boolean',
                 },
+                responseHeaders: {
+                  type: 'object',
+                  description: 'Control emission of RateLimit-* response headers (RateLimit-Limit, '
+                    + 'RateLimit-Remaining, RateLimit-Reset). When enabled, rs-dapi-client reads '
+                    + 'the Reset header to ban the node for the server-advertised window instead '
+                    + 'of the exponential health-ban ladder. Disable only for privacy reasons.',
+                  properties: {
+                    enabled: {
+                      type: 'boolean',
+                    },
+                  },
+                  additionalProperties: false,
+                  required: ['enabled'],
+                },
               },
-              required: ['docker', 'enabled', 'unit', 'requestsPerUnit', 'blacklist', 'whitelist', 'metrics'],
+              required: ['docker', 'enabled', 'unit', 'requestsPerUnit', 'blacklist', 'whitelist', 'metrics', 'responseHeaders'],
               additionalProperties: false,
             },
             ssl: {

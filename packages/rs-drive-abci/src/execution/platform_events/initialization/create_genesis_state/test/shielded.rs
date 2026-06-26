@@ -15,7 +15,7 @@ use drive::grovedb::Element;
 use drive::grovedb::TransactionArg;
 use drive::grovedb_path::SubtreePath;
 use drive::grovedb_storage::{Storage, StorageBatch};
-use grovedb_commitment_tree::{merkle_hash_from_bytes, CommitmentTree, DashMemo};
+use grovedb_commitment_tree::{merkle_hash_from_bytes, CommitmentEntry, CommitmentTree, DashMemo};
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
 
@@ -353,9 +353,17 @@ impl<C> Platform<C> {
                 let batch_notes = generate_filler_batch(&mut rng, this_batch);
                 let gen_elapsed = batch_start.elapsed();
 
-                let iter = batch_notes
-                    .into_iter()
-                    .map(|n| (n.cmx, n.rho, n.encrypted_note));
+                // Filler notes carry a dummy all-zero cv_net: they are not
+                // decryptable by any wallet (ρ is not a valid Nullifier), so the
+                // OVK-recovery use of cv_net never applies to them. The stored item
+                // is `cmx || rho || cv_net || payload` (matching the production
+                // commitment-tree insert path).
+                let iter = batch_notes.into_iter().map(|n| CommitmentEntry {
+                    cmx: n.cmx,
+                    rho: n.rho,
+                    cv_net: [0u8; 32],
+                    payload: n.encrypted_note,
+                });
                 let append_result = ct.append_many_raw(iter).value.map_err(|e| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
                         format!("seed: append_many_raw (batch {batch_index}): {e}")
@@ -437,8 +445,7 @@ impl<C> Platform<C> {
 
             // Commit the subtree's data_batch through the transaction —
             // makes all the BulkAppendTree / frontier writes visible to
-            // subsequent reads (including replace_commitment_tree_subtree_root's
-            // own batch).
+            // subsequent reads (including replace_subtree_root's own batch).
             self.drive
                 .grove
                 .raw_storage()
@@ -451,14 +458,17 @@ impl<C> Platform<C> {
                 })?;
 
             // --- Update parent Merk leaf with the new state ---
+            let new_element = drive::grovedb::Element::new_commitment_tree(
+                u64::from(cfg.total_notes),
+                chunk_power,
+                flags,
+            );
             self.drive
                 .grove
-                .replace_commitment_tree_subtree_root(
+                .replace_subtree_root(
                     parent_path,
                     leaf_key,
-                    u64::from(cfg.total_notes),
-                    chunk_power,
-                    flags,
+                    new_element,
                     combined_root,
                     Some(tx),
                     &platform_version.drive.grove_version,
@@ -466,7 +476,7 @@ impl<C> Platform<C> {
                 .value
                 .map_err(|e| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                        format!("seed: replace_commitment_tree_subtree_root: {e}").into_boxed_str(),
+                        format!("seed: replace_subtree_root: {e}").into_boxed_str(),
                     )))
                 })?;
 
@@ -1038,7 +1048,6 @@ mod platform_tests {
     /// `commit_mmr` to the end) is what makes multi-batch work; this test
     /// pins that contract.
     #[test]
-    #[ignore = "snapshot dump+apply roundtrip; needs the new grovedb branch"]
     fn snapshot_dump_apply_preserves_anchor() {
         let platform_version = PlatformVersion::latest();
 
@@ -1124,6 +1133,124 @@ mod platform_tests {
             count_b,
             u64::from(cfg.total_notes),
             "B's note count must match A's seed config"
+        );
+    }
+
+    /// Reproduces the production devnet InitChain failure:
+    ///   `DRIVE_SHIELDED_SNAPSHOT apply failed: grovedb: ingest_subtree_sst:
+    ///    ... ingest_subtree_sst(default, /tmp/drv-shielded-snapshot-*.sst)
+    ///    failed: Invalid argument: Global seqno is required, but disabled`
+    ///
+    /// Root cause: `apply_shielded_snapshot`'s SST ingest commits DIRECTLY to
+    /// the underlying RocksDB (`ingest_external_file_cf`), bypassing the
+    /// InitChain GroveDB transaction — and nothing wipes the DB on InitChain.
+    /// The genesis transaction is committed only at the end of finalizing
+    /// block 1, so if InitChain never reaches that commit (any genesis/block-1
+    /// failure, a drive-abci restart, or a Tenderdash InitChain retry) the
+    /// transaction rolls back but the **already-ingested SST keys persist** in
+    /// the committed `default` CF. The next InitChain attempt re-runs the
+    /// ingest over the now-committed keys; the SST's key range overlaps
+    /// existing committed keys, so RocksDB needs to assign a global sequence
+    /// number, which grovedb's `ingest_subtree_sst` forbids
+    /// (`allow_global_seqno=false`) → "Global seqno is required, but disabled",
+    /// and the devnet can never initialize.
+    ///
+    /// Applying a deterministic genesis snapshot must therefore be IDEMPOTENT:
+    /// after a failed attempt's transaction rolls back, the next attempt must
+    /// succeed even though the orphaned ingest survived the rollback.
+    ///
+    /// This test models the production scenario exactly:
+    ///   1. apply the snapshot WITH a transaction (`Some(tx1)`) — the ingest
+    ///      writes straight to RocksDB, the parent-leaf patch goes into `tx1`;
+    ///   2. DROP `tx1` without committing — the InitChain failure path. This
+    ///      rolls back the parent-leaf patch (and, in production, all genesis
+    ///      writes) but NOT the ingest, which never went through `tx1`;
+    ///   3. apply again WITH a fresh transaction (`Some(tx2)`) — the retry.
+    ///
+    /// The key point (and the answer to "shouldn't rollback restore an empty
+    /// DB?"): rollback would restore an empty DB only if the ingest were
+    /// transactional. It is not — so after step 2 the `default` CF still holds
+    /// the orphaned SST keys, and step 3's re-ingest overlaps them.
+    ///
+    /// Would have caught the production failure in CI:
+    ///   ✖ step 3 errors with "Global seqno is required, but disabled" before
+    ///     the fix,
+    ///   ✔ step 3 succeeds (safe no-op) after.
+    #[test]
+    fn snapshot_reapply_is_idempotent_under_initchain_retry() {
+        let platform_version = PlatformVersion::latest();
+
+        // --- A: seed a small pool and dump it to a snapshot file ---
+        let platform_a = build_regtest_platform();
+        let cfg = ShieldedSeedConfig {
+            total_notes: 5_000,
+            rng_seed: 0xDEAD_BEEF,
+        };
+        let tx_a = platform_a.drive.grove.start_transaction();
+        platform_a
+            .seed_shielded_pool_with_config(
+                &cfg,
+                &BlockInfo::default(),
+                Some(&tx_a),
+                platform_version,
+            )
+            .expect("seed A");
+        tx_a.commit().expect("commit A");
+        let anchor_a = read_current_anchor(&platform_a, None, platform_version);
+        assert_ne!(anchor_a, EMPTY_SINSEMILLA_ROOT);
+
+        let dump_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_path = dump_dir.path().join("shielded-pool.snap");
+        crate::shielded_snapshot::dump_shielded_subtree(
+            &platform_a.drive.grove,
+            None,
+            &snapshot_path,
+            platform_version,
+        )
+        .expect("dump");
+
+        // --- B, attempt 1: apply inside a transaction, then ROLL BACK ---
+        // Models an InitChain that ingests the snapshot but never reaches the
+        // block-1 commit (a later genesis/block failure, a restart, or a
+        // Tenderdash InitChain retry).
+        let platform_b = build_regtest_platform();
+        {
+            let tx1 = platform_b.drive.grove.start_transaction();
+            crate::shielded_snapshot::apply_shielded_snapshot(
+                &platform_b.drive.grove,
+                Some(&tx1),
+                &snapshot_path,
+                platform_version,
+            )
+            .expect("first apply (inside tx1) must succeed");
+            // Drop tx1 WITHOUT committing — the failure/rollback path. The
+            // parent-leaf patch (in tx1) is discarded; the ingest is NOT.
+            drop(tx1);
+        }
+
+        // --- B, attempt 2: the retry, in a fresh transaction ---
+        // The orphaned ingest from attempt 1 is still committed in the
+        // `default` CF, so this re-ingest overlaps it — the exact production
+        // failure ("Global seqno is required, but disabled").
+        let tx2 = platform_b.drive.grove.start_transaction();
+        let retry = crate::shielded_snapshot::apply_shielded_snapshot(
+            &platform_b.drive.grove,
+            Some(&tx2),
+            &snapshot_path,
+            platform_version,
+        );
+        assert!(
+            retry.is_ok(),
+            "re-applying a deterministic genesis snapshot after a rolled-back \
+             attempt must be idempotent (InitChain retry path), but it failed: \
+             {retry:?}"
+        );
+        tx2.commit().expect("commit retry tx");
+
+        let anchor_b = read_current_anchor(&platform_b, None, platform_version);
+        assert_eq!(
+            anchor_b, anchor_a,
+            "anchor must match after an idempotent re-apply"
         );
     }
 

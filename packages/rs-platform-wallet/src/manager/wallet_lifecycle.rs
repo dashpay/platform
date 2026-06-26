@@ -125,9 +125,23 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     #[allow(clippy::type_complexity)]
     async fn register_wallet(
         &self,
-        wallet: Wallet,
+        mut wallet: Wallet,
         birth_height_override: Option<u32>,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
+        // NOTE: the wallet id is NETWORK-SCOPED by construction.
+        // `Wallet::from_mnemonic` / `from_seed_bytes` now stamp a
+        // network-scoped id (key-wallet folds a domain-tagged,
+        // wire-stable network byte into the digest), so the same
+        // mnemonic yields a DISTINCT id per network. That makes every
+        // downstream `walletId`-keyed structure network-correct by
+        // construction — no per-network disambiguation needed in the
+        // persistence layer, and network-blind child tables (UTXOs,
+        // asset locks, platform addresses) can no longer cross-feed
+        // between a mnemonic's per-network wallets. The watch-only
+        // restore path (`Wallet::new_external_signable`) reuses the
+        // persisted id verbatim, so it stays self-consistent across
+        // launches.
+
         // Birth height resolution: explicit override wins; otherwise
         // fall back to SPV's confirmed header tip (default for fresh
         // wallets — they only need to see funding from now on); 0 if
@@ -206,6 +220,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             address_snapshots.push((account_type, vec![(pool.pool_type, infos)]));
         }
 
+        // Network-INDEPENDENT group id, snapshotted BEFORE `wallet` is
+        // moved into `insert_wallet` below. The per-network `wallet_id`
+        // differs per network for the same seed (see the scoping note
+        // above); this digest deliberately omits the network byte
+        // (`None`), so every network's wallet for one seed shares it and
+        // the persister can group a seed's sibling-network rows by it.
+        // Watch-only / external-signable wallets carry no root key, so
+        // there's nothing to hash — fall back to the scoped `wallet_id`
+        // (a group of one).
+        let wallet_group_id = wallet
+            .root_extended_pub_key_cow()
+            .map(|root| Wallet::compute_wallet_id_from_root_extended_pub_key(&root, None))
+            .unwrap_or(wallet.wallet_id);
+
         let platform_info = PlatformWalletInfo {
             core_wallet: wallet_info,
             balance: Arc::clone(&balance),
@@ -213,14 +241,25 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             tracked_asset_locks: std::collections::BTreeMap::new(),
         };
 
-        // Insert into WalletManager.
+        wallet.downgrade_to_external_signable();
+
+        // Insert into WalletManager. A duplicate (same network-scoped
+        // wallet id already registered) surfaces as the typed
+        // `WalletAlreadyExists` so the create FFI / Swift call sites can
+        // treat re-registering an existing wallet as a benign no-op
+        // instead of substring-matching the error text. Everything else
+        // stays `WalletCreation`.
         let wallet_id = {
             let mut wm = self.wallet_manager.write().await;
             wm.insert_wallet(wallet, platform_info).map_err(|e| {
-                PlatformWalletError::WalletCreation(format!(
-                    "Failed to register wallet in WalletManager: {}",
-                    e
-                ))
+                if matches!(e, key_wallet_manager::WalletError::WalletExists(_)) {
+                    PlatformWalletError::WalletAlreadyExists(e.to_string())
+                } else {
+                    PlatformWalletError::WalletCreation(format!(
+                        "Failed to register wallet in WalletManager: {}",
+                        e
+                    ))
+                }
             })?
         };
 
@@ -245,6 +284,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let mut registration_changeset = PlatformWalletChangeSet {
             wallet_metadata: Some(WalletMetadataEntry {
                 network: self.sdk.network,
+                wallet_group_id,
                 birth_height,
             }),
             account_registrations: account_specs
@@ -437,5 +477,220 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
 
         Ok(removed)
+    }
+}
+
+#[cfg(test)]
+mod scoped_wallet_id_tests {
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::Wallet;
+    use key_wallet::Network;
+
+    // Canonical all-`abandon` BIP-39 test vector. Deterministic, so the
+    // ids below are reproducible across runs.
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    fn wallet_id_for(network: Network) -> [u8; 32] {
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let wallet =
+            Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
+                .expect("wallet construction");
+        // This is the id the manager keys on (insert_wallet returns it,
+        // the create FFI hands it to Swift) — exercises the same
+        // construction path `create_wallet_from_mnemonic` uses.
+        wallet.wallet_id
+    }
+
+    /// The network-INDEPENDENT group id `register_wallet` computes and
+    /// persists onto every per-network row, so the iOS Wallet Info
+    /// "Networks" section can group a seed's sibling-network wallets.
+    /// Mirrors the `register_wallet` derivation exactly.
+    fn wallet_group_id_for(network: Network) -> [u8; 32] {
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let wallet =
+            Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
+                .expect("wallet construction");
+        wallet
+            .root_extended_pub_key_cow()
+            .map(|root| Wallet::compute_wallet_id_from_root_extended_pub_key(&root, None))
+            .unwrap_or(wallet.wallet_id)
+    }
+
+    /// The same mnemonic must yield a DISTINCT wallet id on each network.
+    /// This is the property the whole per-network persistence model now
+    /// relies on (rust-dashcore #793: network-scoped id by default).
+    #[test]
+    fn same_mnemonic_yields_distinct_ids_per_network() {
+        let mainnet = wallet_id_for(Network::Mainnet);
+        let testnet = wallet_id_for(Network::Testnet);
+        let devnet = wallet_id_for(Network::Devnet);
+        let regtest = wallet_id_for(Network::Regtest);
+
+        let all = [mainnet, testnet, devnet, regtest];
+        for i in 0..all.len() {
+            for j in (i + 1)..all.len() {
+                assert_ne!(
+                    all[i], all[j],
+                    "wallet ids for two different networks must differ \
+                     (index {i} vs {j}) — scoped-id regression"
+                );
+            }
+        }
+    }
+
+    /// Re-deriving the same (mnemonic, network) must be stable, otherwise
+    /// the watch-only restore path (which reuses the persisted id) would
+    /// drift across launches.
+    #[test]
+    fn same_mnemonic_same_network_is_stable() {
+        for network in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Devnet,
+            Network::Regtest,
+        ] {
+            assert_eq!(
+                wallet_id_for(network),
+                wallet_id_for(network),
+                "wallet id must be stable across re-derivation for {network:?}"
+            );
+        }
+    }
+
+    /// The group id must be network-INDEPENDENT: the same seed yields
+    /// the SAME group id on every network (this is what lets the Wallet
+    /// Info "Networks" section discover a seed's sibling-network rows
+    /// now that the scoped `walletId` differs per network). It must also
+    /// differ from the scoped id, or grouping would collapse back into
+    /// the per-network id and find nothing.
+    #[test]
+    fn group_id_is_network_independent_and_differs_from_scoped_id() {
+        let g_main = wallet_group_id_for(Network::Mainnet);
+        let g_test = wallet_group_id_for(Network::Testnet);
+        let g_dev = wallet_group_id_for(Network::Devnet);
+        let g_reg = wallet_group_id_for(Network::Regtest);
+
+        // Same seed → identical group id across every network.
+        assert_eq!(g_main, g_test, "group id must not depend on network");
+        assert_eq!(g_main, g_dev, "group id must not depend on network");
+        assert_eq!(g_main, g_reg, "group id must not depend on network");
+
+        // …but the group id is NOT the scoped id (else grouping siblings
+        // by it would degenerate to the per-network id and miss them).
+        assert_ne!(
+            g_main,
+            wallet_id_for(Network::Mainnet),
+            "group id must differ from the network-scoped id"
+        );
+    }
+}
+
+#[cfg(test)]
+mod register_wallet_duplicate_tests {
+    use std::sync::Arc;
+
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Network;
+
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::error::PlatformWalletError;
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::PlatformWalletManager;
+
+    // Canonical all-`abandon` BIP-39 test vector.
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    /// No-op persister: lifecycle tests don't need the real persistence
+    /// pipeline, just a handle satisfying the constructor.
+    struct NoopPersister;
+
+    impl PlatformWalletPersistence for NoopPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    struct NoopEventHandler;
+    impl EventHandler for NoopEventHandler {}
+    impl PlatformEventHandler for NoopEventHandler {}
+
+    /// Build a manager wired to a no-op persister over a mock SDK. The
+    /// duplicate-create path under test never reaches the network: the
+    /// first `create` returns `Ok` (its only network touch — best-effort
+    /// `identity().sync()` — is logged-and-ignored), and the second
+    /// fails at `WalletManager::insert_wallet` before any query.
+    fn make_manager() -> Arc<PlatformWalletManager<NoopPersister>> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = Arc::new(NoopPersister);
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        Arc::new(PlatformWalletManager::new(sdk, persister, event_handler))
+    }
+
+    /// Registering the SAME wallet (same mnemonic/seed + network) twice
+    /// must surface the typed `WalletAlreadyExists` on the second call —
+    /// NOT `WalletCreation`. This exercises the real producer path
+    /// (`register_wallet` → `WalletManager::insert_wallet` →
+    /// `WalletError::WalletExists` mapping) end-to-end; the prior
+    /// isolated FFI-mapper test missed that nothing ever constructed
+    /// `WalletAlreadyExists` on the create path.
+    #[tokio::test]
+    async fn duplicate_register_wallet_returns_wallet_already_exists() {
+        let manager = make_manager();
+
+        let network = Network::Testnet;
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let seed_bytes = mnemonic.to_seed("");
+
+        // First registration succeeds. `Some(0)` skips the SPV-tip
+        // birth-height lookup so the test never consults SPV.
+        manager
+            .create_wallet_from_seed_bytes(
+                network,
+                seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("first create should succeed");
+
+        // Second registration of the identical (seed, network) wallet
+        // collides on the network-scoped wallet id inside
+        // `WalletManager::insert_wallet`.
+        let err = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect_err("second create of the same wallet must fail");
+
+        assert!(
+            matches!(err, PlatformWalletError::WalletAlreadyExists(_)),
+            "duplicate create must map to WalletAlreadyExists, got: {err:?}"
+        );
     }
 }

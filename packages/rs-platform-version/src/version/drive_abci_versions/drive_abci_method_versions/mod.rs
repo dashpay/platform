@@ -7,6 +7,7 @@ pub mod v4;
 pub mod v5;
 pub mod v6;
 pub mod v7;
+pub mod v8;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciMethodVersions {
@@ -179,6 +180,4 @@ pub struct DriveAbciStateTransitionProcessingMethodVersions {
     pub validate_fees_of_event: FeatureVersion,
     pub store_address_balances_to_recent_block_storage: OptionalFeatureVersion,
     pub cleanup_recent_block_storage_address_balances: OptionalFeatureVersion,
-    pub store_nullifiers_to_recent_block_storage: OptionalFeatureVersion,
-    pub cleanup_recent_block_storage_nullifiers: OptionalFeatureVersion,
 }

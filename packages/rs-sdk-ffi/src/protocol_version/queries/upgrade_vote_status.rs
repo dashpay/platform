@@ -1,5 +1,5 @@
 use crate::types::SDKHandle;
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType, FFIError};
 use dash_sdk::dpp::dashcore::ProTxHash;
 use dash_sdk::platform::FetchMany;
 use dash_sdk::query_types::MasternodeProtocolVote;
@@ -56,13 +56,15 @@ pub unsafe extern "C" fn dash_sdk_protocol_version_get_upgrade_vote_status(
             data: std::ptr::null_mut(),
             error: std::ptr::null_mut(),
         },
+        // Preserve the typed `dash_sdk::Error` classification (network /
+        // timeout / etc.) instead of flattening everything to InternalError.
+        // A transient DAPI transport failure (e.g. an evonode serving an
+        // expired TLS certificate) is a NetworkError, not an internal bug, and
+        // the UI should label it as such rather than "Internal Error".
         Err(e) => DashSDKResult {
             data_type: DashSDKResultDataType::NoData,
             data: std::ptr::null_mut(),
-            error: Box::into_raw(Box::new(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                e,
-            ))),
+            error: Box::into_raw(Box::new(DashSDKError::from(e))),
         },
     }
 }
@@ -71,14 +73,14 @@ fn get_protocol_version_upgrade_vote_status(
     sdk_handle: *const SDKHandle,
     start_pro_tx_hash: *const c_char,
     count: u32,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, FFIError> {
     // Check for null pointer
     if sdk_handle.is_null() {
-        return Err("SDK handle is null".to_string());
+        return Err(FFIError::InvalidState("SDK handle is null".to_string()));
     }
 
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
+    let rt = crate::runtime::BigStackRuntime::new_isolated()
+        .map_err(|e| FFIError::InternalError(format!("Failed to create Tokio runtime: {}", e)))?;
 
     let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
     let sdk = wrapper.sdk.clone();
@@ -88,15 +90,16 @@ fn get_protocol_version_upgrade_vote_status(
             None
         } else {
             let start_hash_str = unsafe {
-                CStr::from_ptr(start_pro_tx_hash)
-                    .to_str()
-                    .map_err(|e| format!("Invalid UTF-8 in start pro_tx_hash: {}", e))?
+                CStr::from_ptr(start_pro_tx_hash).to_str().map_err(|e| {
+                    FFIError::InvalidParameter(format!("Invalid UTF-8 in start pro_tx_hash: {}", e))
+                })?
             };
-            let bytes = hex::decode(start_hash_str)
-                .map_err(|e| format!("Failed to decode start pro_tx_hash: {}", e))?;
-            let hash_bytes: [u8; 32] = bytes
-                .try_into()
-                .map_err(|_| "start_pro_tx_hash must be exactly 32 bytes".to_string())?;
+            let bytes = hex::decode(start_hash_str).map_err(|e| {
+                FFIError::InvalidParameter(format!("Failed to decode start pro_tx_hash: {}", e))
+            })?;
+            let hash_bytes: [u8; 32] = bytes.try_into().map_err(|_| {
+                FFIError::InvalidParameter("start_pro_tx_hash must be exactly 32 bytes".to_string())
+            })?;
             Some(ProTxHash::from(hash_bytes))
         };
 
@@ -106,32 +109,29 @@ fn get_protocol_version_upgrade_vote_status(
             start_info: None,
         };
 
-        match MasternodeProtocolVote::fetch_many(&sdk, query).await {
-            Ok(votes) => {
-                if votes.is_empty() {
-                    return Ok(None);
-                }
+        // Propagate the `dash_sdk::Error` unchanged via `?` so the FFI error
+        // converter classifies it (NetworkError, Timeout, ...). Returning a
+        // pre-formatted String here would erase that classification.
+        let votes = MasternodeProtocolVote::fetch_many(&sdk, query).await?;
 
-                let votes_json: Vec<String> = votes
-                    .iter()
-                    .filter_map(|(pro_tx_hash, vote_opt)| {
-                        vote_opt.as_ref().map(|vote| {
-                            format!(
-                                r#"{{"pro_tx_hash":"{}","version":{}}}"#,
-                                hex::encode(pro_tx_hash),
-                                vote.voted_version
-                            )
-                        })
-                    })
-                    .collect();
-
-                Ok(Some(format!("[{}]", votes_json.join(","))))
-            }
-            Err(e) => Err(format!(
-                "Failed to fetch protocol version upgrade vote status: {}",
-                e
-            )),
+        if votes.is_empty() {
+            return Ok(None);
         }
+
+        let votes_json: Vec<String> = votes
+            .iter()
+            .filter_map(|(pro_tx_hash, vote_opt)| {
+                vote_opt.as_ref().map(|vote| {
+                    format!(
+                        r#"{{"pro_tx_hash":"{}","version":{}}}"#,
+                        hex::encode(pro_tx_hash),
+                        vote.voted_version
+                    )
+                })
+            })
+            .collect();
+
+        Ok(Some(format!("[{}]", votes_json.join(","))))
     })
 }
 

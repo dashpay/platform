@@ -708,6 +708,13 @@ mod tests {
         box_dashsdk_error(error)
     }
 
+    fn classify(err: dash_sdk::Error) -> DashSDKErrorCode {
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(err)));
+        let code = unsafe { (*ffi_error).code };
+        unsafe { dash_sdk_error_free(ffi_error) };
+        code
+    }
+
     #[test]
     fn sdk_protocol_consensus_error_maps_to_protocol_error_code() {
         let consensus_error = ConsensusError::BasicError(BasicError::NonceOutOfBoundsError(
@@ -1187,6 +1194,50 @@ mod tests {
         assert_eq!(cstr(detail.kind), "FeeError");
         assert_eq!(cstr(detail.name), "BalanceIsNotEnoughError");
         unsafe { dash_sdk_consensus_error_free(detail_ptr) };
+        unsafe { dash_sdk_error_free(ffi_error) };
+    }
+
+    #[test]
+    fn dapi_client_error_maps_to_network_error() {
+        // The Display form is "Dapi client error: …", which matches none of the
+        // substring heuristics ("DAPI"/"dapi"/"connection"/…). It must be
+        // classified as NetworkError via the typed variant so a transient
+        // transport failure (e.g. an evonode serving an expired TLS cert) does
+        // not surface in the UI as a misleading "Internal Error".
+        let err = dash_sdk::Error::DapiClientError(
+            dash_sdk::dapi_client::DapiClientError::NoAvailableAddresses,
+        );
+        assert_eq!(classify(err), DashSDKErrorCode::NetworkError);
+    }
+
+    #[test]
+    fn timeout_reached_maps_to_timeout() {
+        let err = dash_sdk::Error::TimeoutReached(
+            std::time::Duration::from_secs(8),
+            "fetch protocol version upgrade state".to_string(),
+        );
+        assert_eq!(classify(err), DashSDKErrorCode::Timeout);
+    }
+
+    #[test]
+    fn unclassified_error_maps_to_internal_error_without_balance_prefix() {
+        // A proof-verification failure (e.g. from getDataContractHistory) matches
+        // none of the substring heuristics and must fall through the catch-all.
+        // It should be classified as InternalError and keep its original Display
+        // verbatim — no copy-pasted "Failed to fetch balances:" prefix.
+        let err = dash_sdk::Error::Generic(
+            "Proof verification error: corrupted element for the historical contract".to_string(),
+        );
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(err)));
+        let rendered = error_message_ptr(ffi_error);
+
+        assert_eq!(
+            unsafe { (*ffi_error).code },
+            DashSDKErrorCode::InternalError
+        );
+        assert!(rendered.starts_with("SDK error:"));
+        assert!(rendered.contains("Proof verification error"));
+        assert!(!rendered.contains("Failed to fetch balances"));
         unsafe { dash_sdk_error_free(ffi_error) };
     }
 }

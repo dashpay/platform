@@ -6,6 +6,12 @@ pub mod paths;
 #[cfg(feature = "server")]
 pub(crate) mod estimated_costs;
 
+/// Insert the main shielded credit pool and its eight child subtrees.
+/// Shared between the genesis-v12 and upgrade-to-v12 paths so both build a
+/// byte-identical `[ShieldedBalances]` subtree (consensus-critical).
+#[cfg(feature = "server")]
+mod insert_shielded_pool_structure;
+
 /// Insert a note into the shielded pool commitment tree
 #[cfg(feature = "server")]
 mod insert_note;
@@ -41,11 +47,3 @@ mod read_total_balance;
 /// Count the notes in the shielded pool commitment tree
 #[cfg(feature = "server")]
 mod notes_count;
-
-/// Prove methods for shielded pool queries
-#[cfg(feature = "server")]
-pub mod prove;
-
-/// Per-block nullifier storage for catch-up sync
-#[cfg(any(feature = "server", feature = "verify"))]
-pub mod nullifiers;

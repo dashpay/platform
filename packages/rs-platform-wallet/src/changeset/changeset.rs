@@ -136,6 +136,14 @@ pub struct CoreChangeSet {
     /// upstream `project_derived_addresses` uses, so two records in
     /// the same flush both pushing the same gap-limit boundary
     /// collapse to one entry.
+    ///
+    /// `#[serde(skip)]`: persisters that need the breadcrumb write
+    /// it to a dedicated typed table (see
+    /// `platform_wallet_storage::sqlite::schema::core_state`) rather
+    /// than serialising the parent changeset wholesale, so excluding
+    /// it from the serde round-trip has no functional cost even now
+    /// that `key-wallet-manager/serde` would make it serializable.
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub addresses_derived: Vec<key_wallet_manager::DerivedAddress>,
 
     /// Highest chainlock the wallet has applied (mirrors
@@ -645,6 +653,10 @@ pub struct PlatformAddressBalanceEntry {
     pub account_index: u32,
     pub address_index: u32,
     pub address: PlatformP2PKHAddress,
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "crate::changeset::serde_adapters::address_funds")
+    )]
     pub funds: AddressFunds,
 }
 
@@ -732,6 +744,10 @@ pub struct AssetLockEntry {
     /// BIP44 account index that funded this asset lock (UTXO source).
     pub account_index: u32,
     /// Which funding account to derive the one-time key from.
+    #[cfg_attr(
+        feature = "serde",
+        serde(with = "crate::changeset::serde_adapters::asset_lock_funding_type")
+    )]
     pub funding_type: AssetLockFundingType,
     /// Identity index used during creation.
     pub identity_index: u32,
@@ -794,8 +810,9 @@ impl Merge for TokenBalanceChangeSet {
 
 /// Per-wallet metadata captured at registration. Carries fields not
 /// derivable from the xpub alone: which network the wallet is bound
-/// to and the birth-height best estimate (the SPV tip at create time;
-/// 0 means "scan from genesis / unknown").
+/// to, the network-independent group id that ties a seed's per-network
+/// wallets together, and the birth-height best estimate (the SPV tip
+/// at create time; 0 means "scan from genesis / unknown").
 ///
 /// The shape sits on [`PlatformWalletChangeSet`] as
 /// `Option<WalletMetadataEntry>` because the round emits at most one
@@ -811,6 +828,17 @@ impl Merge for TokenBalanceChangeSet {
 pub struct WalletMetadataEntry {
     /// Network the wallet is bound to.
     pub network: Network,
+    /// Network-INDEPENDENT 32-byte id shared by every network's wallet
+    /// derived from the same seed. Computed as
+    /// `Wallet::compute_wallet_id_from_root_extended_pub_key(root, None)`
+    /// — `SHA256(root_public_key || root_chain_code)` with no network
+    /// byte folded in. Distinct from the per-network [`Self::network`]-
+    /// scoped `wallet_id` the changeset is keyed on: that id differs per
+    /// network for the same seed, this one is the same across all of
+    /// them, so consumers can group a seed's sibling-network rows by it.
+    /// For watch-only / external-signable wallets (which carry no root
+    /// key) this falls back to the scoped `wallet_id` — a group of one.
+    pub wallet_group_id: [u8; 32],
     /// Best estimate of the chain tip at creation time. `0` means
     /// "scan from genesis / unknown".
     pub birth_height: u32,

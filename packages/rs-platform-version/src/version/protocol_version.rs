@@ -178,3 +178,52 @@ impl PlatformVersion {
             .expect("failed to set test versions")
     }
 }
+
+#[cfg(test)]
+mod shielded_pool_gating_tests {
+    use super::PlatformVersion;
+
+    // The shielded credit pool lives in GroveDB at
+    // `[RootTree::ShieldedBalances (52), MAIN_SHIELDED_CREDIT_POOL_KEY ("M" = 0x4d)]`.
+    // That subtree is created ONLY at the protocol v12 upgrade migration
+    // (`transition_to_version_12`) or on a v12 genesis (`create_initial_state_structure_v3`).
+    // It does not exist on a protocol-v11 state (v11 uses init structure v2).
+    //
+    // The block-end / recent-block-storage shielded methods below read that
+    // subtree unconditionally every block. If they are active before v12 they
+    // open `[52, "M"]` on a state where it was never created, producing the
+    // consensus-breaking GroveDB error
+    //   "path parent layer not found: could not get key 4d for parent [52]".
+    //
+    // These methods were inactive (`None`) through protocol v11 in the released
+    // 3.0.1 line, then accidentally turned on for v11 when the four fields were
+    // added as `Some(0)` to the SHARED `DRIVE_ABCI_METHOD_VERSIONS_V7` struct in
+    // the Medusa shielded-pool PR (#3177) — V7 is referenced by both v11.rs and
+    // v12.rs. These tests pin the invariant: shielded reads are gated to v12+.
+
+    #[test]
+    fn shielded_block_processing_methods_inactive_before_v12() {
+        let v11 = PlatformVersion::get(11).expect("protocol version 11 must exist");
+        let block_end = &v11.drive_abci.methods.block_end;
+
+        assert_eq!(
+            block_end.record_shielded_pool_anchor, None,
+            "v11 must NOT record shielded pool anchors: the [52, \"M\"] subtree does not exist before v12"
+        );
+        assert_eq!(
+            block_end.prune_shielded_pool_anchors, None,
+            "v11 must NOT prune shielded pool anchors: the [52, \"M\"] subtree does not exist before v12"
+        );
+    }
+
+    #[test]
+    fn shielded_block_processing_methods_active_at_v12() {
+        let v12 = PlatformVersion::get(12).expect("protocol version 12 must exist");
+        let block_end = &v12.drive_abci.methods.block_end;
+
+        // At v12 the shielded pool subtree is created by the upgrade migration,
+        // so the same methods must be active.
+        assert_eq!(block_end.record_shielded_pool_anchor, Some(0));
+        assert_eq!(block_end.prune_shielded_pool_anchors, Some(0));
+    }
+}

@@ -36,6 +36,24 @@ struct ContestDetailView: View {
     @State private var isRefreshing = false
     @State private var errorMessage: String?
 
+    // MARK: - Vote-casting state
+    /// Presents the masternode vote sheet.
+    @State private var showVoteSheet = false
+    /// In-flight broadcast guard.
+    @State private var isCastingVote = false
+    /// Result banner shown after a cast attempt (success or the
+    /// deterministic authorization rejection a non-masternode hits).
+    @State private var voteResultMessage: String?
+    @State private var voteResultIsError = false
+
+    /// DPNS contest poll shape — the same `(contract, document type,
+    /// index, index values)` tuple the read path uses. The contested
+    /// label lives at the second index value (`["dash", label]`).
+    private static let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
+    private static let dpnsDocumentType = "domain"
+    private static let dpnsIndexName = "parentNameAndLabel"
+    private var dpnsIndexValues: [String] { ["dash", contestName] }
+
     /// Current identity's 32-byte id, parsed from the base58 input
     /// parameter once. `nil` if the caller passed an unparseable id.
     private var currentIdentityData: Data? {
@@ -82,6 +100,7 @@ struct ContestDetailView: View {
             contestHeaderSection
             contendersSection
             voteSummarySection
+            castVoteSection
 
             Section {
                 VStack(alignment: .leading, spacing: 8) {
@@ -103,6 +122,21 @@ struct ContestDetailView: View {
             if voteState == nil {
                 await refreshVoteState()
             }
+        }
+        .sheet(isPresented: $showVoteSheet) {
+            CastVoteSheet(
+                contestName: contestName,
+                contenders: sortedContenders,
+                currentIdentityData: currentIdentityData,
+                isCasting: isCastingVote,
+                onSubmit: { choice, proTxHashHex, votingKeyHex in
+                    await castVote(
+                        choice: choice,
+                        proTxHashHex: proTxHashHex,
+                        votingKeyHex: votingKeyHex
+                    )
+                }
+            )
         }
     }
 
@@ -260,6 +294,40 @@ struct ContestDetailView: View {
     }
 
     @ViewBuilder
+    private var castVoteSection: some View {
+        Section("Cast a Masternode Vote") {
+            if let message = voteResultMessage {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: voteResultIsError
+                        ? "exclamationmark.triangle"
+                        : "checkmark.circle.fill")
+                        .foregroundColor(voteResultIsError ? .orange : .green)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+
+            Button {
+                voteResultMessage = nil
+                showVoteSheet = true
+            } label: {
+                Label("Cast Vote…", systemImage: "hand.raised.fill")
+            }
+            .disabled(appState.sdk == nil || isCastingVote)
+
+            // Contested-resource votes are masternode-only. Spell that
+            // out so a regular-wallet user understands why a broadcast
+            // is expected to be rejected, and what credentials make it
+            // succeed.
+            Text("Only masternodes can vote on contested names, using a masternode voting key tied to a pro_tx_hash. A regular wallet has no voting key, so a vote here will be rejected by Platform. Supply real masternode credentials in the sheet to cast an accepted vote.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    @ViewBuilder
     private func singleContenderBanner(endTime: Date) -> some View {
         let totalDuration: TimeInterval = appState.currentNetwork == .mainnet
             ? (14 * 24 * 60 * 60)       // 14 days for mainnet
@@ -396,6 +464,209 @@ struct ContestDetailView: View {
             }
         } catch {
             errorMessage = "Refresh failed: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Vote casting
+
+    /// Broadcast a masternode contested-resource vote through the SDK.
+    ///
+    /// Marshals the hex inputs into `Data` and forwards to
+    /// `SDK.castContestedResourceVote`, which bridges straight to the
+    /// rs-sdk `PutVote` path. The transition is fully assembled, signed
+    /// and broadcast; a non-masternode caller reaches a deterministic
+    /// authorization rejection (surfaced here as an error banner).
+    private func castVote(
+        choice: ContestedResourceVoteChoice,
+        proTxHashHex: String,
+        votingKeyHex: String
+    ) async {
+        guard let sdk = appState.sdk else {
+            voteResultMessage = "SDK not initialized"
+            voteResultIsError = true
+            return
+        }
+        // `Data(hexString:)` decodes `count / 2` bytes stepping by two, so an
+        // odd-length (e.g. 65-char) string silently drops its trailing nibble
+        // and still yields 32 bytes — the `count == 32` guard alone would pass
+        // a malformed key. Validate the trimmed hex length is exactly 64 (and
+        // therefore even) before decoding so a wrong key can't slip through.
+        let normalizedProTxHashHex = proTxHashHex.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedProTxHashHex.count == 64,
+              let proTxHash = Data(hexString: normalizedProTxHashHex),
+              proTxHash.count == 32 else {
+            voteResultMessage = "pro_tx_hash must be 32 bytes (64 hex characters)."
+            voteResultIsError = true
+            return
+        }
+        let normalizedVotingKeyHex = votingKeyHex.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedVotingKeyHex.count == 64,
+              let votingKey = Data(hexString: normalizedVotingKeyHex),
+              votingKey.count == 32 else {
+            voteResultMessage = "Voting private key must be 32 bytes (64 hex characters)."
+            voteResultIsError = true
+            return
+        }
+
+        isCastingVote = true
+        defer { isCastingVote = false }
+
+        do {
+            try await sdk.castContestedResourceVote(
+                dataContractId: Self.dpnsContractId,
+                documentTypeName: Self.dpnsDocumentType,
+                indexName: Self.dpnsIndexName,
+                indexValues: dpnsIndexValues,
+                choice: choice,
+                proTxHash: proTxHash,
+                votingPrivateKey: votingKey
+            )
+            voteResultMessage = "Vote accepted by Platform."
+            voteResultIsError = false
+            showVoteSheet = false
+            // Pull fresh tallies after a successful cast.
+            await refreshVoteState()
+        } catch {
+            voteResultMessage = "Vote rejected: \(error.localizedDescription)"
+            voteResultIsError = true
+            showVoteSheet = false
+        }
+    }
+}
+
+/// Modal for picking a vote choice and entering masternode credentials.
+///
+/// Kept deliberately explicit about the masternode-key requirement —
+/// the example app's regular wallets cannot satisfy it, so the inputs
+/// are where a masternode operator would paste their pro_tx_hash and
+/// voting private key (both hex).
+private struct CastVoteSheet: View {
+    let contestName: String
+    let contenders: [ContestContender]
+    let currentIdentityData: Data?
+    let isCasting: Bool
+    let onSubmit: (ContestedResourceVoteChoice, String, String) async -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    /// Selected contender identity (hex) or one of the special choices.
+    private enum Selection: Hashable {
+        case contender(String) // identity id hex
+        case abstain
+        case lock
+    }
+
+    @State private var selection: Selection = .abstain
+    @State private var proTxHashHex = ""
+    @State private var votingKeyHex = ""
+    /// Surfaced when the selected contender's hex id fails to decode, so we
+    /// never pass un-decodable hex downstream to the FFI as if it were base58.
+    @State private var choiceError: String?
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Voting on") {
+                    Text("\(contestName).dash")
+                        .font(.headline)
+                        .foregroundColor(.blue)
+                }
+
+                Section("Your Choice") {
+                    Picker("Vote", selection: $selection) {
+                        ForEach(contenders) { contender in
+                            let hex = contender.identityId.toHexString()
+                            HStack {
+                                if contender.identityId == currentIdentityData {
+                                    Text("You")
+                                } else {
+                                    Text(hex.prefix(12) + "…")
+                                }
+                            }
+                            .tag(Selection.contender(hex))
+                        }
+                        Text("Abstain").tag(Selection.abstain)
+                        Text("Lock (no winner)").tag(Selection.lock)
+                    }
+                    .pickerStyle(.inline)
+                }
+
+                Section("Masternode Credentials") {
+                    TextField("pro_tx_hash (64 hex chars)", text: $proTxHashHex)
+                        .font(.system(.caption, design: .monospaced))
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    SecureField("voting private key (64 hex chars)", text: $votingKeyHex)
+                        .font(.system(.caption, design: .monospaced))
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    Text("These belong to a masternode. The voting public key (ECDSA_HASH160) and signer are derived from the private key on the Rust side; the key bytes are not stored.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+
+                Section {
+                    Button {
+                        // Guarded decode: if the selected contender's hex id
+                        // can't be decoded, surface a clear error instead of
+                        // passing raw hex to the FFI as if it were base58.
+                        guard let choice = resolvedChoice else {
+                            choiceError = "Could not decode the selected contender's identity id."
+                            return
+                        }
+                        choiceError = nil
+                        Task {
+                            await onSubmit(choice, proTxHashHex, votingKeyHex)
+                        }
+                    } label: {
+                        if isCasting {
+                            HStack {
+                                ProgressView()
+                                Text("Broadcasting…")
+                            }
+                        } else {
+                            Text("Submit Vote")
+                        }
+                    }
+                    .disabled(isCasting || proTxHashHex.isEmpty || votingKeyHex.isEmpty)
+
+                    if let choiceError {
+                        Text(choiceError)
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                }
+            }
+            .navigationTitle("Cast Vote")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isCasting)
+                }
+            }
+        }
+    }
+
+    /// Translate the picker selection into the SDK vote-choice enum.
+    ///
+    /// Returns `nil` when a contender's hex identity id fails to decode, so the
+    /// caller can surface a clear error instead of passing un-decodable hex
+    /// downstream to the FFI as if it were base58.
+    private var resolvedChoice: ContestedResourceVoteChoice? {
+        switch selection {
+        case .contender(let hex):
+            // The FFI expects a base58 identity id; convert from the hex the
+            // contender rows carry. Guard the decode rather than falling back
+            // to the raw hex string.
+            guard let base58 = Data(hexString: hex)?.toBase58String() else {
+                return nil
+            }
+            return .towardsIdentity(base58)
+        case .abstain:
+            return .abstain
+        case .lock:
+            return .lock
         }
     }
 }

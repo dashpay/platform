@@ -1398,6 +1398,24 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '3.0.2': (configFile) => {
+        // Patch the Platform Gateway (Envoy) image for CVE-2026-47774 /
+        // GHSA-22m2-hvr2-xqc8: an unauthenticated HTTP/2 downstream
+        // memory-exhaustion DoS. Only configs still on the EOL,
+        // dashmate-shipped 1.30.x Envoy image are bumped to the patched base
+        // default (Envoy 1.35.11); a deliberately customised image (private
+        // fork, vendor-patched build, `:latest`, etc.) is left untouched.
+        const patchedImage = base.get('platform.gateway.docker.image');
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const docker = options.platform?.gateway?.docker;
+            if (docker && /^dashpay\/envoy:1\.30\./.test(docker.image)) {
+              docker.image = patchedImage;
+            }
+          });
+
+        return configFile;
+      },
       '3.0.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
@@ -1497,6 +1515,25 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 lodash.set(options, parentPath, lodash.cloneDeep(obj));
                 lodash.get(options, parentPath).port = networkConfig.get(`${parentPath}.port`);
               }
+            }
+          });
+
+        return configFile;
+      },
+      '4.0.0-rc.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // Add responseHeaders toggle to rate limiter (default true so existing
+            // deployments keep emitting RateLimit-* headers; rs-dapi-client depends
+            // on RateLimit-Reset to apply precise ban windows instead of the
+            // exponential health-ban ladder).
+            // Keyed at the next release (4.0.0-rc.3), not the already-released
+            // rc.2: the runner skips fromVersion===toVersion, so a key equal to
+            // an operator's current version never fires. Backfill runs once the
+            // package bumps to rc.3 (mirrors the 3.1.0 migration added at 3.1.0-dev.1).
+            if (options.platform?.gateway?.rateLimiter
+              && typeof options.platform.gateway.rateLimiter.responseHeaders === 'undefined') {
+              options.platform.gateway.rateLimiter.responseHeaders = base.get('platform.gateway.rateLimiter.responseHeaders');
             }
           });
 

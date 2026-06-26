@@ -1,10 +1,12 @@
+pub mod accessors;
 pub mod fields;
 pub mod methods;
 mod proved;
 #[cfg(all(
     test,
     feature = "state-transition-signing",
-    feature = "core_key_wallet"
+    feature = "core_key_wallet",
+    feature = "shielded-client"
 ))]
 mod signing_tests;
 mod state_transition_estimated_fee_validation;

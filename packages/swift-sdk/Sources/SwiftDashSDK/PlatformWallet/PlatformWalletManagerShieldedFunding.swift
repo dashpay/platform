@@ -31,6 +31,57 @@ public struct ShieldedFundFromAssetLockRecipient: Sendable {
     }
 }
 
+/// Live progress for `seedShieldedPoolNotes(...)`, emitted once before and
+/// once after each `ShieldFromAssetLock` batch.
+public struct SeedShieldedPoolProgress: Sendable {
+    /// 0-based index of the batch about to run / just completed.
+    public let batchIndex: UInt64
+    /// Estimated total number of batches to reach `target` from the count
+    /// observed when seeding started. An estimate only.
+    public let batchesTotalEstimate: UInt64
+    /// Pool note count observed at this checkpoint.
+    public let poolNotesNow: UInt64
+    /// The target total note count seeding is driving toward.
+    public let target: UInt64
+}
+
+/// Box that carries the host's progress handler across the C ABI as an
+/// opaque context pointer. Retained for the duration of the FFI call via
+/// `Unmanaged.passRetained` and released in the calling Swift frame.
+///
+/// `@unchecked Sendable`: the only stored value is an `@Sendable` closure,
+/// and the box itself is constructed and consumed entirely inside the
+/// off-actor detached task that drives the FFI call.
+private final class SeedPoolProgressBox: @unchecked Sendable {
+    let handler: @Sendable (SeedShieldedPoolProgress) -> Void
+    init(_ handler: @escaping @Sendable (SeedShieldedPoolProgress) -> Void) {
+        self.handler = handler
+    }
+}
+
+/// C trampoline matching the Rust
+/// `platform_wallet_manager_shielded_seed_pool_notes` progress callback.
+/// Re-materializes the `SeedPoolProgressBox` from the opaque context and
+/// forwards the counters. Called from a background worker thread.
+private func seedPoolProgressTrampoline(
+    context: UnsafeMutableRawPointer?,
+    batchIndex: UInt64,
+    batchesTotalEstimate: UInt64,
+    poolNotesNow: UInt64,
+    target: UInt64
+) {
+    guard let context else { return }
+    let box = Unmanaged<SeedPoolProgressBox>.fromOpaque(context).takeUnretainedValue()
+    box.handler(
+        SeedShieldedPoolProgress(
+            batchIndex: batchIndex,
+            batchesTotalEstimate: batchesTotalEstimate,
+            poolNotesNow: poolNotesNow,
+            target: target
+        )
+    )
+}
+
 extension PlatformWalletManager {
     /// Fund the shielded pool from a Core L1 asset lock, orchestrated
     /// entirely on the Rust side (build asset-lock tx → wait for
@@ -66,11 +117,21 @@ extension PlatformWalletManager {
     ///     empty or multi-recipient lists). Each recipient's
     ///     `credits` becomes the Orchard `value_balance` for that
     ///     output.
+    ///   - surplusOutput: Optional platform address (raw 21-byte
+    ///     `PlatformAddress` storage bytes: 1-byte variant tag +
+    ///     20-byte hash) to receive the asset-lock surplus
+    ///     (`lock_value − shield_amount − pool_fee`). Pass `nil` for
+    ///     none. In today's single-recipient "remainder" flow the
+    ///     surplus is structurally zero (the recipient receives
+    ///     `lock_value − pool_fee`), so `nil` is always valid; the
+    ///     parameter is exposed for parity with the Rust builder and
+    ///     forward-compatibility with multi-output bundles.
     public func shieldedFundFromAssetLock(
         walletId: Data,
         fundingAccountIndex: UInt32,
         amountDuffs: UInt64,
-        recipients: [ShieldedFundFromAssetLockRecipient]
+        recipients: [ShieldedFundFromAssetLockRecipient],
+        surplusOutput: Data? = nil
     ) async throws {
         try shieldedFundFromAssetLockPreflight(
             walletId: walletId,
@@ -106,17 +167,21 @@ extension PlatformWalletManager {
                             "recipient baseAddress is nil"
                         )
                     }
-                    let result = withExtendedLifetime(coreSigner) {
-                        platform_wallet_manager_shielded_fund_from_asset_lock(
-                            handle,
-                            widPtr,
-                            fundingAccountIndex,
-                            amountDuffs,
-                            recipientPtr,
-                            coreSigner.handle
-                        )
+                    try Self.withOptionalSurplusOutput(surplusOutput) { surplusPtr, surplusLen in
+                        let result = withExtendedLifetime(coreSigner) {
+                            platform_wallet_manager_shielded_fund_from_asset_lock(
+                                handle,
+                                widPtr,
+                                fundingAccountIndex,
+                                amountDuffs,
+                                recipientPtr,
+                                surplusPtr,
+                                surplusLen,
+                                coreSigner.handle
+                            )
+                        }
+                        try result.check()
                     }
-                    try result.check()
                 }
             }
         }.value
@@ -142,11 +207,18 @@ extension PlatformWalletManager {
     ///     locks built by this wallet, but kept for generality).
     ///   - recipients: Destination addresses (single-entry today;
     ///     same preflight as the fresh-build variant).
+    ///   - surplusOutput: Optional surplus-output platform address —
+    ///     see `shieldedFundFromAssetLock`. The surplus is structurally
+    ///     zero in this flow and the Rust side re-derives an identical
+    ///     `shield_amount` on every attempt, so a resume cannot desync
+    ///     the surplus destination regardless of this value; pass the
+    ///     same value used on the original attempt (typically `nil`).
     public func shieldedResumeFundFromAssetLock(
         walletId: Data,
         outPointTxid: Data,
         outPointVout: UInt32,
-        recipients: [ShieldedFundFromAssetLockRecipient]
+        recipients: [ShieldedFundFromAssetLockRecipient],
+        surplusOutput: Data? = nil
     ) async throws {
         guard outPointTxid.count == 32 else {
             throw PlatformWalletError.invalidParameter(
@@ -197,17 +269,113 @@ extension PlatformWalletManager {
                             "recipient baseAddress is nil"
                         )
                     }
-                    let result = withExtendedLifetime(coreSigner) {
-                        platform_wallet_manager_shielded_resume_fund_from_asset_lock(
-                            handle,
-                            widPtr,
-                            &outPoint,
-                            recipientPtr,
-                            coreSigner.handle
-                        )
+                    try Self.withOptionalSurplusOutput(surplusOutput) { surplusPtr, surplusLen in
+                        let result = withExtendedLifetime(coreSigner) {
+                            platform_wallet_manager_shielded_resume_fund_from_asset_lock(
+                                handle,
+                                widPtr,
+                                &outPoint,
+                                recipientPtr,
+                                surplusPtr,
+                                surplusLen,
+                                coreSigner.handle
+                            )
+                        }
+                        try result.check()
                     }
-                    try result.check()
                 }
+            }
+        }.value
+    }
+
+    /// Seed the shielded pool's anonymity set up to `targetTotalNotes`
+    /// by submitting a series of `ShieldFromAssetLock` (Type 18) batches,
+    /// each adding up to 6 notes (1 real note to the wallet's own default
+    /// shielded address + up to 5 zero-value anonymity-set fillers). 6 is
+    /// `MAX_ACTIONS_PER_BATCH` in rs-platform-wallet's `seed_pool.rs` —
+    /// the most that fits the 20 KiB `max_state_transition_size`, NOT the
+    /// 16-action consensus cap.
+    ///
+    /// **Devnet/testnet only** — the Rust side hard-errors on mainnet
+    /// (`Network.mainnet`). It exists so a freshly-reset devnet can satisfy
+    /// the 250-note outgoing-transition minimum from the example app in one
+    /// action, without a `DRIVE_SHIELDED_SNAPSHOT` genesis ingest.
+    ///
+    /// Batches run serially and each waits for proven execution, so a
+    /// 250-note seed is ~42 batches and can take an hour or more. `progress`
+    /// is invoked before and after each batch with the live counters; it is
+    /// called from a background worker thread, so hop to your own UI executor
+    /// inside the handler if you touch UI state.
+    ///
+    /// - Parameters:
+    ///   - walletId: 32-byte wallet identifier (the same key `bindShielded`
+    ///     uses). Must match the wallet that funds the seeding.
+    ///   - account: shielded BIP44 account whose default address receives
+    ///     each batch's real note (must be bound).
+    ///   - targetTotalNotes: drive the on-chain pool note count up to (at
+    ///     least) this value. A no-op if the pool already has this many.
+    ///   - fundingAccountIndex: Core BIP44 account whose UTXOs fund each
+    ///     per-batch asset lock.
+    ///   - progress: optional live-progress handler (see above).
+    public func seedShieldedPoolNotes(
+        walletId: Data,
+        account: UInt32 = 0,
+        targetTotalNotes: UInt64 = 250,
+        fundingAccountIndex: UInt32 = 0,
+        progress: (@Sendable (SeedShieldedPoolProgress) -> Void)? = nil
+    ) async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes (was \(walletId.count))"
+            )
+        }
+
+        let handle = self.handle
+
+        try await Task.detached(priority: .userInitiated) {
+            // Constructed inside the detached task so nothing crosses back
+            // to the main actor. The `MnemonicResolver` and the progress
+            // box live only for this off-actor frame (same rationale as
+            // `shieldedFundFromAssetLock`'s resolver).
+            let coreSigner = MnemonicResolver()
+            // Box the progress handler (if any) so it crosses the C ABI as
+            // an opaque context. Retained for the FFI call, released after.
+            let progressBox = progress.map { SeedPoolProgressBox($0) }
+
+            return try walletId.withUnsafeBytes { widRaw in
+                guard
+                    let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter(
+                        "walletId baseAddress is nil"
+                    )
+                }
+
+                let ctx: UnsafeMutableRawPointer? = progressBox.map {
+                    Unmanaged.passRetained($0).toOpaque()
+                }
+                defer {
+                    if let ctx { Unmanaged<SeedPoolProgressBox>.fromOpaque(ctx).release() }
+                }
+
+                let result = withExtendedLifetime(coreSigner) {
+                    platform_wallet_manager_shielded_seed_pool_notes(
+                        handle,
+                        widPtr,
+                        account,
+                        targetTotalNotes,
+                        fundingAccountIndex,
+                        coreSigner.handle,
+                        progressBox == nil ? nil : seedPoolProgressTrampoline,
+                        ctx
+                    )
+                }
+                try result.check()
             }
         }.value
     }
@@ -263,6 +431,38 @@ extension PlatformWalletManager {
                         + "Explicit amounts will be honored when DPP grows multi-output bundles for Type 18."
                 )
             }
+        }
+    }
+
+    /// Run `body` with a `(pointer, length)` view of the optional
+    /// surplus-output address bytes.
+    ///
+    /// `nil` (or empty) yields `(nil, 0)`, which the FFI reads as "no
+    /// surplus output". A non-nil value is pinned for the call via
+    /// `withUnsafeBytes` so the pointer is valid for the duration of
+    /// `body`. The FFI expects raw `PlatformAddress` storage bytes
+    /// (1-byte variant tag + 20-byte hash); it validates the encoding
+    /// and returns an error for malformed input, so no length check is
+    /// duplicated here.
+    ///
+    /// `nonisolated` because `PlatformWalletManager` is
+    /// `@MainActor`-isolated by default and the call sites run inside
+    /// the synchronous, off-main-actor `Task.detached` bodies — this is
+    /// pure byte marshalling that reads no `PlatformWalletManager` state.
+    nonisolated private static func withOptionalSurplusOutput<R>(
+        _ surplusOutput: Data?,
+        _ body: (UnsafePointer<UInt8>?, UInt) throws -> R
+    ) throws -> R {
+        guard let surplusOutput, !surplusOutput.isEmpty else {
+            return try body(nil, 0)
+        }
+        return try surplusOutput.withUnsafeBytes { raw in
+            guard let ptr = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                throw PlatformWalletError.invalidParameter(
+                    "surplusOutput baseAddress is nil"
+                )
+            }
+            return try body(ptr, UInt(raw.count))
         }
     }
 }

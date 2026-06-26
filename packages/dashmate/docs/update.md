@@ -78,7 +78,7 @@ $  dashmate update --format=json --config local_1 | jq
     "name": "gateway",
     "title": "Gateway",
     "updated": "up to date",
-    "image": "dashpay/envoy:1.30.2-impr.1"
+    "image": "dashpay/envoy:1.35.11-impr.1"
   }
 ]
 ```

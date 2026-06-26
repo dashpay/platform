@@ -177,11 +177,18 @@ pub struct PersistenceCallbacks {
         ),
     >,
     /// Called once per registration round with the wallet's
-    /// network tag + birth height. `network` uses the same
-    /// discriminant as `WalletRestoreEntryFFI.network` (0 = Mainnet,
-    /// 1 = Testnet, 2 = Devnet, 3 = Regtest). `birth_height` is the
-    /// best estimate of the block at which the wallet started; zero
-    /// means "scan from genesis / unknown".
+    /// network tag, network-independent group id + birth height.
+    /// `network` uses the same discriminant as
+    /// `WalletRestoreEntryFFI.network` (0 = Mainnet, 1 = Testnet,
+    /// 2 = Devnet, 3 = Regtest). `wallet_group_id` points to 32
+    /// readable bytes (same shape as `wallet_id`) — the
+    /// NETWORK-INDEPENDENT id shared by every network's wallet derived
+    /// from the same seed, so a consumer can group a seed's
+    /// sibling-network rows by it (the per-network `wallet_id` differs
+    /// per network for the same seed). For watch-only /
+    /// external-signable wallets it equals `wallet_id` (a group of
+    /// one). `birth_height` is the best estimate of the block at which
+    /// the wallet started; zero means "scan from genesis / unknown".
     ///
     /// Returns 0 on success. A non-zero return flips the round's
     /// `success` flag to `false` so [`Self::on_changeset_end_fn`]
@@ -191,6 +198,7 @@ pub struct PersistenceCallbacks {
             context: *mut c_void,
             wallet_id: *const u8,
             network: FFINetwork,
+            wallet_group_id: *const u8,
             birth_height: u32,
         ) -> i32,
     >,
@@ -324,6 +332,18 @@ pub struct PersistenceCallbacks {
             count: usize,
         ) -> i32,
     >,
+    /// Per-subwallet outgoing (sent) note upserts, recovered via OVK.
+    /// Append-only send history keyed by `(wallet_id, account_index,
+    /// cmx)`; no spend / nullifier state.
+    #[cfg(feature = "shielded")]
+    pub on_persist_shielded_outgoing_notes_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            entries: *const crate::shielded_persistence::ShieldedOutgoingNoteFFI,
+            count: usize,
+        ) -> i32,
+    >,
     /// Per-subwallet sync watermark advances.
     #[cfg(feature = "shielded")]
     pub on_persist_shielded_synced_indices_fn: Option<
@@ -334,13 +354,18 @@ pub struct PersistenceCallbacks {
             count: usize,
         ) -> i32,
     >,
-    /// Per-subwallet nullifier-sync checkpoint advances.
+    /// Persist a batch of derived activity-log entries. The host upserts
+    /// each by `(wallet_id, account_index, entry_id)` — `entry_id` alone
+    /// is not globally unique across accounts (see [`ShieldedActivityFFI`]).
+    /// Pending→Confirmed/Failed flips and scan-kind refinements re-emit
+    /// the same tuple. Mirrors the other `on_persist_shielded_*`
+    /// callbacks.
     #[cfg(feature = "shielded")]
-    pub on_persist_shielded_nullifier_checkpoints_fn: Option<
+    pub on_persist_shielded_activity_fn: Option<
         unsafe extern "C" fn(
             context: *mut c_void,
             wallet_id: *const u8,
-            entries: *const crate::shielded_persistence::ShieldedNullifierCheckpointFFI,
+            entries: *const crate::shielded_persistence::ShieldedActivityFFI,
             count: usize,
         ) -> i32,
     >,
@@ -367,6 +392,26 @@ pub struct PersistenceCallbacks {
             count: usize,
         ),
     >,
+    /// Restore-on-load: every persisted outgoing (sent) note. Same
+    /// host-allocates / Rust-frees lifetime contract as
+    /// `on_load_shielded_notes_fn`. Inlined (rather than via a type
+    /// alias) so cbindgen emits the referenced struct in the header.
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_outgoing_notes_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            out_entries: *mut *const crate::shielded_persistence::ShieldedOutgoingNoteRestoreFFI,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_outgoing_notes_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            entries: *const crate::shielded_persistence::ShieldedOutgoingNoteRestoreFFI,
+            count: usize,
+        ),
+    >,
     /// Restore-on-load: every per-subwallet sync state.
     #[cfg(feature = "shielded")]
     pub on_load_shielded_sync_states_fn: Option<
@@ -381,6 +426,26 @@ pub struct PersistenceCallbacks {
         unsafe extern "C" fn(
             context: *mut c_void,
             entries: *const crate::shielded_persistence::ShieldedSubwalletSyncStateFFI,
+            count: usize,
+        ),
+    >,
+    /// Restore-on-load: every persisted activity-log entry. Same
+    /// host-allocates / Rust-frees lifetime contract as
+    /// `on_load_shielded_notes_fn`. Inlined so cbindgen emits the
+    /// referenced struct in the header.
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_activity_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            out_entries: *mut *const crate::shielded_persistence::ShieldedActivityRestoreFFI,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_activity_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            entries: *const crate::shielded_persistence::ShieldedActivityRestoreFFI,
             count: usize,
         ),
     >,
@@ -508,17 +573,27 @@ impl Default for PersistenceCallbacks {
             #[cfg(feature = "shielded")]
             on_persist_shielded_nullifiers_spent_fn: None,
             #[cfg(feature = "shielded")]
+            on_persist_shielded_outgoing_notes_fn: None,
+            #[cfg(feature = "shielded")]
             on_persist_shielded_synced_indices_fn: None,
             #[cfg(feature = "shielded")]
-            on_persist_shielded_nullifier_checkpoints_fn: None,
+            on_persist_shielded_activity_fn: None,
             #[cfg(feature = "shielded")]
             on_load_shielded_notes_fn: None,
             #[cfg(feature = "shielded")]
             on_load_shielded_notes_free_fn: None,
             #[cfg(feature = "shielded")]
+            on_load_shielded_outgoing_notes_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_outgoing_notes_free_fn: None,
+            #[cfg(feature = "shielded")]
             on_load_shielded_sync_states_fn: None,
             #[cfg(feature = "shielded")]
             on_load_shielded_sync_states_free_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_activity_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_activity_free_fn: None,
         }
     }
 }
@@ -570,6 +645,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         self.callbacks.context,
                         wallet_id.as_ptr(),
                         meta.network.into(),
+                        meta.wallet_group_id.as_ptr(),
                         meta.birth_height,
                     )
                 };
@@ -1158,7 +1234,67 @@ impl PlatformWalletPersistence for FFIPersister {
                 }
             }
 
-            // 3) synced_indices
+            // 3) outgoing_notes (OVK-recovered send history). Each
+            //    `memo_ptr` borrows into the changeset's owned `memo`
+            //    Vec, which lives for the whole `store()` call, so the
+            //    pointer stays valid for the callback window (same
+            //    discipline as `note_data_ptr` above).
+            if !shielded_cs.outgoing_notes.is_empty() {
+                if let Some(cb) = self.callbacks.on_persist_shielded_outgoing_notes_fn {
+                    let entries: Vec<ShieldedOutgoingNoteFFI> = shielded_cs
+                        .outgoing_notes
+                        .iter()
+                        .flat_map(|(id, notes)| {
+                            notes.iter().filter_map(|n| {
+                                // `recipient` is a 43-byte raw Orchard address
+                                // stored as a `Vec` (serde-derive only covers
+                                // arrays <= 32). It is always exactly 43 bytes
+                                // from OVK recovery; reject (skip + warn) a
+                                // malformed row rather than silently zero-padding
+                                // it into a wrong address.
+                                let recipient: [u8; 43] = match n.recipient.as_slice().try_into() {
+                                    Ok(r) => r,
+                                    Err(_) => {
+                                        tracing::warn!(
+                                            recipient_len = n.recipient.len(),
+                                            "skipping outgoing-note persist row: \
+                                                 recipient is not the expected 43 bytes"
+                                        );
+                                        return None;
+                                    }
+                                };
+                                Some(ShieldedOutgoingNoteFFI {
+                                    wallet_id: id.wallet_id,
+                                    account_index: id.account_index,
+                                    cmx: n.cmx,
+                                    recipient,
+                                    value: n.value,
+                                    block_height: n.block_height,
+                                    memo_ptr: n.memo.as_ptr(),
+                                    memo_len: n.memo.len(),
+                                })
+                            })
+                        })
+                        .collect();
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            entries.as_ptr(),
+                            entries.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Shielded outgoing-notes persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
+                }
+            }
+
+            // 4) synced_indices
             if !shielded_cs.synced_indices.is_empty() {
                 if let Some(cb) = self.callbacks.on_persist_shielded_synced_indices_fn {
                     let entries: Vec<ShieldedSyncedIndexFFI> = shielded_cs
@@ -1188,17 +1324,98 @@ impl PlatformWalletPersistence for FFIPersister {
                 }
             }
 
-            // 4) nullifier_checkpoints
-            if !shielded_cs.nullifier_checkpoints.is_empty() {
-                if let Some(cb) = self.callbacks.on_persist_shielded_nullifier_checkpoints_fn {
-                    let entries: Vec<ShieldedNullifierCheckpointFFI> = shielded_cs
-                        .nullifier_checkpoints
+            // 5) activity entries (derived activity log). The variable-
+            //    length fields (counterparty / memo / cmx + nullifier
+            //    arrays) borrow into `backing`, a Vec of owned byte
+            //    buffers that outlives the callback — same pointer-validity
+            //    discipline as `note_data_ptr` / `memo_ptr` above. The
+            //    host upserts by `(wallet_id, account_index, entry_id)`.
+            if !shielded_cs.activity_entries.is_empty() {
+                if let Some(cb) = self.callbacks.on_persist_shielded_activity_fn {
+                    // One pass pairs each entry with its owned cmx /
+                    // nullifier buffers STRUCTURALLY (same tuple), so the
+                    // pointer-into-backing invariant can't silently
+                    // mis-pair if either side is ever filtered or
+                    // reordered. The buffers live in `rows` (immutable
+                    // once built) for the whole callback window; an inner
+                    // `Vec<u8>`'s heap allocation is stable even as the
+                    // outer Vec grows.
+                    let rows: Vec<(
+                        &platform_wallet::wallet::shielded::SubwalletId,
+                        &platform_wallet::wallet::shielded::ShieldedActivityEntry,
+                        Vec<u8>,
+                        Vec<u8>,
+                    )> = shielded_cs
+                        .activity_entries
                         .iter()
-                        .map(|(id, &(h, t))| ShieldedNullifierCheckpointFFI {
-                            wallet_id: id.wallet_id,
-                            account_index: id.account_index,
-                            height: h,
-                            timestamp: t,
+                        .flat_map(|(id, entries)| entries.iter().map(move |e| (id, e)))
+                        .map(|(id, e)| {
+                            let mut cmx_buf = Vec::with_capacity(e.note_cmxs.len() * 32);
+                            for c in &e.note_cmxs {
+                                cmx_buf.extend_from_slice(c);
+                            }
+                            let mut nf_buf = Vec::with_capacity(e.spent_nullifiers.len() * 32);
+                            for n in &e.spent_nullifiers {
+                                nf_buf.extend_from_slice(n);
+                            }
+                            (id, e, cmx_buf, nf_buf)
+                        })
+                        .collect();
+                    let entries: Vec<ShieldedActivityFFI> = rows
+                        .iter()
+                        .map(|(id, e, cmx_buf, nf_buf)| {
+                            let (identity_id, has_identity_id) = match &e.kind {
+                                platform_wallet::wallet::shielded::ShieldedActivityKind::IdentityCreate {
+                                    identity_id,
+                                } => (*identity_id, 1u8),
+                                _ => ([0u8; 32], 0u8),
+                            };
+                            let (counterparty_ptr, counterparty_len) = match &e.counterparty {
+                                Some(c) if !c.is_empty() => (c.as_ptr(), c.len()),
+                                _ => (std::ptr::null(), 0),
+                            };
+                            let (memo_ptr, memo_len) = match &e.memo {
+                                Some(m) if !m.is_empty() => (m.as_ptr(), m.len()),
+                                _ => (std::ptr::null(), 0),
+                            };
+                            ShieldedActivityFFI {
+                                wallet_id: id.wallet_id,
+                                account_index: id.account_index,
+                                entry_id: e.id,
+                                kind_tag: e.kind.tag(),
+                                direction: activity_direction_tag(&e.direction),
+                                status: activity_status_tag(&e.status),
+                                amount: e.amount,
+                                fee: e.fee.unwrap_or(0),
+                                has_fee: u8::from(e.fee.is_some()),
+                                block_height: e.block_height.unwrap_or(0),
+                                has_block_height: u8::from(e.block_height.is_some()),
+                                created_at_ms: e.created_at_ms,
+                                identity_id,
+                                has_identity_id,
+                                counterparty_ptr,
+                                counterparty_len,
+                                memo_ptr,
+                                memo_len,
+                                // Match the documented "valid or null"
+                                // contract (and the counterparty/memo
+                                // siblings): an empty Vec's `as_ptr()` is
+                                // a dangling non-null sentinel, so emit a
+                                // real null when there's nothing to point
+                                // at.
+                                note_cmxs_ptr: if cmx_buf.is_empty() {
+                                    std::ptr::null()
+                                } else {
+                                    cmx_buf.as_ptr()
+                                },
+                                note_cmxs_count: cmx_buf.len() / 32,
+                                spent_nullifiers_ptr: if nf_buf.is_empty() {
+                                    std::ptr::null()
+                                } else {
+                                    nf_buf.as_ptr()
+                                },
+                                spent_nullifiers_count: nf_buf.len() / 32,
+                            }
                         })
                         .collect();
                     let result = unsafe {
@@ -1211,11 +1428,14 @@ impl PlatformWalletPersistence for FFIPersister {
                     };
                     if result != 0 {
                         eprintln!(
-                            "Shielded nullifier-checkpoint persistence callback returned error code {}",
+                            "Shielded activity persistence callback returned error code {}",
                             result
                         );
                         round_success = false;
                     }
+                    // `rows` and `entries` drop here, after the callback
+                    // has copied everything it needs.
+                    drop(rows);
                 }
             }
         }
@@ -1233,11 +1453,9 @@ impl PlatformWalletPersistence for FFIPersister {
         }
 
         if !round_success {
-            return Err(
-                "one or more persistence callbacks failed; changeset was rolled back"
-                    .to_string()
-                    .into(),
-            );
+            return Err(PersistenceError::backend(
+                "one or more persistence callbacks failed; changeset was rolled back",
+            ));
         }
 
         // Merge into pending changesets.
@@ -1251,9 +1469,10 @@ impl PlatformWalletPersistence for FFIPersister {
         if let Some(cb) = self.callbacks.on_store_fn {
             let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
             if result != 0 {
-                return Err(
-                    format!("Persistence store callback returned error code {}", result).into(),
-                );
+                return Err(PersistenceError::backend(format!(
+                    "Persistence store callback returned error code {}",
+                    result
+                )));
             }
         }
 
@@ -1261,13 +1480,19 @@ impl PlatformWalletPersistence for FFIPersister {
     }
 
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
+        // TODO: deferred — FFI callback failures are classified as
+        // `Fatal` (no transient-retry signal across the C ABI), and
+        // trailing-byte validation on decoded FFI payloads is not yet
+        // applied here. Both are tracked for a follow-up; no behavior
+        // change in this change.
         // Notify caller.
         if let Some(cb) = self.callbacks.on_flush_fn {
             let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
             if result != 0 {
-                return Err(
-                    format!("Persistence flush callback returned error code {}", result).into(),
-                );
+                return Err(PersistenceError::backend(format!(
+                    "Persistence flush callback returned error code {}",
+                    result
+                )));
             }
         }
 
@@ -1293,7 +1518,10 @@ impl PlatformWalletPersistence for FFIPersister {
         let mut count: usize = 0;
         let rc = unsafe { load_cb(self.callbacks.context, &mut entries_ptr, &mut count) };
         if rc != 0 {
-            return Err(format!("on_load_wallet_list_fn returned error code {}", rc).into());
+            return Err(PersistenceError::backend(format!(
+                "on_load_wallet_list_fn returned error code {}",
+                rc
+            )));
         }
         let _guard = LoadGuard {
             context: self.callbacks.context,
@@ -1332,7 +1560,10 @@ impl PlatformWalletPersistence for FFIPersister {
         {
             use crate::shielded_persistence::*;
             use platform_wallet::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
-            use platform_wallet::wallet::shielded::{ShieldedNote, SubwalletId};
+            use platform_wallet::wallet::shielded::{
+                ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus,
+                ShieldedDirection, ShieldedNote, ShieldedOutgoingNote, SubwalletId,
+            };
 
             let mut shielded_state = ShieldedSyncStartState::default();
 
@@ -1343,12 +1574,10 @@ impl PlatformWalletPersistence for FFIPersister {
             if self.callbacks.on_load_shielded_notes_fn.is_some()
                 != self.callbacks.on_load_shielded_notes_free_fn.is_some()
             {
-                return Err(
+                return Err(PersistenceError::backend(
                     "on_load_shielded_notes_fn and on_load_shielded_notes_free_fn must be \
-                     provided together"
-                        .to_string()
-                        .into(),
-                );
+                     provided together",
+                ));
             }
             if self.callbacks.on_load_shielded_sync_states_fn.is_some()
                 != self
@@ -1356,12 +1585,21 @@ impl PlatformWalletPersistence for FFIPersister {
                     .on_load_shielded_sync_states_free_fn
                     .is_some()
             {
-                return Err(
+                return Err(PersistenceError::backend(
                     "on_load_shielded_sync_states_fn and on_load_shielded_sync_states_free_fn \
-                     must be provided together"
-                        .to_string()
-                        .into(),
-                );
+                     must be provided together",
+                ));
+            }
+            if self.callbacks.on_load_shielded_outgoing_notes_fn.is_some()
+                != self
+                    .callbacks
+                    .on_load_shielded_outgoing_notes_free_fn
+                    .is_some()
+            {
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_outgoing_notes_fn and \
+                     on_load_shielded_outgoing_notes_free_fn must be provided together",
+                ));
             }
 
             // 1) notes
@@ -1371,9 +1609,10 @@ impl PlatformWalletPersistence for FFIPersister {
                 let rc =
                     unsafe { load_notes(self.callbacks.context, &mut notes_ptr, &mut notes_count) };
                 if rc != 0 {
-                    return Err(
-                        format!("on_load_shielded_notes_fn returned error code {}", rc).into(),
-                    );
+                    return Err(PersistenceError::backend(format!(
+                        "on_load_shielded_notes_fn returned error code {}",
+                        rc
+                    )));
                 }
                 struct NotesGuard {
                     context: *mut c_void,
@@ -1428,7 +1667,70 @@ impl PlatformWalletPersistence for FFIPersister {
                 }
             }
 
-            // 2) per-subwallet sync states
+            // 2) outgoing (sent) notes recovered via OVK
+            if let Some(load_outgoing) = self.callbacks.on_load_shielded_outgoing_notes_fn {
+                let mut out_ptr: *const ShieldedOutgoingNoteRestoreFFI = std::ptr::null();
+                let mut out_count: usize = 0;
+                let rc =
+                    unsafe { load_outgoing(self.callbacks.context, &mut out_ptr, &mut out_count) };
+                if rc != 0 {
+                    return Err(PersistenceError::backend(format!(
+                        "on_load_shielded_outgoing_notes_fn returned error code {}",
+                        rc
+                    )));
+                }
+                struct OutgoingGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedOutgoingNoteRestoreFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedOutgoingNoteRestoreFFI,
+                    count: usize,
+                }
+                impl Drop for OutgoingGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _outgoing_guard = OutgoingGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_outgoing_notes_free_fn,
+                    entries: out_ptr,
+                    count: out_count,
+                };
+                if !out_ptr.is_null() && out_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(out_ptr, out_count) };
+                    for ffi in slice {
+                        let memo = if ffi.memo_ptr.is_null() || ffi.memo_len == 0 {
+                            Vec::new()
+                        } else {
+                            unsafe {
+                                std::slice::from_raw_parts(ffi.memo_ptr, ffi.memo_len).to_vec()
+                            }
+                        };
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        let entry = shielded_state
+                            .per_subwallet
+                            .entry(id)
+                            .or_insert_with(ShieldedSubwalletStartState::default);
+                        entry.outgoing_notes.push(ShieldedOutgoingNote {
+                            cmx: ffi.cmx,
+                            recipient: ffi.recipient.to_vec(),
+                            value: ffi.value,
+                            memo,
+                            block_height: ffi.block_height,
+                        });
+                    }
+                }
+            }
+
+            // 3) per-subwallet sync states
             if let Some(load_states) = self.callbacks.on_load_shielded_sync_states_fn {
                 let mut states_ptr: *const ShieldedSubwalletSyncStateFFI = std::ptr::null();
                 let mut states_count: usize = 0;
@@ -1436,11 +1738,10 @@ impl PlatformWalletPersistence for FFIPersister {
                     load_states(self.callbacks.context, &mut states_ptr, &mut states_count)
                 };
                 if rc != 0 {
-                    return Err(format!(
+                    return Err(PersistenceError::backend(format!(
                         "on_load_shielded_sync_states_fn returned error code {}",
                         rc
-                    )
-                    .into());
+                    )));
                 }
                 struct StatesGuard {
                     context: *mut c_void,
@@ -1476,12 +1777,157 @@ impl PlatformWalletPersistence for FFIPersister {
                             .entry(id)
                             .or_insert_with(ShieldedSubwalletStartState::default);
                         entry.last_synced_index = ffi.last_synced_index;
-                        if ffi.has_nullifier_checkpoint != 0 {
-                            entry.nullifier_checkpoint = Some((
-                                ffi.nullifier_checkpoint_height,
-                                ffi.nullifier_checkpoint_timestamp,
-                            ));
+                    }
+                }
+            }
+
+            // 4) derived activity entries
+            if self.callbacks.on_load_shielded_activity_fn.is_some()
+                != self.callbacks.on_load_shielded_activity_free_fn.is_some()
+            {
+                return Err(PersistenceError::backend(
+                    "on_load_shielded_activity_fn and on_load_shielded_activity_free_fn must be \
+                     provided together",
+                ));
+            }
+            if let Some(load_activity) = self.callbacks.on_load_shielded_activity_fn {
+                let mut act_ptr: *const ShieldedActivityRestoreFFI = std::ptr::null();
+                let mut act_count: usize = 0;
+                let rc =
+                    unsafe { load_activity(self.callbacks.context, &mut act_ptr, &mut act_count) };
+                if rc != 0 {
+                    return Err(PersistenceError::backend(format!(
+                        "on_load_shielded_activity_fn returned error code {}",
+                        rc
+                    )));
+                }
+                struct ActivityGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedActivityRestoreFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedActivityRestoreFFI,
+                    count: usize,
+                }
+                impl Drop for ActivityGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
                         }
+                    }
+                }
+                let _activity_guard = ActivityGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_activity_free_fn,
+                    entries: act_ptr,
+                    count: act_count,
+                };
+                if !act_ptr.is_null() && act_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(act_ptr, act_count) };
+                    for ffi in slice {
+                        let kind = match ffi.kind_tag {
+                            0 => ShieldedActivityKind::Shield,
+                            1 => ShieldedActivityKind::ShieldFromAssetLock,
+                            2 => ShieldedActivityKind::Received,
+                            3 => ShieldedActivityKind::Sent,
+                            4 => ShieldedActivityKind::Unshield,
+                            5 => ShieldedActivityKind::Withdrawal,
+                            6 => ShieldedActivityKind::IdentityCreate {
+                                identity_id: ffi.identity_id,
+                            },
+                            // 7 and any unknown tag fall back to the
+                            // residual — a forward-compat tag we don't yet
+                            // model still loads as an opaque spend rather
+                            // than getting dropped.
+                            _ => ShieldedActivityKind::ShieldedSpend,
+                        };
+                        let direction = match ffi.direction {
+                            0 => ShieldedDirection::In,
+                            1 => ShieldedDirection::Out,
+                            2 => ShieldedDirection::SelfTransfer,
+                            other => {
+                                // Unlike kind_tag (whose residual
+                                // `ShieldedSpend` variant is a designed
+                                // forward-compat catch-all), direction has
+                                // no "unknown" bucket — make a corrupted /
+                                // future byte loud instead of silently
+                                // reading as a real classification.
+                                tracing::warn!(
+                                    direction = other,
+                                    "unknown shielded-activity direction byte on load; folding to SelfTransfer"
+                                );
+                                ShieldedDirection::SelfTransfer
+                            }
+                        };
+                        let status = match ffi.status {
+                            0 => ShieldedActivityStatus::Pending,
+                            1 => ShieldedActivityStatus::Confirmed,
+                            2 => ShieldedActivityStatus::Failed,
+                            other => {
+                                // Failed is materially distinct from
+                                // Pending/Confirmed — never let a stray
+                                // byte silently mark an operation failed.
+                                tracing::warn!(
+                                    status = other,
+                                    "unknown shielded-activity status byte on load; folding to Pending so a scan can re-confirm it"
+                                );
+                                ShieldedActivityStatus::Pending
+                            }
+                        };
+                        let counterparty = if ffi.counterparty_ptr.is_null()
+                            || ffi.counterparty_len == 0
+                        {
+                            None
+                        } else {
+                            Some(unsafe {
+                                slice::from_raw_parts(ffi.counterparty_ptr, ffi.counterparty_len)
+                                    .to_vec()
+                            })
+                        };
+                        let memo = if ffi.memo_ptr.is_null() || ffi.memo_len == 0 {
+                            None
+                        } else {
+                            Some(unsafe {
+                                slice::from_raw_parts(ffi.memo_ptr, ffi.memo_len).to_vec()
+                            })
+                        };
+                        let note_cmxs =
+                            unsafe { decode_cmx_array(ffi.note_cmxs_ptr, ffi.note_cmxs_count) };
+                        let spent_nullifiers = unsafe {
+                            decode_cmx_array(ffi.spent_nullifiers_ptr, ffi.spent_nullifiers_count)
+                        };
+
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        let entry = shielded_state
+                            .per_subwallet
+                            .entry(id)
+                            .or_insert_with(ShieldedSubwalletStartState::default);
+                        entry.activity.push(ShieldedActivityEntry {
+                            id: ffi.entry_id,
+                            kind,
+                            direction,
+                            amount: ffi.amount,
+                            fee: if ffi.has_fee != 0 {
+                                Some(ffi.fee)
+                            } else {
+                                None
+                            },
+                            counterparty,
+                            memo,
+                            block_height: if ffi.has_block_height != 0 {
+                                Some(ffi.block_height)
+                            } else {
+                                None
+                            },
+                            status,
+                            created_at_ms: ffi.created_at_ms,
+                            note_cmxs,
+                            spent_nullifiers,
+                        });
                     }
                 }
             }
@@ -1694,7 +2140,67 @@ impl PlatformWalletPersistence for FFIPersister {
     }
 }
 
-/// Flatten an `AccountType` + encoded xpub into the C-flat
+/// Decode `count` contiguous 32-byte commitments / nullifiers from a
+/// host buffer into `Vec<[u8; 32]>`. A null pointer, a zero count, or a
+/// `count` whose byte length overflows / exceeds `isize::MAX` (the
+/// `slice::from_raw_parts` bound) yields an empty vec — the buffer is
+/// Rust-written on persist and host-round-tripped on load, so an
+/// out-of-range count means a corrupt row, and the linkage is dropped
+/// rather than read past the buffer.
+///
+/// # Safety
+/// When non-null, `ptr` must point to at least `count * 32` valid
+/// bytes for the duration of the call.
+#[cfg(feature = "shielded")]
+unsafe fn decode_cmx_array(ptr: *const u8, count: usize) -> Vec<[u8; 32]> {
+    if ptr.is_null() || count == 0 {
+        return Vec::new();
+    }
+    // `count` is host-supplied: guard the multiplication so a corrupt
+    // row degrades to a dropped linkage instead of an overflowed length
+    // handed to `from_raw_parts` (UB). Also enforce `from_raw_parts`'
+    // documented bound that the slice length must not exceed
+    // `isize::MAX` bytes.
+    let Some(byte_len) = count
+        .checked_mul(32)
+        .filter(|&len| len <= isize::MAX as usize)
+    else {
+        tracing::warn!(
+            count,
+            "shielded activity linkage count overflows on load; dropping linkage bytes"
+        );
+        return Vec::new();
+    };
+    let bytes = slice::from_raw_parts(ptr, byte_len);
+    bytes
+        .chunks_exact(32)
+        .filter_map(|c| <[u8; 32]>::try_from(c).ok())
+        .collect()
+}
+
+/// Discriminant byte for a `ShieldedDirection` (FFI: 0 In, 1 Out, 2 Self).
+#[cfg(feature = "shielded")]
+fn activity_direction_tag(d: &platform_wallet::wallet::shielded::ShieldedDirection) -> u8 {
+    use platform_wallet::wallet::shielded::ShieldedDirection::*;
+    match d {
+        In => 0,
+        Out => 1,
+        SelfTransfer => 2,
+    }
+}
+
+/// Discriminant byte for a `ShieldedActivityStatus` (FFI: 0 Pending,
+/// 1 Confirmed, 2 Failed).
+#[cfg(feature = "shielded")]
+fn activity_status_tag(s: &platform_wallet::wallet::shielded::ShieldedActivityStatus) -> u8 {
+    use platform_wallet::wallet::shielded::ShieldedActivityStatus::*;
+    match s {
+        Pending => 0,
+        Confirmed => 1,
+        Failed => 2,
+    }
+}
+
 /// [`AccountSpecFFI`] layout.
 ///
 /// The returned struct borrows `xpub_bytes` — caller must keep the
@@ -1927,7 +2433,15 @@ fn build_core_address_entry_ffi(
     // PlatformAddress conversion fails (only P2PKH / P2SH supported)
     // fall back to base58check so the address still surfaces.
     let rendered_address = if is_platform_payment {
-        let network = *info.address.network();
+        let network = if info
+            .address
+            .as_unchecked()
+            .is_valid_for_network(Network::Mainnet)
+        {
+            Network::Mainnet
+        } else {
+            Network::Testnet
+        };
         let converted: Result<PlatformAddress, _> = PlatformAddress::try_from(info.address.clone());
         converted
             .map(|p| p.to_bech32m_string(network))
@@ -1985,11 +2499,30 @@ unsafe fn address_info_from_ffi(
     let address_str = CStr::from_ptr(entry.address_base58)
         .to_str()
         .map_err(|e| format!("address_base58 not UTF-8: {}", e))?;
-    let address = dashcore::Address::from_str(address_str)
+    let parsed = dashcore::Address::from_str(address_str)
         .map_err(|e| format!("failed to parse address '{}': {}", address_str, e))?
         .require_network(network)
         .map_err(|e| format!("address '{}' not on {:?}: {}", address_str, network, e))?;
-    let script_pubkey = address.script_pubkey();
+    let script_pubkey = parsed.script_pubkey();
+    // Re-tag with the wallet's exact network. Devnet (and regtest)
+    // share testnet's base58 prefixes, so `require_network` only
+    // VALIDATES the parse — the returned value keeps the as-parsed
+    // (Testnet) tag. `Address` equality and hashing include the
+    // network, and every runtime lookup key is built via
+    // `Address::from_script(script, wallet_network)`, so a
+    // Testnet-tagged restored key silently misses the pool's
+    // address-keyed maps (`get_address_info`) on a devnet wallet.
+    // The observable failure: outputs paying restored addresses are
+    // counted (`contains_script_pub_key` is script-keyed and hits)
+    // but never credited as UTXOs — a restored wallet permanently
+    // loses change returned by its own transactions. Rebuild from
+    // the script so the restored key is identical to runtime keys.
+    let address = dashcore::Address::from_script(&script_pubkey, network).map_err(|e| {
+        format!(
+            "failed to rebuild address '{}' from its script for {:?}: {}",
+            address_str, network, e
+        )
+    })?;
     let path_str = CStr::from_ptr(entry.derivation_path)
         .to_str()
         .map_err(|e| format!("derivation_path not UTF-8: {}", e))?;
@@ -2121,7 +2654,15 @@ fn build_address_pools_from_derived(
             // bech32m; everything else base58check (matching
             // `build_core_address_entry_ffi`'s logic).
             let rendered_address = if is_platform_payment {
-                let network = *d.address.network();
+                let network = if d
+                    .address
+                    .as_unchecked()
+                    .is_valid_for_network(Network::Mainnet)
+                {
+                    Network::Mainnet
+                } else {
+                    Network::Testnet
+                };
                 let converted: Result<PlatformAddress, _> =
                     PlatformAddress::try_from(d.address.clone());
                 converted
@@ -2267,14 +2808,17 @@ fn build_wallet_start_state(
         let xpub_bytes =
             unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
         let (account_xpub, _): (ExtendedPubKey, usize) =
-            bincode::decode_from_slice(xpub_bytes, config::standard())
-                .map_err(|e| format!("failed to decode account xpub: {}", e))?;
+            bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
+                PersistenceError::backend(format!("failed to decode account xpub: {}", e))
+            })?;
         let account =
             Account::from_xpub(Some(entry.wallet_id), account_type, account_xpub, network)
-                .map_err(|e| format!("Account::from_xpub failed: {:?}", e))?;
-        accounts
-            .insert(account)
-            .map_err(|e| format!("AccountCollection::insert failed: {}", e))?;
+                .map_err(|e| {
+                    PersistenceError::backend(format!("Account::from_xpub failed: {:?}", e))
+                })?;
+        accounts.insert(account).map_err(|e| {
+            PersistenceError::backend(format!("AccountCollection::insert failed: {}", e))
+        })?;
     }
 
     // External-signable wallet — the mnemonic / seed lives in the
@@ -2725,6 +3269,10 @@ fn build_wallet_start_state(
         }
     }
 
+    // TODO: this per-account reconstruction mirrors the SQLite backend's
+    // `platform_addrs::build_per_account`. Deferred dedup — once a shared
+    // helper crate hosts the reconstruction, both backends should call it
+    // instead of keeping parallel copies.
     let mut per_account = PerWalletPlatformAddressState::new();
     for (&account_key, account) in &wallet.accounts.platform_payment_accounts {
         per_account.entry(account_key.account).or_insert_with(|| {
@@ -2915,7 +3463,7 @@ fn build_unused_asset_locks(
     for spec in specs {
         // Decode the outpoint: 32-byte raw txid + 4-byte LE vout.
         let txid = dashcore::Txid::from_slice(&spec.out_point[..32]).map_err(|e| {
-            PersistenceError::from(format!(
+            PersistenceError::backend(format!(
                 "tracked asset lock: invalid txid in outpoint: {}",
                 e
             ))
@@ -2928,8 +3476,8 @@ fn build_unused_asset_locks(
 
         // Decode the consensus-encoded transaction.
         if spec.transaction_bytes.is_null() || spec.transaction_bytes_len == 0 {
-            return Err(PersistenceError::from(
-                "tracked asset lock: empty transaction bytes".to_string(),
+            return Err(PersistenceError::backend(
+                "tracked asset lock: empty transaction bytes",
             ));
         }
         // SAFETY: Swift guarantees the buffer is valid for the
@@ -2939,7 +3487,7 @@ fn build_unused_asset_locks(
             unsafe { slice::from_raw_parts(spec.transaction_bytes, spec.transaction_bytes_len) };
         let transaction: dashcore::Transaction = dashcore::consensus::deserialize(tx_bytes)
             .map_err(|e| {
-                PersistenceError::from(format!(
+                PersistenceError::backend(format!(
                     "tracked asset lock: failed to decode transaction: {}",
                     e
                 ))
@@ -2959,7 +3507,10 @@ fn build_unused_asset_locks(
                 config::standard(),
             )
             .map_err(|e| {
-                PersistenceError::from(format!("tracked asset lock: failed to decode proof: {}", e))
+                PersistenceError::backend(format!(
+                    "tracked asset lock: failed to decode proof: {}",
+                    e
+                ))
             })?;
             Some(proof)
         };
@@ -3010,7 +3561,7 @@ fn funding_type_from_u8(
         4 => AssetLockFundingType::AssetLockAddressTopUp,
         5 => AssetLockFundingType::AssetLockShieldedAddressTopUp,
         other => {
-            return Err(PersistenceError::from(format!(
+            return Err(PersistenceError::backend(format!(
                 "tracked asset lock: unknown funding_type discriminant {}",
                 other
             )))
@@ -3027,7 +3578,7 @@ fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, Persistence
         3 => AssetLockStatus::ChainLocked,
         4 => AssetLockStatus::Consumed,
         other => {
-            return Err(PersistenceError::from(format!(
+            return Err(PersistenceError::backend(format!(
                 "tracked asset lock: unknown status discriminant {}",
                 other
             )))
@@ -3226,7 +3777,7 @@ fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, Persiste
     // been UB for out-of-range bytes from a corrupt SwiftData row /
     // forward-versioned tag / malformed host buffer).
     let type_tag = AccountTypeTagFFI::try_from_u8(spec.type_tag).ok_or_else(|| {
-        PersistenceError::Backend(format!(
+        PersistenceError::backend(format!(
             "AccountSpecFFI carries unknown type_tag byte {} (out of declared range)",
             spec.type_tag
         ))
@@ -3235,7 +3786,7 @@ fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, Persiste
         AccountTypeTagFFI::Standard => {
             let standard_tag = StandardAccountTypeTagFFI::try_from_u8(spec.standard_tag)
                 .ok_or_else(|| {
-                    PersistenceError::Backend(format!(
+                    PersistenceError::backend(format!(
                         "AccountSpecFFI(Standard) carries unknown standard_tag byte {}",
                         spec.standard_tag
                     ))
@@ -3290,7 +3841,7 @@ fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, Persiste
         // is gone.
         AccountTypeTagFFI::IdentityAuthenticationEcdsa
         | AccountTypeTagFFI::IdentityAuthenticationBls => {
-            return Err(PersistenceError::Backend(format!(
+            return Err(PersistenceError::backend(format!(
                 "AccountTypeTagFFI {:?} is no longer mappable to a key-wallet AccountType after the upstream event-bus refactor (TODO(events))",
                 type_tag
             )));
@@ -3393,10 +3944,10 @@ fn restore_unresolved_asset_lock_tx_records(
         let context = match rec.context_raw {
             2 => {
                 let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash).map_err(|e| {
-                    format!(
+                    PersistenceError::backend(format!(
                         "load: malformed block_hash on unresolved asset-lock tx record: {}",
                         e
-                    )
+                    ))
                 })?;
                 TransactionContext::InBlock(BlockInfo::new(
                     rec.block_height,
@@ -3406,10 +3957,10 @@ fn restore_unresolved_asset_lock_tx_records(
             }
             3 => {
                 let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash).map_err(|e| {
-                    format!(
+                    PersistenceError::backend(format!(
                         "load: malformed block_hash on unresolved asset-lock tx record: {}",
                         e
-                    )
+                    ))
                 })?;
                 TransactionContext::InChainLockedBlock(BlockInfo::new(
                     rec.block_height,
@@ -3486,6 +4037,46 @@ mod tests {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::mnemonic::{Language, Mnemonic};
     use key_wallet::wallet::Wallet;
+
+    /// Regression: restored pool addresses must be tagged with the
+    /// WALLET's network, not the network the base58 string parses as.
+    /// Devnet shares testnet's base58 prefixes, so a devnet wallet's
+    /// persisted "y…" address parses as Testnet, and `require_network`
+    /// only validates — it keeps the as-parsed tag. `Address` equality
+    /// includes the network, so a Testnet-tagged restored key misses
+    /// every runtime lookup built via `Address::from_script(script,
+    /// Devnet)`: outputs paying restored addresses were matched
+    /// (script-keyed `contains_script_pub_key` hits) but never credited
+    /// as UTXOs (`get_address_info` missed) — a restored devnet wallet
+    /// permanently lost the change of its own transactions.
+    #[test]
+    fn restored_address_info_is_tagged_with_wallet_network() {
+        use std::ffi::CString;
+        // A valid testnet-prefixed (0x8C, "y…") P2PKH address, as a
+        // devnet wallet persists them.
+        let addr = "yMqShkrgjTRuReBGFpQr7FozEF1QcNBBYA";
+        let addr_c = CString::new(addr).unwrap();
+        let path_c = CString::new("m/44'/1'/0'/1/0").unwrap();
+        let entry = CoreAddressEntryFFI {
+            public_key: [0u8; 33],
+            has_public_key: false,
+            pool_type_tag: AddressPoolTypeTagFFI::Internal as u8,
+            address_index: 0,
+            is_used: false,
+            balance: 0,
+            address_base58: addr_c.as_ptr(),
+            derivation_path: path_c.as_ptr(),
+        };
+        let info = unsafe { address_info_from_ffi(&entry, Network::Devnet) }
+            .expect("restore must accept a testnet-prefixed string on devnet");
+        let runtime_key = dashcore::Address::from_script(&info.script_pubkey, Network::Devnet)
+            .expect("p2pkh script must convert back to an address");
+        assert_eq!(
+            info.address, runtime_key,
+            "restored address must be identical (network tag included) to the \
+             runtime `from_script` lookup key"
+        );
+    }
 
     /// Pins the contract that an `InBlock` unresolved-asset-lock row
     /// projects onto the matching BIP44 account's in-memory

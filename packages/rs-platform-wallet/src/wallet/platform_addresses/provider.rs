@@ -125,8 +125,19 @@ impl PerAccountPlatformAddressState {
     /// `shielded_shield_from_account`) read `available = 0` after a
     /// restart until the first BLAST sync repopulates the in-memory
     /// `address_balances` map.
-    pub(crate) fn found(&self) -> &BTreeMap<PlatformP2PKHAddress, AddressFunds> {
+    pub fn found(&self) -> &BTreeMap<PlatformP2PKHAddress, AddressFunds> {
         &self.found
+    }
+
+    /// Read-only view of the `index <-> address` bijection this account
+    /// has derived.
+    pub fn addresses(&self) -> &BiBTreeMap<AddressIndex, PlatformP2PKHAddress> {
+        &self.addresses
+    }
+
+    /// The account xpub used to extend the gap window on demand.
+    pub fn extended_public_key(&self) -> &ExtendedPubKey {
+        &self.extended_public_key
     }
 }
 
@@ -373,6 +384,14 @@ impl PlatformPaymentAddressProvider {
     ///
     /// Call before each sync round.
     pub(crate) async fn prepare_for_sync(&mut self) -> Result<(), PlatformWalletError> {
+        // Drop any scratch left over from an aborted pass. The SDK only
+        // calls `sync_finished` on success, so a sync that errored after
+        // staging found/absent entries leaves them here — and a stale
+        // staged absent would make the next successful `sync_finished`
+        // remove a committed balance the new pass never re-proved
+        // absent.
+        self.per_wallet_in_sync.clear();
+
         let wallet_ids: Vec<WalletId> = self.per_wallet.keys().copied().collect();
 
         // Refresh provider-level pending and merge in any new
@@ -662,23 +681,74 @@ impl AddressProvider for PlatformPaymentAddressProvider {
             .or_default()
             .absent
             .insert(p2pkh);
+
+        // Mirror `on_address_found`'s managed-account write: zero the
+        // in-memory credit balance for this address so spend paths that
+        // enumerate funded addresses (notably identity-creation funding)
+        // stop offering a stale balance proven absent from state. Pass
+        // `None` for the key source — `set_address_credit_balance` only
+        // triggers gap-limit extension when an address transitions from
+        // unfunded to funded, and zeroing never does, so there is no
+        // gap-limit work to drive here.
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&wallet_id) else {
+            tracing::warn!(
+                "on_address_absent: wallet {} not in wallet manager",
+                hex::encode(wallet_id)
+            );
+            return;
+        };
+        let Some(account) = info
+            .core_wallet
+            .platform_payment_managed_account_at_index_mut(account_index)
+        else {
+            tracing::warn!(
+                "on_address_absent: no platform payment account {} in wallet {}",
+                account_index,
+                hex::encode(wallet_id)
+            );
+            return;
+        };
+        account.set_address_credit_balance(p2pkh, 0, None);
     }
 
     async fn sync_finished(&mut self) {
         // Flush scratch state accumulated during the pass into the
         // committed per-wallet state. `found` is merged entry-by-entry
-        // (new/changed balances overwrite prior values); `absent` is
-        // replaced wholesale since it's point-in-time per-pass.
+        // (new/changed balances overwrite prior values), then every
+        // address proven absent this pass is REMOVED from the committed
+        // `found` map; `absent` itself is replaced wholesale since it's
+        // point-in-time per-pass.
+        //
+        // The absent-removal is what stops a stale balance from a prior
+        // chain (e.g. after a devnet reset) from being re-seeded into the
+        // next incremental pass and the diagnostic surface: `found` is
+        // the seed `current_balances()` hands back to the SDK, so a
+        // proven-absent address that lingers there keeps reporting the
+        // old balance forever.
+        //
+        // The two scratch sets are NOT guaranteed disjoint: the full
+        // scan can prove an address absent at the trunk/branch
+        // checkpoint, then incremental catch-up re-finds it (a credit op
+        // between checkpoint and tip stages a fresh `found` entry
+        // without retracting the earlier absent proof). The catch-up
+        // find reflects the chain tip, so it wins — such addresses are
+        // dropped from the absent set before it drives any removal.
         let drained = std::mem::take(&mut self.per_wallet_in_sync);
         for (wallet_id, wallet_scratch) in drained {
             let Some(wallet_state) = self.per_wallet.get_mut(&wallet_id) else {
                 continue;
             };
-            for (account_index, account_scratch) in wallet_scratch {
+            for (account_index, mut account_scratch) in wallet_scratch {
                 let Some(account_state) = wallet_state.get_mut(&account_index) else {
                     continue;
                 };
+                let PerAccountInSyncPlatformAddressState { found, absent } = &mut account_scratch;
+                absent.retain(|addr| !found.contains_key(addr));
                 account_state.found.extend(account_scratch.found);
+                for absent_addr in &account_scratch.absent {
+                    account_state.found.remove(absent_addr);
+                }
                 account_state.absent = account_scratch.absent;
             }
         }
@@ -708,5 +778,331 @@ impl AddressProvider for PlatformPaymentAddressProvider {
 
     fn last_known_recent_block_height(&self) -> u64 {
         self.last_known_recent_block
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dashcore::secp256k1::Secp256k1;
+    use key_wallet::bip32::ExtendedPrivKey;
+    use key_wallet::Network;
+    use key_wallet_manager::WalletManager;
+
+    const WALLET: WalletId = [3u8; 32];
+    const ACCOUNT: u32 = 0;
+
+    fn test_xpub() -> ExtendedPubKey {
+        let secp = Secp256k1::new();
+        let seed = [42u8; 32];
+        let xprv = ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master xprv");
+        ExtendedPubKey::from_priv(&secp, &xprv)
+    }
+
+    fn p2pkh(byte: u8) -> PlatformP2PKHAddress {
+        PlatformP2PKHAddress::new([byte; 20])
+    }
+
+    fn funds(balance: u64, nonce: u32) -> AddressFunds {
+        AddressFunds { balance, nonce }
+    }
+
+    /// Build a provider whose committed `per_wallet` tracks a single
+    /// account on `wallet_id` with one funded address (index 0), backed
+    /// by the supplied wallet manager.
+    fn provider_tracking_address(
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        addr: PlatformP2PKHAddress,
+        f: AddressFunds,
+    ) -> PlatformPaymentAddressProvider {
+        let mut account_state = PerAccountPlatformAddressState::from_persisted(
+            test_xpub(),
+            BiBTreeMap::new(),
+            BTreeMap::new(),
+        );
+        account_state.insert_persisted_entry(0, addr, f);
+
+        let mut wallet_state = PerWalletPlatformAddressState::new();
+        wallet_state.insert(ACCOUNT, account_state);
+
+        let mut per_wallet = BTreeMap::new();
+        per_wallet.insert(wallet_id, wallet_state);
+
+        let mut pending = BiBTreeMap::new();
+        pending.insert((wallet_id, ACCOUNT, 0u32), addr);
+
+        PlatformPaymentAddressProvider {
+            wallet_manager,
+            per_wallet,
+            per_wallet_in_sync: BTreeMap::new(),
+            pending,
+            sync_height: 0,
+            sync_timestamp: 0,
+            last_known_recent_block: 0,
+        }
+    }
+
+    /// Like [`provider_tracking_address`] but with an empty wallet
+    /// manager — `sync_finished` and `current_balances` only touch the
+    /// in-memory `per_wallet` / `per_wallet_in_sync` maps.
+    fn provider_with_one_funded_address(
+        addr: PlatformP2PKHAddress,
+        f: AddressFunds,
+    ) -> PlatformPaymentAddressProvider {
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            Network::Testnet,
+        )));
+        provider_tracking_address(wallet_manager, WALLET, addr, f)
+    }
+
+    /// Stage `addr` as absent in the in-sync scratch — the shape
+    /// `on_address_absent` produces (without the wallet-manager write,
+    /// which needs a registered managed account).
+    fn stage_absent(provider: &mut PlatformPaymentAddressProvider, addr: PlatformP2PKHAddress) {
+        provider
+            .per_wallet_in_sync
+            .entry(WALLET)
+            .or_default()
+            .entry(ACCOUNT)
+            .or_default()
+            .absent
+            .insert(addr);
+    }
+
+    /// `sync_finished` must drop an address proven absent this pass from
+    /// the committed `found` map so it stops seeding the next pass and
+    /// `current_balances()` no longer yields it. This is the core of the
+    /// stale-balance-after-chain-reset fix.
+    #[tokio::test]
+    async fn sync_finished_removes_absent_from_committed_found() {
+        let addr = p2pkh(1);
+        let mut provider = provider_with_one_funded_address(addr, funds(294_627_247_940, 5));
+
+        // Sanity: before the pass, the funded address is part of the seed.
+        let before: Vec<_> = provider.current_balances().collect();
+        assert_eq!(before.len(), 1);
+        assert_eq!(before[0].1, addr);
+
+        // Prove it absent and flush.
+        stage_absent(&mut provider, addr);
+        provider.sync_finished().await;
+
+        // The committed `found` no longer contains it; the next-pass seed
+        // is empty.
+        let after: Vec<_> = provider.current_balances().collect();
+        assert!(
+            after.is_empty(),
+            "absent address must be removed from current_balances seed"
+        );
+
+        let account_state = provider
+            .per_wallet
+            .get(&WALLET)
+            .and_then(|s| s.get(&ACCOUNT))
+            .expect("account state present");
+        assert!(
+            !account_state.found().contains_key(&addr),
+            "absent address must be removed from committed found map"
+        );
+        // The point-in-time absent set carries it for this pass.
+        assert!(account_state.absent.contains(&addr));
+    }
+
+    /// A found address in the same pass survives; only the absent one is
+    /// dropped. Found and absent are disjoint per pass — this pins that
+    /// the removal doesn't clobber unrelated funded entries.
+    #[tokio::test]
+    async fn sync_finished_keeps_found_drops_absent() {
+        let kept = p2pkh(1);
+        let dropped = p2pkh(2);
+        let mut provider = provider_with_one_funded_address(kept, funds(100, 1));
+
+        // Register a second address (index 1) as tracked + funded so it's
+        // part of the committed seed alongside the one that goes absent.
+        if let Some(account_state) = provider
+            .per_wallet
+            .get_mut(&WALLET)
+            .and_then(|s| s.get_mut(&ACCOUNT))
+        {
+            account_state.insert_persisted_entry(1, dropped, funds(999, 3));
+        }
+
+        // Stage a fresh balance for `kept` via the found-scratch and mark
+        // `dropped` absent.
+        provider
+            .per_wallet_in_sync
+            .entry(WALLET)
+            .or_default()
+            .entry(ACCOUNT)
+            .or_default()
+            .found
+            .insert(kept, funds(150, 2));
+        stage_absent(&mut provider, dropped);
+
+        provider.sync_finished().await;
+
+        let account_state = provider
+            .per_wallet
+            .get(&WALLET)
+            .and_then(|s| s.get(&ACCOUNT))
+            .expect("account state present");
+        // `kept` survives with its refreshed funds; `dropped` is gone.
+        assert_eq!(account_state.found().get(&kept), Some(&funds(150, 2)));
+        assert!(!account_state.found().contains_key(&dropped));
+    }
+
+    /// An address can land in BOTH per-pass sets: proven absent at the
+    /// full-scan checkpoint, then re-found by incremental catch-up. The
+    /// find reflects the chain tip, so it must win — the committed
+    /// `found` keeps the fresh funds and the committed `absent` must not
+    /// list the address.
+    #[tokio::test]
+    async fn sync_finished_found_wins_over_absent_for_same_address() {
+        let addr = p2pkh(1);
+        let mut provider = provider_with_one_funded_address(addr, funds(100, 1));
+
+        // Checkpoint proves it absent, catch-up re-finds it funded.
+        stage_absent(&mut provider, addr);
+        provider
+            .per_wallet_in_sync
+            .entry(WALLET)
+            .or_default()
+            .entry(ACCOUNT)
+            .or_default()
+            .found
+            .insert(addr, funds(250, 2));
+
+        provider.sync_finished().await;
+
+        let account_state = provider
+            .per_wallet
+            .get(&WALLET)
+            .and_then(|s| s.get(&ACCOUNT))
+            .expect("account state present");
+        assert_eq!(
+            account_state.found().get(&addr),
+            Some(&funds(250, 2)),
+            "catch-up find must survive the checkpoint absent proof"
+        );
+        assert!(
+            !account_state.absent.contains(&addr),
+            "an address found at tip must not be committed as absent"
+        );
+        let seed: Vec<_> = provider.current_balances().collect();
+        assert_eq!(seed.len(), 1);
+        assert_eq!(seed[0].2, funds(250, 2));
+    }
+
+    /// Scratch staged by an aborted pass (the SDK only calls
+    /// `sync_finished` on success) must not leak into the next pass —
+    /// `prepare_for_sync` clears it. Without the clear, a stale staged
+    /// absent would remove a committed balance the new pass never
+    /// re-proved absent.
+    #[tokio::test]
+    async fn prepare_for_sync_clears_stale_scratch() {
+        let addr = p2pkh(1);
+        let mut provider = provider_with_one_funded_address(addr, funds(100, 1));
+
+        // Simulate a pass that staged an absent proof and then aborted
+        // before `sync_finished`.
+        stage_absent(&mut provider, addr);
+        assert!(!provider.per_wallet_in_sync.is_empty());
+
+        provider.prepare_for_sync().await.expect("prepare");
+        assert!(
+            provider.per_wallet_in_sync.is_empty(),
+            "aborted-pass scratch must be dropped before a new pass"
+        );
+
+        // The next successful pass with no absent proof keeps the
+        // committed balance intact.
+        provider.sync_finished().await;
+        let seed: Vec<_> = provider.current_balances().collect();
+        assert_eq!(seed.len(), 1);
+        assert_eq!(seed[0].2, funds(100, 1));
+    }
+
+    /// End-to-end `on_address_absent` against a real wallet manager: the
+    /// managed platform account's in-memory credit balance must be
+    /// zeroed, since that map is what spend paths (identity-creation
+    /// funding enumeration) read.
+    #[tokio::test]
+    async fn on_address_absent_zeroes_managed_account_balance() {
+        use key_wallet::bip32::{ChildNumber, DerivationPath};
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
+        use key_wallet::managed_account::managed_platform_account::ManagedPlatformAccount;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+        let addr = p2pkh(1);
+        let stale_balance = 294_627_247_940u64;
+
+        // Real wallet manager with a registered wallet carrying a
+        // platform payment managed account whose in-memory balance holds
+        // the stale value.
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+        let wallet_id = wm
+            .create_wallet_with_random_mnemonic(WalletAccountCreationOptions::None)
+            .expect("create wallet");
+        {
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            let base_path = DerivationPath::from(vec![
+                ChildNumber::from_hardened_idx(9).expect("purpose"),
+                ChildNumber::from_hardened_idx(1).expect("coin type"),
+                ChildNumber::from_hardened_idx(17).expect("feature"),
+                ChildNumber::from_hardened_idx(0).expect("subfeature"),
+                ChildNumber::from_hardened_idx(0).expect("account"),
+            ]);
+            let pool = AddressPool::new_without_generation(
+                base_path,
+                AddressPoolType::Absent,
+                20,
+                Network::Testnet,
+            );
+            let platform_account = ManagedPlatformAccount::new(0, 0, pool, false);
+            info.core_wallet
+                .accounts
+                .insert_platform_account(platform_account);
+            let account = info
+                .core_wallet
+                .platform_payment_managed_account_at_index_mut(ACCOUNT)
+                .expect("platform payment account");
+            account.set_address_credit_balance(addr, stale_balance, None);
+            assert_eq!(account.address_credit_balance(&addr), stale_balance);
+        }
+        let wallet_manager = Arc::new(RwLock::new(wm));
+
+        let mut provider = provider_tracking_address(
+            wallet_manager.clone(),
+            wallet_id,
+            addr,
+            funds(stale_balance, 5),
+        );
+
+        provider
+            .on_address_absent((wallet_id, ACCOUNT, 0), &addr)
+            .await;
+
+        // The absent proof is staged in the per-pass scratch...
+        let staged = provider
+            .per_wallet_in_sync
+            .get(&wallet_id)
+            .and_then(|s| s.get(&ACCOUNT))
+            .expect("scratch staged");
+        assert!(staged.absent.contains(&addr));
+
+        // ...and the managed account's in-memory balance is zeroed.
+        let wm = wallet_manager.read().await;
+        let account = wm
+            .get_wallet_info(&wallet_id)
+            .expect("wallet info")
+            .core_wallet
+            .platform_payment_managed_account_at_index(ACCOUNT)
+            .expect("platform payment account");
+        assert_eq!(
+            account.address_credit_balance(&addr),
+            0,
+            "on_address_absent must zero the in-memory managed-account balance"
+        );
     }
 }

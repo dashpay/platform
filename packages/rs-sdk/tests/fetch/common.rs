@@ -1,8 +1,13 @@
+use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
+use dash_sdk::platform::types::epoch::EpochQuery;
+use dash_sdk::platform::LimitQuery;
 use dash_sdk::{
     mock::Mockable,
     platform::{Query, QuerySettings},
     Sdk,
 };
+use dpp::block::extended_epoch_info::v0::{ExtendedEpochInfoV0, ExtendedEpochInfoV0Getters};
+use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::data_contract::config::DataContractConfig;
 use dpp::{data_contract::DataContractFactory, prelude::Identifier};
 use hex::ToHex;
@@ -96,6 +101,52 @@ pub fn mock_data_contract(
         .create(owner_id, 0, platform_value!(document_types), None, None)
         .expect("create data contract")
         .data_contract_owned()
+}
+
+/// Ratchet a fresh auto-detect mock SDK from the protocol-version floor up to the
+/// network's latest version, exactly as production does on its first proven response.
+///
+/// An unpinned SDK boots at its per-network `min_protocol_version` (the upgrade-safe
+/// floor) and only learns the real network version after a *proven* fetch, when response
+/// metadata drives `maybe_update_protocol_version`. Mock tests that need the latest
+/// wire (e.g. Count / `group_by`, or V2 document types) must therefore perform one
+/// proven fetch before encoding their real request. This registers a cheap proven
+/// `ExtendedEpochInfo::fetch_current` expectation and consumes it, leaving the SDK
+/// ratcheted to `LATEST_VERSION`.
+pub(crate) async fn bootstrap_mock_sdk_to_latest(sdk: &mut Sdk) {
+    let query = LimitQuery {
+        query: EpochQuery {
+            start: None,
+            ascending: false,
+        },
+        limit: Some(1),
+        start_info: None,
+    };
+
+    let epoch = ExtendedEpochInfo::from(ExtendedEpochInfoV0 {
+        index: 0,
+        first_block_time: 0,
+        first_block_height: 0,
+        first_core_block_height: 0,
+        fee_multiplier_permille: 0,
+        protocol_version: dpp::version::LATEST_VERSION,
+    });
+
+    sdk.mock()
+        .expect_fetch::<ExtendedEpochInfo, _>(query, Some(epoch.clone()))
+        .await
+        .expect("register epoch bootstrap expectation");
+
+    let fetched = ExtendedEpochInfo::fetch_current(sdk)
+        .await
+        .expect("bootstrap fetch_current should ratchet the SDK to latest");
+
+    assert_eq!(fetched.index(), epoch.index());
+    assert_eq!(
+        sdk.version().protocol_version,
+        dpp::version::LATEST_VERSION,
+        "bootstrap must ratchet the auto-detect SDK to the network's latest protocol version"
+    );
 }
 
 /// Enable logging for tests

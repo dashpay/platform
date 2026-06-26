@@ -1,8 +1,9 @@
 use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::platform_address::PlatformAddressWasm;
 use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
-use crate::utils::{try_from_options, try_vec_to_fixed_bytes};
+use crate::utils::{try_from_options, try_from_options_optional, try_vec_to_fixed_bytes};
 use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
 use dpp::platform_value::BinaryData;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
@@ -41,6 +42,13 @@ export interface ShieldFromAssetLockTransitionOptions {
     proof: Uint8Array;
     bindingSignature: Uint8Array;
     signature: Uint8Array;
+    /**
+     * Optional platform address that receives the asset-lock surplus
+     * (`assetLockValue − valueBalance − fee`). When omitted, the surplus is
+     * folded into the fee pools, but only up to the implicit fee cap.
+     * Accepts a PlatformAddress, a 21-byte Uint8Array, or a bech32m string.
+     */
+    surplusOutput?: PlatformAddressLike;
 }
 
 /**
@@ -55,6 +63,7 @@ export interface ShieldFromAssetLockTransitionObject {
     proof: Uint8Array;
     bindingSignature: Uint8Array;
     signature: Uint8Array;
+    surplusOutput?: Uint8Array;
 }
 
 /**
@@ -69,6 +78,7 @@ export interface ShieldFromAssetLockTransitionJSON {
     proof: string;
     bindingSignature: string;
     signature: string;
+    surplusOutput?: string;
 }
 "#;
 
@@ -110,6 +120,11 @@ impl ShieldFromAssetLockTransitionWasm {
         // Extract WASM class instances (borrow &options)
         let asset_lock: AssetLockProofWasm = try_from_options(&options, "assetLockProof")?;
         let actions = actions_from_js_options(options.as_ref(), "actions")?;
+        // Optional platform-address output for the asset-lock surplus.
+        // Accepts a PlatformAddress, a 21-byte Uint8Array, or a bech32m string;
+        // absent / null / undefined → `None`.
+        let surplus_output: Option<PlatformAddressWasm> =
+            try_from_options_optional(options.as_ref(), "surplusOutput")?;
 
         // Extract remaining simple fields via serde (consumes options)
         let fields: ShieldFromAssetLockTransitionSimpleFields =
@@ -128,6 +143,7 @@ impl ShieldFromAssetLockTransitionWasm {
                 anchor,
                 proof: fields.proof,
                 binding_signature,
+                surplus_output: surplus_output.map(Into::into),
                 signature: BinaryData::from(fields.signature),
             }),
         ))
@@ -161,6 +177,17 @@ impl ShieldFromAssetLockTransitionWasm {
     pub fn value_balance(&self) -> u64 {
         match &self.0 {
             ShieldFromAssetLockTransition::V0(v0) => v0.value_balance,
+        }
+    }
+
+    /// Returns the optional surplus-output platform address, or
+    /// `undefined` when the surplus folds into the fee pools.
+    #[wasm_bindgen(getter = "surplusOutput")]
+    pub fn surplus_output(&self) -> Option<PlatformAddressWasm> {
+        match &self.0 {
+            ShieldFromAssetLockTransition::V0(v0) => {
+                v0.surplus_output.map(PlatformAddressWasm::from)
+            }
         }
     }
 
