@@ -140,6 +140,33 @@ pub(crate) fn seal(
     Ok((nonce_bytes, ct))
 }
 
+/// Like [`seal`] but takes a caller-supplied `nonce` instead of pulling
+/// from the CSPRNG. **Test-only** — golden-vector / size-budget tests
+/// need byte-deterministic ciphertext output. Production code MUST use
+/// [`seal`] so nonces stay unique (XChaCha20-Poly1305 nonce reuse leaks
+/// the keystream).
+#[cfg(test)]
+pub(crate) fn seal_with_nonce(
+    key: &SecretBytes,
+    nonce_bytes: [u8; NONCE_LEN],
+    aad: &[u8],
+    plaintext: &[u8],
+) -> Result<([u8; NONCE_LEN], Vec<u8>), SecretStoreError> {
+    let cipher = XChaCha20Poly1305::new_from_slice(key.expose_secret())
+        .map_err(|_| SecretStoreError::Encrypt)?;
+    let nonce = XNonce::from_slice(&nonce_bytes);
+    let ct = cipher
+        .encrypt(
+            nonce,
+            chacha20poly1305::aead::Payload {
+                msg: plaintext,
+                aad,
+            },
+        )
+        .map_err(|_| SecretStoreError::Encrypt)?;
+    Ok((nonce_bytes, ct))
+}
+
 /// Decrypt `ciphertext` under `key`/`nonce`/`aad`. On tag failure
 /// returns [`SecretStoreError::Decrypt`] and **no** plaintext — the
 /// combined (non-detached) API never materializes unverified bytes at
