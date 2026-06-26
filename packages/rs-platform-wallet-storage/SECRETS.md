@@ -124,37 +124,69 @@ Every value written through `set_secret`/`set` is wrapped in a
 self-describing, authenticated envelope before it reaches the backend. The
 backend (file vault or OS keychain) stores only these opaque bytes.
 
-```text
-magic    b"PWSEV"        (5)
-version  u8 = 1          (envelope version — independent of the vault FORMAT_VERSION)
-scheme   u8              (0 = unprotected passthrough, 1 = password)
-── scheme 0 ──  payload: the raw secret bytes
-── scheme 1 ──  kdf(id u8 ‖ m_kib u32 LE ‖ t u32 LE ‖ p u32 LE)  (13)
-                ‖ salt[32] ‖ nonce[24] ‖ ciphertext+tag
+The canonical wire format is **bincode-encoded** under a single
+`WIRE_CONFIG = standard().with_big_endian().with_no_limit()` against
+two `pub(crate)` types whose shapes are the source of truth — see
+[`src/secrets/wire/envelope.rs`](src/secrets/wire/envelope.rs) and
+[`src/secrets/wire/mod.rs`](src/secrets/wire/mod.rs):
+
+```rust
+struct Envelope { version: u32, payload: Payload }
+enum Payload {
+    Unprotected(Vec<u8>),                                            // scheme 0
+    Password {                                                       // scheme 1
+        kdf: KdfParamsEncoded, // id u8 ‖ m_kib u32 ‖ t u32 ‖ p u32
+        salt: [u8; 32], nonce: [u8; 24],
+        ciphertext: Vec<u8>,   // includes the 16-byte Poly1305 tag
+    },
+}
 ```
 
-- **AAD (scheme 1)** binds `domain ‖ magic ‖ version ‖ scheme ‖ kdf ‖ salt
-  ‖ wallet_id ‖ label` (length-prefixed), mirroring the vault's own
-  `aad()`/`verify_aad()`. A protected blob relocated to another slot — or
-  any in-place header edit — fails the tag (relocation/header-tamper
-  resistance). On the file arm this AAD is *in addition* to the vault's own
-  per-entry AAD + tag; on the OS arm it is the only authentication layer.
-- **KDF ceiling before derivation (anti-DoS).** The KDF params live in the
-  (attacker-controllable) header, so on a read the Argon2 **ceiling is
-  enforced before** any derivation/allocation — a forged `m_kib`/`t` cannot
-  force a giant allocation or an unbounded stall on the victim's unlock.
-- **No vault format bump.** The envelope lives *inside* the entry bytes,
-  identical over File and Os, so there is no vault-parser or migration
-  change.
+`ENVELOPE_VERSION = 1` is bumped only on a breaking layout change,
+independent of the vault `FORMAT_VERSION`. Decoding goes through a
+budget-limited `DECODE_CONFIG = WIRE_CONFIG.with_limit::<N>()` so a
+hostile blob declaring a multi-GiB length prefix is rejected before
+allocation (security-positive deviation from the no-limit encoder
+config). Trailing bytes after a valid decode are also refused —
+`consumed == blob.len()` is a fail-closed invariant.
+
+- **AAD (scheme 1)** is bincode-encoded from `Tier2Aad`
+  ([`src/secrets/wire/aad.rs`](src/secrets/wire/aad.rs)), which binds
+  `domain (PWSEV-TIER2-AAD-v2) ‖ envelope_version ‖ scheme_discriminant
+  ‖ kdf ‖ salt ‖ wallet_id ‖ label`. The vault's own per-entry AAD goes
+  through `EntryAad` (`domain (PWSV-ENTRY-AAD-v2) ‖ format_version ‖
+  wallet_id ‖ label`) and the vault verify-token AAD through `VerifyAad`
+  (`domain (PWSV-VERIFY-AAD-v2) ‖ format_version ‖ salt ‖ kdf`). All
+  three domain tags are pair-wise byte-disjoint by construction. A
+  protected blob relocated to another slot — or any in-place header
+  edit — fails the tag (relocation/header-tamper resistance). On the
+  file arm this AAD is *in addition* to the vault's own per-entry AAD
+  + tag; on the OS arm it is the only authentication layer.
+- **KDF ceiling before derivation (anti-DoS).** The KDF params live in
+  the (attacker-controllable) header, so on a read the Argon2 ceiling
+  is enforced **before** any derivation/allocation — both the wider
+  `enforce_bounds` (algorithm id + floors/ceilings) AND a tighter
+  per-read gate that refuses any `m_kib > default_target().m_kib` OR
+  `t > default_target().t`. A forged header cannot inflate memory by
+  more than the shipped default or CPU by more than the shipped
+  iteration count.
+- **No vault format bump.** The envelope lives *inside* the entry
+  bytes, identical over File and Os, so there is no vault-parser or
+  migration change.
 - **Size cap.** The plaintext is capped at `MAX_PLAINTEXT_LEN`
-  (`MAX_SECRET_LEN − MAX_ENVELOPE_OVERHEAD` = 64 KiB − 128 = 65 408 bytes),
-  uniformly for both schemes, so the enveloped bytes always fit the
-  backend's own `MAX_SECRET_LEN` cap and the user-visible limit is stable
-  regardless of scheme. Oversize → `SecretTooLarge { found, max }` with
+  (`MAX_SECRET_LEN − MAX_ENVELOPE_OVERHEAD`), uniformly for both
+  schemes, so the enveloped bytes always fit the backend's own
+  `MAX_SECRET_LEN` cap and the user-visible limit is stable regardless
+  of scheme. Oversize → `SecretTooLarge { found, max }` with
   `max = MAX_PLAINTEXT_LEN` (re-exported as `secrets::MAX_PLAINTEXT_LEN`).
-- **Unknown version/scheme** (magic present) → `UnsupportedEnvelopeVersion`
-  — fail closed **regardless of the password**: an unparseable future
-  format can be neither safely unwrapped nor treated as unprotected.
+- **Unknown envelope version** → `UnsupportedEnvelopeVersion` — fail
+  closed **regardless of the password**: an envelope tagged for a
+  future layout can be neither safely unwrapped nor treated as
+  unprotected.
+- **Unparseable bytes / unknown scheme tag / trailing garbage** →
+  `Corruption`. There is no magic-byte peek — every blob runs through
+  the bincode decoder, and anything that does not round-trip cleanly
+  with `consumed == blob.len()` fails closed.
 
 #### The strict, fail-closed read
 
@@ -175,20 +207,19 @@ object must be protected":
 | `password` arg | stored blob | result |
 |---|---|---|
 | `Some(pw)` | valid scheme-1 | the secret, or `WrongPassword` on tag fail |
-| **`Some(pw)`** | **scheme-0 / legacy magic-less raw** | **`ExpectedProtectedButUnsealed` — FAIL CLOSED** |
+| **`Some(pw)`** | **valid scheme-0 envelope** | **`ExpectedProtectedButUnsealed` — FAIL CLOSED** |
 | `Some(pw)` | scheme-1 but truncated/corrupt | `Corruption` |
-| `Some/None` | magic present, unknown version/scheme | `UnsupportedEnvelopeVersion` |
+| `Some/None` | unknown envelope version | `UnsupportedEnvelopeVersion` |
+| `Some/None` | unparseable / non-envelope bytes / trailing garbage | `Corruption` |
 | `None` | valid scheme-1 | `NeedsPassword` (never ciphertext) |
-| `None` | scheme-0 | the secret |
-| `None` | legacy magic-less raw | the secret (+ a one-time warning; re-wrapped on next write) |
-| `None` | magic present but truncated header | `Corruption` |
+| `None` | valid scheme-0 envelope | the secret |
 | any | absent entry | `Ok(None)` (deletion = DoS, never injection) |
 
-The load-bearing row is **`Some(pw)` + non-envelope ⇒
-`ExpectedProtectedButUnsealed`**: with a password in hand, a non-protected
-blob can only mean a strip, so it is refused and **no bytes are returned**.
-A consumer bug alone — over- or under-supplying a password — fails closed
-in *every* direction.
+The load-bearing row is **`Some(pw)` + scheme-0 envelope ⇒
+`ExpectedProtectedButUnsealed`**: with a password in hand, an
+unprotected envelope can only mean a strip, so it is refused and **no
+bytes are returned**. A consumer bug alone — over- or under-supplying
+a password — fails closed in *every* direction.
 
 **Arm asymmetry.** On the file arm the stored bytes are themselves sealed
 under the vault key, so producing a *readable* stripped blob at a slot
@@ -240,16 +271,14 @@ dictionary checks, UX feedback) is locale- and threat-specific and is the
 entropy is the *whole* guarantee against an offline Argon2id attacker who
 already holds the backend — choose it accordingly.
 
-#### Greenfield / legacy entries
+#### Greenfield only — no legacy tolerance
 
-The envelope is net-new, so post-feature reads/writes go through it. A
-decrypted entry that lacks the `PWSEV` magic is treated as a **legacy
-unprotected** value: returned on a `None` read (with a one-time warning,
-and re-wrapped on the next write) and refused (`ExpectedProtectedButUnsealed`)
-on a `Some(pw)` read — so legacy tolerance never weakens the strict read.
-(A pre-feature build that persisted vault files is a deployment fact outside
-this crate; the legacy-tolerant read makes the transition seamless either
-way.)
+The envelope is the only on-disk Tier-2 format this build understands.
+A decrypted entry that does not bincode-decode to a valid `Envelope`
+under `WIRE_CONFIG` (including trailing-byte extension probes) surfaces
+as `Corruption` on every read — there is no magic-byte peek and no
+magic-less raw legacy path. The shipped wire layer is the source of
+truth; older non-enveloped stored values are out of scope.
 
 ### Internal SPI
 

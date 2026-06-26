@@ -32,7 +32,12 @@ pub(crate) const TIER2_DOMAIN_V2: &[u8] = b"PWSEV-TIER2-AAD-v2";
 /// disjointness with [`TIER2_DOMAIN_V2`] and [`VERIFY_DOMAIN_V2`].
 pub(crate) const ENTRY_DOMAIN_V2: &[u8] = b"PWSV-ENTRY-AAD-v2";
 
-/// Domain-separation tag leading every vault `VerifyAad`. Distinct
-/// length from the other two so the bincode varint length prefix alone
-/// makes encoded outputs prefix-disjoint at the first byte.
+/// Domain-separation tag leading every vault `VerifyAad`. Disjoint
+/// from [`TIER2_DOMAIN_V2`] and [`ENTRY_DOMAIN_V2`] by **content past
+/// the common prefix** (the three tags are NOT length-distinct —
+/// TIER2 and VERIFY are both 18 bytes; ENTRY is 17). Pair-wise
+/// byte-disjointness is pinned by the tests
+/// `tier2_and_verify_aad_byte_disjoint`,
+/// `tier2_and_entry_aad_byte_disjoint`, and
+/// `entry_and_verify_aad_byte_disjoint`.
 pub(crate) const VERIFY_DOMAIN_V2: &[u8] = b"PWSV-VERIFY-AAD-v2";

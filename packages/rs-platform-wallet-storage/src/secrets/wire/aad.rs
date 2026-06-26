@@ -5,10 +5,10 @@
 //! Each struct is `Encode`-only — AAD is producer-side; the decoder
 //! re-builds it from the surrounding context and bincode-encodes again
 //! against [`WIRE_CONFIG`]. Pair-wise byte disjointness is guaranteed by
-//! the three domain constants declared in [`super::config`]; the bincode
-//! varint length prefix in front of `domain` is itself distinct across
-//! the three (each tag has a different byte length), so prefix
-//! containment is structurally impossible.
+//! the three domain constants declared in [`super::config`] and pinned
+//! empirically by the tests `tier2_and_entry_aad_byte_disjoint`,
+//! `tier2_and_verify_aad_byte_disjoint`, and
+//! `entry_and_verify_aad_byte_disjoint`.
 
 use crate::secrets::file::crypto::SALT_LEN;
 use crate::secrets::wire::kdf::KdfParamsEncoded;
@@ -23,8 +23,10 @@ use crate::secrets::wire::kdf::KdfParamsEncoded;
 /// re-ordering.
 #[derive(bincode::Encode)]
 pub(crate) struct Tier2Aad<'a> {
-    /// Domain tag — `TIER2_DOMAIN_V2`. Length-prefixed by bincode so a
-    /// future swap can never collide with the entry / verify AADs.
+    /// Domain tag — `TIER2_DOMAIN_V2`. Length-prefixed by bincode and
+    /// byte-disjoint from `ENTRY_DOMAIN_V2` / `VERIFY_DOMAIN_V2` by
+    /// content past the common prefix; pinned by the disjointness tests
+    /// in [`super::aad::tests`].
     pub domain: &'static [u8],
     /// Envelope wire version (`ENVELOPE_VERSION`).
     pub envelope_version: u32,

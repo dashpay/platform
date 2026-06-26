@@ -70,14 +70,25 @@ pub(crate) const MAX_ENVELOPE_OVERHEAD: usize = 112;
 pub const MAX_PLAINTEXT_LEN: usize = MAX_SECRET_LEN - MAX_ENVELOPE_OVERHEAD;
 
 /// Decode-side budget: caps the bytes the bincode decoder will consume
-/// from a single envelope. Defends against a hostile blob whose
-/// length-prefix bytes declare a multi-GiB `Vec<u8>`. Encoding stays on
-/// the no-limit `WIRE_CONFIG` so legitimate outputs (always `<=
-/// MAX_SECRET_LEN`) are never refused. Equal to the on-disk cap.
+/// from a single envelope. Equal to the on-disk cap.
 const DECODE_BUDGET: usize = MAX_SECRET_LEN + MAX_ENVELOPE_OVERHEAD;
 
-/// Bincode decode config = encoder's config with the
-/// [`DECODE_BUDGET`] limit applied.
+/// Bincode decode config — derived from [`WIRE_CONFIG`] but with a
+/// [`DECODE_BUDGET`] byte limit applied.
+///
+/// **Asymmetric on purpose, security-positive deviation from
+/// design-brief NF2** (which locks the wire config to
+/// `with_no_limit()`). The deviation exists for hostile-decode
+/// hardening: an attacker-controlled length prefix in the blob would
+/// otherwise drive `Vec::with_capacity` to a multi-GiB allocation
+/// before any tag check. With `Limit<N>`, bincode refuses the
+/// allocation up front and the unwrap fails closed as `Corruption`.
+///
+/// The encoder retains [`WIRE_CONFIG`] (no limit) because AAD and
+/// envelope encoding are producer-only — every input is library-owned
+/// and bounded by `MAX_PLAINTEXT_LEN`, so a limit there has no
+/// security benefit and would be a foot-gun against legitimate
+/// at-cap secrets.
 const DECODE_CONFIG: Configuration<BigEndian, Varint, Limit<DECODE_BUDGET>> =
     WIRE_CONFIG.with_limit::<DECODE_BUDGET>();
 
@@ -204,8 +215,13 @@ pub(crate) fn unwrap(
     password: Option<&SecretString>,
     blob: &[u8],
 ) -> Result<SecretBytes, SecretStoreError> {
-    let (envelope, _) = bincode::decode_from_slice::<Envelope, _>(blob, DECODE_CONFIG)
+    let (envelope, consumed) = bincode::decode_from_slice::<Envelope, _>(blob, DECODE_CONFIG)
         .map_err(|_| SecretStoreError::Corruption)?;
+    // Trailing bytes after a valid decode are a truncation/extension
+    // probe — fail closed.
+    if consumed != blob.len() {
+        return Err(SecretStoreError::Corruption);
+    }
 
     if envelope.version != ENVELOPE_VERSION {
         // `found` keeps the historical u8 — the error API stayed u8 for
@@ -251,10 +267,14 @@ fn unwrap_password_payload(
     // before any allocation.
     let kdf = KdfParams::try_from(kdf_encoded)?;
     // (b) Per-read ceiling tighter than `enforce_bounds`: a header
-    // declaring more memory than this build's shipped target is also
-    // refused before `derive_key` allocates. Closes the gap between
-    // `ARGON2_MAX_M_KIB` (1 GiB) and the shipped 64 MiB default.
-    if kdf.m_kib > KdfParams::default_target().m_kib {
+    // declaring more memory OR more time than this build's shipped
+    // target is refused before `derive_key` allocates. Closes the gaps
+    // between `ARGON2_MAX_M_KIB` (1 GiB) / `ARGON2_MAX_T` (16) and the
+    // shipped 64 MiB / t=3 default — bounds the worst-case forged read
+    // at the shipped target on both axes (no headroom for an attacker
+    // to inflate memory by 16× or CPU by 5.3×).
+    let target = KdfParams::default_target();
+    if kdf.m_kib > target.m_kib || kdf.t > target.t {
         return Err(SecretStoreError::KdfFailure);
     }
     // (c) AAD binds identity + header — the same bytes the encoder
@@ -807,6 +827,48 @@ mod tests {
         });
         let err = unwrap(&wid(1), "seed", Some(&p), &tampered).unwrap_err();
         assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
+    }
+
+    /// Sibling to TC-024 on the `t` axis — per-read `default_target`
+    /// ceiling rejects an envelope whose `t` exceeds the shipped target
+    /// even when still inside `enforce_bounds` (`ARGON2_MAX_T = 16`).
+    /// Closes the CPU-axis gap that would otherwise let a forged header
+    /// run Argon2 at 5.3× the shipped iteration count.
+    #[test]
+    fn kdf_t_ceiling_fires_before_derive() {
+        let p = pw("pw");
+        let blob = scheme1_blob(&p);
+        let target = KdfParams::default_target();
+        let bumped_t = target.t + 1;
+        // Sanity: the bumped t stays inside the wider enforce_bounds
+        // ceiling, so only the per-read gate can refuse it.
+        assert!(bumped_t <= ARGON2_MAX_T);
+        let tampered = mutate_scheme1(&blob, |kdf, _, _| {
+            // Keep m_kib at the shipped default so the m_kib gate
+            // cannot fire — t must be the sole reason this rejects.
+            kdf.m_kib = target.m_kib;
+            kdf.t = bumped_t;
+        });
+        let err = unwrap(&wid(1), "seed", Some(&p), &tampered).unwrap_err();
+        assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
+    }
+
+    /// Trailing bytes appended after a valid envelope are rejected as
+    /// `Corruption` — defends against a truncation/extension probe.
+    #[test]
+    fn decode_rejects_trailing_garbage() {
+        let p = pw("pw");
+        let blob = scheme1_blob(&p);
+        let mut extended = blob.clone();
+        extended.extend_from_slice(&[0xFFu8; 16]);
+        let err = unwrap(&wid(1), "seed", Some(&p), &extended).unwrap_err();
+        assert!(matches!(err, SecretStoreError::Corruption), "got {err:?}");
+
+        // The same blob without the suffix still unwraps cleanly —
+        // proves the rejection is on the trailing bytes, not the
+        // envelope itself.
+        let ok = unwrap(&wid(1), "seed", Some(&p), &blob).unwrap();
+        assert_eq!(ok.expose_secret(), b"seed");
     }
 
     /// TC-031 — round-tripped secret matches the original under a
