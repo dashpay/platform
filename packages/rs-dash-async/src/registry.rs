@@ -1,7 +1,7 @@
 //! Shared lifecycle engine for background workers (`ThreadRegistry`).
 //!
-//! Centralizes the dangerous, previously-triplicated 80% of a background
-//! worker's lifecycle — the generation-match exit epilogue, the
+//! Centralizes the dangerous 80% of a background worker's lifecycle —
+//! the generation-match exit epilogue, the
 //! reap-or-park of a restarted worker's prior thread, and the orphan
 //! drain — into one tested place, while deliberately leaving the
 //! domain-specific 20% (the "is a pass in flight?" drain barrier) to the
@@ -1143,7 +1143,8 @@ mod tests {
         // The wedged worker never observes cancel, so the internal 30s
         // budget can't fire here; the tiny outer timeout drops the quiesce
         // future mid-poll. A naive by-value-into-future impl would detach
-        // the handle (orphans empty, any_alive false); the fix re-parks it.
+        // the handle (orphans empty, any_alive false); the slot-owned
+        // handle is re-parked instead.
         let result = tokio::time::timeout(Duration::from_millis(100), reg.quiesce("alpha")).await;
         assert!(
             result.is_err(),
@@ -1327,16 +1328,16 @@ mod tests {
         assert!(!reg.any_alive());
     }
 
-    /// T5 regression — a reaped orphan whose body PANICKED (finishes within
-    /// the reap grace, so `detached == 0`) must surface in
-    /// `ShutdownReport::orphan_status` and flip `all_clean()`. Before the
-    /// fix, `shutdown()` discarded the reap status entirely: with
-    /// `per_worker` empty/clean and `detached == 0`, `all_clean()`
-    /// incorrectly returned true. The pre-fix non-vacuity check is
-    /// `orphan_status` itself — without the new field there is no place to
-    /// observe the panic, and `all_clean()` lies.
+    /// A reaped orphan whose body PANICKED (finishes within the reap grace,
+    /// so `detached == 0`) must surface in `ShutdownReport::orphan_status`
+    /// and flip `all_clean()`.
+    ///
+    /// Non-vacuous: `orphan_status` is the only place a panicked-but-reaped
+    /// orphan is observable — without it, an empty/clean `per_worker` plus
+    /// `detached == 0` would let `all_clean()` return true and swallow the
+    /// panic.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn t5_shutdown_report_surfaces_panicked_reaped_orphan() {
+    async fn shutdown_report_surfaces_panicked_reaped_orphan() {
         let reg = ThreadRegistry::<&str>::new();
         // Park a panicking thread directly as an orphan via the test seam.
         // The body panics immediately, so the thread is finished by the
@@ -1364,11 +1365,11 @@ mod tests {
         assert!(!reg.any_alive());
     }
 
-    /// T5 regression complement — a clean reaped orphan (`Ok`) leaves
-    /// `all_clean()` true, so the new gate doesn't over-trigger on the
-    /// common case of orphans that drained cleanly within the grace.
+    /// Complement: a clean reaped orphan (`Ok`) leaves `all_clean()` true,
+    /// so the orphan-status fold doesn't over-trigger on the common case of
+    /// orphans that drained cleanly within the grace.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn t5_shutdown_report_clean_reaped_orphan_is_clean() {
+    async fn shutdown_report_clean_reaped_orphan_is_clean() {
         let reg = ThreadRegistry::<&str>::new();
         let clean = std::thread::spawn(|| { /* exits cleanly */ });
         reg.park_orphan_for_test("k", clean);
@@ -2120,10 +2121,10 @@ mod tests {
     /// prior (already moved out of the slot) nor an orphan, and reports
     /// clean while the wedged prior is still live and un-joined.
     ///
-    /// Deterministic via a long backstop: with the fix the prior is
-    /// observable in orphans well before the backstop could elapse; the
-    /// pre-fix code parks it only at the end of the out-of-lock spin, so the
-    /// early assertion fails.
+    /// Deterministic via a long backstop: parking under the slot lock makes
+    /// the prior observable in orphans well before the backstop could elapse,
+    /// so the early assertion lands. Parking only at the end of the
+    /// out-of-lock spin would fail it.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn start_thread_parks_wedged_prior_under_slot_lock_at_restart() {
         // Long backstop so the under-lock parking is observable well before
@@ -2137,7 +2138,7 @@ mod tests {
 
         // gen-2 restart on a blocking thread: its bounded reap of the wedged
         // gen-1 spins the (long) backstop, so start_thread does not return
-        // promptly. The fix parks gen-1 under the slot lock at the start of
+        // promptly. gen-1 is parked under the slot lock at the start of
         // this call, before that spin.
         let reg2 = Arc::clone(&reg);
         let parent = Handle::current();

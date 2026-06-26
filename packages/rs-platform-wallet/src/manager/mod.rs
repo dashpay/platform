@@ -359,16 +359,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///   [`crate::error::PlatformWalletError::ShieldedShutdownIncomplete`]; or
     /// - the coordinator's store reset itself fails.
     ///
-    /// **Host-serialization precondition**: the caller must not invoke
-    /// `shielded_sync_start` for this manager concurrently with `clear`. A
-    /// concurrent direct `sync_now`/`sync_wallet` is held off — the quiescing
-    /// gate is raised *continuously* for the whole clear (from before the
-    /// drain, across the liveness check, through the wipe), so such a pass
-    /// observes the gate and bails with no lapse. The one remaining residual
-    /// is a full `shielded_sync_start` racing `clear`: a restart spawns a
-    /// fresh loop and reopens the gate, so it could re-persist into the wiped
-    /// store. The wallet UI drives these from one place; that ordering is the
-    /// host's contract until the registry grows a per-key clearing latch.
+    /// **Concurrency**: a concurrent direct `sync_now`/`sync_wallet` and a
+    /// full `shielded_sync_start` are both held off for the whole clear. The
+    /// quiescing gate is raised *continuously* (from before the drain, across
+    /// the liveness check, through the wipe), so a direct pass observes it and
+    /// bails with no lapse; the registry's per-key clearing latch no-ops a
+    /// racing `shielded_sync_start` over the same span, so a fresh loop cannot
+    /// land after the liveness check and re-persist into the store being wiped.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
         self.clear_shielded_inner(std::time::Duration::from_secs(SHUTDOWN_JOIN_TIMEOUT_SECS))
@@ -478,7 +475,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// [`SHUTDOWN_JOIN_TIMEOUT_SECS`] budget; on timeout its handle is
     /// re-parked and the slot reports
     /// [`WorkerStatus::Timeout`] rather than hanging forever
-    /// (the F1 fix — a dropped/timed-out join can never detach a live
+    /// (F1: a dropped/timed-out join can never detach a live
     /// thread). The clear-on-panic half rides on unwinding, so it holds
     /// under `panic = "unwind"`; under the iOS `panic = "abort"` profiles a
     /// pass panic aborts the process outright.
@@ -720,13 +717,12 @@ mod tests {
         assert!(!with_detached.all_clean());
     }
 
-    /// T5 boundary regression — a panicked reaped orphan (orphan finished
-    /// within the reap grace, so `detached == 0` but `orphan_status` is
-    /// `Panicked`) must still make the report non-clean. Without
-    /// `orphan_status` folding into `all_clean()`, a survivor count of zero
-    /// would silently pass the panic.
+    /// A panicked reaped orphan (orphan finished within the reap grace, so
+    /// `detached == 0` but `orphan_status` is `Panicked`) must still make the
+    /// report non-clean. Without `orphan_status` folding into `all_clean()`,
+    /// a survivor count of zero would silently pass the panic.
     #[test]
-    fn t5_panicked_orphan_status_makes_report_non_clean() {
+    fn panicked_orphan_status_makes_report_non_clean() {
         use std::collections::BTreeMap;
 
         // No survivors, but a non-clean reaped-orphan status. An empty
@@ -744,10 +740,10 @@ mod tests {
         );
     }
 
-    /// T5 complement — a clean reaped-orphan status (`Ok`) leaves the report
+    /// Complement: a clean reaped-orphan status (`Ok`) leaves the report
     /// clean. Guards against over-triggering the orphan-status fold.
     #[test]
-    fn t5_clean_orphan_status_keeps_report_clean() {
+    fn clean_orphan_status_keeps_report_clean() {
         use std::collections::BTreeMap;
 
         let mut per_worker = BTreeMap::new();
@@ -964,9 +960,9 @@ mod tests {
     /// adapter are legitimately running. Releasing + reaping the orphan
     /// lets a retry succeed.
     ///
-    /// Non-vacuous: against the pre-fix gate (only `!status.is_clean()`),
-    /// the clean `NotRunning` quiesce would pass the guard and wipe the
-    /// store under the live orphan — `clear_shielded` would return `Ok`.
+    /// Non-vacuous: a gate checking only `!status.is_clean()` would let the
+    /// clean `NotRunning` quiesce pass the guard and wipe the store under the
+    /// live orphan — `clear_shielded` would return `Ok`.
     #[cfg(feature = "shielded")]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn clear_shielded_refuses_while_shielded_orphan_alive() {
@@ -1007,14 +1003,13 @@ mod tests {
             .expect("clear_shielded must succeed once the orphan is reaped");
     }
 
-    /// T11 RESIDUAL (5d569459): while `clear_shielded` is mid-flight, a
-    /// concurrent `shielded_sync().start()` must be no-op'd by the
-    /// registry's per-key clearing latch — otherwise a fresh worker can
-    /// land between the clear's liveness check and the store wipe and
-    /// re-persist into the store about to be cleared. The integration
-    /// test holds the latch directly (mirrors what `clear_shielded_inner`
-    /// does) and verifies a start under the latch leaves
-    /// `is_running()==false`.
+    /// While `clear_shielded` is mid-flight, a concurrent
+    /// `shielded_sync().start()` must be no-op'd by the registry's per-key
+    /// clearing latch — otherwise a fresh worker can land between the
+    /// clear's liveness check and the store wipe and re-persist into the
+    /// store about to be cleared. The test holds the latch directly (mirrors
+    /// what `clear_shielded_inner` does) and verifies a start under the latch
+    /// leaves `is_running()==false`.
     ///
     /// Non-vacuous: without the latch the start would register a worker
     /// on the registry (`is_running()==true`) regardless of any in-

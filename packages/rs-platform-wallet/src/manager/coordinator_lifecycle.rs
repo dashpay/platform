@@ -126,10 +126,8 @@ impl CoordinatorLifecycle {
     /// can yield `!Send` SDK futures); cancellation drops an in-flight
     /// `pass()` at its next `.await`.
     ///
-    /// Replaces the previously-triplicated loop body in
-    /// `IdentitySyncManager::start`, `PlatformAddressSyncManager::start`,
-    /// and `ShieldedSyncManager::start`. Each coordinator now passes a
-    /// thunk that captures its `Arc<Self>` and calls its own `sync_now`.
+    /// Each coordinator's `start` calls this with a thunk that captures its
+    /// `Arc<Self>` and invokes its own `sync_now`.
     pub(crate) fn spawn_periodic_loop<F, Fut, I>(&self, pass: F, interval: I)
     where
         F: Fn() -> Fut + Send + 'static,
@@ -345,10 +343,11 @@ mod tests {
     /// pass before returning. The registry's drain hook cannot cover this:
     /// `registry.quiesce` early-returns `NotRunning` WITHOUT running the
     /// hook when no loop slot exists, so the gate would otherwise never go
-    /// up and the in-flight pass would not be drained. Regression for the
+    /// up and the in-flight pass would not be drained. Guards the
     /// `clear_shielded`/`stop` contract ("a concurrent direct
-    /// sync_now/sync_wallet is held off"). Must fail against the pre-fix
-    /// `quiesce` that only delegated to the registry.
+    /// sync_now/sync_wallet is held off"). Non-vacuous: a `quiesce` that
+    /// merely delegated to the registry would raise no gate and let the
+    /// concurrent pass slip through.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn quiesce_raises_gate_and_drains_direct_pass_without_background_loop() {
         let lifecycle = make_lifecycle();
