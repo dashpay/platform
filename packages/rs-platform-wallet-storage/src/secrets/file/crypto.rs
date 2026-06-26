@@ -19,11 +19,10 @@ pub(crate) const ARGON2_MIN_T: u32 = 2;
 pub(crate) const ARGON2_P: u32 = 1;
 
 /// Argon2 parameter ceilings. Vault `kdf` params are attacker-
-/// controllable JSON, so an oversized `m_kib`/`t` would let a crafted
-/// vault force a multi-GiB allocation or an unbounded-time derivation (a
-/// DoS) before any tag check. 1 GiB memory and 16 passes bound the cost
-/// well above the shipped default (64 MiB, t=3) yet far below an
-/// exhaustion threshold.
+/// controllable JSON, so without a cap an oversized `m_kib`/`t` could
+/// force a multi-GiB allocation or unbounded derivation (DoS) before any
+/// tag check. 1 GiB / 16 passes is well above the default, far below
+/// exhaustion.
 pub(crate) const ARGON2_MAX_M_KIB: u32 = 1_048_576;
 pub(crate) const ARGON2_MAX_T: u32 = 16;
 
@@ -43,11 +42,10 @@ pub(crate) fn random_bytes(buf: &mut [u8]) -> Result<(), SecretStoreError> {
     getrandom(buf).map_err(|_| SecretStoreError::KdfFailure)
 }
 
-/// Argon2id parameters as stored in / read from the vault. Serializes
-/// directly to the on-disk `kdf` object — `id` discriminates the KDF
-/// algorithm (only [`KDF_ID_ARGON2ID`] is accepted today), validated
-/// alongside the parameter ranges in [`KdfParams::enforce_bounds`].
-/// `deny_unknown_fields` fails closed on a stray sibling (C3).
+/// Argon2id parameters stored in the on-disk `kdf` object. `id`
+/// discriminates the algorithm (only [`KDF_ID_ARGON2ID`] today),
+/// validated with the parameter ranges in [`KdfParams::enforce_bounds`].
+/// `deny_unknown_fields` fails closed on a stray sibling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct KdfParams {
@@ -68,13 +66,11 @@ impl KdfParams {
         }
     }
 
-    /// Reject params outside the accepted bounds before any derivation
-    /// or allocation runs. The lower bound refuses a downgraded vault;
-    /// the upper bound refuses an inflated vault from an
-    /// attacker-controllable JSON file that would otherwise force a
-    /// huge allocation / unbounded derivation ahead of any tag check.
-    /// An unknown algorithm `id` is also a bounds failure — Argon2id is
-    /// the only KDF family this version supports.
+    /// Reject out-of-bounds params before any derivation/allocation: the
+    /// lower bound refuses a downgraded vault, the upper bound an inflated
+    /// one (huge allocation / unbounded derivation ahead of any tag
+    /// check). An unknown algorithm `id` also fails — Argon2id is the only
+    /// supported family.
     pub(crate) fn enforce_bounds(&self) -> Result<(), SecretStoreError> {
         if self.id != KDF_ID_ARGON2ID
             || self.m_kib < ARGON2_MIN_M_KIB
@@ -89,20 +85,20 @@ impl KdfParams {
     }
 }
 
-/// Derive a 32-byte AEAD key from `passphrase` + `salt` with Argon2id.
-/// Output lands directly in a [`SecretBytes`].
+/// Derive a 32-byte AEAD key from `passphrase` + `salt` with Argon2id,
+/// landing directly in a [`SecretBytes`]. Takes `&SecretString` so the
+/// bare-byte passphrase view lives only inside this function.
 ///
-/// Takes `&SecretString` directly so the bare-byte view of the
-/// passphrase lives only inside this function — callers can no
-/// longer accidentally hand a `&[u8]` (e.g. by holding a stray
-/// `expose_secret().as_bytes()` longer than intended) into KDF input.
+/// Zeroization residual: argon2 0.5.3's `zeroize` feature wipes
+/// `initial_hash` / `blockhash` but NOT the bulk `Block` matrix (up to
+/// `m_kib` of derived state). Accepted residual against A5 (swap /
+/// core-dump while unlocked); closing it needs an upstream fix.
 pub(crate) fn derive_key(
     passphrase: &SecretString,
-    salt: &[u8],
+    salt: &[u8; SALT_LEN],
     params: KdfParams,
 ) -> Result<SecretBytes, SecretStoreError> {
-    // Bounds MUST gate before Params::new / hash_password_into so an
-    // inflated m_kib never reaches the allocator.
+    // Bounds MUST gate first so an inflated m_kib never reaches the allocator.
     params.enforce_bounds()?;
     let argon_params = Params::new(params.m_kib, params.t, params.p, Some(KEY_LEN))
         .map_err(|_| SecretStoreError::KdfFailure)?;
@@ -126,7 +122,7 @@ pub(crate) fn seal(
     plaintext: &[u8],
 ) -> Result<([u8; NONCE_LEN], Vec<u8>), SecretStoreError> {
     let cipher = XChaCha20Poly1305::new_from_slice(key.expose_secret())
-        .map_err(|_| SecretStoreError::KdfFailure)?;
+        .map_err(|_| SecretStoreError::Encrypt)?;
     let mut nonce_bytes = [0u8; NONCE_LEN];
     random_bytes(&mut nonce_bytes)?;
     let nonce = XNonce::from_slice(&nonce_bytes);
@@ -138,11 +134,9 @@ pub(crate) fn seal(
                 aad,
             },
         )
-        // Encrypt-path failure (XChaCha20-Poly1305 only fails here when
-        // the plaintext exceeds the construction's length limit), so it is
-        // not a decryption concern; keep it on the same write-oriented
-        // variant the cipher-construction failure above uses.
-        .map_err(|_| SecretStoreError::KdfFailure)?;
+        // AEAD write-side failure (only when plaintext exceeds the length
+        // limit), not a key-derivation one.
+        .map_err(|_| SecretStoreError::Encrypt)?;
     Ok((nonce_bytes, ct))
 }
 
@@ -157,7 +151,7 @@ pub(crate) fn open(
     ciphertext: &[u8],
 ) -> Result<SecretBytes, SecretStoreError> {
     let cipher = XChaCha20Poly1305::new_from_slice(key.expose_secret())
-        .map_err(|_| SecretStoreError::KdfFailure)?;
+        .map_err(|_| SecretStoreError::Encrypt)?;
     let nonce = XNonce::from_slice(nonce);
     let pt = cipher
         .decrypt(
@@ -174,6 +168,10 @@ pub(crate) fn open(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Compile-time guard: argon2's `impl Zeroize for Block` is feature-
+    // gated, so this fails to build if `argon2/zeroize` is ever dropped.
+    static_assertions::assert_impl_all!(argon2::Block: zeroize::Zeroize);
 
     /// Argon2id floor params — fast enough for unit tests; production
     /// runs at the default target (64 MiB).
@@ -253,10 +251,8 @@ mod tests {
 
     #[test]
     fn derive_key_rejects_inflated_m_kib_before_allocating() {
-        // u32::MAX m_kib must error fast (enforce_bounds) and never reach
-        // the multi-GiB allocator. A real allocation of ~4 TiB would OOM
-        // the test, so reaching here at all proves the ceiling fired
-        // first.
+        // u32::MAX m_kib must error via enforce_bounds before the ~4 TiB
+        // allocation — which would OOM the test if it ever ran.
         let err = derive_key(
             &SecretString::new("pw"),
             &[0u8; SALT_LEN],

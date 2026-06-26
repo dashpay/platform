@@ -67,13 +67,13 @@ fn tc027_smoke_insert_every_table() {
     let wallet_id = [42u8; 32];
 
     conn.execute(
-        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
         params![wallet_id.as_slice()],
     )
     .unwrap();
     let identity_id = [7u8; 32];
     conn.execute(
-        "INSERT INTO identities (wallet_id, wallet_index, identity_id, entry_blob, tombstoned) \
+        "INSERT INTO identities (wallet_id, identity_index, identity_id, entry_blob, tombstoned) \
          VALUES (?1, NULL, ?2, X'01', 0)",
         params![wallet_id.as_slice(), identity_id.as_slice()],
     )
@@ -86,12 +86,7 @@ fn tc027_smoke_insert_every_table() {
             // Labels must match the writer-side canonical strings — see the
             // CHECK constraint sourced from `ACCOUNT_TYPE_LABELS` in
             // `sqlite::schema::accounts`.
-            "INSERT INTO account_registrations (wallet_id, account_type, account_index, account_xpub_bytes) VALUES (?1, 'standard', 0, X'00')",
-            &[&wallet_id.as_slice()],
-        ),
-        (
-            "account_address_pools",
-            "INSERT INTO account_address_pools (wallet_id, account_type, account_index, pool_type, snapshot_blob) VALUES (?1, 'standard', 0, 'external', X'00')",
+            "INSERT INTO account_registrations (wallet_id, account_type, account_index, account_xpub_bytes) VALUES (?1, 'standard_bip44', 0, X'00')",
             &[&wallet_id.as_slice()],
         ),
         (
@@ -110,21 +105,17 @@ fn tc027_smoke_insert_every_table() {
             &[&wallet_id.as_slice(), &txid],
         ),
         (
-            "core_derived_addresses",
-            "INSERT INTO core_derived_addresses (wallet_id, account_type, account_index, address, derivation_path, used) VALUES (?1, 'standard', 0, 'addr', '', 0)",
-            &[&wallet_id.as_slice()],
-        ),
-        (
             "core_sync_state",
             "INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) VALUES (?1, NULL, NULL)",
             &[&wallet_id.as_slice()],
         ),
         (
             "identity_keys",
-            // identity_keys is keyed by (identity_id, key_id); the FK
-            // targets identities(identity_id).
-            "INSERT INTO identity_keys (identity_id, key_id, public_key_blob, public_key_hash) VALUES (?1, 0, X'00', X'00')",
-            &[&identity_id.as_slice()],
+            // identity_keys is keyed by (wallet_id, identity_id, key_id);
+            // the wallet_id FK targets wallets and the
+            // identity_id FK targets identities(identity_id).
+            "INSERT INTO identity_keys (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) VALUES (?1, ?2, 0, X'00', X'00', NULL)",
+            &[&wallet_id.as_slice(), &identity_id.as_slice()],
         ),
         (
             "contacts",
@@ -208,10 +199,9 @@ fn tc028_idempotent_reopen() {
 
 /// append-only migration hash.
 ///
-/// The hash is computed at runtime from the embedded list. Because this
-/// test belongs to the migration drift policy, we assert the list is
-/// non-empty and the hash is stable across successive calls — not a
-/// pinned value (which would force a churn on every committed migration).
+/// Asserts intra-run stability and a non-empty list — not content
+/// pinning. The fingerprint is content-blind (hashes `(version, name)`
+/// only), so this guards the migration set's identity, not its DDL.
 #[test]
 fn tc029_migration_fingerprint_stable() {
     let a = mig::embedded_migrations_fingerprint();

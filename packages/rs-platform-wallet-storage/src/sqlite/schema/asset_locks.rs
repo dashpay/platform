@@ -13,13 +13,16 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
-// Imports used only by the test-gated readers below.
-#[cfg(any(test, feature = "__test-helpers"))]
 use {
     dashcore::OutPoint, platform_wallet::changeset::AssetLockEntry,
     platform_wallet::wallet::asset_lock::tracked::TrackedAssetLock, rusqlite::Connection,
     std::collections::BTreeMap,
 };
+
+use crate::sqlite::schema::blob::impl_persistable_blob;
+
+// PUBLIC material only: asset-lock lifecycle reaching `lifecycle_blob`.
+impl_persistable_blob!(AssetLockEntry);
 
 pub fn apply(
     tx: &Transaction<'_>,
@@ -66,19 +69,11 @@ pub fn apply(
     Ok(())
 }
 
-/// Single source of truth for the `asset_locks.status` TEXT-column
-/// domain.
-///
-/// Mirrors every variant of
-/// [`platform_wallet::wallet::asset_lock::tracked::AssetLockStatus`]
-/// (writer side: [`status_str`]). The migration in
-/// `migrations/V001__initial.rs` interpolates this array into the
-/// `CHECK (status IN (...))` clause so an unknown label is rejected at
-/// insert time rather than landing as silent garbage. The
-/// `asset_lock_status_labels_match_enum` unit test below enforces
-/// set-equality between this array and the writer's output — drift (a
-/// renamed/added variant) becomes a failing test, not a runtime
-/// divergence between Rust and SQLite.
+/// Source of truth for the `asset_locks.status` TEXT domain, mirroring
+/// [`platform_wallet::wallet::asset_lock::tracked::AssetLockStatus`].
+/// `migrations/V001__initial.rs` interpolates it into a `CHECK (status IN
+/// (...))`; `asset_lock_status_labels_match_enum` keeps it in sync with
+/// [`status_str`].
 pub(crate) const ASSET_LOCK_STATUS_LABELS: &[&str] = &[
     "built",
     "broadcast",
@@ -99,7 +94,6 @@ fn status_str(s: &AssetLockStatus) -> &'static str {
 
 /// Per-wallet asset-lock slice as returned by the readers — outer-keyed
 /// by `account_index`, inner-keyed by outpoint.
-#[cfg(any(test, feature = "__test-helpers"))]
 pub type AssetLocksByAccount = BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>>;
 
 /// Decode one raw `(outpoint_bytes, account_index, lifecycle_blob)`
@@ -109,7 +103,6 @@ pub type AssetLocksByAccount = BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock
 /// Hard-fail behaviour: a malformed outpoint, blob, or out-of-range
 /// account index returns a typed [`WalletStorageError`]. Every caller
 /// propagates that error — corruption is never silently skipped.
-#[cfg(any(test, feature = "__test-helpers"))]
 fn decode_row(
     op_bytes: &[u8],
     account_index: i64,
@@ -118,17 +111,10 @@ fn decode_row(
     let outpoint = blob::decode_outpoint(op_bytes)?;
     let entry: AssetLockEntry = blob::decode(blob_bytes)?;
     let account_index =
-        u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
-            field: "asset_locks.account_index",
-            value: account_index as u64,
-            target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-        })?;
-    // Typed-column vs blob cross-check, symmetric with
-    // IdentityKeyEntryMismatch. A torn write / partial migration /
-    // restored corruption that passes PRAGMA integrity_check would
-    // otherwise silently mis-bucket the lock into the wrong account or
-    // report a different outpoint than the indexed column it was
-    // selected by.
+        crate::sqlite::util::safe_cast::i64_to_u32("asset_locks.account_index", account_index)?;
+    // Typed-column vs blob cross-check: corruption that passes PRAGMA
+    // integrity_check would otherwise mis-bucket the lock or report a
+    // different outpoint than the indexed column it was selected by.
     if entry.out_point != outpoint || entry.account_index != account_index {
         return Err(WalletStorageError::AssetLockEntryMismatch {
             typed_outpoint: outpoint.to_string(),
@@ -150,16 +136,69 @@ fn decode_row(
     Ok((account_index, outpoint, tracked))
 }
 
-/// Build the per-wallet asset-lock slice for `ClientStartState` from
-/// the `asset_locks` table, bucketed by account index. Every status
-/// variant the changeset writes is considered "active": consumed
-/// locks leave the table via [`AssetLockChangeSet::removed`], so a
-/// row present here is by definition still in play. Any row that
-/// fails to read or decode is a hard error — corruption is never
-/// silently dropped. Retained for this crate's integration tests until
-/// the rehydration path consumes it in `load()`.
+/// Full-history asset-lock slice bucketed by account index, **including**
+/// terminal `Consumed` rows (inspection reader for this crate's tests). Use
+/// [`load_unconsumed`] for the rehydration feed. A row that fails to decode is
+/// a hard error.
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn load_state(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<AssetLocksByAccount, WalletStorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT outpoint, account_index, lifecycle_blob \
+         FROM asset_locks WHERE wallet_id = ?1",
+    )?;
+    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+        let op_bytes: Vec<u8> = row.get(0)?;
+        let account_index: i64 = row.get(1)?;
+        let blob_bytes: Vec<u8> = row.get(2)?;
+        Ok((op_bytes, account_index, blob_bytes))
+    })?;
+    let mut out: AssetLocksByAccount = BTreeMap::new();
+    for r in rows {
+        let (op_bytes, account_index, blob_bytes) = r?;
+        let (acct, outpoint, tracked) = decode_row(&op_bytes, account_index, &blob_bytes)?;
+        out.entry(acct).or_default().insert(outpoint, tracked);
+    }
+    Ok(out)
+}
+
+/// Status-filtered rehydration feed: every asset lock **except** terminal
+/// `Consumed` rows, bucketed by account index. Feeding `Consumed` locks back
+/// into the live set would resurrect a spent one-shot lock as actionable
+/// (A04/A08), so the exclusion is at the SQL level (`status NOT IN
+/// ('consumed')`, `status` indexed); history stays visible via [`load_state`].
+/// A row that fails to decode is a hard [`WalletStorageError`].
+pub fn load_unconsumed(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<AssetLocksByAccount, WalletStorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT outpoint, account_index, lifecycle_blob \
+         FROM asset_locks WHERE wallet_id = ?1 AND status NOT IN ('consumed')",
+    )?;
+    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+        let op_bytes: Vec<u8> = row.get(0)?;
+        let account_index: i64 = row.get(1)?;
+        let blob_bytes: Vec<u8> = row.get(2)?;
+        Ok((op_bytes, account_index, blob_bytes))
+    })?;
+    let mut out: AssetLocksByAccount = BTreeMap::new();
+    for r in rows {
+        let (op_bytes, account_index, blob_bytes) = r?;
+        let (acct, outpoint, tracked) = decode_row(&op_bytes, account_index, &blob_bytes)?;
+        out.entry(acct).or_default().insert(outpoint, tracked);
+    }
+    Ok(out)
+}
+
+/// Every asset lock bucketed by account index, **including** terminal
+/// `Consumed` — history/inspection only; use [`load_unconsumed`] for the
+/// rehydration feed. A row that fails to decode is a hard
+/// [`WalletStorageError`].
+#[cfg(any(test, feature = "__test-helpers"))]
+pub fn list_active(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
@@ -187,10 +226,8 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    /// Exhaustive sample of every [`AssetLockStatus`] variant. The
-    /// trailing match arm in the loop fails to compile if upstream
-    /// adds a variant — forcing the developer to extend the list,
-    /// `status_str`, and [`ASSET_LOCK_STATUS_LABELS`] together.
+    /// Every [`AssetLockStatus`] variant; the wildcard-free match below fails
+    /// to compile if upstream adds one.
     fn all_asset_lock_status_variants() -> Vec<AssetLockStatus> {
         let variants = vec![
             AssetLockStatus::Built,

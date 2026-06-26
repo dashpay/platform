@@ -9,7 +9,7 @@
 
 use platform_wallet_storage::secrets::{
     default_credential_store, EncryptedFileStore, SecretBytes, SecretStoreError, SecretString,
-    WalletId, SERVICE_PREFIX,
+    WalletId, MAX_PLAINTEXT_LEN, MIN_PASSPHRASE_LEN, SERVICE_PREFIX,
 };
 
 #[test]
@@ -23,6 +23,9 @@ fn default_build_exposes_secrets_surface() {
     }
     let _ = _accepts_path as fn(_, _) -> _;
     let _ = SERVICE_PREFIX.len();
+    // The Tier-2 public consts are re-exported on the default build.
+    let _ = MAX_PLAINTEXT_LEN;
+    let _ = MIN_PASSPHRASE_LEN;
     let _ = std::mem::size_of::<WalletId>();
     let _ = std::mem::size_of::<SecretBytes>();
     let _ = std::mem::size_of::<SecretStoreError>();
