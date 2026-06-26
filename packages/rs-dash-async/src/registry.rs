@@ -64,11 +64,13 @@ pub struct ShutdownWeight(pub i32);
 // Status
 // ---------------------------------------------------------------------
 
-/// Terminal status of one worker. Its variant set and payloads correspond
-/// 1:1 to the wallet's `CoordinatorThreadStatus`, which is built from this
-/// via an exhaustive by-name `From` so the FFI surface stays stable. The
-/// two enums keep their own declaration order and carry no `#[repr]`, so
-/// the mapping is a match, never a layout-compatible cast.
+/// Terminal status of one worker as classified by the registry at the end
+/// of [`quiesce`](ThreadRegistry::quiesce) or the orphan reap.
+///
+/// Consumers may re-export this directly on their public surface; the
+/// variants distinguish clean exits (`Ok`, `NotRunning`) from every
+/// non-clean outcome a host UAF-safety check must observe — see
+/// [`is_clean`](Self::is_clean).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WorkerStatus {
     /// The loop exited and its thread/task joined cleanly.
