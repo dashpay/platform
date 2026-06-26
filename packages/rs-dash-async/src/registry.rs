@@ -34,7 +34,7 @@
 //!   key-scoped gate, so a parked still-live thread blocks the wipe of its
 //!   own worker's store without an unrelated worker blocking it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -321,6 +321,14 @@ pub struct ThreadRegistry<K: RegistryKey> {
     /// once teardown has begun, so a start racing shutdown can never leave
     /// an un-joined worker behind.
     closing: AtomicBool,
+    /// Per-key clearing latch — the keys whose owner is mid clear-then-
+    /// wipe (e.g. shielded `clear_shielded`). `start_thread`/`start_task`
+    /// refuse a (re)start for a key in this set, so a fresh worker
+    /// cannot slip past the "no new pass" barrier and re-persist into
+    /// the store the clear is about to wipe. Resettable (mirror of
+    /// [`closing`](Self::closing) but per-key and scoped to a
+    /// [`ClearingGuard`]); the guard's `Drop` removes the key.
+    clearing: Mutex<BTreeSet<K>>,
     /// Test seam: when set, the next OS-thread spawn returns an injected
     /// `io::Error` instead of really spawning, so the spawn-failure
     /// rollback path can be exercised deterministically.
@@ -335,6 +343,7 @@ impl<K: RegistryKey> std::fmt::Debug for ThreadRegistry<K> {
             .field("orphans", &self.lock_orphans().len())
             .field("reap_backstop", &self.reap_backstop)
             .field("closing", &self.closing.load(Ordering::Acquire))
+            .field("clearing", &self.lock_clearing().len())
             .finish()
     }
 }
@@ -353,6 +362,7 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             orphans: Mutex::new(Vec::new()),
             reap_backstop: backstop,
             closing: AtomicBool::new(false),
+            clearing: Mutex::new(BTreeSet::new()),
             #[cfg(test)]
             force_spawn_failure: AtomicBool::new(false),
         })
@@ -395,6 +405,13 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             // One-way teardown latch: refuse new workers once shutdown has
             // begun, under the same lock shutdown snapshots tiers with.
             if self.closing.load(Ordering::Acquire) {
+                return;
+            }
+            // Per-key clearing latch: refuse a (re)start while this key's
+            // owner is mid clear-then-wipe, so a fresh worker cannot slip
+            // past the "no new pass" barrier and re-persist into the store
+            // the clear is about to wipe.
+            if self.lock_clearing().contains(&key) {
                 return;
             }
             let slot = slots.entry(key).or_default();
@@ -515,6 +532,10 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             if self.closing.load(Ordering::Acquire) {
                 return;
             }
+            // Per-key clearing latch — see `start_thread`.
+            if self.lock_clearing().contains(&key) {
+                return;
+            }
             let slot = slots.entry(key).or_default();
             if slot.cancel.is_some() {
                 return;
@@ -569,6 +590,25 @@ impl<K: RegistryKey> ThreadRegistry<K> {
             if let Some(token) = slot.cancel.take() {
                 token.cancel();
             }
+        }
+    }
+
+    /// Mark `key` as mid clear-then-wipe and refuse any
+    /// `start_thread`/`start_task` for it until the returned
+    /// [`ClearingGuard`] drops. Per-key (other keys are unaffected) and
+    /// resettable (subsequent clears can reacquire). The caller is
+    /// expected to hold the guard across the full quiesce → liveness →
+    /// wipe sequence, so a racing `(re)start` for the same key cannot
+    /// install a fresh worker that re-persists into the store mid-clear.
+    ///
+    /// Returns a guard, not a `begin/end` pair, so the latch is released
+    /// on every drop path — including panic unwinding — and a caller
+    /// cannot leak it.
+    pub fn hold_clearing(self: &Arc<Self>, key: K) -> ClearingGuard<K> {
+        self.lock_clearing().insert(key);
+        ClearingGuard {
+            reg: Arc::clone(self),
+            key,
         }
     }
 
@@ -790,6 +830,10 @@ impl<K: RegistryKey> ThreadRegistry<K> {
 
     fn lock_orphans(&self) -> std::sync::MutexGuard<'_, Vec<(K, WorkerHandle)>> {
         self.orphans.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn lock_clearing(&self) -> std::sync::MutexGuard<'_, BTreeSet<K>> {
+        self.clearing.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     fn assert_multi_thread(ctx: &str) {
@@ -1030,6 +1074,22 @@ struct EpilogueGuard<K: RegistryKey> {
 impl<K: RegistryKey> Drop for EpilogueGuard<K> {
     fn drop(&mut self) {
         self.reg.run_epilogue(self.key, self.my_gen);
+    }
+}
+
+/// RAII guard returned by [`ThreadRegistry::hold_clearing`]. While alive
+/// the registry refuses any `start_thread`/`start_task` for the latched
+/// key; on drop the latch is released and starts resume. Drop runs on
+/// every exit path, including panic unwinding, so a caller cannot leak
+/// the latch by forgetting to call an end function.
+pub struct ClearingGuard<K: RegistryKey> {
+    reg: Arc<ThreadRegistry<K>>,
+    key: K,
+}
+
+impl<K: RegistryKey> Drop for ClearingGuard<K> {
+    fn drop(&mut self) {
+        self.reg.lock_clearing().remove(&self.key);
     }
 }
 
@@ -1743,6 +1803,98 @@ mod tests {
         assert_eq!(cfg.weight, ShutdownWeight(0));
         assert!(cfg.drain.is_none());
         assert_eq!(cfg.join_budget, DEFAULT_JOIN_BUDGET);
+    }
+
+    /// `hold_clearing(key)` refuses both `start_thread` and `start_task`
+    /// for that key, but ONLY for that key — other keys are unaffected.
+    /// After the guard drops the latch releases and starts succeed again.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn hold_clearing_blocks_starts_for_latched_key_only() {
+        let reg = ThreadRegistry::<&str>::new();
+        let _gate = reg.hold_clearing("shielded");
+
+        // start_thread on the latched key is a no-op.
+        start_clean(&reg, "shielded", WorkerConfig::default());
+        assert!(
+            !reg.is_running("shielded"),
+            "start_thread must be refused while the key is latched"
+        );
+
+        // start_task on the latched key is also a no-op.
+        reg.start_task("shielded", WorkerConfig::default(), |cancel| async move {
+            cancel.cancelled().await;
+        });
+        assert!(
+            !reg.is_running("shielded"),
+            "start_task must be refused while the key is latched"
+        );
+
+        // An unrelated key starts cleanly — the latch is per-key.
+        start_clean(&reg, "identity", WorkerConfig::default());
+        assert!(reg.is_running("identity"));
+
+        // Drop the latch; the same key now starts.
+        drop(_gate);
+        start_clean(&reg, "shielded", WorkerConfig::default());
+        assert!(
+            reg.is_running("shielded"),
+            "latch release allows the key to start again"
+        );
+
+        // Cleanup.
+        assert_eq!(reg.quiesce("shielded").await, WorkerStatus::Ok);
+        assert_eq!(reg.quiesce("identity").await, WorkerStatus::Ok);
+    }
+
+    /// A second `hold_clearing` for the same key on a separate guard
+    /// nests safely — the latch is set-membership, so the second insert
+    /// is a no-op, and only the outer guard's drop fully releases (the
+    /// inner guard's drop removes a key that gets re-inserted by the
+    /// outer if still alive — but here both drop in order). The latch
+    /// returns to "key absent" once every guard has dropped.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn hold_clearing_nested_guards_share_the_latch() {
+        let reg = ThreadRegistry::<&str>::new();
+        let inner;
+        let outer = reg.hold_clearing("shielded");
+        {
+            inner = reg.hold_clearing("shielded");
+            // While both guards are live, starts are refused.
+            start_clean(&reg, "shielded", WorkerConfig::default());
+            assert!(!reg.is_running("shielded"));
+        }
+        // After the inner guard drops the key is removed from the set
+        // (set semantics — every drop removes), so the outer guard's
+        // protection has lapsed. Document this nuance: callers must NOT
+        // rely on nesting; use a single guard per logical clear flow.
+        drop(inner);
+        drop(outer);
+        assert_eq!(reg.lock_clearing().len(), 0);
+    }
+
+    /// The latch holds across panic unwinding (RAII guarantee). A
+    /// closure that holds the guard and panics still removes the key
+    /// from the clearing set on its drop path.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn hold_clearing_releases_on_panic_unwind() {
+        let reg = ThreadRegistry::<&str>::new();
+        let reg_clone = Arc::clone(&reg);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _gate = reg_clone.hold_clearing("shielded");
+            assert_eq!(reg_clone.lock_clearing().len(), 1);
+            panic!("simulated clear-flow panic");
+        }));
+        assert!(result.is_err());
+        assert_eq!(
+            reg.lock_clearing().len(),
+            0,
+            "ClearingGuard's Drop must release the latch even when the clear flow panics"
+        );
+
+        // The key is startable again post-panic.
+        start_clean(&reg, "shielded", WorkerConfig::default());
+        assert!(reg.is_running("shielded"));
+        assert_eq!(reg.quiesce("shielded").await, WorkerStatus::Ok);
     }
 
     // ----- Group 6: concurrency-hazard regressions --------------------

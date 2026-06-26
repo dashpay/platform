@@ -383,6 +383,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         drain_timeout: std::time::Duration,
     ) -> Result<(), crate::error::PlatformWalletError> {
+        // Latch the shielded key on the registry for the WHOLE clear: a
+        // concurrent `shielded_sync_start()` is no-op'd by the registry
+        // until this clear completes, so a fresh worker cannot land
+        // after our liveness check and re-persist into the store we are
+        // about to wipe. Held in addition to the quiescing gate below
+        // (direct passes go through `begin_pass`, which the gate covers;
+        // a full start lands on the registry, which the latch covers).
+        let _clearing_latch = self.registry.hold_clearing(WalletWorker::ShieldedSync);
+
         // Raise and HOLD the shielded quiescing gate for the WHOLE clear,
         // BEFORE quiescing — so the "no new pass" barrier never lapses
         // between the drain, the liveness check, and the store wipe: a direct
@@ -996,6 +1005,52 @@ mod tests {
             .clear_shielded()
             .await
             .expect("clear_shielded must succeed once the orphan is reaped");
+    }
+
+    /// T11 RESIDUAL (5d569459): while `clear_shielded` is mid-flight, a
+    /// concurrent `shielded_sync().start()` must be no-op'd by the
+    /// registry's per-key clearing latch — otherwise a fresh worker can
+    /// land between the clear's liveness check and the store wipe and
+    /// re-persist into the store about to be cleared. The integration
+    /// test holds the latch directly (mirrors what `clear_shielded_inner`
+    /// does) and verifies a start under the latch leaves
+    /// `is_running()==false`.
+    ///
+    /// Non-vacuous: without the latch the start would register a worker
+    /// on the registry (`is_running()==true`) regardless of any in-
+    /// flight clear.
+    #[cfg(feature = "shielded")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn shielded_sync_start_no_ops_while_clearing_latch_held() {
+        let manager = make_manager();
+
+        // Hold the same latch `clear_shielded_inner` raises.
+        let _clearing_latch = manager.registry.hold_clearing(WalletWorker::ShieldedSync);
+
+        // A concurrent caller drives `start()` on the shielded coordinator.
+        manager.shielded_sync_manager.clone().start();
+        assert!(
+            !manager.shielded_sync_manager.is_running(),
+            "registry must refuse the shielded start while the clearing latch is held"
+        );
+
+        // Sibling coordinator (different key) is unaffected.
+        manager.platform_address_sync_manager.clone().start();
+        assert!(
+            manager.platform_address_sync_manager.is_running(),
+            "the latch is per-key; sibling coordinators must still start"
+        );
+
+        // Drop the latch; a fresh start now succeeds.
+        drop(_clearing_latch);
+        manager.shielded_sync_manager.clone().start();
+        assert!(
+            manager.shielded_sync_manager.is_running(),
+            "latch release must let the shielded coordinator start again"
+        );
+
+        // Cleanup.
+        let _ = manager.shutdown().await;
     }
 
     /// SEC-001: `clear_shielded` must BOUND its in-flight-pass drain so a

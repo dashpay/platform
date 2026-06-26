@@ -16,6 +16,6 @@ pub use atomic::AtomicFlagGuard;
 pub use block_on::{block_on, AsyncError};
 #[cfg(not(target_arch = "wasm32"))]
 pub use registry::{
-    DrainHook, RegistryKey, ShutdownReport, ShutdownWeight, ThreadRegistry, WorkerConfig,
-    WorkerStatus, DEFAULT_JOIN_BUDGET, DEFAULT_REAP_BACKSTOP,
+    ClearingGuard, DrainHook, RegistryKey, ShutdownReport, ShutdownWeight, ThreadRegistry,
+    WorkerConfig, WorkerStatus, DEFAULT_JOIN_BUDGET, DEFAULT_REAP_BACKSTOP,
 };
