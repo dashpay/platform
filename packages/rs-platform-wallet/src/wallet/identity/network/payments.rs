@@ -517,31 +517,52 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     ///   that produces each funding input's ECDSA signature on demand. The
     ///   wallet seed is never made resident — every signature is derived and
     ///   wiped inside the signer (mirrors `core_wallet::send_to_addresses`).
+    /// * `provider`         - [`ContactCryptoProvider`] used to drain any
+    ///   deferred contact-crypto build for this contact before the send. The
+    ///   original sender's external-account build is enqueued by the signerless
+    ///   sweep and completed only by a later `drain_pending_contact_crypto`;
+    ///   draining here (with a signer present) builds the account on demand so
+    ///   the very first send after establishing a contact succeeds instead of
+    ///   failing the external-account lookup below.
     ///
     /// # Returns
     ///
     /// The `Txid` of the broadcast transaction and the newly created
     /// [`PaymentEntry`] recording the outgoing payment.
-    pub async fn send_payment<S: key_wallet::signer::Signer>(
+    pub async fn send_payment<S, C>(
         &self,
         from_identity_id: &Identifier,
         to_contact_id: &Identifier,
         amount_duffs: u64,
         memo: Option<String>,
         signer: &S,
+        provider: &C,
     ) -> Result<
         (
             dashcore::Txid,
             crate::wallet::identity::types::dashpay::payment::PaymentEntry,
         ),
         PlatformWalletError,
-    > {
+    >
+    where
+        S: key_wallet::signer::Signer,
+        C: crate::wallet::identity::network::contact_requests::ContactCryptoProvider + Sync,
+    {
         use key_wallet::account::account_collection::DashpayAccountKey;
         use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
         use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
         use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
         let account_index: u32 = 0;
+
+        // Complete any deferred contact-crypto build before resolving the
+        // external account. The signerless sweep enqueues the original
+        // sender's `RegisterExternal` op and never builds it inline; with a
+        // signer present here we drain first so the account exists for the
+        // lookup below. Idempotent and a cheap no-op when the queue is empty.
+        // Run BEFORE acquiring the wallet-manager write guard — the drain
+        // re-acquires that (non-reentrant) lock internally.
+        self.drain_pending_contact_crypto(provider).await;
 
         let (payment_address, tx) = {
             let mut wm = self.wallet_manager.write().await;
@@ -804,6 +825,83 @@ mod tests {
     struct NoopEventHandler;
     impl EventHandler for NoopEventHandler {}
     impl PlatformEventHandler for NoopEventHandler {}
+
+    /// Seed-backed [`key_wallet::signer::Signer`] for the send-path tests.
+    /// Derives every key from the test seed, so it is a faithful stand-in for
+    /// the Keychain signer — but the send-payment tests fail before any input
+    /// is signed (no external account / no spendable UTXOs), so in practice
+    /// only the type bound matters here.
+    struct SeedSigner {
+        wallet: key_wallet::wallet::Wallet,
+    }
+
+    impl SeedSigner {
+        fn new(seed: [u8; 64], network: Network) -> Self {
+            Self {
+                wallet: key_wallet::wallet::Wallet::from_seed_bytes(
+                    seed,
+                    network,
+                    WalletAccountCreationOptions::None,
+                )
+                .expect("seed wallet"),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl key_wallet::signer::Signer for SeedSigner {
+        type Error = String;
+
+        fn supported_methods(&self) -> &[key_wallet::signer::SignerMethod] {
+            &[key_wallet::signer::SignerMethod::Digest]
+        }
+
+        async fn sign_ecdsa(
+            &self,
+            path: &key_wallet::bip32::DerivationPath,
+            sighash: [u8; 32],
+        ) -> Result<
+            (
+                dashcore::secp256k1::ecdsa::Signature,
+                dashcore::secp256k1::PublicKey,
+            ),
+            String,
+        > {
+            let xprv = self
+                .wallet
+                .derive_extended_private_key(path)
+                .map_err(|e| e.to_string())?;
+            let secp = dashcore::secp256k1::Secp256k1::new();
+            let msg = dashcore::secp256k1::Message::from_digest(sighash);
+            let sig = secp.sign_ecdsa(&msg, &xprv.private_key);
+            let pk = dashcore::secp256k1::PublicKey::from_secret_key(&secp, &xprv.private_key);
+            Ok((sig, pk))
+        }
+
+        async fn public_key(
+            &self,
+            path: &key_wallet::bip32::DerivationPath,
+        ) -> Result<dashcore::secp256k1::PublicKey, String> {
+            let xprv = self
+                .wallet
+                .derive_extended_private_key(path)
+                .map_err(|e| e.to_string())?;
+            let secp = dashcore::secp256k1::Secp256k1::new();
+            Ok(dashcore::secp256k1::PublicKey::from_secret_key(
+                &secp,
+                &xprv.private_key,
+            ))
+        }
+
+        async fn extended_public_key(
+            &self,
+            path: &key_wallet::bip32::DerivationPath,
+        ) -> Result<key_wallet::bip32::ExtendedPubKey, String> {
+            self.wallet
+                .derive_extended_public_key(path)
+                .map_err(|e| e.to_string())
+        }
+    }
 
     /// Build a testnet wallet backed by an arbitrary persister `P`, for
     /// flows that need a persister beyond [`RecordingPersister`] (e.g. the
@@ -2779,5 +2877,205 @@ mod tests {
             }),
             "the seedless sweep must enqueue a ContactInfoDecrypt op for the owner"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // send_payment drains the deferred contact-crypto queue first
+    // -----------------------------------------------------------------------
+    //
+    // The original sender's external-account build is enqueued by the
+    // signerless sweep and completed by `drain_pending_contact_crypto`. The
+    // drain runs at the start of `send_payment` (with the signer-backed
+    // provider) so the external account is built before the send resolves it —
+    // otherwise the first `send_payment` after establishing a contact fails the
+    // external-account lookup even though the build is queued and ready.
+    //
+    // Coverage is split across two tests because the mock SDK's
+    // `expect_fetch::<Identity>` is single-shot and the `RegisterExternal`
+    // drain branch fetches the contact identity through it — a second fetch in
+    // a run returns a stale identity whose key yields a different ECDH secret,
+    // so the in-process drain of a `RegisterExternal` op cannot be made to
+    // build the external account deterministically under the mock.
+    //   * `send_payment_runs_pending_contact_crypto_drain` pins the mechanism:
+    //     `send_payment` runs the drain before the external lookup (verified
+    //     with a `RegisterReceiving` op, which the faithful `SeedCryptoProvider`
+    //     completes with no fetch).
+    //   * `send_payment_passes_external_lookup_once_account_built` pins the
+    //     complementary half: once the external account exists, the lookup
+    //     passes and the send proceeds past it.
+    // The full drain-then-send of a queued `RegisterExternal` is exercised
+    // end-to-end by the live DashPay e2e flow.
+
+    /// `send_payment` drains the deferred contact-crypto queue before it
+    /// resolves the external account. A `RegisterExternal` op can't be built
+    /// from under the single-shot mock fetch (see the module comment above), so
+    /// the drain's invocation is pinned with a `RegisterReceiving` op the
+    /// `SeedCryptoProvider` completes with no fetch: after a (still-failing)
+    /// `send_payment`, that queued op is drained. Without the send-path drain
+    /// the op stays queued.
+    #[tokio::test]
+    async fn send_payment_runs_pending_contact_crypto_drain() {
+        use crate::changeset::{PendingContactCrypto, PendingContactCryptoOp};
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        use key_wallet::account::account_collection::DashpayAccountKey;
+
+        let (manager, persister, wallet_id) = make_watch_only_wallet().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        let owner = Identifier::from([0x11; 32]);
+        // The contact whose RegisterReceiving op the drain should complete.
+        let queued_contact = Identifier::from([0x33; 32]);
+        // The (different) contact we try to pay — it has no external account,
+        // so the send fails AFTER the drain has run.
+        let pay_contact = Identifier::from([0x22; 32]);
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(
+                    bare_identity([0x11; 32]),
+                    0,
+                    wallet_id,
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add owner");
+            // A RegisterReceiving op the provider-only drain can complete.
+            info.pending_contact_crypto.push(PendingContactCrypto {
+                owner_identity_id: owner,
+                contact_id: queued_contact,
+                op: PendingContactCryptoOp::RegisterReceiving,
+                enqueued_at_ms: 0,
+            });
+        }
+
+        // A signer + provider derived from the same test seed — the production
+        // posture (Keychain signer present on the send path).
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+
+        // The send fails (no external account for `pay_contact`), but the drain
+        // it runs first must have completed the queued RegisterReceiving op.
+        let result = iw
+            .send_payment(&owner, &pay_contact, 10_000, None, &signer, &provider)
+            .await;
+        assert!(
+            result.is_err(),
+            "the send must still fail for an unbuilt external account"
+        );
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        let receiving_key = DashpayAccountKey {
+            index: 0,
+            user_identity_id: owner.to_buffer(),
+            friend_identity_id: queued_contact.to_buffer(),
+        };
+        assert!(
+            info.core_wallet
+                .accounts
+                .dashpay_receival_accounts
+                .contains_key(&receiving_key),
+            "send_payment must drain the pending contact-crypto queue before \
+             failing — the queued RegisterReceiving op stays unbuilt without the drain"
+        );
+        assert!(
+            !info
+                .pending_contact_crypto
+                .iter()
+                .any(|e| e.contact_id == queued_contact),
+            "the drained RegisterReceiving entry must be cleared from the queue"
+        );
+    }
+
+    /// Once the external account IS built, `send_payment` gets PAST the
+    /// external-account lookup: it no longer returns the
+    /// "No DashpayExternalAccount found" error and instead fails later, at
+    /// funding/transaction build (the seedless test wallet has no UTXOs). Pins
+    /// the precondition the drain clears.
+    #[tokio::test]
+    async fn send_payment_passes_external_lookup_once_account_built() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+
+        let owner_id = Identifier::from([0x11; 32]);
+        let contact_id = Identifier::from([0x22; 32]);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(
+                    bare_identity([0x11; 32]),
+                    0,
+                    wallet_id,
+                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                )
+                .expect("add owner");
+        }
+
+        // Build the external account via the faithful precomputed-shared-key
+        // path (what the drain ultimately calls) so the send's lookup finds it.
+        let shared_key = [0x55u8; 32];
+        let iv = [0x11u8; 16];
+        let compact = {
+            let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+                .expect("mnemonic")
+                .to_seed("");
+            let w = key_wallet::wallet::Wallet::from_seed_bytes(
+                seed,
+                Network::Testnet,
+                WalletAccountCreationOptions::None,
+            )
+            .expect("seed wallet");
+            crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+                &w,
+                Network::Testnet,
+                0,
+                &owner_id,
+                &contact_id,
+            )
+            .expect("derive a valid compact xpub")
+            .compact
+            .to_bytes()
+        };
+        let encrypted =
+            platform_encryption::encrypt_extended_public_key(&shared_key, &iv, &compact);
+        let contact = bare_identity([0x22; 32]);
+        iw.register_external_contact_account(&owner_id, &contact, &encrypted, shared_key)
+            .await
+            .expect("register external account");
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+
+        let err = iw
+            .send_payment(&owner_id, &contact_id, 10_000, None, &signer, &provider)
+            .await
+            .expect_err("seedless test wallet has no UTXOs, so the build must fail");
+
+        // The point: the external-account lookup PASSED. The error is a later
+        // funding/build failure, NOT the missing-account precondition. A
+        // `TransactionBuild` / funding error is the expected post-lookup
+        // failure for a wallet with no spendable UTXOs; only an
+        // `InvalidIdentityData` carrying the missing-account message would mean
+        // the lookup still failed.
+        if let PlatformWalletError::InvalidIdentityData(msg) = &err {
+            assert!(
+                !msg.contains("No DashpayExternalAccount found"),
+                "send_payment must get PAST the external-account lookup once \
+                 the account is built, got: {msg}"
+            );
+        }
     }
 }
