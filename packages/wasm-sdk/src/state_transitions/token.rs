@@ -2054,6 +2054,55 @@ fn validate_price_tiers(tiers: &BTreeMap<TokenAmount, Credits>) -> Result<(), Wa
     Ok(())
 }
 
+/// Build a `priceTiers` map from already-parsed `(originalKey, amount, credits)` entries.
+///
+/// Detects keys that parse to the same `TokenAmount` (e.g. `"1"` and `"01"`) and rejects
+/// them with a message naming both the original and duplicate string keys, instead of
+/// silently overwriting one with the other via `BTreeMap::insert`.
+///
+/// Pure function so it can be unit-tested without a JS runtime.
+fn build_price_tiers(
+    entries: Vec<(String, TokenAmount, Credits)>,
+) -> Result<BTreeMap<TokenAmount, Credits>, WasmSdkError> {
+    let mut tiers: BTreeMap<TokenAmount, Credits> = BTreeMap::new();
+    let mut original_keys: BTreeMap<TokenAmount, String> = BTreeMap::new();
+    for (key_str, amount, credits) in entries {
+        if let Some(prev_key) = original_keys.get(&amount) {
+            return Err(WasmSdkError::invalid_argument(format!(
+                "Duplicate priceTiers tier amount {}: keys '{}' and '{}' both parse to the same token amount",
+                amount, prev_key, key_str
+            )));
+        }
+        original_keys.insert(amount, key_str);
+        tiers.insert(amount, credits);
+    }
+    validate_price_tiers(&tiers)?;
+    Ok(tiers)
+}
+
+/// Decide which pricing mode the caller specified for `tokenSetPrice`.
+///
+/// Exactly one of `price` (flat, including explicit `null` for disable) or
+/// `priceTiers` (tiered) must be provided. Both omitted is rejected so that
+/// a missing field is not silently treated like an explicit `price: null`.
+/// Both present is rejected as ambiguous.
+///
+/// Pure function so it can be unit-tested without a JS runtime.
+fn validate_pricing_mode_selection(
+    price_present: bool,
+    price_tiers_present: bool,
+) -> Result<(), WasmSdkError> {
+    match (price_present, price_tiers_present) {
+        (true, true) => Err(WasmSdkError::invalid_argument(
+            "Specify either 'price' (flat or null) or 'priceTiers' (tiered), not both",
+        )),
+        (false, false) => Err(WasmSdkError::invalid_argument(
+            "Must specify exactly one of 'price' (flat or null to disable) or 'priceTiers' (tiered)",
+        )),
+        _ => Ok(()),
+    }
+}
+
 /// Extract the optional `priceTiers` field from the raw JS options object.
 ///
 /// Returns `Ok(None)` when the field is absent, null, or undefined.
@@ -2077,7 +2126,8 @@ fn extract_price_tiers(
 
     let obj = js_sys::Object::from(value);
     let entries = js_sys::Object::entries(&obj);
-    let mut tiers: BTreeMap<TokenAmount, Credits> = BTreeMap::new();
+    let mut parsed_entries: Vec<(String, TokenAmount, Credits)> =
+        Vec::with_capacity(entries.length() as usize);
 
     for entry in entries.iter() {
         let entry_arr = js_sys::Array::from(&entry);
@@ -2099,12 +2149,10 @@ fn extract_price_tiers(
 
         let credits = try_to_u64(&val, &format!("priceTiers['{}']", key_str))?;
 
-        tiers.insert(amount, credits);
+        parsed_entries.push((key_str, amount, credits));
     }
 
-    validate_price_tiers(&tiers)?;
-
-    Ok(Some(tiers))
+    Ok(Some(build_price_tiers(parsed_entries)?))
 }
 
 /// Result of setting the token price.
@@ -2209,19 +2257,17 @@ impl WasmSdk {
         let raw_options_js: JsValue = options.into();
         let price_tiers = extract_price_tiers(&raw_options_js)?;
 
-        // Reject ambiguous state: caller specified both flat price and tiers.
-        // We detect a present `price` key (including explicit `null` for "disable")
-        // via Reflect to distinguish "key absent" from "price: null".
+        // Determine which pricing mode the caller selected. We must distinguish
+        // "field absent" from "field explicitly null" so that `price: null` can
+        // explicitly disable direct purchases while `{}` is rejected as ambiguous
+        // rather than silently treated like `price: null`.
         let price_field_present =
             js_sys::Reflect::get(&raw_options_js, &JsValue::from_str("price"))
                 .map(|v| !v.is_undefined())
                 .unwrap_or(false);
+        let price_tiers_field_present = price_tiers.is_some();
 
-        if price_tiers.is_some() && price_field_present {
-            return Err(WasmSdkError::invalid_argument(
-                "Specify either 'price' (flat or null) or 'priceTiers' (tiered), not both",
-            ));
-        }
+        validate_pricing_mode_selection(price_field_present, price_tiers_field_present)?;
 
         // Deserialize primitive fields last (consumes options)
         let parsed = deserialize_token_set_price_options(raw_options_js)?;
@@ -2751,5 +2797,106 @@ mod tests {
         let tiers: BTreeMap<TokenAmount, Credits> =
             BTreeMap::from([(1u64, 1_000u64), (100u64, 0u64)]);
         validate_price_tiers(&tiers).expect("zero credits tier should validate");
+    }
+
+    /// Distinct token amount keys build a tier map preserving all entries.
+    #[test]
+    fn build_price_tiers_accepts_distinct_keys() {
+        let entries = vec![
+            ("1".to_string(), 1u64, 1_000u64),
+            ("100".to_string(), 100u64, 800u64),
+        ];
+        let tiers = build_price_tiers(entries).expect("distinct keys should build successfully");
+        assert_eq!(tiers.len(), 2);
+        assert_eq!(tiers.get(&1u64), Some(&1_000u64));
+        assert_eq!(tiers.get(&100u64), Some(&800u64));
+    }
+
+    /// Two string keys that parse to the same `TokenAmount` (e.g. "1" and "01")
+    /// are rejected instead of silently overwriting one entry with the other.
+    #[test]
+    fn build_price_tiers_rejects_duplicate_parsed_keys() {
+        let entries = vec![
+            ("1".to_string(), 1u64, 1_000u64),
+            ("01".to_string(), 1u64, 2_000u64),
+        ];
+        let err = build_price_tiers(entries)
+            .expect_err("duplicate parsed tier amount should be rejected");
+        let msg = err.message();
+        assert!(
+            msg.contains("Duplicate"),
+            "unexpected error message: {}",
+            msg
+        );
+        assert!(
+            msg.contains("'1'"),
+            "error should mention original key: {}",
+            msg
+        );
+        assert!(
+            msg.contains("'01'"),
+            "error should mention duplicate key: {}",
+            msg
+        );
+    }
+
+    /// Even with three keys colliding, the error names the first-seen and the
+    /// next colliding key so the user can locate the offending pair.
+    #[test]
+    fn build_price_tiers_reports_first_collision() {
+        let entries = vec![
+            ("10".to_string(), 10u64, 1u64),
+            ("010".to_string(), 10u64, 2u64),
+            ("0010".to_string(), 10u64, 3u64),
+        ];
+        let err = build_price_tiers(entries).expect_err("collision should be rejected");
+        let msg = err.message();
+        assert!(
+            msg.contains("'10'"),
+            "error should mention first key: {}",
+            msg
+        );
+        assert!(
+            msg.contains("'010'"),
+            "error should mention second key: {}",
+            msg
+        );
+    }
+
+    /// Empty selection (neither `price` nor `priceTiers`) is rejected so that a
+    /// missing field is not silently treated like an explicit `price: null`.
+    #[test]
+    fn validate_pricing_mode_selection_rejects_neither() {
+        let err = validate_pricing_mode_selection(false, false)
+            .expect_err("neither field present should be rejected");
+        assert!(
+            err.message().contains("exactly one"),
+            "unexpected error message: {}",
+            err.message()
+        );
+    }
+
+    /// Specifying both `price` and `priceTiers` is rejected as ambiguous.
+    #[test]
+    fn validate_pricing_mode_selection_rejects_both() {
+        let err = validate_pricing_mode_selection(true, true)
+            .expect_err("both fields present should be rejected");
+        assert!(
+            err.message().contains("not both"),
+            "unexpected error message: {}",
+            err.message()
+        );
+    }
+
+    /// Only `price` present (including `price: null` for disable) is accepted.
+    #[test]
+    fn validate_pricing_mode_selection_accepts_price_only() {
+        validate_pricing_mode_selection(true, false).expect("price-only selection should validate");
+    }
+
+    /// Only `priceTiers` present is accepted.
+    #[test]
+    fn validate_pricing_mode_selection_accepts_tiers_only() {
+        validate_pricing_mode_selection(false, true).expect("tiers-only selection should validate");
     }
 }
