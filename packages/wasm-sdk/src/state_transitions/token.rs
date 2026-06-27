@@ -8,6 +8,7 @@ use crate::sdk::WasmSdk;
 use crate::settings::{get_user_fee_increase, PutSettingsInput};
 use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::document::Document;
+use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::platform::tokens::builders::{
@@ -27,6 +28,7 @@ use dash_sdk::platform::tokens::transitions::{
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use js_sys::BigInt;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::data_contract::document::DocumentWasm;
@@ -35,7 +37,7 @@ use wasm_dpp2::identity::IdentityPublicKeyWasm;
 use wasm_dpp2::state_transitions::base::GroupStateTransitionInfoStatusWasm;
 use wasm_dpp2::state_transitions::batch::token_pricing_schedule::TokenPricingScheduleWasm;
 use wasm_dpp2::tokens::configuration_change_item::TokenConfigurationChangeItemWasm;
-use wasm_dpp2::utils::{try_from_options, try_from_options_optional};
+use wasm_dpp2::utils::{try_from_options, try_from_options_optional, try_to_u64};
 use wasm_dpp2::version::PlatformVersionLikeJs;
 use wasm_dpp2::IdentitySignerWasm;
 
@@ -1942,10 +1944,26 @@ export interface TokenSetPriceOptions {
   authorityId: Identifier;
 
   /**
-   * The price in credits for one token.
+   * The flat price in credits for one token (SinglePrice schedule).
    * Set to null to disable direct purchases.
+   * Mutually exclusive with `priceTiers`.
    */
-  price: bigint | null;
+  price?: bigint | null;
+
+  /**
+   * Tiered direct-purchase pricing (SetPrices schedule).
+   *
+   * Maps the minimum bulk-buy amount (token amount, as a string key)
+   * to the per-token price in credits for that tier. Keys are unsigned
+   * integers encoded as strings; values are credit amounts as bigint.
+   *
+   * Example: `{ "1": 1_000n, "100": 900n, "1000": 800n }` charges 1000
+   * credits/token for purchases of 1+, 900 for purchases of 100+, and
+   * 800 for purchases of 1000+.
+   *
+   * Mutually exclusive with `price`. Must contain at least one entry.
+   */
+  priceTiers?: Record<string, bigint>;
 
   /**
    * Optional public note for the price change.
@@ -1985,6 +2003,10 @@ extern "C" {
 }
 
 /// Main input struct for token set price options (primitives only).
+///
+/// Tiered pricing (`priceTiers`) is extracted separately via `extract_price_tiers`
+/// because serde-wasm-bindgen does not deserialize JS bigints inside a generic
+/// `Record<string, bigint>` reliably.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TokenSetPriceOptionsInput {
@@ -2003,6 +2025,89 @@ fn deserialize_token_set_price_options(
         "Options object is required",
         "token set price options",
     )
+}
+
+/// Validate a constructed `priceTiers` map.
+///
+/// Rejects:
+/// - empty maps (caller must specify at least one tier)
+/// - a `0` minimum bulk-buy amount (use the flat `price` field for that)
+/// - a `0` credits value (use `price: null` to disable direct purchases)
+///
+/// Pure function so it can be unit-tested without a JS runtime.
+fn validate_price_tiers(tiers: &BTreeMap<TokenAmount, Credits>) -> Result<(), WasmSdkError> {
+    if tiers.is_empty() {
+        return Err(WasmSdkError::invalid_argument(
+            "'priceTiers' must contain at least one entry",
+        ));
+    }
+    for (amount, credits) in tiers {
+        if *amount == 0 {
+            return Err(WasmSdkError::invalid_argument(
+                "'priceTiers' minimum bulk-buy amount must be > 0; use 'price' for a flat single-token price",
+            ));
+        }
+        if *credits == 0 {
+            return Err(WasmSdkError::invalid_argument(format!(
+                "'priceTiers' price for amount {} must be > 0; set 'price: null' to disable direct purchases",
+                amount
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Extract the optional `priceTiers` field from the raw JS options object.
+///
+/// Returns `Ok(None)` when the field is absent, null, or undefined.
+/// Returns `Err` when the field is present but malformed (wrong type,
+/// empty, non-numeric keys, non-bigint/integer values, zero amount/price, etc.).
+fn extract_price_tiers(
+    options: &JsValue,
+) -> Result<Option<BTreeMap<TokenAmount, Credits>>, WasmSdkError> {
+    let value = js_sys::Reflect::get(options, &JsValue::from_str("priceTiers"))
+        .map_err(|_| WasmSdkError::invalid_argument("failed to read 'priceTiers' from options"))?;
+
+    if value.is_undefined() || value.is_null() {
+        return Ok(None);
+    }
+
+    if !value.is_object() || js_sys::Array::is_array(&value) {
+        return Err(WasmSdkError::invalid_argument(
+            "'priceTiers' must be an object mapping token amount keys to bigint credit prices",
+        ));
+    }
+
+    let obj = js_sys::Object::from(value);
+    let entries = js_sys::Object::entries(&obj);
+    let mut tiers: BTreeMap<TokenAmount, Credits> = BTreeMap::new();
+
+    for entry in entries.iter() {
+        let entry_arr = js_sys::Array::from(&entry);
+        let key = entry_arr.get(0);
+        let val = entry_arr.get(1);
+
+        let key_str = key.as_string().ok_or_else(|| {
+            WasmSdkError::invalid_argument(
+                "'priceTiers' keys must be strings encoding token amounts",
+            )
+        })?;
+
+        let amount: TokenAmount = key_str.parse().map_err(|err| {
+            WasmSdkError::invalid_argument(format!(
+                "Invalid token amount key '{}' in priceTiers: {}",
+                key_str, err
+            ))
+        })?;
+
+        let credits = try_to_u64(&val, &format!("priceTiers['{}']", key_str))?;
+
+        tiers.insert(amount, credits);
+    }
+
+    validate_price_tiers(&tiers)?;
+
+    Ok(Some(tiers))
 }
 
 /// Result of setting the token price.
@@ -2103,11 +2208,36 @@ impl WasmSdk {
         let authority_id: Identifier =
             try_from_options::<IdentifierWasm>(&options, "authorityId")?.into();
 
-        // Deserialize primitive fields last (consumes options)
-        let parsed = deserialize_token_set_price_options(options.into())?;
+        // Extract optional tiered pricing map before consuming options.
+        let raw_options_js: JsValue = options.into();
+        let price_tiers = extract_price_tiers(&raw_options_js)?;
 
-        // Convert price to pricing schedule
-        let pricing_schedule = parsed.price.map(TokenPricingSchedule::SinglePrice);
+        // Reject ambiguous state: caller specified both flat price and tiers.
+        // We detect a present `price` key (including explicit `null` for "disable")
+        // via Reflect to distinguish "key absent" from "price: null".
+        let price_field_present =
+            js_sys::Reflect::get(&raw_options_js, &JsValue::from_str("price"))
+                .map(|v| !v.is_undefined())
+                .unwrap_or(false);
+
+        if price_tiers.is_some() && price_field_present {
+            return Err(WasmSdkError::invalid_argument(
+                "Specify either 'price' (flat or null) or 'priceTiers' (tiered), not both",
+            ));
+        }
+
+        // Deserialize primitive fields last (consumes options)
+        let parsed = deserialize_token_set_price_options(raw_options_js)?;
+
+        // Build the pricing schedule:
+        // - priceTiers present → SetPrices
+        // - price = Some(n)    → SinglePrice(n)
+        // - price = None / absent → no schedule set (disables direct purchases)
+        let pricing_schedule = if let Some(tiers) = price_tiers {
+            Some(TokenPricingSchedule::SetPrices(tiers))
+        } else {
+            parsed.price.map(TokenPricingSchedule::SinglePrice)
+        };
 
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
@@ -2571,5 +2701,63 @@ impl WasmSdk {
             result,
             contract_id,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A single non-zero tier passes validation.
+    #[test]
+    fn validate_price_tiers_accepts_single_tier() {
+        let tiers: BTreeMap<TokenAmount, Credits> = BTreeMap::from([(1u64, 1_000u64)]);
+        validate_price_tiers(&tiers).expect("single non-zero tier should validate");
+    }
+
+    /// Multiple non-zero tiers pass validation.
+    #[test]
+    fn validate_price_tiers_accepts_multiple_tiers() {
+        let tiers: BTreeMap<TokenAmount, Credits> =
+            BTreeMap::from([(1u64, 1_000u64), (100u64, 900u64), (1000u64, 800u64)]);
+        validate_price_tiers(&tiers).expect("multi-tier schedule should validate");
+    }
+
+    /// An empty tier map is rejected — the caller must specify at least one tier.
+    #[test]
+    fn validate_price_tiers_rejects_empty() {
+        let tiers: BTreeMap<TokenAmount, Credits> = BTreeMap::new();
+        let err = validate_price_tiers(&tiers).expect_err("empty tiers should be rejected");
+        assert!(
+            err.message().contains("at least one entry"),
+            "unexpected error message: {}",
+            err.message()
+        );
+    }
+
+    /// A `0` minimum bulk-buy amount is rejected — direct callers should use `price`.
+    #[test]
+    fn validate_price_tiers_rejects_zero_amount_key() {
+        let tiers: BTreeMap<TokenAmount, Credits> = BTreeMap::from([(0u64, 1_000u64)]);
+        let err = validate_price_tiers(&tiers).expect_err("zero amount key should be rejected");
+        assert!(
+            err.message().contains("amount must be > 0"),
+            "unexpected error message: {}",
+            err.message()
+        );
+    }
+
+    /// A `0` per-token price is rejected — callers should use `price: null` to disable.
+    #[test]
+    fn validate_price_tiers_rejects_zero_credits() {
+        let tiers: BTreeMap<TokenAmount, Credits> =
+            BTreeMap::from([(1u64, 1_000u64), (100u64, 0u64)]);
+        let err = validate_price_tiers(&tiers).expect_err("zero credits should be rejected");
+        let msg = err.message();
+        assert!(
+            msg.contains("amount 100") && msg.contains("must be > 0"),
+            "unexpected error message: {}",
+            msg
+        );
     }
 }
