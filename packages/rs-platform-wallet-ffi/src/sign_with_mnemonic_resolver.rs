@@ -67,6 +67,10 @@ pub const SIGN_WITH_RESOLVER_ERR_UNSUPPORTED_KEY_TYPE: u8 = 8;
 pub const SIGN_WITH_RESOLVER_ERR_RESOLVER_NOT_FOUND: u8 = 9;
 /// Resolver callback returned `mnemonic_resolver_result::OTHER`.
 pub const SIGN_WITH_RESOLVER_ERR_RESOLVER_FAILED: u8 = 10;
+/// The key derived at the path did not match the caller-supplied
+/// `expected_key_data` (compressed pubkey or its hash). The signature is
+/// NOT produced — this guards against signing with a wrong/stale key.
+pub const SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH: u8 = 11;
 
 /// RAII guard that scrubs an [`ExtendedPrivKey`]'s secret scalar on drop, so an
 /// early `return`, `?`, or panic between derivation and use can't leak it (the
@@ -91,9 +95,19 @@ impl Drop for WipingXprv {
 /// Same shape as `dash_sdk_sign_with_mnemonic_and_path`
 /// (rs-sdk-ffi/src/signer_simple.rs) with the mnemonic argument
 /// replaced by `(wallet_id_bytes, mnemonic_resolver_handle)`. The
-/// `key_type` parameter exists for parity (only `0` =
-/// `ECDSA_SECP256K1` is supported); other key types fail with
+/// derived key is always a secp256k1 ECDSA key; `key_type` accepts
+/// `0` (`ECDSA_SECP256K1`) or `2` (`ECDSA_HASH160`) — both sign
+/// identically, the type only describes the on-chain representation.
+/// Other key types fail with
 /// [`SIGN_WITH_RESOLVER_ERR_UNSUPPORTED_KEY_TYPE`].
+///
+/// When `expected_key_data` is non-null it binds the derived key to a
+/// known on-chain key BEFORE signing: the derived compressed public key
+/// (or, for a 20-byte `expected_key_data_len`, its `ripemd160_sha256`
+/// hash) must equal the supplied bytes, else
+/// [`SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH`] and no signature is
+/// produced. Pass null / `0` to skip the check (e.g. the address path,
+/// whose key is already bound by its own derivation).
 ///
 /// Returns `0` on success, `-1` on error. On error, `*out_error`
 /// is set to one of the `SIGN_WITH_RESOLVER_ERR_*` tags,
@@ -108,6 +122,9 @@ impl Drop for WipingXprv {
 ///   C-string for the duration of the call.
 /// - `data` must point at `data_len` readable bytes (may be zero
 ///   only if `data_len == 0`).
+/// - `expected_key_data`, when non-null, must point at
+///   `expected_key_data_len` readable bytes (33 for a compressed
+///   pubkey, 20 for its hash).
 /// - `out_signature` must point at `out_signature_capacity`
 ///   writable bytes; `out_signature_len` and `out_error` must be
 ///   writable.
@@ -121,6 +138,8 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
     data_len: usize,
     key_type: u8,
     network: FFINetwork,
+    expected_key_data: *const u8,
+    expected_key_data_len: usize,
     out_signature: *mut u8,
     out_signature_capacity: usize,
     out_signature_len: *mut usize,
@@ -152,9 +171,12 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
         return fail(SIGN_WITH_RESOLVER_ERR_NULL_POINTER);
     }
 
-    // ECDSA-only entry point. Anything else is a contract violation.
+    // secp256k1-only entry point: both ECDSA key types sign identically
+    // (the type only describes the on-chain pubkey representation). Anything
+    // else (BLS, EdDSA, script-hash) is a contract violation.
     const ECDSA_SECP256K1: u8 = 0;
-    if key_type != ECDSA_SECP256K1 {
+    const ECDSA_HASH160: u8 = 2;
+    if key_type != ECDSA_SECP256K1 && key_type != ECDSA_HASH160 {
         return fail(SIGN_WITH_RESOLVER_ERR_UNSUPPORTED_KEY_TYPE);
     }
 
@@ -225,6 +247,29 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
     };
     let secret_bytes: Zeroizing<[u8; 32]> = Zeroizing::new(derived.0.private_key.secret_bytes());
+
+    // ---- Bind the derived key to the expected on-chain key -------------------
+    // Reject before signing if the key derived here doesn't reproduce the
+    // caller's known key, so a stale/wrong path or a mis-mapped mnemonic can
+    // never yield a valid signature under the wrong key. Mirrors the
+    // discovery-time `validate_private_key_bytes` decision: 33-byte expected =
+    // compressed pubkey equality; 20-byte expected = `ripemd160_sha256` of it.
+    if !expected_key_data.is_null() && expected_key_data_len > 0 {
+        let expected = std::slice::from_raw_parts(expected_key_data, expected_key_data_len);
+        let derived_pubkey = key_wallet::bip32::ExtendedPubKey::from_priv(&secp, &derived.0)
+            .public_key
+            .serialize();
+        let matches = match expected_key_data_len {
+            33 => derived_pubkey.as_slice() == expected,
+            20 => {
+                dash_sdk::dpp::util::hash::ripemd160_sha256(&derived_pubkey).as_slice() == expected
+            }
+            _ => false,
+        };
+        if !matches {
+            return fail(SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH);
+        }
+    }
 
     // ---- Sign ---------------------------------------------------------------
     let data_slice: &[u8] = if data_len == 0 {
@@ -310,6 +355,8 @@ mod tests {
                 data.len(),
                 0, // ECDSA_SECP256K1
                 FFINetwork::Testnet,
+                std::ptr::null(),
+                0,
                 sig_buf.as_mut_ptr(),
                 sig_buf.len(),
                 &mut sig_len,
@@ -341,6 +388,8 @@ mod tests {
                 data.len(),
                 0,
                 FFINetwork::Testnet,
+                std::ptr::null(),
+                0,
                 sig_buf.as_mut_ptr(),
                 sig_buf.len(),
                 &mut sig_len,
@@ -371,6 +420,8 @@ mod tests {
                 data.len(),
                 1, // BLS12_381 — not supported
                 FFINetwork::Testnet,
+                std::ptr::null(),
+                0,
                 sig_buf.as_mut_ptr(),
                 sig_buf.len(),
                 &mut sig_len,
@@ -415,6 +466,8 @@ mod tests {
         let mut sig_buf = [0u8; 128];
         let mut sig_len: usize = 0;
         let mut err: u8 = 0;
+        // Pass the expected pubkey so the binding check also runs on the happy
+        // path (it must accept the key derived at this path).
         let rc = unsafe {
             dash_sdk_sign_with_mnemonic_resolver_and_path(
                 resolver,
@@ -424,6 +477,8 @@ mod tests {
                 data.len(),
                 0, // ECDSA_SECP256K1
                 FFINetwork::Testnet,
+                expected_pubkey.as_ptr(),
+                expected_pubkey.len(),
                 sig_buf.as_mut_ptr(),
                 sig_buf.len(),
                 &mut sig_len,
@@ -438,6 +493,97 @@ mod tests {
             &expected_pubkey,
         )
         .expect("signature must verify against the key derived at the DIP-9 path");
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// The binding rejects BEFORE signing when the key derived at the path does
+    /// not reproduce the caller's expected key — a wrong/stale path or a
+    /// mis-mapped mnemonic can never yield a signature under the wrong key.
+    #[test]
+    fn binding_rejects_wrong_expected_pubkey() {
+        let resolver = make_resolver(english_resolve);
+        let path = CString::new("m/9'/1'/5'/0'/0'/3'/2'").unwrap();
+        let wallet_id = [0u8; 32];
+        let data = b"x";
+        // A pubkey that is NOT the one derived at the path (all 0x02 — a
+        // syntactically valid compressed-pubkey prefix, wrong key).
+        let wrong_pubkey = [0x02u8; 33];
+        let mut sig_buf = [0u8; 128];
+        let mut sig_len: usize = 0;
+        let mut err: u8 = 0;
+        let rc = unsafe {
+            dash_sdk_sign_with_mnemonic_resolver_and_path(
+                resolver,
+                wallet_id.as_ptr(),
+                path.as_ptr(),
+                data.as_ptr(),
+                data.len(),
+                0,
+                FFINetwork::Testnet,
+                wrong_pubkey.as_ptr(),
+                wrong_pubkey.len(),
+                sig_buf.as_mut_ptr(),
+                sig_buf.len(),
+                &mut sig_len,
+                &mut err,
+            )
+        };
+        assert_eq!(rc, -1);
+        assert_eq!(err, SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH);
+        assert_eq!(sig_len, 0, "no signature on a binding mismatch");
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// A `HASH160` identity key (key_type 2) binds by the 20-byte
+    /// `ripemd160_sha256` of the derived pubkey and signs via the same
+    /// secp256k1 path — proving the resolver covers every wallet-derivable
+    /// identity key type (so the carried scalar can be dropped for all of them).
+    #[test]
+    fn binding_accepts_hash160_key_and_signs() {
+        use key_wallet::bip32::ExtendedPubKey;
+
+        let path_str = "m/9'/1'/5'/0'/0'/0'/0'";
+        let resolver = make_resolver(english_resolve);
+        let path = CString::new(path_str).unwrap();
+        let wallet_id = [0u8; 32];
+        let data = b"hash160 identity sign";
+
+        let mnemonic = parse_mnemonic_any_language(ENGLISH_PHRASE).expect("mnemonic");
+        let seed = mnemonic.to_seed("");
+        let secp = Secp256k1::new();
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master");
+        let derived = master
+            .derive_priv(&secp, &DerivationPath::from_str(path_str).unwrap())
+            .expect("derive");
+        let pubkey = ExtendedPubKey::from_priv(&secp, &derived)
+            .public_key
+            .serialize();
+        let expected_hash = dash_sdk::dpp::util::hash::ripemd160_sha256(&pubkey);
+
+        let mut sig_buf = [0u8; 128];
+        let mut sig_len: usize = 0;
+        let mut err: u8 = 0;
+        let rc = unsafe {
+            dash_sdk_sign_with_mnemonic_resolver_and_path(
+                resolver,
+                wallet_id.as_ptr(),
+                path.as_ptr(),
+                data.as_ptr(),
+                data.len(),
+                2, // ECDSA_HASH160
+                FFINetwork::Testnet,
+                expected_hash.as_ptr(),
+                expected_hash.len(),
+                sig_buf.as_mut_ptr(),
+                sig_buf.len(),
+                &mut sig_len,
+                &mut err,
+            )
+        };
+        assert_eq!(rc, 0);
+        assert_eq!(err, SIGN_WITH_RESOLVER_OK);
+        dash_sdk::dpp::dashcore::signer::verify_data_signature(data, &sig_buf[..sig_len], &pubkey)
+            .expect("HASH160 key signature must verify against its derived pubkey");
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
 }
