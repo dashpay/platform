@@ -2032,7 +2032,10 @@ fn deserialize_token_set_price_options(
 /// Rejects:
 /// - empty maps (caller must specify at least one tier)
 /// - a `0` minimum bulk-buy amount (use the flat `price` field for that)
-/// - a `0` credits value (use `price: null` to disable direct purchases)
+///
+/// A `0` credits value is permitted — it mirrors the lower/consensus
+/// `SetPrices` schedule, which allows zero-credit tiers for free
+/// direct purchases at that bulk amount.
 ///
 /// Pure function so it can be unit-tested without a JS runtime.
 fn validate_price_tiers(tiers: &BTreeMap<TokenAmount, Credits>) -> Result<(), WasmSdkError> {
@@ -2041,17 +2044,11 @@ fn validate_price_tiers(tiers: &BTreeMap<TokenAmount, Credits>) -> Result<(), Wa
             "'priceTiers' must contain at least one entry",
         ));
     }
-    for (amount, credits) in tiers {
+    for amount in tiers.keys() {
         if *amount == 0 {
             return Err(WasmSdkError::invalid_argument(
                 "'priceTiers' minimum bulk-buy amount must be > 0; use 'price' for a flat single-token price",
             ));
-        }
-        if *credits == 0 {
-            return Err(WasmSdkError::invalid_argument(format!(
-                "'priceTiers' price for amount {} must be > 0; set 'price: null' to disable direct purchases",
-                amount
-            )));
         }
     }
     Ok(())
@@ -2061,7 +2058,7 @@ fn validate_price_tiers(tiers: &BTreeMap<TokenAmount, Credits>) -> Result<(), Wa
 ///
 /// Returns `Ok(None)` when the field is absent, null, or undefined.
 /// Returns `Err` when the field is present but malformed (wrong type,
-/// empty, non-numeric keys, non-bigint/integer values, zero amount/price, etc.).
+/// empty, non-numeric keys, non-bigint/integer values, zero amount key, etc.).
 fn extract_price_tiers(
     options: &JsValue,
 ) -> Result<Option<BTreeMap<TokenAmount, Credits>>, WasmSdkError> {
@@ -2747,17 +2744,12 @@ mod tests {
         );
     }
 
-    /// A `0` per-token price is rejected — callers should use `price: null` to disable.
+    /// A `0` per-token price is accepted — mirrors lower/consensus `SetPrices`,
+    /// which permits zero-credit tiers for free direct purchases.
     #[test]
-    fn validate_price_tiers_rejects_zero_credits() {
+    fn validate_price_tiers_accepts_zero_credits() {
         let tiers: BTreeMap<TokenAmount, Credits> =
             BTreeMap::from([(1u64, 1_000u64), (100u64, 0u64)]);
-        let err = validate_price_tiers(&tiers).expect_err("zero credits should be rejected");
-        let msg = err.message();
-        assert!(
-            msg.contains("amount 100") && msg.contains("must be > 0"),
-            "unexpected error message: {}",
-            msg
-        );
+        validate_price_tiers(&tiers).expect("zero credits tier should validate");
     }
 }
