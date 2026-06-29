@@ -6,8 +6,10 @@
 //! core-state projection on top. No seed, no signing-key derivation.
 //!
 //! Because load never touches the seed, it performs no wrong-seed check.
-//! A sign-time wrong-seed gate is deferred to separate FFI work and is
-//! not part of this path.
+//! Wrong-seed validation lives in the resolver-backed signing
+//! entrypoints (`sign_with_mnemonic_resolver` and the FFI resolver sign
+//! path), which fail-closed gate the resolver-supplied seed against the
+//! loaded `wallet_id`; the seedless load path here never sees the seed.
 //!
 //! [`load_from_persistor`]: super::PlatformWalletManager::load_from_persistor
 

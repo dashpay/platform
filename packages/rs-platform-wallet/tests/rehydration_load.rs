@@ -3,10 +3,10 @@
 //!
 //! Scope after the seedless rework: load reconstructs every persisted
 //! wallet **watch-only** from its keyless account manifest. The load
-//! path never touches the seed, so it performs no wrong-seed check; a
-//! sign-time gate is deferred separate FFI work and is not part of this
-//! path. Per-row decode failures surface as
-//! [`SkipReason::CorruptPersistedRow`] without aborting the batch.
+//! path never touches the seed, so it performs no wrong-seed check;
+//! wrong-seed validation lives in the resolver-backed signing
+//! entrypoints, not in this load path. Per-row decode failures surface
+//! as [`SkipReason::CorruptPersistedRow`] without aborting the batch.
 //!
 //! RT cases here:
 //! - RT-WO: round-trip — watch-only wallet is registered after reload.
