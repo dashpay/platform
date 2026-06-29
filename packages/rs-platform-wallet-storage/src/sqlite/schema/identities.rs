@@ -24,6 +24,12 @@ pub fn apply(
         // (excluded fills only when on-disk is NULL): the orphan → parented
         // promotion path. The all-zero sentinel stores NULL (no parent).
         let scope_is_sentinel = wallet_id.iter().all(|b| *b == 0);
+        // The DO UPDATE WHERE keeps a wallet-B flush from overwriting wallet
+        // A's row: it fires only when the on-disk row is unowned (orphan →
+        // parented promotion) or already owned by the incoming scope. A
+        // cross-wallet write becomes a no-op (SQLite skips a false-WHERE
+        // upsert without erroring), preserving the resident blob, index, and
+        // tombstone. `IS` is the NULL-safe match for the nullable column.
         let mut stmt = tx.prepare_cached(
             "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
              VALUES (?1, ?2, ?3, ?4, 0) \
@@ -31,7 +37,8 @@ pub fn apply(
                 wallet_id = COALESCE(identities.wallet_id, excluded.wallet_id), \
                 identity_index = excluded.identity_index, \
                 entry_blob = excluded.entry_blob, \
-                tombstoned = 0",
+                tombstoned = 0 \
+             WHERE identities.wallet_id IS NULL OR identities.wallet_id IS excluded.wallet_id",
         )?;
         let wallet_id_param = wallet_id_to_param(wallet_id);
         for (id, entry) in &cs.identities {
@@ -234,4 +241,123 @@ pub fn ensure_exists(
         params![&identity_id[..], wallet_id_param, payload],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::prelude::Identifier;
+    use platform_wallet::changeset::IdentityChangeSet;
+    use platform_wallet::wallet::identity::IdentityStatus;
+
+    fn migrated_conn() -> Connection {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        conn
+    }
+
+    fn insert_wallet(conn: &Connection, wallet: &[u8; 32]) {
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet[..]],
+        )
+        .unwrap();
+    }
+
+    fn entry(
+        id: [u8; 32],
+        wallet_id: Option<[u8; 32]>,
+        balance: u64,
+        index: Option<u32>,
+    ) -> IdentityEntry {
+        IdentityEntry {
+            id: Identifier::from(id),
+            balance,
+            revision: 0,
+            identity_index: index,
+            last_updated_balance_block_time: None,
+            last_synced_keys_block_time: None,
+            dpns_names: Vec::new(),
+            contested_dpns_names: Vec::new(),
+            status: IdentityStatus::Unknown,
+            wallet_id,
+            dashpay_profile: None,
+            dashpay_payments: Default::default(),
+        }
+    }
+
+    fn apply_in_tx(conn: &mut Connection, scope: &[u8; 32], cs: &IdentityChangeSet) {
+        let tx = conn.transaction().unwrap();
+        apply(&tx, scope, cs).unwrap();
+        tx.commit().unwrap();
+    }
+
+    /// A wallet-B flush naming an identity already owned by wallet A must NOT
+    /// overwrite A's blob / index or clear A's tombstone — the DO UPDATE WHERE
+    /// scopes the overwrite to the owning wallet, so the cross-wallet write is
+    /// a no-op.
+    #[test]
+    fn cross_wallet_upsert_does_not_overwrite_resident_row() {
+        let mut conn = migrated_conn();
+        let a = [0xA1u8; 32];
+        let b = [0xB2u8; 32];
+        let x = [0x01u8; 32];
+        insert_wallet(&conn, &a);
+        insert_wallet(&conn, &b);
+
+        // A registers X (balance 1000, index 5), then tombstones it.
+        let mut cs_a = IdentityChangeSet::default();
+        cs_a.identities
+            .insert(Identifier::from(x), entry(x, Some(a), 1000, Some(5)));
+        apply_in_tx(&mut conn, &a, &cs_a);
+        let mut cs_a_remove = IdentityChangeSet::default();
+        cs_a_remove.removed.insert(Identifier::from(x));
+        apply_in_tx(&mut conn, &a, &cs_a_remove);
+
+        // B flushes X (balance 2000, index 9, unowned blob). Must be a no-op.
+        let mut cs_b = IdentityChangeSet::default();
+        cs_b.identities
+            .insert(Identifier::from(x), entry(x, None, 2000, Some(9)));
+        apply_in_tx(&mut conn, &b, &cs_b);
+
+        let (resident, tombstoned) = fetch(&conn, &a, &x).unwrap().expect("A still owns the row");
+        assert_eq!(resident.balance, 1000, "A's blob must survive B's write");
+        assert_eq!(resident.identity_index, Some(5), "A's index must survive");
+        assert!(tombstoned, "A's tombstone must not be reset by B");
+        assert!(
+            fetch(&conn, &b, &x).unwrap().is_none(),
+            "B must not have taken ownership"
+        );
+    }
+
+    /// The WHERE still permits the orphan → parented promotion path: an
+    /// unowned (NULL wallet_id) row is claimed by the first wallet to flush it.
+    #[test]
+    fn orphan_promotion_still_applies() {
+        let mut conn = migrated_conn();
+        let a = [0xA1u8; 32];
+        let y = [0x02u8; 32];
+        insert_wallet(&conn, &a);
+
+        // Orphan Y under the sentinel scope (NULL wallet_id).
+        let mut cs_orphan = IdentityChangeSet::default();
+        cs_orphan
+            .identities
+            .insert(Identifier::from(y), entry(y, None, 10, None));
+        apply_in_tx(&mut conn, &[0u8; 32], &cs_orphan);
+        assert!(
+            fetch(&conn, &a, &y).unwrap().is_none(),
+            "Y starts unowned by A"
+        );
+
+        // A claims Y (balance 500, index 3).
+        let mut cs_a = IdentityChangeSet::default();
+        cs_a.identities
+            .insert(Identifier::from(y), entry(y, Some(a), 500, Some(3)));
+        apply_in_tx(&mut conn, &a, &cs_a);
+
+        let (claimed, _) = fetch(&conn, &a, &y).unwrap().expect("A claimed Y");
+        assert_eq!(claimed.balance, 500, "promotion applies the new blob");
+        assert_eq!(claimed.identity_index, Some(3));
+    }
 }
