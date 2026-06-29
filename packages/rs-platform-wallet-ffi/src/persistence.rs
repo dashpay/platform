@@ -3425,6 +3425,28 @@ fn build_wallet_start_state(
     // would need a new cross-boundary struct field + Swift wiring,
     // tracked as a follow-up. Empty slots make `apply_contacts_and_keys`
     // a no-op for this path, preserving the established iOS behaviour.
+    // Carry the persisted pool used-state through the keyless projection.
+    // The pool-decode block above already merged the persisted `used`
+    // flags into `wallet_info`; project the used addresses out so
+    // `apply_persisted_core_state` can re-mark them used on rehydrate.
+    // Without this a previously-used address whose funds were since spent
+    // comes back marked unused and could be handed out again as a fresh
+    // receive address — an address-reuse privacy leak.
+    let used_core_addresses: Vec<key_wallet::Address> = {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        let mut used = Vec::new();
+        for acct in wallet_info.accounts.all_funding_accounts() {
+            for pool in acct.managed_account_type().address_pools() {
+                for info in pool.addresses.values() {
+                    if info.used {
+                        used.push(info.address.clone());
+                    }
+                }
+            }
+        }
+        used
+    };
+
     let wallet_state = ClientWalletStartState {
         network,
         birth_height: entry.birth_height,
@@ -3434,6 +3456,7 @@ fn build_wallet_start_state(
         unused_asset_locks,
         contacts: Default::default(),
         identity_keys: Default::default(),
+        used_core_addresses,
     };
 
     let platform_address_state = if per_account.is_empty()

@@ -20,7 +20,7 @@ use crate::changeset::{
 };
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 use dashcore::OutPoint;
-use key_wallet::Network;
+use key_wallet::{Address, Network};
 
 /// Keyless per-wallet slice of the startup snapshot.
 ///
@@ -63,4 +63,15 @@ pub struct ClientWalletStartState {
     /// `Identity.public_keys` is populated at load time instead of
     /// only after the next sync. `removed` is always empty.
     pub identity_keys: IdentityKeysChangeSet,
+    /// Addresses the persisted pool snapshot marked **used**, flattened
+    /// across every funds account / pool. `apply_persisted_core_state`
+    /// derives each into its pool slot (if needed) and marks it used, in
+    /// union with the still-unspent UTXO addresses. This is the
+    /// address-reuse guard: a previously-used address whose funds were
+    /// since spent must never be handed back out as a fresh receive
+    /// address. EMPTY default = no pool used-state carried, so rehydrate
+    /// falls back to marking only currently-unspent UTXO addresses (the
+    /// native/SQLite persister until dashpay/platform#3968 wires its pool
+    /// readers to populate this).
+    pub used_core_addresses: Vec<Address>,
 }

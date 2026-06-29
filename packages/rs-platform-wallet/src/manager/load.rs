@@ -88,6 +88,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 unused_asset_locks,
                 contacts,
                 identity_keys,
+                used_core_addresses,
             } = wallet_state;
 
             // Build the watch-only wallet from the keyless manifest. A
@@ -121,6 +122,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 &mut wallet_info,
                 &account_manifest,
                 &core_state,
+                &used_core_addresses,
             ) {
                 load_error = Some(e);
                 break 'load;

@@ -74,6 +74,7 @@ impl PlatformWalletPersistence for FixedLoadPersister {
                             unused_asset_locks: Default::default(),
                             contacts: Default::default(),
                             identity_keys: Default::default(),
+                            used_core_addresses: w.used_core_addresses.clone(),
                         },
                     );
                 }
@@ -132,6 +133,7 @@ fn slice(seed: [u8; 64]) -> (WalletId, ClientWalletStartState) {
             unused_asset_locks: Default::default(),
             contacts: Default::default(),
             identity_keys: Default::default(),
+            used_core_addresses: Default::default(),
         },
     )
 }
@@ -193,6 +195,7 @@ async fn rt_corrupt_row_skipped_and_other_loads() {
         unused_asset_locks: Default::default(),
         contacts: Default::default(),
         identity_keys: Default::default(),
+        used_core_addresses: Default::default(),
     };
 
     let mut st = ClientStartState::default();
@@ -259,6 +262,7 @@ async fn rt_z_secret_hygiene_surfaces() {
         unused_asset_locks: Default::default(),
         contacts: Default::default(),
         identity_keys: Default::default(),
+        used_core_addresses: Default::default(),
     };
     let mut st = ClientStartState::default();
     st.wallets.insert(id, corrupt);

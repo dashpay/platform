@@ -67,12 +67,17 @@ pub(super) fn build_watch_only_wallet(
 /// - `wallet_info`: the skeleton to hydrate in place.
 /// - `manifest`: keyless account manifest (one entry per registered
 ///   account). Each entry carries an `account_type` → `account_xpub`
-///   mapping used by [`extend_pools_for_restored_utxos`] to derive
+///   mapping used by [`extend_pools_for_restored_addresses`] to derive
 ///   addresses for restored UTXOs. If an account's `account_type` is
 ///   absent from the manifest, deep-index derivation is skipped for that
 ///   account (no xpub → no derivation possible); already-derived in-window
 ///   addresses are still marked used.
 /// - `core`: the persisted core-state changeset to apply.
+/// - `used_pool_addresses`: addresses the persisted pool snapshot marked
+///   used (across all accounts/pools). Marked used in union with the
+///   still-unspent UTXO addresses so a previously-used address whose funds
+///   were since spent is never re-handed-out as a fresh receive address
+///   (address-reuse guard). Empty = no pool used-state carried.
 ///
 /// # Reconstructed (safety-critical-correct)
 ///
@@ -88,6 +93,9 @@ pub(super) fn build_watch_only_wallet(
 ///   restored UTXOs at deep derivation indices, then the gap window is
 ///   refilled beyond the deepest restored index so the per-address view
 ///   reconciles with the wallet total.
+/// - **Address-pool used-state**: every `used_pool_addresses` entry is
+///   re-marked used (in union with the unspent-UTXO addresses), so an
+///   address whose funds were since spent is not re-handed-out as fresh.
 /// - **Sync watermarks**: `synced_height` / `last_processed_height`.
 ///
 /// # Reconstructed when the persister supplies it
@@ -122,7 +130,7 @@ pub(super) fn build_watch_only_wallet(
 ///   full sync. The wallet *total* stays exact (every UTXO is summed
 ///   regardless of pool visibility); only the per-address view is
 ///   incomplete until that sync. This is the accepted behavior of the
-///   horizon-walk algorithm — see [`extend_pools_for_restored_utxos`].
+///   horizon-walk algorithm — see [`extend_pools_for_restored_addresses`].
 /// - **Per-UTXO `is_coinbase` / `is_instantlocked` / `is_trusted`
 ///   flags**: not columns in `core_utxos`; conservatively defaulted
 ///   (non-coinbase, confirmed-by-height) and refreshed on the next
@@ -143,6 +151,7 @@ pub fn apply_persisted_core_state(
     wallet_info: &mut ManagedWalletInfo,
     manifest: &[AccountRegistrationEntry],
     core: &crate::changeset::CoreChangeSet,
+    used_pool_addresses: &[key_wallet::Address],
 ) -> Result<(), PlatformWalletError> {
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
@@ -180,6 +189,18 @@ pub fn apply_persisted_core_state(
         .iter()
         .filter(|u| !spent_outpoints.contains(&u.outpoint))
         .collect();
+
+    // Addresses to derive-and-mark-used: the still-unspent UTXO addresses
+    // PLUS the persisted pool used-state. The latter restores addresses
+    // whose funds were since spent — without it a previously-used address
+    // comes back marked unused and could be handed out again as a fresh
+    // receive address (address-reuse privacy leak). Empty
+    // `used_pool_addresses` (the native/SQLite path until
+    // dashpay/platform#3968) preserves the prior unspent-only behaviour.
+    let mut addresses_to_mark: Vec<key_wallet::Address> =
+        unspent.iter().map(|u| u.address.clone()).collect();
+    addresses_to_mark.extend(used_pool_addresses.iter().cloned());
+
     if !unspent.is_empty() {
         match wallet_info
             .accounts
@@ -192,8 +213,13 @@ pub fn apply_persisted_core_state(
                     account.utxos.insert(utxo.outpoint, (*utxo).clone());
                 }
                 // Eager derivation covers only `0..=gap_limit`; extend each
-                // chain to cover restored UTXOs at deeper indices.
-                extend_pools_for_restored_utxos(account, manifest, &unspent, wallet_id)?;
+                // chain to cover restored / used addresses at deeper indices.
+                extend_pools_for_restored_addresses(
+                    account,
+                    manifest,
+                    &addresses_to_mark,
+                    wallet_id,
+                )?;
             }
             None => {
                 return Err(PlatformWalletError::RehydrationTopologyUnsupported {
@@ -201,6 +227,20 @@ pub fn apply_persisted_core_state(
                     utxo_count: unspent.len(),
                 });
             }
+        }
+    } else if !addresses_to_mark.is_empty() {
+        // No unspent UTXOs to hold, but persisted used-state still needs
+        // re-marking so spent-out addresses aren't re-handed-out. Apply to
+        // the first funds account; a funds-less wallet has no pool to mark
+        // (and no UTXOs at risk), so this is a no-op without the topology
+        // guard — that guard only fires for unspent UTXOs above.
+        if let Some(account) = wallet_info
+            .accounts
+            .all_funding_accounts_mut()
+            .into_iter()
+            .next()
+        {
+            extend_pools_for_restored_addresses(account, manifest, &addresses_to_mark, wallet_id)?;
         }
     }
 
@@ -227,19 +267,20 @@ const MAX_REHYDRATION_DERIVATION_INDEX: u32 = 10_000;
 /// [`MAX_REHYDRATION_DERIVATION_INDEX`] ceiling — both worth surfacing.
 const REHYDRATION_DEEP_SCAN_WARN_INDEX: u32 = 1_000;
 
-/// Extend `account`'s address pools so every resolved UTXO address is
-/// derived at its exact `(chain, index)` slot and marked used, then refill
-/// the gap window beyond — following the sync path's `mark_used` →
+/// Extend `account`'s address pools so every resolved address (a
+/// still-unspent UTXO address or a persisted pool used-address) is derived
+/// at its exact `(chain, index)` slot and marked used, then refill the gap
+/// window beyond — following the sync path's `mark_used` →
 /// `maintain_gap_limit` sequence. Each chain is scanned independently,
 /// stopping once no unresolved address matches within a `gap_limit`-sized
 /// window past the deepest resolved index; [`MAX_REHYDRATION_DERIVATION_INDEX`]
 /// is the hard ceiling. Addresses that don't resolve from this account's
 /// xpub — foreign keys, multi-account mismatch, or legitimately-owned but
-/// deep-and-sparse slots with no nearer unspent UTXO to anchor the horizon —
+/// deep-and-sparse slots with no nearer resolved address to anchor the horizon —
 /// are counted and logged via `tracing::warn!`; they re-warm on the next
-/// full sync. Every restored address the pools *do* hold (in-window or
-/// deep-resolved) is marked used so a funded address is never handed out as
-/// a fresh receive address.
+/// full sync. Every resolved address the pools *do* hold (in-window or
+/// deep-resolved) is marked used so a funded or previously-used address is
+/// never handed out as a fresh receive address.
 ///
 /// Tested with Standard BIP44 topology (External + Internal pools) and
 /// CoinJoin topology (single External pool). The per-chain probe loop has no
@@ -258,10 +299,10 @@ const REHYDRATION_DEEP_SCAN_WARN_INDEX: u32 = 1_000;
 /// pool by position.
 ///
 /// Never touches key material — the xpub is the keyless account public key.
-fn extend_pools_for_restored_utxos(
+fn extend_pools_for_restored_addresses(
     account: &mut key_wallet::managed_account::ManagedCoreFundsAccount,
     manifest: &[AccountRegistrationEntry],
-    restored: &[&key_wallet::Utxo],
+    restored_addresses: &[key_wallet::Address],
     wallet_id: [u8; 32],
 ) -> Result<(), PlatformWalletError> {
     use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
@@ -310,10 +351,10 @@ fn extend_pools_for_restored_utxos(
     if let Some(key_source) = key_source.as_ref() {
         let mut unresolved: HashSet<key_wallet::Address> = {
             let pools = account.managed_account_type().address_pools();
-            restored
+            restored_addresses
                 .iter()
-                .map(|u| u.address.clone())
                 .filter(|addr| !pools.iter().any(|p| p.contains_address(addr)))
+                .cloned()
                 .collect()
         };
 
@@ -432,8 +473,8 @@ fn extend_pools_for_restored_utxos(
         // receive address. `mark_used` is a no-op for addresses not in this
         // pool, so an underived (foreign / sparse) index is never marked.
         let mut marked_any = false;
-        for u in restored {
-            if pool.mark_used(&u.address) {
+        for addr in restored_addresses {
+            if pool.mark_used(addr) {
                 marked_any = true;
             }
         }
@@ -639,7 +680,7 @@ mod tests {
             ..Default::default()
         };
 
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core).unwrap();
+        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &[]).unwrap();
 
         // The wallet total is exact regardless (a sum over the UTXO set).
         assert_eq!(wallet_info.balance.total(), expected_total);
@@ -803,7 +844,7 @@ mod tests {
         };
 
         // Must not panic. tracing::warn! fires for the unresolved count.
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core).unwrap();
+        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &[]).unwrap();
 
         // Total balance is exact — foreign UTXO is in the set regardless.
         assert_eq!(
@@ -842,7 +883,7 @@ mod tests {
     }
 
     /// CoinJoin topology (single External pool, no Internal chain).
-    /// Verifies that `extend_pools_for_restored_utxos` handles a single-pool
+    /// Verifies that `extend_pools_for_restored_addresses` handles a single-pool
     /// account at a deep derivation index (idx 30, just past the eager window).
     #[test]
     fn rehydration_coinjoin_single_pool_deep_index() {
@@ -940,7 +981,7 @@ mod tests {
             ..Default::default()
         };
 
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core).unwrap();
+        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &[]).unwrap();
 
         // Balance is exact.
         assert_eq!(
@@ -1038,7 +1079,7 @@ mod tests {
             ..Default::default()
         };
 
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core).unwrap();
+        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &[]).unwrap();
 
         let funds = wallet_info
             .accounts
@@ -1063,6 +1104,125 @@ mod tests {
             external.highest_used,
             Some(3),
             "highest_used must reflect the in-window slot"
+        );
+    }
+
+    /// #3692 review (privacy / address-reuse): a previously-used address
+    /// whose funds were SINCE SPENT (so it carries no current UTXO) must
+    /// still come back marked `used` when the persisted pool snapshot
+    /// reports it via `used_pool_addresses`. Without it the address resets
+    /// to `used = false` and could be handed out again as a fresh receive
+    /// address. Covers an in-window slot (idx 5) and a deeper slot the
+    /// horizon walk resolves (idx 30, at the initial gap-limit boundary),
+    /// and asserts the baseline (empty `used_pool_addresses`) does NOT mark
+    /// them — so the field is demonstrably what fixes the leak.
+    #[test]
+    fn rehydration_restores_persisted_used_state_for_spent_out_address() {
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::Address;
+
+        let wallet = Wallet::from_seed_bytes(
+            [42u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+
+        let funds_type = ManagedWalletInfo::from_wallet(&wallet, 1)
+            .accounts
+            .all_funding_accounts()
+            .first()
+            .unwrap()
+            .managed_account_type()
+            .to_account_type();
+        let xpub = manifest
+            .iter()
+            .find(|e| e.account_type == funds_type)
+            .map(|e| e.account_xpub)
+            .expect("funds account xpub");
+
+        let derive = |index: u32| -> Address {
+            let mut p = AddressPool::new_without_generation(
+                DerivationPath::master(),
+                AddressPoolType::External,
+                DEFAULT_EXTERNAL_GAP_LIMIT,
+                Network::Testnet,
+            );
+            p.generate_addresses(index + 1, &KeySource::Public(xpub), true)
+                .unwrap();
+            p.address_at_index(index).unwrap()
+        };
+        let in_window_used = derive(5);
+        let deep_used = derive(30);
+
+        // No current UTXOs — these addresses' funds were already spent.
+        let core = crate::changeset::CoreChangeSet {
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+        let used = vec![in_window_used.clone(), deep_used.clone()];
+
+        // Baseline: with NO persisted used-state the spent-out address is
+        // not marked used (the pre-fix behaviour, and the reuse hazard).
+        {
+            let mut baseline = ManagedWalletInfo::from_wallet(&wallet, 1);
+            apply_persisted_core_state(&mut baseline, &manifest, &core, &[]).unwrap();
+            let funds = baseline
+                .accounts
+                .all_funding_accounts()
+                .into_iter()
+                .next()
+                .unwrap();
+            let pools = funds.managed_account_type().address_pools();
+            let external = pools.iter().find(|p| p.is_external()).unwrap();
+            assert!(
+                !external
+                    .address_info(&in_window_used)
+                    .map(|i| i.used)
+                    .unwrap_or(false),
+                "without persisted used-state a spent-out address resets to unused"
+            );
+        }
+
+        // With the persisted used-state, both addresses come back used.
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &used).unwrap();
+
+        let funds = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .next()
+            .unwrap();
+        let pools = funds.managed_account_type().address_pools();
+        let external = pools.iter().find(|p| p.is_external()).unwrap();
+
+        assert!(
+            external
+                .address_info(&in_window_used)
+                .expect("in-window used address must be present")
+                .used,
+            "in-window spent-out address must be restored as used"
+        );
+        assert!(external.used_indices.contains(&5), "idx 5 recorded used");
+        assert!(
+            external
+                .address_info(&deep_used)
+                .expect("deep used address must be derived into the pool")
+                .used,
+            "deep spent-out address must be derived + restored as used"
+        );
+        assert!(external.used_indices.contains(&30), "idx 30 recorded used");
+        assert_eq!(
+            external.highest_used,
+            Some(30),
+            "highest_used must reflect the deepest restored used slot"
         );
     }
 
@@ -1144,7 +1304,7 @@ mod tests {
             ..Default::default()
         };
 
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core).unwrap();
+        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &[]).unwrap();
 
         // The wallet total is exact regardless (a sum over the UTXO set).
         assert_eq!(wallet_info.balance.total(), value);
@@ -1239,7 +1399,7 @@ mod tests {
             ..Default::default()
         };
 
-        let err = apply_persisted_core_state(&mut wallet_info, &manifest, &core)
+        let err = apply_persisted_core_state(&mut wallet_info, &manifest, &core, &[])
             .expect_err("must fail closed when no funds account can hold the UTXOs");
         match err {
             PlatformWalletError::RehydrationTopologyUnsupported { utxo_count, .. } => {
@@ -1276,7 +1436,7 @@ mod tests {
             synced_height: Some(1),
             ..Default::default()
         };
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core)
+        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &[])
             .expect("empty UTXO set must be Ok even with no funds account");
     }
 
@@ -1316,7 +1476,7 @@ mod tests {
             ..Default::default()
         };
 
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core).unwrap();
+        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &[]).unwrap();
 
         assert_eq!(
             wallet_info.metadata.last_applied_chain_lock.as_ref(),
