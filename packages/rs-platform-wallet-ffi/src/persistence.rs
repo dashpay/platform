@@ -3377,29 +3377,17 @@ fn build_wallet_start_state(
     // status without rebroadcasting.
     let unused_asset_locks = build_unused_asset_locks(entry)?;
 
-    let wallet_state = ClientWalletStartState {
-        wallet,
-        wallet_info,
-        identity_manager,
-        unused_asset_locks,
-    };
-
-    let platform_address_state = if per_account.is_empty()
-        && entry.platform_sync_height == 0
-        && entry.platform_sync_timestamp == 0
-        && entry.platform_last_known_recent_block == 0
-    {
-        None
-    } else {
-        Some(platform_wallet::PlatformAddressSyncStartState {
-            per_account,
-            sync_height: entry.platform_sync_height,
-            sync_timestamp: entry.platform_sync_timestamp,
-            last_known_recent_block: entry.platform_last_known_recent_block,
-        })
-    };
-
-    Ok((wallet_state, platform_address_state))
+    // Projecting the reconstructed `wallet`/`wallet_info` into the
+    // reshaped keyless `ClientWalletStartState` (account manifest +
+    // `CoreChangeSet` + the keyless contact / identity-key feeds) is the
+    // seeded FFI restore path, which lands in #3692. The storage-only
+    // #3968 branch keeps every reader above wired — `build_unused_asset_locks`
+    // and `build_wallet_identity_bucket` still run, so their `?` error
+    // paths and the per-account projection stay exercised — and stubs
+    // only this final assembly. `_` consumes the two start-state slices
+    // whose sole consumer was the removed struct literal.
+    let _ = (identity_manager, unused_asset_locks);
+    todo!("seeded FFI restore path lands in #3692")
 }
 
 /// Translate the `IdentityRestoreEntryFFI` slice carried on a wallet

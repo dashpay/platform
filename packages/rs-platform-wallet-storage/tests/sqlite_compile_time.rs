@@ -30,12 +30,12 @@ fn tc078_object_safety() {
 /// rarely do.
 const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     (
-        "wallet_meta.rs",
-        "SELECT wallet_id FROM wallet_metadata ORDER BY wallet_id",
+        "wallets.rs",
+        "SELECT wallet_id FROM wallets ORDER BY wallet_id",
     ),
     (
-        "wallet_meta.rs",
-        "SELECT network, birth_height FROM wallet_metadata WHERE wallet_id",
+        "wallets.rs",
+        "SELECT network, birth_height FROM wallets WHERE wallet_id",
     ),
     ("asset_locks.rs", "SELECT outpoint, account_index"),
     ("platform_addrs.rs", "SELECT account_index, address_index"),
@@ -58,6 +58,27 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "SELECT wallet_id, account_index, account_xpub_bytes FROM account_registrations",
     ),
     ("core_state.rs", "SELECT outpoint, value, script, height"),
+    // Full-rehydration readers — one-shot SELECTs in `load_state`.
+    (
+        "accounts.rs",
+        "SELECT account_type, account_index, account_xpub_bytes FROM account_registrations",
+    ),
+    (
+        "core_state.rs",
+        "SELECT record_blob FROM core_transactions WHERE wallet_id",
+    ),
+    (
+        "core_state.rs",
+        "SELECT txid, islock_blob FROM core_instant_locks WHERE wallet_id",
+    ),
+    (
+        "core_state.rs",
+        "SELECT last_processed_height, synced_height, last_applied_chain_lock FROM core_sync_state WHERE wallet_id",
+    ),
+    (
+        "identity_keys.rs",
+        "SELECT identity_id, key_id, public_key_blob FROM identity_keys WHERE wallet_id",
+    ),
     // P4 readers — `load_state` per area uses one-shot SELECTs.
     (
         "identities.rs",

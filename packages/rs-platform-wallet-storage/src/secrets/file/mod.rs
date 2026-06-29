@@ -1,28 +1,24 @@
 //! [`EncryptedFileStore`] — passphrase-encrypted on-disk vault, resident
 //! in memory while the store handle lives.
 //!
-//! # Lifecycle
+//! [`open`] takes the advisory lock on a sibling `.lock` sidecar (single
+//! attempt), then creates or decrypts the vault and keeps the plaintext
+//! entry map resident. [`get`] serves from memory (no per-op KDF/disk);
+//! every mutation ([`put`], [`delete`], [`rekey`]) edits memory then
+//! re-encrypts and atomically rewrites the file. [`Drop`] best-effort
+//! re-syncs, re-asserts `0600` on Unix, and releases the lock. A second
+//! `open()` of a held path fails fast with
+//! [`SecretStoreError::AlreadyLocked`].
 //!
-//! - [`open`] grabs the cross-platform advisory lock on a sibling
-//!   `.lock` sidecar (single attempt, no retry), creates a fresh vault
-//!   if none exists yet, otherwise decrypts the existing one, and keeps
-//!   the plaintext entry map resident.
-//! - Every mutation ([`put`], [`delete`], [`rekey`]) edits the in-memory
-//!   vault and immediately re-encrypts and atomically writes it back to
-//!   disk (eager sync).
-//! - [`get`] reads from the in-memory map — no KDF, no disk hit per op.
-//! - [`Drop`] best-effort-syncs the resident state once more, re-asserts
-//!   `0600` on Unix, and releases the lock when the file descriptor
-//!   closes.
+//! **Cross-process exclusion is LOCAL-filesystem only.** `AlreadyLocked`
+//! rests on `fd-lock` (`flock` / `LockFileEx`), which does NOT interlock
+//! over NFS/CIFS/SMB — two hosts could each "lock" and last-writer-wins
+//! would lose secrets. A vault file MUST NOT be shared across hosts; use
+//! the OS keyring ([`SecretStore::Os`]) for multi-host access. The lock
+//! sidecar is distinct from the vault file so the atomic `persist` rename
+//! never touches the inode the open lock fd points at.
 //!
-//! Concurrency is intentionally not supported: a second `open()` against
-//! a path some other store handle (in this or another process) is
-//! already holding fails fast with [`SecretStoreError::AlreadyLocked`].
-//!
-//! One file, one passphrase, one lock — a multi-wallet store cannot
-//! lock its other wallets out by construction. The lock sidecar
-//! (`<path>.lock`) is distinct from the vault file itself so the atomic
-//! `persist` rename never touches the inode an open lock fd points at.
+//! [`SecretStore::Os`]: crate::secrets::SecretStore::Os
 //!
 //! [`open`]: EncryptedFileStore::open
 //! [`put`]: EncryptedFileStore::put_bytes
@@ -30,21 +26,21 @@
 //! [`rekey`]: EncryptedFileStore::rekey
 //! [`get`]: EncryptedFileStore::get_bytes
 //!
-//! ## Threat coverage
-//!
-//! Covers **A1** (other local user), **A4** (lost laptop / cold
-//! backup), **A6** (synced backup of the vault file): the at-rest file
-//! is Argon2id + AEAD, useless without the passphrase. Does **not**
-//! cover **A3** (passphrase / derived key resident while unlocked), a
-//! weak operator passphrase (KDF raises cost, does not eliminate the
-//! risk — an accepted residual), or **A5** if the derived key / plaintext is
-//! swapped or core-dumped while unlocked (best-effort mitigated by
-//! zeroize + mlock, not eliminated). The derived AEAD key is held
-//! resident inside a [`SecretBytes`] for the store's lifetime so reads
-//! and writes do not pay the Argon2 cost per op; it is zeroized on Drop.
+//! Threat coverage: the at-rest file is Argon2id + AEAD, so it protects
+//! **A1** (other local user), **A4** (lost laptop / cold backup), and
+//! **A6** (synced backup). It does NOT cover **A3** (key/passphrase
+//! resident while unlocked), a weak operator passphrase, or **A5**
+//! (swap / core-dump while unlocked) — the last is best-effort mitigated
+//! by zeroize + mlock. The derived AEAD key stays resident in a
+//! [`SecretBytes`] (to avoid per-op Argon2) and is zeroized on Drop.
 
-mod crypto;
-mod format;
+// `pub(super)` (= visible within `crate::secrets`) so the Tier-2
+// `envelope` module — a sibling of `file` under `secrets` — can reuse the
+// shared Argon2id/XChaCha primitives and `KDF_ID_ARGON2ID` without
+// duplicating crypto. Items inside stay `pub(crate)`/`pub(in …file)`, so
+// nothing escapes the secrets tree (see the crypto.rs module doc).
+pub(super) mod crypto;
+pub(super) mod format;
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -61,12 +57,11 @@ use format::{EntryBody, Vault};
 
 use super::error::SecretStoreError;
 
-use super::secret::{SecretBytes, SecretString};
+use super::secret::{SecretBytes, SecretString, MIN_PASSPHRASE_LEN};
 use super::validate::{validated_label, WalletId};
 
-/// Upstream service-prefix for vault entries. The full `service`
-/// string is `SERVICE_PREFIX + hex(wallet_id)`, mapping each wallet
-/// to its own keyring "service" namespace.
+/// Service-prefix for vault entries: the full `service` string is
+/// `SERVICE_PREFIX + hex(wallet_id)`, one namespace per wallet.
 pub const SERVICE_PREFIX: &str = "dash.platform-wallet-storage/";
 
 /// Vendor / id tags published through `CredentialStoreApi`.
@@ -74,113 +69,118 @@ const VENDOR: &str = "dash.platform-wallet-storage";
 const STORE_ID: &str = "encrypted-file-store-v1";
 
 /// Structural ceiling on the on-disk vault file. The vault is
-/// attacker-controllable JSON; a multi-GiB file would force a huge
-/// `fs::read` allocation ahead of any tag check, so refuse to even
-/// allocate beyond this cap and surface
-/// [`SecretStoreError::VaultTooLarge`].
+/// attacker-controllable JSON, so refuse to allocate / parse beyond this
+/// cap (surfacing [`SecretStoreError::VaultTooLarge`]) ahead of any tag
+/// check rather than let a multi-GiB file force a huge `fs::read`.
 pub const MAX_VAULT_SIZE_BYTES: u64 = 128 * 1024 * 1024;
+
+/// Per-secret write-side ceiling. The vault is ONE shared document, so an
+/// uncapped oversized entry would inflate it past [`MAX_VAULT_SIZE_BYTES`]
+/// and brick every wallet on reopen. 64 KiB is far above any legitimate
+/// mnemonic / seed / xpriv. Enforced with
+/// [`SecretStoreError::SecretTooLarge`] at the write boundary before the
+/// secret is sealed or inserted.
+pub const MAX_SECRET_LEN: usize = 64 * 1024;
 
 /// A passphrase-encrypted file-backed credential store.
 ///
-/// One file, one passphrase, one lock — the whole store rotates
-/// together via [`rekey`](Self::rekey). Every [`SecretString`] and the
-/// resident derived AEAD key are zeroized when the store drops.
-/// The plaintext entry map is held in
-/// [`EntryBody`]-shaped form: the bytes inside `ciphertext` are
-/// ciphertext, but the structure is fully populated so reads do not
-/// re-touch disk.
-///
-/// The handle is cheap-`Clone` — both clones share the same
-/// `Arc<Mutex<…>>`, so every operation through any clone sees the same
-/// resident state and serializes against every other operation.
+/// One file, one passphrase, one lock; the whole store rotates together
+/// via [`rekey`](Self::rekey). The cheap-`Clone` handle shares one
+/// `Arc<Mutex<…>>`, so every clone sees the same resident state and
+/// serializes against every other operation. All [`SecretString`]s and
+/// the resident AEAD key are zeroized on drop.
 #[derive(Clone)]
 pub struct EncryptedFileStore {
     inner: Arc<Mutex<EncryptedFileStoreInner>>,
 }
 
-/// All resident state for the store — path, advisory file lock,
-/// in-memory vault, cached AEAD key, and the store-wide passphrase —
-/// coalesced behind a single [`Mutex`] at the [`Arc`] wrapper level so
-/// every mutation observes a consistent triple (vault matches the key
-/// it was sealed under, key matches the passphrase that derived it).
-///
-/// A single lock keeps put/get/delete/rekey serialized against each
-/// other so a concurrent put cannot seal under an old key while rekey
-/// is swapping in a new one. The disk write happens while
-/// the lock is held; the file-lock sidecar already serializes
-/// cross-process so this does not introduce a new I/O contention
-/// point.
+/// Resident store state behind a single [`Mutex`] so every mutation sees
+/// a consistent triple (vault matches the key it was sealed under, key
+/// matches the passphrase that derived it). The single lock serializes
+/// put/get/delete/rekey so a put cannot seal under an old key mid-rekey;
+/// the disk write happens under it, and the file-lock sidecar already
+/// serializes cross-process, so this adds no new I/O contention point.
 struct EncryptedFileStoreInner {
     /// Vault file path supplied by the caller at [`open`].
     ///
     /// [`open`]: EncryptedFileStore::open
     path: PathBuf,
-    /// In-memory vault. Mutations edit this directly and then call
-    /// `sync_to_disk` to re-encrypt and atomically replace the
-    /// on-disk file. Reads return clones from here without hitting
-    /// disk.
+    /// In-memory vault. Mutations edit it then `sync_to_disk` to
+    /// re-encrypt and atomically replace the file; reads clone from here.
     vault: Vault,
-    /// Cached AEAD key derived once at [`open`] from the salt + KDF
-    /// params + passphrase. Re-derived only on [`rekey`]. Keeping the
-    /// key resident is what makes mutations cheap (one AEAD seal per
-    /// entry, no Argon2 per op) and matches the resident-vault model.
-    /// A3 (key resident while unlocked) is an accepted threat in the
-    /// module docs; the buffer zeroizes when the state drops.
+    /// AEAD key derived once at [`open`] (re-derived only on [`rekey`]).
+    /// Held resident to avoid per-op Argon2 — A3 (key resident while
+    /// unlocked) is an accepted threat; zeroized when the state drops.
     ///
     /// [`open`]: EncryptedFileStore::open
     /// [`rekey`]: EncryptedFileStore::rekey
     derived_key: SecretBytes,
-    /// The store-wide passphrase. Swapped atomically with `vault` and
-    /// `derived_key` under the same lock during [`rekey`].
+    /// Store-wide passphrase, swapped with `vault` + `derived_key` under
+    /// the same lock during [`rekey`].
     ///
     /// [`rekey`]: EncryptedFileStore::rekey
     passphrase: SecretString,
-    /// Holds the cross-platform advisory write-lock on `<path>.lock`
-    /// for the entire lifetime of the store. Dropped (releasing the
-    /// flock / LockFileEx) when the store drops.
+    /// Holds the advisory write-lock on `<path>.lock` for the store's
+    /// lifetime; dropped (releasing the lock) when the store drops.
     _lock: VaultLock,
 }
 
 impl EncryptedFileStore {
-    /// Open a vault store at `path`, unlocked by `passphrase`. `path`
-    /// is the vault FILE, not a directory — the operator picks the
-    /// filename.
+    /// Open a vault store at `path` (the vault FILE, not a directory),
+    /// unlocked by `passphrase`.
     ///
-    /// The call acquires an exclusive advisory lock on a sibling
-    /// `<path>.lock` sidecar before touching the vault. If the lock is
-    /// already held (by another handle in this process or by another
-    /// process) the call returns [`SecretStoreError::AlreadyLocked`]
-    /// immediately — there is no retry loop.
-    ///
-    /// If `path` does not exist yet a fresh vault (random salt, default
-    /// Argon2 params, sealed verify token, no entries) is created at
-    /// `0600` on Unix. If it exists the vault is read, the passphrase
-    /// is verified against the header verify-token, and the plaintext
-    /// entry map is loaded into memory. Either way the returned store
-    /// is immediately usable.
+    /// Acquires an exclusive advisory lock on a sibling `<path>.lock`
+    /// first; if already held, returns [`SecretStoreError::AlreadyLocked`]
+    /// immediately (no retry). A missing `path` is created fresh (random
+    /// salt, default Argon2 params, sealed verify token) at `0600` on
+    /// Unix; an existing one is read and its passphrase verified against
+    /// the header verify-token. Either way the returned store is usable.
     pub fn open(
         path: impl AsRef<Path>,
         passphrase: SecretString,
     ) -> Result<Self, SecretStoreError> {
-        let path = path.as_ref().to_path_buf();
+        // Tier-1 baseline: reject a blank passphrase (empty / all-whitespace)
+        // BEFORE touching the filesystem. A blank passphrase derives a key
+        // from a public salt only — obfuscation, not confidentiality
+        // (obfuscation, not confidentiality). This is an INTENDED behavioural break for any caller
+        // that relied on `SecretString::empty()`; a deliberate keyless vault
+        // must use [`open_unprotected`](Self::open_unprotected). No vault
+        // file is created or altered for a blank passphrase.
+        reject_weak_passphrase(&passphrase)?;
+        Self::open_inner(path.as_ref(), passphrase)
+    }
 
-        // Make sure the parent directory exists so both the lock sidecar
-        // open and the vault create do not fail on a not-yet-materialized
-        // dir (canonical for first-setup operators). `Path::parent()`
-        // returns `Some("")` for a bare relative filename, which neither
-        // `create_dir_all` nor the cross-platform persist path can
-        // consume — normalize the empty-string parent to ".".
+    /// Open (or create) a **deliberately keyless** vault — the only door
+    /// that accepts no passphrase. The vault key is derived from an empty
+    /// passphrase under the public salt, so this is **obfuscation, not
+    /// confidentiality**: use it only where the stored secrets carry their
+    /// own Tier-2 object password, or as a staging step before
+    /// [`rekey`](Self::rekey) to a real passphrase. This is the explicit
+    /// keyless door, distinct from [`open`](Self::open) (which now rejects a
+    /// blank passphrase).
+    pub fn open_unprotected(path: impl AsRef<Path>) -> Result<Self, SecretStoreError> {
+        Self::open_inner(path.as_ref(), SecretString::empty())
+    }
+
+    /// Shared open/create core for [`open`](Self::open) and
+    /// [`open_unprotected`](Self::open_unprotected). Does NOT apply the
+    /// blank-passphrase guard — the public doors decide that.
+    fn open_inner(path: &Path, passphrase: SecretString) -> Result<Self, SecretStoreError> {
+        let path = path.to_path_buf();
+
+        // Materialize the parent so the lock-sidecar open and vault
+        // create do not fail on a not-yet-existing dir.
         let parent = normalized_parent(&path);
         create_parent_dir(parent)?;
+        // Refuse a group/other-WRITABLE parent: directory write governs
+        // rename/unlink, so a writable parent lets another local user
+        // replace the vault despite its own 0600 (the A1 guarantee).
+        check_parent_perms(parent)?;
 
-        // Acquire the lock first — every subsequent step assumes
-        // exclusive ownership of the vault file.
+        // Lock first — every subsequent step assumes exclusive ownership.
         let lock = VaultLock::acquire(&lock_path_for(&path))?;
 
-        // Decide between load-existing and create-fresh based on a
-        // single open attempt: NotFound → fresh; anything else → load
-        // (the perm check inside `read_existing_vault` covers loose
-        // perms on a real file).
+        // NotFound → create fresh; anything else → load.
         let (vault, derived_key) = match Self::load_existing_vault(&path, &passphrase)? {
             Some(loaded) => loaded,
             None => Self::create_new_vault(&path, &passphrase)?,
@@ -222,32 +222,28 @@ impl EncryptedFileStore {
         Ok((vault, key))
     }
 
-    /// Re-encrypt the whole store under `new_passphrase`: fresh salt +
-    /// fresh per-entry nonces for every wallet's entries, then
-    /// atomically replace the vault file. No `.bak` retains old key
-    /// material. The swap is whole-store: every
-    /// wallet's entries are re-keyed in one shot, so the store cannot
-    /// end up half-rotated. The in-memory vault, derived key, and
-    /// passphrase advance together under the resident-state mutex.
+    /// Re-encrypt the whole store under `new_passphrase` — fresh salt and
+    /// per-entry nonces for every wallet, atomically in one shot (no
+    /// half-rotated state, no `.bak` retaining old key material). Vault,
+    /// derived key, and passphrase advance together under the mutex.
     ///
-    /// The fresh KDF / Argon2 derivation runs OUTSIDE the lock — it
-    /// only touches the new passphrase + a fresh salt and never reads
-    /// resident state, so paying ~hundreds of ms inside the critical
-    /// section would just stall unrelated put/get operations.
+    /// The Argon2 derivation runs OUTSIDE the lock — it touches only the
+    /// new passphrase + fresh salt, so paying ~hundreds of ms inside the
+    /// critical section would needlessly stall unrelated put/get ops.
     pub fn rekey(&self, new_passphrase: SecretString) -> Result<(), SecretStoreError> {
+        // Reject a blank target passphrase: `rekey` always advances to a
+        // REAL passphrase (the empty→real migration uses this). The resident
+        // vault, key, and on-disk file are untouched on rejection. To make a
+        // vault keyless, use `open_unprotected` on a fresh path instead.
+        reject_weak_passphrase(&new_passphrase)?;
         let (new_vault, new_key) = build_fresh_vault(&new_passphrase)?;
         lock_inner(&self.inner).rekey(new_vault, new_key, new_passphrase)
     }
 
     /// Store `secret` under `(wallet_id, label)`, returning the typed
-    /// [`SecretStoreError`] (lossless — no `keyring_core::Error` seam).
-    /// The public [`SecretStore`](crate::secrets::SecretStore) file
-    /// arm delegates here so the structural error distinction
-    /// survives. Symmetric with [`get_bytes`]: the secret stays
-    /// wrapped in [`SecretBytes`] across this seam; the lone bare-buffer
-    /// exposure lives one layer down at the AEAD seal call.
-    ///
-    /// [`get_bytes`]: Self::get_bytes
+    /// [`SecretStoreError`] losslessly (no SPI seam). The secret stays
+    /// wrapped across this boundary; the bare-buffer exposure is one layer
+    /// down at the AEAD seal.
     pub(crate) fn put_bytes(
         &self,
         wallet_id: &WalletId,
@@ -258,12 +254,9 @@ impl EncryptedFileStore {
     }
 
     /// Retrieve the plaintext under `(wallet_id, label)`, or `None` if
-    /// absent, returning the typed [`SecretStoreError`]. The plaintext
-    /// stays inside a zeroizing [`SecretBytes`] all the way to this
-    /// boundary; the single `.expose_secret().to_vec()` conversion lives
-    /// at the upstream `CredentialApi::get_secret`
-    /// SPI seam, the only point where the SPI contract demands a bare
-    /// `Vec<u8>`.
+    /// absent. The plaintext stays inside a zeroizing [`SecretBytes`] to
+    /// this boundary; the bare-`Vec<u8>` conversion lives only at the
+    /// `CredentialApi::get_secret` SPI seam, where the contract demands it.
     pub(crate) fn get_bytes(
         &self,
         wallet_id: &WalletId,
@@ -292,11 +285,9 @@ impl EncryptedFileStore {
         write_vault_at(&lock_inner(&self.inner).path, vault)
     }
 
-    /// Drop the in-memory copy of the vault and reload it from disk
-    /// under the current passphrase. Useful for tests that mutate the
-    /// on-disk file out from under the store and want subsequent reads
-    /// to observe the new bytes (the resident-vault model otherwise
-    /// caches the loaded state).
+    /// Reload the vault from disk under the current passphrase, so a test
+    /// that patched the on-disk file sees the new bytes (the resident
+    /// model otherwise serves the cached state).
     #[cfg(test)]
     pub(crate) fn test_reload_from_disk(&self) -> Result<(), SecretStoreError> {
         let mut state = lock_inner(&self.inner);
@@ -310,11 +301,9 @@ impl EncryptedFileStore {
     }
 }
 
-/// Acquire the single coarse-grained state lock on `inner`.
-/// Poisoned-mutex recovery is "log and continue": a previously-panicked
-/// holder cannot have left the [`EncryptedFileStoreInner`] half-written
-/// (every mutation either succeeds wholesale and writes to disk or
-/// reverts), so the inner value is safe to keep using.
+/// Acquire the state lock on `inner`. A poisoned mutex is recovered (not
+/// propagated): every mutation either commits wholesale or reverts, so a
+/// panicked holder cannot have left the inner value half-written.
 fn lock_inner(
     inner: &Arc<Mutex<EncryptedFileStoreInner>>,
 ) -> std::sync::MutexGuard<'_, EncryptedFileStoreInner> {
@@ -337,32 +326,38 @@ impl EncryptedFileStoreInner {
         secret: &SecretBytes,
     ) -> Result<(), SecretStoreError> {
         let label = validated_label(label)?.to_string();
+        // Reject before sealing: the shared document would otherwise
+        // inflate past the read-side ceiling and brick every wallet.
+        if secret.len() > MAX_SECRET_LEN {
+            return Err(SecretStoreError::SecretTooLarge {
+                found: secret.len(),
+                max: MAX_SECRET_LEN,
+            });
+        }
         let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &label);
 
         let (nonce, ciphertext) = crypto::seal(&self.derived_key, &aad, secret.expose_secret())?;
 
-        // Mutate in memory; remember the prior body so we can roll
-        // back on a disk-write failure (the resident state must
-        // always match what is on disk after a returned-Ok mutation).
+        // Remember the prior body so a disk-write failure can revert the
+        // resident state to match disk (Ok must imply memory == disk).
         let prior = {
             let entries = self.vault.wallets.entry(wallet_id.to_hex()).or_default();
             entries.insert(label.clone(), EntryBody { nonce, ciphertext })
         };
 
         if let Err(e) = self.sync_to_disk() {
-            let entries = self
-                .vault
-                .wallets
-                .get_mut(&wallet_id.to_hex())
-                .expect("entry just inserted");
-            match prior {
-                Some(prev) => {
-                    entries.insert(label, prev);
-                }
-                None => {
-                    entries.remove(&label);
-                    if entries.is_empty() {
-                        self.vault.wallets.remove(&wallet_id.to_hex());
+            // A missing bucket means the insert never landed (nothing to
+            // undo) — return the error rather than panic.
+            if let Some(entries) = self.vault.wallets.get_mut(&wallet_id.to_hex()) {
+                match prior {
+                    Some(prev) => {
+                        entries.insert(label, prev);
+                    }
+                    None => {
+                        entries.remove(&label);
+                        if entries.is_empty() {
+                            self.vault.wallets.remove(&wallet_id.to_hex());
+                        }
                     }
                 }
             }
@@ -457,9 +452,8 @@ impl EncryptedFileStoreInner {
             new_vault.wallets.insert(wallet_hex.clone(), new_entries);
         }
 
-        // Stage the new triple in memory, write to disk, and on
-        // failure restore the old triple so the live handle keeps
-        // serving under the still-on-disk key.
+        // Stage the new triple; on disk-write failure restore the old one
+        // so the live handle keeps serving under the still-on-disk key.
         let old_vault = std::mem::replace(&mut self.vault, new_vault);
         let old_key = std::mem::replace(&mut self.derived_key, new_key);
         let old_pp = std::mem::replace(&mut self.passphrase, new_passphrase);
@@ -476,53 +470,60 @@ impl EncryptedFileStoreInner {
 
 impl Drop for EncryptedFileStoreInner {
     fn drop(&mut self) {
-        // Belt-and-suspenders sync of resident state. Eager-sync on
-        // every mutation makes this redundant in the success path, but
-        // a final write lets a future feature (e.g. opportunistic
-        // background buffering) hang off the same Drop without changing
-        // the contract. `&mut self` here implies unique ownership —
-        // the outer `Mutex` is being dropped too, so no other holder
-        // can be waiting.
+        // Best-effort final sync. Redundant in the success path (every
+        // mutation eager-syncs) but kept as a contract anchor.
         if let Err(e) = self.sync_to_disk() {
             tracing::warn!(error = %e, "drop-time vault sync failed");
         }
-        // Re-assert restrictive perms on Unix. Between writes the file
-        // is already 0600, but this defends against a peer that
-        // loosened them through some other path while we held the
-        // lock. Best-effort: any failure is non-fatal at Drop.
+        // Re-assert 0600 on Unix in case a peer loosened it while we held
+        // the lock. Best-effort: failures are non-fatal at Drop.
         #[cfg(unix)]
-        if let Ok(file) = open_no_follow(&self.path) {
-            if let Err(e) = set_restrictive_perms(&file) {
-                tracing::warn!(error = %e, "drop-time perm re-assert failed");
+        match open_no_follow(&self.path) {
+            Ok(file) => {
+                if let Err(e) = set_restrictive_perms(&file) {
+                    tracing::warn!(error = %e, "drop-time perm re-assert failed");
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "drop-time perm re-assert skipped: vault re-open refused"
+                );
             }
         }
-        // The `VaultLock` field drops naturally after this method
-        // returns, releasing the OS advisory lock.
+        // `VaultLock` drops after this returns, releasing the OS lock.
     }
 }
 
-/// Sidecar advisory-lock path for the store's vault file. Kept
-/// distinct from the vault file itself so the cross-platform
-/// `persist` swap never touches the inode an open lock fd points
-/// at — the lock fd remains valid across the atomic replace.
+/// Sidecar lock path (`<path>.lock`). Distinct from the vault file so the
+/// atomic `persist` swap never touches the inode the lock fd points at.
 fn lock_path_for(path: &Path) -> PathBuf {
     let mut s = path.to_path_buf().into_os_string();
     s.push(".lock");
     PathBuf::from(s)
 }
 
-/// Build a fresh vault skeleton: random salt, default Argon2
-/// params, and a passphrase-verification token sealed under the
-/// freshly derived key (the token is the mixed-key-corruption guard).
-/// Returns the (entry-less) vault and the
-/// derived key so the caller can seal entries against it without
-/// re-deriving.
+/// Reject a blank (empty / all-whitespace) or sub-floor passphrase →
+/// [`SecretStoreError::BlankPassphrase`]. The floor is the coarse
+/// [`MIN_PASSPHRASE_LEN`] (1 today = merely non-blank); the real entropy
+/// policy is the consumer's (see `SECRETS.md`). A blank check alone closes
+/// the length term keeps the floor wired for a future bump.
+fn reject_weak_passphrase(passphrase: &SecretString) -> Result<(), SecretStoreError> {
+    if passphrase.is_blank() || passphrase.trimmed().len() < MIN_PASSPHRASE_LEN {
+        return Err(SecretStoreError::BlankPassphrase);
+    }
+    Ok(())
+}
+
+/// Build a fresh entry-less vault (random salt, default Argon2 params,
+/// verify-token sealed under the derived key) plus that derived key, so
+/// the caller can seal entries without re-deriving.
 fn build_fresh_vault(passphrase: &SecretString) -> Result<(Vault, SecretBytes), SecretStoreError> {
     let mut salt = [0u8; SALT_LEN];
     crypto::random_bytes(&mut salt)?;
     let kdf = KdfParams::default_target();
     let key = crypto::derive_key(passphrase, &salt, kdf)?;
-    let v_aad = format::verify_aad(format::FORMAT_VERSION);
+    let v_aad = format::verify_aad(format::FORMAT_VERSION, &salt, &kdf);
     let (verify_nonce, verify_ct) = crypto::seal(&key, &v_aad, format::VERIFY_CONSTANT)?;
     Ok((
         Vault {
@@ -546,7 +547,7 @@ fn derive_and_verify(
     passphrase: &SecretString,
 ) -> Result<SecretBytes, SecretStoreError> {
     let key = crypto::derive_key(passphrase, &vault.salt, vault.kdf)?;
-    let v_aad = format::verify_aad(format::FORMAT_VERSION);
+    let v_aad = format::verify_aad(format::FORMAT_VERSION, &vault.salt, &vault.kdf);
     match crypto::open(&key, &vault.verify_nonce, &v_aad, &vault.verify_ct) {
         Ok(_) => Ok(key),
         Err(SecretStoreError::Decrypt) => Err(SecretStoreError::WrongPassphrase),
@@ -554,13 +555,10 @@ fn derive_and_verify(
     }
 }
 
-/// Read + parse the vault at `path`, or `None` if it does not exist.
-/// Refuses a pre-existing file with looser-than-0600 perms and a file
-/// exceeding [`MAX_VAULT_SIZE_BYTES`].
-///
-/// Eliminates the metadata→read TOCTOU: opens the file once with
-/// `O_NOFOLLOW` on Unix, then derives perms / size from
-/// the open handle's `metadata()` and reads from the same fd.
+/// Read + parse the vault at `path`, or `None` if absent. Refuses
+/// looser-than-0600 perms and a file over [`MAX_VAULT_SIZE_BYTES`].
+/// Opens once with `O_NOFOLLOW` and derives perms/size from the same fd
+/// to avoid a metadata→read TOCTOU.
 fn read_vault_at(path: &Path) -> Result<Option<Vault>, SecretStoreError> {
     let file = match open_no_follow(path) {
         Ok(file) => file,
@@ -592,16 +590,12 @@ fn read_vault_at(path: &Path) -> Result<Option<Vault>, SecretStoreError> {
     Ok(Some(format::deserialize(&bytes)?))
 }
 
-/// Atomically replace the vault at `path`, cross-platform.
-///
-/// Stages into a `NamedTempFile` in the SAME directory (so `persist`
-/// cannot fail cross-volume), tightens perms to 0600 on Unix before
-/// any byte is written, then: `write_all` → `sync_all` →
-/// `persist(path)` → Unix parent-dir fsync. The destination is never
-/// pre-removed, so a crash leaves either the old or the new vault,
-/// never an absent one. On `persist` failure the temp drops and
-/// self-cleans — no manual remove racing it. The temp holds only
-/// ciphertext+header, never plaintext.
+/// Atomically replace the vault at `path`. Stages into a same-directory
+/// `NamedTempFile` (so `persist` cannot fail cross-volume), tightens to
+/// 0600 before writing, then `write_all` → `sync_all` → `persist` → Unix
+/// parent-dir fsync. The destination is never pre-removed, so a crash
+/// leaves the old or new vault, never none. The temp holds only
+/// ciphertext + header, never plaintext.
 fn write_vault_at(path: &Path, vault: &Vault) -> Result<(), SecretStoreError> {
     do_write_vault_at(path, vault).inspect_err(|e| {
         tracing::warn!(error = %e, "failed to write vault file");
@@ -610,9 +604,14 @@ fn write_vault_at(path: &Path, vault: &Vault) -> Result<(), SecretStoreError> {
 
 fn do_write_vault_at(path: &Path, vault: &Vault) -> Result<(), SecretStoreError> {
     let serialized = format::serialize(vault);
-    // Normalize an empty / bare-filename parent to "." so neither
-    // `NamedTempFile::new_in` nor the Unix parent-dir fsync sees an
-    // empty path.
+    // Defence in depth: never write a vault the read path would refuse,
+    // so the on-disk file is never left unopenable.
+    if serialized.len() as u64 > MAX_VAULT_SIZE_BYTES {
+        return Err(SecretStoreError::VaultTooLarge {
+            found: serialized.len() as u64,
+            max: MAX_VAULT_SIZE_BYTES,
+        });
+    }
     let parent = normalized_parent(path);
     create_parent_dir(parent)?;
     let mut tmp =
@@ -626,30 +625,48 @@ fn do_write_vault_at(path: &Path, vault: &Vault) -> Result<(), SecretStoreError>
         .map_err(|e| SecretStoreError::io_at(path, e))?;
     tmp.persist(path)
         .map_err(|e| SecretStoreError::io_at(path, e.error))?;
+    // The vault is now committed on disk via the atomic persist() rename above.
+    // A subsequent parent-directory fsync failure cannot undo the already-written
+    // file.  Propagating the error would cause callers (put/delete/rekey) to roll
+    // back in-memory state that already matches the on-disk vault — leaving the
+    // live handle diverged from disk.  Log a warning instead so the caller's
+    // rollback guard is not triggered.
     #[cfg(unix)]
     {
-        let d = fs::File::open(parent).map_err(|e| SecretStoreError::io_at(parent, e))?;
-        d.sync_all()
-            .map_err(|e| SecretStoreError::io_at(parent, e))?;
+        match fs::File::open(parent) {
+            Ok(d) => {
+                if let Err(e) = d.sync_all() {
+                    tracing::warn!(
+                        error = %e,
+                        parent = %parent.display(),
+                        "parent-dir fsync failed after vault persist; vault is committed on disk"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    parent = %parent.display(),
+                    "parent-dir open for fsync failed after vault persist; vault is committed on disk"
+                );
+            }
+        }
     }
     Ok(())
 }
 
-/// Normalize `path.parent()` for callers that need a directory path
-/// they can pass to `fs::create_dir_all`, `NamedTempFile::new_in`, and
-/// the Unix parent-dir fsync. `Path::parent()` returns `Some("")` for a
-/// bare relative filename like `"vault.pwsvault"`, and the empty path
-/// errors out at every one of those calls — normalize to "." so a
-/// caller that supplies a bare filename in their cwd just works.
+/// Normalize `path.parent()` to a usable directory: `Path::parent()`
+/// returns `Some("")` for a bare filename, which errors at
+/// `create_dir_all` / `NamedTempFile::new_in` / parent-dir fsync — map
+/// the empty parent to "." so a bare filename in the cwd just works.
 fn normalized_parent(path: &Path) -> &Path {
     path.parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."))
 }
 
-/// Create the parent directory for a vault file, applying a `0700` mode
-/// on Unix so the directory created at first-setup is not
-/// world-readable. Idempotent: a pre-existing directory is left alone.
+/// Create the vault's parent directory at `0700` on Unix (not
+/// world-readable). Idempotent — a pre-existing directory is left alone.
 fn create_parent_dir(parent: &Path) -> Result<(), SecretStoreError> {
     #[cfg(unix)]
     {
@@ -659,10 +676,8 @@ fn create_parent_dir(parent: &Path) -> Result<(), SecretStoreError> {
             .recursive(true)
             .create(parent)?;
     }
-    // INTENTIONAL: Windows ACL hardening on the parent dir is deferred
-    // to https://github.com/dashpay/platform/issues/3754. The recursive
-    // create still runs so the path materializes; operators on Windows
-    // MUST tighten ACLs manually until the follow-up lands.
+    // INTENTIONAL: Windows parent-dir ACL hardening deferred to
+    // https://github.com/dashpay/platform/issues/3754 — tighten manually.
     #[cfg(not(unix))]
     {
         fs::create_dir_all(parent)?;
@@ -670,28 +685,25 @@ fn create_parent_dir(parent: &Path) -> Result<(), SecretStoreError> {
     Ok(())
 }
 
-/// Cross-platform advisory write-lock holder. Owns a `Box<RwLock<File>>`
-/// (so the address is stable) and an owned `RwLockWriteGuard` borrowing
-/// from it. Dropping the holder drops the guard first (which releases
-/// the OS lock via `fd-lock`'s Drop impl, calling `flock(LOCK_UN)` on
-/// Unix and `UnlockFileEx` on Windows) and then frees the heap-pinned
-/// `RwLock`.
+/// Advisory write-lock holder owning a heap-pinned `Box<RwLock<File>>`
+/// and a self-referential `'static` guard borrowing from it. The
+/// self-reference is unavoidable: `fd-lock`'s guard borrows the `RwLock`,
+/// and the resident-vault model needs the lock held continuously between
+/// `open` and `Drop`. Safety:
 ///
-/// The self-reference is unavoidable: `fd-lock`'s guard borrows the
-/// `RwLock`, and the resident-vault model requires the lock to stay
-/// held continuously between `open` and `Drop`. Wrapped in a small
-/// allow-unsafe island so the rest of the crate keeps
-/// `deny(unsafe_code)`. Safety arguments:
-///
-/// 1. The `RwLock<File>` lives on the heap via `Box::into_raw`, so its
-///    address is stable for the holder's lifetime.
-/// 2. The `'static` lifetime on the guard is a lie tolerated only
-///    because the guard never outlives the holder, and the holder's
-///    `Drop` impl takes the guard out (running its Drop) *before*
-///    reclaiming the box.
+/// 1. `Box::into_raw` gives the `RwLock` a stable address for the
+///    holder's lifetime.
+/// 2. The `'static` guard lifetime is a lie sound only because `Drop`
+///    takes the guard out (running its Drop, releasing the OS lock)
+///    BEFORE reclaiming the box.
 /// 3. The raw pointer never escapes this module.
+///
+/// Calibrated to `fd-lock = "=4.0.4"` (exact-pinned): any bump must
+/// re-verify the guard releases the OS lock before the box is reclaimed.
 mod vault_lock {
-    #![allow(unsafe_code)]
+    // INTENTIONAL: the crate's only unsafe island; soundness rests on the
+    // drop-order argument above, not a Miri test. `#![deny(unsafe_code)]`
+    // still applies everywhere outside the narrowed per-item allows.
 
     use std::fs;
     use std::path::Path;
@@ -709,26 +721,30 @@ mod vault_lock {
     // member is a `File`/`RawFd`, both `Send + Sync`). The raw pointer
     // points at the heap-pinned `RwLock` this struct owns; sending the
     // struct moves ownership of the box address with it.
+    #[allow(unsafe_code)]
     unsafe impl Send for VaultLock {}
+    #[allow(unsafe_code)]
     unsafe impl Sync for VaultLock {}
 
     impl VaultLock {
         pub(super) fn acquire(lock_path: &Path) -> Result<Self, SecretStoreError> {
-            // INTENTIONAL: on non-unix platforms the symlink-following
-            // hardening is deferred to
-            // https://github.com/dashpay/platform/issues/3754 — Windows
-            // requires `FILE_FLAG_OPEN_REPARSE_POINT` via the raw API
-            // and is out of scope for the secrets-feature landing.
+            // INTENTIONAL: non-unix symlink hardening (Windows needs
+            // FILE_FLAG_OPEN_REPARSE_POINT) deferred to
+            // https://github.com/dashpay/platform/issues/3754.
             let mut opts = fs::OpenOptions::new();
             opts.read(true).write(true).create(true).truncate(false);
             #[cfg(unix)]
             {
                 use std::os::unix::fs::OpenOptionsExt;
                 opts.custom_flags(libc::O_NOFOLLOW);
+                // Restrictive from the first byte — no loose-perm window.
+                opts.mode(0o600);
             }
             let lock_file = opts
                 .open(lock_path)
                 .map_err(|e| SecretStoreError::io_at(lock_path, e))?;
+            // `mode()` only applies to a file this call creates; re-assert
+            // 0600 on a pre-existing sidecar.
             #[cfg(unix)]
             set_restrictive_perms(&lock_file)?;
 
@@ -740,6 +756,7 @@ mod vault_lock {
             // at a valid `RwLock<File>`. No other reference exists
             // yet, so promoting it to `&'static mut` is sound for the
             // borrow we hand to `try_write`.
+            #[allow(unsafe_code)]
             let static_ref: &'static mut fd_lock::RwLock<fs::File> = unsafe { &mut *raw };
 
             let guard = match static_ref.try_write() {
@@ -749,7 +766,10 @@ mod vault_lock {
                     // no live borrow points at the box; reclaiming
                     // here is sound and avoids leaking on the error
                     // path.
-                    unsafe { drop(Box::from_raw(raw)) };
+                    #[allow(unsafe_code)]
+                    unsafe {
+                        drop(Box::from_raw(raw))
+                    };
                     return Err(match e.kind() {
                         std::io::ErrorKind::WouldBlock => SecretStoreError::AlreadyLocked,
                         _ => SecretStoreError::from(e),
@@ -773,19 +793,19 @@ mod vault_lock {
             // the guard has just been dropped (no live borrow), and we
             // are the only owner. Reclaiming the Box runs the
             // `RwLock`'s Drop, which closes the file fd.
-            unsafe { drop(Box::from_raw(self.rwlock)) };
+            #[allow(unsafe_code)]
+            unsafe {
+                drop(Box::from_raw(self.rwlock))
+            };
         }
     }
 }
 
 use vault_lock::VaultLock;
 
-/// Why a wallet-id hex string failed the canonical-form check.
-///
-/// `WalletId::to_hex` only ever emits 64 lowercase hex chars, so every
-/// seam that parses a wallet id back enforces exactly that shape in one
-/// place via [`wallet_id_hex_to_bytes`]; this enum lets each caller map
-/// the reason onto its own error type with the right message.
+/// Why a wallet-id hex string failed the canonical-form check, so each
+/// caller of [`wallet_id_hex_to_bytes`] can map the reason onto its own
+/// error type and message.
 enum WalletIdHexError {
     /// Not exactly 64 characters.
     WrongLength,
@@ -795,10 +815,9 @@ enum WalletIdHexError {
     NotHex,
 }
 
-/// Decode a 64-lowercase-hex-char wallet id into its 32 bytes, enforcing
-/// the canonical form `WalletId::to_hex` writes (64 chars, lowercase).
-/// The single seam both the on-disk outer-key check and the SPI
-/// service-string parse go through so the contract lives in one place.
+/// Decode a wallet id into 32 bytes, enforcing the canonical form
+/// `WalletId::to_hex` writes (64 lowercase hex chars). The single seam
+/// for both the on-disk outer-key check and the SPI service-string parse.
 fn wallet_id_hex_to_bytes(s: &str) -> Result<[u8; 32], WalletIdHexError> {
     if s.len() != 64 {
         return Err(WalletIdHexError::WrongLength);
@@ -811,13 +830,10 @@ fn wallet_id_hex_to_bytes(s: &str) -> Result<[u8; 32], WalletIdHexError> {
     Ok(out)
 }
 
-/// Decode a wallet-id hex string (the on-disk outer key) into the
-/// 32-byte form the AAD construction expects. A malformed key here is
-/// an on-disk integrity failure — the format-layer parse already
-/// constrains entries to JSON object semantics, but the outer key is
-/// a free-form string at the type level, so the bytes-back check is a
-/// defence-in-depth structural guard. Off-canonical (uppercase / wrong
-/// length / non-hex) keys are all rejected as corruption.
+/// Decode the on-disk outer-key wallet hex into the 32 bytes the AAD
+/// expects. The outer key is a free-form string at the type level, so
+/// this bytes-back check is a defence-in-depth structural guard; any
+/// off-canonical key is rejected as corruption.
 pub(super) fn decode_wallet_id_hex(s: &str) -> Result<[u8; 32], SecretStoreError> {
     wallet_id_hex_to_bytes(s).map_err(|_| SecretStoreError::MalformedVault)
 }
@@ -843,14 +859,10 @@ fn parse_service(service: &str) -> Result<WalletId, KeyringError> {
     Ok(WalletId::from(bytes))
 }
 
-/// A `(wallet_id, label)` row in an [`EncryptedFileStore`].
-///
-/// Holds a [`Clone`]d handle to the parent store so each credential
-/// goes through the same public store API (and the same single-lock
-/// critical section per operation). All four operations re-validate
-/// `user` (label); the store key is resident on the inner so a
-/// wrong-passphrase race cannot happen at the credential layer — the
-/// open already failed if the passphrase was wrong.
+/// A `(wallet_id, label)` row in an [`EncryptedFileStore`]. Holds a
+/// cloned handle to the parent so each op goes through the same store API
+/// and single-lock critical section. All ops re-validate the label; the
+/// passphrase was already verified at open, so no wrong-pass race here.
 pub struct EncryptedFileCredential {
     store: EncryptedFileStore,
     wallet_id: WalletId,
@@ -869,6 +881,13 @@ impl std::fmt::Debug for EncryptedFileCredential {
 impl CredentialApi for EncryptedFileCredential {
     fn set_secret(&self, secret: &[u8]) -> KeyringResult<()> {
         let _ = validated_label(&self.label).map_err(SecretStoreError::from)?;
+        // Cap before wrapping so an oversized secret is never materialized.
+        if secret.len() > MAX_SECRET_LEN {
+            return Err(KeyringError::from(SecretStoreError::SecretTooLarge {
+                found: secret.len(),
+                max: MAX_SECRET_LEN,
+            }));
+        }
         self.store
             .put_bytes(
                 &self.wallet_id,
@@ -881,6 +900,8 @@ impl CredentialApi for EncryptedFileCredential {
     fn get_secret(&self) -> KeyringResult<Vec<u8>> {
         let _ = validated_label(&self.label).map_err(SecretStoreError::from)?;
         match self.store.get_bytes(&self.wallet_id, &self.label) {
+            // SPI contract forces a bare Vec; caller owns disposal —
+            // prefer SecretStore::get for a zeroizing SecretBytes.
             Ok(Some(v)) => Ok(v.expose_secret().to_vec()),
             Ok(None) => Err(KeyringError::NoEntry),
             Err(e) => Err(e.into()),
@@ -921,6 +942,11 @@ impl CredentialStoreApi for EncryptedFileStore {
         STORE_ID.to_string()
     }
 
+    /// Build a credential for `(service, user)`. SPI-direct consumers:
+    /// format the returned [`KeyringError`] with `Display`, never `Debug`
+    /// — byte-bearing variants embed raw bytes in `Debug` (CWE-209/
+    /// CWE-532). Prefer the typed
+    /// [`SecretStore`](crate::secrets::SecretStore) path.
     fn build(
         &self,
         service: &str,
@@ -950,10 +976,9 @@ impl CredentialStoreApi for EncryptedFileStore {
 
 impl std::fmt::Debug for EncryptedFileStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // `try_lock` rather than `lock_inner` so a Debug invoked from
-        // a panic path while the same thread already holds the state
-        // lock cannot deadlock or double-panic. Poison is folded into
-        // the same fallback display as contention.
+        // `try_lock` (not `lock_inner`) so a Debug from a panic path that
+        // already holds the lock cannot deadlock; poison folds into the
+        // same fallback as contention.
         let path: PathBuf = match self.inner.try_lock() {
             Ok(guard) => guard.path.clone(),
             Err(_) => PathBuf::from("<unavailable>"),
@@ -964,14 +989,11 @@ impl std::fmt::Debug for EncryptedFileStore {
     }
 }
 
-/// Project an entry-level `crypto::open` result into the typed
-/// distinction the secret backend exposes. The verify-token has already
-/// passed at every caller (open / get / rekey), so a
-/// `SecretStoreError::Decrypt` here is corruption or tampering of the
-/// individual entry — **not** a wrong passphrase. Logs the non-secret
-/// `(wallet_id, label)` pair at error level (never the secret) and
-/// maps to `SecretStoreError::Corruption`. Every other variant rides
-/// through unchanged.
+/// Map an entry-level `crypto::open` failure to the typed distinction.
+/// The verify-token has already passed at every caller, so a `Decrypt`
+/// here is entry corruption/tampering, NOT a wrong passphrase — logs the
+/// non-secret `(wallet_id, label)` and maps to `Corruption`; other
+/// variants pass through.
 fn entry_decrypt_or_corruption(
     wallet_hex: &str,
     label: &str,
@@ -1000,14 +1022,34 @@ fn check_perms(meta: &fs::Metadata) -> Result<(), SecretStoreError> {
     Ok(())
 }
 
-// INTENTIONAL: Windows ACL read-check deferred to a follow-up PR —
-// tracked at https://github.com/dashpay/platform/issues/3754. Vault
-// file mode hardening on Windows requires GetSecurityInfo via
-// `windows-acl` or `winapi`; out of scope for the secrets-feature
-// landing. Operators on Windows MUST set ACLs manually until the
-// follow-up lands.
+// INTENTIONAL: Windows ACL read-check (needs GetSecurityInfo) deferred to
+// https://github.com/dashpay/platform/issues/3754 — set ACLs manually.
 #[cfg(not(unix))]
 fn check_perms(_meta: &fs::Metadata) -> Result<(), SecretStoreError> {
+    Ok(())
+}
+
+/// Refuse a group/other-WRITABLE vault parent (`mode & 0o022`). The
+/// threat is rename/unlink/replace, which POSIX gates on directory WRITE,
+/// so this targets write bits only — a 0o755 read-only parent leaks
+/// filenames but not the 0600 contents and is the common layout.
+/// `DirBuilder::mode` only hardens dirs this process creates, so a
+/// pre-existing loose dir must still be checked here.
+#[cfg(unix)]
+fn check_parent_perms(parent: &Path) -> Result<(), SecretStoreError> {
+    use std::os::unix::fs::MetadataExt;
+    let meta = fs::metadata(parent).map_err(|e| SecretStoreError::io_at(parent, e))?;
+    let mode = meta.mode() & 0o777;
+    if mode & 0o022 != 0 {
+        return Err(SecretStoreError::InsecureParentDir { mode });
+    }
+    Ok(())
+}
+
+// INTENTIONAL: Windows parent-dir ACL check deferred to the same
+// follow-up as `check_perms` — https://github.com/dashpay/platform/issues/3754.
+#[cfg(not(unix))]
+fn check_parent_perms(_parent: &Path) -> Result<(), SecretStoreError> {
     Ok(())
 }
 
@@ -1018,12 +1060,8 @@ fn set_restrictive_perms(f: &fs::File) -> Result<(), SecretStoreError> {
     Ok(())
 }
 
-// INTENTIONAL: Windows ACL tightening deferred to the same follow-up
-// as `check_perms` above — tracked at
-// https://github.com/dashpay/platform/issues/3754. Vault file mode
-// hardening on Windows requires SetSecurityInfo via `windows-acl` or
-// `winapi`; out of scope for the secrets-feature landing. Operators on
-// Windows MUST set ACLs manually until the follow-up lands.
+// INTENTIONAL: Windows ACL tightening (needs SetSecurityInfo) deferred to
+// https://github.com/dashpay/platform/issues/3754 — set ACLs manually.
 #[cfg(not(unix))]
 fn set_restrictive_perms(_f: &fs::File) -> Result<(), SecretStoreError> {
     Ok(())
@@ -1055,6 +1093,13 @@ mod tests {
     }
 
     fn vault_path(dir: &Path) -> PathBuf {
+        // Tighten the umask-0002 tempdir (0o775) to 0o700 so it passes the
+        // parent-dir perm check (dedicated perm tests use a subdir).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
+        }
         dir.join("vault.pwsvault")
     }
 
@@ -1086,9 +1131,7 @@ mod tests {
 
     #[test]
     fn open_creates_vault_file_on_first_open() {
-        // Resident-vault model: open() creates a usable vault file even
-        // without any subsequent put, so a second open() of the same
-        // path observes a real on-disk file (modulo the lock).
+        // open() creates a usable vault file even without a put.
         let dir = tempfile::tempdir().unwrap();
         let path = vault_path(dir.path());
         {
@@ -1135,10 +1178,8 @@ mod tests {
 
     #[test]
     fn open_acquires_exclusive_lock_until_drop() {
-        // Resident-vault model: a second open() of the same path while
-        // the first store is alive returns AlreadyLocked immediately
-        // (no retry, no wait). Once the first store drops the lock is
-        // released and a fresh open() succeeds.
+        // A second open() while the first store is alive returns
+        // AlreadyLocked; once it drops, a fresh open() succeeds.
         let dir = tempfile::tempdir().unwrap();
         let path = vault_path(dir.path());
         let s1 = store_at(&path);
@@ -1376,6 +1417,62 @@ mod tests {
         );
     }
 
+    /// A parent-dir fsync failure that occurs AFTER `persist()` has already
+    /// committed the vault to disk must NOT cause `put` to return an error or
+    /// roll back the in-memory entry.  The vault is already on disk; propagating
+    /// the post-persist error would diverge in-memory state from the on-disk file.
+    ///
+    /// Trigger: set the parent dir to `0o300` (write + execute, no read) so
+    /// `persist()` (a rename — needs write) succeeds but the subsequent
+    /// `fs::File::open(parent)` for fsync fails (needs read).
+    #[cfg(unix)]
+    #[test]
+    fn put_succeeds_when_parent_dir_fsync_fails_post_persist() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let s = store_at(&path);
+        entry(&s, wid(1), "seed")
+            .set_secret(b"first-value")
+            .unwrap();
+
+        // Tighten the parent dir to write+execute only (no read):
+        //   - NamedTempFile::new_in  : needs write (0o200) + execute (0o100) → OK
+        //   - persist() (rename)     : needs write on directory              → OK
+        //   - fs::File::open(parent) : needs read (0o400) — MISSING          → FAILS
+        // This forces the post-persist parent-dir fsync to fail, which is the
+        // scenario under test.
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o300)).unwrap();
+        let result = entry(&s, wid(1), "seed").set_secret(b"second-value");
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+
+        // Post-fix: put must succeed even though the parent-dir fsync failed —
+        // the vault was already committed via persist().
+        assert!(
+            result.is_ok(),
+            "put must succeed even when parent-dir fsync fails post-persist; got {result:?}"
+        );
+
+        // In-memory state was NOT rolled back.
+        assert_eq!(
+            entry(&s, wid(1), "seed").get_secret().unwrap(),
+            b"second-value",
+            "in-memory state must reflect the committed put"
+        );
+
+        // Drop `s` (releases the vault lock) before opening a second store on
+        // the same file — `EncryptedFileStore::open` is exclusive by design.
+        drop(s);
+
+        // The vault on disk reflects the committed value.
+        let reopened = EncryptedFileStore::open(&path, SecretString::new("pw-correct")).unwrap();
+        assert_eq!(
+            entry(&reopened, wid(1), "seed").get_secret().unwrap(),
+            b"second-value",
+            "vault on disk must have the committed value after post-persist fsync failure"
+        );
+    }
+
     #[test]
     fn get_corruption_after_verify_token_is_not_wrong_passphrase() {
         let dir = tempfile::tempdir().unwrap();
@@ -1453,6 +1550,174 @@ mod tests {
                 .all(|w| w != b"PLAINTEXTNEEDLE"),
             "plaintext leaked into vault file"
         );
+    }
+
+    /// The no-plaintext-at-rest guarantee also holds through the public
+    /// `SecretStore::set` path (which writes an unprotected envelope sealed
+    /// under the vault key), not just the raw SPI entry path.
+    #[test]
+    fn no_plaintext_in_vault_file_via_secret_store_set() {
+        use crate::secrets::SecretStore;
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let store = SecretStore::file(&path, SecretString::new("pw-correct")).unwrap();
+        store
+            .set(
+                &wid(1),
+                "seed",
+                &SecretBytes::from_slice(b"PLAINTEXTNEEDLE"),
+            )
+            .unwrap();
+        let raw = fs::read(&path).unwrap();
+        assert!(
+            raw.windows(b"PLAINTEXTNEEDLE".len())
+                .all(|w| w != b"PLAINTEXTNEEDLE"),
+            "plaintext leaked into vault file via SecretStore::set"
+        );
+    }
+
+    /// A blank passphrase is rejected at `open` →
+    /// `BlankPassphrase`; no vault file (or lock sidecar) is created.
+    #[test]
+    fn open_rejects_blank_passphrase() {
+        for blank in [
+            SecretString::empty(),
+            SecretString::new(""),
+            SecretString::new("   "),
+            SecretString::new("\t\n"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = vault_path(dir.path());
+            let err = EncryptedFileStore::open(&path, blank).unwrap_err();
+            assert!(
+                matches!(err, SecretStoreError::BlankPassphrase),
+                "blank passphrase must be rejected, got {err:?}"
+            );
+            assert!(!path.exists(), "no vault file for a blank passphrase");
+            assert!(
+                !lock_path_for(&path).exists(),
+                "no lock sidecar for a blank passphrase"
+            );
+        }
+    }
+
+    /// A blank passphrase is rejected at `rekey`; the resident
+    /// vault, key, and on-disk file are UNCHANGED — the original passphrase
+    /// still reads every entry, live and after reopen.
+    #[test]
+    fn rekey_rejects_blank_passphrase_vault_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let s = store_at(&path); // real "pw-correct"
+        entry(&s, wid(1), "seed").set_secret(b"v1").unwrap();
+        for blank in [SecretString::empty(), SecretString::new("   ")] {
+            let err = s.rekey(blank).unwrap_err();
+            assert!(
+                matches!(err, SecretStoreError::BlankPassphrase),
+                "blank rekey must be rejected, got {err:?}"
+            );
+        }
+        // Old passphrase still reads the entry, live…
+        assert_eq!(entry(&s, wid(1), "seed").get_secret().unwrap(), b"v1");
+        // …and after a clean reopen under the original passphrase.
+        drop(s);
+        let s2 = store_at(&path);
+        assert_eq!(entry(&s2, wid(1), "seed").get_secret().unwrap(), b"v1");
+    }
+
+    /// `open_unprotected` permits a deliberate keyless vault that
+    /// round-trips; a real-passphrase `open` of that keyless vault then
+    /// fails with `WrongPassphrase` (it is keyless, not real-pass).
+    #[test]
+    fn open_unprotected_permits_keyless_vault() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        {
+            let s = EncryptedFileStore::open_unprotected(&path).unwrap();
+            entry(&s, wid(1), "seed")
+                .set_secret(b"keyless-seed")
+                .unwrap();
+        }
+        {
+            let s = EncryptedFileStore::open_unprotected(&path).unwrap();
+            assert_eq!(
+                entry(&s, wid(1), "seed").get_secret().unwrap(),
+                b"keyless-seed"
+            );
+        }
+        let err = EncryptedFileStore::open(&path, SecretString::new("real")).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::WrongPassphrase),
+            "real-pass open of a keyless vault must fail, got {err:?}"
+        );
+    }
+
+    /// Empty→real passphrase migration via `rekey`. After rekey,
+    /// `open(real)` reads every entry; the keyless door no longer opens it;
+    /// no `.bak`/`.tmp` residue beside the vault.
+    #[test]
+    fn empty_to_real_rekey_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        {
+            let s = EncryptedFileStore::open_unprotected(&path).unwrap();
+            entry(&s, wid(1), "seed").set_secret(b"migrate-me").unwrap();
+            s.rekey(SecretString::new("real-pass")).unwrap();
+            // The live handle keeps working post-rekey.
+            assert_eq!(
+                entry(&s, wid(1), "seed").get_secret().unwrap(),
+                b"migrate-me"
+            );
+        }
+        // Reopen under the real passphrase reads the entry.
+        {
+            let s = EncryptedFileStore::open(&path, SecretString::new("real-pass")).unwrap();
+            assert_eq!(
+                entry(&s, wid(1), "seed").get_secret().unwrap(),
+                b"migrate-me"
+            );
+        }
+        // The keyless door no longer opens it.
+        let err = EncryptedFileStore::open_unprotected(&path).unwrap_err();
+        assert!(
+            matches!(err, SecretStoreError::WrongPassphrase),
+            "keyless open after migration must fail, got {err:?}"
+        );
+        // No .bak / .tmp residue (mirrors rekey_reencrypts_and_old_passphrase_fails).
+        for sibling in fs::read_dir(dir.path()).unwrap().flatten() {
+            let name = sibling.file_name();
+            let name = name.to_string_lossy();
+            assert!(
+                !name.ends_with(".bak") && !name.ends_with(".tmp"),
+                "unexpected residue: {name}"
+            );
+        }
+    }
+
+    /// Crash-safety: a disk-write failure mid-rekey leaves the
+    /// pre-rekey keyless vault intact and readable via `open_unprotected`
+    /// (mirrors rekey_does_not_corrupt_on_disk_temp_failure).
+    #[cfg(unix)]
+    #[test]
+    fn empty_to_real_rekey_crash_safe_stays_keyless() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let s = EncryptedFileStore::open_unprotected(&path).unwrap();
+        entry(&s, wid(1), "seed").set_secret(b"keyless").unwrap();
+
+        // Read-only parent → the rekey atomic temp-write fails.
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o500)).unwrap();
+        let err = s.rekey(SecretString::new("real-pass")).unwrap_err();
+        assert!(matches!(err, SecretStoreError::Io(_)), "got {err:?}");
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+
+        // The live handle still serves the pre-rekey keyless vault…
+        assert_eq!(entry(&s, wid(1), "seed").get_secret().unwrap(), b"keyless");
+        // …and on disk it is still the keyless vault.
+        drop(s);
+        let s2 = EncryptedFileStore::open_unprotected(&path).unwrap();
+        assert_eq!(entry(&s2, wid(1), "seed").get_secret().unwrap(), b"keyless");
     }
 
     #[test]
@@ -1552,13 +1817,9 @@ mod tests {
 
     #[test]
     fn inflated_kdf_params_fail_open_with_kdf_failure() {
-        // A vault whose JSON declares m_kib = u32::MAX must be refused
-        // at open() with KdfFailure — before the verify-token is
-        // derived and without the ~4 TiB allocation the inflated param
-        // would demand. Under the resident-vault model this surfaces at
-        // open() rather than on first get(). Drop the store BEFORE
-        // patching the on-disk file so the drop-time sync cannot
-        // overwrite our injected corruption.
+        // A JSON m_kib = u32::MAX must be refused at open() with
+        // KdfFailure, before the ~4 TiB allocation it would demand. Drop
+        // the store before patching disk so the drop-sync can't undo it.
         let dir = tempfile::tempdir().unwrap();
         let path = vault_path(dir.path());
         {
@@ -1613,14 +1874,10 @@ mod tests {
         );
     }
 
-    /// Two threads share a cloned [`EncryptedFileStore`] handle (same
-    /// shape [`EncryptedFileCredential`] uses internally): one hammers
-    /// `put_bytes` + `get_bytes`, the other calls `rekey`. The single
-    /// state lock serializes every put/get/rekey, so a put can never
-    /// capture an old key and insert under a newly-swapped vault — every
-    /// `get` returns either the right plaintext, `Ok(None)`, or a clean
-    /// typed error, NEVER garbled bytes from a mis-keyed seal (which
-    /// would surface as `Corruption`).
+    /// Two threads share a cloned handle: one hammers put/get, the other
+    /// rekeys. The single state lock serializes them, so a `get` only ever
+    /// returns the right plaintext, `Ok(None)`, or a clean typed error —
+    /// never garbled bytes from a put that sealed under a swapped key.
     #[test]
     fn rekey_does_not_race_put_into_corruption() {
         let dir = tempfile::tempdir().unwrap();
@@ -1629,19 +1886,15 @@ mod tests {
         let writer_store = store.clone();
         let rekeyer_store = store.clone();
 
-        // Iteration counts are tuned for cost: every rekey runs Argon2
-        // at the default-target params, so the rekey loop dominates
-        // wall-clock. 16 rekeys overlap a 200-iter put loop reliably
-        // enough to hit the pre-fix race window on the test runner
-        // without dragging the suite out.
+        // Counts tuned for cost: each rekey runs Argon2, so 16 rekeys
+        // overlapping a 200-iter put loop hits the race window affordably.
         const PUT_ITERS: usize = 200;
         const REKEY_ITERS: usize = 16;
         let wallet = wid(7);
         let label = "racy";
 
-        // A fixed-prefix payload byte vector — never built with
-        // `format!` so the in-source secrets-guard scanner does not
-        // flag this test as a sink/expose_secret pairing.
+        // Fixed prefix, never built with `format!` so the secrets-guard
+        // scanner does not flag this as a sink/expose_secret pairing.
         const PREFIX: &[u8] = b"payload-";
         let writer = std::thread::spawn(move || {
             let mut buf = Vec::with_capacity(PREFIX.len() + 4);
@@ -1654,9 +1907,8 @@ mod tests {
                     .expect("put");
                 match writer_store.get_bytes(&wallet, label) {
                     Ok(Some(bytes)) => {
-                        // Must be one of OUR payloads — never random
-                        // bytes from a mis-keyed seal. Compare only
-                        // length + prefix; never log the bytes.
+                        // Must be one of OUR payloads, never mis-keyed
+                        // garbage. Check length + prefix; never log bytes.
                         let got = bytes.expose_secret();
                         assert!(got.starts_with(PREFIX), "garbled get-after-put");
                         assert_eq!(got.len(), PREFIX.len() + 4);
@@ -1668,10 +1920,8 @@ mod tests {
         });
 
         let rekeyer = std::thread::spawn(move || {
-            // Alternate two passphrases so consecutive rekeys actually
-            // change the resident key (the salt rerolls regardless, but
-            // alternating distinct passphrases is the operator-facing
-            // model and keeps the race window real).
+            // Alternate passphrases so consecutive rekeys change the
+            // resident key, keeping the race window real.
             let passphrases = ["pw-A", "pw-B"];
             for i in 0..REKEY_ITERS {
                 rekeyer_store
@@ -1684,20 +1934,23 @@ mod tests {
         rekeyer.join().expect("rekeyer thread");
     }
 
-    /// A bare relative filename makes `Path::parent()` return `Some("")`,
-    /// which `NamedTempFile::new_in("")` and the Unix parent-dir fsync
-    /// both reject; the `normalized_parent` helper rewrites the empty
-    /// parent to ".". Switch cwd to a temp dir for the test scope so we
-    /// exercise the bare-filename path without scribbling in the
-    /// workspace.
+    /// A bare filename makes `Path::parent()` return `Some("")`, which
+    /// `normalized_parent` rewrites to "."; exercise that path in a temp
+    /// cwd so nothing lands in the workspace.
     #[test]
     fn open_and_put_with_bare_filename_uses_cwd() {
-        // A static mutex serializes cwd-changing tests so they cannot
-        // race each other across the suite.
+        // Serialize cwd-changing tests so they cannot race each other.
         static CWD_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let _g = CWD_GUARD.lock().unwrap_or_else(|p| p.into_inner());
 
         let dir = tempfile::tempdir().unwrap();
+        // Tighten the cwd-parent so the parent-dir perm check passes (a
+        // umask-0002 tempdir is group-writable at 0o775).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        }
         let prior = std::env::current_dir().unwrap();
         std::env::set_current_dir(dir.path()).unwrap();
         // Tear-down guard so a panic still restores cwd.
@@ -1720,9 +1973,8 @@ mod tests {
         assert!(dir.path().join("vault.pwsvault").exists());
     }
 
-    /// The lock sidecar must refuse to traverse a pre-existing symlink
-    /// at the lock path on Unix. Without `O_NOFOLLOW` an attacker could
-    /// redirect the lock file's open to an unrelated inode.
+    /// The lock-sidecar open must refuse a pre-existing symlink
+    /// (`O_NOFOLLOW`) so an attacker can't redirect it to another inode.
     #[cfg(unix)]
     #[test]
     fn vault_lock_rejects_symlink_at_lock_path() {
@@ -1731,9 +1983,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = vault_path(dir.path());
         let lock = lock_path_for(&path);
-        // Point the lock path at /dev/null. Any successful open of the
-        // symlink would land on /dev/null's inode; O_NOFOLLOW makes the
-        // open itself fail with ELOOP.
+        // O_NOFOLLOW makes the open of this symlink fail with ELOOP.
         symlink("/dev/null", &lock).unwrap();
 
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
@@ -1741,6 +1991,155 @@ mod tests {
         assert!(
             matches!(err, SecretStoreError::Io(_)),
             "expected an Io error from O_NOFOLLOW refusal, got {err:?}"
+        );
+    }
+
+    /// A group/other-WRITABLE parent is refused at open (it would let a
+    /// peer rename/replace the vault despite its 0600); a read-only 0o750
+    /// parent is fine.
+    #[cfg(unix)]
+    #[test]
+    fn writable_parent_dir_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("vaultdir");
+        fs::create_dir(&sub).unwrap();
+        // Group-writable (0o770) trips the write-bit check. Build the path
+        // directly — `vault_path` would tighten the dir back to 0o700.
+        fs::set_permissions(&sub, fs::Permissions::from_mode(0o770)).unwrap();
+        let path = sub.join("vault.pwsvault");
+        let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
+            .expect_err("writable parent dir must be refused");
+        assert!(
+            matches!(err, SecretStoreError::InsecureParentDir { mode } if mode & 0o022 != 0),
+            "got {err:?}"
+        );
+        // Dropping the write bits (still group-readable at 0o750) lets the
+        // open succeed: read-only group access is not a rename threat.
+        fs::set_permissions(&sub, fs::Permissions::from_mode(0o750)).unwrap();
+        let _s = store_at(&path);
+    }
+
+    /// An oversized secret is rejected at the write boundary with
+    /// `SecretTooLarge`, and the vault stays openable — the per-secret
+    /// cap prevents the shared document from being inflated past the
+    /// read-side ceiling.
+    #[test]
+    fn oversized_secret_rejected_and_vault_stays_openable() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        {
+            let s = store_at(&path);
+            entry(&s, wid(1), "ok").set_secret(b"small").unwrap();
+            let too_big = vec![0xABu8; MAX_SECRET_LEN + 1];
+            let err = entry(&s, wid(1), "huge").set_secret(&too_big).unwrap_err();
+            // Surfaces through the SPI as BadStoreFormat carrying the
+            // secret-free SecretTooLarge message.
+            assert!(
+                matches!(&err, KeyringError::BadStoreFormat(m)
+                    if *m == SecretStoreError::SecretTooLarge {
+                        found: MAX_SECRET_LEN + 1,
+                        max: MAX_SECRET_LEN,
+                    }.to_string()),
+                "got {err:?}"
+            );
+            // The earlier good entry is still readable on this handle.
+            assert_eq!(entry(&s, wid(1), "ok").get_secret().unwrap(), b"small");
+        }
+        // The vault reopens cleanly — the oversized put never landed.
+        let s2 = store_at(&path);
+        assert_eq!(entry(&s2, wid(1), "ok").get_secret().unwrap(), b"small");
+        assert!(matches!(
+            entry(&s2, wid(1), "huge").get_secret(),
+            Err(KeyringError::NoEntry)
+        ));
+    }
+
+    /// An in-bounds KDF-param shift on a correct-passphrase vault is
+    /// rejected at open with `WrongPassphrase` — driven by the changed
+    /// DERIVED KEY, not the AAD binding (which `verify_aad_binds_salt_and_
+    /// kdf_params` covers).
+    #[test]
+    fn header_tamper_kdf_shift_smoke_test() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        {
+            let s = store_at(&path);
+            entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
+        }
+        let mut vault = read_vault_at(&path).unwrap().unwrap();
+        // Shift to still-valid-but-weaker params (defaults are 64 MiB/t=3;
+        // halving m_kib and dropping t stays above the 19 MiB / t=2 floor).
+        vault.kdf.m_kib /= 2;
+        vault.kdf.t -= 1;
+        assert!(
+            vault.kdf.enforce_bounds().is_ok(),
+            "shift must stay in bounds"
+        );
+        write_vault_at(&path, &vault).unwrap();
+        let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
+            .expect_err("KDF-param shift must fail the verify-token");
+        assert!(
+            matches!(err, SecretStoreError::WrongPassphrase),
+            "got {err:?}"
+        );
+    }
+
+    /// A flipped salt byte on a correct-passphrase vault is rejected at
+    /// open with `WrongPassphrase` — driven by the changed DERIVED KEY
+    /// (salt feeds the KDF), not the AAD binding.
+    #[test]
+    fn header_tamper_flipped_salt_smoke_test() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        {
+            let s = store_at(&path);
+            entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
+        }
+        let mut vault = read_vault_at(&path).unwrap().unwrap();
+        vault.salt[0] ^= 0x01;
+        write_vault_at(&path, &vault).unwrap();
+        let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
+            .expect_err("flipped salt must fail open");
+        assert!(
+            matches!(err, SecretStoreError::WrongPassphrase),
+            "got {err:?}"
+        );
+    }
+
+    /// A flipped entry NONCE byte (verify-token intact) surfaces as
+    /// `Corruption`: the per-entry AEAD-open fails its tag under the
+    /// correct key, mirroring the ciphertext-flip route.
+    #[test]
+    fn flipped_entry_nonce_is_corruption() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let s = store_at(&path);
+        entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
+        let mut vault = s.test_read_vault_from_disk().unwrap().unwrap();
+        vault
+            .wallets
+            .get_mut(&wid(1).to_hex())
+            .unwrap()
+            .get_mut("seed")
+            .unwrap()
+            .nonce[0] ^= 0x01;
+        s.test_write_vault_to_disk(&vault).unwrap();
+        s.test_reload_from_disk().unwrap();
+        let err = entry(&s, wid(1), "seed").get_secret().unwrap_err();
+        assert!(is_corruption(&err), "unexpected error: {err:?}");
+    }
+
+    /// A secret exactly at the cap is accepted (boundary is inclusive).
+    #[test]
+    fn secret_exactly_at_cap_is_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = store_at(&vault_path(dir.path()));
+        let at_cap = vec![0x5Au8; MAX_SECRET_LEN];
+        entry(&s, wid(1), "atcap").set_secret(&at_cap).unwrap();
+        assert_eq!(
+            entry(&s, wid(1), "atcap").get_secret().unwrap().len(),
+            MAX_SECRET_LEN
         );
     }
 }
