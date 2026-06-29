@@ -76,9 +76,10 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
         Arc<RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>>,
     /// Shared `PlatformEventManager`, retained on the manager for the
     /// two callers that fan out platform-wallet events directly:
-    /// `load_from_persistor` surfaces per-wallet
-    /// [`PlatformEvent`](crate::events::PlatformEvent) skip
-    /// notifications to the app handler, and (under the `shielded`
+    /// `load_from_persistor` surfaces per-wallet wallet-skipped-on-load
+    /// notifications to the app handler via
+    /// [`on_wallet_skipped_on_load`](crate::PlatformEventHandler::on_wallet_skipped_on_load),
+    /// and (under the `shielded`
     /// feature) `configure_shielded` installs a per-chunk progress
     /// handler onto the freshly-created `NetworkShieldedCoordinator`
     /// that forwards into `on_shielded_sync_progress`. Sub-managers

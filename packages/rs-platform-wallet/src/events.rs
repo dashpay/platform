@@ -73,28 +73,8 @@ pub trait PlatformEventHandler: EventHandler {
     /// [`load_from_persistor`](crate::PlatformWalletManager::load_from_persistor)
     /// skipped because its persisted row was corrupt.
     ///
-    /// Prefer this concrete overload over [`on_platform_event`](Self::on_platform_event)
-    /// — it matches the handler pattern used everywhere else on this trait and
-    /// removes the enum-dispatch indirection. The default implementation
-    /// delegates to `on_platform_event` so existing implementations that only
-    /// override `on_platform_event` continue to receive the event without any
-    /// changes.
-    fn on_wallet_skipped_on_load(&self, wallet_id: WalletId, reason: &SkipReason) {
-        self.on_platform_event(&PlatformEvent::WalletSkippedOnLoad {
-            wallet_id,
-            reason: reason.clone(),
-        });
-    }
-
-    /// Fired once per wallet that
-    /// [`load_from_persistor`](crate::PlatformWalletManager::load_from_persistor)
-    /// skipped because its persisted row was corrupt.
-    ///
-    /// **Deprecated in favour of [`on_wallet_skipped_on_load`](Self::on_wallet_skipped_on_load)**,
-    /// which follows the concrete-handler pattern used elsewhere on this trait.
-    /// The default implementation is a no-op; override
-    /// `on_wallet_skipped_on_load` for new code.
-    fn on_platform_event(&self, _event: &PlatformEvent) {}
+    /// Default impl is a no-op so existing handlers don't have to care.
+    fn on_wallet_skipped_on_load(&self, _wallet_id: WalletId, _reason: &SkipReason) {}
 
     /// Fired periodically during a shielded sync pass — once per
     /// completed chunk inside `sync_shielded_notes`. Carries the
@@ -197,25 +177,11 @@ impl PlatformEventManager {
     /// Dispatch a wallet-skipped-on-load notification to every handler.
     ///
     /// Not on the SPV hot path — called at most once per wallet during
-    /// a single `load_from_persistor` pass. Prefer this over
-    /// [`on_platform_event`](Self::on_platform_event) for new call sites;
-    /// it avoids heap-allocating a `PlatformEvent` wrapper and follows the
-    /// concrete-handler pattern used throughout this manager.
+    /// a single `load_from_persistor` pass.
     pub fn on_wallet_skipped_on_load(&self, wallet_id: WalletId, reason: &SkipReason) {
         let handlers = self.handlers.load();
         for h in handlers.iter() {
             h.on_wallet_skipped_on_load(wallet_id, reason);
-        }
-    }
-
-    /// Dispatch a [`PlatformEvent`] to every handler.
-    ///
-    /// Not on the SPV hot path — called at most once per wallet during
-    /// a single `load_from_persistor` pass.
-    pub fn on_platform_event(&self, event: &PlatformEvent) {
-        let handlers = self.handlers.load();
-        for h in handlers.iter() {
-            h.on_platform_event(event);
         }
     }
 

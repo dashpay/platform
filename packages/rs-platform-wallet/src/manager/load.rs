@@ -34,8 +34,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///   xpub, duplicate `account_type`, …): the wallet is **skipped** —
     ///   never inserted into `wallet_manager` / `self.wallets`, recorded
     ///   in [`LoadOutcome::skipped`] with a structural
-    ///   [`SkipReason::CorruptPersistedRow`], and a
-    ///   [`PlatformEvent::WalletSkippedOnLoad`] is emitted. One bad row
+    ///   [`SkipReason::CorruptPersistedRow`], and
+    ///   [`on_wallet_skipped_on_load`](crate::PlatformEventHandler::on_wallet_skipped_on_load)
+    ///   is called on each registered handler. One bad row
     ///   never aborts the others; the call still returns `Ok`.
     /// - **Whole-load failure** (persister I/O, programmer error, the
     ///   no-silent-zero topology check in
