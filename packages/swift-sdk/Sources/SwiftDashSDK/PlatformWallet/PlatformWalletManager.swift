@@ -645,26 +645,41 @@ public class PlatformWalletManager: ObservableObject {
             let drainError: Error? = {
                 do { try result.check(); return nil } catch { return error }
             }()
-            await MainActor.run {
-                self?.setDashPayDraining(walletId, false)
-                if let drainError {
-                    self?.lastError = drainError
-                    print(
-                        "⚠️ contact-crypto drain failed for "
-                            + "\(walletId.toHexString().prefix(8)): \(drainError)"
-                    )
-                } else if drained > 0 {
-                    // `drained` counts cleared queue entries — both completed
-                    // and permanently-failed (channel-broken) ops — so report
-                    // it neutrally rather than implying all succeeded.
-                    print(
-                        "🔑 processed \(drained) deferred contact-crypto op(s) for "
-                            + "\(walletId.toHexString().prefix(8))"
-                    )
-                }
-            }
+            // Hop to the main actor via a direct call, not a `MainActor.run`
+            // closure: capturing the task-isolated `self` into a main-actor
+            // closure is what Swift 6 region isolation rejects. `self` is
+            // `@MainActor` (Sendable) and the locally-built `drainError` /
+            // `drained` are region-transferable, so the call is race-free.
+            await self?.finishContactCryptoDrain(
+                walletId: walletId, drained: drained, drainError: drainError)
         }
         return true
+    }
+
+    /// Main-actor tail of the deferred contact-crypto drain: clears the
+    /// `draining` flag and surfaces any failure on `lastError`. Split out of
+    /// the `Task.detached` body so it hops back via a direct `@MainActor`
+    /// call instead of capturing `self` into a `MainActor.run` closure.
+    @MainActor
+    private func finishContactCryptoDrain(
+        walletId: Data, drained: UInt32, drainError: Error?
+    ) {
+        setDashPayDraining(walletId, false)
+        if let drainError {
+            lastError = drainError
+            print(
+                "⚠️ contact-crypto drain failed for "
+                    + "\(walletId.toHexString().prefix(8)): \(drainError)"
+            )
+        } else if drained > 0 {
+            // `drained` counts cleared queue entries — both completed
+            // and permanently-failed (channel-broken) ops — so report
+            // it neutrally rather than implying all succeeded.
+            print(
+                "🔑 processed \(drained) deferred contact-crypto op(s) for "
+                    + "\(walletId.toHexString().prefix(8))"
+            )
+        }
     }
 
     /// For every persisted asset lock at `statusRaw < 2` (Built /

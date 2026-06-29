@@ -1323,9 +1323,13 @@ extension ManagedPlatformWallet {
 
 /// Simple search-result struct surfaced by `searchDpnsNames`. Mirrors
 /// the Rust `DpnsSearchResultFFI` row shape in a Sendable Swift value.
-public struct DpnsSearchResult: Sendable, Equatable {
+public struct DpnsSearchResult: Sendable, Equatable, Identifiable {
     public let identityId: Identifier
     public let fullName: String
+    /// Unique per row: a single identity can own several names that
+    /// match a prefix, and a contested name shares `fullName` across
+    /// contenders — so neither field alone is unique. Combine both.
+    public var id: String { "\(fullName)|\(identityId.toBase58String())" }
 }
 
 extension ManagedPlatformWallet {
@@ -2153,48 +2157,54 @@ extension ManagedPlatformWallet {
         let avatarBytes = update.avatarBytes
 
         return try await Task.detached(priority: .userInitiated) { () -> DashPayProfile in
-            _ = signer
             var outProfile = DashPayProfileFFI()
 
-            let result: PlatformWalletFFIResult = idBytes.withUnsafeBufferPointer {
-                idBp -> PlatformWalletFFIResult in
-                let idPtr = idBp.baseAddress!
-                return invokeWithOptionalCStrings(
-                    displayName,
-                    publicMessage,
-                    avatarUrl
-                ) { namePtr, msgPtr, urlPtr -> PlatformWalletFFIResult in
-                    let bytes = avatarBytes ?? Data()
-                    if let avatarBytes, !avatarBytes.isEmpty {
-                        return avatarBytes.withUnsafeBytes { rawBuf -> PlatformWalletFFIResult in
-                            let bytesPtr = rawBuf.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            // Pin the KeychainSigner across the whole synchronous FFI call:
+            // Rust holds a `passUnretained` ctx pointer to it via `signerHandle`,
+            // so a bare `_ = signer` keepalive can be released under -O before the
+            // call returns. `withExtendedLifetime` keeps ARC holding it for the
+            // call's duration (matches the other *_with_signer wrappers).
+            let result: PlatformWalletFFIResult = withExtendedLifetime(signer) {
+                idBytes.withUnsafeBufferPointer {
+                    idBp -> PlatformWalletFFIResult in
+                    let idPtr = idBp.baseAddress!
+                    return invokeWithOptionalCStrings(
+                        displayName,
+                        publicMessage,
+                        avatarUrl
+                    ) { namePtr, msgPtr, urlPtr -> PlatformWalletFFIResult in
+                        let bytes = avatarBytes ?? Data()
+                        if let avatarBytes, !avatarBytes.isEmpty {
+                            return avatarBytes.withUnsafeBytes { rawBuf -> PlatformWalletFFIResult in
+                                let bytesPtr = rawBuf.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                                return platform_wallet_create_or_update_dashpay_profile_with_signer(
+                                    handle,
+                                    idPtr,
+                                    namePtr,
+                                    msgPtr,
+                                    urlPtr,
+                                    bytesPtr,
+                                    UInt(avatarBytes.count),
+                                    doCreate,
+                                    signerHandle,
+                                    &outProfile
+                                )
+                            }
+                        } else {
+                            _ = bytes
                             return platform_wallet_create_or_update_dashpay_profile_with_signer(
                                 handle,
                                 idPtr,
                                 namePtr,
                                 msgPtr,
                                 urlPtr,
-                                bytesPtr,
-                                UInt(avatarBytes.count),
+                                nil,
+                                0,
                                 doCreate,
                                 signerHandle,
                                 &outProfile
                             )
                         }
-                    } else {
-                        _ = bytes
-                        return platform_wallet_create_or_update_dashpay_profile_with_signer(
-                            handle,
-                            idPtr,
-                            namePtr,
-                            msgPtr,
-                            urlPtr,
-                            nil,
-                            0,
-                            doCreate,
-                            signerHandle,
-                            &outProfile
-                        )
                     }
                 }
             }

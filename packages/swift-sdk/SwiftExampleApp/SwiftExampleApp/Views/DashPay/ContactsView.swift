@@ -184,6 +184,17 @@ func attachOrStartSync(_ walletManager: PlatformWalletManager) async {
     }
 }
 
+/// Fire-and-forget kick of a DashPay sync pass after a local mutation
+/// (send request / accept / pay). It pulls the counterparty's state and
+/// promotes the established pair without waiting for the next background
+/// poll tick — so the user isn't left staring at a stale list right
+/// after acting. Non-blocking: callers dismiss/continue immediately and
+/// the Rust manager folds an in-flight pass into a no-op.
+@MainActor
+func kickDashPaySync(_ walletManager: PlatformWalletManager) {
+    Task { _ = try? await walletManager.dashPaySyncNow() }
+}
+
 // MARK: - Row model + view
 
 /// UI model for one established contact row, resolved from the

@@ -203,7 +203,7 @@ struct AddContactView: View {
                     .accessibilityIdentifier("dashpay.addContact.retry")
                 }
             case .found(let results):
-                ForEach(results, id: \.identityId) { result in
+                ForEach(results) { result in
                     Button {
                         selectedResult = result
                         errorMessage = nil
@@ -223,7 +223,7 @@ struct AddContactView: View {
                                     .foregroundColor(.secondary)
                             }
                             Spacer()
-                            if selectedResult?.identityId == result.identityId {
+                            if selectedResult == result {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.blue)
                             }
@@ -459,6 +459,7 @@ struct AddContactView: View {
                     signer: signer
                 )
                 onSent(recipient, mode == .dpns ? selectedResult?.fullName : nil)
+                kickDashPaySync(walletManager)
                 dismiss()
             } catch {
                 errorMessage = error.localizedDescription
@@ -485,6 +486,7 @@ struct AddContactView: View {
                 }
                 let signer = KeychainSigner(modelContainer: modelContext.container)
                 _ = try await wallet.acceptContactRequest(request, signer: signer)
+                kickDashPaySync(walletManager)
                 dismiss()
             } catch {
                 errorMessage = "Accept failed: \(error.localizedDescription)"

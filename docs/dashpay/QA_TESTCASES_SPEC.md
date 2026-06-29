@@ -193,7 +193,7 @@ truth (and on-chain for the payment).
 |---|---|---|
 | DP-01 send | ✅ | labeled contact request broadcast (sheet dismissed, no error); also the DP-02 reciprocal send |
 | DP-02 accept | ✅ | 7A8E accepted Eve → reciprocal `7A8E→Eve` row created (established) |
-| DP-03 payment | ✅ | Eve→Alice **0.001 DASH** real L1 tx (input spent, change `74,899,477`, fee `226` duffs, txid `850433507c88…560e`) — **after starting Core SPV** |
+| DP-03 payment | ✅ one direction | Eve→Alice **0.001 DASH** real L1 tx (input spent, change `74,899,477`, fee `226` duffs, txid `850433507c88…560e`) — **after starting Core SPV**. ⚠️ only the forward direction was driven; see the bidirectional gap below |
 | DP-04 profile | ✅ | publicMessage updated on-chain → SwiftData (`QA fresh-build 16:10`) |
 | DP-05 view | ✅ | contacts / requests / profile rendered throughout |
 | DP-06 ignore | ✅ | registered a fresh identity (asset-lock funded, ChainLock proof) → sent Eve a request → Eve **ignored** it (→ ignored-senders) → **un-ignored** (reversed). Local-only mute |
@@ -206,6 +206,12 @@ truth (and on-chain for the payment).
 (SwiftData + chain; DP-07/DP-08 via a freshly-registered unconnected identity to
 get clean first-contact pairs), DP-09's on-chain publish + DP-10's backfill-rescan
 both confirmed in the Rust logs.
+
+**Gap (DP-03 bidirectional):** only the **forward** payment (Eve→Alice) was driven.
+The reverse (Alice→Eve) is symmetric by design — once established, each party derives
+the other's payment address from the exchanged xpubs — but it was **not** verified
+live (SimA's app context had flipped to a separate testnet wallet set). DP-03 now
+explicitly requires verifying **both** directions; the reverse remains to be driven.
 
 **Finding (DP-08):** the QR auto-accept *reciprocal* is signer-backed, so it only
 fires once the recipient's wallet is **unlocked** (the "N contacts waiting to finish

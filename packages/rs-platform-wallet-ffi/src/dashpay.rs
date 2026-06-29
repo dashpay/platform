@@ -550,9 +550,20 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
                 network,
             )
         };
+        // Same resolver handle, wrapped as a `ContactCryptoProvider`, so
+        // `send_payment` can drain a deferred external-account build for this
+        // contact before resolving the account. Same lifetime contract as the
+        // signer above (no new FFI surface).
+        let provider = unsafe {
+            resolver_contact_crypto_provider(
+                signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
         block_on_worker(async move {
             identity
-                .send_payment(&from_id, &to_id, amount_duffs, memo_str, &signer)
+                .send_payment(&from_id, &to_id, amount_duffs, memo_str, &signer, &provider)
                 .await
         })
     });

@@ -274,10 +274,11 @@ impl ManagedIdentity {
     /// either source. The wire field names (`alias_name` / `display_hidden`)
     /// map onto the domain names (`alias` / `is_hidden`) on the contact.
     /// `Ok(false)` = no-op (contact isn't established); `Ok(true)` = applied
-    /// (or unchanged, skipping the persist). `Err` = the change reached memory
-    /// but the persist failed — the caller MUST surface it so the drain leaves
-    /// the `ContactInfoDecrypt` queue entry in place. Swallowing here would lose
-    /// the alias/note on restart AND clear the only retry hook.
+    /// (or unchanged, skipping the persist). `Err` = the persist failed; the
+    /// in-memory contact is left UNCHANGED (we persist before committing to
+    /// memory), so a retry is not defeated by the unchanged-equality
+    /// short-circuit above. The caller MUST surface it so the drain leaves the
+    /// `ContactInfoDecrypt` queue entry in place for that retry.
     pub fn set_contact_metadata(
         &mut self,
         contact_id: &Identifier,
@@ -296,9 +297,16 @@ impl ManagedIdentity {
             // calls this for every decrypted doc on every pass).
             return Ok(true);
         }
-        contact.alias = metadata.alias_name;
-        contact.note = metadata.note;
-        contact.is_hidden = metadata.display_hidden;
+        // Persist BEFORE committing to memory: build the changeset from a copy
+        // carrying the new metadata, store it, and only apply to the live
+        // contact once the store succeeds. On a store failure memory stays
+        // equal to the persisted state, so the unchanged-equality short-circuit
+        // above does NOT swallow the next retry — the drain's ContactInfoDecrypt
+        // entry re-runs and re-persists cleanly.
+        let mut updated = contact.clone();
+        updated.alias = metadata.alias_name;
+        updated.note = metadata.note;
+        updated.is_hidden = metadata.display_hidden;
 
         let mut cs = ContactChangeSet::default();
         cs.established.insert(
@@ -306,9 +314,10 @@ impl ManagedIdentity {
                 owner_id,
                 recipient_id: *contact_id,
             },
-            contact.clone(),
+            updated.clone(),
         );
         persister.store(cs.into())?;
+        *contact = updated;
         Ok(true)
     }
 
@@ -746,6 +755,86 @@ mod tests {
         assert!(
             result.is_err(),
             "a failed metadata persist must surface, not report success"
+        );
+    }
+
+    /// A retry after a failed metadata persist must actually re-store — it must
+    /// NOT be swallowed by the unchanged-equality short-circuit. Pre-fix,
+    /// `set_contact_metadata` mutated memory BEFORE persisting, so a failed
+    /// store left memory == metadata; the next retry hit the equality
+    /// short-circuit and returned `Ok(true)` WITHOUT persisting, permanently
+    /// losing the alias/note.
+    #[test]
+    fn set_contact_metadata_retry_after_failed_persist_actually_persists() {
+        use crate::changeset::{
+            ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+        };
+        use crate::wallet::platform_wallet::WalletId;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct Counting(Arc<AtomicUsize>);
+        impl PlatformWalletPersistence for Counting {
+            fn store(
+                &self,
+                _w: WalletId,
+                _cs: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+            fn flush(&self, _w: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = Identifier::from([1u8; 32]);
+        let contact_id = Identifier::from([2u8; 32]);
+        let outgoing = create_contact_request(our_id, contact_id, 1000);
+        let incoming = create_contact_request(contact_id, our_id, 1001);
+        managed.established_contacts.insert(
+            contact_id,
+            EstablishedContact::new(contact_id, outgoing, incoming),
+        );
+        let meta = ContactInfoPrivateData {
+            alias_name: Some("New alias".to_string()),
+            note: None,
+            display_hidden: false,
+            accepted_accounts: Vec::new(),
+        };
+
+        // First attempt fails to persist → surfaces as Err.
+        let r1 = managed.set_contact_metadata(&contact_id, meta.clone(), &failing_persister());
+        assert!(
+            r1.is_err(),
+            "first attempt must surface the persist failure"
+        );
+
+        // Retry with the SAME metadata against a working persister. The fix
+        // (persist-before-commit) leaves memory unchanged on the failed
+        // attempt, so this retry must NOT short-circuit — it must re-store.
+        let count = Arc::new(AtomicUsize::new(0));
+        let working = WalletPersister::new([0u8; 32], Arc::new(Counting(count.clone())));
+        let r2 = managed.set_contact_metadata(&contact_id, meta, &working);
+        assert!(r2.is_ok(), "retry must succeed");
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "retry after a failed persist must actually re-store, not be swallowed \
+             by the unchanged-equality short-circuit"
+        );
+        assert_eq!(
+            managed
+                .established_contacts
+                .get(&contact_id)
+                .unwrap()
+                .alias
+                .as_deref(),
+            Some("New alias"),
+            "memory must reflect the persisted alias after a successful retry"
         );
     }
 
