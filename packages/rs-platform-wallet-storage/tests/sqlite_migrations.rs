@@ -185,6 +185,21 @@ fn tc027_smoke_insert_every_table() {
             .unwrap();
         assert!(n >= 1, "{table} insert did not land");
     }
+
+    // `identity_keys` is counted above via the identity join, but it also
+    // carries its OWN `wallet_id` column (the direct per-wallet read scope);
+    // verify the smoke row is countable that way too.
+    let direct: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM identity_keys WHERE wallet_id = ?1",
+            rusqlite::params![wallet_id.as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(
+        direct >= 1,
+        "identity_keys must be countable by its direct wallet_id column"
+    );
 }
 
 /// re-open is idempotent.

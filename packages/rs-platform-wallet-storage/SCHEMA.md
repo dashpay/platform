@@ -506,11 +506,16 @@ global-config persister can write to typed scopes whose parent tables
 stay empty). Cleanup is instead a soft cascade. Deleting a
 `wallets` row fires a wallet-rooted `AFTER DELETE` trigger that
 brooms the wallet-scoped tables (`meta_wallet`, `meta_contact`,
-`meta_platform_address`) by `wallet_id`, and the FK cascade through
-`identities` fires a per-identity trigger that brooms `meta_identity` +
-`meta_token` by `identity_id`. Both legs key on the id alone, so a wallet
-delete cleans its metadata transitively whether or not the typed parent
-was ever written and regardless of any contact's lifecycle state.
+`meta_platform_address`) by `wallet_id` — unconditionally, regardless of
+whether the typed parent row was ever written or any contact's lifecycle
+state. The identity-scoped tables (`meta_identity`, `meta_token`) are
+broomed by a *different* leg: the `wallets → identities` FK cascade deletes
+each linked `identities` row, and a per-identity `AFTER DELETE` trigger then
+brooms by `identity_id`. That leg fires only for identities the wallet
+actually owns, so it cleans `meta_token` even when no `token_balances` row
+ever existed — but identity-scoped metadata for an identity whose
+`identities` row was never written (or is not linked to this wallet)
+survives the delete as an orphan (see the orphan-metadata limitation above).
 Additional triggers handle direct deletes of a single `token_balances`,
 `contacts`, or `platform_addresses` row.
 

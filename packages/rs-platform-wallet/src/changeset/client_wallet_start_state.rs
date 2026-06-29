@@ -30,7 +30,7 @@ use key_wallet::{Address, Network};
 /// boundary, enforced by type rather than convention.
 #[derive(Debug)]
 pub struct ClientWalletStartState {
-    /// Network the wallet is bound to (from `wallet_metadata`).
+    /// Network the wallet is bound to.
     pub network: Network,
     /// Best estimate of the chain tip at creation time (`0` = scan
     /// from genesis / unknown).
