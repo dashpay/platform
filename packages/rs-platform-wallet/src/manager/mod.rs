@@ -13,7 +13,9 @@ mod wallet_lifecycle;
 
 use std::sync::Arc;
 
-use dash_async::{ShutdownReport, ShutdownWeight, ThreadRegistry, WorkerConfig, WorkerStatus};
+use dash_async::{
+    RefcountedFlagGuard, ShutdownReport, ShutdownWeight, ThreadRegistry, WorkerConfig, WorkerStatus,
+};
 use tokio::sync::{Notify, RwLock};
 
 use key_wallet_manager::WalletManager;
@@ -446,27 +448,34 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Stop all background workers and wait for them to exit.
     ///
-    /// Tears down in ascending weight order. The periodic sync
-    /// coordinators (weight 0) are quiesced first — concurrently, since
-    /// they share no lock — each via the coordinator's `quiesce`, which
-    /// raises that coordinator's `quiescing` gate (a cancellation-safe
-    /// refcounted flag guard) and holds it across the cancel, the
-    /// OS-thread/task join, and the in-flight-pass drain. With the gate up
+    /// Every coordinator's `quiescing` gate is raised up front and held —
+    /// via `hold_coordinator_gates` — across the **entire** teardown, not
+    /// just each coordinator's own quiesce. So
     /// a concurrent direct `sync_now`/`sync_wallet` reaching `begin_pass`
-    /// observes `quiescing > 0` and bails, so no new pass can claim the
-    /// `is_syncing` slot mid-teardown; each guard's `Drop` returns the
-    /// refcount to 0 as its `quiesce` returns (and runs even if this future
-    /// is cancelled at an `await`). The wallet-event adapter (weight 10)
-    /// that sinks their stores, and any parked orphans, are then torn down
-    /// via [`ThreadRegistry::shutdown`]. When this returns every `!Send`
-    /// loop has fully exited. Idempotent.
+    /// observes `quiescing > 0` and bails for the whole shutdown, including
+    /// the weight-10 wallet-event-adapter (store-sink) join in
+    /// [`ThreadRegistry::shutdown`] and the orphan reap — not merely while a
+    /// coordinator loop is being cancelled. Were the gate dropped as each
+    /// coordinator's quiesce returned, a direct pass could slip in during the
+    /// sink teardown and `persister.store(...)` / fire a host callback into a
+    /// context the caller is about to free.
     ///
-    /// The gate is raised by the lifecycle itself, not by a registry-side
-    /// drain hook: such a hook's `fetch_add` ran inside `registry.quiesce`
-    /// while its matching `fetch_sub` lived past the same `await`, so a
-    /// teardown-cancelling `tokio::time::timeout` leaked the refcount and
-    /// wedged the coordinator. Holding the guard in the lifecycle keeps the
-    /// raise and release symmetric on every exit path.
+    /// Teardown then runs in ascending weight order: the periodic
+    /// coordinators (weight 0) are quiesced first — concurrently, since they
+    /// share no lock — each via the coordinator's `quiesce` (cancel, the
+    /// OS-thread/task join, and the in-flight-pass drain); then the
+    /// wallet-event adapter (weight 10) that sinks their stores and any
+    /// parked orphans, via [`ThreadRegistry::shutdown`]. When this returns
+    /// every `!Send` loop has fully exited. Idempotent.
+    ///
+    /// The gates are refcounted [`RefcountedFlagGuard`]s held in the
+    /// lifecycle, not raised by a registry-side drain hook: such a hook's
+    /// `fetch_add` ran inside `registry.quiesce` while its matching
+    /// `fetch_sub` lived past the same `await`, so a teardown-cancelling
+    /// `tokio::time::timeout` leaked the refcount and wedged the coordinator.
+    /// The held guards' `Drop` is cancellation-safe (runs on every exit path,
+    /// including this future being dropped at an `await`), so the refcount
+    /// returns to 0 only once shutdown completes or unwinds.
     ///
     /// Ordering matters: cancel-only `stop()` would let a pass already
     /// inside `sync_now` keep running and call `persister.store(...)` /
@@ -509,22 +518,68 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
              services one block_on at a time, so the join would deadlock"
         );
 
-        // Quiesce the periodic coordinators (weight 0) first, each holding
-        // its own cancellation-safe `quiescing` gate across cancel+join+drain
-        // so a concurrent direct sync_now/sync_wallet bails at `begin_pass`
-        // instead of racing the teardown. Concurrent: they share no lock.
+        // Raise + HOLD every coordinator's quiescing gate for the whole
+        // teardown so a concurrent direct sync_now/sync_wallet bails at
+        // `begin_pass` throughout — including the weight-10 event-adapter
+        // (store-sink) join below, not just each coordinator's own quiesce.
+        // Dropped only when `_gates` falls out of scope at function end.
+        let _gates = self.hold_coordinator_gates();
+
+        // Quiesce the periodic coordinators (weight 0) first — concurrently,
+        // they share no lock — cancelling, joining, and draining each
+        // in-flight pass.
         let coordinator_statuses = self.quiesce_coordinators().await;
 
-        // Tear down the rest (event adapter, weight 10; parked orphans). The
-        // coordinators are already joined, so the registry classifies them
-        // NotRunning here; overwrite those entries with the real quiesce
-        // status while leaving never-started coordinators (absent from the
-        // report) absent.
+        // Tear down the rest (event adapter, weight 10; parked orphans).
         let mut report = self.registry.shutdown().await;
         for (worker, status) in coordinator_statuses {
-            report.per_worker.entry(worker).and_modify(|s| *s = status);
+            // Overwrite ONLY the slots the registry classified `NotRunning`
+            // (the already-joined coordinators) with their real quiesce
+            // status. If a concurrent restart slipped a fresh worker in
+            // before the registry latched closed, `registry.shutdown` joined
+            // it and reported its live status — keep that, never clobber it
+            // with the stale pre-restart status. Never-started coordinators
+            // are absent from the report and stay absent.
+            report.per_worker.entry(worker).and_modify(|s| {
+                if *s == WorkerStatus::NotRunning {
+                    *s = status;
+                }
+            });
         }
         report
+    }
+
+    /// Raise and hold every periodic coordinator's `quiescing` gate for the
+    /// whole [`shutdown`](Self::shutdown) teardown. The returned guards keep
+    /// each gate's refcount `> 0` (composing with each `quiesce`'s own
+    /// transient raise) until they drop, so a concurrent direct
+    /// `sync_now`/`sync_wallet` bails at `begin_pass` across the entire
+    /// shutdown — the coordinator loop joins, the weight-10 event-adapter
+    /// (store-sink) join, and the orphan reap. `RefcountedFlagGuard::Drop`
+    /// is cancellation-safe, so the refcount returns to 0 on every exit path.
+    #[cfg(feature = "shielded")]
+    fn hold_coordinator_gates(&self) -> [RefcountedFlagGuard<'_>; 3] {
+        [
+            self.platform_address_sync_manager.hold_quiescing_gate(),
+            self.identity_sync_manager.hold_quiescing_gate(),
+            self.shielded_sync_manager.hold_quiescing_gate(),
+        ]
+    }
+
+    /// Raise and hold every periodic coordinator's `quiescing` gate for the
+    /// whole [`shutdown`](Self::shutdown) teardown. The returned guards keep
+    /// each gate's refcount `> 0` (composing with each `quiesce`'s own
+    /// transient raise) until they drop, so a concurrent direct
+    /// `sync_now`/`sync_wallet` bails at `begin_pass` across the entire
+    /// shutdown — the coordinator loop joins, the weight-10 event-adapter
+    /// (store-sink) join, and the orphan reap. `RefcountedFlagGuard::Drop`
+    /// is cancellation-safe, so the refcount returns to 0 on every exit path.
+    #[cfg(not(feature = "shielded"))]
+    fn hold_coordinator_gates(&self) -> [RefcountedFlagGuard<'_>; 2] {
+        [
+            self.platform_address_sync_manager.hold_quiescing_gate(),
+            self.identity_sync_manager.hold_quiescing_gate(),
+        ]
     }
 
     /// Quiesce the periodic sync coordinators (weight 0) concurrently,
@@ -1007,6 +1062,112 @@ mod tests {
                 .quiescing_load_for_test(AO::Acquire),
             "quiescing gate must return to 0 once shutdown completes"
         );
+    }
+
+    /// Regression for the gap the per-coordinator-only gate left open:
+    /// `shutdown()` must keep the gate raised **through** `registry.shutdown()`
+    /// — the weight-10 event-adapter (store-sink) join and the orphan reap —
+    /// not just while each coordinator loop is cancelled+joined. Otherwise a
+    /// direct `sync_now`/`sync_wallet` can slip past `begin_pass` after the
+    /// coordinators are joined but before shutdown returns, and persist /
+    /// fire a host callback into a context about to be freed.
+    ///
+    /// We make that teardown phase observable by parking a wedged orphan so
+    /// `registry.shutdown()`'s reap blocks for its ~1 s grace: a deterministic
+    /// window AFTER the coordinator has joined (`is_running() == false`) but
+    /// BEFORE shutdown returns. In that window a direct `sync_now()` (with
+    /// `is_syncing` free) must still bail purely on `quiescing > 0`.
+    ///
+    /// Non-vacuous: against the prior body — which dropped every gate when
+    /// `quiesce_coordinators()` returned — the gate is 0 during this phase,
+    /// so the direct `sync_now()` runs and the completion count climbs to 2;
+    /// the assertion below then fails.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn shutdown_holds_gate_through_registry_teardown() {
+        let started = Arc::new(AtomicBool::new(false));
+        // `release` pre-set: the handler only counts, it never blocks.
+        let release = Arc::new(AtomicBool::new(true));
+        let completions = Arc::new(AtomicUsize::new(0));
+        let manager = Arc::new(make_manager_with_blocking_handler(
+            Arc::clone(&started),
+            release,
+            Arc::clone(&completions),
+        ));
+
+        // First loop pass fires immediately and completes (count == 1); the
+        // loop then parks in a long interval sleep.
+        manager
+            .platform_address_sync_manager
+            .set_interval(Duration::from_secs(3600));
+        Arc::clone(&manager.platform_address_sync_manager).start();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while completions.load(AO::SeqCst) == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("first loop pass must complete");
+
+        // Park a wedged orphan so `registry.shutdown()`'s orphan reap blocks
+        // for the full ~1 s grace — the teardown window the gate must cover.
+        let (release_tx, wedged) = spawn_wedged_thread();
+        manager
+            .registry
+            .park_orphan_for_test(WalletWorker::ShieldedSync, wedged);
+
+        let shutdown_mgr = Arc::clone(&manager);
+        let shutdown_task = tokio::spawn(async move { shutdown_mgr.shutdown().await });
+
+        // Wait until the coordinator loop has joined (its quiesce is done).
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while manager.platform_address_sync_manager.is_running() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("coordinator must join during shutdown");
+
+        // Settle past `quiesce_coordinators()`'s return (so a pre-fix gate has
+        // surely dropped); we are now inside `registry.shutdown()`'s ~1 s reap.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            !shutdown_task.is_finished(),
+            "shutdown should still be tearing down the event adapter / orphans"
+        );
+        assert!(
+            manager
+                .platform_address_sync_manager
+                .quiescing_load_for_test(AO::Acquire),
+            "gate must stay raised through the registry teardown phase"
+        );
+
+        // Direct sync_now in this phase: `is_syncing` is free (loop joined +
+        // drained), so it bails purely on the raised gate — no new completion.
+        manager.platform_address_sync_manager.sync_now().await;
+        assert_eq!(
+            completions.load(AO::SeqCst),
+            1,
+            "a direct sync_now during the registry teardown phase must bail on \
+             the gate, not start a fresh pass"
+        );
+
+        // Release the wedged orphan and let shutdown finish.
+        release_tx.send(()).expect("release wedged orphan");
+        let _report = tokio::time::timeout(Duration::from_secs(10), shutdown_task)
+            .await
+            .expect("shutdown completes")
+            .expect("shutdown task joined");
+
+        // Refcount returns to 0 only once shutdown completes.
+        assert!(
+            !manager
+                .platform_address_sync_manager
+                .quiescing_load_for_test(AO::Acquire),
+            "quiescing gate must return to 0 after shutdown"
+        );
+
+        // Cleanup any re-parked orphan so no live thread leaks past the test.
+        let _ = manager.registry.reap_orphans(Duration::from_secs(5)).await;
     }
 
     /// Race regression — start coordinators with a long sleep interval so

@@ -294,9 +294,10 @@ impl CoordinatorLifecycle {
     /// multi-step teardown (e.g. the shielded Clear flow) keep new direct
     /// passes off across a check-then-wipe even while a concurrent public
     /// `quiesce()` lands inside the window — neither party's Drop can lower
-    /// the other's barrier. In production only the shielded Clear flow needs
-    /// this today; the coordinator pass-gate tests also exercise it.
-    #[cfg(any(test, feature = "shielded"))]
+    /// the other's barrier. Used by the shielded Clear flow and by
+    /// `PlatformWalletManager::shutdown`, which holds every coordinator's
+    /// gate across the whole teardown (including the registry's event-adapter
+    /// join); the coordinator pass-gate tests also exercise it.
     pub(crate) fn hold_quiescing_gate(&self) -> RefcountedFlagGuard<'_> {
         // SeqCst on the refcount: store-half of the `quiescing`<->
         // `is_syncing` handshake (see `begin_pass`). The Clear flow raises

@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use dash_async::ThreadRegistry;
+use dash_async::{RefcountedFlagGuard, ThreadRegistry};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use arc_swap::ArcSwapOption;
@@ -239,6 +239,14 @@ impl PlatformAddressSyncManager {
     /// one-shot host drops the runtime.
     pub async fn quiesce(&self) -> dash_async::WorkerStatus {
         self.lifecycle.quiesce().await
+    }
+
+    /// Raise this coordinator's `quiescing` gate and hold it until the
+    /// returned guard drops. `PlatformWalletManager::shutdown` holds one
+    /// across the whole teardown so a direct `sync_now` cannot slip past
+    /// `begin_pass` while the registry tears down the store sink.
+    pub(crate) fn hold_quiescing_gate(&self) -> RefcountedFlagGuard<'_> {
+        self.lifecycle.hold_quiescing_gate()
     }
 
     /// Test-only read of the `quiescing` gate ("is the gate raised?").
