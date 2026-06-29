@@ -47,6 +47,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use keyring_core::api::{Credential, CredentialApi, CredentialPersistence, CredentialStoreApi};
@@ -92,6 +93,9 @@ pub const MAX_SECRET_LEN: usize = 64 * 1024;
 #[derive(Clone)]
 pub struct EncryptedFileStore {
     inner: Arc<Mutex<EncryptedFileStoreInner>>,
+    /// Shared clone of [`EncryptedFileStoreInner::durability_uncertain`] so
+    /// the pollable accessor reads it WITHOUT taking the state lock.
+    durability_uncertain: Arc<AtomicU64>,
 }
 
 /// Resident store state behind a single [`Mutex`] so every mutation sees
@@ -120,6 +124,14 @@ struct EncryptedFileStoreInner {
     ///
     /// [`rekey`]: EncryptedFileStore::rekey
     passphrase: SecretString,
+    /// Count of vault writes whose data committed (atomic rename succeeded)
+    /// but whose parent-directory fsync could NOT be confirmed, so the
+    /// rename's durability across power loss is uncertain. Non-fatal by
+    /// design — the write still returns `Ok` and the data is visible — this
+    /// is a pollable signal, not a rollback trigger (see
+    /// [`EncryptedFileStore::durability_uncertain_count`]). Bumped under the
+    /// state lock from `sync_to_disk`; read lock-free via the shared `Arc`.
+    durability_uncertain: Arc<AtomicU64>,
     /// Holds the advisory write-lock on `<path>.lock` for the store's
     /// lifetime; dropped (releasing the lock) when the store drops.
     _lock: VaultLock,
@@ -186,15 +198,30 @@ impl EncryptedFileStore {
             None => Self::create_new_vault(&path, &passphrase)?,
         };
 
+        let durability_uncertain = Arc::new(AtomicU64::new(0));
         Ok(Self {
             inner: Arc::new(Mutex::new(EncryptedFileStoreInner {
                 path,
                 vault,
                 derived_key,
                 passphrase,
+                durability_uncertain: Arc::clone(&durability_uncertain),
                 _lock: lock,
             })),
+            durability_uncertain,
         })
+    }
+
+    /// Number of vault writes whose data committed but whose parent-directory
+    /// fsync could not be confirmed (rename durability across power loss is
+    /// uncertain). Monotonic, process-lifetime; `0` means every write this
+    /// store performed was confirmed durable. This is the **observable signal**
+    /// behind the intentionally non-fatal handling: such a write still returns
+    /// `Ok` (data committed + visible), so a caller that cares about hard
+    /// durability polls this rather than seeing a spurious error it would
+    /// otherwise roll back. Read lock-free.
+    pub fn durability_uncertain_count(&self) -> u64 {
+        self.durability_uncertain.load(Ordering::Relaxed)
     }
 
     /// Load and decrypt an existing vault file, returning `Ok(None)` if
@@ -218,7 +245,9 @@ impl EncryptedFileStore {
         passphrase: &SecretString,
     ) -> Result<(Vault, SecretBytes), SecretStoreError> {
         let (vault, key) = build_fresh_vault(passphrase)?;
-        write_vault_at(path, &vault)?;
+        // Initial create: the store isn't built yet, so no durability counter
+        // to bump — a brand-new store's count starts at 0.
+        write_vault_at(path, &vault, None)?;
         Ok((vault, key))
     }
 
@@ -302,7 +331,7 @@ impl EncryptedFileStore {
 
     #[cfg(test)]
     pub(crate) fn test_write_vault_to_disk(&self, vault: &Vault) -> Result<(), SecretStoreError> {
-        write_vault_at(&lock_inner(&self.inner).path, vault)
+        write_vault_at(&lock_inner(&self.inner).path, vault, None)
     }
 
     /// Reload the vault from disk under the current passphrase, so a test
@@ -334,7 +363,7 @@ impl EncryptedFileStoreInner {
     /// Re-encrypt the resident vault and atomically replace the
     /// on-disk file. Runs inside the state-lock critical section.
     fn sync_to_disk(&self) -> Result<(), SecretStoreError> {
-        write_vault_at(&self.path, &self.vault)
+        write_vault_at(&self.path, &self.vault, Some(&self.durability_uncertain))
     }
 
     /// In-place seal + disk-write for [`EncryptedFileStore::put_bytes`];
@@ -616,13 +645,21 @@ fn read_vault_at(path: &Path) -> Result<Option<Vault>, SecretStoreError> {
 /// parent-dir fsync. The destination is never pre-removed, so a crash
 /// leaves the old or new vault, never none. The temp holds only
 /// ciphertext + header, never plaintext.
-fn write_vault_at(path: &Path, vault: &Vault) -> Result<(), SecretStoreError> {
-    do_write_vault_at(path, vault).inspect_err(|e| {
+fn write_vault_at(
+    path: &Path,
+    vault: &Vault,
+    durability_uncertain: Option<&AtomicU64>,
+) -> Result<(), SecretStoreError> {
+    do_write_vault_at(path, vault, durability_uncertain).inspect_err(|e| {
         tracing::warn!(error = %e, "failed to write vault file");
     })
 }
 
-fn do_write_vault_at(path: &Path, vault: &Vault) -> Result<(), SecretStoreError> {
+fn do_write_vault_at(
+    path: &Path,
+    vault: &Vault,
+    durability_uncertain: Option<&AtomicU64>,
+) -> Result<(), SecretStoreError> {
     let serialized = format::serialize(vault);
     // Defence in depth: never write a vault the read path would refuse,
     // so the on-disk file is never left unopenable.
@@ -647,29 +684,33 @@ fn do_write_vault_at(path: &Path, vault: &Vault) -> Result<(), SecretStoreError>
         .map_err(|e| SecretStoreError::io_at(path, e.error))?;
     // The vault is now committed on disk via the atomic persist() rename above.
     // A subsequent parent-directory fsync failure cannot undo the already-written
-    // file.  Propagating the error would cause callers (put/delete/rekey) to roll
-    // back in-memory state that already matches the on-disk vault — leaving the
-    // live handle diverged from disk.  Log a warning instead so the caller's
-    // rollback guard is not triggered.
+    // file. Propagating the error would force callers (put/delete/rekey) to roll
+    // back in-memory state that already matches the on-disk vault — diverging the
+    // live handle from disk. So this stays NON-FATAL: the write returns `Ok` and
+    // the data is committed + visible. We surface the unconfirmed power-loss
+    // durability two ways instead of swallowing it — an `error!` log AND a bump
+    // of the pollable `durability_uncertain` counter
+    // ([`EncryptedFileStore::durability_uncertain_count`]).
     #[cfg(unix)]
     {
+        let signal_unconfirmed = |e: &std::io::Error| {
+            tracing::error!(
+                error = %e,
+                parent = %parent.display(),
+                "parent-dir fsync unconfirmed after vault persist; data is committed on disk \
+                 but its rename durability across power loss is NOT confirmed"
+            );
+            if let Some(counter) = durability_uncertain {
+                counter.fetch_add(1, Ordering::Relaxed);
+            }
+        };
         match fs::File::open(parent) {
             Ok(d) => {
                 if let Err(e) = d.sync_all() {
-                    tracing::warn!(
-                        error = %e,
-                        parent = %parent.display(),
-                        "parent-dir fsync failed after vault persist; vault is committed on disk"
-                    );
+                    signal_unconfirmed(&e);
                 }
             }
-            Err(e) => {
-                tracing::warn!(
-                    error = %e,
-                    parent = %parent.display(),
-                    "parent-dir open for fsync failed after vault persist; vault is committed on disk"
-                );
-            }
+            Err(e) => signal_unconfirmed(&e),
         }
     }
     Ok(())
@@ -1175,6 +1216,26 @@ mod tests {
         assert_eq!(got, b"abandon abandon");
         let missing = entry(&s2, wid(1), "missing").get_secret().unwrap_err();
         assert!(matches!(missing, KeyringError::NoEntry));
+    }
+
+    /// The durability-uncertain counter exists, starts at 0, and a normal
+    /// write (whose parent-dir fsync is confirmed) does NOT bump it. The
+    /// increment-on-fsync-FAILURE path is environment-specific and not forced
+    /// here; this guards the accessor + the no-spurious-bump invariant.
+    #[test]
+    fn durability_uncertain_count_zero_for_confirmed_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let s = store_at(&path);
+        assert_eq!(s.durability_uncertain_count(), 0, "fresh store has none");
+        entry(&s, wid(1), "bip39_mnemonic")
+            .set_secret(b"abandon abandon")
+            .unwrap();
+        assert_eq!(
+            s.durability_uncertain_count(),
+            0,
+            "a confirmed-durable write must not bump the counter"
+        );
     }
 
     #[test]
@@ -1848,7 +1909,7 @@ mod tests {
         }
         let mut vault = read_vault_at(&path).unwrap().unwrap();
         vault.kdf.m_kib = u32::MAX;
-        write_vault_at(&path, &vault).unwrap();
+        write_vault_at(&path, &vault, None).unwrap();
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("inflated KDF must fail open");
         assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
@@ -2096,7 +2157,7 @@ mod tests {
             vault.kdf.enforce_bounds().is_ok(),
             "shift must stay in bounds"
         );
-        write_vault_at(&path, &vault).unwrap();
+        write_vault_at(&path, &vault, None).unwrap();
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("KDF-param shift must fail the verify-token");
         assert!(
@@ -2118,7 +2179,7 @@ mod tests {
         }
         let mut vault = read_vault_at(&path).unwrap().unwrap();
         vault.salt[0] ^= 0x01;
-        write_vault_at(&path, &vault).unwrap();
+        write_vault_at(&path, &vault, None).unwrap();
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("flipped salt must fail open");
         assert!(

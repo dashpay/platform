@@ -283,6 +283,18 @@ impl SecretStore {
         }
     }
 
+    /// Pollable durability signal — see
+    /// [`EncryptedFileStore::durability_uncertain_count`]. `Some(count)` on the
+    /// `File` arm (writes whose data committed but whose parent-dir fsync was
+    /// unconfirmed); `None` on the `Os` arm, whose backend owns its own
+    /// durability and exposes no such signal here.
+    pub fn durability_uncertain_count(&self) -> Option<u64> {
+        match self {
+            Self::File(s) => Some(s.durability_uncertain_count()),
+            Self::Os(_) => None,
+        }
+    }
+
     /// Delete the secret stored under `(service, label)`.
     ///
     /// Returns `Ok(true)` if a credential was removed, `Ok(false)` if no
