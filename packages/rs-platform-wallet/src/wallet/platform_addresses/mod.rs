@@ -16,11 +16,6 @@ mod transfer;
 mod wallet;
 mod withdrawal;
 
-/// Build platform-address persistence-changeset entries from proof-attested
-/// post-transition `address_infos`. Shared by the transfer path and the
-/// identity top-up-from-addresses balance reconciliation.
-pub(crate) use transfer::build_transfer_persistence_entries as build_platform_address_persistence_entries;
-
 /// Saturating sum over `Credits` (== `u64`) — total credit supply is far
 /// below `u64::MAX`, so saturation is unreachable in practice but the policy
 /// keeps debug-build panics off the table. Use this only for sums over

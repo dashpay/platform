@@ -32,9 +32,12 @@ use key_wallet_manager::WalletManager;
 
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+use crate::PlatformAddressBalanceEntry;
 use dash_sdk::platform::address_sync::{
     AddressFunds, AddressIndex, AddressProvider, AddressSyncResult,
 };
+use dash_sdk::query_types::AddressInfos;
+use dpp::address_funds::PlatformAddress;
 use tokio::sync::RwLock;
 
 /// DIP-17 address coordinates used as both the pending-bimap key and
@@ -202,6 +205,18 @@ pub(crate) struct PlatformPaymentAddressProvider {
 }
 
 impl PlatformPaymentAddressProvider {
+    /// The committed per-account index/balance state for one wallet, or
+    /// `None` if the provider doesn't cover it. Exposes the full persisted
+    /// `index <-> address` bijection — including addresses restored from
+    /// disk that are no longer in a live derived pool — so callers can map a
+    /// spent address back to its derivation index.
+    pub(crate) fn per_wallet_state(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Option<&PerWalletPlatformAddressState> {
+        self.per_wallet.get(wallet_id)
+    }
+
     /// Build a provider covering every platform payment account on
     /// each wallet in `wallet_ids`.
     ///
@@ -781,6 +796,55 @@ impl AddressProvider for PlatformPaymentAddressProvider {
     }
 }
 
+/// Resolve each spent platform address in a top-up's proof-attested
+/// `address_infos` to its `(account_index, address_index)` using the
+/// per-account index bijections, and pair it with the proof's post-spend
+/// balance + nonce. Resolving against the bijections — rather than the live
+/// derived address pool — means addresses restored from disk (present in the
+/// persisted index map but not in `ManagedPlatformAccount::addresses`) are
+/// still reconciled; without this, a top-up that spends a restored cached row
+/// would leave its stale balance behind, preserving the phantom balance.
+///
+/// Addresses the proof returns that the wallet doesn't own (no bijection
+/// entry) are skipped. Pure and lock-free so the reconciliation is
+/// unit-testable.
+pub(crate) fn build_top_up_balance_entries(
+    wallet_id: WalletId,
+    per_account_addresses: &[(u32, &BiBTreeMap<AddressIndex, PlatformP2PKHAddress>)],
+    address_infos: &AddressInfos,
+) -> Vec<PlatformAddressBalanceEntry> {
+    let mut entries = Vec::new();
+    for (addr, maybe_info) in address_infos.iter() {
+        let PlatformAddress::P2pkh(hash) = addr else {
+            continue;
+        };
+        let p2pkh = PlatformP2PKHAddress::new(*hash);
+        let funds = match maybe_info {
+            Some(ai) => AddressFunds {
+                balance: ai.balance,
+                nonce: ai.nonce,
+            },
+            None => AddressFunds {
+                balance: 0,
+                nonce: 0,
+            },
+        };
+        for &(account_index, bimap) in per_account_addresses {
+            if let Some(&address_index) = bimap.get_by_right(&p2pkh) {
+                entries.push(PlatformAddressBalanceEntry {
+                    wallet_id,
+                    account_index,
+                    address_index,
+                    address: p2pkh,
+                    funds,
+                });
+                break;
+            }
+        }
+    }
+    entries
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -805,6 +869,58 @@ mod tests {
 
     fn funds(balance: u64, nonce: u32) -> AddressFunds {
         AddressFunds { balance, nonce }
+    }
+
+    /// Regression for the top-up reconciliation: a spent platform address
+    /// that exists only in the persisted index bijection (restored from
+    /// disk — not in any live derived pool) must still be resolved to its
+    /// derivation index and recorded with the proof's post-spend balance.
+    /// The original fix scanned only the live pool, so it left restored
+    /// rows stale, preserving the phantom Platform Balance the PR targets.
+    #[test]
+    fn build_top_up_entries_resolves_restored_address_outside_live_pool() {
+        use dash_sdk::query_types::AddressInfo;
+
+        // Present in the persisted bijection at index 3, but NOT in a live
+        // derived address pool.
+        let restored = p2pkh(0x11);
+        let mut bimap: BiBTreeMap<AddressIndex, PlatformP2PKHAddress> = BiBTreeMap::new();
+        bimap.insert(3, restored);
+
+        // The top-up spent it; the proof attests post-spend balance 5,
+        // nonce bumped to 4.
+        let restored_addr = PlatformAddress::P2pkh([0x11; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            restored_addr,
+            Some(AddressInfo {
+                address: restored_addr,
+                nonce: 4,
+                balance: 5,
+            }),
+        );
+
+        let per_account: [(u32, &BiBTreeMap<AddressIndex, PlatformP2PKHAddress>); 1] =
+            [(ACCOUNT, &bimap)];
+        let entries = build_top_up_balance_entries(WALLET, &per_account, &address_infos);
+
+        assert_eq!(
+            entries.len(),
+            1,
+            "a restored spent address must still be reconciled"
+        );
+        let e = &entries[0];
+        assert_eq!(e.address, restored);
+        assert_eq!(e.account_index, ACCOUNT);
+        assert_eq!(
+            e.address_index, 3,
+            "index resolved from the persisted bijection, not the live pool"
+        );
+        assert_eq!(
+            e.funds.balance, 5,
+            "records the proof's post-spend balance, not a stale value"
+        );
+        assert_eq!(e.funds.nonce, 4, "records the bumped nonce");
     }
 
     /// Build a provider whose committed `per_wallet` tracks a single

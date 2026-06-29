@@ -610,17 +610,13 @@ impl PlatformAddressWallet {
     }
 }
 
-/// Translate proof-attested `inputs ∪ outputs` address infos into the
-/// persistence-changeset entries for this wallet. Non-P2PKH addresses and
+/// Translate `transfer_address_funds`'s `inputs ∪ outputs` address infos into
+/// the persistence-changeset entries for this wallet. Non-P2PKH addresses and
 /// addresses outside `owned` (i.e. external recipients) are filtered out — the
 /// caller persists only entries that belong to the wallet's derived address
 /// pool. Missing per-address info defaults to zero balance / zero nonce, which
 /// matches the on-chain post-transition state for a fully consumed input.
-///
-/// Shared by `transfer_address_funds` and the identity top-up-from-addresses
-/// reconciliation (re-exported as
-/// [`build_platform_address_persistence_entries`](super::build_platform_address_persistence_entries)).
-pub(crate) fn build_transfer_persistence_entries<'a, I>(
+fn build_transfer_persistence_entries<'a, I>(
     wallet_id: [u8; 32],
     account_index: u32,
     owned: &BTreeMap<PlatformP2PKHAddress, u32>,

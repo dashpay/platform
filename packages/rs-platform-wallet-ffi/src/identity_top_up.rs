@@ -118,11 +118,21 @@ pub unsafe extern "C" fn platform_wallet_top_up_from_addresses_with_signer(
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity_wallet = wallet.identity().clone();
+        let platform_wallet = wallet.platform().clone();
         block_on_worker(async move {
             let address_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
-            identity_wallet
+            let (address_infos, new_balance) = identity_wallet
                 .top_up_from_addresses(&identity_id, input_map, address_signer, None)
-                .await
+                .await?;
+            // Reconcile the spent platform-address balances from the proof so
+            // the wallet's displayed balance and next input selection reflect
+            // the spend. Resolves spent addresses via the address provider, so
+            // it covers addresses restored from disk that are no longer in a
+            // live derived pool.
+            platform_wallet
+                .apply_top_up_reconciliation(&address_infos)
+                .await;
+            Ok::<_, platform_wallet::PlatformWalletError>(new_balance)
         })
     });
     let result = unwrap_option_or_return!(option);
