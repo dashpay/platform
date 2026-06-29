@@ -104,6 +104,16 @@ fn release_open_path(path: &Path) {
     set.remove(path);
 }
 
+/// `true` if `path` is held open by a live [`SqlitePersister`] in this
+/// process. Callers pass a canonicalized path (matching how `open()`
+/// registers it).
+fn is_path_open(path: &Path) -> bool {
+    open_path_registry()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .contains(path)
+}
+
 /// SQLite-backed `PlatformWalletPersistence`.
 pub struct SqlitePersister {
     config: SqlitePersisterConfig,
@@ -302,6 +312,19 @@ impl SqlitePersister {
         auto_backup_dir: Option<&Path>,
         skip_backup: bool,
     ) -> Result<(), WalletStorageError> {
+        // Refuse to overwrite a database a live persister in this process is
+        // still holding open: that handle's buffer/connection would silently
+        // diverge from the restored bytes. Canonicalize to match how `open()`
+        // registers the path (symlinks / `.`-segments resolve to one key); a
+        // not-yet-existing dest can't be open, so the fallback path is fine.
+        let dest_canonical = dest_db_path
+            .canonicalize()
+            .unwrap_or_else(|_| dest_db_path.to_path_buf());
+        if is_path_open(&dest_canonical) {
+            return Err(WalletStorageError::AlreadyOpen {
+                path: dest_canonical,
+            });
+        }
         if !skip_backup && dest_db_path.exists() {
             let dir = auto_backup_dir.ok_or(WalletStorageError::AutoBackupDisabled {
                 operation: AutoBackupOperation::Restore,
