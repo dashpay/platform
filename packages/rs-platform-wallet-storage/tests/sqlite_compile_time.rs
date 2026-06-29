@@ -58,6 +58,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "SELECT wallet_id, account_index, account_xpub_bytes FROM account_registrations",
     ),
     ("core_state.rs", "SELECT outpoint, value, script, height"),
+    ("core_state.rs", "SELECT DISTINCT script FROM core_utxos"),
     // Full-rehydration readers — one-shot SELECTs in `load_state`.
     (
         "accounts.rs",

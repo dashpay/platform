@@ -373,6 +373,33 @@ pub fn load_state(
     Ok(cs)
 }
 
+/// Every address that has ever held a `core_utxos` row for this wallet —
+/// spent **and** unspent — deduplicated. The rehydration address-reuse
+/// guard: an address whose UTXO was since spent must still be marked used
+/// so it's never handed back out as a fresh receive address. `network`
+/// turns each persisted `script` back into an [`Address`](dashcore::Address);
+/// a script that isn't a valid address is a hard error (corruption is never
+/// silently dropped), matching [`load_state`]'s unspent-UTXO handling.
+pub fn load_used_addresses(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    network: dashcore::Network,
+) -> Result<Vec<dashcore::Address>, WalletStorageError> {
+    let mut stmt = conn
+        .prepare("SELECT DISTINCT script FROM core_utxos WHERE wallet_id = ?1 ORDER BY script")?;
+    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+        row.get::<_, Vec<u8>>(0)
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        let script = dashcore::ScriptBuf::from_bytes(r?);
+        let address = dashcore::Address::from_script(&script, network)
+            .map_err(|_| WalletStorageError::blob_decode("core_utxos.script not an address"))?;
+        out.push(address);
+    }
+    Ok(out)
+}
+
 /// Convert a stored sync-height column to `u32`, erroring on overflow
 /// rather than silently truncating a corrupt/out-of-range value.
 fn sync_height_u32(
