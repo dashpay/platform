@@ -3387,7 +3387,12 @@ fn build_wallet_start_state(
     // only this final assembly. `_` consumes the two start-state slices
     // whose sole consumer was the removed struct literal.
     let _ = (identity_manager, unused_asset_locks);
-    todo!("seeded FFI restore path lands in #3692")
+    // Must NOT panic: this runs beneath an `extern "C"` boundary where an
+    // unwind is undefined behaviour. Return a typed backend error until the
+    // seeded FFI restore path lands in #3692 (which replaces this assembly).
+    Err(PersistenceError::backend(
+        "seeded FFI restore path is not available on this build (lands in #3692)".to_string(),
+    ))
 }
 
 /// Translate the `IdentityRestoreEntryFFI` slice carried on a wallet
