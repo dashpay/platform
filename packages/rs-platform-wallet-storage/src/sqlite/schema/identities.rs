@@ -147,13 +147,31 @@ pub fn load_state(
     let mut state = IdentityManagerStartState::default();
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     while let Some(row) = rows.next()? {
-        let _identity_id: Vec<u8> = row.get(0)?;
+        let identity_id_bytes: Vec<u8> = row.get(0)?;
         let payload: Vec<u8> = row.get(1)?;
         let tombstoned: i64 = row.get(2)?;
         if tombstoned != 0 {
             continue;
         }
         let entry: IdentityEntry = blob::decode(&payload)?;
+        // Cross-check the decoded blob against the typed columns it was
+        // selected by (mirrors the accounts / identity_keys readers): the
+        // blob must name the same identity, and its own wallet_id (when set)
+        // must match the wallet scope, else the row is corrupt / mis-filed.
+        let typed_id = <[u8; 32]>::try_from(identity_id_bytes.as_slice()).map_err(|_| {
+            WalletStorageError::blob_decode("identities.identity_id is not 32 bytes")
+        })?;
+        if entry.id != dpp::prelude::Identifier::from(typed_id) {
+            return Err(WalletStorageError::IdentityEntryIdMismatch);
+        }
+        if let Some(entry_wallet_id) = entry.wallet_id {
+            if entry_wallet_id != *wallet_id {
+                return Err(WalletStorageError::WalletIdMismatch {
+                    expected: *wallet_id,
+                    found: entry_wallet_id,
+                });
+            }
+        }
         let managed = managed_identity_from_entry(&entry, wallet_id);
         match entry.identity_index {
             Some(idx) => {
@@ -359,5 +377,30 @@ mod tests {
         let (claimed, _) = fetch(&conn, &a, &y).unwrap().expect("A claimed Y");
         assert_eq!(claimed.balance, 500, "promotion applies the new blob");
         assert_eq!(claimed.identity_index, Some(3));
+    }
+
+    /// `load_state` rejects a row whose decoded blob names a different
+    /// `identity_id` than its typed column — corruption is a hard, typed
+    /// error, never rehydrated under the wrong id.
+    #[test]
+    fn load_state_rejects_identity_id_column_mismatch() {
+        let conn = migrated_conn();
+        let a = [0xA1u8; 32];
+        insert_wallet(&conn, &a);
+        let typed_id = [0x01u8; 32]; // column
+        let blob_id = [0x02u8; 32]; // disagreeing blob
+        let payload = blob::encode(&entry(blob_id, Some(a), 100, Some(1))).unwrap();
+        conn.execute(
+            "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
+             VALUES (?1, ?2, 1, ?3, 0)",
+            params![&typed_id[..], &a[..], payload],
+        )
+        .unwrap();
+
+        let err = load_state(&conn, &a).expect_err("identity_id mismatch must fail");
+        assert!(
+            matches!(err, WalletStorageError::IdentityEntryIdMismatch),
+            "expected IdentityEntryIdMismatch, got {err:?}"
+        );
     }
 }

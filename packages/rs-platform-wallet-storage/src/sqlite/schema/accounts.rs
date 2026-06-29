@@ -25,15 +25,23 @@ pub(crate) type PlatformPaymentRegistration = (u32, ExtendedPubKey);
 /// One `platform_payment` registration row decoded into
 /// `(account_index, xpub)`.
 fn decode_platform_payment_row(
-    account_index: i64,
+    typed_index: i64,
     xpub_bytes: &[u8],
 ) -> Result<PlatformPaymentRegistration, WalletStorageError> {
-    let account_index = crate::sqlite::util::safe_cast::i64_to_u32(
+    let typed_index = crate::sqlite::util::safe_cast::i64_to_u32(
         "account_registrations.account_index",
-        account_index,
+        typed_index,
     )?;
     let entry: AccountRegistrationEntry = blob::decode(xpub_bytes)?;
-    Ok((account_index, entry.account_xpub))
+    // Callers select `WHERE account_type = 'platform_payment'`, so the decoded
+    // blob must agree: a PlatformPayment account at the same index. A row whose
+    // blob disagrees is corrupt / mis-bucketed, never fed to the oracle.
+    if account_type_db_label(&entry.account_type) != "platform_payment"
+        || account_index(&entry.account_type) != typed_index
+    {
+        return Err(WalletStorageError::AccountRegistrationEntryMismatch);
+    }
+    Ok((typed_index, entry.account_xpub))
 }
 
 /// Every `platform_payment` registration for one wallet, decoded into

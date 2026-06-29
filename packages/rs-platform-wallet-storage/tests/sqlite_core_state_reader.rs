@@ -390,3 +390,53 @@ fn b5_last_applied_chain_lock_round_trips() {
          through ClientWalletStartState.core_state — fails if reader still leaves it None"
     );
 }
+
+/// A lower-height chain lock arriving AFTER a higher one must not regress the
+/// stored `last_applied_chain_lock`: heights monotonic-max merge just like the
+/// sync watermarks, so an out-of-order update can't roll the finalized
+/// checkpoint backwards.
+#[test]
+fn chain_lock_does_not_regress_on_lower_height_update() {
+    use dashcore::ephemerealdata::chain_lock::ChainLock;
+    use dashcore::BlockHash;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xB6);
+    ensure_wallet_meta(&persister, &w);
+
+    let high = ChainLock {
+        block_height: 100_000,
+        block_hash: BlockHash::from_byte_array([0xAAu8; 32]),
+        signature: [0x11u8; 96].into(),
+    };
+    let low = ChainLock {
+        block_height: 90_000,
+        block_hash: BlockHash::from_byte_array([0xBBu8; 32]),
+        signature: [0x22u8; 96].into(),
+    };
+
+    let store_cl = |cl: ChainLock| {
+        let cs = PlatformWalletChangeSet {
+            core: Some(CoreChangeSet {
+                last_applied_chain_lock: Some(cl),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        persister.store(w, cs).expect("store");
+        PlatformWalletPersistence::flush(&persister, w).expect("flush");
+    };
+    store_cl(high.clone());
+    store_cl(low); // out-of-order, lower height — must not win
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let loaded = core_state::load_state(&conn, &w, key_wallet::Network::Testnet)
+        .expect("load_state must succeed");
+    assert_eq!(
+        loaded.last_applied_chain_lock.as_ref(),
+        Some(&high),
+        "a lower-height chain lock must not regress the stored higher one"
+    );
+}

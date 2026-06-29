@@ -66,7 +66,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     ),
     (
         "core_state.rs",
-        "SELECT record_blob FROM core_transactions WHERE wallet_id",
+        "SELECT length(record_blob), record_blob FROM core_transactions",
     ),
     (
         "core_state.rs",

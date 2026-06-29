@@ -38,7 +38,16 @@ fn encode_chain_lock(cl: &ChainLock) -> Result<Vec<u8>, WalletStorageError> {
 /// ChainLock event will repopulate the column).
 fn decode_chain_lock_soft(bytes: &[u8]) -> Option<ChainLock> {
     match bincode::decode_from_slice::<ChainLock, _>(bytes, chain_lock_config()) {
-        Ok((cl, _)) => Some(cl),
+        // Reject a valid-prefix + trailing-garbage payload (bincode stops
+        // after the typed length) the same way the BLOB decoders do.
+        Ok((cl, consumed)) if consumed == bytes.len() => Some(cl),
+        Ok(_) => {
+            tracing::warn!(
+                "core_sync_state.last_applied_chain_lock: trailing bytes after \
+                 ChainLock; field left None — the next ChainLock sync will repopulate"
+            );
+            None
+        }
         Err(e) => {
             tracing::warn!(
                 error = %e,
@@ -48,6 +57,15 @@ fn decode_chain_lock_soft(bytes: &[u8]) -> Option<ChainLock> {
             None
         }
     }
+}
+
+/// Block height of an encoded `last_applied_chain_lock` blob, or `None` if it
+/// can't be decoded. Used to monotonic-max-merge the chain lock so an
+/// out-of-order lower-height update never regresses the finalized checkpoint.
+fn chain_lock_height(bytes: &[u8]) -> Option<u32> {
+    bincode::decode_from_slice::<ChainLock, _>(bytes, chain_lock_config())
+        .ok()
+        .map(|(cl, _)| cl.block_height)
 }
 
 /// Apply a `CoreChangeSet` inside a transaction.
@@ -226,9 +244,21 @@ fn upsert_sync_state(
         (Some(a), Some(b)) => Some(a.max(b)),
         (a, b) => a.or(b),
     };
-    // Chain lock: take the new bytes when provided; keep the existing bytes
-    // when the changeset has no chain lock update (None = "no change").
-    let cl_final = chain_lock_bytes.or(current_raw.2);
+    // Chain lock: monotonic-max by height like the sync watermarks above.
+    // A new chain lock replaces the stored one only when its height is >=
+    // the stored height, so an out-of-order lower-height update can't
+    // regress the finalized checkpoint. `None` (no update) keeps existing.
+    let cl_final = match (chain_lock_bytes, current_raw.2) {
+        (Some(new_bytes), Some(existing_bytes)) => {
+            if chain_lock_height(&new_bytes) >= chain_lock_height(&existing_bytes) {
+                Some(new_bytes)
+            } else {
+                Some(existing_bytes)
+            }
+        }
+        (Some(new_bytes), None) => Some(new_bytes),
+        (None, existing) => existing,
+    };
     tx.execute(
         "INSERT INTO core_sync_state \
             (wallet_id, last_processed_height, synced_height, last_applied_chain_lock) \
@@ -314,13 +344,23 @@ pub fn load_state(
     }
 
     {
-        let mut stmt =
-            conn.prepare("SELECT record_blob FROM core_transactions WHERE wallet_id = ?1")?;
-        let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
-            row.get::<_, Vec<u8>>(0)
-        })?;
-        for r in rows {
-            let payload = r?;
+        // Cap on the cheap `length()` (O(1) from the row header) BEFORE
+        // materializing the blob, so a tampered oversize `record_blob` can't
+        // force a multi-gigabyte allocation that `blob::decode`'s post-hoc cap
+        // would only catch after the Vec is already built.
+        let mut stmt = conn.prepare(
+            "SELECT length(record_blob), record_blob FROM core_transactions WHERE wallet_id = ?1",
+        )?;
+        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        while let Some(row) = rows.next()? {
+            let len = usize::try_from(row.get::<_, i64>(0)?).unwrap_or(usize::MAX);
+            if len > blob::BLOB_SIZE_LIMIT_BYTES {
+                return Err(WalletStorageError::BlobTooLarge {
+                    len_bytes: len,
+                    limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
+                });
+            }
+            let payload: Vec<u8> = row.get(1)?;
             cs.records
                 .push(blob::decode::<TransactionRecord>(&payload)?);
         }

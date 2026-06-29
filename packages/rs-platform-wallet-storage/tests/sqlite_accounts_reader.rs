@@ -12,11 +12,13 @@ use platform_wallet::changeset::{AccountRegistrationEntry, PlatformWalletChangeS
 use platform_wallet_storage::sqlite::schema::accounts;
 use platform_wallet_storage::WalletStorageError;
 
-fn xpub() -> key_wallet::bip32::ExtendedPubKey {
+/// A distinct extended public key per `seed` byte, so a round-trip test can
+/// tell entries apart instead of asserting against one shared xpub.
+fn xpub_from_seed(seed: u8) -> key_wallet::bip32::ExtendedPubKey {
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     let w = Wallet::from_seed_bytes(
-        [7u8; 64],
+        [seed; 64],
         key_wallet::Network::Testnet,
         WalletAccountCreationOptions::Default,
     )
@@ -35,7 +37,8 @@ fn reopen(path: &std::path::Path) -> platform_wallet_storage::SqlitePersister {
     .expect("reopen persister")
 }
 
-/// Registrations round-trip bit-exact, in stable order.
+/// Registrations round-trip bit-exact, in the reader's deterministic order
+/// (`account_type` label ascending), with each entry keeping its OWN xpub.
 #[test]
 fn a1_account_registrations_roundtrip() {
     let (persister, _tmp, path) = fresh_persister();
@@ -43,17 +46,23 @@ fn a1_account_registrations_roundtrip() {
     let w = wid(0xA1);
     ensure_wallet_meta(&persister, &w);
 
+    // Distinct xpubs so the round-trip proves each entry keeps its own key,
+    // not just that *some* xpub survives.
+    let standard_xpub = xpub_from_seed(7);
+    let idreg_xpub = xpub_from_seed(8);
+    assert_ne!(standard_xpub, idreg_xpub, "fixtures must differ");
+
     let entries = vec![
         AccountRegistrationEntry {
             account_type: AccountType::Standard {
                 index: 0,
                 standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
             },
-            account_xpub: xpub(),
+            account_xpub: standard_xpub,
         },
         AccountRegistrationEntry {
             account_type: AccountType::IdentityRegistration,
-            account_xpub: xpub(),
+            account_xpub: idreg_xpub,
         },
     ];
     let cs = PlatformWalletChangeSet {
@@ -69,17 +78,29 @@ fn a1_account_registrations_roundtrip() {
     drop(conn);
 
     assert_eq!(manifest.len(), 2, "all rows must be returned");
-    // Bit-exact xpub round-trip.
-    for e in &manifest {
-        assert_eq!(e.account_xpub, xpub());
-    }
-    let has_standard = manifest
-        .iter()
-        .any(|e| matches!(e.account_type, AccountType::Standard { index: 0, .. }));
-    let has_idreg = manifest
-        .iter()
-        .any(|e| matches!(e.account_type, AccountType::IdentityRegistration));
-    assert!(has_standard && has_idreg);
+    // Reader orders by `account_type` label: 'identity_registration' sorts
+    // before 'standard_bip44', so the manifest is deterministically ordered.
+    assert!(
+        matches!(manifest[0].account_type, AccountType::IdentityRegistration),
+        "identity_registration must sort first, got {:?}",
+        manifest[0].account_type
+    );
+    assert_eq!(
+        manifest[0].account_xpub, idreg_xpub,
+        "IdentityRegistration must keep its own xpub"
+    );
+    assert!(
+        matches!(
+            manifest[1].account_type,
+            AccountType::Standard { index: 0, .. }
+        ),
+        "standard_bip44 must sort second, got {:?}",
+        manifest[1].account_type
+    );
+    assert_eq!(
+        manifest[1].account_xpub, standard_xpub,
+        "Standard must keep its own xpub"
+    );
 }
 
 /// An empty wallet yields an empty manifest, not an error.

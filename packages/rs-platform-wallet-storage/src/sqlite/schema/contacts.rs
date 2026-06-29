@@ -243,6 +243,8 @@ pub(crate) fn load_state(
         match contact_state_from_label(&label)? {
             ContactState::Sent => {
                 let request = decode_request("outgoing_request", outgoing.as_deref())?;
+                // We are the sender; the contact is the recipient.
+                check_request_parties(&request, &owner_id, &contact_id)?;
                 state.sent_requests.insert(
                     SentContactRequestKey {
                         owner_id,
@@ -253,6 +255,8 @@ pub(crate) fn load_state(
             }
             ContactState::Received => {
                 let request = decode_request("incoming_request", incoming.as_deref())?;
+                // The contact is the sender; we are the recipient.
+                check_request_parties(&request, &contact_id, &owner_id)?;
                 state.incoming_requests.insert(
                     ReceivedContactRequestKey {
                         owner_id,
@@ -264,6 +268,9 @@ pub(crate) fn load_state(
             ContactState::Established => {
                 let outgoing_request = decode_request("outgoing_request", outgoing.as_deref())?;
                 let incoming_request = decode_request("incoming_request", incoming.as_deref())?;
+                // Outgoing = us→contact; incoming = contact→us.
+                check_request_parties(&outgoing_request, &owner_id, &contact_id)?;
+                check_request_parties(&incoming_request, &contact_id, &owner_id)?;
                 let alias: Option<String> = row.get(5)?;
                 let note: Option<String> = row.get(6)?;
                 let is_hidden: bool = row.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0;
@@ -328,6 +335,23 @@ fn decode_request(
             _ => "contacts row is missing its incoming_request blob",
         })),
     }
+}
+
+/// Cross-check a decoded [`ContactRequest`]'s parties against the typed
+/// `(owner_id, contact_id)` columns it was selected by. A blob that names a
+/// different sender/recipient than its indexed columns is corruption (or a
+/// mis-filed row) and is rejected rather than rehydrated into the wrong slot.
+fn check_request_parties(
+    request: &ContactRequest,
+    expected_sender: &Identifier,
+    expected_recipient: &Identifier,
+) -> Result<(), WalletStorageError> {
+    if request.sender_id != *expected_sender || request.recipient_id != *expected_recipient {
+        return Err(WalletStorageError::blob_decode(
+            "contacts request sender/recipient disagree with the typed owner/contact columns",
+        ));
+    }
+    Ok(())
 }
 
 fn decode_pair_key(a: &[u8], b: &[u8]) -> Result<(Identifier, Identifier), WalletStorageError> {
