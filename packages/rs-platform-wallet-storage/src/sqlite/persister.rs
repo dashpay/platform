@@ -207,6 +207,12 @@ impl SqlitePersister {
             crate::sqlite::migrations::assert_schema_version_supported(&conn)?;
             crate::sqlite::conn::assert_wallet_application_id(&conn)?;
             crate::sqlite::migrations::assert_schema_history_well_formed(&conn)?;
+        } else if crate::sqlite::migrations::db_has_objects(&conn)? {
+            // A pre-existing file with schema objects but NO refinery history is
+            // a foreign (non-wallet) SQLite DB. Migrating it in place would graft
+            // wallet tables onto someone else's schema; reject via the
+            // application_id gate (a foreign DB never carries our magic) instead.
+            crate::sqlite::conn::assert_wallet_application_id(&conn)?;
         }
         let pending = crate::sqlite::migrations::embedded_migrations();
         let pending_count = if had_schema_history {
@@ -833,8 +839,12 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// Fail-hard: any row that fails to decode (or has a malformed
     /// `wallet_id`) aborts the whole load — corruption is never skipped.
     ///
-    /// **Query budget.** Constant w.r.t. wallet count: one `SELECT` for the
-    /// id list plus a fixed set of grouped scans, not a per-wallet fan-out.
+    /// **Query budget.** Platform addresses load via grouped bulk scans
+    /// (constant), but the keyless per-wallet payload is a fan-out: one
+    /// id-list `SELECT` plus a fixed set of per-wallet reads for each wallet
+    /// (core state, identities, asset locks, contacts, identity keys, used
+    /// addresses). O(wallets) queries overall — acceptable for one-shot
+    /// startup, not the hot path.
     ///
     /// # Concurrency
     ///

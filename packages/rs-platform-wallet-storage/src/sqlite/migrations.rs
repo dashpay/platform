@@ -62,6 +62,19 @@ pub(crate) fn has_schema_history(conn: &rusqlite::Connection) -> Result<bool, Wa
     Ok(exists)
 }
 
+/// Returns true if the database already carries any schema object (table,
+/// index, view, or trigger). `open` uses it to tell a brand-new empty DB
+/// apart from a pre-existing NON-wallet SQLite file that lacks
+/// `refinery_schema_history`: the former is migrated, the latter rejected
+/// rather than silently grafting wallet tables onto a foreign schema.
+pub(crate) fn db_has_objects(conn: &rusqlite::Connection) -> Result<bool, WalletStorageError> {
+    let exists = conn
+        .query_row("SELECT 1 FROM sqlite_master LIMIT 1", [], |_| Ok(()))
+        .optional()?
+        .is_some();
+    Ok(exists)
+}
+
 /// Refuse to operate on a DB whose `refinery_schema_history` MAX(version)
 /// exceeds [`max_supported_version`], returning
 /// [`WalletStorageError::SchemaVersionUnsupported`]. This is a forward-only
