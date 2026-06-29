@@ -223,3 +223,52 @@ fn tc056_aggressive_prune_evicts_safety_backup_and_orders_by_embedded_ts() {
          (auto dir is not a protected vault)"
     );
 }
+
+/// `keep_last_n` is a FLOOR, not a ceiling: with both `keep_last_n` and
+/// `max_age` set, a file beyond the N newest but still within `max_age` must
+/// be KEPT (the union of the two policies), and only files failing BOTH are
+/// evicted. Regression guard for the count-caps-the-age-window bug.
+#[test]
+fn keep_last_n_is_a_floor_not_a_ceiling_with_max_age() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let dir = persister.config_for_test().auto_backup_dir.clone().unwrap();
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let stamp = |hours_ago: i64| {
+        chrono::Utc::now()
+            .checked_sub_signed(chrono::Duration::hours(hours_ago))
+            .unwrap()
+            .format("%Y%m%dT%H%M%SZ")
+            .to_string()
+    };
+    // Newest (0h) kept by the floor; the 1h file is beyond the floor but
+    // within the 2h window (kept by age); the 48h file fails both (evicted).
+    let newest = dir.join(format!("wallet-{}.db", stamp(0)));
+    let within_age = dir.join(format!("wallet-{}.db", stamp(1)));
+    let too_old = dir.join(format!("wallet-{}.db", stamp(48)));
+    for p in [&newest, &within_age, &too_old] {
+        std::fs::write(p, b"x").unwrap();
+    }
+
+    let report = persister
+        .prune_backups(
+            &dir,
+            platform_wallet_storage::RetentionPolicy {
+                keep_last_n: Some(1),
+                max_age: Some(std::time::Duration::from_secs(2 * 3600)),
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        report.kept, 2,
+        "floor (1) + within-age (1) must both survive"
+    );
+    assert_eq!(report.removed.len(), 1);
+    assert!(newest.exists(), "the newest file is kept by the floor");
+    assert!(
+        within_age.exists(),
+        "a within-max_age file beyond the floor must NOT be evicted by the count"
+    );
+    assert!(!too_old.exists(), "a file failing both policies is evicted");
+}

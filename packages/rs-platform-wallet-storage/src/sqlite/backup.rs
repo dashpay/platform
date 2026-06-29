@@ -133,10 +133,13 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 /// Validation runs against the source and again against the STAGED bytes,
 /// under a SQLite-native `BEGIN EXCLUSIVE` on `dest_db_path` that blocks
 /// every other SQLite peer (which advisory flock could not). The staged
-/// temp is `persist`-ed as an atomic rename only after all gates pass, so
-/// either the DB and its WAL/SHM siblings are replaced together or nothing
-/// is touched; the parent dir is fsynced afterward. See the numbered steps
-/// in the body for the per-phase rationale.
+/// temp is `persist`-ed as an atomic rename only after all gates pass, and
+/// that rename is the commit point: if it fails, the live DB and its WAL/SHM
+/// siblings are left untouched, so a failed restore never strands the old DB
+/// without its WAL-committed state. The now-stale WAL/SHM siblings are
+/// unlinked only AFTER the swap succeeds (so a leftover `-wal` can't shadow
+/// the restored DB); the parent dir is fsynced afterward. See the numbered
+/// steps in the body for the per-phase rationale.
 ///
 /// # Lock-release-before-rename trade-off
 ///
@@ -231,20 +234,28 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
             .set_permissions(std::fs::Permissions::from_mode(0o600))?;
     }
 
-    // 6. Release the EXCLUSIVE lock before touching siblings/rename: on
-    //    Windows / some FUSE mounts `remove_file` on a still-open file
-    //    returns `PermissionDenied`, and the rename window wants a clean
-    //    close (see lock-release trade-off above).
+    // 6. Release the EXCLUSIVE lock before the rename/unlinks: on Windows /
+    //    some FUSE mounts `remove_file` on a still-open file returns
+    //    `PermissionDenied`, and the rename window wants a clean close (see
+    //    lock-release trade-off above).
     if let Some(conn) = dest_lock_conn.take() {
         let _ = conn.execute_batch("ROLLBACK");
         drop(conn);
     }
 
-    // 7. Clear any WAL/SHM siblings BEFORE persist so the DB and its
-    //    siblings are replaced atomically (all-or-nothing). Sibling paths
-    //    use `OsString::push` so non-UTF-8 bytes round-trip; `NotFound` is
-    //    a silent no-op. Requires the lock conn dropped first for
-    //    cross-platform unlink semantics.
+    // 7. Persist the staged DB atomically over the destination FIRST. The
+    //    atomic rename is the commit point: if it fails (disk full, EXDEV,
+    //    perms) the live DB and its WAL/SHM siblings are left untouched, so a
+    //    failed restore can never strand the old DB without its WAL-committed
+    //    state. Sibling cleanup (step 8) runs only once the swap has succeeded.
+    tmp.persist(dest_db_path)
+        .map_err(|e| WalletStorageError::Io(e.error))?;
+
+    // 8. Clear the now-stale WAL/SHM siblings AFTER the swap so a leftover
+    //    `-wal` can't shadow the restored DB on the next open. Sibling paths
+    //    use `OsString::push` so non-UTF-8 bytes round-trip; `NotFound` is a
+    //    silent no-op. The lock conn was dropped in step 6 for cross-platform
+    //    unlink semantics.
     if let Some(file_name) = dest_db_path.file_name() {
         for ext in ["-wal", "-shm"] {
             let mut sibling_name = file_name.to_os_string();
@@ -258,11 +269,7 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         }
     }
 
-    // 8. Persist atomically over the destination.
-    tmp.persist(dest_db_path)
-        .map_err(|e| WalletStorageError::Io(e.error))?;
-
-    // 9. Make the rename's dentry update durable.
+    // 9. Make the rename + unlink dentry updates durable.
     fsync_parent_dir(dest_db_path)?;
 
     // 10. Re-tighten perms (idempotent; SQLite may re-materialise -wal/-shm).
@@ -358,19 +365,19 @@ pub fn prune(dir: &Path, policy: RetentionPolicy) -> Result<PruneReport, WalletS
     let mut failed_removals: Vec<(PathBuf, std::io::Error)> = Vec::new();
     let mut kept = 0;
     for (idx, (ts, path)) in files.into_iter().enumerate() {
-        // `keep_last_n` is a FLOOR: the N newest are always kept even if
-        // `max_age` would evict them, so an age+count policy can't delete
-        // every backup. `None` gives no floor (age-only may prune all).
-        let within_floor = matches!(policy.keep_last_n, Some(n) if idx < n);
-        let pass_count = match policy.keep_last_n {
-            Some(n) => idx < n,
-            None => true,
-        };
-        let pass_age = match policy.max_age {
+        // `keep_last_n` is a FLOOR: the N newest are always kept. `max_age` is
+        // an independent age window. A file is kept if it satisfies EITHER
+        // policy (the union), and removed only when it fails BOTH — so a
+        // within-age file beyond the N newest is still kept (the bug fix: the
+        // count must not cap the age window). With no policy set at all (both
+        // `None`) every file is kept.
+        let count_keep = matches!(policy.keep_last_n, Some(n) if idx < n);
+        let age_keep = match policy.max_age {
             Some(max) => now.duration_since(ts).map(|d| d <= max).unwrap_or(true),
-            None => true,
+            None => false,
         };
-        if within_floor || (pass_count && pass_age) {
+        let no_policy = policy.keep_last_n.is_none() && policy.max_age.is_none();
+        if no_policy || count_keep || age_keep {
             kept += 1;
         } else {
             match std::fs::remove_file(&path) {
