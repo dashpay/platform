@@ -19,7 +19,13 @@
 //! ```
 //!
 //! Nested `BTreeMap`s give O(log n) lookup and a JSON-object shape that
-//! excludes duplicate `(wallet_id, label)` pairs by construction.
+//! excludes duplicate `(wallet_id, label)` pairs by construction on the
+//! WRITE side. On the READ side, a hand-edited document with duplicate JSON
+//! keys is not rejected — `serde_json` collapses duplicates last-wins into
+//! the `BTreeMap`. That is benign: every entry's ciphertext is AEAD-sealed
+//! with its `(wallet_id, label)` bound as AAD, so a collapsed or reordered
+//! structure can never surface bytes that don't authenticate against the
+//! surviving key (a forged duplicate fails its tag as `Corruption`).
 //!
 //! Parsing is two-step: a lax [`VersionProbe`] reads `version` first
 //! (tolerating future-version siblings), then the strict [`Vault`]

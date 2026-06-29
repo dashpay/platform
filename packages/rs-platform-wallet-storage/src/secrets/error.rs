@@ -1,10 +1,15 @@
 //! Secret-store error taxonomy and its `keyring_core::Error` projection.
 //!
 //! Variants carry only non-secret diagnostics (POSIX mode bits, header
-//! version, vault path) — never a secret byte, passphrase, plaintext, or
-//! stringified source (CWE-209/CWE-532). The public, fully-typed path is
-//! the [`SecretStore`](crate::secrets::SecretStore) API; the SPI
-//! projection into `keyring_core::Error` is lossy (see the [`From`] impl).
+//! version, vault path) — never a secret byte, passphrase, or plaintext
+//! (CWE-209/CWE-532). The single carried source is the [`Io`] variant's
+//! OS error (an errno plus the non-secret caller-supplied path); every
+//! other variant is source-free so a crypto/format failure can't stringify
+//! a secret. The public, fully-typed path is the
+//! [`SecretStore`](crate::secrets::SecretStore) API; the SPI projection into
+//! `keyring_core::Error` is lossy (see the [`From`] impl).
+//!
+//! [`Io`]: SecretStoreError::Io
 
 use std::path::Path;
 
@@ -86,9 +91,10 @@ pub enum SecretStoreError {
     /// [`VersionUnsupported`]: SecretStoreError::VersionUnsupported
     #[error("unsupported secret envelope version {found}")]
     UnsupportedEnvelopeVersion {
-        /// The envelope `version` byte read from the (unauthenticated)
-        /// header.
-        found: u8,
+        /// The full `version` field read from the (unauthenticated)
+        /// envelope header. `u32` to match `Envelope.version` — a truncating
+        /// `u8` would alias distinct out-of-range versions in diagnostics.
+        found: u32,
     },
 
     /// The vault file was malformed (bad magic, truncated header, bad

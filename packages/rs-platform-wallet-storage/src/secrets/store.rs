@@ -252,6 +252,13 @@ impl SecretStore {
     /// **Entropy is the caller's:** the `new` password's entropy is the
     /// whole confidentiality guarantee for the re-protected object; this
     /// crate enforces only non-blank, not strength.
+    ///
+    /// **Atomicity:** on the `File` arm the read → rewrap → write runs under
+    /// the store's single lock, so a concurrent `set`/`delete` can't interleave
+    /// and let this rewrite (built on the bytes read here) clobber a newer
+    /// value. The `Os` arm is a per-item keyring with no transaction, so its
+    /// read→write is NOT atomic — a documented residual; serialize reprotect
+    /// intent at the caller if a concurrent writer is possible there.
     pub fn reprotect(
         &self,
         service: &WalletId,
@@ -259,10 +266,21 @@ impl SecretStore {
         current: Option<&SecretString>,
         new: Option<&SecretString>,
     ) -> Result<(), SecretStoreError> {
-        let Some(secret) = self.get_secret(service, label, current)? else {
-            return Err(SecretStoreError::NoEntry);
-        };
-        self.set_secret(service, label, &secret, new)
+        match self {
+            Self::File(s) => s.reprotect_bytes(service, label, |stored| {
+                let Some(stored) = stored else {
+                    return Err(SecretStoreError::NoEntry);
+                };
+                let secret = envelope::unwrap(service, label, current, stored.expose_secret())?;
+                envelope::wrap(service, label, new, secret.expose_secret())
+            }),
+            Self::Os(_) => {
+                let Some(secret) = self.get_secret(service, label, current)? else {
+                    return Err(SecretStoreError::NoEntry);
+                };
+                self.set_secret(service, label, &secret, new)
+            }
+        }
     }
 
     /// Delete the secret stored under `(service, label)`.

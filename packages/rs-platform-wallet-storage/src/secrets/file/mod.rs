@@ -275,6 +275,26 @@ impl EncryptedFileStore {
         lock_inner(&self.inner).delete(wallet_id, label)
     }
 
+    /// Atomic read-modify-write of `(wallet_id, label)`. Holds the store lock
+    /// across the read → `transform` → write so a concurrent `put`/`delete`
+    /// can't interleave and let a transform built on stale bytes clobber a
+    /// newer value. `transform` receives the currently-stored bytes (`None`
+    /// if absent) and returns the bytes to persist.
+    pub(crate) fn reprotect_bytes<F>(
+        &self,
+        wallet_id: &WalletId,
+        label: &str,
+        transform: F,
+    ) -> Result<(), SecretStoreError>
+    where
+        F: FnOnce(Option<SecretBytes>) -> Result<SecretBytes, SecretStoreError>,
+    {
+        let mut inner = lock_inner(&self.inner);
+        let current = inner.get(wallet_id, label)?;
+        let next = transform(current)?;
+        inner.put(wallet_id, label, &next)
+    }
+
     #[cfg(test)]
     pub(crate) fn test_read_vault_from_disk(&self) -> Result<Option<Vault>, SecretStoreError> {
         read_vault_at(&lock_inner(&self.inner).path)

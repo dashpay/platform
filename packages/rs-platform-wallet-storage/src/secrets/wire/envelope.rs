@@ -134,11 +134,19 @@ pub(crate) fn wrap_with_params(
     }
 
     let Some(pw) = password else {
-        let envelope = Envelope {
+        use zeroize::Zeroize;
+        // The scheme-0 plaintext copy rides the envelope in the clear. Encode,
+        // then wipe that copy before it drops — the returned SecretBytes is the
+        // only retained copy and zeroizes itself.
+        let mut envelope = Envelope {
             version: ENVELOPE_VERSION,
             payload: Payload::Unprotected(plaintext.to_vec()),
         };
-        return Ok(SecretBytes::new(encode_envelope(&envelope)));
+        let encoded = encode_envelope(&envelope);
+        if let Payload::Unprotected(ref mut bytes) = envelope.payload {
+            bytes.zeroize();
+        }
+        return Ok(SecretBytes::new(encoded));
     };
 
     // Reject a blank object password BEFORE any salt / derive.
@@ -224,11 +232,8 @@ pub(crate) fn unwrap(
     }
 
     if envelope.version != ENVELOPE_VERSION {
-        // `found` keeps the historical u8 — the error API stayed u8 for
-        // back-compat; an out-of-range u32 wraps but the decoder above
-        // already accepts every u32 so this only narrows the diagnostic.
         return Err(SecretStoreError::UnsupportedEnvelopeVersion {
-            found: envelope.version as u8,
+            found: envelope.version,
         });
     }
 
@@ -806,6 +811,25 @@ mod tests {
                 "got {err:?}"
             );
         }
+    }
+
+    /// A version above 255 must surface its FULL `u32`, not a truncated `u8`
+    /// (`300 as u8 == 44` would alias a different version in diagnostics).
+    #[test]
+    fn unsupported_version_preserves_full_u32() {
+        let env = Envelope {
+            version: 300,
+            payload: Payload::Unprotected(b"x".to_vec()),
+        };
+        let blob = encode(&env);
+        let err = unwrap(&wid(1), "seed", None, &blob).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                SecretStoreError::UnsupportedEnvelopeVersion { found: 300 }
+            ),
+            "version must not be truncated to u8, got {err:?}"
+        );
     }
 
     /// TC-020 — a hand-crafted byte stream with an unknown payload
