@@ -22,30 +22,6 @@ use crate::manager::platform_address_sync::PlatformAddressSyncSummary;
 use crate::manager::shielded_sync::ShieldedSyncPassSummary;
 use crate::wallet::platform_wallet::WalletId;
 
-/// Platform-wallet lifecycle event surfaced to app handlers.
-///
-/// Distinct from the SPV `EventHandler` stream — these are
-/// platform-specific notifications the app may react to (toast,
-/// telemetry) without threading return values through every call site.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum PlatformEvent {
-    /// A persisted wallet was skipped during
-    /// [`load_from_persistor`](crate::PlatformWalletManager::load_from_persistor)
-    /// because its persisted row was corrupt (a structural decode /
-    /// projection failure). The load path is seedless, so the only
-    /// reason is [`SkipReason::CorruptPersistedRow`].
-    ///
-    /// Carries the (public, non-secret) wallet id and the structural
-    /// [`SkipReason`]; never any secret byte.
-    WalletSkippedOnLoad {
-        /// The skipped wallet's id.
-        wallet_id: WalletId,
-        /// Why it was skipped — always a corrupt persisted row.
-        reason: SkipReason,
-    },
-}
-
 /// Extension of [`EventHandler`] for platform-wallet consumers.
 ///
 /// Implementors receive all SPV events via the [`EventHandler`] supertrait,
