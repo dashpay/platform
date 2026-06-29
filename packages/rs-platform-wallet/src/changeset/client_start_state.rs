@@ -13,6 +13,7 @@ use crate::changeset::client_wallet_start_state::ClientWalletStartState;
 use crate::changeset::platform_address_sync_start_state::PlatformAddressSyncStartState;
 #[cfg(feature = "shielded")]
 use crate::changeset::shielded_sync_start_state::ShieldedSyncStartState;
+use crate::manager::load_outcome::SkipReason;
 use crate::wallet::platform_wallet::WalletId;
 
 /// Snapshot of everything a persister hands back on
@@ -32,6 +33,13 @@ pub struct ClientStartState {
     /// Per-wallet startup slices (UTXOs and unused asset locks, each
     /// bucketed by account index).
     pub wallets: BTreeMap<WalletId, ClientWalletStartState>,
+    /// Wallets the persister itself rejected as structurally corrupt
+    /// before they could be reconstructed (e.g. a malformed account xpub
+    /// that aborts decode). They never appear in `wallets`; the manager
+    /// folds them into the load outcome's `skipped` set and notifies
+    /// handlers, so one bad persisted row never blocks the rest of the
+    /// batch. Empty for persisters that decode every row up front.
+    pub skipped: Vec<(WalletId, SkipReason)>,
     /// Restored shielded sub-wallet state — per-`SubwalletId`
     /// notes + sync watermarks. Consumed at `bind_shielded` time
     /// to rehydrate the in-memory `SubwalletState` so spending /

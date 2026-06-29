@@ -61,6 +61,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let ClientStartState {
             mut platform_addresses,
             wallets,
+            skipped: persister_skipped,
             // Shielded restore happens lazily on `bind_shielded`,
             // not here — drop the snapshot at this entry point.
             #[cfg(feature = "shielded")]
@@ -82,6 +83,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let mut inserted_in_wallets: Vec<WalletId> = Vec::new();
         let mut load_error: Option<PlatformWalletError> = None;
         let mut outcome = LoadOutcome::default();
+
+        // Rows the persister rejected as corrupt before reconstruction
+        // (e.g. a malformed xpub that aborts FFI decode) never reach the
+        // rebuild loop below — fold them into the skip set and notify, so
+        // one bad persisted row never blocks the batch.
+        for (wallet_id, reason) in persister_skipped {
+            self.event_manager
+                .on_wallet_skipped_on_load(wallet_id, &reason);
+            outcome.skipped.push((wallet_id, reason));
+        }
 
         'load: for (expected_wallet_id, wallet_state) in wallets {
             let ClientWalletStartState {

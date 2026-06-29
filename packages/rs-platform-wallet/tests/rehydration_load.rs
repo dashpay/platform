@@ -78,6 +78,7 @@ impl PlatformWalletPersistence for FixedLoadPersister {
                         },
                     );
                 }
+                out.skipped = s.skipped.clone();
                 Ok(out)
             }
         }
@@ -211,6 +212,54 @@ async fn rt_idempotent_repeat_restore() {
         "wallet still present after the repeat load"
     );
     assert_eq!(mgr.wallet_ids().await, vec![id]);
+}
+
+/// RT-PersisterSkip: a wallet the persister itself rejected as corrupt
+/// before reconstruction — surfaced via `ClientStartState::skipped` (e.g.
+/// the FFI `load()` catching a malformed xpub per-row) — is folded into
+/// `LoadOutcome::skipped` and fires `on_wallet_skipped_on_load`, while the
+/// healthy wallet still loads. One bad persisted row never blocks the batch.
+#[tokio::test]
+async fn rt_persister_skipped_folds_into_outcome() {
+    let seed_ok = [0x71; 64];
+    let p = Arc::new(FixedLoadPersister::new());
+    let h = Arc::new(RecordingHandler::default());
+    let (id_ok, s_ok) = slice(seed_ok);
+
+    // A wallet id the persister could not decode (fabricated skip).
+    let bad_id: WalletId = [0x09; 32];
+    let reason = SkipReason::CorruptPersistedRow {
+        kind: CorruptKind::DecodeError("malformed account xpub".to_string()),
+    };
+
+    let mut st = ClientStartState::default();
+    st.wallets.insert(id_ok, s_ok);
+    st.skipped.push((bad_id, reason.clone()));
+    p.set(st);
+
+    let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
+    let outcome = mgr
+        .load_from_persistor()
+        .await
+        .expect("Ok despite a persister-rejected row");
+
+    assert!(
+        outcome.loaded.contains(&id_ok),
+        "healthy wallet still loads"
+    );
+    assert!(!outcome.loaded.contains(&bad_id));
+    assert_eq!(outcome.skipped.len(), 1, "the rejected row surfaces once");
+    assert_eq!(outcome.skipped[0], (bad_id, reason.clone()));
+    assert!(mgr.get_wallet(&id_ok).await.is_some());
+    assert!(
+        mgr.get_wallet(&bad_id).await.is_none(),
+        "the rejected row is never registered"
+    );
+
+    // The skip notification fired exactly once for the bad row.
+    let skipped = h.skipped.lock().unwrap();
+    assert_eq!(skipped.len(), 1, "exactly one skip notification");
+    assert_eq!(skipped[0], (bad_id, reason));
 }
 
 /// RT-Corrupt: a corrupt row (empty manifest) is skipped with

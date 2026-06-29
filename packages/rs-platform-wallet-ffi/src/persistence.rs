@@ -23,6 +23,7 @@ use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
     Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
+use platform_wallet::manager::load_outcome::{CorruptKind, SkipReason};
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
 use std::collections::BTreeMap;
@@ -1541,11 +1542,36 @@ impl PlatformWalletPersistence for FFIPersister {
         // fires before we leave this function.
         let entries = unsafe { slice::from_raw_parts(entries_ptr, count) };
         for entry in entries {
-            let (wallet_state, platform_address_state) = build_wallet_start_state(entry)?;
-            out.wallets.insert(entry.wallet_id, wallet_state);
-            if let Some(platform_address_state) = platform_address_state {
-                out.platform_addresses
-                    .insert(entry.wallet_id, platform_address_state);
+            match build_wallet_start_state(entry) {
+                Ok((wallet_state, platform_address_state)) => {
+                    out.wallets.insert(entry.wallet_id, wallet_state);
+                    if let Some(platform_address_state) = platform_address_state {
+                        out.platform_addresses
+                            .insert(entry.wallet_id, platform_address_state);
+                    }
+                }
+                Err(e) => {
+                    // One corrupt SwiftData row must never abort the whole
+                    // restore. Errors from `build_wallet_start_state` are
+                    // inherently per-row (decode / projection of THIS entry,
+                    // e.g. a malformed account xpub), so record the wallet as
+                    // skipped and continue — the manager folds this into
+                    // `LoadOutcome::skipped` and fires
+                    // `on_wallet_skipped_on_load`, and the other rows still
+                    // load. `PersistenceError`'s Display is structural (no
+                    // raw row bytes / key material), safe for `DecodeError`.
+                    tracing::warn!(
+                        wallet_id = %hex::encode(entry.wallet_id),
+                        error = %e,
+                        "load: skipping corrupt wallet restore-entry; continuing with the rest"
+                    );
+                    out.skipped.push((
+                        entry.wallet_id,
+                        SkipReason::CorruptPersistedRow {
+                            kind: CorruptKind::DecodeError(e.to_string()),
+                        },
+                    ));
+                }
             }
         }
 
