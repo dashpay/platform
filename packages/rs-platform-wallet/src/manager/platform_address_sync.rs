@@ -241,6 +241,14 @@ impl PlatformAddressSyncManager {
         self.lifecycle.quiesce().await
     }
 
+    /// Test-only read of the `quiescing` gate ("is the gate raised?").
+    /// Used by the manager shutdown test to assert teardown raises the
+    /// gate that holds off a racing direct `sync_now`.
+    #[cfg(test)]
+    pub(crate) fn quiescing_load_for_test(&self, ordering: std::sync::atomic::Ordering) -> bool {
+        self.lifecycle.quiescing_load_for_test(ordering)
+    }
+
     /// Run one sync pass across every registered wallet.
     ///
     /// If a pass is already in flight, returns an empty summary and

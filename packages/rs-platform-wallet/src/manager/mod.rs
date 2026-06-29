@@ -13,9 +13,7 @@ mod wallet_lifecycle;
 
 use std::sync::Arc;
 
-#[cfg(any(test, feature = "shielded"))]
-use dash_async::WorkerStatus;
-use dash_async::{ShutdownReport, ShutdownWeight, ThreadRegistry, WorkerConfig};
+use dash_async::{ShutdownReport, ShutdownWeight, ThreadRegistry, WorkerConfig, WorkerStatus};
 use tokio::sync::{Notify, RwLock};
 
 use key_wallet_manager::WalletManager;
@@ -448,13 +446,27 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Stop all background workers and wait for them to exit.
     ///
-    /// Delegates to the shared [`ThreadRegistry::shutdown`], which drains
-    /// in ascending weight order: the periodic coordinators (weight 0)
-    /// first — concurrently, since they share no lock — then the
-    /// wallet-event adapter (weight 10) that sinks their stores, then any
-    /// parked orphans. Each worker's drain raises its `quiescing` gate,
-    /// cancels the loop, and **joins** its OS thread / task, so when this
-    /// returns every `!Send` loop has fully exited. Idempotent.
+    /// Tears down in ascending weight order. The periodic sync
+    /// coordinators (weight 0) are quiesced first — concurrently, since
+    /// they share no lock — each via the coordinator's `quiesce`, which
+    /// raises that coordinator's `quiescing` gate (a cancellation-safe
+    /// refcounted flag guard) and holds it across the cancel, the
+    /// OS-thread/task join, and the in-flight-pass drain. With the gate up
+    /// a concurrent direct `sync_now`/`sync_wallet` reaching `begin_pass`
+    /// observes `quiescing > 0` and bails, so no new pass can claim the
+    /// `is_syncing` slot mid-teardown; each guard's `Drop` returns the
+    /// refcount to 0 as its `quiesce` returns (and runs even if this future
+    /// is cancelled at an `await`). The wallet-event adapter (weight 10)
+    /// that sinks their stores, and any parked orphans, are then torn down
+    /// via [`ThreadRegistry::shutdown`]. When this returns every `!Send`
+    /// loop has fully exited. Idempotent.
+    ///
+    /// The gate is raised by the lifecycle itself, not by a registry-side
+    /// drain hook: such a hook's `fetch_add` ran inside `registry.quiesce`
+    /// while its matching `fetch_sub` lived past the same `await`, so a
+    /// teardown-cancelling `tokio::time::timeout` leaked the refcount and
+    /// wedged the coordinator. Holding the guard in the lifecycle keeps the
+    /// raise and release symmetric on every exit path.
     ///
     /// Ordering matters: cancel-only `stop()` would let a pass already
     /// inside `sync_now` keep running and call `persister.store(...)` /
@@ -473,8 +485,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Each coordinator's OS thread drives its loop via
     /// [`Handle::block_on`](tokio::runtime::Handle::block_on) and needs the
     /// runtime's timer/IO driver; a `current_thread` runtime can only
-    /// service one `block_on` at a time, so the join would deadlock.
-    /// [`ThreadRegistry::shutdown`] asserts this in both debug and release.
+    /// service one `block_on` at a time, so the join would deadlock. Both
+    /// this method and [`ThreadRegistry::shutdown`] assert this in debug
+    /// and release.
     ///
     /// Each worker's join is bounded by its own
     /// [`SHUTDOWN_JOIN_TIMEOUT_SECS`] budget; on timeout its handle is
@@ -485,7 +498,69 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// under `panic = "unwind"`; under the iOS `panic = "abort"` profiles a
     /// pass panic aborts the process outright.
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
-        self.registry.shutdown().await
+        assert!(
+            matches!(
+                tokio::runtime::Handle::current().runtime_flavor(),
+                tokio::runtime::RuntimeFlavor::MultiThread
+            ),
+            "PlatformWalletManager::shutdown() requires a multi-thread Tokio \
+             runtime: each coordinator drives its loop via Handle::block_on and \
+             needs the runtime's timer/IO driver, but a current_thread runtime \
+             services one block_on at a time, so the join would deadlock"
+        );
+
+        // Quiesce the periodic coordinators (weight 0) first, each holding
+        // its own cancellation-safe `quiescing` gate across cancel+join+drain
+        // so a concurrent direct sync_now/sync_wallet bails at `begin_pass`
+        // instead of racing the teardown. Concurrent: they share no lock.
+        let coordinator_statuses = self.quiesce_coordinators().await;
+
+        // Tear down the rest (event adapter, weight 10; parked orphans). The
+        // coordinators are already joined, so the registry classifies them
+        // NotRunning here; overwrite those entries with the real quiesce
+        // status while leaving never-started coordinators (absent from the
+        // report) absent.
+        let mut report = self.registry.shutdown().await;
+        for (worker, status) in coordinator_statuses {
+            report.per_worker.entry(worker).and_modify(|s| *s = status);
+        }
+        report
+    }
+
+    /// Quiesce the periodic sync coordinators (weight 0) concurrently,
+    /// returning each one's terminal status. Each `quiesce` raises and
+    /// holds its `quiescing` gate across the cancel + join + in-flight-pass
+    /// drain, so a concurrent direct `sync_now`/`sync_wallet` bails at
+    /// `begin_pass` rather than persisting after teardown.
+    #[cfg(feature = "shielded")]
+    async fn quiesce_coordinators(&self) -> Vec<(WalletWorker, WorkerStatus)> {
+        let (address, identity, shielded) = tokio::join!(
+            self.platform_address_sync_manager.quiesce(),
+            self.identity_sync_manager.quiesce(),
+            self.shielded_sync_manager.quiesce(),
+        );
+        vec![
+            (WalletWorker::PlatformAddressSync, address),
+            (WalletWorker::IdentitySync, identity),
+            (WalletWorker::ShieldedSync, shielded),
+        ]
+    }
+
+    /// Quiesce the periodic sync coordinators (weight 0) concurrently,
+    /// returning each one's terminal status. Each `quiesce` raises and
+    /// holds its `quiescing` gate across the cancel + join + in-flight-pass
+    /// drain, so a concurrent direct `sync_now`/`sync_wallet` bails at
+    /// `begin_pass` rather than persisting after teardown.
+    #[cfg(not(feature = "shielded"))]
+    async fn quiesce_coordinators(&self) -> Vec<(WalletWorker, WorkerStatus)> {
+        let (address, identity) = tokio::join!(
+            self.platform_address_sync_manager.quiesce(),
+            self.identity_sync_manager.quiesce(),
+        );
+        vec![
+            (WalletWorker::PlatformAddressSync, address),
+            (WalletWorker::IdentitySync, identity),
+        ]
     }
 }
 
@@ -563,6 +638,43 @@ mod tests {
         PlatformWalletManager::new(sdk, persister, handler)
     }
 
+    /// Build a manager whose `on_platform_address_sync_completed` callback
+    /// signals `started`, counts every dispatch in `completions`, and then
+    /// **blocks** (holding `is_syncing`) until `release` is set — so a test
+    /// can hold an in-flight pass open across a concurrent `shutdown()`. The
+    /// block is bounded (30 s) so a failing test can never hang forever.
+    fn make_manager_with_blocking_handler(
+        started: Arc<AtomicBool>,
+        release: Arc<AtomicBool>,
+        completions: Arc<AtomicUsize>,
+    ) -> PlatformWalletManager<NoopPersister> {
+        struct BlockingHandler {
+            started: Arc<AtomicBool>,
+            release: Arc<AtomicBool>,
+            completions: Arc<AtomicUsize>,
+        }
+        impl dash_spv::EventHandler for BlockingHandler {}
+        impl PlatformEventHandler for BlockingHandler {
+            fn on_platform_address_sync_completed(&self, _: &PlatformAddressSyncSummary) {
+                self.completions.fetch_add(1, AO::SeqCst);
+                self.started.store(true, AO::Release);
+                let deadline = std::time::Instant::now() + Duration::from_secs(30);
+                while !self.release.load(AO::Acquire) && std::time::Instant::now() < deadline {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            }
+        }
+
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = Arc::new(NoopPersister);
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(BlockingHandler {
+            started,
+            release,
+            completions,
+        });
+        PlatformWalletManager::new(sdk, persister, handler)
+    }
+
     /// Start every periodic coordinator's background OS-thread loop.
     fn start_coordinators<P: PlatformWalletPersistence + 'static>(m: &PlatformWalletManager<P>) {
         Arc::clone(&m.platform_address_sync_manager).start();
@@ -600,7 +712,7 @@ mod tests {
             Some(&WorkerStatus::Ok)
         );
         #[cfg(not(feature = "shielded"))]
-        assert!(status.per_worker.get(&WalletWorker::ShieldedSync).is_none());
+        assert!(!status.per_worker.contains_key(&WalletWorker::ShieldedSync));
         assert_eq!(
             status.per_worker.get(&WalletWorker::EventAdapter),
             Some(&WorkerStatus::Ok)
@@ -809,6 +921,91 @@ mod tests {
         assert!(
             handler_completed.load(AO::Acquire),
             "shutdown must not return before the in-flight pass completes"
+        );
+    }
+
+    /// Regression: `shutdown()` must RAISE each coordinator's `quiescing`
+    /// gate and hold it across the cancel+join teardown, so a direct
+    /// `sync_now`/`sync_wallet` racing FFI `destroy` bails at `begin_pass`
+    /// (`quiescing > 0`) instead of persisting / firing a host callback
+    /// into a context the caller is about to free. The gate's refcount must
+    /// return to 0 once teardown completes (no leak).
+    ///
+    /// Non-vacuous: against a `shutdown()` that delegates straight to
+    /// `registry.shutdown()` (the prior behaviour — no lifecycle quiesce),
+    /// the per-coordinator gate is never raised, so the wait below times
+    /// out and the test fails. The pure `begin_pass`-rejects-on-gate
+    /// semantics are covered exhaustively by the `coordinator_lifecycle`
+    /// tests; this proves `shutdown()` actually wires the gate up.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn shutdown_raises_quiescing_gate_during_teardown() {
+        let started = Arc::new(AtomicBool::new(false));
+        let release = Arc::new(AtomicBool::new(false));
+        let completions = Arc::new(AtomicUsize::new(0));
+        let manager = Arc::new(make_manager_with_blocking_handler(
+            Arc::clone(&started),
+            Arc::clone(&release),
+            Arc::clone(&completions),
+        ));
+
+        // First loop pass fires immediately, enters the blocking completion
+        // handler, and parks there (holding `is_syncing`) until released.
+        Arc::clone(&manager.platform_address_sync_manager).start();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !started.load(AO::Acquire) {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("handler did not start within 5s");
+        assert_eq!(completions.load(AO::SeqCst), 1, "first loop pass completed");
+
+        // Drive shutdown concurrently: it quiesces the coordinator, raising
+        // the gate and then blocking on the join until the handler releases.
+        let shutdown_mgr = Arc::clone(&manager);
+        let shutdown_task = tokio::spawn(async move { shutdown_mgr.shutdown().await });
+
+        // The gate must be observed raised mid-teardown. Pre-fix (registry
+        // shutdown only) it never rises and this times out.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !manager
+                .platform_address_sync_manager
+                .quiescing_load_for_test(AO::Acquire)
+            {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("shutdown must raise the coordinator's quiescing gate");
+
+        // A direct sync_now racing the teardown does no work: the raised
+        // gate (and the in-flight pass holding `is_syncing`) keep it out of
+        // `begin_pass`, so no extra completion fires.
+        manager.platform_address_sync_manager.sync_now().await;
+        assert_eq!(
+            completions.load(AO::SeqCst),
+            1,
+            "a direct sync_now during teardown must not start a new pass"
+        );
+
+        // Release the in-flight pass; shutdown drains it and returns Ok.
+        release.store(true, AO::Release);
+        let report = tokio::time::timeout(Duration::from_secs(5), shutdown_task)
+            .await
+            .expect("shutdown completes once the pass drains")
+            .expect("shutdown task joined");
+        assert_eq!(
+            report.per_worker.get(&WalletWorker::PlatformAddressSync),
+            Some(&WorkerStatus::Ok),
+            "coordinator joins cleanly after the drain"
+        );
+
+        // No leak: the refcounted gate is back to 0 after teardown.
+        assert!(
+            !manager
+                .platform_address_sync_manager
+                .quiescing_load_for_test(AO::Acquire),
+            "quiescing gate must return to 0 once shutdown completes"
         );
     }
 
