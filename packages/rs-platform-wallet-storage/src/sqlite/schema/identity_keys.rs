@@ -166,6 +166,18 @@ pub fn load_state(
             target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
         })?;
         let entry = decode_entry(&payload)?;
+        // Cross-check the decoded blob against the typed columns it was
+        // selected by (mirrors `accounts`/`asset_locks` readers): a row whose
+        // blob names a different identity / key / wallet than its indexed
+        // columns is corruption, never silently mis-keyed into the map.
+        if entry.identity_id != identity_id || entry.key_id != key_id {
+            return Err(WalletStorageError::IdentityKeyEntryMismatch);
+        }
+        if let Some(entry_wallet_id) = entry.wallet_id {
+            if entry_wallet_id != *wallet_id {
+                return Err(WalletStorageError::IdentityKeyEntryMismatch);
+            }
+        }
         cs.upserts.insert((identity_id, key_id), entry);
     }
     Ok(cs)
@@ -177,6 +189,109 @@ mod tests {
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
+
+    /// In-memory connection with the full schema applied.
+    fn migrated_conn() -> rusqlite::Connection {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        conn
+    }
+
+    /// A valid `IdentityPublicKey` for building wire blobs in tests.
+    fn sample_public_key() -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![2u8; 33]),
+            disabled_at: None,
+        })
+    }
+
+    /// Insert an `identity_keys` row with a fully-formed wire blob, first
+    /// staging the `wallets` + `identities` FK parents it depends on.
+    fn insert_key_row(
+        conn: &Connection,
+        wallet: &[u8; 32],
+        typed_identity: &[u8; 32],
+        wire: &IdentityKeyWire,
+    ) {
+        conn.execute(
+            "INSERT OR IGNORE INTO wallets (wallet_id, network, birth_height) \
+             VALUES (?1, 'testnet', 0)",
+            params![&wallet[..]],
+        )
+        .unwrap();
+        crate::sqlite::schema::identities::ensure_exists(conn, wallet, typed_identity).unwrap();
+        let entry_blob = blob::encode(wire).unwrap();
+        conn.execute(
+            "INSERT INTO identity_keys \
+                (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) \
+             VALUES (?1, ?2, 0, ?3, ?4, NULL)",
+            params![&wallet[..], &typed_identity[..], entry_blob, &[0u8; 20][..]],
+        )
+        .unwrap();
+    }
+
+    /// `load_state` rejects a row whose decoded blob names a different
+    /// `identity_id` than its typed column — corruption is a hard, typed
+    /// error rather than a silent mis-key into the upsert map.
+    #[test]
+    fn load_state_rejects_identity_id_column_mismatch() {
+        let conn = migrated_conn();
+        let wallet = [0x11u8; 32];
+        let typed_identity = [0xBBu8; 32];
+        let wire = IdentityKeyWire {
+            identity_id: Identifier::from([0xAAu8; 32]), // disagrees with the column
+            key_id: 0,
+            public_key_bincode: bincode::encode_to_vec(
+                sample_public_key(),
+                bincode::config::standard(),
+            )
+            .unwrap(),
+            public_key_hash: [0u8; 20],
+            wallet_id: None,
+            derivation_indices: None,
+        };
+        insert_key_row(&conn, &wallet, &typed_identity, &wire);
+
+        let err = load_state(&conn, &wallet).expect_err("identity_id mismatch must fail");
+        assert!(
+            matches!(err, WalletStorageError::IdentityKeyEntryMismatch),
+            "expected IdentityKeyEntryMismatch, got {err:?}"
+        );
+    }
+
+    /// `load_state` rejects a row whose decoded blob carries a `wallet_id`
+    /// different from the wallet scope the typed column is read under.
+    #[test]
+    fn load_state_rejects_wallet_id_blob_mismatch() {
+        let conn = migrated_conn();
+        let wallet = [0x22u8; 32];
+        let typed_identity = [0xCCu8; 32];
+        let wire = IdentityKeyWire {
+            identity_id: Identifier::from(typed_identity), // matches the column
+            key_id: 0,
+            public_key_bincode: bincode::encode_to_vec(
+                sample_public_key(),
+                bincode::config::standard(),
+            )
+            .unwrap(),
+            public_key_hash: [0u8; 20],
+            wallet_id: Some([0xDDu8; 32]), // disagrees with the read scope
+            derivation_indices: None,
+        };
+        insert_key_row(&conn, &wallet, &typed_identity, &wire);
+
+        let err = load_state(&conn, &wallet).expect_err("wallet_id mismatch must fail");
+        assert!(
+            matches!(err, WalletStorageError::IdentityKeyEntryMismatch),
+            "expected IdentityKeyEntryMismatch, got {err:?}"
+        );
+    }
 
     /// A `public_key_bincode` payload whose IdentityPublicKey prefix is
     /// valid but carries trailing garbage is refused at decode time
