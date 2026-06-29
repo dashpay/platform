@@ -65,30 +65,29 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_start(
     PlatformWalletFFIResult::ok()
 }
 
-/// Stop the shielded sync manager and wait for any in-flight pass to
-/// drain before returning. No-op if not running.
+/// Stop the shielded sync manager. No-op if not running.
 ///
-/// Uses `quiesce` rather than cancel-only stop, so on return: the loop
-/// is cancelled, no new pass will start, and any in-flight pass has
-/// fully drained — its **persistence callbacks have completed** (no
-/// note/sync-state row can be written after this returns) and its
-/// completion-event *dispatch* on the Rust side has run.
+/// **Cancel-only**: signals the loop and returns immediately, matching
+/// `platform_address_sync_stop` / `identity_sync_stop`. An in-flight
+/// pass is cancelled mid-flight at its next `.await`; a parked prior-
+/// generation orphan is **not** joined here. Never returns
+/// `ErrorShutdownIncomplete` — the join-and-orphan-liveness gate that
+/// prevents a host UAF lives on `platform_wallet_manager_destroy` and
+/// `platform_wallet_manager_shielded_clear`, which are the host's
+/// contract points for "safe to free the callback context".
 ///
-/// Caveat on host-observed events: a host that marshals the completion
-/// callback onto its own executor (e.g. the Swift trampoline hops it to
-/// the `@MainActor`) may still observe that final, already-dispatched
-/// event land *after* this call returns — Rust controls when the event
-/// is dispatched, not when the host's run loop applies it. The drain
-/// guarantee above (no further persistence, no new pass) is the
-/// load-bearing part; hosts that must ignore a trailing UI event should
-/// gate their handler on their own post-stop/post-clear state (the
-/// example app drops events while unbound).
+/// Caveat: a host marshalling events onto its own executor (e.g. Swift
+/// hops to `@MainActor`) may still observe an already-dispatched event
+/// land after this returns; gate the handler on post-stop state if
+/// trailing events must be dropped (the example app does so).
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.shielded_sync().quiesce());
+        // Cancel-only by design: a second `AtomicFlagGuard` on `quiescing`
+        // here would race a continuously-held gate in `shielded_clear`.
+        manager.shielded_sync().stop();
     });
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
@@ -417,7 +416,9 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
 /// via the changeset path.
 ///
 /// Returns `ErrorWalletOperation` if the Rust-side store reset
-/// fails. The host **must** check this before wiping its own
+/// fails, or `ErrorShutdownIncomplete` if the in-flight sync pass
+/// did not drain cleanly first (in which case the store is left
+/// intact). The host **must** check this before wiping its own
 /// persistence: a silent failure would leave the shared tree
 /// populated while the host drops its rows, and the next cold
 /// resync would gate-skip every re-downloaded position against the
@@ -443,10 +444,19 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
     });
     let result = unwrap_option_or_return!(option);
     if let Err(e) = result {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("clear_shielded failed: {e}"),
-        );
+        // A non-clean / timed-out quiesce aborts the clear *before* the store
+        // is touched: surface it as ErrorShutdownIncomplete (symmetric with
+        // destroy / shielded_sync_stop) so the host defers freeing its
+        // callback context and does NOT commit its own persistence wipe — the
+        // store was intentionally left intact. Every other clear failure is a
+        // store-reset error → ErrorWalletOperation, as before.
+        let code = match &e {
+            platform_wallet::PlatformWalletError::ShieldedShutdownIncomplete { .. } => {
+                PlatformWalletFFIResultCode::ErrorShutdownIncomplete
+            }
+            _ => PlatformWalletFFIResultCode::ErrorWalletOperation,
+        };
+        return PlatformWalletFFIResult::err(code, format!("clear_shielded failed: {e}"));
     }
     PlatformWalletFFIResult::ok()
 }

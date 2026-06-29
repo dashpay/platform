@@ -39,6 +39,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// outcome. Do NOT auto-retry — a retry would rebuild the bundle and
     /// could double-execute if the original landed.
     case errorShieldedSpendUnconfirmed = 18
+    /// A destroy/stop/clear completed but a background coordinator did not
+    /// exit cleanly (timed out or ended non-cleanly). The host should defer
+    /// freeing its callback context — a lingering coordinator may still fire
+    /// one final callback through it — and, on the clear path, must NOT
+    /// commit its own persistence wipe (the Rust store was left intact).
+    case errorShutdownIncomplete = 19
     case notFound = 98
     case errorUnknown = 99
 
@@ -82,6 +88,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedBroadcastUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_SPEND_UNCONFIRMED:
             self = .errorShieldedSpendUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHUTDOWN_INCOMPLETE:
+            self = .errorShutdownIncomplete
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -177,6 +185,12 @@ public enum PlatformWalletError: LocalizedError {
     /// notes reserved wallet-side (a shield reserves nothing) until the
     /// next sync reconciles the outcome. Do NOT auto-retry.
     case shieldedSpendUnconfirmed(String)
+    /// A destroy / stop / clear completed but a background coordinator did
+    /// not exit cleanly. The host should defer freeing its callback context
+    /// (a lingering coordinator may still fire one final callback) and, on
+    /// the clear path, must NOT commit its own persistence wipe — the Rust
+    /// store was left intact so it can be retried once the pass settles.
+    case shutdownIncomplete(String)
     case notFound(String)
     case unknown(String)
 
@@ -192,6 +206,7 @@ public enum PlatformWalletError: LocalizedError {
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
+             .shutdownIncomplete(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -222,6 +237,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
         case .errorShieldedSpendUnconfirmed: self = .shieldedSpendUnconfirmed(detail)
+        case .errorShutdownIncomplete: self = .shutdownIncomplete(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }
@@ -239,5 +255,17 @@ extension PlatformWalletFFIResult {
     @inline(__always)
     func discard() {
         _ = PlatformWalletResult(self)
+    }
+
+    /// Free the result's Rust-owned message and return its typed code.
+    ///
+    /// Like `discard()`, but hands back the code so the caller can branch
+    /// on it — used by `PlatformWalletManager.deinit`, which must detect
+    /// `.errorShutdownIncomplete` to decide whether to keep its callback
+    /// context alive. The message is still freed deterministically (the
+    /// temporary `PlatformWalletResult` frees it on drop).
+    @inline(__always)
+    func discardReturningCode() -> PlatformWalletResultCode {
+        PlatformWalletResult(self).code
     }
 }
