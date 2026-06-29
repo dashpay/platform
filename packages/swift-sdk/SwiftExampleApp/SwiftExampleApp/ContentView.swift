@@ -4,7 +4,7 @@ import SwiftData
 import LocalAuthentication
 
 enum RootTab: Hashable {
-    case sync, wallets, identities, dashpay, contracts, settings
+    case sync, wallets, identities, dashpay, settings
 }
 
 struct ContentView: View {
@@ -129,20 +129,9 @@ struct ContentView: View {
                 }
                 .tag(RootTab.dashpay)
 
-                // Tab 5: Contracts (locally-persisted data contracts +
-                // their tokens).
-                //
-                // The current network is threaded in so the contracts +
-                // tokens lists stay scoped to it — `PersistentDataContract`
-                // rows from another network would otherwise leak into
-                // the picker after a network switch.
-                ContractsTabView(network: platformState.currentNetwork)
-                    .tabItem {
-                        Label("Contracts", systemImage: "doc.text")
-                    }
-                    .tag(RootTab.contracts)
-
-                // Tab 6: Settings (includes Platform section)
+                // Tab 5: Settings (Platform section + Contracts, which
+                // moved here from its own tab so the bar shows 5 tabs
+                // directly instead of collapsing into iOS's "More").
                 SettingsView()
                     .tabItem {
                         Label("Settings", systemImage: "gearshape")
@@ -154,12 +143,12 @@ struct ContentView: View {
                 // which publishes on a fast cadence while syncing. Reading
                 // it directly in `ContentView.body` would subscribe the
                 // whole `TabView` to every progress tick, re-creating each
-                // tab's content (including `ContractsTabView` and any sheet
-                // it presents) several times a second — which tears down a
-                // pushed drill-down and dismisses sheets presented from it
-                // (e.g. the document-create flow). Isolating the volatile
-                // observation in this leaf keeps the tab content stable;
-                // only the overlay re-renders on progress.
+                // tab's content (and any sheet it presents) several times a
+                // second — which tears down a pushed drill-down and
+                // dismisses sheets presented from it (e.g. the
+                // document-create flow). Isolating the volatile observation
+                // in this leaf keeps the tab content stable; only the
+                // overlay re-renders on progress.
                 GlobalSyncIndicatorOverlay(isSyncTab: selectedTab.wrappedValue == .sync)
             }
             .onAppear { checkForOrphanMnemonic() }
