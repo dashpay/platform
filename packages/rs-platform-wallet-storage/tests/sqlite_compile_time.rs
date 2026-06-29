@@ -61,7 +61,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     // Full-rehydration readers — one-shot SELECTs in `load_state`.
     (
         "accounts.rs",
-        "SELECT account_type, account_index, account_xpub_bytes FROM account_registrations",
+        "SELECT account_type, account_index, key_class, user_identity_id, friend_identity_id,",
     ),
     (
         "core_state.rs",

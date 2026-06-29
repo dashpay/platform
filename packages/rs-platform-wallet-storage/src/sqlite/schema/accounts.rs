@@ -102,22 +102,31 @@ pub fn apply_registrations(
         return Ok(());
     }
     // `account_xpub_bytes` holds the encoded `AccountRegistrationEntry`; the
-    // separate `account_type` / `account_index` columns mirror it for SQL.
+    // separate typed columns mirror it for SQL. `key_class` and the DashPay
+    // `(user, friend)` identity pair widen the PK so distinct accounts that
+    // share `(account_type, account_index)` don't overwrite each other.
     let mut stmt = tx.prepare_cached(
         "INSERT INTO account_registrations \
-                (wallet_id, account_type, account_index, account_xpub_bytes) \
-             VALUES (?1, ?2, ?3, ?4) \
-             ON CONFLICT(wallet_id, account_type, account_index) DO UPDATE SET \
+                (wallet_id, account_type, account_index, key_class, \
+                 user_identity_id, friend_identity_id, account_xpub_bytes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+             ON CONFLICT(wallet_id, account_type, account_index, key_class, \
+                 user_identity_id, friend_identity_id) DO UPDATE SET \
                 account_xpub_bytes = excluded.account_xpub_bytes",
     )?;
     for entry in entries {
         let account_type = account_type_db_label(&entry.account_type);
         let account_index = account_index(&entry.account_type);
+        let key_class = account_key_class(&entry.account_type);
+        let (user_identity_id, friend_identity_id) = account_dashpay_ids(&entry.account_type);
         let payload = blob::encode(entry)?;
         stmt.execute(params![
             wallet_id.as_slice(),
             account_type,
             i64::from(account_index),
+            i64::from(key_class),
+            &user_identity_id[..],
+            &friend_identity_id[..],
             payload,
         ])?;
     }
@@ -139,30 +148,45 @@ pub fn load_state(
     // columns is a sign of corruption or a schema bug and must be rejected
     // rather than silently mis-bucketed.
     let mut stmt = conn.prepare(
-        "SELECT account_type, account_index, account_xpub_bytes FROM account_registrations \
-         WHERE wallet_id = ?1 ORDER BY account_type, account_index",
+        "SELECT account_type, account_index, key_class, user_identity_id, friend_identity_id, \
+                account_xpub_bytes FROM account_registrations \
+         WHERE wallet_id = ?1 \
+         ORDER BY account_type, account_index, key_class, user_identity_id, friend_identity_id",
     )?;
     let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
         Ok((
             row.get::<_, String>(0)?,  // account_type TEXT
             row.get::<_, i64>(1)?,     // account_index INTEGER
-            row.get::<_, Vec<u8>>(2)?, // account_xpub_bytes BLOB
+            row.get::<_, i64>(2)?,     // key_class INTEGER
+            row.get::<_, Vec<u8>>(3)?, // user_identity_id BLOB
+            row.get::<_, Vec<u8>>(4)?, // friend_identity_id BLOB
+            row.get::<_, Vec<u8>>(5)?, // account_xpub_bytes BLOB
         ))
     })?;
     let mut out = Vec::new();
     for r in rows {
-        let (typed_account_type, typed_account_index, payload) = r?;
+        let (typed_type, typed_index, typed_key_class, typed_user, typed_friend, payload) = r?;
         let entry = blob::decode::<AccountRegistrationEntry>(&payload)?;
-        // Cross-check the typed indexed columns vs the decoded blob so
-        // a corruption that passes `PRAGMA integrity_check` is still
-        // caught here rather than feeding a wrong account to the oracle.
-        let blob_type = account_type_db_label(&entry.account_type);
+        // Cross-check every typed PK column vs the decoded blob so a
+        // corruption that passes `PRAGMA integrity_check` is still caught
+        // here rather than feeding a wrong account to the oracle.
         let blob_index = account_index(&entry.account_type);
+        let blob_key_class = account_key_class(&entry.account_type);
+        let (blob_user, blob_friend) = account_dashpay_ids(&entry.account_type);
         let typed_index = crate::sqlite::util::safe_cast::i64_to_u32(
             "account_registrations.account_index",
-            typed_account_index,
+            typed_index,
         )?;
-        if blob_type != typed_account_type.as_str() || blob_index != typed_index {
+        let typed_key_class = crate::sqlite::util::safe_cast::i64_to_u32(
+            "account_registrations.key_class",
+            typed_key_class,
+        )?;
+        if account_type_db_label(&entry.account_type) != typed_type.as_str()
+            || blob_index != typed_index
+            || blob_key_class != typed_key_class
+            || blob_user.as_slice() != typed_user.as_slice()
+            || blob_friend.as_slice() != typed_friend.as_slice()
+        {
             return Err(WalletStorageError::AccountRegistrationEntryMismatch);
         }
         out.push(entry);
@@ -252,6 +276,38 @@ pub(crate) fn account_index(at: &key_wallet::account::AccountType) -> u32 {
         AccountType::DashpayReceivingFunds { index, .. } => *index,
         AccountType::DashpayExternalAccount { index, .. } => *index,
         AccountType::PlatformPayment { account, .. } => *account,
+    }
+}
+
+/// Hardened `key_class` discriminator for `PlatformPayment`, persisted in the
+/// `account_registrations.key_class` PK column. `0` for every other variant —
+/// the sentinel "no key-class axis" value, matching the column default.
+pub(crate) fn account_key_class(at: &key_wallet::account::AccountType) -> u32 {
+    use key_wallet::account::AccountType;
+    match at {
+        AccountType::PlatformPayment { key_class, .. } => *key_class,
+        _ => 0,
+    }
+}
+
+/// DashPay `(user_identity_id, friend_identity_id)` discriminator pair — the
+/// real account key for `DashpayReceivingFunds` / `DashpayExternalAccount`,
+/// persisted in the matching PK columns. All-zero for every non-DashPay
+/// variant (no identity axis), matching the column default.
+pub(crate) fn account_dashpay_ids(at: &key_wallet::account::AccountType) -> ([u8; 32], [u8; 32]) {
+    use key_wallet::account::AccountType;
+    match at {
+        AccountType::DashpayReceivingFunds {
+            user_identity_id,
+            friend_identity_id,
+            ..
+        }
+        | AccountType::DashpayExternalAccount {
+            user_identity_id,
+            friend_identity_id,
+            ..
+        } => (*user_identity_id, *friend_identity_id),
+        _ => ([0u8; 32], [0u8; 32]),
     }
 }
 
@@ -395,6 +451,112 @@ mod tests {
             loaded[0].account_type,
             key_wallet::account::AccountType::PlatformPayment { account: 3, .. }
         ));
+    }
+
+    /// Two `PlatformPayment` accounts sharing `(account_type, account_index)`
+    /// but differing in `key_class` must both survive a persist — the widened
+    /// PK keeps distinct key classes from collapsing onto one row (the
+    /// data-loss bug this fix addresses).
+    #[test]
+    fn distinct_key_class_accounts_do_not_collide() {
+        let mut conn = migrated_conn();
+        let w = [0x44u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            rusqlite::params![&w[..]],
+        )
+        .unwrap();
+        let entry = |key_class: u32| AccountRegistrationEntry {
+            account_type: key_wallet::account::AccountType::PlatformPayment {
+                account: 0,
+                key_class,
+            },
+            account_xpub: test_xpub(),
+        };
+        {
+            let tx = conn.transaction().unwrap();
+            apply_registrations(&tx, &w, &[entry(0), entry(1)]).unwrap();
+            tx.commit().unwrap();
+        }
+        let loaded = load_state(&conn, &w).expect("both key classes load");
+        assert_eq!(loaded.len(), 2, "distinct key classes must both persist");
+        let key_classes: HashSet<u32> = loaded
+            .iter()
+            .map(|e| match e.account_type {
+                key_wallet::account::AccountType::PlatformPayment { key_class, .. } => key_class,
+                _ => unreachable!("only PlatformPayment was inserted"),
+            })
+            .collect();
+        assert_eq!(key_classes, HashSet::from([0, 1]));
+    }
+
+    /// Two `DashpayReceivingFunds` accounts at the same `index` but for
+    /// different contacts (distinct `friend_identity_id`) must both survive —
+    /// the per-contact identity pair is the real account key and must not
+    /// collapse on the shared `(account_type, account_index)`.
+    #[test]
+    fn distinct_dashpay_friends_do_not_collide() {
+        let mut conn = migrated_conn();
+        let w = [0x55u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            rusqlite::params![&w[..]],
+        )
+        .unwrap();
+        let entry = |friend: [u8; 32]| AccountRegistrationEntry {
+            account_type: key_wallet::account::AccountType::DashpayReceivingFunds {
+                index: 0,
+                user_identity_id: [0xAB; 32],
+                friend_identity_id: friend,
+            },
+            account_xpub: test_xpub(),
+        };
+        {
+            let tx = conn.transaction().unwrap();
+            apply_registrations(&tx, &w, &[entry([0x01; 32]), entry([0x02; 32])]).unwrap();
+            tx.commit().unwrap();
+        }
+        let loaded = load_state(&conn, &w).expect("both contacts load");
+        assert_eq!(loaded.len(), 2, "distinct contacts must both persist");
+        let friends: HashSet<[u8; 32]> = loaded
+            .iter()
+            .map(|e| match e.account_type {
+                key_wallet::account::AccountType::DashpayReceivingFunds {
+                    friend_identity_id,
+                    ..
+                } => friend_identity_id,
+                _ => unreachable!("only DashpayReceivingFunds was inserted"),
+            })
+            .collect();
+        assert_eq!(friends, HashSet::from([[0x01; 32], [0x02; 32]]));
+    }
+
+    /// Re-persisting the same account (identical full `AccountType`) updates in
+    /// place rather than inserting a duplicate — the idempotent upsert the
+    /// widened PK must preserve.
+    #[test]
+    fn idempotent_repersist_does_not_duplicate() {
+        let mut conn = migrated_conn();
+        let w = [0x66u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            rusqlite::params![&w[..]],
+        )
+        .unwrap();
+        let entry = AccountRegistrationEntry {
+            account_type: key_wallet::account::AccountType::PlatformPayment {
+                account: 2,
+                key_class: 1,
+            },
+            account_xpub: test_xpub(),
+        };
+        for _ in 0..2 {
+            let tx = conn.transaction().unwrap();
+            apply_registrations(&tx, &w, std::slice::from_ref(&entry)).unwrap();
+            tx.commit().unwrap();
+        }
+        let loaded = load_state(&conn, &w).expect("load");
+        assert_eq!(loaded.len(), 1, "re-persist must not duplicate the row");
     }
 
     /// Every [`key_wallet::account::AccountType`] variant; the wildcard-free

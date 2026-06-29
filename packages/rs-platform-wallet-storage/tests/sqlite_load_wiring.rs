@@ -107,12 +107,11 @@ fn c1_load_populates_keyless_wallet_payload() {
     let slice = state.wallets.get(&w).expect("wallet slice");
     assert_eq!(slice.network, key_wallet::Network::Testnet);
     assert_eq!(slice.birth_height, 7);
-    // Every persisted row round-trips. The writer's
-    // `(account_type_label, account_index)` upsert key collapses a few
-    // distinct special-purpose variants that share a label+index (a
-    // persist-side characteristic, not a load bug), so the manifest is
-    // a faithful read of what is on disk: non-empty, containing the
-    // primary BIP44 account.
+    // Every persisted account round-trips: the registration PK carries the
+    // full discriminator set (account_type, index, key_class, dashpay ids),
+    // so distinct variants never collapse onto one row. The manifest is a
+    // faithful read of what is on disk — non-empty, containing the primary
+    // BIP44 account.
     assert!(!slice.account_manifest.is_empty());
     assert!(
         slice.account_manifest.iter().any(|e| matches!(

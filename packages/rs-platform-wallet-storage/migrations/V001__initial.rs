@@ -76,8 +76,14 @@ CREATE TABLE account_registrations (
     wallet_id BLOB NOT NULL,
     account_type TEXT NOT NULL CHECK (account_type IN {account_type_check}),
     account_index INTEGER NOT NULL,
+    -- Discriminators sharing (account_type, account_index) across distinct
+    -- accounts: PlatformPayment key_class and the DashPay (user, friend)
+    -- identity pair. Sentinel default for variants without that axis.
+    key_class INTEGER NOT NULL DEFAULT 0,
+    user_identity_id BLOB NOT NULL DEFAULT (zeroblob(32)),
+    friend_identity_id BLOB NOT NULL DEFAULT (zeroblob(32)),
     account_xpub_bytes BLOB NOT NULL,
-    PRIMARY KEY (wallet_id, account_type, account_index),
+    PRIMARY KEY (wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id),
     FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
 );
 
