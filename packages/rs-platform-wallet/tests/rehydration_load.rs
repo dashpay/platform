@@ -172,6 +172,47 @@ async fn rt_wo_watch_only_roundtrip() {
     assert_eq!(mgr.wallet_ids().await, vec![id]);
 }
 
+/// RT-Idem: a second `load_from_persistor` with the wallet already
+/// registered (a repeat restore, or a wallet created at runtime) must be
+/// idempotent. `WalletExists` from `insert_wallet` is treated as
+/// already-satisfied — counted as loaded — not a fatal `WalletCreation`
+/// that aborts the whole batch.
+#[tokio::test]
+async fn rt_idempotent_repeat_restore() {
+    let seed = [0x55; 64];
+    let p = Arc::new(FixedLoadPersister::new());
+    let h = Arc::new(RecordingHandler::default());
+    let (id, s) = slice(seed);
+    let mut st = ClientStartState::default();
+    st.wallets.insert(id, s);
+    p.set(st);
+
+    let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
+
+    let first = mgr.load_from_persistor().await.expect("first load Ok");
+    assert_eq!(first.loaded, vec![id]);
+    assert!(first.skipped.is_empty());
+
+    // Second load: the wallet is already registered. Must NOT hard-error.
+    let second = mgr
+        .load_from_persistor()
+        .await
+        .expect("repeat load must be idempotent, not a hard error");
+    assert!(
+        second.loaded.contains(&id),
+        "already-present wallet is reported loaded (already-satisfied)"
+    );
+    assert!(
+        second.skipped.is_empty(),
+        "an idempotent re-load is not a skip"
+    );
+    assert!(
+        mgr.get_wallet(&id).await.is_some(),
+        "wallet still present after the repeat load"
+    );
+    assert_eq!(mgr.wallet_ids().await, vec![id]);
+}
+
 /// RT-Corrupt: a corrupt row (empty manifest) is skipped with
 /// `MissingManifest`; the other row loads cleanly; the load returns
 /// `Ok`; exactly one `WalletSkippedOnLoad` event fires for the skipped

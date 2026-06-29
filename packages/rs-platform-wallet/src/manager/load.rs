@@ -44,6 +44,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///   `Err(_)` — every wallet inserted earlier in this pass is
     ///   rolled back. Skipped wallets never entered the maps so the
     ///   rollback path never sees them.
+    /// - **Already present** (`WalletExists` from `insert_wallet`, e.g. a
+    ///   repeat restore or a runtime-created wallet): treated as
+    ///   already-satisfied — counted as loaded, left untouched, and kept
+    ///   out of the rollback set so a later hard-fail never evicts it. A
+    ///   second `load_from_persistor` is therefore idempotent.
     ///
     /// Platform-address provider state is restored per wallet via
     /// [`initialize_from_persisted`](crate::wallet::platform_addresses::PlatformAddressWallet::initialize_from_persisted),
@@ -159,6 +164,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 let mut wm = self.wallet_manager.write().await;
                 match wm.insert_wallet(wallet, platform_info) {
                     Ok(id) => id,
+                    Err(key_wallet_manager::WalletError::WalletExists(_)) => {
+                        // Idempotent restore: a prior `load_from_persistor`
+                        // (or a runtime create) already registered this
+                        // wallet. Re-registering must not abort the batch —
+                        // treat it as already-satisfied: record it as loaded
+                        // and continue. It was NOT inserted by this pass, so
+                        // it stays out of the rollback set and a later
+                        // hard-fail never evicts the pre-existing wallet.
+                        outcome.loaded.push(expected_wallet_id);
+                        continue 'load;
+                    }
                     Err(e) => {
                         load_error = Some(PlatformWalletError::WalletCreation(format!(
                             "Failed to register persisted wallet in WalletManager: {}",
