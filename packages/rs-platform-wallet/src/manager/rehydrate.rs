@@ -173,10 +173,12 @@ pub fn apply_persisted_core_state(
     // funds accounts and stays exact. A wallet with persisted UTXOs but
     // no funds account at all cannot be represented: fail closed rather
     // than silently reconstruct a zero balance.
+    let spent_outpoints: std::collections::HashSet<dashcore::OutPoint> =
+        core.spent_utxos.iter().map(|u| u.outpoint).collect();
     let unspent: Vec<&key_wallet::Utxo> = core
         .new_utxos
         .iter()
-        .filter(|u| !core.spent_utxos.iter().any(|s| s.outpoint == u.outpoint))
+        .filter(|u| !spent_outpoints.contains(&u.outpoint))
         .collect();
     if !unspent.is_empty() {
         match wallet_info
