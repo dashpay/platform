@@ -1108,22 +1108,25 @@ mod tests {
     }
 
     /// #3692 review (privacy / address-reuse): a previously-used address
-    /// whose funds were SINCE SPENT (so it carries no current UTXO) must
-    /// still come back marked `used` when the persisted pool snapshot
-    /// reports it via `used_pool_addresses`. Without it the address resets
-    /// to `used = false` and could be handed out again as a fresh receive
-    /// address. Covers an in-window slot (idx 5) and a deeper slot the
-    /// horizon walk resolves (idx 30, at the initial gap-limit boundary),
-    /// and asserts the baseline (empty `used_pool_addresses`) does NOT mark
-    /// them — so the field is demonstrably what fixes the leak.
+    /// whose UTXO was SINCE SPENT must still come back marked `used` when the
+    /// snapshot carries it via `ClientWalletStartState::used_core_addresses`.
+    /// Without it the address resets to `used = false` and could be handed
+    /// out again as a fresh receive address. The used flag must survive even
+    /// though the UTXO is gone (`spent_utxos` cancels `new_utxos` → zero
+    /// balance), proving it is NOT just a side effect of a live UTXO. Covers
+    /// an in-window slot (idx 5) and a deeper slot the horizon walk resolves
+    /// (idx 30), and asserts the empty-snapshot baseline does NOT mark them.
     #[test]
-    fn rehydration_restores_persisted_used_state_for_spent_out_address() {
+    fn rehydration_used_state_survives_spent_utxo() {
+        use crate::changeset::{ClientWalletStartState, CoreChangeSet};
+        use dashcore::blockdata::transaction::txout::TxOut;
+        use dashcore::{OutPoint, Txid};
         use key_wallet::bip32::DerivationPath;
         use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
         use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
-        use key_wallet::Address;
+        use key_wallet::{Address, Utxo};
 
         let wallet = Wallet::from_seed_bytes(
             [42u8; 64],
@@ -1160,19 +1163,59 @@ mod tests {
         let in_window_used = derive(5);
         let deep_used = derive(30);
 
-        // No current UTXOs — these addresses' funds were already spent.
-        let core = crate::changeset::CoreChangeSet {
+        // The in-window address received funds (new_utxos) that were later
+        // spent (spent_utxos) — so it carries NO unspent UTXO. Exactly the
+        // reuse hazard: zero balance, yet the address must stay `used`.
+        let spent = Utxo {
+            outpoint: OutPoint {
+                txid: Txid::from([1u8; 32]),
+                vout: 0,
+            },
+            txout: TxOut {
+                value: 50_000,
+                script_pubkey: in_window_used.script_pubkey(),
+            },
+            address: in_window_used.clone(),
+            height: 1,
+            is_coinbase: false,
+            is_confirmed: true,
+            is_instantlocked: false,
+            is_locked: false,
+            is_trusted: false,
+        };
+        let core = CoreChangeSet {
+            new_utxos: vec![spent.clone()],
+            spent_utxos: vec![spent],
             last_processed_height: Some(1),
             synced_height: Some(1),
             ..Default::default()
         };
-        let used = vec![in_window_used.clone(), deep_used.clone()];
 
-        // Baseline: with NO persisted used-state the spent-out address is
-        // not marked used (the pre-fix behaviour, and the reuse hazard).
+        // The keyless slice the persister hands back, carrying the pool
+        // used-state for both addresses.
+        let state = ClientWalletStartState {
+            network: Network::Testnet,
+            birth_height: 1,
+            account_manifest: manifest.clone(),
+            core_state: core,
+            identity_manager: Default::default(),
+            unused_asset_locks: Default::default(),
+            contacts: Default::default(),
+            identity_keys: Default::default(),
+            used_core_addresses: vec![in_window_used.clone(), deep_used.clone()],
+        };
+
+        // Baseline: drop the pool used-state (empty) — the spent-out address
+        // resets to unused (the pre-fix behaviour, and the reuse hazard).
         {
             let mut baseline = ManagedWalletInfo::from_wallet(&wallet, 1);
-            apply_persisted_core_state(&mut baseline, &manifest, &core, &[]).unwrap();
+            apply_persisted_core_state(
+                &mut baseline,
+                &state.account_manifest,
+                &state.core_state,
+                &[],
+            )
+            .unwrap();
             let funds = baseline
                 .accounts
                 .all_funding_accounts()
@@ -1186,13 +1229,28 @@ mod tests {
                     .address_info(&in_window_used)
                     .map(|i| i.used)
                     .unwrap_or(false),
-                "without persisted used-state a spent-out address resets to unused"
+                "without pool used-state a spent-out address resets to unused"
             );
         }
 
-        // With the persisted used-state, both addresses come back used.
+        // With the snapshot's used-state — routed through
+        // ClientWalletStartState::used_core_addresses — both come back used.
         let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
-        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &used).unwrap();
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &state.account_manifest,
+            &state.core_state,
+            &state.used_core_addresses,
+        )
+        .unwrap();
+
+        // The spent UTXO contributes no balance — the used flag is NOT a
+        // side effect of a live UTXO.
+        assert_eq!(
+            wallet_info.balance.total(),
+            0,
+            "the spent UTXO must not contribute balance"
+        );
 
         let funds = wallet_info
             .accounts
@@ -1202,11 +1260,10 @@ mod tests {
             .unwrap();
         let pools = funds.managed_account_type().address_pools();
         let external = pools.iter().find(|p| p.is_external()).unwrap();
-
         assert!(
             external
                 .address_info(&in_window_used)
-                .expect("in-window used address must be present")
+                .expect("in-window used address present")
                 .used,
             "in-window spent-out address must be restored as used"
         );
@@ -1214,7 +1271,7 @@ mod tests {
         assert!(
             external
                 .address_info(&deep_used)
-                .expect("deep used address must be derived into the pool")
+                .expect("deep used address derived into pool")
                 .used,
             "deep spent-out address must be derived + restored as used"
         );
@@ -1223,6 +1280,163 @@ mod tests {
             external.highest_used,
             Some(30),
             "highest_used must reflect the deepest restored used slot"
+        );
+    }
+
+    /// dash-evo-tool#829 Bug 2 / PR #830 regression guard (pool DEPTH —
+    /// distinct from the address-reuse test above): UNSPENT UTXOs landing on
+    /// chain indices well past the eager `0..=gap_limit` window
+    /// (gap_limit = 30) must be reflected in the per-address view, not just
+    /// in `balance.total`. Each chain carries a walkable ladder of UTXOs so
+    /// the horizon walk extends the pool out to the deepest index; a wallet
+    /// that derived deep before restart must not undercount per-address.
+    #[test]
+    fn rt_deep_index_utxos_extend_pools_on_rehydration() {
+        use crate::changeset::CoreChangeSet;
+        use dashcore::blockdata::transaction::txout::TxOut;
+        use dashcore::{OutPoint, Txid};
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::{Address, Utxo};
+        use std::collections::HashSet;
+
+        let wallet = Wallet::from_seed_bytes(
+            [88u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+
+        let funds_type = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .first()
+            .unwrap()
+            .managed_account_type()
+            .to_account_type();
+        let xpub = manifest
+            .iter()
+            .find(|e| e.account_type == funds_type)
+            .map(|e| e.account_xpub)
+            .expect("funds account xpub");
+
+        let derive = |pool_type, index: u32| -> Address {
+            let mut p = AddressPool::new_without_generation(
+                DerivationPath::master(),
+                pool_type,
+                DEFAULT_EXTERNAL_GAP_LIMIT,
+                Network::Testnet,
+            );
+            p.generate_addresses(index + 1, &KeySource::Public(xpub), true)
+                .unwrap();
+            p.address_at_index(index).unwrap()
+        };
+
+        let mk = |addr: Address, value: u64, n: u8| -> Utxo {
+            Utxo {
+                outpoint: OutPoint {
+                    txid: Txid::from([n; 32]),
+                    vout: 0,
+                },
+                txout: TxOut {
+                    value,
+                    script_pubkey: addr.script_pubkey(),
+                },
+                address: addr,
+                height: 1,
+                is_coinbase: false,
+                is_confirmed: true,
+                is_instantlocked: false,
+                is_locked: false,
+                is_trusted: false,
+            }
+        };
+
+        // Walkable ladders past the eager window: each hop is <= gap_limit
+        // (30) from the previous so the horizon advances to the deepest slot.
+        // External climbs to idx 84; Internal climbs to idx 90.
+        let ext = [(30u32, 10_000u64), (60, 20_000), (84, 30_000)];
+        let int = [(30u32, 40_000u64), (60, 50_000), (90, 60_000)];
+
+        let mut new_utxos = Vec::new();
+        let mut n: u8 = 1;
+        let mut deepest_external = None;
+        let mut deepest_internal = None;
+        for (idx, val) in ext {
+            let addr = derive(AddressPoolType::External, idx);
+            if idx == 84 {
+                deepest_external = Some(addr.clone());
+            }
+            new_utxos.push(mk(addr, val, n));
+            n += 1;
+        }
+        for (idx, val) in int {
+            let addr = derive(AddressPoolType::Internal, idx);
+            if idx == 90 {
+                deepest_internal = Some(addr.clone());
+            }
+            new_utxos.push(mk(addr, val, n));
+            n += 1;
+        }
+        let deepest_external = deepest_external.unwrap();
+        let deepest_internal = deepest_internal.unwrap();
+        let expected_total: u64 = new_utxos.iter().map(|u| u.value()).sum();
+
+        let core = CoreChangeSet {
+            new_utxos,
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+
+        apply_persisted_core_state(&mut wallet_info, &manifest, &core, &[]).unwrap();
+
+        // (b) total is exact (a sum over the UTXO set, never undercounts).
+        assert_eq!(wallet_info.balance.total(), expected_total);
+
+        let funds = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .next()
+            .unwrap();
+        let pools = funds.managed_account_type().address_pools();
+
+        // (a) deep-index addresses were DERIVED into their exact slots.
+        let external = pools.iter().find(|p| p.is_external()).unwrap();
+        let internal = pools.iter().find(|p| p.is_internal()).unwrap();
+        assert_eq!(
+            external.address_at_index(84).as_ref(),
+            Some(&deepest_external),
+            "external pool must be walked out to the deepest UTXO index (84)"
+        );
+        assert_eq!(
+            internal.address_at_index(90).as_ref(),
+            Some(&deepest_internal),
+            "internal pool must be walked out to the deepest UTXO index (90)"
+        );
+
+        // (b) per-address view == total: every UTXO address resolves into a
+        // pool, so the monitored/per-address sum matches `balance.total`
+        // with no deep-index undercount.
+        let pool_addresses: HashSet<Address> = pools
+            .iter()
+            .flat_map(|p| p.addresses.values().map(|i| i.address.clone()))
+            .collect();
+        let visible: u64 = funds
+            .utxos
+            .values()
+            .filter(|u| pool_addresses.contains(&u.address))
+            .map(|u| u.value())
+            .sum();
+        assert_eq!(
+            visible, expected_total,
+            "all deep-index UTXO addresses must be derived into their pools"
         );
     }
 
