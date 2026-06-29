@@ -1523,6 +1523,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '4.0.0-rc.3': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
+            // Bump the default Tenderdash image to the 1.6.0 line. Pulled DRY from
+            // the base config so it tracks whatever the base config pins.
+            // Keyed at the next release (4.0.0-rc.3), not the already-released
+            // rc.2: the runner skips fromVersion===toVersion, so a key equal to
+            // an operator's current version never fires.
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+
             // Add responseHeaders toggle to rate limiter (default true so existing
             // deployments keep emitting RateLimit-* headers; rs-dapi-client depends
             // on RateLimit-Reset to apply precise ban windows instead of the
