@@ -437,3 +437,35 @@ resolver path is proven for 100 % of the live key set.
 - `packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletPersistenceHandler.swift`
   — write breadcrumb columns; delete `storeCarriedIdentityKey` + the scalar
   copy/scrub.
+
+---
+
+## 9. As-built notes (what shipped vs. this spec)
+
+The additive, fallback-protected work (Phase 1 + Phase 2 steps 1–5) shipped on
+`feat/dashpay-identity-key-scalar-elimination`. Two deliberate deviations from the
+rev-2 design above, plus what is explicitly **not** done:
+
+- **Resolver FFI accepts `ECDSA_HASH160` (key_type 2), not just SECP256K1.** Full
+  scalar deletion is impossible otherwise — discovery breadcrumbs both ECDSA key
+  types. The MF-2 binding disambiguates by `expected_key_data` length: 33 bytes =
+  compressed-pubkey equality, 20 bytes = `ripemd160_sha256(pubkey)` equality. The
+  param is nullable (the address path passes none). This widens §3.2's "reuse the
+  primitive unchanged."
+- **The backfill self-check is canonical-path-from-indices, not a pubkey
+  re-derivation.** §5 layer 1 specified re-deriving the pubkey at the path and
+  comparing to `publicKeyData`; that needs the seed, which the backfill
+  deliberately avoids. Instead it rebuilds the canonical DIP-9 path from the
+  metadata's `(network, identityIndex, keyIndex)` and requires it to equal the
+  stored `derivationPath` (rejecting format drift), and **relies on the sign-time
+  MF-2 binding as the real guard** — a present-but-wrong path yields
+  `ERR_PUBKEY_MISMATCH` at sign time → a logged `IDENTITY_SIGN_FALLBACK`, never a
+  wrong-key signature. A non-zero backfill failure count is still surfaced.
+- **NOT done — Phase 2 step 6 (the irreversible deletion) and the funded-testnet
+  zero-fallback acceptance gate.** The carried scalar (`IdentityKeyEntry.private_key`
+  / `KeyWithBreadcrumb.verified_scalar`) and the legacy stored-scalar signer path
+  are **retained** as the safety net, so the shipped change is reversible and
+  non-lockout. The deletion remains gated on a real zero-`IDENTITY_SIGN_FALLBACK`
+  run over an existing store (sim/idb tooling blocked the automated UAT) and on
+  explicit sign-off. The `DashModelContainer` migration-stamp (MF-3) is therefore
+  also deferred — it only matters once the legacy path is removed.

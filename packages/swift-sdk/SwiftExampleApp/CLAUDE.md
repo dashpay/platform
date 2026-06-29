@@ -6,6 +6,10 @@ This document provides guidance for AI assistants working with the SwiftExampleA
 
 SwiftExampleApp is an iOS application demonstrating the integration of both Core (SPV wallet) and Platform (identity/documents) functionality of the Dash SDK.
 
+## Funding a testnet wallet for testing
+
+To get testnet funds for a wallet in the app, use the built-in faucet: **Wallet → Receive** has a "request from testnet" button that funds the displayed receive address. No external faucet or pasted seed is needed — create a fresh wallet, open Wallet → Receive, and tap it. Use this when an end-to-end test needs a funded wallet (e.g. registering an identity, signing state transitions).
+
 ## Key Architecture Patterns
 
 ### Unified SDK Integration
