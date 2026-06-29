@@ -815,6 +815,49 @@ extension KeychainManager {
         return nil
     }
 
+    /// Decode the metadata blob (`kSecAttrGeneric`) of every
+    /// `identity_privkey.*` keychain item — no secret bytes loaded. The
+    /// breadcrumb backfill uses this to populate
+    /// `PersistentPublicKey.{walletId, identityDerivationPath}` for keys
+    /// materialized before those columns existed; sourcing it from the
+    /// Keychain (not SwiftData) means it heals even if the SwiftData store
+    /// was rebuilt.
+    public nonisolated func allIdentityPrivateKeyMetadata() -> [IdentityPrivateKeyMetadata] {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true,
+        ]
+        if let accessGroup = accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else {
+            return []
+        }
+
+        let decoder = JSONDecoder()
+        var out: [IdentityPrivateKeyMetadata] = []
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                account.hasPrefix("identity_privkey.")
+            else {
+                continue
+            }
+            guard let metadataData = item[kSecAttrGeneric as String] as? Data,
+                let metadata = try? decoder.decode(
+                    IdentityPrivateKeyMetadata.self, from: metadataData)
+            else {
+                continue
+            }
+            out.append(metadata)
+        }
+        return out
+    }
+
     /// Delete the identity private-key row for the
     /// `(walletId, derivationPath)` pair — symmetric with
     /// `storeIdentityPrivateKey` (which writes under the

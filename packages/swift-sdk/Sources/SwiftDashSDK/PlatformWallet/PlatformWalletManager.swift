@@ -597,6 +597,12 @@ public class PlatformWalletManager: ObservableObject {
             throw error
         }
 
+        // Heal pre-breadcrumb identity keys so they sign via the resolver
+        // (derive-sign-destroy) rather than the stored scalar. Idempotent and
+        // Keychain-sourced; runs once the seed is confirmed present for this
+        // wallet, which is exactly when its identity keys become signable.
+        persistenceHandler?.backfillIdentityKeyBreadcrumbs(walletId: walletId)
+
         // Don't stack a second drain on an in-flight one: a banner Unlock tap
         // (or a second unlock) while a drain runs would duplicate the network
         // re-fetch + ECDH work and race the channel-broken writes. The banner
