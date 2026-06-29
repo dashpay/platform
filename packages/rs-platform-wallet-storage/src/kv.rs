@@ -81,6 +81,12 @@ pub enum KvError {
     #[error("kv key is empty")]
     KeyEmpty,
 
+    /// Key contained an embedded NUL (`\0`). SQLite `length()` counts only
+    /// the bytes before the first NUL, so a NUL-bearing key would break the
+    /// `chars().count()` == SQLite `length()` invariant the CHECK relies on.
+    #[error("kv key contains an embedded NUL")]
+    KeyContainsNul,
+
     /// Key exceeded [`MAX_KEY_LEN`]. `len` is the key's code-point count
     /// (the same unit the SQL `length()` CHECK uses).
     #[error("kv key too long: {len} code points (max {})", MAX_KEY_LEN)]
@@ -159,6 +165,12 @@ pub(crate) fn validate_key(key: &str) -> Result<(), KvError> {
     if key.is_empty() {
         return Err(KvError::KeyEmpty);
     }
+    // An embedded NUL truncates SQLite's `length()` (and string comparisons),
+    // so reject it before the count below — otherwise `chars().count()` and the
+    // SQL CHECK would disagree on the key's length and identity.
+    if key.contains('\0') {
+        return Err(KvError::KeyContainsNul);
+    }
     let code_points = key.chars().count();
     if code_points > MAX_KEY_LEN {
         return Err(KvError::KeyTooLong { len: code_points });
@@ -189,5 +201,12 @@ mod tests {
         assert!(validate_key("k").is_ok());
         let k = "a".repeat(MAX_KEY_LEN);
         assert!(validate_key(&k).is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_embedded_nul() {
+        assert!(matches!(validate_key("a\0b"), Err(KvError::KeyContainsNul)));
+        // A leading/trailing NUL is rejected too.
+        assert!(matches!(validate_key("\0"), Err(KvError::KeyContainsNul)));
     }
 }
