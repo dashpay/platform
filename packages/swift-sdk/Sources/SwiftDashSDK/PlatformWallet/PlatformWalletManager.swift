@@ -601,7 +601,9 @@ public class PlatformWalletManager: ObservableObject {
         // (derive-sign-destroy) rather than the stored scalar. Idempotent and
         // Keychain-sourced; runs once the seed is confirmed present for this
         // wallet, which is exactly when its identity keys become signable.
-        persistenceHandler?.backfillIdentityKeyBreadcrumbs(walletId: walletId)
+        // Fire-and-forget off the main actor — signing falls back to the stored
+        // scalar until this heals, so it never needs to block unlock.
+        persistenceHandler?.scheduleBackfillIdentityKeyBreadcrumbs(walletId: walletId)
 
         // Don't stack a second drain on an in-flight one: a banner Unlock tap
         // (or a second unlock) while a drain runs would duplicate the network

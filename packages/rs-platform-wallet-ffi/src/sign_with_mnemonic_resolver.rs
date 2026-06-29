@@ -586,4 +586,79 @@ mod tests {
             .expect("HASH160 key signature must verify against its derived pubkey");
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
+
+    /// An `expected_key_data` whose length is neither 33 (pubkey) nor 20 (hash)
+    /// hits the `_ => false` arm and fails closed — it must NOT silently skip
+    /// the binding or sign. Guards against a caller passing, e.g., a 32-byte
+    /// scalar or a 65-byte uncompressed key by mistake.
+    #[test]
+    fn binding_rejects_malformed_expected_length() {
+        let resolver = make_resolver(english_resolve);
+        let path = CString::new("m/9'/1'/5'/0'/0'/3'/2'").unwrap();
+        let wallet_id = [0u8; 32];
+        let data = b"x";
+        let malformed = [0x02u8; 32]; // 32 bytes — neither 33 nor 20
+        let mut sig_buf = [0u8; 128];
+        let mut sig_len: usize = 0;
+        let mut err: u8 = 0;
+        let rc = unsafe {
+            dash_sdk_sign_with_mnemonic_resolver_and_path(
+                resolver,
+                wallet_id.as_ptr(),
+                path.as_ptr(),
+                data.as_ptr(),
+                data.len(),
+                0,
+                FFINetwork::Testnet,
+                malformed.as_ptr(),
+                malformed.len(),
+                sig_buf.as_mut_ptr(),
+                sig_buf.len(),
+                &mut sig_len,
+                &mut err,
+            )
+        };
+        assert_eq!(rc, -1);
+        assert_eq!(err, SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH);
+        assert_eq!(sig_len, 0, "malformed binding length must fail closed");
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// The 20-byte (HASH160) binding arm must REJECT a wrong hash, not just
+    /// accept the right one — a wrong-HASH160 signature is the R9 silent
+    /// consensus-reject lockout, so its false branch must be pinned.
+    #[test]
+    fn binding_rejects_wrong_hash160() {
+        let resolver = make_resolver(english_resolve);
+        let path = CString::new("m/9'/1'/5'/0'/0'/0'/0'").unwrap();
+        let wallet_id = [0u8; 32];
+        let data = b"x";
+        // ripemd160_sha256 of an unrelated pubkey is a valid-shaped but WRONG
+        // 20-byte hash for the key derived at the path above.
+        let wrong_hash = dash_sdk::dpp::util::hash::ripemd160_sha256(&[0x03u8; 33]);
+        let mut sig_buf = [0u8; 128];
+        let mut sig_len: usize = 0;
+        let mut err: u8 = 0;
+        let rc = unsafe {
+            dash_sdk_sign_with_mnemonic_resolver_and_path(
+                resolver,
+                wallet_id.as_ptr(),
+                path.as_ptr(),
+                data.as_ptr(),
+                data.len(),
+                2, // ECDSA_HASH160
+                FFINetwork::Testnet,
+                wrong_hash.as_ptr(),
+                wrong_hash.len(),
+                sig_buf.as_mut_ptr(),
+                sig_buf.len(),
+                &mut sig_len,
+                &mut err,
+            )
+        };
+        assert_eq!(rc, -1);
+        assert_eq!(err, SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH);
+        assert_eq!(sig_len, 0, "wrong HASH160 must fail closed");
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
 }

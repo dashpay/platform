@@ -377,7 +377,10 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                 }
                 // Resolver-derivable: a breadcrumb plus a readable mnemonic are
                 // the two inputs `signIdentityKeyOnDemand` needs to derive-sign.
+                // Match its `wid.count == 32` precondition so this preflight
+                // doesn't report a corrupt-walletId row as signable.
                 if let wid = row.walletId,
+                    wid.count == 32,
                     let path = row.identityDerivationPath,
                     !path.isEmpty,
                     WalletStorage().hasMnemonic(for: wid)
@@ -582,7 +585,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// is absent or carries no breadcrumb yet (an un-backfilled key) — the
     /// caller then falls back to the stored scalar. Pinned to the serial
     /// queue + a per-call `ModelContext`, like the platform-address resolver.
-    fileprivate func resolveIdentityKeyContext(
+    func resolveIdentityKeyContext(
         publicKey: Data
     ) -> (walletId: Data, derivationPath: String)? {
         var resolved: (walletId: Data, derivationPath: String)?
@@ -837,11 +840,19 @@ private func keychainSignerSignAsyncTrampoline(
     // yet backfilled — signable, so the cutover is non-lockout by construction.
     // Every fallback is logged so the zero-fallback acceptance gate can catch
     // un-migrated rows or resolver failures before the stored scalar is removed.
-    if let resolverResult = signer.signIdentityKeyOnDemand(
-        publicKey: pubkeyData,
-        keyType: keyType,
-        data: dataToSign
-    ) {
+    //
+    // Only the two secp256k1 key types the resolver can derive+sign
+    // (ECDSA_SECP256K1=0, ECDSA_HASH160=2) attempt it; a non-ECDSA derivable
+    // key would only fail UNSUPPORTED there, so it skips straight to the stored
+    // scalar with no spurious resolver call or fallback log.
+    let isEcdsaKeyType = keyType == 0 || keyType == 2
+    if isEcdsaKeyType,
+        let resolverResult = signer.signIdentityKeyOnDemand(
+            publicKey: pubkeyData,
+            keyType: keyType,
+            data: dataToSign
+        )
+    {
         switch resolverResult {
         case .success(let sig):
             reportSuccess(sig)
@@ -849,7 +860,7 @@ private func keychainSignerSignAsyncTrampoline(
         case .failure(let err):
             print("⚠️ IDENTITY_SIGN_FALLBACK resolver-failed: \(err.localizedDescription)")
         }
-    } else {
+    } else if isEcdsaKeyType {
         print("⚠️ IDENTITY_SIGN_FALLBACK no-breadcrumb")
     }
 

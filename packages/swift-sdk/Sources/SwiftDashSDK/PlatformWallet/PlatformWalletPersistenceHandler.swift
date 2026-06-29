@@ -7,7 +7,10 @@ import DashSDKFFI
 /// Allocated as a class so its pointer can be passed as the opaque `context`
 /// to the Rust persistence callbacks. Must be retained for the lifetime of
 /// the `PlatformWalletManager`.
-public class PlatformWalletPersistenceHandler {
+// All mutable state (`backgroundContext`, caches) is confined to `serialQueue`
+// — the handler's de-facto actor — so it is safe to hand to a `@Sendable`
+// closure (e.g. the off-main `serialQueue.async` backfill dispatch).
+public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     let modelContainer: ModelContainer
 
     /// Network this handler's owning `PlatformWalletManager` is bound
@@ -2394,65 +2397,94 @@ public class PlatformWalletPersistenceHandler {
     /// path up front. A non-zero `failed` count means some materialized key
     /// could not be migrated — a signal the scalar-deletion gate must not be
     /// crossed yet.
-    @discardableResult
-    func backfillIdentityKeyBreadcrumbs(walletId: Data) -> (written: Int, skipped: Int, failed: Int) {
+    /// Fire-and-forget production entry: scans the Keychain and runs the
+    /// backfill on the serial queue, OFF the calling (main) thread — the
+    /// `@MainActor` unlock path must not block on the Keychain scan + the
+    /// serial-queue SwiftData work. Safe to run lazily: an un-migrated key
+    /// still signs via the stored-scalar fallback until this heals it.
+    func scheduleBackfillIdentityKeyBreadcrumbs(walletId: Data) {
         let walletIdHex = walletId.toHexString()
-        let items = KeychainManager.shared.allIdentityPrivateKeyMetadata()
-            .filter { $0.walletId.caseInsensitiveCompare(walletIdHex) == .orderedSame }
+        serialQueue.async { [weak self] in
+            guard let self else { return }
+            let items = KeychainManager.shared.allIdentityPrivateKeyMetadata()
+                .filter { $0.walletId.caseInsensitiveCompare(walletIdHex) == .orderedSame }
+            _ = self.backfillCore(walletId: walletId, items: items)
+        }
+    }
+
+    /// Testable entry point: the caller supplies the metadata items (so a unit
+    /// test can inject them without the real Keychain). Runs the SwiftData work
+    /// synchronously on the serial queue.
+    @discardableResult
+    func backfillIdentityKeyBreadcrumbs(
+        walletId: Data,
+        items: [KeychainManager.IdentityPrivateKeyMetadata]
+    ) -> (written: Int, skipped: Int, failed: Int) {
+        onQueue { backfillCore(walletId: walletId, items: items) }
+    }
+
+    /// Backfill body. **Assumes it is already running on `serialQueue`** (it
+    /// touches `backgroundContext` directly — do not wrap in `onQueue`).
+    private func backfillCore(
+        walletId: Data,
+        items: [KeychainManager.IdentityPrivateKeyMetadata]
+    ) -> (written: Int, skipped: Int, failed: Int) {
         guard !items.isEmpty else { return (0, 0, 0) }
 
-        return onQueue {
-            var written = 0
-            var skipped = 0
-            var failed = 0
+        var written = 0
+        var skipped = 0
+        var failed = 0
 
-            let walletDescriptor = FetchDescriptor<PersistentWallet>(
-                predicate: walletRecordPredicate(walletId: walletId)
+        let walletDescriptor = FetchDescriptor<PersistentWallet>(
+            predicate: walletRecordPredicate(walletId: walletId)
+        )
+        let network: Network =
+            (try? backgroundContext.fetch(walletDescriptor).first)?.network ?? .testnet
+
+        for meta in items {
+            guard let pubKeyData = Data(hexString: meta.publicKey) else {
+                failed += 1
+                continue
+            }
+            let descriptor = FetchDescriptor<PersistentPublicKey>(
+                predicate: #Predicate<PersistentPublicKey> { $0.publicKeyData == pubKeyData }
             )
-            let network: Network =
-                (try? backgroundContext.fetch(walletDescriptor).first)?.network ?? .testnet
-
-            for meta in items {
-                guard let pubKeyData = Data(hexString: meta.publicKey) else {
-                    failed += 1
-                    continue
-                }
-                let descriptor = FetchDescriptor<PersistentPublicKey>(
-                    predicate: #Predicate<PersistentPublicKey> { $0.publicKeyData == pubKeyData }
-                )
-                guard let row = try? backgroundContext.fetch(descriptor).first else {
-                    // No row yet (e.g. store rebuilt before discovery re-ran).
-                    // Discovery re-materializes and writes the column itself;
-                    // nothing for the backfill to heal here.
-                    continue
-                }
-                if row.identityDerivationPath != nil {
-                    skipped += 1
-                    continue
-                }
-                guard
-                    let expectedPath = try? KeyDerivation.getIdentityAuthenticationPath(
-                        network: network,
-                        identityIndex: meta.identityIndex,
-                        keyIndex: meta.keyIndex
-                    ),
-                    expectedPath == meta.derivationPath
-                else {
-                    print("⚠️ backfill: path self-check failed for \(meta.publicKey.prefix(8))… — left unmigrated")
-                    failed += 1
-                    continue
-                }
-                row.walletId = walletId
-                row.identityDerivationPath = meta.derivationPath
-                written += 1
+            guard let row = try? backgroundContext.fetch(descriptor).first else {
+                // No row yet (e.g. store rebuilt before discovery re-ran).
+                // Discovery re-materializes and writes the column itself;
+                // nothing for the backfill to heal here.
+                continue
             }
-
-            if written > 0 || failed > 0 {
-                try? backgroundContext.save()
-                print("ℹ️ backfill(\(walletIdHex.prefix(8))…): wrote \(written), skipped \(skipped), failed \(failed)")
+            if row.identityDerivationPath != nil {
+                skipped += 1
+                continue
             }
-            return (written, skipped, failed)
+            guard
+                let expectedPath = try? KeyDerivation.getIdentityAuthenticationPath(
+                    network: network,
+                    identityIndex: meta.identityIndex,
+                    keyIndex: meta.keyIndex
+                ),
+                expectedPath == meta.derivationPath
+            else {
+                print("⚠️ backfill: path self-check failed for \(meta.publicKey.prefix(8))… — left unmigrated")
+                failed += 1
+                continue
+            }
+            row.walletId = walletId
+            row.identityDerivationPath = meta.derivationPath
+            written += 1
         }
+
+        // Save only when a row actually changed; `failed`/`skipped` paths never
+        // mutate the context.
+        if written > 0 {
+            try? backgroundContext.save()
+        }
+        if written > 0 || failed > 0 {
+            print("ℹ️ backfill(\(walletId.toHexString().prefix(8))…): wrote \(written), skipped \(skipped), failed \(failed)")
+        }
+        return (written, skipped, failed)
     }
 
     // MARK: - Identity snapshot structs
