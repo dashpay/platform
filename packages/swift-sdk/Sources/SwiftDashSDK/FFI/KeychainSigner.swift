@@ -369,11 +369,22 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                     row.publicKeyData == publicKey
                 }
             )
-            if let row = try? context.fetch(descriptor).first,
-                row.privateKeyKeychainIdentifier != nil
-            {
-                found = true
-                return
+            if let row = try? context.fetch(descriptor).first {
+                // Stored scalar present (legacy / not-yet-backfilled key).
+                if row.privateKeyKeychainIdentifier != nil {
+                    found = true
+                    return
+                }
+                // Resolver-derivable: a breadcrumb plus a readable mnemonic are
+                // the two inputs `signIdentityKeyOnDemand` needs to derive-sign.
+                if let wid = row.walletId,
+                    let path = row.identityDerivationPath,
+                    !path.isEmpty,
+                    WalletStorage().hasMnemonic(for: wid)
+                {
+                    found = true
+                    return
+                }
             }
             // Mirror `lookupIdentityPrivateKey`'s fallback: pre-
             // registration the SwiftData row may not exist yet but
@@ -534,6 +545,10 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                             UInt(dataRaw.count),
                             ecdsaSecp256k1KeyType,
                             self.network.ffiValue,
+                            // Address keys are bound by their own DIP-17
+                            // derivation; no extra pubkey-binding needed.
+                            nil,
+                            0,
                             bufPtr.baseAddress,
                             UInt(bufPtr.count),
                             &sigLen,
@@ -558,6 +573,108 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
 
         // Copy out the leading `sigLen` bytes BEFORE the deferred
         // scrub erases them.
+        let signature = Data(sigBuf.prefix(Int(sigLen)))
+        return .success(signature)
+    }
+
+    /// SwiftData lookup: identity public-key bytes →
+    /// `(walletId, identityDerivationPath)` breadcrumb. `nil` when the row
+    /// is absent or carries no breadcrumb yet (an un-backfilled key) — the
+    /// caller then falls back to the stored scalar. Pinned to the serial
+    /// queue + a per-call `ModelContext`, like the platform-address resolver.
+    fileprivate func resolveIdentityKeyContext(
+        publicKey: Data
+    ) -> (walletId: Data, derivationPath: String)? {
+        var resolved: (walletId: Data, derivationPath: String)?
+        queue.sync {
+            let context = ModelContext(self.modelContainer)
+            let descriptor = FetchDescriptor<PersistentPublicKey>(
+                predicate: #Predicate<PersistentPublicKey> { row in
+                    row.publicKeyData == publicKey
+                }
+            )
+            guard let row = try? context.fetch(descriptor).first,
+                let wid = row.walletId,
+                let path = row.identityDerivationPath,
+                !path.isEmpty,
+                wid.count == 32
+            else {
+                return
+            }
+            resolved = (wid, path)
+        }
+        return resolved
+    }
+
+    /// One-shot derive-and-sign for an identity key (`keyType < 5`), the
+    /// derive-sign-destroy counterpart of [`signPlatformAddressOnDemand`].
+    /// Resolves the key's `(walletId, derivationPath)` breadcrumb and signs
+    /// via the resolver, passing the on-chain key bytes as the binding so the
+    /// FFI rejects (before signing) if the key derived at the path doesn't
+    /// reproduce this exact key.
+    ///
+    /// Returns `nil` when the key carries no breadcrumb yet — the trampoline
+    /// then falls back to the stored scalar so an un-backfilled key still
+    /// signs. A `.failure` means a breadcrumb was present but the resolver
+    /// couldn't sign (mnemonic missing, binding mismatch); the trampoline
+    /// logs it and still falls back to the verified stored scalar.
+    fileprivate func signIdentityKeyOnDemand(
+        publicKey: Data,
+        keyType: UInt8,
+        data: Data
+    ) -> Result<Data, Error>? {
+        guard let ctx = resolveIdentityKeyContext(publicKey: publicKey) else {
+            return nil
+        }
+
+        var sigBuf = [UInt8](repeating: 0, count: 128)
+        var sigLen: UInt = 0
+        var errTag: UInt8 = 0
+        defer {
+            sigBuf.withUnsafeMutableBufferPointer { ptr in
+                if let base = ptr.baseAddress {
+                    memset_s(UnsafeMutableRawPointer(base), ptr.count, 0, ptr.count)
+                }
+            }
+        }
+
+        let rc = ctx.walletId.withUnsafeBytes { walletBytes -> Int32 in
+            let walletPtr = walletBytes.bindMemory(to: UInt8.self).baseAddress
+            return ctx.derivationPath.withCString { pPtr -> Int32 in
+                return data.withUnsafeBytes { dataRaw -> Int32 in
+                    return publicKey.withUnsafeBytes { expRaw -> Int32 in
+                        return sigBuf.withUnsafeMutableBufferPointer { bufPtr -> Int32 in
+                            let dataBase = dataRaw.bindMemory(to: UInt8.self).baseAddress
+                            let expBase = expRaw.bindMemory(to: UInt8.self).baseAddress
+                            return dash_sdk_sign_with_mnemonic_resolver_and_path(
+                                self.mnemonicResolver.handle,
+                                walletPtr,
+                                pPtr,
+                                dataBase,
+                                UInt(dataRaw.count),
+                                keyType,
+                                self.network.ffiValue,
+                                expBase,
+                                UInt(expRaw.count),
+                                bufPtr.baseAddress,
+                                UInt(bufPtr.count),
+                                &sigLen,
+                                &errTag
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        guard rc == 0 else {
+            if errTag == SignWithMnemonicResolverError.resolverNotFound.rawValue {
+                let walletHex = ctx.walletId.map { String(format: "%02x", $0) }.joined()
+                return .failure(.mnemonicMissing(walletIdHex: walletHex))
+            }
+            return .failure(.signWithMnemonicFailed(tag: errTag))
+        }
+
         let signature = Data(sigBuf.prefix(Int(sigLen)))
         return .success(signature)
     }
@@ -697,8 +814,9 @@ private func keychainSignerSignAsyncTrampoline(
     // Dispatch on key_type. Platform-address signing (`0xFF`) is a
     // single-call derive-and-sign path — no separate key lookup,
     // because the derived bytes never come back to Swift. Identity
-    // signing (`< 5`) keeps the original two-step `lookup → ffiSign`
-    // path because the identity key really does live in the Keychain.
+    // signing (`< 5`) prefers the same derive-sign-destroy path (from
+    // the key's stored breadcrumb) and falls back to the stored scalar
+    // when a key has no breadcrumb yet.
     if keyType == KeychainSigner.platformAddressHashKeyType {
         switch signer.signPlatformAddressOnDemand(
             addressHash: pubkeyData,
@@ -711,6 +829,28 @@ private func keychainSignerSignAsyncTrampoline(
             reportSuccess(sig)
         }
         return
+    }
+
+    // Identity signing (`keyType < 5`): derive-sign-destroy via the resolver
+    // when the key carries a derivation breadcrumb; otherwise fall back to the
+    // stored scalar. The fallback keeps already-materialized keys — and any not
+    // yet backfilled — signable, so the cutover is non-lockout by construction.
+    // Every fallback is logged so the zero-fallback acceptance gate can catch
+    // un-migrated rows or resolver failures before the stored scalar is removed.
+    if let resolverResult = signer.signIdentityKeyOnDemand(
+        publicKey: pubkeyData,
+        keyType: keyType,
+        data: dataToSign
+    ) {
+        switch resolverResult {
+        case .success(let sig):
+            reportSuccess(sig)
+            return
+        case .failure(let err):
+            print("⚠️ IDENTITY_SIGN_FALLBACK resolver-failed: \(err.localizedDescription)")
+        }
+    } else {
+        print("⚠️ IDENTITY_SIGN_FALLBACK no-breadcrumb")
     }
 
     let privateKey: Data

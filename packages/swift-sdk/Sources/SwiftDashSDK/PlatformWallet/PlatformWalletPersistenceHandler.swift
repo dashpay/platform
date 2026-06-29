@@ -1644,6 +1644,19 @@ public class PlatformWalletPersistenceHandler {
                 }
             }
 
+            // Persist the derivation breadcrumb so the signer can derive this
+            // key on demand from the Keychain seed (derive-sign-destroy),
+            // independent of whether a scalar was carried this callback. Always
+            // overwrite when the key is wallet-derivable so a backfilled value
+            // and a freshly-persisted one stay byte-identical.
+            if let indices = entry.derivationIndices {
+                let resolvedWalletId = entry.walletId ?? walletId
+                row.walletId = resolvedWalletId
+                if let path = identityAuthPath(walletId: resolvedWalletId, indices: indices) {
+                    row.identityDerivationPath = path
+                }
+            }
+
             row.lastAccessed = Date()
         }
 
@@ -2341,6 +2354,30 @@ public class PlatformWalletPersistenceHandler {
             print("⚠️ storeCarriedIdentityKey: keychain write failed for \(derivationPath)")
         }
         return account
+    }
+
+    /// Resolve the wallet's network and format the DIP-9 identity-auth path
+    /// for `(identityIndex, keyIndex)`. Pure string formatting (the FFI
+    /// formatter takes only network + indices, no mnemonic — not key
+    /// derivation). `nil` if the wallet row is missing or the path build
+    /// fails. Scoped to THIS handler's network via `walletRecordPredicate`,
+    /// since the same `walletId` can have a row per network.
+    private func identityAuthPath(
+        walletId: Data,
+        indices: (identityIndex: UInt32, keyIndex: UInt32)
+    ) -> String? {
+        let walletDescriptor = FetchDescriptor<PersistentWallet>(
+            predicate: walletRecordPredicate(walletId: walletId)
+        )
+        guard let persistentWallet = try? backgroundContext.fetch(walletDescriptor).first else {
+            return nil
+        }
+        let network: Network = persistentWallet.network ?? .testnet
+        return try? KeyDerivation.getIdentityAuthenticationPath(
+            network: network,
+            identityIndex: indices.identityIndex,
+            keyIndex: indices.keyIndex
+        )
     }
 
     // MARK: - Identity snapshot structs
