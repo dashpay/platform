@@ -17,6 +17,7 @@ use crate::wallet::platform_wallet::WalletId;
 ///
 /// [`MnemonicResolverHandle`]: rs_sdk_ffi::MnemonicResolverHandle
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum SkipReason {
     /// The persisted row could not be reconstructed: a structural decode
     /// failure on the keyless account manifest or core-state projection.
@@ -35,6 +36,7 @@ pub enum SkipReason {
 /// row-derived bytes. Apps drive their UI from the *family*, not from
 /// the inner message.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CorruptKind {
     /// The wallet row exists but has no usable `AccountRegistrationEntry`
     /// manifest to rebuild the account collection from.
@@ -68,6 +70,7 @@ impl std::fmt::Display for CorruptKind {
 /// (persister I/O, programmer error). The load path is watch-only and
 /// never touches the seed, so no wrong-seed outcome appears here.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct LoadOutcome {
     /// Wallets fully reconstructed and registered, in load order.
     pub loaded: Vec<WalletId>,

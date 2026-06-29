@@ -215,7 +215,13 @@ fn skip_reason_code(reason: &platform_wallet::SkipReason) -> u32 {
             CorruptKind::MissingManifest => 100,
             CorruptKind::MalformedXpub => 101,
             CorruptKind::DecodeError(_) => 102,
+            // `CorruptKind` is #[non_exhaustive]; a future variant maps to a
+            // generic corrupt-row code until this mapping is extended.
+            _ => 199,
         },
+        // `SkipReason` is #[non_exhaustive]; a future reason maps to a
+        // generic skip code until this mapping is extended.
+        _ => 200,
     }
 }
 

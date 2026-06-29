@@ -28,6 +28,7 @@ use crate::wallet::platform_wallet::WalletId;
 /// platform-specific notifications the app may react to (toast,
 /// telemetry) without threading return values through every call site.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PlatformEvent {
     /// A persisted wallet was skipped during
     /// [`load_from_persistor`](crate::PlatformWalletManager::load_from_persistor)
