@@ -141,14 +141,6 @@ pub struct ShieldedSyncManager {
     coordinator_slot: Arc<RwLock<Option<Arc<NetworkShieldedCoordinator>>>>,
     /// Cancel token for the background loop, if running.
     background_cancel: StdMutex<Option<CancellationToken>>,
-    /// Monotonically increasing generation counter. Bumped on every
-    /// `start()` so the exiting thread can tell whether its
-    /// generation is still the active one before clearing
-    /// `background_cancel`. Without this, a `stop()` → `start()`
-    /// overlap lets the prior thread's cleanup strip the new
-    /// generation's token, leaving the new loop running but
-    /// untrackable via `is_running()`.
-    background_generation: AtomicU64,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
     /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
@@ -171,7 +163,6 @@ impl ShieldedSyncManager {
             event_manager,
             coordinator_slot,
             background_cancel: StdMutex::new(None),
-            background_generation: AtomicU64::new(0),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
             quiescing: AtomicBool::new(false),
@@ -228,10 +219,6 @@ impl ShieldedSyncManager {
         }
         let cancel = CancellationToken::new();
         *guard = Some(cancel.clone());
-        // Bump the generation while we still hold the slot lock so
-        // the load below in any prior thread's cleanup observes
-        // `current_gen != my_gen` ordered against this token swap.
-        let my_gen = self.background_generation.fetch_add(1, Ordering::AcqRel) + 1;
         drop(guard);
 
         let handle = tokio::runtime::Handle::current();
@@ -261,16 +248,8 @@ impl ShieldedSyncManager {
                         }
                     }
 
-                    // Only clear `background_cancel` if the active
-                    // generation is still ours. Without this guard a
-                    // tight `stop()` → `start()` reschedule has the
-                    // exiting thread overwrite the *new* generation's
-                    // token, leaving the new loop running but
-                    // unreflectable via `is_running()` / `stop()`.
-                    if this.background_generation.load(Ordering::Acquire) == my_gen {
-                        if let Ok(mut guard) = this.background_cancel.lock() {
-                            *guard = None;
-                        }
+                    if let Ok(mut guard) = this.background_cancel.lock() {
+                        *guard = None;
                     }
                 });
             })

@@ -4,11 +4,72 @@ use dpp::identifier::Identifier;
 use key_wallet::account::StandardAccountType;
 use key_wallet::Network;
 
+use crate::manager::load_outcome::CorruptKind;
+
+/// Per-row failure surfacing during watch-only rehydration of a single
+/// persisted wallet. Maps 1:1 to [`CorruptKind`] for the
+/// [`SkipReason`](crate::manager::load_outcome::SkipReason) the load loop
+/// records.
+#[derive(Debug)]
+pub(crate) enum RehydrateRowError {
+    /// Manifest was empty — no account to rebuild the wallet around.
+    MissingManifest,
+    /// Building a watch-only [`Account`](key_wallet::account::Account) from a
+    /// manifest entry failed (xpub structurally malformed for its
+    /// [`AccountType`](key_wallet::account::AccountType)).
+    MalformedXpub,
+    /// `AccountCollection::insert` rejected an account (typically a
+    /// duplicate `account_type` within the manifest).
+    DecodeError(String),
+}
+
+impl From<RehydrateRowError> for CorruptKind {
+    fn from(e: RehydrateRowError) -> Self {
+        match e {
+            RehydrateRowError::MissingManifest => CorruptKind::MissingManifest,
+            RehydrateRowError::MalformedXpub => CorruptKind::MalformedXpub,
+            RehydrateRowError::DecodeError(s) => CorruptKind::DecodeError(s),
+        }
+    }
+}
+
 /// Errors that can occur in platform wallet operations
 #[derive(Debug, thiserror::Error)]
 pub enum PlatformWalletError {
     #[error("Wallet creation failed: {0}")]
     WalletCreation(String),
+
+    /// The persisted wallet has UTXOs to restore but no funds-bearing
+    /// account in its reconstructed account collection to hold them.
+    /// Fail-closed rather than reconstructing a silent zero balance —
+    /// the no-silent-zero mandate. Carries only the (public) wallet id
+    /// and the dropped-UTXO count, never key material.
+    #[error(
+        "rehydration topology unsupported for wallet {}: {utxo_count} persisted UTXO(s) but no funds-bearing account",
+        hex::encode(wallet_id)
+    )]
+    RehydrationTopologyUnsupported {
+        /// The wallet whose topology could not hold the persisted UTXOs.
+        wallet_id: [u8; 32],
+        /// How many persisted UTXOs would have been silently dropped.
+        utxo_count: usize,
+    },
+
+    /// The deep-index discovery probes did not mirror the account's real
+    /// address pools 1:1 during rehydration, so applying probe depths by
+    /// position would index the wrong pool. Fail-closed instead of risking
+    /// a misattributed derivation — the probes are built directly from the
+    /// same `address_pools()` enumeration, so a mismatch is a structural
+    /// invariant break, not user-reachable.
+    #[error(
+        "rehydration pool/probe mismatch: expected {expected} address pool(s) to mirror the discovery probes, found {found}"
+    )]
+    RehydrationPoolMismatch {
+        /// Number of discovery probes built from `address_pools()`.
+        expected: usize,
+        /// Number of real address pools from `address_pools_mut()`.
+        found: usize,
+    },
 
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),

@@ -3,8 +3,11 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
 use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
+use crate::manager::load_outcome::{LoadOutcome, SkipReason};
 use crate::wallet::core::WalletBalance;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -13,23 +16,42 @@ use crate::wallet::PlatformWallet;
 use super::PlatformWalletManager;
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
-    /// Load the full [`ClientStartState`] from the configured persister
-    /// and rehydrate the manager's `wallet_manager` and `wallets` maps.
+    /// Restore every persisted wallet as a **watch-only** entry — no
+    /// signing key material is derived here. The persister hands back a
+    /// keyless reconstruction snapshot; each wallet is rebuilt via
+    /// [`Wallet::new_watch_only`](key_wallet::wallet::Wallet::new_watch_only)
+    /// from its [`AccountRegistrationEntry`](crate::changeset::AccountRegistrationEntry)
+    /// manifest, the keyless core-state projection is applied, and the
+    /// result is registered into the manager.
     ///
-    /// For each persisted wallet this builds a `PlatformWalletInfo` from
-    /// the snapshot (core wallet info, identity manager, tracked asset
-    /// locks) and inserts the `(Wallet, PlatformWalletInfo)` pair into
-    /// the inner [`WalletManager`]. A matching [`PlatformWallet`] handle
-    /// is then constructed and registered in `self.wallets`.
+    /// The load path never touches the seed, so it performs no wrong-seed
+    /// check. Signing happens later, on demand, via the configured
+    /// [`MnemonicResolverHandle`].
     ///
-    /// If the snapshot includes platform-address provider state, each
-    /// per-wallet slice is handed to
-    /// [`PlatformAddressWallet::initialize_from_persisted`](crate::wallet::platform_addresses::PlatformAddressWallet::initialize_from_persisted);
-    /// wallets missing from that slice get a fresh
-    /// [`PlatformAddressWallet::initialize`](crate::wallet::platform_addresses::PlatformAddressWallet::initialize).
+    /// # Skip vs hard-fail
     ///
-    /// [`WalletManager`]: key_wallet_manager::WalletManager
-    pub async fn load_from_persistor(&self) -> Result<(), PlatformWalletError> {
+    /// - **Per-row decode/projection failure** (empty manifest, malformed
+    ///   xpub, duplicate `account_type`, …): the wallet is **skipped** —
+    ///   never inserted into `wallet_manager` / `self.wallets`, recorded
+    ///   in [`LoadOutcome::skipped`] with a structural
+    ///   [`SkipReason::CorruptPersistedRow`], and a
+    ///   [`PlatformEvent::WalletSkippedOnLoad`] is emitted. One bad row
+    ///   never aborts the others; the call still returns `Ok`.
+    /// - **Whole-load failure** (persister I/O, programmer error, the
+    ///   no-silent-zero topology check in
+    ///   [`apply_persisted_core_state`](super::rehydrate::apply_persisted_core_state)):
+    ///   `Err(_)` — every wallet inserted earlier in this pass is
+    ///   rolled back. Skipped wallets never entered the maps so the
+    ///   rollback path never sees them.
+    ///
+    /// Platform-address provider state is restored per wallet via
+    /// [`initialize_from_persisted`](crate::wallet::platform_addresses::PlatformAddressWallet::initialize_from_persisted),
+    /// or a fresh
+    /// [`initialize`](crate::wallet::platform_addresses::PlatformAddressWallet::initialize)
+    /// when the snapshot carries no slice for it.
+    ///
+    /// [`MnemonicResolverHandle`]: rs_sdk_ffi::MnemonicResolverHandle
+    pub async fn load_from_persistor(&self) -> Result<LoadOutcome, PlatformWalletError> {
         let ClientStartState {
             mut platform_addresses,
             wallets,
@@ -46,47 +68,70 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         let persister_dyn: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
 
-        // Track every wallet successfully inserted into
-        // `wallet_manager` and `self.wallets` during this call so the
-        // batch is transactional: if any later iteration fails (id
-        // mismatch, `initialize_from_persisted` error), we walk back
-        // every prior insert before bailing. Without this, a clean
-        // retry would collide on `WalletManager::insert_wallet`
-        // returning `WalletAlreadyExists` for every previously-loaded
-        // wallet — half-poisoning the manager until the process
-        // restarts. The orphan state is observable across the FFI
-        // boundary with no Swift-side reset path, so transactional
-        // semantics matter for this hydration API.
+        // Transactional batch: every wallet inserted into
+        // `wallet_manager` / `self.wallets` is tracked so a later hard
+        // error walks back every prior insert. Skipped wallets never
+        // enter either map, so the rollback path never sees them.
         let mut inserted_in_manager: Vec<WalletId> = Vec::new();
         let mut inserted_in_wallets: Vec<WalletId> = Vec::new();
         let mut load_error: Option<PlatformWalletError> = None;
+        let mut outcome = LoadOutcome::default();
 
         'load: for (expected_wallet_id, wallet_state) in wallets {
             let ClientWalletStartState {
-                wallet,
-                wallet_info,
+                network,
+                birth_height,
+                account_manifest,
+                core_state,
                 identity_manager,
                 unused_asset_locks,
+                contacts,
+                identity_keys,
             } = wallet_state;
 
-            // Flatten the (account → outpoint → lock) map into the flat
-            // OutPoint → TrackedAssetLock map that `PlatformWalletInfo`
-            // holds today.
+            // Build the watch-only wallet from the keyless manifest. A
+            // structural decode failure skips this row (per-row
+            // resilience) — it never aborts the batch and never inserts
+            // a degraded placeholder.
+            let wallet = match super::rehydrate::build_watch_only_wallet(
+                network,
+                expected_wallet_id,
+                &account_manifest,
+            ) {
+                Ok(w) => w,
+                Err(row_err) => {
+                    let reason = SkipReason::CorruptPersistedRow {
+                        kind: row_err.into(),
+                    };
+                    outcome.skipped.push((expected_wallet_id, reason.clone()));
+                    self.event_manager
+                        .on_wallet_skipped_on_load(expected_wallet_id, &reason);
+                    continue 'load;
+                }
+            };
+
+            // Mint the managed-info skeleton from the watch-only wallet,
+            // then apply the keyless persisted core state (UTXOs, sync
+            // watermarks, per-account balances). A wallet with persisted
+            // UTXOs but no funds account hard-fails here rather than
+            // reconstructing a silent zero balance.
+            let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
+            if let Err(e) = super::rehydrate::apply_persisted_core_state(
+                &mut wallet_info,
+                &account_manifest,
+                &core_state,
+            ) {
+                load_error = Some(e);
+                break 'load;
+            }
+
+            // Flatten the (account → outpoint → lock) map.
             let mut tracked_asset_locks = BTreeMap::new();
             for (_account_index, account_locks) in unused_asset_locks {
                 tracked_asset_locks.extend(account_locks);
             }
 
             let balance = Arc::new(WalletBalance::new());
-            // Mirror the inner `ManagedWalletInfo.balance` (already
-            // recomputed from the freshly-loaded UTXO set on the FFI
-            // side via `update_balance`) into the lock-free `Arc` the
-            // UI reads. Without this, `wallet.balance()` reports zero
-            // for restored wallets even though the per-account totals
-            // and the inner `core_wallet.balance` are correct.
-            // `WalletBalance::set` is `pub(crate)`, which is why this
-            // step has to live inside `platform_wallet` rather than
-            // the FFI loader.
             let core_balance = &wallet_info.balance;
             balance.set(
                 core_balance.confirmed(),
@@ -94,17 +139,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 core_balance.immature(),
                 core_balance.locked(),
             );
+            // Build the identity manager from the (id, balance,
+            // revision) skeleton, then layer the persisted PUBLIC
+            // contacts + identity keys onto it — the same routing the
+            // runtime changeset-replay path uses.
+            let mut identity_manager = IdentityManager::from(identity_manager);
+            identity_manager.apply_contacts_and_keys(contacts, identity_keys, network);
             let platform_info = PlatformWalletInfo {
                 core_wallet: wallet_info,
                 balance: Arc::clone(&balance),
-                identity_manager: IdentityManager::from(identity_manager),
+                identity_manager,
                 tracked_asset_locks,
             };
 
-            // Insert into `wallet_manager` first so we have a wallet
-            // handle to validate against. Track success in
-            // `inserted_in_manager` so the batch-rollback at the
-            // bottom can unwind on any later-iteration failure.
             let wallet_id = {
                 let mut wm = self.wallet_manager.write().await;
                 match wm.insert_wallet(wallet, platform_info) {
@@ -120,15 +167,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             };
             inserted_in_manager.push(wallet_id);
 
-            if wallet_id != expected_wallet_id {
-                load_error = Some(PlatformWalletError::WalletCreation(format!(
-                    "Persisted wallet id {} does not match recomputed id {}",
-                    hex::encode(expected_wallet_id),
-                    hex::encode(wallet_id)
-                )));
-                break 'load;
-            }
-
             let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(
                 &self.spv_manager,
             )));
@@ -142,10 +180,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 broadcaster,
             );
 
-            // Initialize the platform-address provider. If the snapshot
-            // carried a slice for this wallet, restore it directly;
-            // otherwise do a fresh scan from the live wallet manager.
-            // Failures break to the rollback path below.
             if let Some(persisted) = platform_addresses.remove(&wallet_id) {
                 if let Err(e) = platform_wallet
                     .platform()
@@ -167,13 +201,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             wallets_guard.insert(wallet_id, platform_wallet);
             drop(wallets_guard);
             inserted_in_wallets.push(wallet_id);
+            outcome.loaded.push(wallet_id);
         }
 
         if let Some(err) = load_error {
-            // Walk back every wallet committed in this call so the
-            // manager state matches what it was before. Order:
-            // remove from `self.wallets` first (UI surface), then
-            // from the inner `wallet_manager`.
             if !inserted_in_wallets.is_empty() {
                 let mut wallets_guard = self.wallets.write().await;
                 for id in &inserted_in_wallets {
@@ -189,6 +220,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             return Err(err);
         }
 
-        Ok(())
+        Ok(outcome)
     }
 }
