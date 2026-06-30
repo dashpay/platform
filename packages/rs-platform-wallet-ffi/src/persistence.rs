@@ -1568,7 +1568,7 @@ impl PlatformWalletPersistence for FFIPersister {
                     out.skipped.push((
                         entry.wallet_id,
                         SkipReason::CorruptPersistedRow {
-                            kind: CorruptKind::DecodeError(e.to_string()),
+                            kind: corrupt_kind_from_build_err(&e),
                         },
                     ));
                 }
@@ -2784,6 +2784,24 @@ impl Drop for LoadGuard {
 /// the configured signer surface (see
 /// `Wallet::new_external_signable`). Earlier revisions of this code
 /// path produced a `WatchOnly` wallet — that has been replaced.
+/// Error-message prefix emitted when an account xpub fails to decode.
+/// Shared by the producer and [`corrupt_kind_from_build_err`] so the
+/// `MalformedXpub` classification can't silently drift from the text.
+const MALFORMED_XPUB_ERR_PREFIX: &str = "failed to decode account xpub";
+
+/// Classify a [`build_wallet_start_state`] failure for the FFI
+/// `reason_code`: a malformed xpub maps to [`CorruptKind::MalformedXpub`]
+/// (101), anything else to [`CorruptKind::DecodeError`] (102).
+/// String-matched because `PersistenceError` carries no typed discriminator.
+fn corrupt_kind_from_build_err(e: &PersistenceError) -> CorruptKind {
+    let msg = e.to_string();
+    if msg.contains(MALFORMED_XPUB_ERR_PREFIX) {
+        CorruptKind::MalformedXpub
+    } else {
+        CorruptKind::DecodeError(msg)
+    }
+}
+
 fn build_wallet_start_state(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<
@@ -2835,7 +2853,7 @@ fn build_wallet_start_state(
             unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
         let (account_xpub, _): (ExtendedPubKey, usize) =
             bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                PersistenceError::backend(format!("failed to decode account xpub: {}", e))
+                PersistenceError::backend(format!("{MALFORMED_XPUB_ERR_PREFIX}: {e}"))
             })?;
         let account =
             Account::from_xpub(Some(entry.wallet_id), account_type, account_xpub, network)
@@ -4138,6 +4156,30 @@ mod tests {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::mnemonic::{Language, Mnemonic};
     use key_wallet::wallet::Wallet;
+
+    /// A malformed-xpub failure must surface as `MalformedXpub` (FFI
+    /// `reason_code` 101), distinct from the generic `DecodeError` (102),
+    /// so the host can special-case unrecoverable key-material corruption.
+    #[test]
+    fn malformed_xpub_error_maps_to_dedicated_corrupt_kind() {
+        let xpub_err =
+            PersistenceError::backend(format!("{MALFORMED_XPUB_ERR_PREFIX}: invalid checksum"));
+        assert_eq!(
+            corrupt_kind_from_build_err(&xpub_err),
+            CorruptKind::MalformedXpub,
+            "an xpub-decode failure must surface as MalformedXpub (code 101)"
+        );
+
+        // Any unrelated structural failure keeps the generic family.
+        let other_err = PersistenceError::backend("Account::from_xpub failed: bad network");
+        assert!(
+            matches!(
+                corrupt_kind_from_build_err(&other_err),
+                CorruptKind::DecodeError(_)
+            ),
+            "non-xpub failures must stay DecodeError (code 102)"
+        );
+    }
 
     /// Regression: restored pool addresses must be tagged with the
     /// WALLET's network, not the network the base58 string parses as.
