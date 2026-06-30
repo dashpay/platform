@@ -361,6 +361,19 @@ pub fn parse_dashpay_contact_uri(uri: &str) -> Result<(String, Vec<u8>), Platfor
 
     let username = username.ok_or_else(|| invalid("contact URI missing du (username)"))?;
     let dapk = dapk.ok_or_else(|| invalid("contact URI missing dapk (key)"))?;
+    // Bound the base58 work an unauthenticated QR / deep link can force. A
+    // valid `KEY_BLOB_LEN`-byte DIP-15 blob base58-encodes to ~52 chars, and
+    // `decode_auto_accept_key_blob` rejects wrong-length blobs anyway — but
+    // only after `bs58::decode` allocates ~0.73 × len bytes. Cap the input so
+    // a hostile multi-megabyte `dapk` value can't force a large allocation
+    // per scan/paste before any structural validation runs.
+    const MAX_DAPK_BASE58_LEN: usize = 128;
+    if dapk.len() > MAX_DAPK_BASE58_LEN {
+        return Err(invalid(format!(
+            "dapk too long ({} chars; max {MAX_DAPK_BASE58_LEN})",
+            dapk.len()
+        )));
+    }
     let key_blob = bs58::decode(&dapk)
         .into_vec()
         .map_err(|e| invalid(format!("dapk is not valid base58: {e}")))?;
@@ -632,6 +645,29 @@ mod tests {
         assert!(
             parse_dashpay_contact_uri("dash:?du=x&dapk=0OIl").is_err(),
             "bad b58"
+        );
+    }
+
+    #[test]
+    fn parse_contact_uri_caps_oversized_dapk_before_decoding() {
+        // A hostile QR / deep link with a huge base58 `dapk` must be rejected
+        // up front rather than base58-decoded into a large allocation. A valid
+        // blob encodes to ~52 chars; this is far over the 128-char cap.
+        let huge = "z".repeat(5000);
+        let uri = format!("dash:?du=alice&dapk={huge}");
+        let err = parse_dashpay_contact_uri(&uri).expect_err("oversized dapk must be rejected");
+        assert!(
+            err.to_string().contains("too long"),
+            "expected a length-cap rejection, got: {err}"
+        );
+
+        // The cap must not reject a normal-length (valid) dapk.
+        let key = SecretKey::from_slice(&[0x09u8; 32]).unwrap();
+        let blob = encode_auto_accept_key_blob(&key, 1);
+        let uri = encode_dashpay_contact_uri("alice", &blob);
+        assert!(
+            parse_dashpay_contact_uri(&uri).is_ok(),
+            "a valid-length dapk must still parse"
         );
     }
 
