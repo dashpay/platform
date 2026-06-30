@@ -28,6 +28,15 @@ use crate::sqlite::error::WalletStorageError;
 /// ungated columns.
 pub(crate) const SQLITE_MAX_BLOB_BYTES: i32 = (crate::SIZE_LIMIT_BYTES * 2) as i32;
 
+// Compile-time guard: the `as i32` cast above is lossless only while
+// SIZE_LIMIT_BYTES ≤ i32::MAX / 2 (~1 GiB). Widening SIZE_LIMIT_BYTES
+// beyond that would silently truncate the limit, turning the backstop into
+// a no-op. This assertion makes such a change a compile error instead.
+const _: () = assert!(
+    crate::SIZE_LIMIT_BYTES <= (i32::MAX as usize) / 2,
+    "SQLITE_MAX_BLOB_BYTES would overflow i32 — lower SIZE_LIMIT_BYTES or widen the limit type",
+);
+
 /// Magic stamped into the SQLite header `application_id` (offset 68) by
 /// `V001__initial`. ASCII `"PLWT"` (Platform Wallet) big-endian. A
 /// refinery-versioned DB whose `application_id` does not equal this is a
