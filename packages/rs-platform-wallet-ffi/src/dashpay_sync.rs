@@ -71,6 +71,9 @@ pub unsafe extern "C" fn platform_wallet_manager_dashpay_sync_is_running(
     out_running: *mut bool,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_running);
+    // Define the out-slot before the stale-handle early return below can fire,
+    // so the caller never reads uninitialized stack contents.
+    *out_running = false;
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE
         .with_item(handle, |manager| manager.dashpay_sync().is_running());
@@ -86,6 +89,7 @@ pub unsafe extern "C" fn platform_wallet_manager_dashpay_sync_is_syncing(
     out_syncing: *mut bool,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_syncing);
+    *out_syncing = false;
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE
         .with_item(handle, |manager| manager.dashpay_sync().is_syncing());
@@ -106,6 +110,7 @@ pub unsafe extern "C" fn platform_wallet_manager_dashpay_sync_last_sync_unix_sec
     out_last_sync_unix: *mut u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_last_sync_unix);
+    *out_last_sync_unix = 0;
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         manager.dashpay_sync().last_sync_unix_seconds()
