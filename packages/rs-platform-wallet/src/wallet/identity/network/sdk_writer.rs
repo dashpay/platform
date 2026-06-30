@@ -284,11 +284,7 @@ impl DashPaySdkWriter for SdkWriter {
                 Ok::<Vec<u8>, dash_sdk::Error>(xpub_bytes_clone)
             })
             .await
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to send contact request: {e}"
-                ))
-            })
+            .map_err(PlatformWalletError::Sdk)
     }
 
     async fn put_document(
