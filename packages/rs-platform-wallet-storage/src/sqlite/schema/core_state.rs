@@ -63,9 +63,12 @@ fn decode_chain_lock_soft(bytes: &[u8]) -> Option<ChainLock> {
 /// can't be decoded. Used to monotonic-max-merge the chain lock so an
 /// out-of-order lower-height update never regresses the finalized checkpoint.
 fn chain_lock_height(bytes: &[u8]) -> Option<u32> {
-    bincode::decode_from_slice::<ChainLock, _>(bytes, chain_lock_config())
-        .ok()
-        .map(|(cl, _)| cl.block_height)
+    match bincode::decode_from_slice::<ChainLock, _>(bytes, chain_lock_config()) {
+        // Require full consumption (like `decode_chain_lock_soft`) so a corrupt
+        // stored blob can't out-rank a later valid update and stay stuck.
+        Ok((cl, consumed)) if consumed == bytes.len() => Some(cl.block_height),
+        _ => None,
+    }
 }
 
 /// Apply a `CoreChangeSet` inside a transaction.
@@ -526,4 +529,31 @@ pub fn list_unspent_utxos(
         by_account.entry(account_index).or_default().push(row);
     }
     Ok(by_account)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dashcore::hashes::Hash;
+    use dashcore::BlockHash;
+
+    fn sample_chain_lock(height: u32) -> ChainLock {
+        ChainLock {
+            block_height: height,
+            block_hash: BlockHash::from_byte_array([0x11u8; 32]),
+            signature: [0x22u8; 96].into(),
+        }
+    }
+
+    #[test]
+    fn chain_lock_height_rejects_trailing_bytes() {
+        let bytes = encode_chain_lock(&sample_chain_lock(100_000)).expect("encode");
+        assert_eq!(chain_lock_height(&bytes), Some(100_000));
+
+        // A corrupt blob (valid prefix + trailing garbage) must not yield a
+        // height, else it stays stuck atop later valid lower-height updates.
+        let mut corrupt = bytes.clone();
+        corrupt.extend_from_slice(&[0xFFu8; 4]);
+        assert_eq!(chain_lock_height(&corrupt), None);
+    }
 }
