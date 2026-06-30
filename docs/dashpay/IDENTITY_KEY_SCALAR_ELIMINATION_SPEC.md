@@ -461,11 +461,33 @@ rev-2 design above, plus what is explicitly **not** done:
   MF-2 binding as the real guard** — a present-but-wrong path yields
   `ERR_PUBKEY_MISMATCH` at sign time → a logged `IDENTITY_SIGN_FALLBACK`, never a
   wrong-key signature. A non-zero backfill failure count is still surfaced.
-- **NOT done — Phase 2 step 6 (the irreversible deletion) and the funded-testnet
-  zero-fallback acceptance gate.** The carried scalar (`IdentityKeyEntry.private_key`
-  / `KeyWithBreadcrumb.verified_scalar`) and the legacy stored-scalar signer path
-  are **retained** as the safety net, so the shipped change is reversible and
-  non-lockout. The deletion remains gated on a real zero-`IDENTITY_SIGN_FALLBACK`
-  run over an existing store (sim/idb tooling blocked the automated UAT) and on
-  explicit sign-off. The `DashModelContainer` migration-stamp (MF-3) is therefore
-  also deferred — it only matters once the legacy path is removed.
+- **Phase 2 step 6 — the carried scalar IS deleted; the legacy fallback signer is
+  KEPT (partial by design).** `KeyWithBreadcrumb.verified_scalar`,
+  `IdentityKeyEntry.private_key`, and `IdentityKeyEntryFFI.{private_key,
+  private_key_is_some}` are removed (FFI layout guard recomputed `224` → `184`; the
+  `from_entry` copy + free-scrub gone). Discovery now derives-verifies-**drops** the
+  candidate scalar instead of emitting it — verification is still
+  `validate_private_key_bytes`, the scalar just never leaves discovery. The legacy
+  Keychain-scalar signer (`lookupIdentityPrivateKey` / `ffiSign`) is **retained** so
+  keys already materialized on existing installs still sign: the §5 lockout defense
+  is preserved *without* removing the legacy path. New keys are resolver-only.
+  Merged into `feat/dashpay-m1-sync-correctness` (`fb11783706`; commits `930c100c64`
+  deletion + `fa1098c081` test).
+- **The funded-testnet zero-`IDENTITY_SIGN_FALLBACK` gate (§4 step 5 / §7) was
+  un-runnable and was substituted.** idb cannot actuate this app's SwiftUI
+  confirmation controls (the toolbar Create/Cancel, the backup-seed "I wrote it
+  down" switch), and the macOS-click fallback needs Accessibility / Automation /
+  Screen-Recording TCC the tmux-hosted shell lacks — so the automated UAT could not
+  even create a wallet. With explicit sign-off ("delete the field if it passes"),
+  the gate was replaced by a HEADLESS Swift integration test
+  (`IdentityResolverSignIntegrationTests`): it seeds a real mnemonic in
+  `WalletStorage` + a consistent breadcrumb row and asserts `signIdentityKeyOnDemand`
+  → resolver → on-demand derive → MF-2 binding → valid 65-byte signature (plus a
+  wrong-path → `.failure`). It stays green *after* the deletion — proof the resolver
+  path signs through the Swift layer with no stored scalar. Verified end to end:
+  platform-wallet 314 + FFI (125/26/9) tests, Swift IdentityResolverSign 2/2 +
+  IdentityKeyBreadcrumb 4/4 + 30 Identity tests, clippy clean, SwiftExampleApp sim
+  BUILD SUCCEEDED. Because the legacy fallback was retained, the `DashModelContainer`
+  migration-stamp (MF-3) stays deferred (it only matters once the fallback is
+  removed). Still unproven: a live on-device discover→materialize→sign over an
+  existing store.
