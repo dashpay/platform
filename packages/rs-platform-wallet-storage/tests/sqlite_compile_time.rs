@@ -59,7 +59,13 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "accounts.rs",
         "SELECT wallet_id, account_index, length(account_xpub_bytes), account_xpub_bytes",
     ),
+    // list_unspent_utxos (test-helper reader, ungated — global SQLITE_LIMIT_LENGTH covers it).
     ("core_state.rs", "SELECT outpoint, value, script, height"),
+    // load_state unspent-UTXO reader: pre-read length() gates on outpoint and script.
+    (
+        "core_state.rs",
+        "SELECT length(outpoint), outpoint, value, length(script), script, height",
+    ),
     ("core_state.rs", "SELECT DISTINCT script FROM core_utxos"),
     // Full-rehydration readers — one-shot SELECTs in `load_state`.
     (

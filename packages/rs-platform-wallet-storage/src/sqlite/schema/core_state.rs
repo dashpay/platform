@@ -296,20 +296,25 @@ pub fn load_state(
     let mut cs = CoreChangeSet::default();
 
     // Unspent UTXOs → new_utxos (the balance source).
+    // Pre-read `length()` gates on `outpoint` and `script` before materializing
+    // the Vec so tampered oversize values are caught before heap allocation.
+    // Uses `prepare + query + while let` (not `query_map`) so the typed
+    // `BlobTooLarge` error can be returned from the loop body directly.
     {
         let mut stmt = conn.prepare(
-            "SELECT outpoint, value, script, height FROM core_utxos \
-             WHERE wallet_id = ?1 AND spent = 0",
+            "SELECT length(outpoint), outpoint, value, length(script), script, height \
+             FROM core_utxos WHERE wallet_id = ?1 AND spent = 0",
         )?;
-        let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
-            let op: Vec<u8> = row.get(0)?;
-            let value: i64 = row.get(1)?;
-            let script: Vec<u8> = row.get(2)?;
-            let height: Option<i64> = row.get(3)?;
-            Ok((op, value, script, height))
-        })?;
-        for r in rows {
-            let (op_bytes, value, script_bytes, height) = r?;
+        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        while let Some(row) = rows.next()? {
+            // col 0: length(outpoint) — gate before materializing
+            blob::check_size(row.get::<_, i64>(0)?)?;
+            let op_bytes: Vec<u8> = row.get(1)?;
+            let value: i64 = row.get(2)?;
+            // col 3: length(script) — gate before materializing
+            blob::check_size(row.get::<_, i64>(3)?)?;
+            let script_bytes: Vec<u8> = row.get(4)?;
+            let height: Option<i64> = row.get(5)?;
             let outpoint = blob::decode_outpoint(&op_bytes)?;
             let value = crate::sqlite::util::safe_cast::i64_to_u64("core_utxos.value", value)?;
             let height_u32 = match height {

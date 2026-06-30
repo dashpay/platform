@@ -46,6 +46,7 @@ rusqlite = { version = "0.38", features = [
     "backup",
     "blob",
     "hooks",
+    "limits",
     "trace",
 ], optional = true }
 refinery = { version = "0.9", default-features = false, features = [

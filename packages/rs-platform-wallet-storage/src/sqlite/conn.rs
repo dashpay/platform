@@ -7,10 +7,26 @@
 //! `peek_schema_version` probe opens directly (no mutations, and
 //! `open_conn` is `pub(crate)`, unreachable from the bin target).
 
+use rusqlite::limits::Limit;
 use rusqlite::{Connection, OpenFlags};
 use std::path::Path;
 
 use crate::sqlite::error::WalletStorageError;
+
+/// Global per-connection BLOB / string length ceiling applied to every
+/// connection opened by this crate via [`open_conn`].
+///
+/// Value: **2 × [`crate::SIZE_LIMIT_BYTES`]** (= 32 MiB), giving one stop
+/// of headroom above the typed per-column cap so that per-column gates (which
+/// fire at 16 MiB via [`check_size`](crate::sqlite::schema::blob::check_size))
+/// still take precedence on explicitly gated columns while this backstop caps
+/// ALL other columns — `script`, `outpoint`, `wallet_id`, `txid`,
+/// `identity_id`, etc. — that carry no individual `length()` pre-read gate.
+/// SQLite's compile-time default is ~1 GiB per string/BLOB/row; this reduces
+/// it to 32 MiB for every connection opened by this crate, blocking a
+/// tampered wallet DB from forcing multi-hundred-MiB heap allocations on
+/// ungated columns.
+pub(crate) const SQLITE_MAX_BLOB_BYTES: i32 = (crate::SIZE_LIMIT_BYTES * 2) as i32;
 
 /// Magic stamped into the SQLite header `application_id` (offset 68) by
 /// `V001__initial`. ASCII `"PLWT"` (Platform Wallet) big-endian. A
@@ -60,6 +76,12 @@ pub(crate) fn open_conn(path: &Path, access: Access) -> Result<Connection, Walle
         Access::ReadWrite => Connection::open(path)?,
         Access::ReadOnly => Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?,
     };
+    // Hard-cap every string/BLOB column at SQLITE_MAX_BLOB_BYTES (32 MiB).
+    // Per-column typed gates (check_size / check_fixed_width) still fire first
+    // on explicitly gated columns because their cap (16 MiB) is smaller.
+    // This backstop covers the rest without requiring individual `length()`
+    // pre-reads on every column in every reader.
+    conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, SQLITE_MAX_BLOB_BYTES)?;
     if access == Access::ReadWrite {
         enforce_foreign_keys(&conn)?;
     }

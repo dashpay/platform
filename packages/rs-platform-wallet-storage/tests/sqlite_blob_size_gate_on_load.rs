@@ -22,6 +22,59 @@ fn oversize_blob() -> Vec<u8> {
     vec![0u8; platform_wallet_storage::SIZE_LIMIT_BYTES + 1]
 }
 
+// ── global SQLITE_LIMIT_LENGTH backstop ─────────────────────────────────────
+
+/// Every connection opened by this crate via `open_conn` must have
+/// `SQLITE_LIMIT_LENGTH` set to `SQLITE_MAX_BLOB_BYTES` (32 MiB). This
+/// confirms the global backstop is applied even before any per-column gate.
+#[test]
+fn connection_has_sqlite_limit_length_set() {
+    use rusqlite::limits::Limit;
+    let (persister, _tmp, _path) = fresh_persister();
+    let conn = persister.lock_conn_for_test();
+    // SQLITE_MAX_BLOB_BYTES = 2 × SIZE_LIMIT_BYTES = 32 MiB.
+    let expected = (platform_wallet_storage::SIZE_LIMIT_BYTES as i64 * 2) as i32;
+    let actual = conn
+        .limit(Limit::SQLITE_LIMIT_LENGTH)
+        .expect("SQLITE_LIMIT_LENGTH must be readable");
+    assert_eq!(
+        actual, expected,
+        "connection must have SQLITE_LIMIT_LENGTH = {expected} (32 MiB), got {actual}"
+    );
+}
+
+// ── core_state::load_state — core_utxos script ──────────────────────────────
+
+/// An oversize `script` blob in `core_utxos` is caught by the pre-read
+/// `length(script)` gate in `core_state::load_state` and returned as
+/// `BlobTooLarge` **before** the Vec is allocated.
+#[test]
+fn blob_gate_core_utxos_load_state_rejects_oversize_script() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xF1);
+    ensure_wallet_meta(&persister, &w);
+
+    let oversize_script = oversize_blob();
+    // A 33-byte outpoint: bincode encodes txid(32 bytes) + vout(1 byte for 0).
+    // The outpoint gate passes (33 bytes << 16 MiB); only the script gate fires.
+    let tiny_op = vec![0u8; 33];
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO core_utxos \
+            (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
+         VALUES (?1, ?2, 0, ?3, NULL, 0, 0, NULL)",
+        params![w.as_slice(), tiny_op.as_slice(), oversize_script.as_slice()],
+    )
+    .expect("insert oversize script row");
+
+    let err = core_state::load_state(&conn, &w, dashcore::Network::Testnet)
+        .expect_err("load_state must reject an oversize script blob");
+    assert!(
+        matches!(err, WalletStorageError::BlobTooLarge { .. }),
+        "expected BlobTooLarge for oversize script, got {err:?}"
+    );
+}
+
 // ── core_state::load_state — last_applied_chain_lock ────────────────────────
 
 /// An oversize `last_applied_chain_lock` blob is caught by the pre-read
