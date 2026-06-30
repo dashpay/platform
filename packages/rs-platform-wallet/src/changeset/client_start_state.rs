@@ -50,7 +50,11 @@ pub struct ClientStartState {
 
 impl ClientStartState {
     pub fn is_empty(&self) -> bool {
-        let core_empty = self.platform_addresses.is_empty() && self.wallets.is_empty();
+        // A skipped-only load (rows rejected, no wallets) is NOT empty:
+        // the manager must still fire its skip notifications.
+        let core_empty = self.platform_addresses.is_empty()
+            && self.wallets.is_empty()
+            && self.skipped.is_empty();
         #[cfg(feature = "shielded")]
         {
             core_empty && self.shielded.is_empty()
@@ -59,5 +63,30 @@ impl ClientStartState {
         {
             core_empty
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::manager::load_outcome::CorruptKind;
+
+    /// A skipped-only start state must report non-empty so the manager
+    /// still surfaces `LoadOutcome::skipped` and fires skip handlers.
+    #[test]
+    fn skipped_only_state_is_not_empty() {
+        let mut state = ClientStartState::default();
+        assert!(state.is_empty(), "a freshly defaulted state is empty");
+
+        state.skipped.push((
+            [0u8; 32],
+            SkipReason::CorruptPersistedRow {
+                kind: CorruptKind::MalformedXpub,
+            },
+        ));
+        assert!(
+            !state.is_empty(),
+            "a skipped-only state must be non-empty so skip notifications fire"
+        );
     }
 }
