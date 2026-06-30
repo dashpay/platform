@@ -621,7 +621,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// signs. A `.failure` means a breadcrumb was present but the resolver
     /// couldn't sign (mnemonic missing, binding mismatch); the trampoline
     /// logs it and still falls back to the verified stored scalar.
-    fileprivate func signIdentityKeyOnDemand(
+    func signIdentityKeyOnDemand(
         publicKey: Data,
         keyType: UInt8,
         data: Data
