@@ -160,6 +160,10 @@ where
     persister: Arc<P>,
     /// Cancel token for the background loop, if running.
     background_cancel: StdMutex<Option<CancellationToken>>,
+    /// Monotonically increasing generation counter. Incremented each
+    /// time `start()` installs a new cancel token so the exiting
+    /// thread can tell whether its token is still current.
+    background_generation: AtomicU64,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
     /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
@@ -200,6 +204,7 @@ where
             sdk,
             persister,
             background_cancel: StdMutex::new(None),
+            background_generation: AtomicU64::new(0),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
             quiescing: AtomicBool::new(false),
@@ -396,6 +401,7 @@ where
         }
         let cancel = CancellationToken::new();
         *guard = Some(cancel.clone());
+        let my_gen = self.background_generation.fetch_add(1, Ordering::AcqRel) + 1;
         drop(guard);
 
         let handle = tokio::runtime::Handle::current();
@@ -418,8 +424,12 @@ where
                         }
                     }
 
+                    // Only clear the slot if no newer start() has
+                    // installed a replacement token since we launched.
                     if let Ok(mut guard) = this.background_cancel.lock() {
-                        *guard = None;
+                        if this.background_generation.load(Ordering::Acquire) == my_gen {
+                            *guard = None;
+                        }
                     }
                 });
             })
