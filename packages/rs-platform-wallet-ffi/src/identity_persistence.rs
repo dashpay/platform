@@ -221,21 +221,18 @@ pub struct ContactProfileRowFFI {
 
 /// Flat C mirror of [`IdentityKeyEntry`] for forwarding across FFI.
 ///
-/// For a key this wallet's seed reproduced under discovery's verify gate,
-/// the already-verified 32-byte ECDSA scalar rides in [`Self::private_key`]
-/// (flagged by [`Self::private_key_is_some`]) so the client stores it
-/// directly without re-deriving from a mnemonic. For a watch-only key the
-/// scalar is absent (`private_key_is_some == false`, buffer zeroed) and the
-/// client uses the `(wallet_id, identity_index, key_index)` breadcrumb only
-/// for the keychain account label. `public_key_hash` is the precomputed
+/// No private material crosses here. For a key this wallet's seed reproduced
+/// under discovery's verify gate, the client gets the
+/// `(wallet_id, identity_index, key_index)` breadcrumb and derives the key on
+/// demand from the Keychain seed at the DIP-9 path when it needs to sign; a
+/// watch-only key carries no breadcrumb. `public_key_hash` is the precomputed
 /// RIPEMD160(SHA256) of the pubkey so clients without a RIPEMD-160
 /// implementation can still round-trip it into the keychain.
 ///
 /// `public_key_data_ptr` / `public_key_data_len` own a heap-allocated
 /// copy of the public-key bytes (compressed secp256k1 for ECDSA, hash
 /// for hash160, etc. — depends on `key_type`). Released by
-/// [`free_identity_key_entry_ffi`], which also zeroes the `private_key`
-/// buffer unconditionally.
+/// [`free_identity_key_entry_ffi`].
 #[repr(C)]
 pub struct IdentityKeyEntryFFI {
     pub identity_id: [u8; 32],
@@ -299,17 +296,6 @@ pub struct IdentityKeyEntryFFI {
     pub contract_bounds_kind: u8,
     pub contract_bounds_id: [u8; 32],
     pub contract_bounds_document_type: *const c_char,
-
-    // Verified private scalar. When `private_key_is_some` is true,
-    // `private_key` holds the already-verified 32-byte ECDSA secret that
-    // reproduces this key's on-chain public key; the client stores it
-    // directly (no mnemonic re-derive). When false the buffer is zeroed
-    // and the key is watch-only. Placed last to keep the rest of the
-    // layout stable. `free_identity_key_entry_ffi` zeroes `private_key`
-    // unconditionally (volatile), so the secret never lingers after the
-    // callback's copy.
-    pub private_key_is_some: bool,
-    pub private_key: [u8; 32],
 }
 
 /// Composite identifier for [`IdentityKeysChangeSet::removed`] entries
@@ -356,12 +342,9 @@ pub struct IdentityKeyRemovalFFI {
 //   137..=168 contract_bounds_id      [u8; 32]
 //   169..=175 (padding to 8 for pointer alignment)
 //   176..=183 contract_bounds_document_type *const c_char
-//   184       private_key_is_some     bool
-//   185..=216 private_key             [u8; 32]
-//   217..=223 (trailing padding to 8 for struct alignment)
 //
-// Total size = 224, alignment = 8 (from u64 / pointer).
-const _: [u8; 224] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
+// Total size = 184, alignment = 8 (from u64 / pointer).
+const _: [u8; 184] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityKeyEntryFFI>()];
 
 // Compile-time guard for `IdentityEntryFFI`. Same rationale as the
@@ -695,14 +678,6 @@ impl IdentityKeyEntryFFI {
             None => (false, 0, 0),
         };
 
-        // Carry the verified scalar by value when present; zero the buffer
-        // otherwise. The callback copies the bytes out and the post-callback
-        // `free_identity_key_entry_ffi` loop scrubs this buffer.
-        let (private_key_is_some, private_key) = match &entry.private_key {
-            Some(scalar) => (true, **scalar),
-            None => (false, [0u8; 32]),
-        };
-
         // Project the DPP `ContractBounds` enum into the kind /
         // id / doc-type-cstring trio so the Swift side can switch
         // on a single discriminant. Strings containing interior
@@ -747,8 +722,6 @@ impl IdentityKeyEntryFFI {
             contract_bounds_kind,
             contract_bounds_id,
             contract_bounds_document_type,
-            private_key_is_some,
-            private_key,
         }
     }
 }
@@ -914,13 +887,6 @@ pub unsafe fn free_identity_key_entry_ffi(entry: &mut IdentityKeyEntryFFI) {
         let _ = unsafe { CString::from_raw(entry.contract_bounds_document_type as *mut c_char) };
         entry.contract_bounds_document_type = ptr::null();
     }
-    // Scrub the inline private scalar with a volatile write so the
-    // optimizer cannot elide it as a dead store (the codebase replaced
-    // non-volatile `*byte = 0` scrubs for exactly this reason). Done
-    // unconditionally: the 32 bytes are present in the buffer even when
-    // `private_key_is_some == false`, so they must be wiped either way.
-    zeroize::Zeroize::zeroize(&mut entry.private_key);
-    entry.private_key_is_some = false;
 }
 
 #[cfg(test)]
@@ -1220,8 +1186,6 @@ mod tests {
                 identity_index: 3,
                 key_index: 5,
             }),
-            // A verified scalar to materialize.
-            private_key: Some(zeroize::Zeroizing::new([0xC7; 32])),
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.identity_id, [2u8; 32]);
@@ -1241,57 +1205,6 @@ mod tests {
         assert!(ffi.derivation_indices_is_some);
         assert_eq!(ffi.identity_index, 3);
         assert_eq!(ffi.key_index, 5);
-        // The verified scalar rides by value, flagged present.
-        assert!(ffi.private_key_is_some);
-        assert_eq!(ffi.private_key, [0xC7; 32]);
-        unsafe { free_identity_key_entry_ffi(&mut ffi) };
-        assert!(ffi.public_key_data_ptr.is_null());
-        // Free scrubs the secret and clears the flag.
-        assert_eq!(ffi.private_key, [0u8; 32], "free must zero the scalar");
-        assert!(!ffi.private_key_is_some);
-    }
-
-    /// A discovered key carries its derivation breadcrumb to the client WITHOUT
-    /// a scalar: `wallet_id` + `(identity_index, key_index)` cross the FFI so the
-    /// client can rebuild the DIP-9 path and derive-sign on demand, while
-    /// `private_key_is_some` is false and the secret buffer stays zeroed. This
-    /// is the shape a seedless discovery emits — proof the breadcrumb is
-    /// independent of any carried scalar.
-    #[test]
-    fn test_identity_key_entry_ffi_breadcrumb_without_scalar() {
-        let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
-            id: 2,
-            purpose: Purpose::AUTHENTICATION,
-            security_level: SecurityLevel::HIGH,
-            contract_bounds: None,
-            key_type: KeyType::ECDSA_SECP256K1,
-            read_only: false,
-            data: BinaryData::new(vec![0xCD; 33]),
-            disabled_at: None,
-        });
-        let entry = IdentityKeyEntry {
-            identity_id: Identifier::from([4u8; 32]),
-            key_id: 2,
-            public_key,
-            public_key_hash: [0x55; 20],
-            wallet_id: Some([0x1B; 32]),
-            derivation_indices: Some(IdentityKeyDerivationIndices {
-                identity_index: 7,
-                key_index: 2,
-            }),
-            // Breadcrumb present, but NO carried scalar.
-            private_key: None,
-        };
-        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
-        // The breadcrumb crosses in full ...
-        assert!(ffi.wallet_id_is_some);
-        assert_eq!(ffi.wallet_id, [0x1B; 32]);
-        assert!(ffi.derivation_indices_is_some);
-        assert_eq!(ffi.identity_index, 7);
-        assert_eq!(ffi.key_index, 2);
-        // ... with no secret material.
-        assert!(!ffi.private_key_is_some);
-        assert_eq!(ffi.private_key, [0u8; 32]);
         unsafe { free_identity_key_entry_ffi(&mut ffi) };
         assert!(ffi.public_key_data_ptr.is_null());
     }
@@ -1315,7 +1228,6 @@ mod tests {
             public_key_hash: [0x00; 20],
             wallet_id: None,
             derivation_indices: None,
-            private_key: None,
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert!(!ffi.wallet_id_is_some);
@@ -1325,18 +1237,7 @@ mod tests {
         assert_eq!(ffi.disabled_at, 1_700_000_000);
         assert_eq!(ffi.contract_bounds_kind, 0);
         assert!(ffi.contract_bounds_document_type.is_null());
-        // A watch-only key carries no secret — flag false, buffer zeroed.
-        assert!(!ffi.private_key_is_some);
-        assert_eq!(ffi.private_key, [0u8; 32]);
-        // `free` scrubs the buffer even when the flag is false: the 32
-        // bytes are physically present regardless, so a residual value
-        // (set here directly to simulate a leftover) must still be wiped.
-        ffi.private_key = [0xEE; 32];
         unsafe { free_identity_key_entry_ffi(&mut ffi) };
-        assert_eq!(
-            ffi.private_key, [0u8; 32],
-            "free must zero the scalar even when the flag is false"
-        );
     }
 
     #[test]
@@ -1360,7 +1261,6 @@ mod tests {
             public_key_hash: [0x11; 20],
             wallet_id: None,
             derivation_indices: None,
-            private_key: None,
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.contract_bounds_kind, 1);
@@ -1393,7 +1293,6 @@ mod tests {
             public_key_hash: [0x22; 20],
             wallet_id: None,
             derivation_indices: None,
-            private_key: None,
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.contract_bounds_kind, 2);
