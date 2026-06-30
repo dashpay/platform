@@ -2267,10 +2267,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// results are coerced to `None` so the UI shows nothing rather than
     /// garbage.
     ///
-    /// Persisted via an `established` changeset entry — the same path as the
-    /// broken-channel flag. Self-contained locking: takes its own write guard,
-    /// and the decrypt is synchronous, so nothing awaits or re-locks under it.
-    /// The caller must hold no wallet-manager guard when invoking it.
+    /// Written to the in-memory `established` contact and flushed through an
+    /// `established` changeset entry. Unlike the broken-channel flag, the label
+    /// is **not** durably persisted by the SQLite backend: it is intentionally
+    /// re-derived from the incoming request on the next contact-info sweep so it
+    /// never goes stale against rotated key material (the field resets to `None`
+    /// on every (re-)establish/rotation) — a cold restart restores it empty and
+    /// the next sweep repopulates it. Self-contained locking: takes its own
+    /// write guard, and the decrypt is synchronous, so nothing awaits or
+    /// re-locks under it. The caller must hold no wallet-manager guard.
     pub(crate) async fn store_contact_account_label(
         &self,
         identity_id: &Identifier,
