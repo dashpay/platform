@@ -222,11 +222,23 @@ struct DashPayTabView: View {
                 .sheet(isPresented: $showRegisterName) {
                     if let identity = activeIdentity {
                         // RegisterNameView brings its own NavigationView +
-                        // Cancel toolbar; the Rust register path queues an
-                        // IdentityChangeSet that persists the new dpnsName,
-                        // so this prompt hides reactively — the onRegistered
-                        // callback is a no-op here.
-                        RegisterNameView(identity: identity, onRegistered: { _ in })
+                        // Cancel toolbar. On success, persist the new name onto
+                        // the identity's scalar `dpnsName` and drop it from the
+                        // resolved set so this prompt hides on the next render.
+                        // The Rust register path only upserts `PersistentDPNSName`
+                        // relationship rows — not the scalar `dpnsName` /
+                        // `mainDpnsName` this prompt (and the header) read — so
+                        // without this the CTA would linger until the next
+                        // identity switch or app-foreground re-check.
+                        RegisterNameView(identity: identity, onRegistered: { label in
+                            PersistentIdentity.updateDpnsName(
+                                in: modelContext,
+                                identityId: identity.identityId,
+                                dpnsName: label
+                            )
+                            usernameResolvedIds.remove(identity.identityId)
+                            try? modelContext.save()
+                        })
                             .environmentObject(walletManager)
                             .environmentObject(appState)
                     }
