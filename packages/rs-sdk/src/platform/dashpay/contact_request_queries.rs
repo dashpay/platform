@@ -48,6 +48,18 @@ const CONTACT_REQUEST_PAGE_SIZE: u32 = 100;
 /// not advance past such a cluster (it would re-read the same oldest 5_000 each
 /// sweep); the fix would be a persisted `StartAfter` document-id continuation
 /// cursor rather than the `$createdAt` high-water.
+///
+/// The wallet caller widens that single-cluster case into a time *window*: it
+/// rewinds each sweep's lower `$createdAt` bound by a 10-minute overlap
+/// (`SYNC_OVERLAP_MS`) for clock-skew / page-boundary safety. So an attacker
+/// who concentrates ≥ this budget of `contactRequest`s within any 10-minute
+/// span targeting one recipient (≥5_000 funded `(ownerId, toUserId)` pairs —
+/// costly but reachable at scale) keeps the high-water pinned at the window's
+/// max `$createdAt`, and the next sweep's rewind lands back inside the same
+/// window — the same non-advancing cursor, with a wider trigger. The memory
+/// bound still holds (oldest-first, budget-capped); only forward progress past
+/// a fully saturated window stalls, and the same `StartAfter` document-id
+/// continuation cursor is the recovery.
 const MAX_CONTACT_REQUEST_PAGES_PER_SWEEP: u32 = 50;
 
 impl Sdk {
