@@ -1221,4 +1221,117 @@ mod tests {
             "on_address_absent must zero the in-memory managed-account balance"
         );
     }
+
+    /// Records every changeset handed to `store`, so a test can assert what
+    /// the reconciliation actually persisted.
+    #[derive(Default)]
+    struct CapturingPersister {
+        stored: std::sync::Mutex<Vec<crate::changeset::PlatformWalletChangeSet>>,
+    }
+
+    impl crate::changeset::PlatformWalletPersistence for CapturingPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            self.stored.lock().expect("persister mutex").push(changeset);
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(crate::changeset::ClientStartState::default())
+        }
+    }
+
+    /// Integration regression for the top-up reconciliation *contract* — not
+    /// just the pure entry builder. `apply_top_up_reconciliation` must build
+    /// AND **persist** a `PlatformAddressChangeSet` carrying the proof's
+    /// post-spend balance for a spent address resolved via the provider's
+    /// persisted state. The reported bug was the *missing persist* (the SDK's
+    /// `address_infos` were discarded), so this pins that `store` actually
+    /// fires with the decremented entry — a helper-only test would still pass
+    /// if `apply_top_up_reconciliation` stopped persisting.
+    #[tokio::test]
+    async fn apply_top_up_reconciliation_persists_decremented_balance() {
+        use crate::broadcaster::SpvBroadcaster;
+        use crate::events::PlatformEventManager;
+        use crate::spv::SpvRuntime;
+        use crate::wallet::asset_lock::manager::AssetLockManager;
+        use crate::wallet::persister::WalletPersister;
+        use crate::wallet::platform_addresses::PlatformAddressWallet;
+        use dash_sdk::query_types::AddressInfo;
+        use tokio::sync::Notify;
+
+        let recorder = Arc::new(CapturingPersister::default());
+
+        // Wallet wired to the capturing persister. The rest mirrors the
+        // short-circuit fixture — `apply_top_up_reconciliation` only touches
+        // provider / wallet_manager / persister.
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
+        let persister = WalletPersister::new(WALLET, recorder.clone());
+        let event_manager = Arc::new(PlatformEventManager::new(Vec::new()));
+        let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallet_manager), event_manager));
+        let broadcaster = Arc::new(SpvBroadcaster::new(spv));
+        let asset_locks = Arc::new(AssetLockManager::new(
+            Arc::clone(&sdk),
+            Arc::clone(&wallet_manager),
+            WALLET,
+            Arc::new(Notify::new()),
+            broadcaster,
+            persister.clone(),
+        ));
+        let wallet = PlatformAddressWallet::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            WALLET,
+            asset_locks,
+            persister,
+        );
+
+        // The provider knows the spent address via its persisted bijection
+        // (pre-spend balance 100).
+        let addr = p2pkh(0x11);
+        let provider =
+            provider_tracking_address(Arc::clone(&wallet_manager), WALLET, addr, funds(100, 1));
+        *wallet.provider.write().await = Some(provider);
+
+        // The top-up spent it; the proof attests post-spend balance 5, nonce 4.
+        let spent = PlatformAddress::P2pkh([0x11; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            spent,
+            Some(AddressInfo {
+                address: spent,
+                nonce: 4,
+                balance: 5,
+            }),
+        );
+
+        wallet.apply_top_up_reconciliation(&address_infos).await;
+
+        // The reconciliation must have PERSISTED the decremented entry — the
+        // contract the original bug broke by discarding `address_infos`.
+        let stored = recorder.stored.lock().expect("persister mutex");
+        let entry = stored
+            .iter()
+            .filter_map(|cs| cs.platform_addresses.as_ref())
+            .flat_map(|pa| pa.addresses.iter())
+            .find(|e| e.address == addr)
+            .expect("a persisted platform-address entry for the spent address");
+        assert_eq!(entry.account_index, ACCOUNT);
+        assert_eq!(
+            entry.funds.balance, 5,
+            "persists the proof's post-spend balance, not the stale pre-spend value"
+        );
+        assert_eq!(entry.funds.nonce, 4, "persists the bumped nonce");
+    }
 }
