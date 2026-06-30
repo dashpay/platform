@@ -166,13 +166,7 @@ pub fn load_state(
     while let Some(row) = rows.next()? {
         let op_bytes: Vec<u8> = row.get(0)?;
         let account_index: i64 = row.get(1)?;
-        let len = usize::try_from(row.get::<_, i64>(2)?).unwrap_or(usize::MAX);
-        if len > blob::BLOB_SIZE_LIMIT_BYTES {
-            return Err(WalletStorageError::BlobTooLarge {
-                len_bytes: len,
-                limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
-            });
-        }
+        blob::check_size(row.get::<_, i64>(2)?)?;
         let blob_bytes: Vec<u8> = row.get(3)?;
         let status: String = row.get(4)?;
         let (acct, outpoint, tracked) = decode_row(&op_bytes, account_index, &blob_bytes, &status)?;
@@ -200,13 +194,7 @@ pub fn load_unconsumed(
     while let Some(row) = rows.next()? {
         let op_bytes: Vec<u8> = row.get(0)?;
         let account_index: i64 = row.get(1)?;
-        let len = usize::try_from(row.get::<_, i64>(2)?).unwrap_or(usize::MAX);
-        if len > blob::BLOB_SIZE_LIMIT_BYTES {
-            return Err(WalletStorageError::BlobTooLarge {
-                len_bytes: len,
-                limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
-            });
-        }
+        blob::check_size(row.get::<_, i64>(2)?)?;
         let blob_bytes: Vec<u8> = row.get(3)?;
         let status: String = row.get(4)?;
         let (acct, outpoint, tracked) = decode_row(&op_bytes, account_index, &blob_bytes, &status)?;
@@ -233,13 +221,7 @@ pub fn list_active(
     while let Some(row) = rows.next()? {
         let op_bytes: Vec<u8> = row.get(0)?;
         let account_index: i64 = row.get(1)?;
-        let len = usize::try_from(row.get::<_, i64>(2)?).unwrap_or(usize::MAX);
-        if len > blob::BLOB_SIZE_LIMIT_BYTES {
-            return Err(WalletStorageError::BlobTooLarge {
-                len_bytes: len,
-                limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
-            });
-        }
+        blob::check_size(row.get::<_, i64>(2)?)?;
         let blob_bytes: Vec<u8> = row.get(3)?;
         let status: String = row.get(4)?;
         let (acct, outpoint, tracked) = decode_row(&op_bytes, account_index, &blob_bytes, &status)?;

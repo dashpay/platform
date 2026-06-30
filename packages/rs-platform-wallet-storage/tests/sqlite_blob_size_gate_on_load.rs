@@ -13,13 +13,135 @@ mod common;
 use common::{ensure_wallet_meta, fresh_persister, wid};
 use rusqlite::params;
 
-use platform_wallet_storage::sqlite::schema::{accounts, identities, identity_keys};
+use platform_wallet_storage::sqlite::schema::{accounts, core_state, identities, identity_keys};
 use platform_wallet_storage::WalletStorageError;
 
 /// Blob larger than the 16 MiB cap: one byte over the limit is enough to
 /// trigger the pre-read gate without wasting more memory than necessary.
 fn oversize_blob() -> Vec<u8> {
     vec![0u8; platform_wallet_storage::SIZE_LIMIT_BYTES + 1]
+}
+
+// ── core_state::load_state — last_applied_chain_lock ────────────────────────
+
+/// An oversize `last_applied_chain_lock` blob is caught by the pre-read
+/// `length()` gate in `core_state::load_state` and returned as `BlobTooLarge`
+/// **before** the Vec is allocated.
+#[test]
+fn blob_gate_core_state_load_state_rejects_oversize_chain_lock() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xC1);
+    ensure_wallet_meta(&persister, &w);
+
+    let blob = oversize_blob();
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO core_sync_state \
+            (wallet_id, last_processed_height, synced_height, last_applied_chain_lock) \
+         VALUES (?1, 0, 0, ?2)",
+        params![w.as_slice(), blob.as_slice()],
+    )
+    .expect("insert oversize chain_lock row");
+
+    let err = core_state::load_state(&conn, &w, dashcore::Network::Testnet)
+        .expect_err("load_state must reject an oversize last_applied_chain_lock blob");
+    assert!(
+        matches!(err, WalletStorageError::BlobTooLarge { .. }),
+        "expected BlobTooLarge, got {err:?}"
+    );
+}
+
+// ── platform_addrs — address column (fixed 20 bytes) ────────────────────────
+
+/// A `platform_addresses` row whose `address` column is wider than 20 bytes
+/// but within the BLOB cap is rejected with `BlobDecode` by the
+/// `check_fixed_width` gate before the Vec is materialized.
+#[test]
+fn blob_gate_platform_addrs_load_all_rejects_wrong_width_address() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xD1);
+    ensure_wallet_meta(&persister, &w);
+
+    // 21-byte address: wrong width, within size cap.
+    let bad_addr = vec![0x42u8; 21];
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO platform_addresses \
+            (wallet_id, account_index, address_index, address, balance, nonce) \
+         VALUES (?1, 0, 0, ?2, 0, 0)",
+        params![w.as_slice(), bad_addr.as_slice()],
+    )
+    .expect("insert wrong-width address row");
+
+    // load_all drives all_address_rows which has the check_fixed_width gate.
+    use platform_wallet_storage::sqlite::schema::platform_addrs;
+    let err =
+        platform_addrs::load_all(&conn).expect_err("load_all must reject a wrong-width address");
+    assert!(
+        matches!(
+            err,
+            WalletStorageError::BlobDecode { .. } | WalletStorageError::BlobTooLarge { .. }
+        ),
+        "expected BlobDecode or BlobTooLarge for wrong-width address, got {err:?}"
+    );
+}
+
+/// A `platform_addresses` row whose `address` column exceeds the 16 MiB cap
+/// is rejected with `BlobTooLarge` by the `check_fixed_width` gate.
+#[test]
+fn blob_gate_platform_addrs_load_all_rejects_oversize_address() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xD2);
+    ensure_wallet_meta(&persister, &w);
+
+    let oversize_addr = oversize_blob();
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO platform_addresses \
+            (wallet_id, account_index, address_index, address, balance, nonce) \
+         VALUES (?1, 0, 0, ?2, 0, 0)",
+        params![w.as_slice(), oversize_addr.as_slice()],
+    )
+    .expect("insert oversize address row");
+
+    use platform_wallet_storage::sqlite::schema::platform_addrs;
+    let err =
+        platform_addrs::load_all(&conn).expect_err("load_all must reject an oversize address blob");
+    assert!(
+        matches!(err, WalletStorageError::BlobTooLarge { .. }),
+        "expected BlobTooLarge for oversize address, got {err:?}"
+    );
+}
+
+// ── identity_keys — bounded inner public_key_bincode decode ──────────────────
+
+/// A `public_key_blob` that is small enough to pass the outer size gate but
+/// contains a crafted `public_key_bincode` whose content causes the inner
+/// `blob::bounded_config()` decode to fail deterministically, without
+/// OOM-allocating. Proves the inner nested decode is end-to-end capped.
+#[test]
+fn blob_gate_identity_keys_bounded_inner_public_key_bincode() {
+    // Build an outer entry blob (tiny, within the 16 MiB gate) that wraps
+    // a public_key_bincode containing a huge-length varint. The test helper
+    // in identity_keys builds this without going through the bounded encode.
+    let crafted_blob = identity_keys::crafted_entry_blob_with_bad_pk_bincode_for_test();
+
+    assert!(
+        crafted_blob.len() < platform_wallet_storage::SIZE_LIMIT_BYTES,
+        "test blob must fit within the outer gate to exercise the inner path"
+    );
+
+    // decode_entry: outer blob::decode succeeds (small blob, valid serde wire);
+    // into_entry's inner decode fails on the crafted pk_bincode.
+    let err = identity_keys::decode_entry(&crafted_blob)
+        .expect_err("inner decode must fail on crafted public_key_bincode");
+    assert!(
+        matches!(
+            err,
+            WalletStorageError::BincodeDecode { .. } | WalletStorageError::BlobTooLarge { .. }
+        ),
+        "expected bounded decode error, got {err:?}"
+    );
 }
 
 // ── accounts::load_state — account_xpub_bytes ────────────────────────────────

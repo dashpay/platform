@@ -47,7 +47,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     ),
     (
         "platform_addrs.rs",
-        "SELECT wallet_id, account_index, address_index, address, balance, nonce",
+        "SELECT wallet_id, account_index, address_index, length(address), address, balance, nonce",
     ),
     // Pre-read `length()` gates added by PR #3968 review — substrings updated
     // to reflect the new `length(<col>)` column in each SELECT.
@@ -76,7 +76,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     ),
     (
         "core_state.rs",
-        "SELECT last_processed_height, synced_height, last_applied_chain_lock FROM core_sync_state WHERE wallet_id",
+        "SELECT last_processed_height, synced_height,",
     ),
     (
         "identity_keys.rs",

@@ -14,6 +14,7 @@ use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformA
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::accounts;
+use crate::sqlite::schema::blob;
 use crate::sqlite::util::safe_cast;
 
 pub fn apply(
@@ -110,23 +111,26 @@ pub fn list_per_wallet(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<Vec<PlatformAddressRow>, WalletStorageError> {
+    // length(address) is read first (O(1)) so an oversize or wrong-width
+    // address blob is caught before materializing the Vec.
     let mut stmt = conn.prepare(
-        "SELECT account_index, address_index, address, balance, nonce \
+        "SELECT account_index, address_index, length(address), address, balance, nonce \
          FROM platform_addresses WHERE wallet_id = ?1 \
          ORDER BY account_index, address_index, address",
     )?;
-    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
-        Ok((
-            row.get::<_, i64>(0)?,
-            row.get::<_, i64>(1)?,
-            row.get::<_, Vec<u8>>(2)?,
-            row.get::<_, i64>(3)?,
-            row.get::<_, i64>(4)?,
-        ))
-    })?;
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut out = Vec::new();
-    for r in rows {
-        let (account_index, address_index, address_bytes, balance, nonce) = r?;
+    while let Some(row) = rows.next()? {
+        let account_index: i64 = row.get(0)?;
+        let address_index: i64 = row.get(1)?;
+        blob::check_fixed_width(
+            row.get::<_, i64>(2)?,
+            20,
+            "platform_addresses.address is not 20 bytes",
+        )?;
+        let address_bytes: Vec<u8> = row.get(3)?;
+        let balance: i64 = row.get(4)?;
+        let nonce: i64 = row.get(5)?;
         out.push(decode_address_row(
             account_index,
             address_index,
@@ -321,23 +325,26 @@ fn all_sync_state(
 fn all_address_rows(
     conn: &Connection,
 ) -> Result<BTreeMap<WalletId, Vec<PlatformAddressRow>>, WalletStorageError> {
+    // length(address) is read first (O(1)) so an oversize or wrong-width
+    // address blob is caught before materializing the Vec.
     let mut stmt = conn.prepare(
-        "SELECT wallet_id, account_index, address_index, address, balance, nonce \
+        "SELECT wallet_id, account_index, address_index, length(address), address, balance, nonce \
          FROM platform_addresses ORDER BY wallet_id, account_index, address_index, address",
     )?;
-    let rows = stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, Vec<u8>>(0)?,
-            row.get::<_, i64>(1)?,
-            row.get::<_, i64>(2)?,
-            row.get::<_, Vec<u8>>(3)?,
-            row.get::<_, i64>(4)?,
-            row.get::<_, i64>(5)?,
-        ))
-    })?;
+    let mut rows = stmt.query([])?;
     let mut out: BTreeMap<WalletId, Vec<PlatformAddressRow>> = BTreeMap::new();
-    for r in rows {
-        let (wid_bytes, account_index, address_index, address_bytes, balance, nonce) = r?;
+    while let Some(row) = rows.next()? {
+        let wid_bytes: Vec<u8> = row.get(0)?;
+        let account_index: i64 = row.get(1)?;
+        let address_index: i64 = row.get(2)?;
+        blob::check_fixed_width(
+            row.get::<_, i64>(3)?,
+            20,
+            "platform_addresses.address is not 20 bytes",
+        )?;
+        let address_bytes: Vec<u8> = row.get(4)?;
+        let balance: i64 = row.get(5)?;
+        let nonce: i64 = row.get(6)?;
         let wallet_id = wallet_id_from_bytes(&wid_bytes)?;
         out.entry(wallet_id).or_default().push(decode_address_row(
             account_index,

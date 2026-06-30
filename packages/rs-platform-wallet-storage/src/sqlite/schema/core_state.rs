@@ -19,17 +19,9 @@ use crate::sqlite::schema::blob::impl_persistable_blob;
 // `islock_blob` (transaction records + InstantLocks are public chain data).
 impl_persistable_blob!(TransactionRecord, dashcore::InstantLock);
 
-/// Bounded bincode config for `ChainLock` BLOB columns — native bincode
-/// (not the serde bridge) because `ChainLock` enables the `bincode` feature
-/// but not `serde`. The size limit caps allocations symmetrically with other
-/// BLOB columns (`blob::BLOB_SIZE_LIMIT_BYTES`).
-fn chain_lock_config() -> impl bincode::config::Config {
-    bincode::config::standard().with_limit::<{ blob::BLOB_SIZE_LIMIT_BYTES }>()
-}
-
 /// Encode a `ChainLock` to bytes for storage in `core_sync_state`.
 fn encode_chain_lock(cl: &ChainLock) -> Result<Vec<u8>, WalletStorageError> {
-    Ok(bincode::encode_to_vec(cl, chain_lock_config())?)
+    Ok(bincode::encode_to_vec(cl, blob::bounded_config())?)
 }
 
 /// Decode a `ChainLock` from `core_sync_state.last_applied_chain_lock`.
@@ -37,7 +29,7 @@ fn encode_chain_lock(cl: &ChainLock) -> Result<Vec<u8>, WalletStorageError> {
 /// single corrupt byte cannot prevent the wallet from loading (the next
 /// ChainLock event will repopulate the column).
 fn decode_chain_lock_soft(bytes: &[u8]) -> Option<ChainLock> {
-    match bincode::decode_from_slice::<ChainLock, _>(bytes, chain_lock_config()) {
+    match bincode::decode_from_slice::<ChainLock, _>(bytes, blob::bounded_config()) {
         // Reject a valid-prefix + trailing-garbage payload (bincode stops
         // after the typed length) the same way the BLOB decoders do.
         Ok((cl, consumed)) if consumed == bytes.len() => Some(cl),
@@ -63,7 +55,7 @@ fn decode_chain_lock_soft(bytes: &[u8]) -> Option<ChainLock> {
 /// can't be decoded. Used to monotonic-max-merge the chain lock so an
 /// out-of-order lower-height update never regresses the finalized checkpoint.
 fn chain_lock_height(bytes: &[u8]) -> Option<u32> {
-    match bincode::decode_from_slice::<ChainLock, _>(bytes, chain_lock_config()) {
+    match bincode::decode_from_slice::<ChainLock, _>(bytes, blob::bounded_config()) {
         // Require full consumption (like `decode_chain_lock_soft`) so a corrupt
         // stored blob can't out-rank a later valid update and stay stuck.
         Ok((cl, consumed)) if consumed == bytes.len() => Some(cl.block_height),
@@ -347,22 +339,15 @@ pub fn load_state(
     }
 
     {
-        // Cap on the cheap `length()` (O(1) from the row header) BEFORE
-        // materializing the blob, so a tampered oversize `record_blob` can't
-        // force a multi-gigabyte allocation that `blob::decode`'s post-hoc cap
-        // would only catch after the Vec is already built.
+        // Pre-read `length()` gate (O(1) from the row header) before
+        // materializing the blob so a tampered oversize `record_blob` can't
+        // force a multi-gigabyte allocation.
         let mut stmt = conn.prepare(
             "SELECT length(record_blob), record_blob FROM core_transactions WHERE wallet_id = ?1",
         )?;
         let mut rows = stmt.query(params![wallet_id.as_slice()])?;
         while let Some(row) = rows.next()? {
-            let len = usize::try_from(row.get::<_, i64>(0)?).unwrap_or(usize::MAX);
-            if len > blob::BLOB_SIZE_LIMIT_BYTES {
-                return Err(WalletStorageError::BlobTooLarge {
-                    len_bytes: len,
-                    limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
-                });
-            }
+            blob::check_size(row.get::<_, i64>(0)?)?;
             let payload: Vec<u8> = row.get(1)?;
             cs.records
                 .push(blob::decode::<TransactionRecord>(&payload)?);
@@ -370,9 +355,7 @@ pub fn load_state(
     }
 
     {
-        // Same pre-read length gate as `record_blob` above: `length()` is
-        // O(1) from the row header, so a tampered oversize `islock_blob`
-        // can't force a large allocation before the cap rejects it.
+        // Same pre-read length gate as `record_blob` above.
         let mut stmt = conn.prepare(
             "SELECT txid, length(islock_blob), islock_blob \
              FROM core_instant_locks WHERE wallet_id = ?1",
@@ -381,13 +364,7 @@ pub fn load_state(
         while let Some(row) = rows.next()? {
             use dashcore::hashes::Hash;
             let txid_bytes: Vec<u8> = row.get(0)?;
-            let len = usize::try_from(row.get::<_, i64>(1)?).unwrap_or(usize::MAX);
-            if len > blob::BLOB_SIZE_LIMIT_BYTES {
-                return Err(WalletStorageError::BlobTooLarge {
-                    len_bytes: len,
-                    limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
-                });
-            }
+            blob::check_size(row.get::<_, i64>(1)?)?;
             let blob_bytes: Vec<u8> = row.get(2)?;
             let txid = dashcore::Txid::from_slice(&txid_bytes)
                 .map_err(|_| WalletStorageError::blob_decode("core_instant_locks.txid"))?;
@@ -397,28 +374,32 @@ pub fn load_state(
         }
     }
 
-    // Sync watermarks + persisted chain lock.
-    if let Some((lp, sy, cl_bytes)) = conn
-        .query_row(
-            "SELECT last_processed_height, synced_height, last_applied_chain_lock \
-             FROM core_sync_state WHERE wallet_id = ?1",
-            params![wallet_id.as_slice()],
-            |row| {
-                let lp: Option<i64> = row.get(0)?;
-                let sy: Option<i64> = row.get(1)?;
-                let cl: Option<Vec<u8>> = row.get(2)?;
-                Ok((lp, sy, cl))
-            },
-        )
-        .optional()?
+    // Sync watermarks + persisted chain lock. Read `length()` first so an
+    // oversize chain-lock blob is rejected before the Vec is allocated.
     {
-        // Fail-hard on an out-of-range watermark (corruption is never skipped).
-        cs.last_processed_height = sync_height_u32("core_sync_state.last_processed_height", lp)?;
-        cs.synced_height = sync_height_u32("core_sync_state.synced_height", sy)?;
-        // Soft-fail on a corrupt chain lock blob — a single bad byte must not
-        // prevent the wallet from loading; the next ChainLock event repopulates.
-        if let Some(bytes) = cl_bytes {
-            cs.last_applied_chain_lock = decode_chain_lock_soft(&bytes);
+        let mut stmt = conn.prepare(
+            "SELECT last_processed_height, synced_height, \
+                    length(last_applied_chain_lock), last_applied_chain_lock \
+             FROM core_sync_state WHERE wallet_id = ?1",
+        )?;
+        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        if let Some(row) = rows.next()? {
+            let lp: Option<i64> = row.get(0)?;
+            let sy: Option<i64> = row.get(1)?;
+            // Gate before materializing: NULL length means no chain lock.
+            if let Some(n) = row.get::<_, Option<i64>>(2)? {
+                blob::check_size(n)?;
+            }
+            let cl_bytes: Option<Vec<u8>> = row.get(3)?;
+            // Fail-hard on an out-of-range watermark (corruption never skipped).
+            cs.last_processed_height =
+                sync_height_u32("core_sync_state.last_processed_height", lp)?;
+            cs.synced_height = sync_height_u32("core_sync_state.synced_height", sy)?;
+            // Soft-fail on a corrupt chain-lock blob — a single bad byte must
+            // not prevent loading; the next ChainLock event repopulates.
+            if let Some(bytes) = cl_bytes {
+                cs.last_applied_chain_lock = decode_chain_lock_soft(&bytes);
+            }
         }
     }
 
@@ -470,17 +451,19 @@ pub fn get_tx_record(
     wallet_id: &WalletId,
     txid: &dashcore::Txid,
 ) -> Result<Option<TransactionRecord>, WalletStorageError> {
-    let row: Option<Vec<u8>> = conn
-        .query_row(
-            "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
-            params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(txid)],
-            |row| row.get(0),
-        )
-        .optional()?;
-    match row {
-        None => Ok(None),
-        Some(payload) => Ok(Some(blob::decode(&payload)?)),
-    }
+    // Pre-read `length()` gate before materializing, consistent with the
+    // bulk load_state path above.
+    let mut stmt = conn.prepare(
+        "SELECT length(record_blob), record_blob FROM core_transactions \
+         WHERE wallet_id = ?1 AND txid = ?2",
+    )?;
+    let mut rows = stmt.query(params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(txid)])?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+    blob::check_size(row.get::<_, i64>(0)?)?;
+    let payload: Vec<u8> = row.get(1)?;
+    Ok(Some(blob::decode(&payload)?))
 }
 
 /// Row representing one unspent UTXO. Used by tests that probe the

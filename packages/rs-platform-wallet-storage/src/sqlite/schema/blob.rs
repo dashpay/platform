@@ -42,12 +42,48 @@ pub(crate) use impl_persistable_blob;
 /// [`SIZE_LIMIT_BYTES`](crate::SIZE_LIMIT_BYTES) with the KV value cap.
 pub const BLOB_SIZE_LIMIT_BYTES: usize = crate::SIZE_LIMIT_BYTES;
 
-fn bounded_config() -> bincode::config::Configuration<
+pub(crate) fn bounded_config() -> bincode::config::Configuration<
     bincode::config::LittleEndian,
     bincode::config::Varint,
     bincode::config::Limit<BLOB_SIZE_LIMIT_BYTES>,
 > {
     bincode::config::standard().with_limit::<BLOB_SIZE_LIMIT_BYTES>()
+}
+
+/// Gate a variable-width blob column BEFORE materializing the `Vec<u8>`.
+/// `len` is the value of `length(<col>)` selected in the same row.
+/// Returns [`WalletStorageError::BlobTooLarge`] when `len` exceeds the cap.
+pub(crate) fn check_size(len: i64) -> Result<(), WalletStorageError> {
+    let len_usize = usize::try_from(len).unwrap_or(usize::MAX);
+    if len_usize > BLOB_SIZE_LIMIT_BYTES {
+        return Err(WalletStorageError::BlobTooLarge {
+            len_bytes: len_usize,
+            limit_bytes: BLOB_SIZE_LIMIT_BYTES,
+        });
+    }
+    Ok(())
+}
+
+/// Gate a fixed-width blob column BEFORE materializing the `Vec<u8>`.
+/// Returns [`WalletStorageError::BlobTooLarge`] for oversize values, or
+/// [`WalletStorageError::BlobDecode`] when `len != expected`. `col` names
+/// the column in the decode reason string.
+pub(crate) fn check_fixed_width(
+    len: i64,
+    expected: usize,
+    col: &'static str,
+) -> Result<(), WalletStorageError> {
+    let len_usize = usize::try_from(len).unwrap_or(usize::MAX);
+    if len_usize > BLOB_SIZE_LIMIT_BYTES {
+        return Err(WalletStorageError::BlobTooLarge {
+            len_bytes: len_usize,
+            limit_bytes: BLOB_SIZE_LIMIT_BYTES,
+        });
+    }
+    if len_usize != expected {
+        return Err(WalletStorageError::blob_decode(col));
+    }
+    Ok(())
 }
 
 /// Encode a [`PersistableBlob`] value into a `BLOB` payload. The sealed bound

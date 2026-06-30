@@ -38,7 +38,7 @@ crate::sqlite::schema::blob::impl_persistable_blob!(IdentityKeyWire);
 
 impl IdentityKeyWire {
     fn from_entry(entry: &IdentityKeyEntry) -> Result<Self, WalletStorageError> {
-        let pk = bincode::encode_to_vec(&entry.public_key, bincode::config::standard())?;
+        let pk = bincode::encode_to_vec(&entry.public_key, blob::bounded_config())?;
         Ok(Self {
             identity_id: entry.identity_id,
             key_id: entry.key_id,
@@ -51,7 +51,7 @@ impl IdentityKeyWire {
 
     fn into_entry(self) -> Result<IdentityKeyEntry, WalletStorageError> {
         let (public_key, consumed): (IdentityPublicKey, usize) =
-            bincode::decode_from_slice(&self.public_key_bincode, bincode::config::standard())?;
+            bincode::decode_from_slice(&self.public_key_bincode, blob::bounded_config())?;
         // Reject a valid-prefix + trailing-garbage payload (bincode stops
         // after the typed length); mirrors the outer blob::decode guard.
         if consumed != self.public_key_bincode.len() {
@@ -156,13 +156,7 @@ pub fn load_state(
     while let Some(row) = rows.next()? {
         let identity_id_bytes: Vec<u8> = row.get(0)?;
         let key_id: i64 = row.get(1)?;
-        let len = usize::try_from(row.get::<_, i64>(2)?).unwrap_or(usize::MAX);
-        if len > blob::BLOB_SIZE_LIMIT_BYTES {
-            return Err(WalletStorageError::BlobTooLarge {
-                len_bytes: len,
-                limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
-            });
-        }
+        blob::check_size(row.get::<_, i64>(2)?)?;
         let payload: Vec<u8> = row.get(3)?;
         let id32 = <[u8; 32]>::try_from(identity_id_bytes.as_slice()).map_err(|_| {
             WalletStorageError::blob_decode("identity_keys.identity_id is not 32 bytes")
@@ -189,6 +183,34 @@ pub fn load_state(
         cs.upserts.insert((identity_id, key_id), entry);
     }
     Ok(cs)
+}
+
+/// Build an outer `public_key_blob` payload whose inner `public_key_bincode`
+/// field contains a crafted byte sequence that causes the inner
+/// `blob::bounded_config()` decode to fail. Used by the blob-gate integration
+/// test to prove the inner decode is bounded end-to-end.
+///
+/// The outer blob is well within [`blob::BLOB_SIZE_LIMIT_BYTES`];
+/// only the *inner* decode path is stressed.
+#[cfg(any(test, feature = "__test-helpers"))]
+pub fn crafted_entry_blob_with_bad_pk_bincode_for_test() -> Vec<u8> {
+    // 0xFC followed by four 0xFF bytes is bincode's 5-byte varint encoding
+    // for u32::MAX (4 294 967 295). Decoded as the first value inside
+    // IdentityPublicKey, this either triggers LimitExceeded (4 GB read
+    // attempt > 16 MiB bound) or an InvalidVariant — either way the decode
+    // fails without OOM-allocating.
+    let wire = IdentityKeyWire {
+        identity_id: dpp::prelude::Identifier::from([0xAAu8; 32]),
+        key_id: 0,
+        public_key_bincode: vec![0xFCu8, 0xFF, 0xFF, 0xFF, 0xFF],
+        public_key_hash: [0u8; 20],
+        wallet_id: None,
+        derivation_indices: None,
+    };
+    // Intentionally unbounded outer encode — test setup only, not a
+    // production path.
+    bincode::serde::encode_to_vec(&wire, bincode::config::standard())
+        .expect("test helper outer encode must not fail")
 }
 
 #[cfg(test)]
@@ -255,11 +277,8 @@ mod tests {
         let wire = IdentityKeyWire {
             identity_id: Identifier::from([0xAAu8; 32]), // disagrees with the column
             key_id: 0,
-            public_key_bincode: bincode::encode_to_vec(
-                sample_public_key(),
-                bincode::config::standard(),
-            )
-            .unwrap(),
+            public_key_bincode: bincode::encode_to_vec(sample_public_key(), blob::bounded_config())
+                .unwrap(),
             public_key_hash: [0u8; 20],
             wallet_id: None,
             derivation_indices: None,
@@ -283,11 +302,8 @@ mod tests {
         let wire = IdentityKeyWire {
             identity_id: Identifier::from(typed_identity), // matches the column
             key_id: 0,
-            public_key_bincode: bincode::encode_to_vec(
-                sample_public_key(),
-                bincode::config::standard(),
-            )
-            .unwrap(),
+            public_key_bincode: bincode::encode_to_vec(sample_public_key(), blob::bounded_config())
+                .unwrap(),
             public_key_hash: [0u8; 20],
             wallet_id: Some([0xDDu8; 32]), // disagrees with the read scope
             derivation_indices: None,
@@ -316,7 +332,7 @@ mod tests {
             data: BinaryData::new(vec![2u8; 33]),
             disabled_at: None,
         });
-        let mut pk_bincode = bincode::encode_to_vec(&pk, bincode::config::standard()).unwrap();
+        let mut pk_bincode = bincode::encode_to_vec(&pk, blob::bounded_config()).unwrap();
         pk_bincode.push(0xFF); // trailing garbage past the typed length
 
         let wire = IdentityKeyWire {

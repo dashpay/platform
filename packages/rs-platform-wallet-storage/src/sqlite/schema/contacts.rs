@@ -242,26 +242,12 @@ pub(crate) fn load_state(
         let owner: Vec<u8> = row.get(0)?;
         let contact: Vec<u8> = row.get(1)?;
         let label: String = row.get(2)?;
-        let outgoing_len: Option<i64> = row.get(3)?;
-        if let Some(n) = outgoing_len {
-            let n = usize::try_from(n).unwrap_or(usize::MAX);
-            if n > blob::BLOB_SIZE_LIMIT_BYTES {
-                return Err(WalletStorageError::BlobTooLarge {
-                    len_bytes: n,
-                    limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
-                });
-            }
+        if let Some(n) = row.get::<_, Option<i64>>(3)? {
+            blob::check_size(n)?;
         }
         let outgoing: Option<Vec<u8>> = row.get(4)?;
-        let incoming_len: Option<i64> = row.get(5)?;
-        if let Some(n) = incoming_len {
-            let n = usize::try_from(n).unwrap_or(usize::MAX);
-            if n > blob::BLOB_SIZE_LIMIT_BYTES {
-                return Err(WalletStorageError::BlobTooLarge {
-                    len_bytes: n,
-                    limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
-                });
-            }
+        if let Some(n) = row.get::<_, Option<i64>>(5)? {
+            blob::check_size(n)?;
         }
         let incoming: Option<Vec<u8>> = row.get(6)?;
         let (owner_id, contact_id) = decode_pair_key(&owner, &contact)?;
@@ -300,15 +286,8 @@ pub(crate) fn load_state(
                 let alias: Option<String> = row.get(7)?;
                 let note: Option<String> = row.get(8)?;
                 let is_hidden: bool = row.get::<_, Option<i64>>(9)?.unwrap_or(0) != 0;
-                let accepted_len: Option<i64> = row.get(10)?;
-                if let Some(n) = accepted_len {
-                    let n = usize::try_from(n).unwrap_or(usize::MAX);
-                    if n > blob::BLOB_SIZE_LIMIT_BYTES {
-                        return Err(WalletStorageError::BlobTooLarge {
-                            len_bytes: n,
-                            limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
-                        });
-                    }
+                if let Some(n) = row.get::<_, Option<i64>>(10)? {
+                    blob::check_size(n)?;
                 }
                 let accepted_blob: Option<Vec<u8>> = row.get(11)?;
                 let accepted_accounts: Vec<u32> = match accepted_blob {

@@ -121,13 +121,7 @@ pub fn fetch(
     match rows.next()? {
         None => Ok(None),
         Some(row) => {
-            let len = usize::try_from(row.get::<_, i64>(0)?).unwrap_or(usize::MAX);
-            if len > blob::BLOB_SIZE_LIMIT_BYTES {
-                return Err(WalletStorageError::BlobTooLarge {
-                    len_bytes: len,
-                    limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
-                });
-            }
+            blob::check_size(row.get::<_, i64>(0)?)?;
             let payload: Vec<u8> = row.get(1)?;
             let tombstoned: i64 = row.get(2)?;
             Ok(Some((blob::decode(&payload)?, tombstoned != 0)))
@@ -156,13 +150,7 @@ pub fn load_state(
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     while let Some(row) = rows.next()? {
         let identity_id_bytes: Vec<u8> = row.get(0)?;
-        let len = usize::try_from(row.get::<_, i64>(1)?).unwrap_or(usize::MAX);
-        if len > blob::BLOB_SIZE_LIMIT_BYTES {
-            return Err(WalletStorageError::BlobTooLarge {
-                len_bytes: len,
-                limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
-            });
-        }
+        blob::check_size(row.get::<_, i64>(1)?)?;
         let payload: Vec<u8> = row.get(2)?;
         let tombstoned: i64 = row.get(3)?;
         if tombstoned != 0 {

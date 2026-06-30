@@ -61,13 +61,7 @@ pub(crate) fn list_platform_payment_registrations(
     let mut out = Vec::new();
     while let Some(row) = rows.next()? {
         let idx: i64 = row.get(0)?;
-        let len = usize::try_from(row.get::<_, i64>(1)?).unwrap_or(usize::MAX);
-        if len > blob::BLOB_SIZE_LIMIT_BYTES {
-            return Err(WalletStorageError::BlobTooLarge {
-                len_bytes: len,
-                limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
-            });
-        }
+        blob::check_size(row.get::<_, i64>(1)?)?;
         let bytes: Vec<u8> = row.get(2)?;
         out.push(decode_platform_payment_row(idx, &bytes)?);
     }
@@ -182,13 +176,7 @@ pub fn load_state(
         let typed_key_class: i64 = row.get(2)?; // key_class INTEGER
         let typed_user: Vec<u8> = row.get(3)?; // user_identity_id BLOB
         let typed_friend: Vec<u8> = row.get(4)?; // friend_identity_id BLOB
-        let len = usize::try_from(row.get::<_, i64>(5)?).unwrap_or(usize::MAX);
-        if len > blob::BLOB_SIZE_LIMIT_BYTES {
-            return Err(WalletStorageError::BlobTooLarge {
-                len_bytes: len,
-                limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
-            });
-        }
+        blob::check_size(row.get::<_, i64>(5)?)?;
         let payload: Vec<u8> = row.get(6)?; // account_xpub_bytes BLOB
         let entry = blob::decode::<AccountRegistrationEntry>(&payload)?;
         // Cross-check every typed PK column vs the decoded blob so a
