@@ -226,9 +226,15 @@ pub(crate) fn load_state(
 ) -> Result<ContactsRecords, WalletStorageError> {
     let mut state = ContactsRecords::default();
 
+    // `length()` for each blob column is read before the column itself so an
+    // oversize blob is caught before the Vec is allocated.  NULL blobs return
+    // NULL from `length()`, which maps to `None` here — no gate needed.
     let mut stmt = conn.prepare(
-        "SELECT owner_id, contact_id, state, outgoing_request, incoming_request, \
-                alias, note, is_hidden, accepted_accounts \
+        "SELECT owner_id, contact_id, state, \
+                length(outgoing_request), outgoing_request, \
+                length(incoming_request), incoming_request, \
+                alias, note, is_hidden, \
+                length(accepted_accounts), accepted_accounts \
          FROM contacts WHERE wallet_id = ?1",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
@@ -236,8 +242,28 @@ pub(crate) fn load_state(
         let owner: Vec<u8> = row.get(0)?;
         let contact: Vec<u8> = row.get(1)?;
         let label: String = row.get(2)?;
-        let outgoing: Option<Vec<u8>> = row.get(3)?;
-        let incoming: Option<Vec<u8>> = row.get(4)?;
+        let outgoing_len: Option<i64> = row.get(3)?;
+        if let Some(n) = outgoing_len {
+            let n = usize::try_from(n).unwrap_or(usize::MAX);
+            if n > blob::BLOB_SIZE_LIMIT_BYTES {
+                return Err(WalletStorageError::BlobTooLarge {
+                    len_bytes: n,
+                    limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
+                });
+            }
+        }
+        let outgoing: Option<Vec<u8>> = row.get(4)?;
+        let incoming_len: Option<i64> = row.get(5)?;
+        if let Some(n) = incoming_len {
+            let n = usize::try_from(n).unwrap_or(usize::MAX);
+            if n > blob::BLOB_SIZE_LIMIT_BYTES {
+                return Err(WalletStorageError::BlobTooLarge {
+                    len_bytes: n,
+                    limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
+                });
+            }
+        }
+        let incoming: Option<Vec<u8>> = row.get(6)?;
         let (owner_id, contact_id) = decode_pair_key(&owner, &contact)?;
 
         match contact_state_from_label(&label)? {
@@ -271,10 +297,20 @@ pub(crate) fn load_state(
                 // Outgoing = us→contact; incoming = contact→us.
                 check_request_parties(&outgoing_request, &owner_id, &contact_id)?;
                 check_request_parties(&incoming_request, &contact_id, &owner_id)?;
-                let alias: Option<String> = row.get(5)?;
-                let note: Option<String> = row.get(6)?;
-                let is_hidden: bool = row.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0;
-                let accepted_blob: Option<Vec<u8>> = row.get(8)?;
+                let alias: Option<String> = row.get(7)?;
+                let note: Option<String> = row.get(8)?;
+                let is_hidden: bool = row.get::<_, Option<i64>>(9)?.unwrap_or(0) != 0;
+                let accepted_len: Option<i64> = row.get(10)?;
+                if let Some(n) = accepted_len {
+                    let n = usize::try_from(n).unwrap_or(usize::MAX);
+                    if n > blob::BLOB_SIZE_LIMIT_BYTES {
+                        return Err(WalletStorageError::BlobTooLarge {
+                            len_bytes: n,
+                            limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
+                        });
+                    }
+                }
+                let accepted_blob: Option<Vec<u8>> = row.get(11)?;
                 let accepted_accounts: Vec<u32> = match accepted_blob {
                     Some(bytes) => blob::decode(&bytes)?,
                     None => Vec::new(),

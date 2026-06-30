@@ -149,13 +149,21 @@ pub fn load_state(
 ) -> Result<IdentityKeysChangeSet, WalletStorageError> {
     let mut cs = IdentityKeysChangeSet::default();
     let mut stmt = conn.prepare(
-        "SELECT identity_id, key_id, public_key_blob FROM identity_keys WHERE wallet_id = ?1",
+        "SELECT identity_id, key_id, length(public_key_blob), public_key_blob \
+         FROM identity_keys WHERE wallet_id = ?1",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     while let Some(row) = rows.next()? {
         let identity_id_bytes: Vec<u8> = row.get(0)?;
         let key_id: i64 = row.get(1)?;
-        let payload: Vec<u8> = row.get(2)?;
+        let len = usize::try_from(row.get::<_, i64>(2)?).unwrap_or(usize::MAX);
+        if len > blob::BLOB_SIZE_LIMIT_BYTES {
+            return Err(WalletStorageError::BlobTooLarge {
+                len_bytes: len,
+                limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
+            });
+        }
+        let payload: Vec<u8> = row.get(3)?;
         let id32 = <[u8; 32]>::try_from(identity_id_bytes.as_slice()).map_err(|_| {
             WalletStorageError::blob_decode("identity_keys.identity_id is not 32 bytes")
         })?;

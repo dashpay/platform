@@ -370,16 +370,25 @@ pub fn load_state(
     }
 
     {
-        let mut stmt =
-            conn.prepare("SELECT txid, islock_blob FROM core_instant_locks WHERE wallet_id = ?1")?;
-        let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
-            let txid: Vec<u8> = row.get(0)?;
-            let blob_bytes: Vec<u8> = row.get(1)?;
-            Ok((txid, blob_bytes))
-        })?;
-        for r in rows {
+        // Same pre-read length gate as `record_blob` above: `length()` is
+        // O(1) from the row header, so a tampered oversize `islock_blob`
+        // can't force a large allocation before the cap rejects it.
+        let mut stmt = conn.prepare(
+            "SELECT txid, length(islock_blob), islock_blob \
+             FROM core_instant_locks WHERE wallet_id = ?1",
+        )?;
+        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        while let Some(row) = rows.next()? {
             use dashcore::hashes::Hash;
-            let (txid_bytes, blob_bytes) = r?;
+            let txid_bytes: Vec<u8> = row.get(0)?;
+            let len = usize::try_from(row.get::<_, i64>(1)?).unwrap_or(usize::MAX);
+            if len > blob::BLOB_SIZE_LIMIT_BYTES {
+                return Err(WalletStorageError::BlobTooLarge {
+                    len_bytes: len,
+                    limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
+                });
+            }
+            let blob_bytes: Vec<u8> = row.get(2)?;
             let txid = dashcore::Txid::from_slice(&txid_bytes)
                 .map_err(|_| WalletStorageError::blob_decode("core_instant_locks.txid"))?;
             let islock: dashcore::ephemerealdata::instant_lock::InstantLock =

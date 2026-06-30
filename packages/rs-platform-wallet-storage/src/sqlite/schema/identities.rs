@@ -110,21 +110,28 @@ pub fn fetch(
     wallet_id: &WalletId,
     identity_id: &[u8; 32],
 ) -> Result<Option<(IdentityEntry, bool)>, WalletStorageError> {
-    use rusqlite::OptionalExtension;
     // Scope to the caller's wallet (NULL-safe `IS`) so a peer wallet sharing
     // the identity-id row can't leak through; sentinel matches orphan rows.
     let wallet_id_param = wallet_id_to_param(wallet_id);
-    let row: Option<(Vec<u8>, i64)> = conn
-        .query_row(
-            "SELECT entry_blob, tombstoned FROM identities \
-             WHERE identity_id = ?1 AND wallet_id IS ?2",
-            params![&identity_id[..], wallet_id_param],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()?;
-    match row {
+    let mut stmt = conn.prepare(
+        "SELECT length(entry_blob), entry_blob, tombstoned FROM identities \
+         WHERE identity_id = ?1 AND wallet_id IS ?2",
+    )?;
+    let mut rows = stmt.query(params![&identity_id[..], wallet_id_param])?;
+    match rows.next()? {
         None => Ok(None),
-        Some((payload, tombstoned)) => Ok(Some((blob::decode(&payload)?, tombstoned != 0))),
+        Some(row) => {
+            let len = usize::try_from(row.get::<_, i64>(0)?).unwrap_or(usize::MAX);
+            if len > blob::BLOB_SIZE_LIMIT_BYTES {
+                return Err(WalletStorageError::BlobTooLarge {
+                    len_bytes: len,
+                    limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
+                });
+            }
+            let payload: Vec<u8> = row.get(1)?;
+            let tombstoned: i64 = row.get(2)?;
+            Ok(Some((blob::decode(&payload)?, tombstoned != 0)))
+        }
     }
 }
 
@@ -142,14 +149,22 @@ pub fn load_state(
     // Per-wallet loader: match by wallet_id, so orphan rows (NULL wallet_id)
     // are out of scope.
     let mut stmt = conn.prepare(
-        "SELECT identity_id, entry_blob, tombstoned FROM identities WHERE wallet_id = ?1",
+        "SELECT identity_id, length(entry_blob), entry_blob, tombstoned \
+         FROM identities WHERE wallet_id = ?1",
     )?;
     let mut state = IdentityManagerStartState::default();
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     while let Some(row) = rows.next()? {
         let identity_id_bytes: Vec<u8> = row.get(0)?;
-        let payload: Vec<u8> = row.get(1)?;
-        let tombstoned: i64 = row.get(2)?;
+        let len = usize::try_from(row.get::<_, i64>(1)?).unwrap_or(usize::MAX);
+        if len > blob::BLOB_SIZE_LIMIT_BYTES {
+            return Err(WalletStorageError::BlobTooLarge {
+                len_bytes: len,
+                limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
+            });
+        }
+        let payload: Vec<u8> = row.get(2)?;
+        let tombstoned: i64 = row.get(3)?;
         if tombstoned != 0 {
             continue;
         }

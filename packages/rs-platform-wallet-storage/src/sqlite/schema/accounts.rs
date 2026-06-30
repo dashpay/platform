@@ -52,16 +52,23 @@ pub(crate) fn list_platform_payment_registrations(
     wallet_id: &WalletId,
 ) -> Result<Vec<PlatformPaymentRegistration>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT account_index, account_xpub_bytes FROM account_registrations \
+        "SELECT account_index, length(account_xpub_bytes), account_xpub_bytes \
+         FROM account_registrations \
          WHERE wallet_id = ?1 AND account_type = 'platform_payment' \
          ORDER BY account_index",
     )?;
-    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
-        Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
-    })?;
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut out = Vec::new();
-    for r in rows {
-        let (idx, bytes) = r?;
+    while let Some(row) = rows.next()? {
+        let idx: i64 = row.get(0)?;
+        let len = usize::try_from(row.get::<_, i64>(1)?).unwrap_or(usize::MAX);
+        if len > blob::BLOB_SIZE_LIMIT_BYTES {
+            return Err(WalletStorageError::BlobTooLarge {
+                len_bytes: len,
+                limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
+            });
+        }
+        let bytes: Vec<u8> = row.get(2)?;
         out.push(decode_platform_payment_row(idx, &bytes)?);
     }
     Ok(out)
@@ -75,20 +82,24 @@ pub(crate) fn all_platform_payment_registrations(
     conn: &Connection,
 ) -> Result<BTreeMap<WalletId, Vec<PlatformPaymentRegistration>>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT wallet_id, account_index, account_xpub_bytes FROM account_registrations \
+        "SELECT wallet_id, account_index, length(account_xpub_bytes), account_xpub_bytes \
+         FROM account_registrations \
          WHERE account_type = 'platform_payment' \
          ORDER BY wallet_id, account_index",
     )?;
-    let rows = stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, Vec<u8>>(0)?,
-            row.get::<_, i64>(1)?,
-            row.get::<_, Vec<u8>>(2)?,
-        ))
-    })?;
+    let mut rows = stmt.query([])?;
     let mut out: BTreeMap<WalletId, Vec<PlatformPaymentRegistration>> = BTreeMap::new();
-    for r in rows {
-        let (wid_bytes, idx, bytes) = r?;
+    while let Some(row) = rows.next()? {
+        let wid_bytes: Vec<u8> = row.get(0)?;
+        let idx: i64 = row.get(1)?;
+        let len = usize::try_from(row.get::<_, i64>(2)?).unwrap_or(usize::MAX);
+        if len > blob::BLOB_SIZE_LIMIT_BYTES {
+            return Err(WalletStorageError::BlobTooLarge {
+                len_bytes: len,
+                limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
+            });
+        }
+        let bytes: Vec<u8> = row.get(3)?;
         let wallet_id = <[u8; 32]>::try_from(wid_bytes.as_slice()).map_err(|_| {
             WalletStorageError::InvalidWalletIdLength {
                 actual: wid_bytes.len(),
@@ -155,25 +166,30 @@ pub fn load_state(
     // against the decoded entry — a row whose blob disagrees with its indexed
     // columns is a sign of corruption or a schema bug and must be rejected
     // rather than silently mis-bucketed.
+    // `length(account_xpub_bytes)` is read first (O(1) from the row header) so
+    // an oversize blob is caught before the Vec is allocated.
     let mut stmt = conn.prepare(
         "SELECT account_type, account_index, key_class, user_identity_id, friend_identity_id, \
-                account_xpub_bytes FROM account_registrations \
+                length(account_xpub_bytes), account_xpub_bytes FROM account_registrations \
          WHERE wallet_id = ?1 \
          ORDER BY account_type, account_index, key_class, user_identity_id, friend_identity_id",
     )?;
-    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
-        Ok((
-            row.get::<_, String>(0)?,  // account_type TEXT
-            row.get::<_, i64>(1)?,     // account_index INTEGER
-            row.get::<_, i64>(2)?,     // key_class INTEGER
-            row.get::<_, Vec<u8>>(3)?, // user_identity_id BLOB
-            row.get::<_, Vec<u8>>(4)?, // friend_identity_id BLOB
-            row.get::<_, Vec<u8>>(5)?, // account_xpub_bytes BLOB
-        ))
-    })?;
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut out = Vec::new();
-    for r in rows {
-        let (typed_type, typed_index, typed_key_class, typed_user, typed_friend, payload) = r?;
+    while let Some(row) = rows.next()? {
+        let typed_type: String = row.get(0)?; // account_type TEXT
+        let typed_index: i64 = row.get(1)?; // account_index INTEGER
+        let typed_key_class: i64 = row.get(2)?; // key_class INTEGER
+        let typed_user: Vec<u8> = row.get(3)?; // user_identity_id BLOB
+        let typed_friend: Vec<u8> = row.get(4)?; // friend_identity_id BLOB
+        let len = usize::try_from(row.get::<_, i64>(5)?).unwrap_or(usize::MAX);
+        if len > blob::BLOB_SIZE_LIMIT_BYTES {
+            return Err(WalletStorageError::BlobTooLarge {
+                len_bytes: len,
+                limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
+            });
+        }
+        let payload: Vec<u8> = row.get(6)?; // account_xpub_bytes BLOB
         let entry = blob::decode::<AccountRegistrationEntry>(&payload)?;
         // Cross-check every typed PK column vs the decoded blob so a
         // corruption that passes `PRAGMA integrity_check` is still caught

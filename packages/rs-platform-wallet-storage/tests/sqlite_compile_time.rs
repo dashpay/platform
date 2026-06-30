@@ -49,13 +49,15 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "platform_addrs.rs",
         "SELECT wallet_id, account_index, address_index, address, balance, nonce",
     ),
+    // Pre-read `length()` gates added by PR #3968 review — substrings updated
+    // to reflect the new `length(<col>)` column in each SELECT.
     (
         "accounts.rs",
-        "SELECT account_index, account_xpub_bytes FROM account_registrations",
+        "SELECT account_index, length(account_xpub_bytes), account_xpub_bytes",
     ),
     (
         "accounts.rs",
-        "SELECT wallet_id, account_index, account_xpub_bytes FROM account_registrations",
+        "SELECT wallet_id, account_index, length(account_xpub_bytes), account_xpub_bytes",
     ),
     ("core_state.rs", "SELECT outpoint, value, script, height"),
     ("core_state.rs", "SELECT DISTINCT script FROM core_utxos"),
@@ -70,7 +72,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     ),
     (
         "core_state.rs",
-        "SELECT txid, islock_blob FROM core_instant_locks WHERE wallet_id",
+        "SELECT txid, length(islock_blob), islock_blob",
     ),
     (
         "core_state.rs",
@@ -78,12 +80,14 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     ),
     (
         "identity_keys.rs",
-        "SELECT identity_id, key_id, public_key_blob FROM identity_keys WHERE wallet_id",
+        "SELECT identity_id, key_id, length(public_key_blob), public_key_blob",
     ),
     // P4 readers — `load_state` per area uses one-shot SELECTs.
+    // Substring covers both `fetch` (`SELECT length(entry_blob)…`) and
+    // `load_state` (`SELECT identity_id, length(entry_blob)…`).
     (
         "identities.rs",
-        "SELECT identity_id, entry_blob, tombstoned",
+        "length(entry_blob), entry_blob, tombstoned",
     ),
     ("contacts.rs", "SELECT owner_id, contact_id, state"),
 ];
