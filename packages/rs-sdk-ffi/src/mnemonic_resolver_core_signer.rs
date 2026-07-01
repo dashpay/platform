@@ -242,6 +242,13 @@ impl MnemonicResolverCoreSigner {
     /// `Zeroizing`-wrapped. `ExtendedPrivKey: Zeroize` comes from rust-dashcore
     /// PR #833 (rev `f42498e0d04257e28b4e457c16629904a872ab61`).
     ///
+    /// One transient is irreducible: `ExtendedPrivKey::derive_priv` returns the
+    /// child key *by value* (`ExtendedPrivKey` is `Copy`), so its return slot
+    /// briefly holds an un-wiped copy until the same-line `Zeroizing::new`
+    /// takes ownership. Closing that would require an upstream signature change
+    /// in key-wallet; it is not "zero copies ever", just the tightest this
+    /// layer can guarantee.
+    ///
     /// # Errors
     ///
     /// Propagates [`MnemonicResolverSignerError`] for every failure mode:
@@ -517,17 +524,26 @@ mod tests {
         let derived = master.derive_priv(&secp, &path).expect("path derivation");
         let expected = ExtendedPubKey::from_priv(&secp, &derived);
 
-        // Full-struct equality catches any field regression; the explicit
-        // metadata asserts keep the guarantee even if `ExtendedPubKey`'s
-        // `PartialEq` ever narrows, and document that chain code / depth /
-        // network are deliberately covered — not just the public point.
-        assert_eq!(xpub, expected, "xpub must match independent derivation");
+        // Field-level checks run first so a silently-dropped BIP-32 metadatum
+        // fails here with a precise message — not just the public point. The
+        // final full-struct assert then catches the remaining fields
+        // (parent_fingerprint, child_number). Ordering matters: a leading
+        // full-struct `assert_eq!` would short-circuit and make these
+        // per-field asserts unreachable (i.e. vacuous) on a metadata regression.
+        assert_eq!(
+            xpub.public_key, expected.public_key,
+            "public key must match"
+        );
         assert_eq!(
             xpub.chain_code, expected.chain_code,
             "chain code must match"
         );
         assert_eq!(xpub.depth, expected.depth, "depth must match");
         assert_eq!(xpub.network, expected.network, "network must match");
+        assert_eq!(
+            xpub, expected,
+            "full xpub must match independent derivation"
+        );
 
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
