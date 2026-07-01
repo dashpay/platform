@@ -1546,6 +1546,21 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '4.0.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // The drive and rs-dapi image tags are derived from the package
+            // major version. Re-pin them from the base config so operators
+            // upgrading from a prerelease of this major, or from an older
+            // major, move off their stale tag onto the current stable images.
+            // The legacy 0.25.x migrations already do this, but only fire for
+            // configs old enough to cross them; recent upgraders need it here.
+            options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
+            options.platform.dapi.rsDapi.docker.image = base.get('platform.dapi.rsDapi.docker.image');
+          });
+
+        return configFile;
+      },
     };
   }
 
