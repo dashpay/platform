@@ -283,19 +283,23 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map_err(|e| FileShieldedStoreError(format!("read tree anchor: {e}")))
     }
 
-    fn witness(
+    fn witness_at_depth(
         &self,
         position: u64,
+        depth: usize,
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error> {
         let tree = self
             .tree
             .lock()
             .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
-        // `checkpoint_depth = 0` = current tree state. The Halo 2
-        // proof we're about to build uses `tree_anchor()` — also
-        // depth 0 — so the witness root must agree.
-        tree.witness(Position::from(position), 0)
-            .map_err(|e| FileShieldedStoreError(format!("witness({position}): {e}")))
+        // `checkpoint_depth = 0` is the current tree state; deeper values
+        // reach older checkpoints so a spend can be built against a root
+        // Platform actually recorded (it records one anchor per block, while
+        // an index-chunk sync routinely leaves the tree mid-block). The proof
+        // uses whichever anchor this witness produces via `MerklePath::root`,
+        // so the anchor and the authentication path always agree.
+        tree.witness(Position::from(position), depth)
+            .map_err(|e| FileShieldedStoreError(format!("witness({position}, depth {depth}): {e}")))
     }
 
     fn tree_size(&self) -> Result<u64, Self::Error> {
