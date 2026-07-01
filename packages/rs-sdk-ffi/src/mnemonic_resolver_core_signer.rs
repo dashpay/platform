@@ -222,8 +222,9 @@ impl MnemonicResolverCoreSigner {
         }
     }
 
-    /// Resolve the mnemonic from the Swift-side callback, then derive the
-    /// BIP-32 extended private key at `path`.
+    /// Resolve the mnemonic from the Swift-side callback, derive the BIP-32
+    /// extended private key at `path`, and hand it *by reference* to
+    /// `extract`, returning whatever `extract` produces.
     ///
     /// This is the single entry-point for all private-key material in this
     /// signer. It handles the full stack: resolver FFI call → result-code
@@ -232,22 +233,25 @@ impl MnemonicResolverCoreSigner {
     ///
     /// # Zeroization contract
     ///
-    /// Both the `master` and returned `derived` extended keys are held in
-    /// [`Zeroizing`], so every `ExtendedPrivKey` scalar is wiped on drop:
-    /// `master` when this helper returns, `derived` when the caller's
-    /// binding drops. The mnemonic and seed buffers are likewise
-    /// `Zeroizing`-wrapped. `ExtendedPrivKey: Zeroize` comes from
-    /// rust-dashcore PR #833 (rev `f42498e0d04257e28b4e457c16629904a872ab61`).
+    /// Both the `master` and `derived` extended keys are held in [`Zeroizing`]
+    /// and wiped when this method returns. The `ExtendedPrivKey` never crosses
+    /// the call boundary — `extract` only borrows it — so no raw or wrapped
+    /// key can outlive the derivation. `extract` returns public material
+    /// (`ExtendedPubKey`) or a `Zeroizing` scalar copy; the caller wipes the
+    /// latter on its own drop. The mnemonic and seed buffers are likewise
+    /// `Zeroizing`-wrapped. `ExtendedPrivKey: Zeroize` comes from rust-dashcore
+    /// PR #833 (rev `f42498e0d04257e28b4e457c16629904a872ab61`).
     ///
     /// # Errors
     ///
     /// Propagates [`MnemonicResolverSignerError`] for every failure mode:
     /// null handle, resolver FFI errors, encoding/parse failures, and BIP-32
     /// derivation errors.
-    fn resolve_and_derive(
+    fn resolve_and_derive<T>(
         &self,
         path: &DerivationPath,
-    ) -> Result<Zeroizing<ExtendedPrivKey>, MnemonicResolverSignerError> {
+        extract: impl FnOnce(&ExtendedPrivKey) -> T,
+    ) -> Result<T, MnemonicResolverSignerError> {
         if self.resolver_addr == 0 {
             return Err(MnemonicResolverSignerError::NullHandle);
         }
@@ -310,28 +314,29 @@ impl MnemonicResolverCoreSigner {
                 MnemonicResolverSignerError::DerivationFailed(format!("master: {e}"))
             })?,
         );
-        let derived = master
-            .derive_priv(&secp, path)
-            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(format!("path: {e}")))?;
+        let derived =
+            Zeroizing::new(master.derive_priv(&secp, path).map_err(|e| {
+                MnemonicResolverSignerError::DerivationFailed(format!("path: {e}"))
+            })?);
 
-        Ok(Zeroizing::new(derived))
+        Ok(extract(&derived))
     }
 
     /// Resolve the mnemonic and derive the raw 32-byte scalar at `path`.
     ///
     /// Returns the scalar in a `Zeroizing` wrapper so the caller's last
-    /// drop point wipes it. All other intermediate key material — the two
-    /// [`ExtendedPrivKey`] values, mnemonic, and seed — is `Zeroizing`-
-    /// wrapped and wiped before this method returns (see
-    /// [`Self::resolve_and_derive`]).
+    /// drop point wipes it. The intermediate `ExtendedPrivKey` values,
+    /// mnemonic, and seed are wiped inside [`Self::resolve_and_derive`]
+    /// before this returns.
     fn derive_priv(
         &self,
         path: &DerivationPath,
     ) -> Result<Zeroizing<[u8; 32]>, MnemonicResolverSignerError> {
-        let derived = self.resolve_and_derive(path)?;
-        // `secret_bytes()` copies the 32-byte scalar out of the `Zeroizing`-
-        // wrapped `derived`, which wipes on drop at end of scope.
-        Ok(Zeroizing::new(derived.private_key.secret_bytes()))
+        // `secret_bytes()` copies the scalar out of the borrowed key; the
+        // `ExtendedPrivKey` itself never leaves `resolve_and_derive`.
+        self.resolve_and_derive(path, |derived| {
+            Zeroizing::new(derived.private_key.secret_bytes())
+        })
     }
 }
 
@@ -392,12 +397,10 @@ impl Signer for MnemonicResolverCoreSigner {
         &self,
         path: &DerivationPath,
     ) -> Result<ExtendedPubKey, Self::Error> {
-        let derived = self.resolve_and_derive(path)?;
         let secp = Secp256k1::new();
         // `ExtendedPubKey` carries only public material (chain code + point);
-        // `derived` wipes its private scalar on drop at end of scope.
-        let xpub = ExtendedPubKey::from_priv(&secp, &derived);
-        Ok(xpub)
+        // the borrowed private key never leaves `resolve_and_derive`.
+        self.resolve_and_derive(path, |derived| ExtendedPubKey::from_priv(&secp, derived))
     }
 }
 
@@ -489,6 +492,42 @@ mod tests {
             pk_only, pk_via_sign,
             "public_key() and sign_ecdsa() must return the same pubkey for the same path"
         );
+
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    #[tokio::test]
+    async fn extended_public_key_matches_independent_derivation() {
+        let resolver = make_resolver(english_resolve);
+        let signer =
+            unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+
+        let path = test_path();
+        let xpub = signer
+            .extended_public_key(&path)
+            .await
+            .expect("extended_public_key succeeds");
+
+        // Independently derive the expected xpub straight from the known
+        // BIP-39 vector — same network + path, no resolver in the loop.
+        let secp = Secp256k1::new();
+        let mnemonic = parse_mnemonic_any_language(ENGLISH_PHRASE).expect("valid phrase");
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &mnemonic.to_seed(""))
+            .expect("master derivation");
+        let derived = master.derive_priv(&secp, &path).expect("path derivation");
+        let expected = ExtendedPubKey::from_priv(&secp, &derived);
+
+        // Full-struct equality catches any field regression; the explicit
+        // metadata asserts keep the guarantee even if `ExtendedPubKey`'s
+        // `PartialEq` ever narrows, and document that chain code / depth /
+        // network are deliberately covered — not just the public point.
+        assert_eq!(xpub, expected, "xpub must match independent derivation");
+        assert_eq!(
+            xpub.chain_code, expected.chain_code,
+            "chain code must match"
+        );
+        assert_eq!(xpub.depth, expected.depth, "depth must match");
+        assert_eq!(xpub.network, expected.network, "network must match");
 
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
