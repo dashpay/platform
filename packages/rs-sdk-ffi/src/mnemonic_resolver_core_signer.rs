@@ -39,18 +39,18 @@
 //! # Zeroization
 //!
 //! Every intermediate that carries key material is wiped before the
-//! method returns. Two mechanisms cover the different ownership
+//! method returns. Three mechanisms cover the different ownership
 //! shapes:
 //!
-//! - **`Zeroizing` wrappers** scrub on `Drop`. This covers the
-//!   byte-buffer intermediates (resolver mnemonic buffer, BIP-39 seed,
-//!   final derived 32-byte scalar) and the two intermediate
-//!   [`ExtendedPrivKey`] values (master + derived). `ExtendedPrivKey`
-//!   is `Copy` with no `Drop`, so the wipe fires through its
-//!   `Zeroizing` wrapper on every exit path — success, `?`-early-return,
-//!   and panic-unwind. `ExtendedPrivKey: Zeroize` comes from
-//!   rust-dashcore PR #833 (rev
-//!   `f42498e0d04257e28b4e457c16629904a872ab61`).
+//! - **[`ExtendedPrivKey`] self-wipes on `Drop`.** The master and
+//!   derived extended keys zero their secret material when they leave
+//!   scope, on every exit path — success, `?`-early-return, and
+//!   panic-unwind. The type is no longer `Copy` as of rust-dashcore rev
+//!   `a8c57fe863c96ac9c7e33833549e7a4f75ac9b5e`, so each move is a real
+//!   move that leaves no stray bitwise duplicate behind.
+//! - **`Zeroizing` wrappers** scrub the plain byte buffers that carry
+//!   no `Drop` of their own: the resolver mnemonic buffer, the BIP-39
+//!   seed, and the final derived 32-byte scalar.
 //! - **Explicit `non_secure_erase` calls** scrub the raw
 //!   [`secp256k1::SecretKey`] copies at the two sign sites, where the
 //!   scalar comes back out of `SecretKey::from_slice`. `SecretKey` has
@@ -233,21 +233,16 @@ impl MnemonicResolverCoreSigner {
     ///
     /// # Zeroization contract
     ///
-    /// Both the `master` and `derived` extended keys are held in [`Zeroizing`]
-    /// and wiped when this method returns. The `ExtendedPrivKey` never crosses
-    /// the call boundary — `extract` only borrows it — so no raw or wrapped
-    /// key can outlive the derivation. `extract` returns public material
+    /// Both the `master` and `derived` extended keys wipe their secret
+    /// material when they leave this scope — [`ExtendedPrivKey`] zeroizes on
+    /// `Drop` as of rust-dashcore rev
+    /// `a8c57fe863c96ac9c7e33833549e7a4f75ac9b5e`, and is no longer `Copy`, so
+    /// each move is a real move that leaves no bitwise duplicate behind. The
+    /// key never crosses the call boundary — `extract` only borrows it — so it
+    /// cannot outlive the derivation. `extract` returns public material
     /// (`ExtendedPubKey`) or a `Zeroizing` scalar copy; the caller wipes the
-    /// latter on its own drop. The mnemonic and seed buffers are likewise
-    /// `Zeroizing`-wrapped. `ExtendedPrivKey: Zeroize` comes from rust-dashcore
-    /// PR #833 (rev `f42498e0d04257e28b4e457c16629904a872ab61`).
-    ///
-    /// One transient is irreducible: `ExtendedPrivKey::derive_priv` returns the
-    /// child key *by value* (`ExtendedPrivKey` is `Copy`), so its return slot
-    /// briefly holds an un-wiped copy until the same-line `Zeroizing::new`
-    /// takes ownership. Closing that would require an upstream signature change
-    /// in key-wallet; it is not "zero copies ever", just the tightest this
-    /// layer can guarantee.
+    /// latter on its own drop. The mnemonic and seed buffers are plain arrays
+    /// and ride [`Zeroizing`] wrappers for the same guarantee.
     ///
     /// # Errors
     ///
@@ -316,15 +311,11 @@ impl MnemonicResolverCoreSigner {
         drop(mnemonic);
 
         let secp = Secp256k1::new();
-        let master = Zeroizing::new(
-            ExtendedPrivKey::new_master(self.network, seed.as_ref()).map_err(|e| {
-                MnemonicResolverSignerError::DerivationFailed(format!("master: {e}"))
-            })?,
-        );
-        let derived =
-            Zeroizing::new(master.derive_priv(&secp, path).map_err(|e| {
-                MnemonicResolverSignerError::DerivationFailed(format!("path: {e}"))
-            })?);
+        let master = ExtendedPrivKey::new_master(self.network, seed.as_ref())
+            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(format!("master: {e}")))?;
+        let derived = master
+            .derive_priv(&secp, path)
+            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(format!("path: {e}")))?;
 
         Ok(extract(&derived))
     }
