@@ -1,0 +1,135 @@
+name: "Platform testnet sync status"
+
+"on":
+  repository_dispatch:
+    types:
+      - platform-testnet-sync-completed
+  workflow_dispatch:
+    inputs:
+      status:
+        description: Final completed run status
+        required: true
+        type: choice
+        options:
+          - sync_passed
+          - build_failed
+          - sync_failed
+      target_sha:
+        description: Platform commit SHA to report against
+        required: false
+        type: string
+      target_url:
+        description: URL for run logs or status details
+        required: false
+        type: string
+      core_version:
+        description: Public Core version used by the run
+        required: false
+        type: string
+      platform_sha:
+        description: Platform commit SHA built and synced
+        required: false
+        type: string
+      completed_at:
+        description: Completion timestamp, preferably ISO 8601 UTC
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  report:
+    name: Report latest completed sync status
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish commit status
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        env:
+          CLIENT_PAYLOAD: ${{ toJson(github.event.client_payload) }}
+        with:
+          script: |
+            const dispatchPayload = JSON.parse(process.env.CLIENT_PAYLOAD || '{}');
+            const payload = context.eventName === 'workflow_dispatch'
+              ? context.payload.inputs
+              : dispatchPayload;
+
+            if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+              core.setFailed('Missing repository_dispatch client_payload');
+              return;
+            }
+
+            const status = payload.status;
+            const labels = {
+              sync_passed: 'Sync Passed',
+              build_failed: 'Build Failed',
+              sync_failed: 'Sync Failed',
+            };
+
+            if (!Object.prototype.hasOwnProperty.call(labels, status)) {
+              core.setFailed(`Unsupported status: ${status || '<empty>'}`);
+              return;
+            }
+
+            const targetSha = String(payload.target_sha || payload.platform_sha || '').trim();
+            if (!/^[0-9a-f]{40}$/i.test(targetSha)) {
+              core.setFailed('target_sha or platform_sha must be an explicit 40-character commit SHA');
+              return;
+            }
+
+            await github.rest.repos.getCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: targetSha,
+            });
+
+            let targetUrl;
+            if (payload.target_url) {
+              let parsedUrl;
+              try {
+                parsedUrl = new URL(payload.target_url);
+              } catch (error) {
+                core.setFailed(`target_url must be a valid URL: ${error.message}`);
+                return;
+              }
+
+              if (parsedUrl.origin !== 'https://github.com') {
+                core.setFailed('target_url must use the https://github.com origin');
+                return;
+              }
+              targetUrl = parsedUrl.toString();
+            }
+
+            const state = status === 'sync_passed' ? 'success' : 'failure';
+            const label = labels[status];
+            const details = [
+              payload.core_version,
+              payload.platform_sha ? payload.platform_sha.slice(0, 12) : null,
+              payload.completed_at,
+            ].filter(Boolean).join(' ');
+            const description = `${label}${details ? ` - ${details}` : ''}`.slice(0, 140);
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: targetSha,
+              state,
+              context: 'Platform testnet sync',
+              description,
+              target_url: targetUrl || undefined,
+            });
+
+            await core.summary
+              .addHeading('Platform testnet sync')
+              .addRaw(`Status: ${label}\n\n`)
+              .addRaw(`Target SHA: ${targetSha}\n\n`)
+              .addRaw(`Core version: ${payload.core_version || 'not provided'}\n\n`)
+              .addRaw(`Platform SHA: ${payload.platform_sha || targetSha}\n\n`)
+              .addRaw(`Completed at: ${payload.completed_at || 'not provided'}\n\n`)
+              .addRaw(`Details: ${targetUrl || 'not provided'}\n`)
+              .write();
+
+            if (status !== 'sync_passed') {
+              core.setFailed(label);
+            }

@@ -12,6 +12,7 @@
 <p align="center">
   <a href="https://github.com/dashpay/platform/actions/workflows/tests.yml"><img alt="CI" src="https://github.com/dashpay/platform/actions/workflows/tests.yml/badge.svg"></a>
   <a href="https://github.com/dashpay/platform/blob/v3.1-dev/NIGHTLY_STATUS.md"><img alt="Nightly Tests" src="https://img.shields.io/github/actions/workflow/status/dashpay/platform/tests.yml?event=schedule&label=Nightly%20Tests" title="Nightly test status"></a>
+  <a href="https://github.com/dashpay/platform/blob/v3.1-dev/docs/PLATFORM_TESTNET_SYNC.md"><img alt="Platform Sync" src="https://img.shields.io/github/actions/workflow/status/dashpay/platform/platform-testnet-sync-status.yml?event=repository_dispatch&label=Platform%20Sync" title="Platform testnet sync status"></a>
   <a href="https://codecov.io/gh/dashpay/platform"><img alt="codecov" src="https://codecov.io/gh/dashpay/platform/branch/v3.1-dev/graph/badge.svg"></a>
   <a href="https://github.com/dashpay/platform/graphs/commit-activity"><img alt="commit activity" src="https://img.shields.io/github/commit-activity/m/dashpay/platform"></a>
   <a href="https://github.com/dashpay/platform/commits"><img alt="last commit" src="https://img.shields.io/github/last-commit/dashpay/platform"></a>
