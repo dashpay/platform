@@ -241,6 +241,9 @@ export default function getBaseConfigFactory() {
             blacklist: [],
             whitelist: [],
             enabled: true,
+            responseHeaders: {
+              enabled: true,
+            },
           },
           ssl: {
             enabled: false,
@@ -355,7 +358,7 @@ export default function getBaseConfigFactory() {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1.6-dev.1',
+              image: 'dashpay/tenderdash:1.6.0',
             },
             p2p: {
               host: '0.0.0.0',
