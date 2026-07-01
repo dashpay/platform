@@ -95,6 +95,15 @@ pub trait CanRetry {
         false
     }
 
+    /// If this error is a gRPC `ResourceExhausted` (Envoy rate-limit) that
+    /// carries a `RateLimit-Reset` metadata header, returns the server-advertised
+    /// ban duration (clamped to a safe range).  Returns `None` for all other
+    /// errors and for rate-limit errors that carry no usable header (the caller
+    /// falls back to the normal exponential ban ladder in that case).
+    fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
+        None
+    }
+
     /// Get boolean flag that indicates if the error is retryable.
     ///
     /// Deprecated in favor of [CanRetry::can_retry].
