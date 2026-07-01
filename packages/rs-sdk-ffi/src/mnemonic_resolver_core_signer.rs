@@ -42,20 +42,20 @@
 //! method returns. Two mechanisms cover the different ownership
 //! shapes:
 //!
-//! - **`Zeroizing` wrappers** scrub on `Drop` for the byte-buffer
-//!   intermediates: the resolver mnemonic buffer, the BIP-39 seed,
-//!   and the final derived 32-byte scalar.
-//! - **Explicit `non_secure_erase` calls** scrub the
-//!   [`secp256k1::SecretKey`] scalars inside the two intermediate
+//! - **`Zeroizing` wrappers** scrub on `Drop`. This covers the
+//!   byte-buffer intermediates (resolver mnemonic buffer, BIP-39 seed,
+//!   final derived 32-byte scalar) and the two intermediate
 //!   [`ExtendedPrivKey`] values (master + derived). `ExtendedPrivKey`
-//!   has no `Drop` / `Zeroize` impl in `key-wallet`, so falling out
-//!   of scope alone would leave those scalars resident; the explicit
-//!   wipe at the bottom of `derive_priv` closes the gap. Same
-//!   defense is applied at the sign-site for the `SecretKey` copy
-//!   `from_slice` creates. A proper fix is a `Zeroize` /
-//!   `ZeroizeOnDrop` impl in `dashpay/rust-dashcore`'s
-//!   `key-wallet/src/bip32.rs`; until that ships, the local wipes
-//!   keep the no-residue invariant true.
+//!   is `Copy` with no `Drop`, so the wipe fires through its
+//!   `Zeroizing` wrapper on every exit path — success, `?`-early-return,
+//!   and panic-unwind. `ExtendedPrivKey: Zeroize` comes from
+//!   rust-dashcore PR #833 (rev
+//!   `f42498e0d04257e28b4e457c16629904a872ab61`).
+//! - **Explicit `non_secure_erase` calls** scrub the raw
+//!   [`secp256k1::SecretKey`] copies at the two sign sites, where the
+//!   scalar comes back out of `SecretKey::from_slice`. `SecretKey` has
+//!   no `Zeroize` impl (only `non_secure_erase()`), so it can't ride a
+//!   `Zeroizing` wrapper.
 //!
 //! Combined, no private key bytes survive past the trait-method
 //! boundary.
@@ -232,12 +232,12 @@ impl MnemonicResolverCoreSigner {
     ///
     /// # Zeroization contract
     ///
-    /// - The `master` scalar is wiped inside this helper before returning.
-    /// - The *caller* is responsible for wiping `derived.private_key` after
-    ///   extracting whatever it needs — `ExtendedPrivKey` carries no
-    ///   `Drop`-based zeroization (see the `TODO(upstream)` below).
-    /// - All other intermediate buffers (mnemonic, seed) are `Zeroizing`-
-    ///   wrapped and wiped on drop before this method returns.
+    /// Both the `master` and returned `derived` extended keys are held in
+    /// [`Zeroizing`], so every `ExtendedPrivKey` scalar is wiped on drop:
+    /// `master` when this helper returns, `derived` when the caller's
+    /// binding drops. The mnemonic and seed buffers are likewise
+    /// `Zeroizing`-wrapped. `ExtendedPrivKey: Zeroize` comes from
+    /// rust-dashcore PR #833 (rev `f42498e0d04257e28b4e457c16629904a872ab61`).
     ///
     /// # Errors
     ///
@@ -247,7 +247,7 @@ impl MnemonicResolverCoreSigner {
     fn resolve_and_derive(
         &self,
         path: &DerivationPath,
-    ) -> Result<ExtendedPrivKey, MnemonicResolverSignerError> {
+    ) -> Result<Zeroizing<ExtendedPrivKey>, MnemonicResolverSignerError> {
         if self.resolver_addr == 0 {
             return Err(MnemonicResolverSignerError::NullHandle);
         }
@@ -305,56 +305,33 @@ impl MnemonicResolverCoreSigner {
         drop(mnemonic);
 
         let secp = Secp256k1::new();
-        let mut master = ExtendedPrivKey::new_master(self.network, seed.as_ref())
-            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(format!("master: {e}")))?;
-        // TODO(upstream): `key_wallet::bip32::ExtendedPrivKey` has no
-        // `Drop` / `Zeroize` impl — the inner `secp256k1::SecretKey`
-        // scalar on `master` would otherwise drop un-wiped. The `derived`
-        // scalar is the caller's responsibility (see zeroization contract
-        // above). Proper fix is a `Zeroize` / `ZeroizeOnDrop` impl in
-        // `dashpay/rust-dashcore`'s `key-wallet/src/bip32.rs`; until
-        // that lands, wipe the master scalar explicitly on BOTH paths:
-        // the error arm below (early return) and the success path after
-        // the match. Mirrored in the sibling FFI at
-        // `rs-platform-wallet-ffi/src/sign_with_mnemonic_resolver.rs`.
-        let derived = match master.derive_priv(&secp, path) {
-            Ok(d) => d,
-            Err(e) => {
-                // Wipe master before returning — the success path below
-                // never runs, so line 323's erase would be skipped without
-                // this explicit call.
-                master.private_key.non_secure_erase();
-                return Err(MnemonicResolverSignerError::DerivationFailed(format!(
-                    "path: {e}"
-                )));
-            }
-        };
+        let master = Zeroizing::new(
+            ExtendedPrivKey::new_master(self.network, seed.as_ref()).map_err(|e| {
+                MnemonicResolverSignerError::DerivationFailed(format!("master: {e}"))
+            })?,
+        );
+        let derived = master
+            .derive_priv(&secp, path)
+            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(format!("path: {e}")))?;
 
-        // Success path: master scalar wiped here; derived is the caller's
-        // responsibility (documented in the zeroization contract above).
-        master.private_key.non_secure_erase();
-
-        Ok(derived)
+        Ok(Zeroizing::new(derived))
     }
 
     /// Resolve the mnemonic and derive the raw 32-byte scalar at `path`.
     ///
     /// Returns the scalar in a `Zeroizing` wrapper so the caller's last
-    /// drop point wipes it. All other intermediate key material is zeroed
-    /// before this method returns (see [`Self::resolve_and_derive`]).
+    /// drop point wipes it. All other intermediate key material — the two
+    /// [`ExtendedPrivKey`] values, mnemonic, and seed — is `Zeroizing`-
+    /// wrapped and wiped before this method returns (see
+    /// [`Self::resolve_and_derive`]).
     fn derive_priv(
         &self,
         path: &DerivationPath,
     ) -> Result<Zeroizing<[u8; 32]>, MnemonicResolverSignerError> {
-        let mut derived = self.resolve_and_derive(path)?;
-        // `secret_bytes()` copies the 32-byte scalar; wrap in `Zeroizing`
-        // so the caller's drop point wipes it.
-        let bytes = Zeroizing::new(derived.private_key.secret_bytes());
-        // Wipe the derived extended key's scalar — the extracted `bytes`
-        // carry it from here. Mirrors the SecretKey-copy hole noted in
-        // `resolve_and_derive`'s TODO(upstream).
-        derived.private_key.non_secure_erase();
-        Ok(bytes)
+        let derived = self.resolve_and_derive(path)?;
+        // `secret_bytes()` copies the 32-byte scalar out of the `Zeroizing`-
+        // wrapped `derived`, which wipes on drop at end of scope.
+        Ok(Zeroizing::new(derived.private_key.secret_bytes()))
     }
 }
 
@@ -415,12 +392,11 @@ impl Signer for MnemonicResolverCoreSigner {
         &self,
         path: &DerivationPath,
     ) -> Result<ExtendedPubKey, Self::Error> {
-        let mut derived = self.resolve_and_derive(path)?;
+        let derived = self.resolve_and_derive(path)?;
         let secp = Secp256k1::new();
-        // Capture the extended public key *before* wiping the private scalar.
-        // `ExtendedPubKey` carries only public material (chain code + point).
+        // `ExtendedPubKey` carries only public material (chain code + point);
+        // `derived` wipes its private scalar on drop at end of scope.
         let xpub = ExtendedPubKey::from_priv(&secp, &derived);
-        derived.private_key.non_secure_erase();
         Ok(xpub)
     }
 }
