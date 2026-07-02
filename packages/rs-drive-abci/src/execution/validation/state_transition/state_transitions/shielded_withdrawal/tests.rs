@@ -660,9 +660,13 @@ mod tests {
                 b[0] = later;
                 let rho_later = Rho::from_bytes(&b).unwrap();
                 let rseed_later = RandomSeed::from_bytes([42u8; 32], &rho_later).unwrap();
-                let note_later =
-                    Note::from_parts(recipient, NoteValue::from_raw(1_000), rho_later, rseed_later)
-                        .unwrap();
+                let note_later = Note::from_parts(
+                    recipient,
+                    NoteValue::from_raw(1_000),
+                    rho_later,
+                    rseed_later,
+                )
+                .unwrap();
                 let cmx_later = ExtractedNoteCommitment::from(note_later.commitment());
                 tree.append(cmx_later.to_bytes(), Retention::Ephemeral)
                     .unwrap();
