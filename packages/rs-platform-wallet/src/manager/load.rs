@@ -26,7 +26,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// The load path never touches the seed, so it performs no wrong-seed
     /// check. Signing happens later, on demand, via the configured
-    /// [`MnemonicResolverHandle`].
+    /// `MnemonicResolverHandle` (`rs-sdk-ffi`).
     ///
     /// # Skip vs hard-fail
     ///
@@ -55,8 +55,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// or a fresh
     /// [`initialize`](crate::wallet::platform_addresses::PlatformAddressWallet::initialize)
     /// when the snapshot carries no slice for it.
-    ///
-    /// [`MnemonicResolverHandle`]: rs_sdk_ffi::MnemonicResolverHandle
     pub async fn load_from_persistor(&self) -> Result<LoadOutcome, PlatformWalletError> {
         let ClientStartState {
             mut platform_addresses,
