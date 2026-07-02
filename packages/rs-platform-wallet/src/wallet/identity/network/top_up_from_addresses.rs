@@ -28,14 +28,20 @@ impl IdentityWallet {
     /// Uses the `TopUpIdentityFromAddresses` SDK trait. Address nonces are
     /// looked up automatically.
     ///
-    /// Returns the proof-attested post-spend `AddressInfos` alongside the new
-    /// identity balance. The caller MUST reconcile the spent platform-address
-    /// balances from the `AddressInfos` via
-    /// [`PlatformAddressWallet::apply_top_up_reconciliation`] — this method
-    /// only owns the identity-side balance update, because resolving a spent
-    /// address back to its derivation index needs the address provider, which
-    /// lives on the platform-address wallet (and covers addresses restored
-    /// from disk that are no longer in a live derived pool).
+    /// This method owns only the identity-side balance update and returns
+    /// the proof-attested post-spend `AddressInfos` alongside the new
+    /// identity balance. Prefer the composite
+    /// [`PlatformWallet::top_up_from_addresses`], which feeds the returned
+    /// `AddressInfos` through
+    /// [`PlatformAddressWallet::reconcile_address_infos`] — the
+    /// platform-address wallet holds the address provider needed to map a
+    /// spent address back to its derivation index (including addresses
+    /// restored from disk that are no longer in a live derived pool).
+    ///
+    /// [`PlatformWallet::top_up_from_addresses`]:
+    /// crate::wallet::PlatformWallet::top_up_from_addresses
+    /// [`PlatformAddressWallet::reconcile_address_infos`]:
+    /// crate::wallet::PlatformAddressWallet::reconcile_address_infos
     ///
     /// # Arguments
     ///
@@ -100,10 +106,10 @@ impl IdentityWallet {
             }
         }
 
-        // The spent platform-address balances are reconciled by the caller via
-        // `PlatformAddressWallet::apply_top_up_reconciliation`, which has the
-        // address provider needed to map restored addresses back to their
-        // derivation index.
+        // The spent platform-address balances are reconciled by the
+        // composite `PlatformWallet::top_up_from_addresses`, which routes
+        // the returned `AddressInfos` through the platform-address wallet's
+        // shared reconciliation seam.
         Ok((address_infos, new_balance))
     }
 }

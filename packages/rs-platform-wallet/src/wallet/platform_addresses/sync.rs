@@ -153,13 +153,20 @@ impl PlatformAddressWallet {
         }
 
         provider.update_sync_state(&result);
-        drop(guard);
 
+        // Persist BEFORE releasing the provider lock. The reconciliation
+        // seam (`reconcile_address_infos`) serializes on this lock and
+        // persists its proof-attested entries after acquiring it, so
+        // keeping this store inside the critical section guarantees any
+        // reconciliation that observed this pass's committed state also
+        // lands on disk after it — releasing first would let a fresher
+        // reconciliation row be overwritten by this (older) diff.
         if !cs.is_empty() {
             if let Err(e) = self.persister.store(cs.into()) {
                 tracing::error!("Failed to persist address sync changeset: {}", e);
             }
         }
+        drop(guard);
 
         Ok(result)
     }

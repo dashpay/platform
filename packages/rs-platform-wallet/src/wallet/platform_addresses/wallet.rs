@@ -1,9 +1,11 @@
 //! Platform address wallet for DIP-17 platform payment addresses.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use key_wallet::PlatformP2PKHAddress;
 use tokio::sync::RwLock;
 
 use crate::broadcaster::SpvBroadcaster;
@@ -28,8 +30,11 @@ pub struct PlatformAddressWallet {
     pub(crate) wallet_id: WalletId,
     /// Single provider covering every platform payment account on the
     /// wallet. `None` until [`initialize`] runs so that no-account
-    /// wallets don't allocate empty state. Sync takes a `write` lock;
-    /// transfer/withdraw paths take `read` for key_source lookups.
+    /// wallets don't allocate empty state. Both sync and the
+    /// post-broadcast reconciliation seam
+    /// ([`reconcile_address_infos`](Self::reconcile_address_infos))
+    /// take the `write` lock across their whole apply sequence, which
+    /// is what serializes them against each other.
     pub(crate) provider: Arc<RwLock<Option<PlatformPaymentAddressProvider>>>,
     /// Shared asset-lock manager. Threaded in so the orchestrated
     /// `fund_from_asset_lock` path can drive
@@ -159,72 +164,151 @@ impl PlatformAddressWallet {
         Ok(())
     }
 
-    /// Reconcile platform-address balances after an identity
-    /// top-up-from-addresses, from the proof-attested `address_infos` the SDK
-    /// returns. Each spent address's `(account_index, address_index)` is
-    /// resolved from the persisted provider state — covering addresses
-    /// restored from disk that are no longer in a live derived pool — its
-    /// in-memory balance is set to the proof's post-spend value, and a
-    /// `PlatformAddressChangeSet` is persisted so the displayed balance and
-    /// the next input selection both reflect on-chain reality.
+    /// Reconcile platform-address balances from the proof-attested
+    /// `address_infos` an address-funds state transition returns (transfer,
+    /// withdrawal, asset-lock funding, identity registration / top-up /
+    /// credit transfer). This is the single apply-and-persist seam every
+    /// flow routes through.
     ///
-    /// Without this, the local balances stay frozen at their pre-top-up
-    /// values: the wallet keeps displaying a stale "Platform Balance" and the
-    /// next top-up over-selects the now-drained addresses, which Drive
-    /// rejects with "Insufficient combined address balances".
+    /// Each address's `(account_index, address_index)` is resolved through
+    /// the provider's persisted `index <-> address` bijection — covering
+    /// addresses restored from disk that are no longer in a live derived
+    /// pool — with the live pools as fallback for addresses derived since
+    /// the last sync (e.g. a fresh change address). Non-P2PKH addresses and
+    /// addresses the wallet doesn't own (external recipients) are skipped.
     ///
-    /// Locks are released before persisting (the persistence backend runs its
-    /// callbacks inline), and errors are logged rather than propagated —
-    /// Platform already accepted the top-up, and a later sync reconciles.
-    pub async fn apply_top_up_reconciliation(&self, address_infos: &AddressInfos) {
-        // Resolve spent addresses to balance entries under the provider read
-        // lock, then drop it.
-        let entries = {
-            let guard = self.provider.read().await;
-            match guard
-                .as_ref()
-                .and_then(|p| p.per_wallet_state(&self.wallet_id))
-            {
-                Some(state) => {
-                    let per_account: Vec<_> = state
-                        .iter()
-                        .map(|(idx, acct)| (*idx, acct.addresses()))
-                        .collect();
-                    super::provider::build_top_up_balance_entries(
-                        self.wallet_id,
-                        &per_account,
-                        address_infos,
-                    )
-                }
-                None => {
-                    tracing::warn!(
-                        wallet_id = ?self.wallet_id,
-                        "Top-up reconciliation skipped: no platform-address \
-                         provider state for this wallet; local balances stay \
-                         stale until the next platform-address sync"
-                    );
-                    return;
-                }
-            }
-        };
-        if entries.is_empty() {
-            if !address_infos.is_empty() {
-                tracing::warn!(
-                    wallet_id = ?self.wallet_id,
-                    spent_addresses = address_infos.len(),
-                    "Top-up reconciliation resolved none of the proof's spent \
-                     addresses through the persisted provider state; local \
-                     balances stay stale until the next platform-address sync"
-                );
-            }
-            return;
+    /// For each surviving entry the in-memory account balance is set to the
+    /// proof's attested value, the provider's committed `found` seed is
+    /// updated (so the background sync's diff baseline agrees with what we
+    /// just applied), and a `PlatformAddressChangeSet` is persisted so the
+    /// displayed balance and the next input selection both reflect on-chain
+    /// reality. Without this, local balances stay frozen at their
+    /// pre-transition values: the wallet displays a stale "Platform
+    /// Balance" and the next input selection over-selects drained
+    /// addresses, which Drive rejects with "Insufficient combined address
+    /// balances".
+    ///
+    /// A freshness guard protects against racing the 15s background sync:
+    /// entries whose nonce is below the committed seed's are dropped (a
+    /// fresher state was already committed), see
+    /// [`PlatformPaymentAddressProvider::commit_reconciliation`]. The
+    /// provider write lock is held across the provider commit AND the
+    /// account-balance write, so a sync pass — which holds the same lock
+    /// across its scan and its own persist — can never interleave between
+    /// the two; the lock order (provider → wallet manager) matches the
+    /// sync callbacks.
+    ///
+    /// Persistence errors are logged rather than propagated — Platform
+    /// already accepted the transition, and a later sync reconciles.
+    ///
+    /// [`PlatformPaymentAddressProvider::commit_reconciliation`]:
+    /// super::provider::PlatformPaymentAddressProvider::commit_reconciliation
+    pub async fn reconcile_address_infos(
+        &self,
+        address_infos: &AddressInfos,
+        context: &'static str,
+    ) -> crate::PlatformAddressChangeSet {
+        if address_infos.is_empty() {
+            return crate::PlatformAddressChangeSet::default();
         }
-        // Apply the proof-attested post-spend balances in memory, then drop
-        // the write lock.
+
+        let mut guard = self.provider.write().await;
+        let Some(provider) = guard.as_mut() else {
+            tracing::warn!(
+                wallet_id = ?self.wallet_id,
+                context,
+                "Address reconciliation skipped: no platform-address \
+                 provider for this wallet; local balances stay stale \
+                 until the next platform-address sync"
+            );
+            return crate::PlatformAddressChangeSet::default();
+        };
+        if provider.per_wallet_state(&self.wallet_id).is_none() {
+            tracing::warn!(
+                wallet_id = ?self.wallet_id,
+                context,
+                "Address reconciliation skipped: no platform-address \
+                 provider state for this wallet; local balances stay \
+                 stale until the next platform-address sync"
+            );
+            return crate::PlatformAddressChangeSet::default();
+        }
+
+        // Live-pool fallback indexes for addresses derived since the last
+        // sync (not yet merged into the provider bijection). Taking the
+        // wallet-manager read lock while holding the provider write lock
+        // follows the provider → wallet-manager order the sync callbacks
+        // use.
+        let pool_indexes: BTreeMap<PlatformP2PKHAddress, (u32, u32)> = {
+            let wm = self.wallet_manager.read().await;
+            let mut out = BTreeMap::new();
+            if let Some(info) = wm.get_wallet_info(&self.wallet_id) {
+                for account in info.core_wallet.all_platform_payment_managed_accounts() {
+                    // The provider tracks key-class-0 accounts only; other
+                    // key classes have no per-account provider state to
+                    // reconcile against.
+                    if account.key_class != 0 {
+                        continue;
+                    }
+                    for (&index, addr_info) in &account.addresses.addresses {
+                        if let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address) {
+                            out.entry(p2pkh).or_insert((account.account, index));
+                        }
+                    }
+                }
+            }
+            out
+        };
+
+        let outcome = provider.commit_reconciliation(&self.wallet_id, address_infos, &pool_indexes);
+
+        if outcome.resolved == 0 {
+            tracing::warn!(
+                wallet_id = ?self.wallet_id,
+                context,
+                proof_addresses = address_infos.len(),
+                "Address reconciliation resolved none of the proof's \
+                 addresses to a wallet-owned slot. Expected when every \
+                 address belongs to a third party; otherwise local \
+                 balances stay stale until the next platform-address sync"
+            );
+            return crate::PlatformAddressChangeSet::default();
+        }
+        if outcome.stale_skipped > 0 || outcome.unchanged_skipped > 0 {
+            tracing::debug!(
+                wallet_id = ?self.wallet_id,
+                context,
+                stale_skipped = outcome.stale_skipped,
+                unchanged_skipped = outcome.unchanged_skipped,
+                "Address reconciliation dropped entries superseded by (or \
+                 identical to) the committed sync seed"
+            );
+        }
+        if outcome.entries.is_empty() {
+            return crate::PlatformAddressChangeSet::default();
+        }
+
+        // Apply the proof-attested balances to the managed accounts while
+        // STILL holding the provider write lock, so a background sync can't
+        // interleave between the provider commit above and this write.
+        // The per-account key source drives gap-limit extension when a
+        // previously unfunded address (e.g. a change output) becomes funded.
         {
+            let key_sources: BTreeMap<u32, key_wallet::KeySource> = outcome
+                .entries
+                .iter()
+                .map(|e| e.account_index)
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .filter_map(|account_index| {
+                    provider
+                        .key_source(&self.wallet_id, account_index)
+                        .map(|ks| (account_index, ks))
+                })
+                .collect();
             let mut wm = self.wallet_manager.write().await;
             if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-                for entry in &entries {
+                for entry in &outcome.entries {
                     if let Some(account) = info
                         .core_wallet
                         .platform_payment_managed_account_at_index_mut(entry.account_index)
@@ -232,25 +316,30 @@ impl PlatformAddressWallet {
                         account.set_address_credit_balance(
                             entry.address,
                             entry.funds.balance,
-                            None,
+                            key_sources.get(&entry.account_index),
                         );
                     }
                 }
             }
         }
-        // Persist with no locks held.
+        drop(guard);
+
+        // Persist with no locks held (the persistence backend runs its
+        // callbacks inline).
         let cs = crate::PlatformAddressChangeSet {
-            addresses: entries,
+            addresses: outcome.entries,
             ..Default::default()
         };
-        if let Err(e) = self.persister.store(cs.into()) {
+        if let Err(e) = self.persister.store(cs.clone().into()) {
             tracing::error!(
+                context,
                 error = %e,
-                "Failed to persist top-up platform-address reconciliation; \
+                "Failed to persist platform-address reconciliation; \
                  in-memory balances are updated but durable rows stay stale \
                  until the next platform-address sync"
             );
         }
+        cs
     }
 
     /// Get the network from the SDK.
