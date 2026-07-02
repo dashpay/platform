@@ -71,11 +71,12 @@ impl Domain {
     ];
 }
 
-/// Domains carrying data in `cs`. The named destructure catches a renamed or
-/// removed changeset field at compile time; the trailing `..` absorbs only
-/// feature-gated fields (`shielded`), which the storage layer does not
-/// version here. A newly added persisted field must gain a `Domain` variant
-/// and an arm below — `tc_b_013_every_domain_maps_and_isolates` guards that.
+/// Domains carrying data in `cs`. The destructure is exhaustive (no `..`), so
+/// adding a field to `PlatformWalletChangeSet` is a compile error here until
+/// it gains a `Domain` variant and an arm below — the R8 forgotten-domain
+/// guard. The feature-gated `shielded` field is bound under the storage
+/// crate's pass-through `shielded` feature; storage versions no shielded state
+/// here, so it is deliberately ignored, not mapped to a domain.
 pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     let PlatformWalletChangeSet {
         core,
@@ -90,8 +91,11 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
         wallet_metadata,
         account_registrations,
         account_address_pools,
-        ..
+        #[cfg(feature = "shielded")]
+        shielded,
     } = cs;
+    #[cfg(feature = "shielded")]
+    let _ = shielded;
 
     // A sub-changeset carried but empty (`Some(default)`) is not a real
     // change; the `Merge::is_empty` bound is the shared emptiness contract.

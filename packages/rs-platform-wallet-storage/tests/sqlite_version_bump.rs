@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! `meta_data_versions` bump discipline (WS-B task B4). Covers TC-B-011
+//! `meta_data_versions` bump discipline. Covers TC-B-011
 //! (bump rides the flush tx), TC-B-012 (atomic rollback — data and bump are
 //! all-or-nothing), TC-B-013 (every domain maps to a bump; none silently
 //! excluded), TC-B-014 (saturating seq, never wraps).
