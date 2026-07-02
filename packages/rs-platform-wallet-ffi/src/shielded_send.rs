@@ -311,9 +311,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     // calling thread.
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
-        wallet
+        let r = wallet
             .shielded_transfer_to(&coordinator, account, &recipient, amount, memo, &prover)
-            .await
+            .await;
+        poke_sync_on_unconfirmed(&r, &coordinator);
+        r
     });
     map_spend_result(result, "shielded transfer")
 }
@@ -363,9 +365,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
 
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
-        wallet
+        let r = wallet
             .shielded_unshield_to(&coordinator, account, &to_addr_str, amount, &prover)
-            .await
+            .await;
+        poke_sync_on_unconfirmed(&r, &coordinator);
+        r
     });
     map_spend_result(result, "shielded unshield")
 }
@@ -412,7 +416,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
-        wallet
+        let r = wallet
             .shielded_withdraw_to(
                 &coordinator,
                 account,
@@ -421,9 +425,35 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
                 core_fee_per_byte,
                 &prover,
             )
-            .await
+            .await;
+        poke_sync_on_unconfirmed(&r, &coordinator);
+        r
     });
     map_spend_result(result, "shielded withdraw")
+}
+
+/// On the AMBIGUOUS outcome (broadcast accepted, result unconfirmed),
+/// kick an immediate forced shielded sync so the first re-drive check —
+/// nullifier re-check, then re-broadcast of the persisted transition —
+/// happens now instead of at the next background tick. Fire-and-forget:
+/// the spend's own result is already decided, and the sync pass owns
+/// resolution from here (`redrive_pending_spends` + the prune backstop).
+fn poke_sync_on_unconfirmed<T>(
+    result: &Result<T, PlatformWalletError>,
+    coordinator: &std::sync::Arc<platform_wallet::wallet::shielded::NetworkShieldedCoordinator>,
+) {
+    let ambiguous = matches!(
+        result,
+        Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+            | Err(PlatformWalletError::ShieldedBroadcastUnconfirmed { .. })
+    );
+    if !ambiguous {
+        return;
+    }
+    let coordinator = std::sync::Arc::clone(coordinator);
+    runtime().spawn(async move {
+        let _ = coordinator.sync(true).await;
+    });
 }
 
 /// Map a shielded operation outcome (shield / unshield / transfer /
@@ -600,7 +630,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         // `Signer<IdentityPublicKey>`.
         let identity_signer: &VTableSigner = &*(signer_identity_addr as *const VTableSigner);
         let prover = CachedOrchardProver::new();
-        wallet
+        let r = wallet
             .shielded_identity_create_from_pool(
                 &coordinator,
                 account,
@@ -611,7 +641,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
                 identity_signer,
                 &prover,
             )
-            .await
+            .await;
+        poke_sync_on_unconfirmed(&r, &coordinator);
+        r
     });
 
     match result {
