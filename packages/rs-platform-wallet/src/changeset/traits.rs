@@ -255,6 +255,26 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// per-wallet one, because `ClientStartState::platform_addresses` is
     /// already keyed by wallet id and the sub-changesets carry their own
     /// wallet attribution where needed.
+    ///
+    /// # Trust boundary
+    ///
+    /// The returned [`ClientStartState`] — including each wallet's
+    /// persisted account manifest — is trusted as-is by every consumer of
+    /// this method. Nothing in this contract cryptographically binds a
+    /// manifest to the `wallet_id` it's returned under: implementations
+    /// are not required to authenticate what they hand back, and callers
+    /// (see `PlatformWalletManager::load_from_persistor` /
+    /// `build_watch_only_wallet` in the `rehydrate` module) do not
+    /// independently verify it either. A corrupted or tampered backing
+    /// store can therefore return a structurally well-formed manifest
+    /// under the wrong `wallet_id` and it will be accepted silently.
+    ///
+    /// This is a known, currently-unaddressed gap — closing it needs a
+    /// persisted commitment/MAC (or the root xpub) added to the manifest
+    /// at write time, which is a storage-schema change outside what any
+    /// implementation of this trait can do on its own. Implementors
+    /// should not treat the absence of such a check here as a bug in
+    /// their backend; callers should not assume one is being performed.
     fn load(&self) -> Result<ClientStartState, PersistenceError>;
 
     /// Look up a single core transaction record by `txid` for `wallet_id`.

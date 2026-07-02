@@ -126,6 +126,7 @@ fn rt2_nonzero_balance_survives_reopen() {
             &mut info,
             &manifest_for(&wallet),
             &core,
+            &[],
         )
         .expect("BIP44 reconstruction must not error");
         let bal = WalletInfoInterface::balance(&info);
@@ -295,6 +296,7 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
             &mut info,
             &manifest_for(&wallet),
             &core,
+            &[],
         )
         .expect("CoinJoin-only reconstruction must not error");
         let bal = WalletInfoInterface::balance(&info);
