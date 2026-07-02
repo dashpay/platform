@@ -90,6 +90,50 @@ pub fn account_index_for_script(
         .transpose()
 }
 
+/// Used addresses for a wallet, read verbatim from `core_address_pool`
+/// (`used = 1`) with no re-derivation. Returns `None` when the wallet has no
+/// pool rows at all — the caller then falls back to the `core_utxos`-derived
+/// set (a pre-pool / migrated-V001 store). `Some(vec)` (possibly empty) means
+/// pool rows exist and their `used` state is authoritative.
+///
+/// `network` turns each stored `script` back into an [`Address`]; a script
+/// that isn't a valid address is a hard error — corruption is never silently
+/// dropped, matching [`crate::sqlite::schema::core_state::load_used_addresses`].
+pub fn load_used_addresses(
+    conn: &rusqlite::Connection,
+    wallet_id: &WalletId,
+    network: dashcore::Network,
+) -> Result<Option<Vec<dashcore::Address>>, WalletStorageError> {
+    let has_rows: bool = conn
+        .query_row(
+            "SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 LIMIT 1",
+            params![wallet_id.as_slice()],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !has_rows {
+        return Ok(None);
+    }
+
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT script FROM core_address_pool \
+         WHERE wallet_id = ?1 AND used = 1 ORDER BY script",
+    )?;
+    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+        row.get::<_, Vec<u8>>(0)
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        let script = dashcore::ScriptBuf::from_bytes(r?);
+        let address = dashcore::Address::from_script(&script, network).map_err(|_| {
+            WalletStorageError::blob_decode("core_address_pool.script not an address")
+        })?;
+        out.push(address);
+    }
+    Ok(Some(out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

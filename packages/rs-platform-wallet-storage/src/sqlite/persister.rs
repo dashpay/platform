@@ -940,13 +940,19 @@ impl PlatformWalletPersistence for SqlitePersister {
                 .map_err(PersistenceError::from)?;
             let identity_keys = schema::identity_keys::load_state(&conn, &wallet_id)
                 .map_err(PersistenceError::from)?;
-            // Every address that ever held a UTXO (spent + unspent) is "used":
-            // the address-reuse guard so a used-then-emptied address is never
-            // handed back as a fresh receive address. The in-band pool snapshot
-            // was retired, so we derive this from the full core_utxos set.
+            // Used addresses drive the reuse guard: a used-then-emptied
+            // address must never be handed back as a fresh receive address.
+            // Prefer the verbatim `core_address_pool` used-set (no
+            // re-derivation); fall back to the `core_utxos`-derived set only
+            // for a pre-pool / migrated-V001 store with no pool rows.
             let used_core_addresses =
-                schema::core_state::load_used_addresses(&conn, &wallet_id, network)
-                    .map_err(PersistenceError::from)?;
+                match schema::core_pool::load_used_addresses(&conn, &wallet_id, network)
+                    .map_err(PersistenceError::from)?
+                {
+                    Some(addrs) => addrs,
+                    None => schema::core_state::load_used_addresses(&conn, &wallet_id, network)
+                        .map_err(PersistenceError::from)?,
+                };
 
             state.wallets.insert(
                 wallet_id,
