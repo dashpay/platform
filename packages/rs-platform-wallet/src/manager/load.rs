@@ -7,7 +7,7 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
 use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
-use crate::manager::load_outcome::{LoadOutcome, SkipReason};
+use crate::manager::load_outcome::{CorruptKind, LoadOutcome, SkipReason};
 use crate::wallet::core::WalletBalance;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -21,8 +21,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// keyless reconstruction snapshot; each wallet is rebuilt via
     /// [`Wallet::new_watch_only`](key_wallet::wallet::Wallet::new_watch_only)
     /// from its [`AccountRegistrationEntry`](crate::changeset::AccountRegistrationEntry)
-    /// manifest, the keyless core-state projection is applied, and the
-    /// result is registered into the manager.
+    /// manifest, the managed core state is restored, and the result is
+    /// registered into the manager.
+    ///
+    /// Core state comes in one of two shapes, per wallet:
+    /// - a full keyless snapshot
+    ///   ([`ClientWalletStartState::core_wallet_info`]) — consumed
+    ///   directly, preserving per-account UTXO/record attribution and
+    ///   exact pool contents (the FFI/iOS persister); or
+    /// - the keyless projection
+    ///   ([`core_state`](ClientWalletStartState::core_state) +
+    ///   [`used_core_addresses`](ClientWalletStartState::used_core_addresses)),
+    ///   replayed onto a fresh skeleton via
+    ///   [`apply_persisted_core_state`](super::rehydrate::apply_persisted_core_state)
+    ///   (persisters that cannot reconstruct the snapshot).
     ///
     /// The load path never touches the seed, so it performs no wrong-seed
     /// check. Signing happens later, on demand, via the configured
@@ -105,6 +117,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 network,
                 birth_height,
                 account_manifest,
+                core_wallet_info,
                 core_state,
                 identity_manager,
                 unused_asset_locks,
@@ -112,6 +125,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 identity_keys,
                 used_core_addresses,
             } = wallet_state;
+
+            // Idempotency, checked FIRST: a wallet already registered (a
+            // prior load pass, or a runtime create) is already-satisfied.
+            // Checking before any reconstruction work matters — the
+            // rebuild below derives eager gap windows (and possibly a
+            // deep discovery scan), all of which the `WalletExists` arm
+            // at insert time would only throw away.
+            {
+                let wm = self.wallet_manager.read().await;
+                if wm.get_wallet(&expected_wallet_id).is_some() {
+                    outcome.loaded.push(expected_wallet_id);
+                    continue 'load;
+                }
+            }
 
             // Build the watch-only wallet from the keyless manifest. A
             // structural decode failure skips this row (per-row
@@ -123,10 +150,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 &account_manifest,
             ) {
                 Ok(w) => w,
-                Err(row_err) => {
-                    let reason = SkipReason::CorruptPersistedRow {
-                        kind: row_err.into(),
-                    };
+                Err(kind) => {
+                    let reason = SkipReason::CorruptPersistedRow { kind };
                     outcome.skipped.push((expected_wallet_id, reason.clone()));
                     self.event_manager
                         .on_wallet_skipped_on_load(expected_wallet_id, &reason);
@@ -134,21 +159,65 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 }
             };
 
-            // Mint the managed-info skeleton from the watch-only wallet,
-            // then apply the keyless persisted core state (UTXOs, sync
-            // watermarks, per-account balances). A wallet with persisted
-            // UTXOs but no funds account hard-fails here rather than
-            // reconstructing a silent zero balance.
-            let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
-            if let Err(e) = super::rehydrate::apply_persisted_core_state(
-                &mut wallet_info,
-                &account_manifest,
-                &core_state,
-                &used_core_addresses,
-            ) {
-                load_error = Some(e);
-                break 'load;
-            }
+            let wallet_info = match core_wallet_info {
+                // Full keyless snapshot carried by the persister (the
+                // FFI/iOS path): consume it directly. This preserves
+                // per-account UTXO/record attribution, the exact pool
+                // contents (derived-but-unused addresses stay in the SPV
+                // watch set), and per-index used flags — none of which
+                // the projection replay below can reconstruct — and
+                // skips a second eager gap-window derivation.
+                Some(info) => {
+                    let mut info = *info;
+                    // The snapshot must describe this row's wallet; a
+                    // mismatch is a corrupt row, skipped like any other
+                    // structural failure.
+                    if info.wallet_id != expected_wallet_id || info.network != network {
+                        let reason = SkipReason::CorruptPersistedRow {
+                            kind: CorruptKind::DecodeError(format!(
+                                "managed-info snapshot (wallet {}, network {:?}) does not \
+                                 match its row (wallet {}, network {:?})",
+                                hex::encode(info.wallet_id),
+                                info.network,
+                                hex::encode(expected_wallet_id),
+                                network,
+                            )),
+                        };
+                        outcome.skipped.push((expected_wallet_id, reason.clone()));
+                        self.event_manager
+                            .on_wallet_skipped_on_load(expected_wallet_id, &reason);
+                        continue 'load;
+                    }
+                    // Recompute totals from the carried UTXO set so the
+                    // lock-free balance mirrored below can never drift
+                    // from it (no-silent-zero holds by recomputation).
+                    {
+                        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+                        info.update_balance();
+                    }
+                    info
+                }
+                // No snapshot (native/SQLite persister until
+                // dashpay/platform#3968): mint the managed-info skeleton
+                // from the watch-only wallet, then replay the keyless
+                // projection (UTXOs, sync watermarks, used addresses). A
+                // wallet with persisted UTXOs but no funds account
+                // hard-fails here rather than reconstructing a silent
+                // zero balance.
+                None => {
+                    let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
+                    if let Err(e) = super::rehydrate::apply_persisted_core_state(
+                        &mut wallet_info,
+                        &account_manifest,
+                        &core_state,
+                        &used_core_addresses,
+                    ) {
+                        load_error = Some(e);
+                        break 'load;
+                    }
+                    wallet_info
+                }
+            };
 
             // Flatten the (account → outpoint → lock) map.
             let mut tracked_asset_locks = BTreeMap::new();

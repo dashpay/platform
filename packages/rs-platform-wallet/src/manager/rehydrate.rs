@@ -20,7 +20,8 @@ use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 
 use crate::changeset::AccountRegistrationEntry;
-use crate::error::{PlatformWalletError, RehydrateRowError};
+use crate::error::PlatformWalletError;
+use crate::manager::load_outcome::CorruptKind;
 
 /// Build a watch-only [`Wallet`] from the keyless account manifest.
 ///
@@ -29,8 +30,10 @@ use crate::error::{PlatformWalletError, RehydrateRowError};
 /// [`AccountCollection`] is handed to [`Wallet::new_watch_only`] under
 /// the same id. No key material crosses this function.
 ///
-/// Returns [`RehydrateRowError`] when the row is structurally unusable
-/// (caller maps it onto a per-row [`SkipReason`]).
+/// Returns [`CorruptKind`] when the row is structurally unusable
+/// (caller wraps it in a per-row [`SkipReason`]).
+///
+/// [`SkipReason`]: crate::manager::load_outcome::SkipReason
 ///
 /// # Trust boundary
 ///
@@ -48,9 +51,9 @@ pub(super) fn build_watch_only_wallet(
     network: Network,
     expected_wallet_id: [u8; 32],
     manifest: &[AccountRegistrationEntry],
-) -> Result<Wallet, RehydrateRowError> {
+) -> Result<Wallet, CorruptKind> {
     if manifest.is_empty() {
-        return Err(RehydrateRowError::MissingManifest);
+        return Err(CorruptKind::MissingManifest);
     }
     let mut accounts = AccountCollection::new();
     for entry in manifest {
@@ -63,10 +66,10 @@ pub(super) fn build_watch_only_wallet(
             entry.account_xpub,
             network,
         )
-        .map_err(|_| RehydrateRowError::MalformedXpub)?;
+        .map_err(|_| CorruptKind::MalformedXpub)?;
         accounts
             .insert(account)
-            .map_err(|e| RehydrateRowError::DecodeError(e.to_string()))?;
+            .map_err(|e| CorruptKind::DecodeError(e.to_string()))?;
     }
     Ok(Wallet::new_watch_only(
         network,
@@ -497,26 +500,42 @@ fn extend_pools_for_restored_addresses(
         // funded address keeps `used = false` and could be handed out as a fresh
         // receive address. `mark_used` is a no-op for addresses not in this
         // pool, so an underived (foreign / sparse) index is never marked.
-        let mut marked_any = false;
-        for addr in restored_addresses {
-            if pool.mark_used(addr) {
-                marked_any = true;
-            }
-        }
-
-        // Refill the gap window past the deepest used index (needs the xpub).
-        if marked_any {
-            if let Some(key_source) = key_source.as_ref() {
-                if let Err(e) = pool.maintain_gap_limit(key_source) {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        account_type = ?account_type,
-                        pool_type = ?pool.pool_type,
-                        error = %e,
-                        "rehydration: gap-limit maintenance failed; pool window \
-                         may be short until the next sync"
-                    );
+        //
+        // Mark ↔ refill runs to a FIXPOINT: marking raises `highest_used`,
+        // whose gap refill can derive a deeper previously-used address that
+        // the discovery walk missed (e.g. used idx 45 with in-window used
+        // idx 20 and gap 30 — the walk's horizon stops at 30, but the refill
+        // reaches 50 and derives idx 45). A single mark-then-refill pass
+        // would leave that address in the pool with `used = false`, handing
+        // a previously-used address back out as fresh. Terminates: each
+        // round marks at least one new address from the finite restored set
+        // (`mark_used` returns `true` only on an unused→used flip).
+        loop {
+            let mut marked_any = false;
+            for addr in restored_addresses {
+                if pool.mark_used(addr) {
+                    marked_any = true;
                 }
+            }
+            if !marked_any {
+                break;
+            }
+            // Refill the gap window past the deepest used index (needs the
+            // xpub); without one no deeper address can be derived, so a
+            // single mark pass is all that's possible.
+            let Some(key_source) = key_source.as_ref() else {
+                break;
+            };
+            if let Err(e) = pool.maintain_gap_limit(key_source) {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    account_type = ?account_type,
+                    pool_type = ?pool.pool_type,
+                    error = %e,
+                    "rehydration: gap-limit maintenance failed; pool window \
+                     may be short until the next sync"
+                );
+                break;
             }
         }
     }
@@ -592,7 +611,7 @@ mod tests {
     fn empty_manifest_is_missing_manifest() {
         let err = build_watch_only_wallet(Network::Testnet, [0u8; 32], &[])
             .expect_err("empty manifest must be MissingManifest");
-        assert!(matches!(err, RehydrateRowError::MissingManifest));
+        assert!(matches!(err, CorruptKind::MissingManifest));
     }
 
     /// Regression: after restart-in-place the watch-only pools eagerly
@@ -1229,6 +1248,7 @@ mod tests {
             network: Network::Testnet,
             birth_height: 1,
             account_manifest: manifest.clone(),
+            core_wallet_info: None,
             core_state: core,
             identity_manager: Default::default(),
             unused_asset_locks: Default::default(),
@@ -1312,6 +1332,116 @@ mod tests {
             external.highest_used,
             Some(30),
             "highest_used must reflect the deepest restored used slot"
+        );
+    }
+
+    /// Regression (mark↔refill fixpoint): a previously-used address in the
+    /// "wedge zone" — past the discovery horizon but within reach of the
+    /// gap refill — must come back `used`. With used addresses at idx 20
+    /// (in the eager window) and idx 45 (gap 30): the discovery walk
+    /// excludes in-window addresses from `unresolved`, so nothing anchors
+    /// the horizon past 30 and idx 45 is never scanned; marking idx 20 then
+    /// makes `maintain_gap_limit` derive out to 20+30=50, which brings the
+    /// idx-45 address into the pool. A single mark-then-refill pass left it
+    /// there with `used = false` — pool-visible as a FRESH address, handed
+    /// out again, and its stale `used = false` persisted back over the
+    /// store's `is_used = true` on the next pool snapshot. The fixpoint
+    /// re-marks after every refill until nothing new resolves.
+    #[test]
+    fn rehydration_wedge_zone_used_address_marked_after_refill() {
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::gap_limit::DEFAULT_EXTERNAL_GAP_LIMIT;
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+        use key_wallet::Address;
+
+        let wallet = Wallet::from_seed_bytes(
+            [61u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let manifest = manifest_for(&wallet);
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 1);
+
+        let funds_type = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .first()
+            .unwrap()
+            .managed_account_type()
+            .to_account_type();
+        let xpub = manifest
+            .iter()
+            .find(|e| e.account_type == funds_type)
+            .map(|e| e.account_xpub)
+            .expect("funds account xpub");
+
+        let derive = |index: u32| -> Address {
+            let mut p = AddressPool::new_without_generation(
+                DerivationPath::master(),
+                AddressPoolType::External,
+                DEFAULT_EXTERNAL_GAP_LIMIT,
+                Network::Testnet,
+            );
+            p.generate_addresses(index + 1, &KeySource::Public(xpub), true)
+                .unwrap();
+            p.address_at_index(index).unwrap()
+        };
+        // Reachable multi-device state: this device saw idx 20 used;
+        // another device (same mnemonic) handed out and used idx 45.
+        let in_window_used = derive(20);
+        let wedge_used = derive(45);
+
+        // No UTXOs at all — only the persisted pool used-state.
+        let core = crate::changeset::CoreChangeSet {
+            last_processed_height: Some(1),
+            synced_height: Some(1),
+            ..Default::default()
+        };
+        apply_persisted_core_state(
+            &mut wallet_info,
+            &manifest,
+            &core,
+            &[in_window_used.clone(), wedge_used.clone()],
+        )
+        .unwrap();
+
+        let funds = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .next()
+            .unwrap();
+        let pools = funds.managed_account_type().address_pools();
+        let external = pools.iter().find(|p| p.is_external()).unwrap();
+        assert!(
+            external
+                .address_info(&in_window_used)
+                .expect("in-window used address present")
+                .used,
+            "in-window used address must be restored as used"
+        );
+        let wedge_info = external
+            .address_info(&wedge_used)
+            .expect("wedge-zone address must be derived into the pool by the refill");
+        assert!(
+            wedge_info.used,
+            "wedge-zone previously-used address must be re-marked used, \
+             not left pool-visible as fresh"
+        );
+        assert!(external.used_indices.contains(&45), "idx 45 recorded used");
+        assert_eq!(
+            external.highest_used,
+            Some(45),
+            "highest_used must reflect the wedge-zone slot"
+        );
+        // And the window is refilled past the re-marked slot.
+        assert!(
+            external.highest_generated >= Some(45 + DEFAULT_EXTERNAL_GAP_LIMIT),
+            "gap window must extend past the re-marked wedge slot (got {:?})",
+            external.highest_generated,
         );
     }
 

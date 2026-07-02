@@ -438,12 +438,7 @@ pub unsafe extern "C" fn platform_wallet_manager_load_from_persistor(
             })
             .collect();
         let skipped_count = skipped_vec.len();
-        let skipped_ptr = if skipped_count == 0 {
-            std::ptr::null_mut()
-        } else {
-            let boxed = skipped_vec.into_boxed_slice();
-            Box::into_raw(boxed) as *mut SkippedWalletFFI
-        };
+        let skipped_ptr = crate::core_wallet_types::vec_to_ptr(skipped_vec);
         std::ptr::write(
             out_outcome,
             LoadOutcomeFFI {
