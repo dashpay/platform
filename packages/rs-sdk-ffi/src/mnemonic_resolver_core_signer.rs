@@ -66,7 +66,7 @@ use std::os::raw::c_char;
 use async_trait::async_trait;
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::dashcore::secp256k1::{self, Secp256k1};
-use key_wallet::signer::{Signer, SignerMethod};
+use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::Network;
 use thiserror::Error;
 use zeroize::Zeroizing;
@@ -382,7 +382,10 @@ impl Signer for MnemonicResolverCoreSigner {
         secret.non_secure_erase();
         Ok(pubkey)
     }
+}
 
+#[async_trait]
+impl ExtendedPubKeySigner for MnemonicResolverCoreSigner {
     /// Derive the BIP-32 extended public key at `path`.
     ///
     /// Returns the full [`ExtendedPubKey`] (public point + chain code) so
