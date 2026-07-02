@@ -12,6 +12,7 @@ use std::os::raw::c_char;
 use std::str::FromStr;
 
 use super::{parse_input_selection, runtime};
+use crate::runtime::block_on_worker;
 
 /// Withdraw platform credits to a Core L1 address.
 #[no_mangle]
@@ -49,20 +50,32 @@ pub unsafe extern "C" fn platform_address_wallet_withdraw(
 
     let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);
 
-    let address_signer: &VTableSigner = &*(signer_address_handle as *const VTableSigner);
-
-    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
-        runtime().block_on(wallet.withdraw(
-            account_index,
-            input_selection,
-            core_script,
-            core_fee_per_byte,
-            fee,
-            None,
-            address_signer,
-        ))
+    // Clone the wallet out of handle storage so the read lock is released
+    // before the long-running withdraw, then poll on a worker thread
+    // (8 MB stack): the withdraw future verifies the execution proof, and
+    // GroveDB proof verification recurses past the ~512 KB stacks of iOS
+    // dispatch / Swift-concurrency threads (see runtime.rs) — polling it
+    // on the calling thread crashes with EXC_BAD_ACCESS after the funds
+    // already moved on-chain. Round-trip the signer pointer through
+    // `usize` so the future's capture is `Send + 'static`; the caller
+    // guarantees the handle outlives this synchronously-awaited call.
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| wallet.clone());
+    let wallet = unwrap_option_or_return!(option);
+    let signer_addr = signer_address_handle as usize;
+    let result = block_on_worker(async move {
+        let address_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+        wallet
+            .withdraw(
+                account_index,
+                input_selection,
+                core_script,
+                core_fee_per_byte,
+                fee,
+                None,
+                address_signer,
+            )
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let changeset = unwrap_result_or_return!(result);
     *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);
     PlatformWalletFFIResult::ok()
@@ -130,36 +143,45 @@ pub unsafe extern "C" fn platform_address_wallet_withdraw_to_address(
 
     let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);
 
-    // SAFETY: caller guarantees `signer_address_handle` is a valid,
-    // non-destroyed handle that outlives this call.
-    let address_signer: &VTableSigner = &*(signer_address_handle as *const VTableSigner);
+    // Clone the wallet out of handle storage so the read lock is released
+    // before the network check + long-running withdraw.
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| wallet.clone());
+    let wallet = unwrap_option_or_return!(option);
 
-    // The closure returns a typed `PlatformWalletFFIResult` on the error
-    // side so the network-mismatch case can surface as the dedicated
-    // `ErrorInvalidNetwork` code instead of flattening to `ErrorUnknown`
-    // via the blanket `From<PlatformWalletError>` impl. The withdraw
-    // error still routes through that blanket conversion (`.into()`),
-    // preserving its per-variant code mapping.
-    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
-        // Network check: reject an address that doesn't belong to the
-        // wallet's network before any signing or submission happens.
-        // Mirrors the `require_network` precedent used elsewhere in the
-        // FFI for Core-address handling. `require_network` consumes the
-        // unchecked address, which isn't reused afterwards.
-        let checked_address = unchecked_address
-            .require_network(wallet.network())
-            .map_err(|e| {
-                PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorInvalidNetwork,
-                    format!(
-                        "Core address is not valid for the wallet's network ({:?}): {e}",
-                        wallet.network()
-                    ),
-                )
-            })?;
-        let core_script = CoreScript::new(checked_address.script_pubkey());
-        runtime()
-            .block_on(wallet.withdraw(
+    // Network check: reject an address that doesn't belong to the
+    // wallet's network before any signing or submission happens.
+    // Mirrors the `require_network` precedent used elsewhere in the
+    // FFI for Core-address handling. `require_network` consumes the
+    // unchecked address, which isn't reused afterwards. Surfaced as the
+    // dedicated `ErrorInvalidNetwork` code instead of flattening to
+    // `ErrorUnknown` via the blanket `From<PlatformWalletError>` impl.
+    let checked_address = match unchecked_address.require_network(wallet.network()) {
+        Ok(a) => a,
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidNetwork,
+                format!(
+                    "Core address is not valid for the wallet's network ({:?}): {e}",
+                    wallet.network()
+                ),
+            );
+        }
+    };
+    let core_script = CoreScript::new(checked_address.script_pubkey());
+
+    // Poll on a worker thread (8 MB stack): the withdraw future verifies
+    // the execution proof, and GroveDB proof verification recurses past
+    // the ~512 KB stacks of iOS dispatch / Swift-concurrency threads (see
+    // runtime.rs) — polling it on the calling thread crashes with
+    // EXC_BAD_ACCESS after the funds already moved on-chain. Round-trip
+    // the signer pointer through `usize` so the future's capture is
+    // `Send + 'static`; the caller guarantees the handle outlives this
+    // synchronously-awaited call.
+    let signer_addr = signer_address_handle as usize;
+    let result = block_on_worker(async move {
+        let address_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+        wallet
+            .withdraw(
                 account_index,
                 input_selection,
                 core_script,
@@ -167,13 +189,9 @@ pub unsafe extern "C" fn platform_address_wallet_withdraw_to_address(
                 fee,
                 None,
                 address_signer,
-            ))
-            .map_err(PlatformWalletFFIResult::from)
+            )
+            .await
     });
-    // `result` is `Result<PlatformAddressChangeSet, PlatformWalletFFIResult>`:
-    // a network mismatch is already a typed `ErrorInvalidNetwork` result,
-    // any other withdraw failure is the blanket-mapped wallet error.
-    let result = unwrap_option_or_return!(option);
     let changeset = unwrap_result_or_return!(result);
     *out_changeset = PlatformAddressChangeSetFFI::from(&changeset);
     PlatformWalletFFIResult::ok()

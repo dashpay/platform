@@ -112,8 +112,8 @@ pub enum PlatformWalletError {
     #[error(
         "Every funded address holds less than the per-input minimum of \
          {min_input_amount} credits ({sub_min_count} addresses totaling \
-         {sub_min_aggregate} credits), so none can fund a withdrawal on its \
-         own. Consolidate funds onto fewer addresses, then try again."
+         {sub_min_aggregate} credits), so none can fund this operation on \
+         its own. Consolidate funds onto fewer addresses, then try again."
     )]
     OnlyDustInputs {
         /// Number of addresses with a positive balance below `min_input_amount`.

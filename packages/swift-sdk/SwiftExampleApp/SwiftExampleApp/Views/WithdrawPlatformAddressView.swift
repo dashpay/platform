@@ -672,6 +672,28 @@ struct WithdrawPlatformAddressView: View {
         Task {
             defer { isSubmitting = false }
             do {
+                // Consent guard: the figures on this sheet come from the
+                // last `preflight`, but balances can change while the sheet
+                // is open (the background address sync), and `withdraw`
+                // below re-plans against CURRENT balances with full-balance
+                // semantics. Re-run the same Rust preflight now and require
+                // it to match what the user confirmed; on drift, refresh
+                // the display and block instead of withdrawing an amount
+                // the user never saw.
+                let confirmed = preflight
+                let latest = try addressWallet.preflightWithdrawal(accountIndex: sourceAccount)
+                guard let confirmed,
+                    latest.canWithdraw,
+                    latest.netWithdrawable == confirmed.netWithdrawable,
+                    latest.estimatedFee == confirmed.estimatedFee
+                else {
+                    preflight = latest
+                    submitError = SubmitError(
+                        message: "The withdrawable balance changed while this sheet was open. "
+                            + "Review the updated amount, then tap Withdraw again."
+                    )
+                    return
+                }
                 let updated = try await addressWallet.withdraw(
                     accountIndex: sourceAccount,
                     coreAddress: coreAddress,
