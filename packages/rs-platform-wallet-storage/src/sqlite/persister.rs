@@ -7,8 +7,10 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
-    ClientStartState, Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, ClientWalletStartState, Merge, PersistenceError, PlatformWalletChangeSet,
+    PlatformWalletPersistence,
 };
+use platform_wallet::manager::load_outcome::{CorruptKind, SkipReason};
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::backup::{self, BackupKind};
@@ -908,67 +910,43 @@ impl PlatformWalletPersistence for SqlitePersister {
         }
 
         // Per-wallet keyless rehydration payload; the manager rebuilds each
-        // wallet watch-only and derives signing keys later on demand.
+        // wallet watch-only and derives signing keys later on demand. A row
+        // that fails to decode structurally is skipped (not fatal): it lands
+        // in `state.skipped` as a corrupt row so one bad wallet never blocks
+        // the rest of the batch — the manager folds these into the load
+        // outcome's skip set and notifies handlers. Infra / transient
+        // failures still abort the whole load.
         let wallet_ids = schema::wallets::list_ids(&conn).map_err(PersistenceError::from)?;
         let wallets_seen = wallet_ids.len();
         for wallet_id in wallet_ids {
-            let (network_str, birth_height) = schema::wallets::fetch(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?
-                .ok_or_else(|| {
-                    PersistenceError::backend(format!(
-                        "wallets row vanished mid-load for {}",
-                        hex::encode(wallet_id)
-                    ))
-                })?;
-            let network = schema::wallets::parse_network(&network_str).ok_or_else(|| {
-                PersistenceError::backend(format!(
-                    "unknown persisted network {:?} for wallet {}",
-                    network_str,
-                    hex::encode(wallet_id)
-                ))
-            })?;
-
-            let account_manifest =
-                schema::accounts::load_state(&conn, &wallet_id).map_err(PersistenceError::from)?;
-            let core_state = schema::core_state::load_state(&conn, &wallet_id, network)
-                .map_err(PersistenceError::from)?;
-            let identity_manager = schema::identities::load_state(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?;
-            let unused_asset_locks = schema::asset_locks::load_unconsumed(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?;
-            let contacts = schema::contacts::load_changeset(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?;
-            let identity_keys = schema::identity_keys::load_state(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?;
-            // Every address that ever held a UTXO (spent + unspent) is "used":
-            // the address-reuse guard so a used-then-emptied address is never
-            // handed back as a fresh receive address. The in-band pool snapshot
-            // was retired, so we derive this from the full core_utxos set.
-            let used_core_addresses =
-                schema::core_state::load_used_addresses(&conn, &wallet_id, network)
-                    .map_err(PersistenceError::from)?;
-
-            state.wallets.insert(
-                wallet_id,
-                platform_wallet::changeset::ClientWalletStartState {
-                    network,
-                    birth_height,
-                    account_manifest,
-                    core_state,
-                    identity_manager,
-                    unused_asset_locks,
-                    contacts,
-                    identity_keys,
-                    used_core_addresses,
-                },
-            );
+            match load_one_wallet_state(&conn, &wallet_id) {
+                Ok(wallet_state) => {
+                    state.wallets.insert(wallet_id, wallet_state);
+                }
+                Err(e) if e.is_corrupt_row() => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error_kind = e.error_kind_str(),
+                        "load() skipping corrupt persisted wallet row; the rest of the batch continues"
+                    );
+                    state.skipped.push((
+                        wallet_id,
+                        SkipReason::CorruptPersistedRow {
+                            kind: CorruptKind::DecodeError(e.error_kind_str().to_string()),
+                        },
+                    ));
+                }
+                Err(e) => return Err(PersistenceError::from(e)),
+            }
         }
         let wallets_rehydrated = state.wallets.len();
+        let wallets_skipped = state.skipped.len();
 
         tracing::info!(
             wallets_seen,
             addresses_loaded,
             wallets_rehydrated,
+            wallets_skipped,
             wallets_pending_rehydration = 0usize,
             unimplemented = ?LOAD_UNIMPLEMENTED,
             "load() summary"
@@ -987,6 +965,47 @@ impl PlatformWalletPersistence for SqlitePersister {
         let conn = self.conn().map_err(PersistenceError::from)?;
         schema::core_state::get_tx_record(&conn, &wallet_id, txid).map_err(PersistenceError::from)
     }
+}
+
+/// Decode one wallet's keyless rehydration payload from the open
+/// connection. A structural decode failure surfaces as a corrupt-row
+/// [`WalletStorageError`] (see [`WalletStorageError::is_corrupt_row`]) so
+/// `load` can skip just this wallet without aborting the batch; infra
+/// failures propagate unchanged.
+fn load_one_wallet_state(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<ClientWalletStartState, WalletStorageError> {
+    let (network_str, birth_height) =
+        schema::wallets::fetch(conn, wallet_id)?.ok_or(WalletStorageError::WalletNotFound {
+            wallet_id: *wallet_id,
+        })?;
+    let network = schema::wallets::parse_network(&network_str)
+        .ok_or_else(|| WalletStorageError::blob_decode("unknown persisted network value"))?;
+
+    let account_manifest = schema::accounts::load_state(conn, wallet_id)?;
+    let core_state = schema::core_state::load_state(conn, wallet_id, network)?;
+    let identity_manager = schema::identities::load_state(conn, wallet_id)?;
+    let unused_asset_locks = schema::asset_locks::load_unconsumed(conn, wallet_id)?;
+    let contacts = schema::contacts::load_changeset(conn, wallet_id)?;
+    let identity_keys = schema::identity_keys::load_state(conn, wallet_id)?;
+    // Every address that ever held a UTXO (spent + unspent) is "used": the
+    // address-reuse guard so a used-then-emptied address is never handed back
+    // as a fresh receive address. The in-band pool snapshot was retired, so we
+    // derive this from the full core_utxos set.
+    let used_core_addresses = schema::core_state::load_used_addresses(conn, wallet_id, network)?;
+
+    Ok(ClientWalletStartState {
+        network,
+        birth_height,
+        account_manifest,
+        core_state,
+        identity_manager,
+        unused_asset_locks,
+        contacts,
+        identity_keys,
+        used_core_addresses,
+    })
 }
 
 /// Count of top-level changeset slots carrying data, for the

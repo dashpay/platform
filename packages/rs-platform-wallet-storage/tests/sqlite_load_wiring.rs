@@ -16,6 +16,7 @@ use platform_wallet::changeset::{
     AccountRegistrationEntry, CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
     WalletMetadataEntry,
 };
+use platform_wallet::SkipReason;
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
 
 fn reopen(path: &std::path::Path) -> SqlitePersister {
@@ -149,4 +150,60 @@ fn c3_metadata_only_wallet_present() {
     let slice = state.wallets.get(&w).expect("metadata-only wallet present");
     assert!(slice.account_manifest.is_empty());
     assert!(slice.core_state.new_utxos.is_empty());
+}
+
+/// A structurally undecodable row is recorded in `skipped` (not fatal)
+/// while the good rows still load — one corrupt persisted wallet never
+/// blocks the rest of the batch, and a load that skipped a wallet is not
+/// reported empty.
+#[test]
+fn c4_corrupt_row_skipped_good_rows_load() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w_good = wid(0xC4);
+    let w_bad = wid(0xCB);
+
+    // Two wallets the loader can list...
+    ensure_wallet_meta(&persister, &w_good);
+    ensure_wallet_meta(&persister, &w_bad);
+    // ...then corrupt the bad wallet's core state with an undecodable
+    // `record_blob`, so `core_state::load_state` returns BincodeDecode and
+    // the loader skips just that wallet.
+    {
+        let conn = persister.lock_conn_for_test();
+        conn.execute(
+            "INSERT INTO core_transactions \
+                (wallet_id, txid, height, block_hash, block_time, finalized, record_blob) \
+             VALUES (?1, ?2, NULL, NULL, NULL, 0, X'00')",
+            rusqlite::params![w_bad.as_slice(), &[0x11u8; 32][..]],
+        )
+        .unwrap();
+    }
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let state = p2
+        .load()
+        .expect("load must succeed despite one corrupt row");
+
+    // The good wallet loaded; the corrupt one did not.
+    assert!(
+        state.wallets.contains_key(&w_good),
+        "the good wallet must load"
+    );
+    assert!(
+        !state.wallets.contains_key(&w_bad),
+        "the corrupt wallet must not appear in the loaded set"
+    );
+
+    // The corrupt wallet is recorded as a skipped corrupt row.
+    assert_eq!(state.skipped.len(), 1, "exactly one wallet skipped");
+    let (skipped_id, reason) = &state.skipped[0];
+    assert_eq!(*skipped_id, w_bad, "the bad wallet must be the skipped one");
+    assert!(
+        matches!(reason, SkipReason::CorruptPersistedRow { .. }),
+        "skip reason must be CorruptPersistedRow; got {reason:?}"
+    );
+
+    // A load that skipped a wallet is NOT empty.
+    assert!(!state.is_empty(), "a load with skips is not empty");
 }

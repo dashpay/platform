@@ -381,6 +381,59 @@ impl WalletStorageError {
         }
     }
 
+    /// `true` when the failure means a single persisted wallet *row* is
+    /// structurally undecodable — its blob / typed columns cannot be parsed
+    /// or are internally inconsistent — so a load pass may skip just that
+    /// wallet and continue the batch, recording it in
+    /// `ClientStartState::skipped`. `false` for infra / transient /
+    /// operational failures and for post-decode value-range / id-format
+    /// failures (e.g. [`Self::IntegerOverflow`], [`Self::InvalidWalletIdLength`]),
+    /// which abort the whole load rather than masquerade as one skippable row.
+    ///
+    /// The match is intentionally wildcard-free so a future variant forces
+    /// explicit classification here.
+    pub fn is_corrupt_row(&self) -> bool {
+        match self {
+            Self::BincodeDecode { .. }
+            | Self::BlobDecode { .. }
+            | Self::HashDecode { .. }
+            | Self::ConsensusCodec { .. }
+            | Self::BlobTooLarge { .. }
+            | Self::IdentityKeyEntryMismatch
+            | Self::IdentityEntryIdMismatch
+            | Self::AccountRegistrationEntryMismatch
+            | Self::AssetLockEntryMismatch { .. } => true,
+            // Infra / transient / operational, plus post-decode value-range
+            // and id-format failures — abort the whole load.
+            Self::Io(_)
+            | Self::Sqlite(_)
+            | Self::Migration(_)
+            | Self::IntegrityCheckFailed { .. }
+            | Self::IntegrityCheckRunFailed { .. }
+            | Self::SourceOpenFailed { .. }
+            | Self::SchemaHistoryMissing
+            | Self::SchemaVersionUnsupported { .. }
+            | Self::AutoBackupDisabled { .. }
+            | Self::AutoBackupDirUnwritable { .. }
+            | Self::WalletNotFound { .. }
+            | Self::WalletIdMismatch { .. }
+            | Self::LockPoisoned
+            | Self::RestoreDestinationLocked
+            | Self::InvalidWalletIdHex { .. }
+            | Self::InvalidWalletIdLength { .. }
+            | Self::ConfigInvalid { .. }
+            | Self::BincodeEncode { .. }
+            | Self::BackupDestinationExists { .. }
+            | Self::ForeignKeysNotEnforced
+            | Self::JournalModeNotApplied { .. }
+            | Self::SchemaHistoryMalformed { .. }
+            | Self::NotAWalletDb { .. }
+            | Self::AlreadyOpen { .. }
+            | Self::IntegerOverflow { .. }
+            | Self::FlushRetryable { .. } => false,
+        }
+    }
+
     /// Trait-boundary classification for [`PersistenceError::Backend`]:
     ///
     /// - [`PersistenceErrorKind::Transient`] — [`Self::is_transient`] true; caller MAY retry.

@@ -162,25 +162,30 @@ reconstructed from these per-area readers:
 | `contacts` | `schema::contacts::load_changeset` |
 | `identity_keys` | `schema::identity_keys::load_state` |
 
-The payload carries **no** `Wallet` and no key material. On this
-storage-only build the **manager-side rebuild is not yet wired**:
-`PlatformWalletManager::load_from_persistor` returns a typed error rather
-than reconstructing wallets. The keyless rebuild (watch-only via
-`Wallet::new_watch_only` from the manifest, then on-demand signing-key
-derivation through the `sign_with_mnemonic_resolver` path) lands in #3692.
-`load()` itself already reconstructs the full keyless payload.
+The payload carries **no** `Wallet` and no key material. The manager-side
+rebuild is wired: `PlatformWalletManager::load_from_persistor` reconstructs
+each wallet watch-only (via `Wallet::new_watch_only` from the manifest, with
+on-demand signing-key derivation through the `sign_with_mnemonic_resolver`
+path) and folds the persister's skipped rows into its load outcome. `load()`
+itself reconstructs the full keyless payload.
 
-Loading is **fail-hard**: any row that fails to decode, or a stored
-`wallet_id` that is not exactly 32 bytes, aborts the whole call with a typed
-[`WalletStorageError`](src/sqlite/error.rs)
-(`BincodeDecode` / `BlobDecode` / `InvalidWalletIdLength`). There is no
-corruption tolerance, no per-row skip, and no partial `Ok` — a corrupt
-database surfaces as an error rather than silently losing rows.
+Loading tolerates a corrupt **row**: a wallet whose persisted payload fails
+to decode structurally — a typed
+[`WalletStorageError`](src/sqlite/error.rs) for which
+[`is_corrupt_row`](src/sqlite/error.rs) holds (`BincodeDecode` /
+`BlobDecode` / entry-mismatch / …) — is **skipped**, recorded in
+`ClientStartState.skipped` as a `SkipReason::CorruptPersistedRow`, and the
+rest of the batch loads. One bad row never blocks the others. Infra /
+transient failures (I/O, busy, lock poison) and a failure enumerating the
+wallet set (e.g. a stored `wallet_id` that is not exactly 32 bytes) still
+abort the whole call with a typed `WalletStorageError`.
 
 The summary `tracing::info!` carries `wallets_seen`, `addresses_loaded`,
-`wallets_rehydrated` (the count actually rehydrated this call), and
-`wallets_pending_rehydration` (now always `0` — every seen wallet is
-rehydrated). The only deferred field is listed in `LOAD_UNIMPLEMENTED`.
+`wallets_rehydrated` (the count actually rehydrated this call),
+`wallets_skipped` (corrupt rows recorded in `skipped`), and
+`wallets_pending_rehydration` (now always `0` — every seen wallet is either
+rehydrated or skipped). The only deferred field is listed in
+`LOAD_UNIMPLEMENTED`.
 
 ### KV metadata API
 

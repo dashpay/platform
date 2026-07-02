@@ -160,7 +160,7 @@ dash-sdk = { path = "../rs-sdk", default-features = false, features = [
 ] }
 
 [features]
-default = ["sqlite", "cli", "secrets", "kv"]
+default = ["sqlite", "cli", "secrets", "kv", "rehydration-apply"]
 # SQLite-backed persister (`platform_wallet_storage::sqlite`).
 sqlite = [
     "dep:platform-wallet",
@@ -245,5 +245,6 @@ kv = ["sqlite"]
 # convention for "MUST NOT enable from downstream" features
 # (https://doc.rust-lang.org/cargo/reference/features.html#feature-resolver-version-2).
 __test-helpers = ["sqlite"]
-# e2e tests that drive the #3692 manager-apply path; enabled in the integrated stack (dash-evo-tool).
+# e2e tests that drive the #3692 manager-apply path. Default-on in the
+# integrated stack (dash-evo-tool) so the cross-crate manager-apply e2e runs.
 rehydration-apply = []
