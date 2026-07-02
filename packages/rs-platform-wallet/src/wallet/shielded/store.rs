@@ -478,13 +478,20 @@ impl SubwalletState {
     }
 
     /// Reserve `nullifier` against an in-flight spend. Returns
-    /// `true` if newly added, `false` if it was already reserved
-    /// (re-reserving is idempotent — the note is already excluded
-    /// from selection, so the entry is never re-selected and reset).
+    /// `true` if newly added, `false` if it was already reserved.
+    /// Re-reserving is a true no-op: an already-armed entry keeps its
+    /// anchor/activity link (selection excludes pending nullifiers, so
+    /// this shouldn't happen — but a plain `insert` would silently
+    /// wipe the release pass's only handle on a stranded spend if it
+    /// ever did).
     pub(super) fn mark_pending(&mut self, nullifier: &[u8; 32]) -> bool {
-        self.pending_nullifiers
-            .insert(*nullifier, PendingSpend::default())
-            .is_none()
+        match self.pending_nullifiers.entry(*nullifier) {
+            std::collections::btree_map::Entry::Vacant(e) => {
+                e.insert(PendingSpend::default());
+                true
+            }
+            std::collections::btree_map::Entry::Occupied(_) => false,
+        }
     }
 
     /// Attach the built spend's recorded `anchor` and linked

@@ -836,10 +836,13 @@ impl NetworkShieldedCoordinator {
     ///    grows), so if that spend nevertheless executed, it executed at a
     ///    height the scan covered — the reconcile already cleared its
     ///    reservation, which fact 2 catches.
-    /// 2. `clear_pending`'s return value is honored: `Ok(false)` means the
-    ///    reservation was already resolved concurrently (the reconcile
-    ///    above, or the spend's own result-wait confirming mid-pass) —
-    ///    nothing was released, and the linked activity row is left alone.
+    /// 2. Each release is a check-and-clear under a single store write
+    ///    guard: the reservation is cleared only while the nullifier is
+    ///    still armed with the snapshot's exact anchor + activity. A
+    ///    reservation resolved concurrently (the reconcile above, or the
+    ///    spend's own result-wait confirming mid-pass) — or cleared and
+    ///    re-armed by a retry with a fresh anchor — is skipped, and its
+    ///    activity row is left alone.
     ///
     /// A still-recorded (slow-but-landing) spend is never released, and an
     /// anchor-less reservation (reserved but not yet built) is never in the
@@ -849,34 +852,67 @@ impl NetworkShieldedCoordinator {
         snapshot: Vec<(SubwalletId, StalePendingSpend)>,
         recorded: &HashSet<[u8; 32]>,
     ) {
+        // Persister map is only written on wallet register/unregister —
+        // one read acquisition covers the whole loop.
+        let persisters = self.persisters.read().await;
+        // Every note of a multi-note spend carries the same activity id:
+        // flip each linked row once, not once per nullifier.
+        let mut flipped: HashSet<[u8; 32]> = HashSet::new();
         for (id, (nullifier, anchor, activity_id)) in snapshot {
             // Fund-safety invariant: release ONLY when the anchor is absent
             // from the recorded set. A still-recorded anchor may yet land.
             if recorded.contains(&anchor) {
                 continue;
             }
-            match self.store.write().await.clear_pending(id, &nullifier) {
-                Ok(true) => {}
-                Ok(false) => {
-                    // Already resolved while this pass was scanning (landed
-                    // and reconciled, or the result-wait confirmed it).
-                    // Nothing was released — leave the activity row alone.
+            // Check-and-clear under ONE write acquisition: the snapshot
+            // entry is released only while the nullifier is still armed
+            // with the SAME anchor + activity. A reservation cleared
+            // mid-scan and re-armed by a retry (same note, fresh anchor
+            // and activity) must not be judged against the pre-scan set —
+            // its anchor may postdate the fetch; it gets checked next pass.
+            {
+                let mut store = self.store.write().await;
+                let still_same = match store.stale_pending_spends(id) {
+                    Ok(current) => current
+                        .iter()
+                        .any(|(n, a, act)| *n == nullifier && *a == anchor && *act == activity_id),
+                    Err(e) => {
+                        tracing::warn!(
+                            wallet_id = %hex::encode(id.wallet_id),
+                            account = id.account_index,
+                            error = %e,
+                            "shielded reservation release: stale_pending_spends failed; skipping entry"
+                        );
+                        continue;
+                    }
+                };
+                if !still_same {
+                    // Resolved (landed and reconciled, result-wait
+                    // confirmed) or re-armed by a retry while this pass
+                    // was scanning. Nothing to release — leave the
+                    // activity row alone.
                     tracing::debug!(
                         wallet_id = %hex::encode(id.wallet_id),
                         account = id.account_index,
                         nullifier = %hex::encode(nullifier),
-                        "shielded reservation release: reservation already resolved; skipping"
+                        "shielded reservation release: reservation resolved or re-armed; skipping"
                     );
                     continue;
                 }
-                Err(e) => {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(id.wallet_id),
-                        account = id.account_index,
-                        error = %e,
-                        "shielded reservation release: clear_pending failed"
-                    );
-                    continue;
+                match store.clear_pending(id, &nullifier) {
+                    // `still_same` held under this same guard, so the clear
+                    // removes exactly the snapshot's reservation.
+                    Ok(true) => {}
+                    Ok(false) => continue,
+                    Err(e) => {
+                        tracing::warn!(
+                            wallet_id = %hex::encode(id.wallet_id),
+                            account = id.account_index,
+                            error = %e,
+                            "shielded reservation release: clear_pending failed"
+                        );
+                        continue;
+                    }
                 }
             }
             tracing::info!(
@@ -890,7 +926,10 @@ impl NetworkShieldedCoordinator {
             // Flip the linked activity row to Failed. Only queue to the
             // wallet's own persister (cloned out — `WalletPersister: Clone`).
             if let Some(entry_id) = activity_id {
-                let persister = self.persisters.read().await.get(&id.wallet_id).cloned();
+                if !flipped.insert(entry_id) {
+                    continue;
+                }
+                let persister = persisters.get(&id.wallet_id).cloned();
                 super::operations::record_activity_status_by_id(
                     &self.store,
                     persister.as_ref(),
@@ -1323,6 +1362,65 @@ mod tests {
         assert!(
             prefetched.is_none(),
             "nothing armed ⇒ no anchor fetch, no release pass"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Full release-path coverage through `release_stranded_spends` itself
+    /// (not just the store predicate): of two armed reservations, the one
+    /// whose anchor is absent from the recorded set is released while the
+    /// one whose anchor is still recorded survives untouched.
+    #[tokio::test]
+    async fn release_stranded_spends_releases_pruned_and_retains_recorded() {
+        let dir = temp_dir("release_paths");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+
+        let pruned_nf = [0xAAu8; 32];
+        let pruned_anchor = [0xABu8; 32];
+        let pruned_act = [0xACu8; 32];
+        let live_nf = [0xBAu8; 32];
+        let live_anchor = [0xBBu8; 32];
+        let live_act = [0xBCu8; 32];
+        {
+            let mut store = coordinator.store.write().await;
+            store.mark_pending(id, &pruned_nf).expect("mark pruned");
+            store
+                .set_pending_spend(id, &pruned_nf, pruned_anchor, pruned_act)
+                .expect("arm pruned");
+            store.mark_pending(id, &live_nf).expect("mark live");
+            store
+                .set_pending_spend(id, &live_nf, live_anchor, live_act)
+                .expect("arm live");
+        }
+
+        // Snapshot as the pre-scan prefetch would have produced it; the
+        // recorded set holds only the live anchor (the other was "pruned").
+        let snapshot = vec![
+            (id, (pruned_nf, pruned_anchor, Some(pruned_act))),
+            (id, (live_nf, live_anchor, Some(live_act))),
+        ];
+        let recorded: HashSet<[u8; 32]> = [live_anchor].into_iter().collect();
+
+        coordinator
+            .release_stranded_spends(snapshot, &recorded)
+            .await;
+
+        let remaining = coordinator
+            .store
+            .read()
+            .await
+            .stale_pending_spends(id)
+            .expect("stale_pending_spends");
+        assert_eq!(
+            remaining.len(),
+            1,
+            "pruned-anchor reservation released; recorded-anchor one retained"
+        );
+        assert_eq!(
+            remaining[0].0, live_nf,
+            "the still-recorded reservation must survive"
         );
 
         let _ = std::fs::remove_dir_all(&dir);
