@@ -16,56 +16,59 @@ use wasm_dpp2::{ProTxHashLikeNullableJs, ProTxHashWasm};
 pub struct ProtocolVersionUpgradeStateWasm {
     current_protocol_version: u32,
     next_protocol_version: Option<u32>,
-    activation_height: Option<u64>,
-    vote_count: Option<u32>,
-    #[serde(rename = "thresholdReached")]
-    is_threshold_reached: bool,
+    vote_count: Option<u64>,
 }
 
 impl ProtocolVersionUpgradeStateWasm {
     fn new(
         current_protocol_version: u32,
         next_protocol_version: Option<u32>,
-        activation_height: Option<u64>,
-        vote_count: Option<u32>,
-        is_threshold_reached: bool,
+        vote_count: Option<u64>,
     ) -> Self {
         Self {
             current_protocol_version,
             next_protocol_version,
-            activation_height,
             vote_count,
-            is_threshold_reached,
         }
     }
 }
 
 #[wasm_bindgen(js_class = ProtocolVersionUpgradeState)]
 impl ProtocolVersionUpgradeStateWasm {
+    /// Protocol version the chain was running when this response was produced.
     #[wasm_bindgen(getter = "currentProtocolVersion")]
     pub fn current_protocol_version(&self) -> u32 {
         self.current_protocol_version
     }
 
+    /// Candidate upgrade version: the version above the current one with the
+    /// most evonode votes, if any votes exist.
     #[wasm_bindgen(getter = "nextProtocolVersion")]
     pub fn next_protocol_version(&self) -> Option<u32> {
         self.next_protocol_version
     }
 
-    #[wasm_bindgen(getter = "activationHeight")]
-    pub fn activation_height(&self) -> Option<u64> {
-        self.activation_height
-    }
-
+    /// Number of evonode votes cast for `nextProtocolVersion`.
     #[wasm_bindgen(getter = "voteCount")]
-    pub fn vote_count(&self) -> Option<u32> {
+    pub fn vote_count(&self) -> Option<u64> {
         self.vote_count
     }
+}
 
-    #[wasm_bindgen(getter = "isThresholdReached")]
-    pub fn is_threshold_reached(&self) -> bool {
-        self.is_threshold_reached
-    }
+/// Pick the candidate upgrade version from the vote counts: among versions
+/// newer than `current_version`, the one with the most votes.
+fn next_version_upgrade(
+    upgrades: &drive_proof_verifier::types::ProtocolVersionUpgrades,
+    current_version: u32,
+) -> (Option<u32>, Option<u64>) {
+    upgrades
+        .iter()
+        .filter_map(|(version, votes)| votes.map(|votes| (*version, votes)))
+        .filter(|(version, _)| *version > current_version)
+        .max_by_key(|(_, votes)| *votes)
+        .map_or((None, None), |(version, votes)| {
+            (Some(version), Some(votes))
+        })
 }
 
 #[wasm_bindgen(js_name = "ProtocolVersionUpgradeVoteStatus")]
@@ -108,36 +111,18 @@ impl WasmSdk {
         use dash_sdk::platform::FetchMany;
         use drive_proof_verifier::types::ProtocolVersionVoteCount;
 
-        let upgrade_result: drive_proof_verifier::types::ProtocolVersionUpgrades =
-            ProtocolVersionVoteCount::fetch_many(self.as_ref(), ()).await?;
+        let (upgrade_result, metadata): (drive_proof_verifier::types::ProtocolVersionUpgrades, _) =
+            ProtocolVersionVoteCount::fetch_many_with_metadata(self.as_ref(), (), None).await?;
 
-        // Get the current protocol version from the SDK
-        let current_version = self.version();
+        // The chain's protocol version at the time of the response
+        let current_version = metadata.protocol_version;
 
-        // Find the next version with votes
-        let mut next_version = None;
-        let mut activation_height = None;
-        let mut vote_count = None;
-        let mut threshold_reached = false;
-
-        // The result is an IndexMap<u32, Option<u64>> where u32 is version and Option<u64> is activation height
-        for (version, height_opt) in upgrade_result.iter() {
-            if *version > current_version {
-                next_version = Some(*version);
-                activation_height = *height_opt;
-                // TODO: Get actual vote count and threshold from platform
-                vote_count = None;
-                threshold_reached = height_opt.is_some();
-                break;
-            }
-        }
+        let (next_version, vote_count) = next_version_upgrade(&upgrade_result, current_version);
 
         Ok(ProtocolVersionUpgradeStateWasm::new(
             current_version,
             next_version,
-            activation_height,
             vote_count,
-            threshold_reached,
         ))
     }
 
@@ -194,32 +179,12 @@ impl WasmSdk {
         ) = ProtocolVersionVoteCount::fetch_many_with_metadata_and_proof(self.as_ref(), (), None)
             .await?;
 
-        // Get the current protocol version from the SDK
-        let current_version = self.version();
+        // The chain's protocol version at the time of the response
+        let current_version = metadata.protocol_version;
 
-        // Find the next version with votes
-        let mut next_version = None;
-        let mut activation_height = None;
-        let mut vote_count = None;
-        let mut threshold_reached = false;
+        let (next_version, vote_count) = next_version_upgrade(&upgrade_result, current_version);
 
-        for (version, height_opt) in upgrade_result.iter() {
-            if *version > current_version {
-                next_version = Some(*version);
-                activation_height = *height_opt;
-                vote_count = None;
-                threshold_reached = height_opt.is_some();
-                break;
-            }
-        }
-
-        let state = ProtocolVersionUpgradeStateWasm::new(
-            current_version,
-            next_version,
-            activation_height,
-            vote_count,
-            threshold_reached,
-        );
+        let state = ProtocolVersionUpgradeStateWasm::new(current_version, next_version, vote_count);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             state, metadata, proof,
