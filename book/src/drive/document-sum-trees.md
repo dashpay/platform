@@ -2,7 +2,7 @@
 
 Summing a numeric property across the documents that match a query used to mean fetching them all and adding values up client-side. The grovedb upgrade that landed alongside [Document Count Trees](./document-count-trees.md) adds **provable sum trees** and **references with sum item** as primitives — the building blocks Drive uses to turn `sum(amount)`-style queries into an O(log n) provable lookup. This chapter explains the three sum-tree variants, how a document type opts into one, the unified `GetDocumentsSum` endpoint that exposes the feature, and the parallels with the count-tree machinery.
 
-> **Status:** the grovedb-level sum-tree primitives (`SumTree`, `ProvableSumTree`, `BigSumTree`, and reference elements that carry a sum-item contribution) are in place. The Drive-level schema syntax, query handler, and SDK surfaces described below are the proposed design — the [Sum Index Examples](./sum-index-examples.md) chapter is the worked-example companion, and the tip-jar contract fixture at [`packages/rs-drive/tests/supporting_files/contract/tip-jar/tip-jar-contract.json`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/tests/supporting_files/contract/tip-jar/tip-jar-contract.json) is the schema this design targets.
+> **Status:** the grovedb-level sum-tree primitives (`SumTree`, `ProvableSumTree`, `BigSumTree`, and reference elements that carry a sum-item contribution) are in place. The Drive-level schema syntax, query handler, and SDK surfaces described below are the proposed design — the [Sum Index Examples](./sum-index-examples.md) chapter is the worked-example companion, and the tip-jar contract fixture at [`packages/rs-drive/tests/supporting_files/contract/tip-jar/tip-jar-contract.json`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/tests/supporting_files/contract/tip-jar/tip-jar-contract.json) is the schema this design targets.
 
 ## Why Sum Trees Exist
 
@@ -124,7 +124,7 @@ The two-path / two-shape split is identical to the count endpoint's, and for the
 
 ### No-Prove (Server-Side O(1) or O(log n))
 
-When `prove=false`, drive-abci calls into `DriveDocumentSumQuery` (the proposed analog of `DriveDocumentCountQuery` in [`packages/rs-drive/src/query/drive_document_count_query/mod.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/mod.rs)). The handler picks a path based on the where clauses:
+When `prove=false`, drive-abci calls into `DriveDocumentSumQuery` (the proposed analog of `DriveDocumentCountQuery` in [`packages/rs-drive/src/query/drive_document_count_query/mod.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/mod.rs)). The handler picks a path based on the where clauses:
 
 **Unfiltered total (no where clauses) on a `documentsSummable: "amount"` document type**:
 
