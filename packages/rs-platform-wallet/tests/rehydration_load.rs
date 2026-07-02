@@ -26,8 +26,9 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::Wallet;
 use platform_wallet::changeset::{
     AccountRegistrationEntry, ClientStartState, ClientWalletStartState, CoreChangeSet,
-    PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
+use platform_wallet::error::PlatformWalletError;
 use platform_wallet::events::{EventHandler, PlatformEventHandler};
 use platform_wallet::manager::load_outcome::CorruptKind;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -86,6 +87,31 @@ impl PlatformWalletPersistence for FixedLoadPersister {
                 out.skipped = s.skipped.clone();
                 Ok(out)
             }
+        }
+    }
+}
+
+/// Persister whose `load()` always fails with a chosen [`PersistenceError`],
+/// to exercise the typed error propagation out of `load_from_persistor`.
+struct FailingLoadPersister {
+    transient: bool,
+}
+
+impl PlatformWalletPersistence for FailingLoadPersister {
+    fn store(&self, _: WalletId, _: PlatformWalletChangeSet) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+    fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+    fn load(&self) -> Result<ClientStartState, PersistenceError> {
+        if self.transient {
+            Err(PersistenceError::backend_with_kind(
+                PersistenceErrorKind::Transient,
+                "backend busy",
+            ))
+        } else {
+            Err(PersistenceError::backend("schema corrupt"))
         }
     }
 }
@@ -709,4 +735,56 @@ async fn rt_snapshot_mismatch_skip_coexists_with_healthy_load() {
     let skipped = h.skipped.lock().unwrap();
     assert_eq!(skipped.len(), 1, "exactly one skip notification");
     assert_eq!(skipped[0].0, id_bad);
+}
+
+/// RT-PersisterLoad-Transient: a transient persister load failure
+/// propagates as a typed `PersisterLoad` error whose retry classification
+/// survives — `is_transient()` is `true` so callers may back off and retry.
+#[tokio::test]
+async fn rt_persister_load_transient_error_is_typed_and_retryable() {
+    let p = Arc::new(FailingLoadPersister { transient: true });
+    let h = Arc::new(RecordingHandler::default());
+    let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+    let mgr = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&p), h));
+
+    let err = mgr
+        .load_from_persistor()
+        .await
+        .expect_err("transient backend failure must surface");
+    match err {
+        PlatformWalletError::PersisterLoad(inner) => {
+            assert!(
+                inner.is_transient(),
+                "transient classification must survive propagation"
+            );
+            assert_eq!(inner.kind(), Some(PersistenceErrorKind::Transient));
+        }
+        other => panic!("expected PersisterLoad, got {other:?}"),
+    }
+}
+
+/// RT-PersisterLoad-Permanent: a fatal persister load failure propagates as
+/// a typed `PersisterLoad` error classified non-transient, so callers do
+/// not retry a permanent failure.
+#[tokio::test]
+async fn rt_persister_load_permanent_error_is_typed_and_not_retryable() {
+    let p = Arc::new(FailingLoadPersister { transient: false });
+    let h = Arc::new(RecordingHandler::default());
+    let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+    let mgr = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&p), h));
+
+    let err = mgr
+        .load_from_persistor()
+        .await
+        .expect_err("fatal backend failure must surface");
+    match err {
+        PlatformWalletError::PersisterLoad(inner) => {
+            assert!(
+                !inner.is_transient(),
+                "fatal failure must not read as retryable"
+            );
+            assert_eq!(inner.kind(), Some(PersistenceErrorKind::Fatal));
+        }
+        other => panic!("expected PersisterLoad, got {other:?}"),
+    }
 }

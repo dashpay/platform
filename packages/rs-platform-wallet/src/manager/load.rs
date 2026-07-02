@@ -84,12 +84,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // not here — drop the snapshot at this entry point.
             #[cfg(feature = "shielded")]
                 shielded: _,
-        } = self.persister.load().map_err(|e| {
-            PlatformWalletError::WalletCreation(format!(
-                "Failed to load persisted client state: {}",
-                e
-            ))
-        })?;
+        } = self.persister.load()?;
 
         let persister_dyn: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
 
