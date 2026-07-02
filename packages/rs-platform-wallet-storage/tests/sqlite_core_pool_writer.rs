@@ -1,7 +1,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! `core_address_pool` writer + `core_utxos.account_index` attribution
-//! (WS-B task B3). Covers TC-B-001 (pool rows with `used` flags), TC-B-002
+//! `core_address_pool` writer + `core_utxos.account_index` attribution.
+//! Covers TC-B-001 (pool rows with `used` flags), TC-B-002
 //! (real account_index, not the retired `=0` constant), TC-B-010 (idempotent
 //! per-changeset pool state), TC-B-015 (`key_class` survives).
 

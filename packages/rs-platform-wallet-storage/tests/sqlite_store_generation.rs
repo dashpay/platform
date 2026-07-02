@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Store-generation token behaviour (WS-B task B5). Covers TC-B-004
+//! Store-generation token behaviour. Covers TC-B-004
 //! (present + stable across a normal flush) and TC-B-024 (regenerated on
 //! restore so a restored copy is distinguishable from its source).
 

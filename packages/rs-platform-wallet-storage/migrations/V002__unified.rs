@@ -1,4 +1,4 @@
-//! Unified additive migration for `platform-wallet-storage` (WS-B #3968).
+//! Unified additive migration for `platform-wallet-storage` (#3968).
 //!
 //! Additive-only: V001 stays byte-identical so refinery's applied-migration
 //! checksum for version 1 never diverges on an existing store. V002 lifts

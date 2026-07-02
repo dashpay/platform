@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! V002 unified-migration schema tests (WS-B task B1).
+//! V002 unified-migration schema tests.
 //!
 //! Covers TC-B-030 (fresh store migrates clean to the new target version),
 //! TC-B-003 (`meta_data_versions` shape + PK), the schema half of TC-B-001

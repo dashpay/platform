@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Populated-V001 fixture capture (WS-B task B0).
+//! Populated-V001 fixture capture.
 //!
 //! `regenerate_populated_v001_fixture` (`#[ignore]`) writes a realistic
 //! multi-wallet store, built by the CURRENT V001-only persister, to
@@ -266,7 +266,7 @@ fn build_populated_store(path: &Path) {
     persister.flush(empty).expect("flush empty");
 }
 
-/// B0 regenerator. Ignored by default — run explicitly to rebuild the
+/// Fixture regenerator. Ignored by default — run explicitly to rebuild the
 /// committed fixture:
 /// `cargo test -p platform-wallet-storage --test fixture_gen -- --ignored regenerate`.
 #[test]
@@ -344,7 +344,7 @@ fn populated_v001_fixture_is_present_and_openable() {
     assert_eq!(utxo_count, 1, "full wallet has one unspent UTXO");
     assert_eq!(
         account_index, 0,
-        "V001 hardcodes account_index=0 — the writer gap B3 closes"
+        "V001 hardcodes account_index=0 — the pre-redirect writer gap"
     );
 
     let tx_count: i64 = conn

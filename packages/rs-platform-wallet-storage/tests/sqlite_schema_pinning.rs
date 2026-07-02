@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Content-level schema-freeze guards (WS-B task B2).
+//! Content-level schema-freeze guards.
 //!
 //! TC-B-040: pin the rendered migration SQL with a golden fingerprint so an
 //! in-place DDL edit (which the identity-only fingerprint is documented not
