@@ -1,0 +1,69 @@
+//! Unified additive migration for `platform-wallet-storage` (WS-B #3968).
+//!
+//! Additive-only: V001 stays byte-identical so refinery's applied-migration
+//! checksum for version 1 never diverges on an existing store. V002 lifts
+//! `max_supported_version()` from 1 to 2 automatically (the value is derived
+//! from the embedded list) and lands three concerns in one migration event:
+//!
+//! - `core_address_pool` — per-index address-pool rows with a `used` flag,
+//!   the first-class row store that replaces `core_utxos` script-derivation
+//!   for the address-reuse guard. `pool_type` is in the primary key so an
+//!   External (receive) and Internal (change) pool never collide at the same
+//!   `address_index`. `address` is stored so the reader returns used
+//!   addresses verbatim, without re-deriving from an xpub.
+//! - `meta_data_versions` — per-`(wallet_id, domain)` monotonic `seq`
+//!   bumped inside the flush transaction, the cache-invalidation keystone.
+//!   No FK (a domain row may be written before its typed parent syncs,
+//!   mirroring the `meta_*` tables); a soft-cascade trigger reaps rows on
+//!   wallet delete.
+//! - `meta_store_generation` — a single-row store-generation token, seeded
+//!   with `randomblob(16)` so the rendered SQL stays deterministic (the
+//!   content fingerprint pins the text, the runtime value is unique per
+//!   store). Regenerated on restore.
+//!
+//! No MAC column ships here — manifest authentication is deferred out of
+//! this workstream (dev-plan §7).
+
+pub fn migration() -> String {
+    "\
+CREATE TABLE core_address_pool (
+    wallet_id BLOB NOT NULL,
+    account_index INTEGER NOT NULL,
+    key_class INTEGER NOT NULL DEFAULT 0,
+    pool_type INTEGER NOT NULL CHECK (pool_type IN (0, 1, 2, 3)),
+    address_index INTEGER NOT NULL,
+    address BLOB NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0 CHECK (used IN (0, 1)),
+    PRIMARY KEY (wallet_id, account_index, key_class, pool_type, address_index),
+    FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_core_address_pool_used
+    ON core_address_pool(wallet_id, used);
+
+CREATE TABLE meta_data_versions (
+    wallet_id BLOB NOT NULL,
+    domain TEXT NOT NULL,
+    seq INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (wallet_id, domain)
+);
+
+-- Soft-cascade reap, matching the meta_* tables: no FK (a domain may be
+-- bumped before its typed parent exists), so a trigger clears rows when
+-- the owning wallet is deleted.
+CREATE TRIGGER cascade_meta_data_versions_on_wallet_delete
+AFTER DELETE ON wallets
+FOR EACH ROW
+BEGIN
+    DELETE FROM meta_data_versions WHERE wallet_id = OLD.wallet_id;
+END;
+
+CREATE TABLE meta_store_generation (
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 0),
+    generation BLOB NOT NULL
+);
+
+INSERT INTO meta_store_generation (id, generation) VALUES (0, randomblob(16));
+"
+    .to_string()
+}
