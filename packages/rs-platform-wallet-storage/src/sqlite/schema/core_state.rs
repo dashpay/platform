@@ -99,15 +99,16 @@ pub fn apply(
             ])?;
         }
     }
-    // `addresses_derived` is intentionally NOT persisted here. The iOS
-    // address registry is fed by the FFI `addresses_derived` callback (fired
-    // before the UTXO changeset in the same round), and UTXO attribution is
-    // hardcoded to the default account (index 0); the storage layer keeps no
-    // derived-address lookup table.
+    // `addresses_derived` is intentionally NOT persisted here — the pool
+    // snapshot (`account_address_pools`) is the derived-address source, and
+    // it is applied to `core_address_pool` before this in the same flush tx,
+    // so a UTXO's owning account resolves by matching its script against a
+    // pool row (falling back to account 0 when no pool row covers it).
     if !cs.new_utxos.is_empty() {
         let mut stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
         for utxo in &cs.new_utxos {
-            execute_upsert_utxo(&mut stmt, wallet_id, utxo, false)?;
+            let account_index = resolve_account_index(tx, wallet_id, utxo)?;
+            execute_upsert_utxo(&mut stmt, wallet_id, utxo, account_index, false)?;
         }
     }
     if !cs.spent_utxos.is_empty() {
@@ -126,11 +127,11 @@ pub fn apply(
             if exists {
                 mark_spent_stmt.execute(params![wallet_id.as_slice(), &op[..]])?;
             } else {
-                // Spent-only synthetic row for a UTXO we never saw unspent.
-                // account_index is the hardcoded default like every row, and
-                // inert anyway since spent rows are excluded from
-                // `list_unspent_utxos`.
-                execute_upsert_utxo(&mut upsert_stmt, wallet_id, utxo, true)?;
+                // Spent-only synthetic row for a UTXO we never saw unspent;
+                // attribute like any other row (inert — spent rows are
+                // excluded from `list_unspent_utxos`).
+                let account_index = resolve_account_index(tx, wallet_id, utxo)?;
+                execute_upsert_utxo(&mut upsert_stmt, wallet_id, utxo, account_index, true)?;
             }
         }
     }
@@ -179,20 +180,29 @@ const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         account_index = excluded.account_index, \
         spent = excluded.spent";
 
-/// Account index written for every `core_utxos` row. The product uses only
-/// the default account (index 0); a non-default funds account causes
-/// `core_bridge::warn_if_non_default_account` to emit a `warn!` log but
-/// the record is still persisted under index 0 (dropping it would
-/// undercount the balance and lose funds). The one reader
-/// (`list_unspent_utxos` per-account grouping) groups everything under 0.
-const CORE_UTXO_ACCOUNT_INDEX: i64 = 0;
+/// Owning account for a UTXO, resolved by matching its `script_pubkey`
+/// against a `core_address_pool` row. Falls back to account 0 when no pool
+/// row covers the script — the one-way historical-attribution default (R7):
+/// funds are never dropped, only conservatively bucketed.
+fn resolve_account_index(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    utxo: &Utxo,
+) -> Result<i64, WalletStorageError> {
+    let script = utxo.txout.script_pubkey.as_bytes();
+    let account =
+        crate::sqlite::schema::core_pool::account_index_for_script(tx, wallet_id, script)?
+            .unwrap_or(0);
+    Ok(i64::from(account))
+}
 
-/// Upsert one `core_utxos` row. `account_index` is the hardcoded default
-/// ([`CORE_UTXO_ACCOUNT_INDEX`]); `spent` marks spent-only synthetic rows.
+/// Upsert one `core_utxos` row with its resolved `account_index`; `spent`
+/// marks spent-only synthetic rows.
 fn execute_upsert_utxo(
     stmt: &mut rusqlite::CachedStatement<'_>,
     wallet_id: &WalletId,
     utxo: &Utxo,
+    account_index: i64,
     spent: bool,
 ) -> Result<(), WalletStorageError> {
     let op = blob::encode_outpoint(&utxo.outpoint)?;
@@ -202,7 +212,7 @@ fn execute_upsert_utxo(
         crate::sqlite::util::safe_cast::u64_to_i64("core_utxos.value", utxo.value())?,
         utxo.txout.script_pubkey.as_bytes(),
         i64::from(utxo.height),
-        CORE_UTXO_ACCOUNT_INDEX,
+        account_index,
         spent,
     ])?;
     Ok(())

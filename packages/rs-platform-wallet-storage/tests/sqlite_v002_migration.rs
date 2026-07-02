@@ -97,7 +97,7 @@ fn tc_b_001_core_address_pool_shape() {
         ("key_class", "INTEGER"),
         ("pool_type", "INTEGER"),
         ("address_index", "INTEGER"),
-        ("address", "BLOB"),
+        ("script", "BLOB"),
         ("used", "INTEGER"),
     ] {
         let col = cols

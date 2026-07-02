@@ -9,8 +9,9 @@
 //!   the first-class row store that replaces `core_utxos` script-derivation
 //!   for the address-reuse guard. `pool_type` is in the primary key so an
 //!   External (receive) and Internal (change) pool never collide at the same
-//!   `address_index`. `address` is stored so the reader returns used
-//!   addresses verbatim, without re-deriving from an xpub.
+//!   `address_index`. `script` (the address' `script_pubkey`) is stored so
+//!   the reader returns used addresses verbatim and the UTXO writer can
+//!   attribute an outpoint to its owning account, both without re-deriving.
 //! - `meta_data_versions` — per-`(wallet_id, domain)` monotonic `seq`
 //!   bumped inside the flush transaction, the cache-invalidation keystone.
 //!   No FK (a domain row may be written before its typed parent syncs,
@@ -32,7 +33,7 @@ CREATE TABLE core_address_pool (
     key_class INTEGER NOT NULL DEFAULT 0,
     pool_type INTEGER NOT NULL CHECK (pool_type IN (0, 1, 2, 3)),
     address_index INTEGER NOT NULL,
-    address BLOB NOT NULL,
+    script BLOB NOT NULL,
     used INTEGER NOT NULL DEFAULT 0 CHECK (used IN (0, 1)),
     PRIMARY KEY (wallet_id, account_index, key_class, pool_type, address_index),
     FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE
@@ -40,6 +41,11 @@ CREATE TABLE core_address_pool (
 
 CREATE INDEX idx_core_address_pool_used
     ON core_address_pool(wallet_id, used);
+
+-- The UTXO writer attributes an outpoint to its owning account by matching
+-- the outpoint's script against a pool row.
+CREATE INDEX idx_core_address_pool_script
+    ON core_address_pool(wallet_id, script);
 
 CREATE TABLE meta_data_versions (
     wallet_id BLOB NOT NULL,
