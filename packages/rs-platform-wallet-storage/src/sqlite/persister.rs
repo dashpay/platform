@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
-    ClientStartState, Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -994,25 +994,9 @@ impl PlatformWalletPersistence for SqlitePersister {
 /// from the public fields so no storage-only helper leaks into the
 /// `rs-platform-wallet` API.
 fn populated_field_count(cs: &PlatformWalletChangeSet) -> usize {
-    [
-        cs.core.is_empty(),
-        cs.identities.is_empty(),
-        cs.identity_keys.is_empty(),
-        cs.contacts.is_empty(),
-        cs.platform_addresses.is_empty(),
-        cs.asset_locks.is_empty(),
-        cs.token_balances.is_empty(),
-        cs.dashpay_profiles.as_ref().is_none_or(|m| m.is_empty()),
-        cs.dashpay_payments_overlay
-            .as_ref()
-            .is_none_or(|m| m.is_empty()),
-        cs.wallet_metadata.is_none(),
-        cs.account_registrations.is_empty(),
-        cs.account_address_pools.is_empty(),
-    ]
-    .iter()
-    .filter(|empty| !**empty)
-    .count()
+    // Single source of truth with the version-domain mapping: each populated
+    // field is exactly one touched domain.
+    schema::versions::touched_domains(cs).len()
 }
 
 fn validate_config(config: &SqlitePersisterConfig) -> Result<(), WalletStorageError> {
@@ -1123,6 +1107,9 @@ fn apply_changeset_to_tx(
             cs.dashpay_payments_overlay.as_ref(),
         )?;
     }
+    // Bump each touched domain's version inside this same tx so a domain's
+    // cache-invalidation marker commits atomically with its data.
+    schema::versions::bump_touched_domains(tx, wallet_id, cs)?;
     Ok(())
 }
 

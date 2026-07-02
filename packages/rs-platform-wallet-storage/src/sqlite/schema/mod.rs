@@ -17,6 +17,7 @@ pub mod identities;
 pub mod identity_keys;
 pub mod platform_addrs;
 pub mod token_balances;
+pub mod versions;
 pub mod wallets;
 
 /// Reject any `identity_id` in `touched` whose `identities` row does not
