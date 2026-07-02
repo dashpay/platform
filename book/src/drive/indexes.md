@@ -32,7 +32,7 @@ Concrete example. Given:
 
 ## The `Index` Struct
 
-The compiled-Rust shape — the JSON schema fields are deserialized into this — lives in [`packages/rs-dpp/src/data_contract/document_type/index/mod.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-dpp/src/data_contract/document_type/index/mod.rs):
+The compiled-Rust shape — the JSON schema fields are deserialized into this — lives in [`packages/rs-dpp/src/data_contract/document_type/index/mod.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-dpp/src/data_contract/document_type/index/mod.rs):
 
 ```rust
 pub struct Index {
@@ -122,7 +122,7 @@ The schema accepts both the legacy boolean form (`true` → `Countable`, `false`
 
 ## How Drive Builds the IndexLevel Trie
 
-The flat list of `Index`es declared on a document type is compiled, at contract-load time, into an `IndexLevel` trie ([`packages/rs-dpp/src/data_contract/document_type/index_level/mod.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-dpp/src/data_contract/document_type/index_level/mod.rs)):
+The flat list of `Index`es declared on a document type is compiled, at contract-load time, into an `IndexLevel` trie ([`packages/rs-dpp/src/data_contract/document_type/index_level/mod.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-dpp/src/data_contract/document_type/index_level/mod.rs)):
 
 ```rust
 pub struct IndexLevel {
@@ -468,7 +468,7 @@ Count trees automatically count *every* child element. A `NormalTree`, an `Item`
 
 Sum trees behave the opposite way. Only sum-bearing element variants — `SumItem`, `ItemWithSumItem`, `ReferenceWithSumItem`, and the sum-bearing tree variants themselves — contribute to a parent `SumTree`'s running sum. `Item`, `Reference`, plain `NormalTree`, `CountTree` — all contribute **0** by default. That has two consequences:
 
-1. **Per-document contributions don't appear automatically.** A plain `Element::Reference` under a `SumTree` does not propagate any sum. We need a different reference element — `Element::ReferenceWithSumItem(path, max_hops, sum_value, flags)` — that carries an explicit `i64` sum contribution (the document's value at the `summable` property, frozen at insert time) alongside the usual reference-path bytes. Grovedb PR 670 adds this variant; Drive's index walker constructs it via [`make_document_reference_with_sum_item`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/drive/document/mod.rs) under any index path with `summable.is_some()`.
+1. **Per-document contributions don't appear automatically.** A plain `Element::Reference` under a `SumTree` does not propagate any sum. We need a different reference element — `Element::ReferenceWithSumItem(path, max_hops, sum_value, flags)` — that carries an explicit `i64` sum contribution (the document's value at the `summable` property, frozen at insert time) alongside the usual reference-path bytes. Grovedb PR 670 adds this variant; Drive's index walker constructs it via [`make_document_reference_with_sum_item`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/drive/document/mod.rs) under any index path with `summable.is_some()`.
 2. **Sibling continuations usually don't need a wrapper.** A `NormalTree` continuation under a sum-bearing value tree contributes 0 by default — exactly what we want. No `NotSummed` wrap required. The exception is when the continuation is *itself* sum-bearing (e.g. a deeper compound index that's also `range_summable`); in that case wrap the continuation in `Element::NotSummed<*>` to keep its sum from leaking into the outer index's aggregate. Compare with `range_countable`, where **every** continuation needs `NonCounted` because every non-count-aware element auto-contributes 1.
 
 #### Layout
@@ -509,7 +509,7 @@ Extend the widget contract with a numeric `price` property and promote both inde
 
 Both indexes name **the same** sum property — `summable: "price"` in both. The DPP validator requires this: grovedb's sum trees aggregate `i64` per merk node with no per-tree property tag, so a contract that mixed `summable: "price"` and `summable: "fee"` on the same doctype would feed inconsistent contributions into the same merk hierarchy. `price` is `type: integer` and listed in `required` — both also enforced at contract-creation time.
 
-`byColorShape` combines `countable` (root-only doc count per `(color, shape)` pair) with `summable` + `rangeSummable` (per-node sums of `price`). Drive's dispatch table promotes this combination to **`ProvableCountProvableSumTree`** (PCPS) at the value-tree and `[0]` terminal levels — the only grovedb variant carrying per-node sums also carries per-node counts as a side effect, so the count side gets per-node tracking "for free" even though only the sum side was opted into provability. See [`DocumentTypePrimaryKeyTreeType::primary_key_tree_type`'s v1 dispatch table](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/drive/document/primary_key_tree_type.rs) for the full mapping.
+`byColorShape` combines `countable` (root-only doc count per `(color, shape)` pair) with `summable` + `rangeSummable` (per-node sums of `price`). Drive's dispatch table promotes this combination to **`ProvableCountProvableSumTree`** (PCPS) at the value-tree and `[0]` terminal levels — the only grovedb variant carrying per-node sums also carries per-node counts as a side effect, so the count side gets per-node tracking "for free" even though only the sum side was opted into provability. See [`DocumentTypePrimaryKeyTreeType::primary_key_tree_type`'s v1 dispatch table](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/drive/document/primary_key_tree_type.rs) for the full mapping.
 
 The two indexes share the `color` prefix exactly as the count examples did, so the same shared-prefix layout still applies. What changes is the element types at every level from `'color'` downward — and the diagram below makes the compound case visible, because the `'shape'` continuation under each color is now *itself* a sum-bearing tree (since `byColorShape` is `rangeSummable`) and needs `Element::NotSummed<*>`-wrapping to keep its aggregate from leaking into the outer `byColor` sum.
 
@@ -608,7 +608,7 @@ Walking through how the aggregates layer:
 
 ##### Why PCPS at the value level
 
-PCPS is grovedb's only tree variant carrying per-node sums. When an index sets `countable: "<tier>" + summable + rangeSummable`, the dispatch table promotes the value tree to PCPS because there's no "ProvableSumCountTree" variant (per-node sum + root-only count) to land on. The count side gets per-node tracking "for free" — same storage cost as `ProvableCountSumTree`'s count-half since PCPS commits the same per-node count metadata. See [`primary_key_tree_type.rs`'s v1 dispatch table](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/drive/document/primary_key_tree_type.rs) for the full mapping.
+PCPS is grovedb's only tree variant carrying per-node sums. When an index sets `countable: "<tier>" + summable + rangeSummable`, the dispatch table promotes the value tree to PCPS because there's no "ProvableSumCountTree" variant (per-node sum + root-only count) to land on. The count side gets per-node tracking "for free" — same storage cost as `ProvableCountSumTree`'s count-half since PCPS commits the same per-node count metadata. See [`primary_key_tree_type.rs`'s v1 dispatch table](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/drive/document/primary_key_tree_type.rs) for the full mapping.
 
 `byColor`, by contrast, has only `summable + rangeSummable` (no `countable`), so its value trees stay `SumTree` — root-only sum, no count tracking, no upgrade. The two indexes living side by side on the same widget contract show both sides of the dispatch.
 
@@ -648,13 +648,13 @@ Setting both `range_countable: true` AND `range_summable: true` on the same inde
 
 The combined primitive is strictly cheaper than running two separate range queries: one proof envelope, one merk walk, and both metrics atomically bound to the same root hash (so they can't drift relative to each other across a concurrent write).
 
-The full dispatch table mapping `(countable, range_countable, summable, range_summable)` combinations to grovedb tree variants lives in [`DocumentTypePrimaryKeyTreeType::primary_key_tree_type`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/drive/document/primary_key_tree_type.rs)'s v1 arm; the index-walker dispatch in [`add_indices_for_index_level_for_contract_operations`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/drive/document/insert/add_indices_for_index_level_for_contract_operations) follows the same table at every recursion level.
+The full dispatch table mapping `(countable, range_countable, summable, range_summable)` combinations to grovedb tree variants lives in [`DocumentTypePrimaryKeyTreeType::primary_key_tree_type`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/drive/document/primary_key_tree_type.rs)'s v1 arm; the index-walker dispatch in [`add_indices_for_index_level_for_contract_operations`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/drive/document/insert/add_indices_for_index_level_for_contract_operations) follows the same table at every recursion level.
 
-End-to-end coverage for the sum surface lives in [`packages/rs-drive/benches/document_sum_worst_case.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_sum_worst_case.rs)'s tip-jar fixture (paralleling the count side's `document_count_worst_case.rs` widget bench), with the worked-example queries in [Sum Index Examples](sum-index-examples.md).
+End-to-end coverage for the sum surface lives in [`packages/rs-drive/benches/document_sum_worst_case.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/benches/document_sum_worst_case.rs)'s tip-jar fixture (paralleling the count side's `document_count_worst_case.rs` widget bench), with the worked-example queries in [Sum Index Examples](sum-index-examples.md).
 
 ## Tree Type at the Terminal Level
 
-The decision happens in [`add_reference_for_index_level_for_contract_operations/v0/mod.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/drive/document/insert/add_reference_for_index_level_for_contract_operations/v0/mod.rs):
+The decision happens in [`add_reference_for_index_level_for_contract_operations/v0/mod.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/drive/document/insert/add_reference_for_index_level_for_contract_operations/v0/mod.rs):
 
 ```rust
 if !index_type.index_type.is_unique() || any_fields_null {
@@ -722,7 +722,7 @@ Same convention as the layout diagram above: rectangles are tree-type elements, 
 
 ## Null Handling
 
-The `any_fields_null` and `all_fields_null` flags are accumulated as Drive descends the index property list during insertion ([`add_indices_for_index_level_for_contract_operations/v0/mod.rs:170-171`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/drive/document/insert/add_indices_for_index_level_for_contract_operations/v0/mod.rs#L170-L171)):
+The `any_fields_null` and `all_fields_null` flags are accumulated as Drive descends the index property list during insertion ([`add_indices_for_index_level_for_contract_operations/v0/mod.rs:170-171`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/drive/document/insert/add_indices_for_index_level_for_contract_operations/v0/mod.rs#L170-L171)):
 
 ```rust
 any_fields_null |= document_index_field.is_empty();
@@ -747,11 +747,11 @@ Putting it together, when Drive inserts a document into a contract `C` of type `
 2. **`add_indices_for_index_level_for_contract_operations`** (recursive) — for each sub-level of the trie, pushes the property name and value onto the path, OR-accumulates `any_fields_null`, AND-accumulates `all_fields_null`, and recurses. If the current level has `has_index_with_type = Some(...)`, it also calls into step 3 *before* recursing further (because an index can terminate at a non-leaf trie level when another index continues past it).
 3. **`add_reference_for_index_level_for_contract_operations`** — the terminal call. Decides between unique and non-unique-style storage using the matrix above; for the non-unique-style path it picks a `NormalTree` / `CountTree` / `ProvableCountTree` based on `countable`; finally inserts the document reference (or sub-tree containing it).
 
-Deletion mirrors the same walk in reverse — see [`packages/rs-drive/src/drive/document/delete/`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/drive/document/delete/).
+Deletion mirrors the same walk in reverse — see [`packages/rs-drive/src/drive/document/delete/`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/drive/document/delete/).
 
 ## Query Traversal
 
-When a query arrives at drive-abci, the document-query construction path picks one of the document type's indexes that "covers" the query — i.e., whose property prefix matches the query's equality clauses, in order. The picker is in [`packages/rs-drive/src/query/mod.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/mod.rs) (look for `fn construct_path_query` and the index-selection helpers it calls). For count queries specifically there's a separate, count-tree-aware picker ([`drive_document_count_query/mod.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/mod.rs)) — see [Document Count Trees](document-count-trees.md) for that path.
+When a query arrives at drive-abci, the document-query construction path picks one of the document type's indexes that "covers" the query — i.e., whose property prefix matches the query's equality clauses, in order. The picker is in [`packages/rs-drive/src/query/mod.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/mod.rs) (look for `fn construct_path_query` and the index-selection helpers it calls). For count queries specifically there's a separate, count-tree-aware picker ([`drive_document_count_query/mod.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/mod.rs)) — see [Document Count Trees](document-count-trees.md) for that path.
 
 Once an index is picked, the query-engine builds a `PathQuery` whose path is exactly the prefix shape the insert code produced: `[DataContractDocuments, contract_id, 1, doc_type, prop, value, prop, value, …]`. GroveDB then walks the path in O(log n per level), reading the terminal sub-tree (or single reference) and returning matching documents.
 
