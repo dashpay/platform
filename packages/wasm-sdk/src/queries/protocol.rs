@@ -56,7 +56,8 @@ impl ProtocolVersionUpgradeStateWasm {
 }
 
 /// Pick the candidate upgrade version from the vote counts: among versions
-/// newer than `current_version`, the one with the most votes.
+/// newer than `current_version`, the one with the most votes; equal vote
+/// counts resolve to the highest version.
 fn next_version_upgrade(
     upgrades: &drive_proof_verifier::types::ProtocolVersionUpgrades,
     current_version: u32,
@@ -65,7 +66,7 @@ fn next_version_upgrade(
         .iter()
         .filter_map(|(version, votes)| votes.map(|votes| (*version, votes)))
         .filter(|(version, _)| *version > current_version)
-        .max_by_key(|(_, votes)| *votes)
+        .max_by_key(|&(version, votes)| (votes, version))
         .map_or((None, None), |(version, votes)| {
             (Some(version), Some(votes))
         })
