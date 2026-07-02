@@ -83,6 +83,10 @@ impl<E: CanRetry> CanRetry for ExecutionError<E> {
     fn is_no_available_addresses(&self) -> bool {
         self.inner.is_no_available_addresses()
     }
+
+    fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
+        self.inner.rate_limit_ban_duration()
+    }
 }
 
 /// Request execution response.

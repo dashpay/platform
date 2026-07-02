@@ -33,9 +33,10 @@ use crate::error::PlatformWalletError;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
+use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::identity_create_from_shielded_pool::IdentityCreateFromShieldedPool;
 use dpp::address_funds::{
@@ -327,6 +328,33 @@ async fn record_activity_status<S: ShieldedStore>(
         next
     };
     queue_shielded_changeset(persister, wallet_id, changeset_for_entry(id, next));
+}
+
+/// Flip the activity row identified by `entry_id` (if present) to
+/// `status`, reusing [`record_activity_status`]'s semantics — it re-reads
+/// the CURRENT stored row and leaves a scan-`Confirmed`-with-height row
+/// untouched. Used by the sync reconcile, which knows only the reservation's
+/// stored `activity_id`, not the whole entry. No-op if no such row exists.
+pub(super) async fn record_activity_status_by_id<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    entry_id: &[u8; 32],
+    status: ShieldedActivityStatus,
+) {
+    let entry = match store.read().await.get_activity_by_entry_id(id, entry_id) {
+        Ok(entry) => entry,
+        Err(e) => {
+            warn!(
+                entry_id = %hex::encode(entry_id),
+                error = %e,
+                "activity status flip by id: lookup failed; skipping"
+            );
+            return;
+        }
+    };
+    record_activity_status(store, persister, wallet_id, id, &entry, status, None).await;
 }
 
 // -------------------------------------------------------------------------
@@ -662,7 +690,11 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     // it. A build failure leaves it `None` and records nothing.
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
+        let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        // Capture the recorded anchor before the builder consumes it, so a
+        // broadcast-accepted-but-unconfirmed spend can be auto-released once
+        // this anchor is pruned from Platform's recorded set.
+        let anchor_bytes = anchor.to_bytes();
 
         // The builder computes and returns the fee authoritatively; `exact_fee` (== the
         // minimum) was already used above for note reservation.
@@ -707,6 +739,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             },
         )
         .await;
+        arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("Unshield: state transition built, broadcasting...");
         broadcast_shielded_spend(sdk, &state_transition, "unshield").await
@@ -824,7 +857,11 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
 
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
+        let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        // Capture the recorded anchor before the builder consumes it, so a
+        // broadcast-accepted-but-unconfirmed spend can be auto-released once
+        // this anchor is pruned from Platform's recorded set.
+        let anchor_bytes = anchor.to_bytes();
 
         // The builder computes and returns the fee authoritatively; `exact_fee` (== the
         // minimum) was already used above for note reservation.
@@ -869,6 +906,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             },
         )
         .await;
+        arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("Shielded transfer: state transition built, broadcasting...");
         broadcast_shielded_spend(sdk, &state_transition, "transfer").await
@@ -974,7 +1012,11 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
 
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
+        let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        // Capture the recorded anchor before the builder consumes it, so a
+        // broadcast-accepted-but-unconfirmed spend can be auto-released once
+        // this anchor is pruned from Platform's recorded set.
+        let anchor_bytes = anchor.to_bytes();
 
         // The builder computes and returns the fee authoritatively; `exact_fee` (== the
         // minimum) was already used above for note reservation.
@@ -1021,6 +1063,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             },
         )
         .await;
+        arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("Shielded withdrawal: state transition built, broadcasting...");
         broadcast_shielded_spend(sdk, &state_transition, "withdraw").await
@@ -1163,7 +1206,11 @@ where
     // outer match; it lives here so the flip can see it.
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
+        let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        // Capture the recorded anchor before the builder consumes it, so a
+        // broadcast-accepted-but-unconfirmed create can be auto-released once
+        // this anchor is pruned from Platform's recorded set.
+        let anchor_bytes = anchor.to_bytes();
 
         let build = build_identity_create_from_shielded_pool_transition(
             public_keys,
@@ -1210,6 +1257,7 @@ where
             },
         )
         .await;
+        arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("IdentityCreateFromShieldedPool: built, broadcasting via SDK...");
         // Stage the broadcast and the result-wait SEPARATELY (instead of one `broadcast_and_wait`)
@@ -1508,88 +1556,213 @@ fn default_orchard_address(keys: &OrchardKeySet) -> Result<OrchardAddress, Platf
     payment_address_to_orchard(&keys.default_address)
 }
 
-/// Extract `SpendableNote` structs with Merkle witnesses and the
-/// tree anchor.
+/// Checkpoint depths probed for a Platform-recorded anchor. Kept equal to the
+/// commitment tree's `max_checkpoints` retention (the store is opened with
+/// `100` — see `PlatformWalletManager`) so the probe reaches every checkpoint
+/// the tree still holds and no further: deeper checkpoints are pruned, so
+/// probing past this bound is wasted work. Coupled by convention — if that
+/// retention changes, update this in lockstep.
+const MAX_ANCHOR_PROBE_DEPTH: usize = 100;
+
+/// Extract `SpendableNote` structs with Merkle witnesses and an anchor
+/// Platform has recorded.
 ///
-/// The anchor is derived from the witness paths themselves (via
-/// `MerklePath::root(cmx)`) rather than from `store.tree_anchor()`.
-/// The store's witness call is `witness_at_checkpoint_depth(0)`
-/// (root of the most recent checkpoint) while `tree_anchor()` is
-/// `root_at_checkpoint_depth(None)` (latest tree state) — any
-/// commitments appended after the last checkpoint move the latter
-/// ahead of the former, and the resulting `AnchorMismatch` from
-/// the Orchard spend builder is what you'd see at proof time.
-/// Using the witness's own computed root keeps the anchor
-/// consistent with the authentication paths the proof actually
-/// verifies.
+/// A shielded spend's proof is accepted only if its anchor is a
+/// commitment-tree root Platform recorded (`validate_anchor_exists`).
+/// Platform records one anchor per block, but an index-chunk sync routinely
+/// leaves the wallet's tree mid-block, so the depth-0 (current) root is
+/// frequently a value Platform never recorded — building against it
+/// unconditionally is what made such spends fail and never land.
+///
+/// This fetches Platform's recorded anchor set (outside the store lock), then
+/// selects the shallowest checkpoint depth whose root is in that set — depth 0
+/// being the fully-synced fast path — witnessing every note at that same depth
+/// so the anchor and the authentication paths agree (the builder derives the
+/// anchor from the witnesses via `MerklePath::root`, so a per-note disagreement
+/// would surface downstream as `AnchorMismatch`). When no probed depth has a
+/// recorded root it returns the retryable
+/// [`PlatformWalletError::ShieldedNoRecordedAnchor`] rather than broadcasting a
+/// spend Platform is guaranteed to reject.
 async fn extract_spends_and_anchor<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     notes: &[ShieldedNote],
 ) -> Result<(Vec<SpendableNote>, Anchor), PlatformWalletError> {
-    use grovedb_commitment_tree::ExtractedNoteCommitment;
-
-    let store = store.read().await;
-
-    let mut spends = Vec::with_capacity(notes.len());
-    let mut anchor: Option<Anchor> = None;
-    for note in notes {
-        let orchard_note = deserialize_note(&note.note_data).ok_or_else(|| {
-            PlatformWalletError::ShieldedBuildError(format!(
-                "Failed to deserialize note at position {}",
-                note.position
-            ))
-        })?;
-
-        let merkle_path = store
-            .witness(note.position)
-            .map_err(|e| PlatformWalletError::ShieldedMerkleWitnessUnavailable(e.to_string()))?
-            .ok_or_else(|| {
-                PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
-                    "no witness available for note at position {} (not marked, or pruned past this position)",
-                    note.position
-                ))
-            })?;
-
-        // Compute the anchor this witness was generated against.
-        // All selected notes must share the same anchor — if not,
-        // the store handed us witnesses from different
-        // checkpoints, which the spend builder would reject
-        // downstream with `AnchorMismatch`. Surface the mismatch
-        // here so the host doesn't pay the ~30 s proof cost
-        // first.
-        let cmx = ExtractedNoteCommitment::from_bytes(&note.cmx)
-            .into_option()
-            .ok_or_else(|| {
-                PlatformWalletError::ShieldedBuildError(format!(
-                    "invalid stored cmx for note at position {}",
-                    note.position
-                ))
-            })?;
-        let witness_anchor = merkle_path.root(cmx);
-        match &anchor {
-            None => anchor = Some(witness_anchor),
-            Some(prev) if prev.to_bytes() != witness_anchor.to_bytes() => {
-                return Err(PlatformWalletError::ShieldedBuildError(format!(
-                    "witness anchor mismatch across selected notes (position {})",
-                    note.position
-                )));
-            }
-            _ => {}
-        }
-
-        spends.push(SpendableNote {
-            note: orchard_note,
-            merkle_path,
-        });
+    // Nothing selected — fail before the network round-trip.
+    if notes.is_empty() {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "no spendable notes selected — anchor undefined".to_string(),
+        ));
     }
 
-    let anchor = anchor.ok_or_else(|| {
-        PlatformWalletError::ShieldedBuildError(
-            "no spendable notes selected — anchor undefined".to_string(),
-        )
-    })?;
+    // Fetch the recorded anchor set OUTSIDE the store lock so the network
+    // round-trip doesn't serialize with other store users, and so the lock is
+    // held only for the mutually-consistent depth/witness probe below.
+    let dash_sdk::query_types::ShieldedAnchors(recorded_anchors) =
+        dash_sdk::query_types::ShieldedAnchors::fetch_current(sdk).await?;
+    let recorded: HashSet<[u8; 32]> = recorded_anchors.into_iter().collect();
 
-    Ok((spends, anchor))
+    // Hold a single read lock across the whole probe so the checkpoint depths
+    // and the per-note witnesses stay mutually consistent: a concurrent sync
+    // checkpointing mid-probe would otherwise shift the depth indices out from
+    // under us.
+    let store = store.read().await;
+    select_recorded_spends(&*store, notes, &recorded)
+}
+
+/// Pick the shallowest checkpoint depth whose tree root is in `recorded`,
+/// witnessing every note at that depth. Pure (no SDK, no async), so the depth
+/// walk can be unit-tested against a real commitment tree.
+///
+/// Depth 0 is the current tree state (the fully-synced fast path). Deeper
+/// checkpoints are older and hold strictly fewer positions, so the probe stops
+/// as soon as a selected note is no longer witnessable at a depth — no deeper
+/// checkpoint could contain it. Returns
+/// [`PlatformWalletError::ShieldedNoRecordedAnchor`] when no probed depth has a
+/// recorded root (a clean, retryable outcome — nothing is broadcast).
+fn select_recorded_spends<S: ShieldedStore>(
+    store: &S,
+    notes: &[ShieldedNote],
+    recorded: &HashSet<[u8; 32]>,
+) -> Result<(Vec<SpendableNote>, Anchor), PlatformWalletError> {
+    use grovedb_commitment_tree::ExtractedNoteCommitment;
+
+    // Deserialize each note and decode its commitment ONCE — both are
+    // independent of the checkpoint depth, so hoisting them out of the probe
+    // keeps the depth walk cheap (each probed depth only re-witnesses).
+    let prepared: Vec<(u64, grovedb_commitment_tree::Note, ExtractedNoteCommitment)> = notes
+        .iter()
+        .map(|note| {
+            let orchard_note = deserialize_note(&note.note_data).ok_or_else(|| {
+                PlatformWalletError::ShieldedBuildError(format!(
+                    "Failed to deserialize note at position {}",
+                    note.position
+                ))
+            })?;
+            let cmx = ExtractedNoteCommitment::from_bytes(&note.cmx)
+                .into_option()
+                .ok_or_else(|| {
+                    PlatformWalletError::ShieldedBuildError(format!(
+                        "invalid stored cmx for note at position {}",
+                        note.position
+                    ))
+                })?;
+            Ok((note.position, orchard_note, cmx))
+        })
+        .collect::<Result<_, PlatformWalletError>>()?;
+
+    // Build every selected note's `SpendableNote` plus the shared anchor at a
+    // single checkpoint `depth`.
+    //
+    // `strict` (depth 0 only): a missing/failed witness is a hard
+    // `ShieldedMerkleWitnessUnavailable` (the note is expected to be witnessable
+    // at the current tip). At depth > 0, `Ok(None)` means the note post-dates
+    // this older checkpoint, so the depth is unusable — return `Ok(None)` and
+    // let the caller stop probing deeper; a genuine store `Err` (poisoned mutex,
+    // IO, tree corruption) is logged — the probe would otherwise discard the
+    // message — and likewise treated as an unusable depth rather than aborting,
+    // so a transient read can't strand a spend a shallower depth already
+    // covered. An anchor disagreement across notes is always a hard error (the
+    // spend builder would reject it downstream).
+    let build_at_depth = |depth: usize,
+                          strict: bool|
+     -> Result<Option<(Vec<SpendableNote>, Anchor)>, PlatformWalletError> {
+        let mut spends = Vec::with_capacity(prepared.len());
+        let mut anchor: Option<Anchor> = None;
+        for (position, note, cmx) in &prepared {
+            let merkle_path = match store.witness_at_depth(*position, depth) {
+                Ok(Some(path)) => path,
+                Ok(None) if strict => {
+                    return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
+                        "no witness available for note at position {position} (not marked, or pruned past this position)"
+                    )));
+                }
+                Err(e) if strict => {
+                    return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
+                        e.to_string(),
+                    ));
+                }
+                // depth > 0: the note isn't witnessable at this older checkpoint
+                // (appended after it, or the depth doesn't exist).
+                Ok(None) => return Ok(None),
+                // depth > 0: a genuine store failure. Log it so the operator sees
+                // it (the anchor probe otherwise swallows the message), then treat
+                // the depth as unusable — never a mid-probe abort.
+                Err(e) => {
+                    tracing::warn!(
+                        position = *position,
+                        depth,
+                        error = %e,
+                        "shielded anchor probe: witness_at_depth failed at depth > 0; skipping depth"
+                    );
+                    return Ok(None);
+                }
+            };
+
+            // The anchor is derived from the witness path itself
+            // (`MerklePath::root(cmx)`); all selected notes must agree on it, or
+            // the store handed back witnesses from different checkpoints and the
+            // spend builder would reject the mismatch downstream.
+            let witness_anchor = merkle_path.root(*cmx);
+            match &anchor {
+                None => anchor = Some(witness_anchor),
+                Some(prev) if prev.to_bytes() != witness_anchor.to_bytes() => {
+                    return Err(PlatformWalletError::ShieldedBuildError(format!(
+                        "witness anchor mismatch across selected notes (position {position})"
+                    )));
+                }
+                _ => {}
+            }
+
+            spends.push(SpendableNote {
+                note: *note,
+                merkle_path,
+            });
+        }
+
+        // `notes` is non-empty (the caller checked), so `anchor` is set.
+        let anchor = anchor.ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "no spendable notes selected — anchor undefined".to_string(),
+            )
+        })?;
+        Ok(Some((spends, anchor)))
+    };
+
+    // Fast path: a fully-synced wallet's depth-0 root is a recorded anchor.
+    let (spends, anchor) = match build_at_depth(0, true)? {
+        Some(pair) => pair,
+        // Unreachable — a strict build returns `Some` or errors — but stay
+        // fund-safe (a clean error, never a panic) if that invariant breaks.
+        None => {
+            return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
+                "depth-0 witness probe returned no witness for a selected note".to_string(),
+            ));
+        }
+    };
+    if recorded.contains(&anchor.to_bytes()) {
+        return Ok((spends, anchor));
+    }
+
+    // Otherwise walk older checkpoints newest→oldest for the shallowest
+    // recorded root.
+    for depth in 1..MAX_ANCHOR_PROBE_DEPTH {
+        match build_at_depth(depth, false)? {
+            Some((spends, anchor)) if recorded.contains(&anchor.to_bytes()) => {
+                return Ok((spends, anchor));
+            }
+            // A root exists at this depth but Platform didn't record it — try an
+            // older checkpoint.
+            Some(_) => continue,
+            // A selected note isn't witnessable this deep; every deeper
+            // checkpoint is older still, so none can cover it either.
+            None => break,
+        }
+    }
+
+    Err(PlatformWalletError::ShieldedNoRecordedAnchor(
+        "no recorded anchor covers the selected notes; wait for the next shielded sync".to_string(),
+    ))
 }
 
 /// Mark the selected notes as spent for `id`. Also queues a
@@ -1722,6 +1895,42 @@ async fn cancel_pending<S: ShieldedStore>(
             tracing::warn!(
                 error = %e,
                 "cancel_pending: clear_pending failed; the next note scan will reconcile"
+            );
+        }
+    }
+}
+
+/// Record the recorded `anchor` the spend was built against and the
+/// linked activity entry on every selected note's reservation, so a
+/// spend that ends broadcast-accepted-but-unconfirmed can be released
+/// on a later sync once that anchor is pruned from Platform's recorded
+/// set (see `NetworkShieldedCoordinator::release_stranded_spends`).
+///
+/// No-op when no activity entry was recorded (an output-less bundle —
+/// unreachable for our own builders, which always carry a visible
+/// output). Best-effort: a store write failure only means the
+/// reservation won't self-release on a pruned anchor (it still frees
+/// on the next restart), so it must never abort a spend about to
+/// broadcast. A success (`finalize_pending`) or a definite failure
+/// (`cancel_pending`) removes the entry, so only an ambiguous
+/// unconfirmed outcome leaves it carrying the anchor.
+async fn arm_pending_release<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    anchor: [u8; 32],
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    notes: &[ShieldedNote],
+) {
+    let Some(entry) = pending_entry else {
+        return;
+    };
+    let mut store = store.write().await;
+    for note in notes {
+        if let Err(e) = store.set_pending_spend(id, &note.nullifier, anchor, entry.id) {
+            warn!(
+                error = %e,
+                "set_pending_spend failed; this reservation won't self-release on a pruned \
+                 anchor (it still frees on the next restart)"
             );
         }
     }
@@ -2307,5 +2516,310 @@ mod record_activity_status_tests {
             .expect("row must exist");
         assert_eq!(stored.status, ShieldedActivityStatus::Confirmed);
         assert_eq!(stored.block_height, Some(900));
+    }
+
+    /// The by-id flip the sync reconcile uses: it knows only the
+    /// reservation's stored `activity_id`, so it looks the row up and flips
+    /// it — a released stranded spend moves Pending → Failed.
+    #[tokio::test]
+    async fn status_flip_by_id_flips_pending_to_failed() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = sub();
+        let pending = captured_pending();
+        store.write().await.save_activity(id, &pending).unwrap();
+
+        record_activity_status_by_id(
+            &store,
+            None,
+            id.wallet_id,
+            id,
+            &pending.id,
+            ShieldedActivityStatus::Failed,
+        )
+        .await;
+
+        let stored = store
+            .read()
+            .await
+            .get_activity_by_entry_id(id, &pending.id)
+            .unwrap()
+            .expect("row must exist");
+        assert_eq!(stored.status, ShieldedActivityStatus::Failed);
+    }
+
+    /// A by-id flip for an entry that doesn't exist is a silent no-op
+    /// (nothing to flip), never a panic.
+    #[tokio::test]
+    async fn status_flip_by_id_missing_entry_is_noop() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = sub();
+        record_activity_status_by_id(
+            &store,
+            None,
+            id.wallet_id,
+            id,
+            &[0xDE; 32],
+            ShieldedActivityStatus::Failed,
+        )
+        .await;
+        assert!(store
+            .read()
+            .await
+            .get_activity_by_entry_id(id, &[0xDE; 32])
+            .unwrap()
+            .is_none());
+    }
+}
+
+/// Unit tests for the pure anchor-selection probe ([`select_recorded_spends`])
+/// against a real SQLite-backed commitment tree — no SDK, no network.
+///
+/// These pin the fix for the shielded-withdrawal "never lands" root cause:
+/// the wallet must build a spend against a Platform-recorded anchor, not the
+/// bleeding-edge depth-0 root a mid-block index-chunk sync leaves behind. They
+/// reuse the block-boundary tree shape from the `file_store` reproduction test.
+#[cfg(test)]
+mod select_recorded_spends_tests {
+    use super::*;
+    use crate::wallet::shielded::file_store::FileBackedShieldedStore;
+    use dashcore::Network;
+    use grovedb_commitment_tree::{ExtractedNoteCommitment, Note, NoteValue, RandomSeed, Rho};
+
+    /// Unique temp path for a test tree (no `tempfile` dev-dep).
+    fn temp_tree_path(tag: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("select_recorded_spends_{tag}_{nanos}.sqlite"))
+    }
+
+    /// A filler leaf commitment for non-owned positions. Any canonical 32-byte
+    /// field element works — the probe only needs the tree to grow between
+    /// blocks so successive checkpoint roots differ.
+    fn filler_cmx(b: u8) -> [u8; 32] {
+        let mut c = [0u8; 32];
+        c[0] = b;
+        c
+    }
+
+    /// Build one real, spendable Orchard note owned by a fixed test seed and
+    /// return the wallet's `ShieldedNote` view of it.
+    ///
+    /// `note_data` is the real serialized note so `deserialize_note` accepts
+    /// it, and `cmx` is the note's real extracted commitment so that appending
+    /// `cmx` as the leaf at `position` makes `witness(position, d).root(cmx)`
+    /// reproduce the tree's anchor at depth `d`.
+    fn real_note(position: u64) -> ShieldedNote {
+        let keys = OrchardKeySet::from_seed(&[0x42; 32], Network::Testnet, 0)
+            .expect("ZIP-32 derivation from a fixed seed");
+        let recipient = keys.default_address;
+
+        // rho and rseed must be canonical Pallas base-field elements; not every
+        // 32-byte pattern is, so scan deterministically for a valid pair drawn
+        // from disjoint byte regions (mirroring the sync tests' note builders).
+        let rho = (1u16..=u16::MAX)
+            .find_map(|n| {
+                let mut b = [0u8; 32];
+                b[0..2].copy_from_slice(&n.to_le_bytes());
+                Rho::from_bytes(&b).into_option()
+            })
+            .expect("a canonical rho exists");
+        let rseed = (1u16..=u16::MAX)
+            .find_map(|m| {
+                let mut b = [0u8; 32];
+                b[2..4].copy_from_slice(&m.to_le_bytes());
+                RandomSeed::from_bytes(b, &rho).into_option()
+            })
+            .expect("a canonical rseed exists");
+
+        let value = NoteValue::from_raw(100_000);
+        let note = Note::from_parts(recipient, value, rho, rseed)
+            .into_option()
+            .expect("valid note parts");
+        let cmx = ExtractedNoteCommitment::from(note.commitment()).to_bytes();
+
+        // `recipient(43) || value(8 LE) || rho(32) || rseed(32)` — the exact
+        // format `deserialize_note` expects.
+        let mut note_data = Vec::with_capacity(115);
+        note_data.extend_from_slice(&note.recipient().to_raw_address_bytes());
+        note_data.extend_from_slice(&note.value().inner().to_le_bytes());
+        note_data.extend_from_slice(&note.rho().to_bytes());
+        note_data.extend_from_slice(note.rseed().as_bytes());
+
+        ShieldedNote {
+            position,
+            cmx,
+            nullifier: [0x07; 32],
+            block_height: 1,
+            is_spent: false,
+            value: 100_000,
+            note_data,
+        }
+    }
+
+    /// Mid-block: the wallet's depth-0 root is not recorded, but a prior
+    /// block-boundary checkpoint is — the probe must select that older recorded
+    /// anchor (the shallowest one), never the mid-block depth-0 root Platform
+    /// never recorded.
+    #[test]
+    fn mid_block_selects_prior_recorded_checkpoint_not_depth0() {
+        let path = temp_tree_path("midblock");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        // The owned note lives at position 0, present since block 1.
+        let note = real_note(0);
+
+        // Block 1 = positions 0,1,2 (leaf 0 is the owned note's cmx). drive
+        // records ONE anchor per block, at block-processing-end.
+        store.append_commitment(&note.cmx, true).unwrap();
+        store.append_commitment(&filler_cmx(0xA1), true).unwrap();
+        store.append_commitment(&filler_cmx(0xA2), true).unwrap();
+        store.checkpoint_tree(3).unwrap();
+        let root_block1 = store.tree_anchor().unwrap();
+
+        // Block 2 = positions 3,4,5. Its block-end root is the second recorded
+        // anchor.
+        store.append_commitment(&filler_cmx(0xB1), true).unwrap();
+        store.append_commitment(&filler_cmx(0xB2), true).unwrap();
+        store.append_commitment(&filler_cmx(0xB3), true).unwrap();
+        store.checkpoint_tree(6).unwrap();
+        let root_block2 = store.tree_anchor().unwrap();
+
+        // Mid-block: the index-chunk sync appends one more commitment (position
+        // 6) and checkpoints there. The depth-0 root is now a state drive never
+        // recorded.
+        store.append_commitment(&filler_cmx(0xC1), true).unwrap();
+        store.checkpoint_tree(7).unwrap();
+        let root_depth0 = store.tree_anchor().unwrap();
+
+        // drive's recorded set is exactly the two block-boundary roots.
+        let recorded: HashSet<[u8; 32]> = [root_block1, root_block2].into_iter().collect();
+
+        let (spends, anchor) =
+            select_recorded_spends(&store, std::slice::from_ref(&note), &recorded)
+                .expect("a prior recorded checkpoint covers the owned note");
+
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(spends.len(), 1, "the single owned note is spendable");
+        assert!(
+            recorded.contains(&anchor.to_bytes()),
+            "the selected anchor must be a Platform-recorded root"
+        );
+        assert_eq!(
+            anchor.to_bytes(),
+            root_block2,
+            "must pick the shallowest recorded checkpoint (block 2 / depth 1), not a deeper one"
+        );
+        assert_ne!(
+            anchor.to_bytes(),
+            root_depth0,
+            "must NOT use the mid-block depth-0 root drive never recorded"
+        );
+    }
+
+    /// Fully synced: the wallet's depth-0 root IS recorded, so the probe takes
+    /// the fast path and returns the depth-0 anchor without walking deeper.
+    #[test]
+    fn fully_synced_returns_depth0_anchor() {
+        let path = temp_tree_path("fastpath");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        let note = real_note(0);
+
+        // One block, checkpointed exactly on its boundary: depth 0 == a recorded
+        // anchor.
+        store.append_commitment(&note.cmx, true).unwrap();
+        store.append_commitment(&filler_cmx(0xA1), true).unwrap();
+        store.append_commitment(&filler_cmx(0xA2), true).unwrap();
+        store.checkpoint_tree(3).unwrap();
+        let root_depth0 = store.tree_anchor().unwrap();
+
+        let recorded: HashSet<[u8; 32]> = [root_depth0].into_iter().collect();
+
+        let (spends, anchor) =
+            select_recorded_spends(&store, std::slice::from_ref(&note), &recorded)
+                .expect("depth-0 root is recorded");
+
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(spends.len(), 1);
+        assert_eq!(
+            anchor.to_bytes(),
+            root_depth0,
+            "the fully-synced fast path returns the depth-0 anchor"
+        );
+    }
+
+    /// No checkpoint root is recorded: the probe exhausts every depth and
+    /// returns the retryable `ShieldedNoRecordedAnchor` — nothing is broadcast.
+    #[test]
+    fn no_recorded_checkpoint_returns_retryable_error() {
+        let path = temp_tree_path("none");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        let note = real_note(0);
+
+        store.append_commitment(&note.cmx, true).unwrap();
+        store.append_commitment(&filler_cmx(0xA1), true).unwrap();
+        store.append_commitment(&filler_cmx(0xA2), true).unwrap();
+        store.checkpoint_tree(3).unwrap();
+
+        // Platform recorded none of this wallet's checkpoint roots.
+        let recorded: HashSet<[u8; 32]> = HashSet::new();
+
+        // `SpendableNote` isn't `Debug`, so match rather than `expect_err`.
+        let result = select_recorded_spends(&store, std::slice::from_ref(&note), &recorded);
+
+        let _ = std::fs::remove_file(&path);
+
+        match result {
+            Err(PlatformWalletError::ShieldedNoRecordedAnchor(_)) => {}
+            Err(other) => {
+                panic!("expected ShieldedNoRecordedAnchor, got error: {other:?}")
+            }
+            Ok(_) => panic!("expected ShieldedNoRecordedAnchor, got Ok"),
+        }
+    }
+
+    /// A selected note that post-dates the only recorded checkpoint. Depth 0
+    /// (which contains the note) isn't recorded; at depth 1 the note is not yet
+    /// in the tree, so the probe's early-termination fires (a deeper checkpoint
+    /// is older still and can't contain it) and the retryable error is returned
+    /// — even though a recorded anchor exists, it doesn't cover this note. This
+    /// pins the walk's break arm and the value-selection trade-off (a mid-block
+    /// wallet whose selected note is newer than every recorded checkpoint waits
+    /// for the next sync rather than spending).
+    #[test]
+    fn note_newer_than_recorded_checkpoint_breaks_and_returns_retryable_error() {
+        let path = temp_tree_path("toonew");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        // Block 1 = positions 0,1,2 (fillers), checkpointed on its boundary —
+        // the only root Platform recorded.
+        store.append_commitment(&filler_cmx(0xA0), true).unwrap();
+        store.append_commitment(&filler_cmx(0xA1), true).unwrap();
+        store.append_commitment(&filler_cmx(0xA2), true).unwrap();
+        store.checkpoint_tree(3).unwrap();
+        let root_block1 = store.tree_anchor().unwrap();
+
+        // The owned note is appended AFTER block 1 (position 3) and checkpointed:
+        // present at depth 0, absent from the block-1 checkpoint (depth 1).
+        let note = real_note(3);
+        store.append_commitment(&note.cmx, true).unwrap();
+        store.checkpoint_tree(4).unwrap();
+
+        let recorded: HashSet<[u8; 32]> = [root_block1].into_iter().collect();
+
+        let result = select_recorded_spends(&store, std::slice::from_ref(&note), &recorded);
+
+        let _ = std::fs::remove_file(&path);
+
+        match result {
+            Err(PlatformWalletError::ShieldedNoRecordedAnchor(_)) => {}
+            Err(other) => panic!("expected ShieldedNoRecordedAnchor, got error: {other:?}"),
+            Ok(_) => panic!("expected ShieldedNoRecordedAnchor, got Ok"),
+        }
     }
 }

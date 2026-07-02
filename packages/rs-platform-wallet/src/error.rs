@@ -240,6 +240,19 @@ pub enum PlatformWalletError {
     #[error("Shielded Merkle witness unavailable: {0}")]
     ShieldedMerkleWitnessUnavailable(String),
 
+    /// No Platform-recorded anchor covers the notes selected for a shielded
+    /// spend, so the wallet cannot build a proof Platform will accept.
+    ///
+    /// Platform records one commitment-tree anchor per block, but an
+    /// index-chunk sync routinely leaves the wallet's tree mid-block, so the
+    /// current (depth-0) root is frequently a value Platform never recorded.
+    /// This variant is **retryable**: it is returned *before* any broadcast,
+    /// the note reservations are released by the caller's generic error path,
+    /// and the next shielded sync advances the tree onto a recorded boundary.
+    /// `0` carries a human-readable reason.
+    #[error("Shielded spend cannot use a Platform-recorded anchor: {0}")]
+    ShieldedNoRecordedAnchor(String),
+
     #[error("Shielded key derivation failed: {0}")]
     ShieldedKeyDerivation(String),
 

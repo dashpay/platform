@@ -372,7 +372,13 @@ var body: some View {
                         .disabled(platformBalanceSyncService.isSyncing)
 
                         Button {
-                            platformBalanceSyncService.clearDisplay()
+                            Task {
+                                await platformBalanceSyncService.clearLocalState(
+                                    modelContext: modelContext,
+                                    network: platformState.currentNetwork,
+                                    walletIdsOnNetwork: walletIdsOnNetwork
+                                )
+                            }
                         } label: {
                             Text("Clear")
                                 .font(.caption)
