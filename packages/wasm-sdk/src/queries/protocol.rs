@@ -72,6 +72,52 @@ fn next_version_upgrade(
         })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::next_version_upgrade;
+    use drive_proof_verifier::types::ProtocolVersionUpgrades;
+
+    #[test]
+    fn empty_upgrades_yield_no_candidate() {
+        let upgrades = ProtocolVersionUpgrades::new();
+
+        assert_eq!(next_version_upgrade(&upgrades, 12), (None, None));
+    }
+
+    #[test]
+    fn none_vote_counts_are_skipped() {
+        let upgrades = ProtocolVersionUpgrades::from_iter([(13, None), (14, None)]);
+
+        assert_eq!(next_version_upgrade(&upgrades, 12), (None, None));
+    }
+
+    #[test]
+    fn versions_at_or_below_current_are_excluded() {
+        let upgrades = ProtocolVersionUpgrades::from_iter([(11, Some(50)), (12, Some(80))]);
+
+        assert_eq!(next_version_upgrade(&upgrades, 12), (None, None));
+    }
+
+    #[test]
+    fn picks_future_version_with_most_votes() {
+        let upgrades = ProtocolVersionUpgrades::from_iter([
+            (11, Some(200)),
+            (13, Some(7)),
+            (14, Some(132)),
+            (15, Some(3)),
+        ]);
+
+        assert_eq!(next_version_upgrade(&upgrades, 12), (Some(14), Some(132)));
+    }
+
+    #[test]
+    fn equal_votes_resolve_to_highest_version() {
+        let upgrades = ProtocolVersionUpgrades::from_iter([(13, Some(9)), (14, Some(9))]);
+
+        assert_eq!(next_version_upgrade(&upgrades, 12), (Some(14), Some(9)));
+    }
+}
+
 #[wasm_bindgen(js_name = "ProtocolVersionUpgradeVoteStatus")]
 #[derive(Clone)]
 pub struct ProtocolVersionUpgradeVoteStatusWasm {
