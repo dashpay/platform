@@ -122,6 +122,13 @@ public class PlatformWalletManager: ObservableObject {
     /// Last error from a wallet operation, if any. Cleared on successful op.
     @Published public private(set) var lastError: Error?
 
+    /// Wallets Rust skipped during the most recent [`loadFromPersistor`]
+    /// because their persisted row was structurally corrupt. Empty after
+    /// a clean load. Rust treats these as non-fatal — the load still
+    /// succeeds — so they are surfaced here rather than through
+    /// [`lastError`], letting UI offer to inspect / clear the bad rows.
+    @Published public private(set) var lastLoadSkippedWallets: [SkippedWalletOnLoad] = []
+
     // MARK: - Internals
 
     /// FFI handle; `NULL_HANDLE` until [`configure`] is called.
@@ -319,6 +326,29 @@ public class PlatformWalletManager: ObservableObject {
 
     // MARK: - Watch-only restore from persister
 
+    /// One wallet Rust skipped during `load_from_persistor` because its
+    /// persisted row was structurally corrupt. `reasonCode` is one of the
+    /// Rust-side `LOAD_SKIP_REASON_*` constants (100 missing manifest,
+    /// 101 malformed xpub, 102 decode error, 199 other corrupt row,
+    /// 200 other skip); [`reasonDescription`] renders it for display.
+    public struct SkippedWalletOnLoad {
+        public let walletId: Data
+        public let reasonCode: UInt32
+
+        /// Human-readable rendering of `reasonCode`, mirroring the Rust
+        /// `LOAD_SKIP_REASON_*` constants.
+        public var reasonDescription: String {
+            switch reasonCode {
+            case 100: return "missing account manifest"
+            case 101: return "malformed account xpub"
+            case 102: return "decode error"
+            case 199: return "other corrupt row"
+            case 200: return "other skip"
+            default: return "unknown skip reason (\(reasonCode))"
+            }
+        }
+    }
+
     /// Rehydrate wallets from SwiftData on app launch.
     ///
     /// Calls `platform_wallet_manager_load_from_persistor` which fires
@@ -342,12 +372,40 @@ public class PlatformWalletManager: ObservableObject {
     public func loadFromPersistor() throws -> [ManagedPlatformWallet] {
         try ensureConfigured()
 
-        // Pass nil for `out_outcome` — Swift doesn't currently consume
-        // the per-wallet skip summary (corrupt persisted rows are
-        // logged by Rust at warn level). When Swift starts surfacing
-        // skipped wallets to the UI, pass a `LoadOutcomeFFI` here and
-        // free it with `platform_wallet_load_outcome_free`.
-        try platform_wallet_manager_load_from_persistor(handle, nil).check()
+        // Consume the load outcome so Rust's per-wallet skip summary
+        // isn't discarded. Rust writes `out_outcome` on every path
+        // (including early errors), so freeing it is safe even if the
+        // `.check()` below throws — defer the free before that throwing
+        // call.
+        var outcome = LoadOutcomeFFI(loaded_count: 0, skipped_count: 0, skipped: nil)
+        let loadResult = platform_wallet_manager_load_from_persistor(handle, &outcome)
+        defer { platform_wallet_load_outcome_free(&outcome) }
+        try loadResult.check()
+
+        // Collect the ids Rust skipped as structurally corrupt. These
+        // are non-fatal on the Rust side, so they must not reach
+        // `lastError`: they are surfaced through `lastLoadSkippedWallets`
+        // and their ids are excluded from the per-id restore loop below
+        // (a skipped id is still in SwiftData, so `get_wallet` would
+        // return NotFound for it).
+        var skippedIds = Set<Data>()
+        var skippedWallets: [SkippedWalletOnLoad] = []
+        if let skipped = outcome.skipped {
+            skippedWallets.reserveCapacity(Int(outcome.skipped_count))
+            for i in 0..<Int(outcome.skipped_count) {
+                var entry = skipped[i]
+                let walletId = withUnsafeBytes(of: &entry.wallet_id) { Data($0) }
+                skippedIds.insert(walletId)
+                let skip = SkippedWalletOnLoad(walletId: walletId, reasonCode: entry.reason_code)
+                skippedWallets.append(skip)
+                NSLog(
+                    "[load-from-persistor] skipped corrupt wallet %@ — %@",
+                    walletId.prefix(4).map { String(format: "%02x", $0) }.joined(),
+                    skip.reasonDescription
+                )
+            }
+        }
+        self.lastLoadSkippedWallets = skippedWallets
 
         // Ask SwiftData for the list of wallet ids we just told Rust
         // to load. We reuse the same container rather than shipping a
@@ -362,6 +420,9 @@ public class PlatformWalletManager: ObservableObject {
 
         for walletId in walletIds {
             guard walletId.count == 32 else { continue }
+            // Rust already skipped this id as corrupt; `get_wallet` would
+            // return NotFound and pollute `lastError`. Skip it here.
+            if skippedIds.contains(walletId) { continue }
             var walletHandle: Handle = NULL_HANDLE
             do {
                 try walletId.withUnsafeBytes { idPtr in

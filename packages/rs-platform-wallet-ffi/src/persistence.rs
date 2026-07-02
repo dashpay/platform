@@ -3451,16 +3451,20 @@ fn build_wallet_start_state(
     // status without rebroadcasting.
     let unused_asset_locks = build_unused_asset_locks(entry)?;
 
-    // Project the reconstructed `wallet` + `wallet_info` into the
-    // keyless `ClientWalletStartState` the persister contract requires
-    // (SECRETS.md: no `Wallet`/seed crosses `load()`). The manager
-    // rebuilds a watch-only wallet from this manifest via
-    // `Wallet::new_watch_only` and applies this `core_state` projection.
-    // Signing happens later via the on-demand
-    // `sign_with_mnemonic_resolver` path, which fail-closed gates the
-    // resolver-supplied seed against the loaded `wallet_id`. The
-    // locally-built `wallet` is dropped — it was only needed to shape
-    // the account collection / UTXO routing above.
+    // Hand the fully-restored `wallet_info` across as the keyless
+    // snapshot (SECRETS.md: no `Wallet`/seed crosses `load()` —
+    // `ManagedWalletInfo` carries balances / pools / UTXOs, never key
+    // material). The manager rebuilds a watch-only wallet from the
+    // manifest via `Wallet::new_watch_only` and consumes this snapshot
+    // directly, so everything the decode blocks above restored survives
+    // verbatim: per-account UTXO and tx-record attribution (including
+    // the unresolved asset-lock funding records), exact pool contents
+    // with per-index `used` flags (the address-reuse guard and the SPV
+    // watch set), and the sync metadata / chainlock. Signing happens
+    // later via the on-demand `sign_with_mnemonic_resolver` path, which
+    // fail-closed gates the resolver-supplied seed against the loaded
+    // `wallet_id`. The locally-built `wallet` is dropped — it was only
+    // needed to shape the account collection / UTXO routing above.
     let account_manifest: Vec<AccountRegistrationEntry> = wallet
         .accounts
         .all_accounts()
@@ -3470,23 +3474,6 @@ fn build_wallet_start_state(
             account_xpub: a.account_xpub,
         })
         .collect();
-    let new_utxos: Vec<key_wallet::Utxo> = wallet_info
-        .accounts
-        .all_funding_accounts()
-        .into_iter()
-        .flat_map(|acct| acct.utxos.values().cloned())
-        .collect();
-    let core_state = platform_wallet::changeset::CoreChangeSet {
-        new_utxos,
-        last_processed_height: (wallet_info.metadata.last_processed_height > 0)
-            .then_some(wallet_info.metadata.last_processed_height),
-        synced_height: (wallet_info.metadata.synced_height > 0)
-            .then_some(wallet_info.metadata.synced_height),
-        // Carry the decoded chainlock through the keyless projection;
-        // `apply_persisted_core_state` re-applies it onto the rebuilt wallet.
-        last_applied_chain_lock: wallet_info.metadata.last_applied_chain_lock.clone(),
-        ..Default::default()
-    };
 
     // `contacts` / `identity_keys` are the PR-3 keyless feed the
     // manager layers onto the managed identities via
@@ -3498,38 +3485,22 @@ fn build_wallet_start_state(
     // would need a new cross-boundary struct field + Swift wiring,
     // tracked as a follow-up. Empty slots make `apply_contacts_and_keys`
     // a no-op for this path, preserving the established iOS behaviour.
-    // Carry the persisted pool used-state through the keyless projection.
-    // The pool-decode block above already merged the persisted `used`
-    // flags into `wallet_info`; project the used addresses out so
-    // `apply_persisted_core_state` can re-mark them used on rehydrate.
-    // Without this a previously-used address whose funds were since spent
-    // comes back marked unused and could be handed out again as a fresh
-    // receive address — an address-reuse privacy leak.
-    let used_core_addresses: Vec<key_wallet::Address> = {
-        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-        let mut used = Vec::new();
-        for acct in wallet_info.accounts.all_funding_accounts() {
-            for pool in acct.managed_account_type().address_pools() {
-                for info in pool.addresses.values() {
-                    if info.used {
-                        used.push(info.address.clone());
-                    }
-                }
-            }
-        }
-        used
-    };
-
+    //
+    // `core_state` / `used_core_addresses` stay empty: they are the
+    // projection fallback for persisters that cannot reconstruct a full
+    // snapshot (the SQLite path until dashpay/platform#3968), and the
+    // manager ignores them when `core_wallet_info` is `Some`.
     let wallet_state = ClientWalletStartState {
         network,
         birth_height: entry.birth_height,
         account_manifest,
-        core_state,
+        core_wallet_info: Some(Box::new(wallet_info)),
+        core_state: Default::default(),
         identity_manager,
         unused_asset_locks,
         contacts: Default::default(),
         identity_keys: Default::default(),
-        used_core_addresses,
+        used_core_addresses: Vec::new(),
     };
 
     let platform_address_state = if per_account.is_empty()
