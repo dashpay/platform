@@ -106,62 +106,14 @@ impl PlatformAddressWallet {
             }
         };
 
-        // Get the cached key source from the unified provider for gap
-        // limit maintenance.
-        let key_source = {
-            let guard = self.provider.read().await;
-            guard
-                .as_ref()
-                .and_then(|p| p.key_source(&self.wallet_id, account_index))
-        };
-
-        // Update balances in the ManagedPlatformAccount.
-        let mut wm = self.wallet_manager.write().await;
-        let mut cs = PlatformAddressChangeSet::default();
-        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-            if let Some(account) = info
-                .core_wallet
-                .platform_payment_managed_account_at_index_mut(account_index)
-            {
-                for (addr, maybe_info) in address_infos.iter() {
-                    let PlatformAddress::P2pkh(hash) = addr else {
-                        continue;
-                    };
-                    let p2pkh = PlatformP2PKHAddress::new(*hash);
-                    let funds = match maybe_info {
-                        Some(ai) => dash_sdk::platform::address_sync::AddressFunds {
-                            balance: ai.balance,
-                            nonce: ai.nonce,
-                        },
-                        None => dash_sdk::platform::address_sync::AddressFunds {
-                            balance: 0,
-                            nonce: 0,
-                        },
-                    };
-                    account.set_address_credit_balance(p2pkh, funds.balance, key_source.as_ref());
-                    let address_index = account
-                        .addresses
-                        .addresses
-                        .iter()
-                        .find_map(|(&idx, info)| {
-                            PlatformP2PKHAddress::from_address(&info.address)
-                                .ok()
-                                .filter(|found| *found == p2pkh)
-                                .map(|_| idx)
-                        })
-                        .unwrap_or(0);
-                    cs.addresses.push(crate::PlatformAddressBalanceEntry {
-                        wallet_id: self.wallet_id,
-                        account_index,
-                        address_index,
-                        address: p2pkh,
-                        funds,
-                    });
-                }
-            }
-        }
-
-        Ok(cs)
+        // Apply + persist the proof-attested post-withdrawal balances via
+        // the shared seam. Input addresses resolve through the provider's
+        // persisted index bijection (with live-pool fallback), so a
+        // restored address that is no longer in a live derived pool keeps
+        // its real derivation index instead of corrupting index 0.
+        Ok(self
+            .reconcile_address_infos(&address_infos, "address withdrawal")
+            .await)
     }
 
     /// Auto-select all funded addresses for withdrawal. Withdrawals consume
