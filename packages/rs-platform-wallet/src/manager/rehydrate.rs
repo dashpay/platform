@@ -907,14 +907,17 @@ mod tests {
         );
     }
 
-    /// CoinJoin topology (single External pool, no Internal chain).
-    /// Verifies that `extend_pools_for_restored_addresses` handles a single-pool
-    /// account at a deep derivation index (idx 30, just past the eager window).
+    /// CoinJoin topology (External pool, deep index).
+    /// Verifies that `extend_pools_for_restored_addresses` handles the
+    /// CoinJoin External pool at a deep derivation index (idx 30, just past
+    /// the eager window). CoinJoin accounts carry both an External and an
+    /// Internal pool (mirroring `Standard`); this test exercises the
+    /// External side only.
     #[test]
     fn rehydration_coinjoin_single_pool_deep_index() {
         use dashcore::blockdata::transaction::txout::TxOut;
         use dashcore::{OutPoint, Txid};
-        use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
+        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
         use key_wallet::Utxo;
@@ -951,13 +954,12 @@ mod tests {
                 .expect("CoinJoin account must be the only funds account");
             let ft = funds.managed_account_type().to_account_type();
             let pools = funds.managed_account_type().address_pools();
-            // CoinJoin has a single pool (External).
-            assert_eq!(
-                pools.len(),
-                1,
-                "CoinJoin topology: must have exactly one pool"
-            );
-            let p = &pools[0];
+            // CoinJoin carries both an External and an Internal pool; this
+            // test targets the External side specifically.
+            let p = pools
+                .iter()
+                .find(|p| p.pool_type == AddressPoolType::External)
+                .expect("CoinJoin topology: must have an External pool");
             (ft, p.base_path.clone(), p.pool_type, p.gap_limit)
         };
 
@@ -1022,7 +1024,12 @@ mod tests {
             .into_iter()
             .next()
             .unwrap();
-        let cj_pool = &funds_post.managed_account_type().address_pools()[0];
+        let cj_pool = funds_post
+            .managed_account_type()
+            .address_pools()
+            .into_iter()
+            .find(|p| p.pool_type == AddressPoolType::External)
+            .expect("CoinJoin topology: must have an External pool");
         assert_eq!(
             cj_pool.address_at_index(30).as_ref(),
             Some(&deep_cj_addr),
