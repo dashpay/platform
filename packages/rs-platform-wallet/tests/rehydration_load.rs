@@ -642,3 +642,71 @@ async fn rt_snapshot_account_set_mismatch_is_skipped() {
     assert!(mgr.get_wallet(&id_a).await.is_none());
     assert_eq!(h.skipped.lock().unwrap().len(), 1);
 }
+
+/// RT-Snapshot-Mismatch-Combined: a snapshot-identity-mismatch skip and a
+/// healthy snapshot load in the SAME batch. The mismatched row is skipped
+/// with `SnapshotIdentityMismatch`; the healthy row loads fully; the batch
+/// returns `Ok` and notifies the handler exactly once. Mirrors
+/// `rt_corrupt_row_skipped_and_other_loads` for the snapshot path.
+#[tokio::test]
+async fn rt_snapshot_mismatch_skip_coexists_with_healthy_load() {
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+    let seed_ok = [0x81; 64];
+    let seed_bad = [0x82; 64];
+    let seed_other = [0x83; 64];
+    let p = Arc::new(FixedLoadPersister::new());
+    let h = Arc::new(RecordingHandler::default());
+
+    // Healthy row: snapshot built from its own wallet, matching its row.
+    let wallet_ok = Wallet::from_seed_bytes(
+        seed_ok,
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let id_ok = wallet_ok.compute_wallet_id();
+    let (_, mut s_ok) = slice(seed_ok);
+    s_ok.core_wallet_info = Some(Box::new(ManagedWalletInfo::from_wallet(&wallet_ok, 1)));
+
+    // Mismatched row: keyed by wallet BAD, snapshot built from wallet OTHER.
+    let (id_bad, mut s_bad) = slice(seed_bad);
+    let wallet_other = Wallet::from_seed_bytes(
+        seed_other,
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    s_bad.core_wallet_info = Some(Box::new(ManagedWalletInfo::from_wallet(&wallet_other, 1)));
+
+    let mut st = ClientStartState::default();
+    st.wallets.insert(id_ok, s_ok);
+    st.wallets.insert(id_bad, s_bad);
+    p.set(st);
+
+    let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
+    let outcome = mgr
+        .load_from_persistor()
+        .await
+        .expect("Ok despite the per-row snapshot mismatch");
+
+    assert_eq!(outcome.loaded, vec![id_ok], "only the healthy row loads");
+    assert_eq!(outcome.skipped.len(), 1);
+    let (skipped_id, reason) = &outcome.skipped[0];
+    assert_eq!(*skipped_id, id_bad);
+    assert!(matches!(
+        reason,
+        SkipReason::CorruptPersistedRow {
+            kind: CorruptKind::SnapshotIdentityMismatch
+        }
+    ));
+    assert!(mgr.get_wallet(&id_ok).await.is_some());
+    assert!(
+        mgr.get_wallet(&id_bad).await.is_none(),
+        "mismatched row must be absent, not a degraded placeholder"
+    );
+
+    let skipped = h.skipped.lock().unwrap();
+    assert_eq!(skipped.len(), 1, "exactly one skip notification");
+    assert_eq!(skipped[0].0, id_bad);
+}
