@@ -31,6 +31,19 @@ use crate::error::{PlatformWalletError, RehydrateRowError};
 ///
 /// Returns [`RehydrateRowError`] when the row is structurally unusable
 /// (caller maps it onto a per-row [`SkipReason`]).
+///
+/// # Trust boundary
+///
+/// `expected_wallet_id` is stamped in verbatim and is **not** cryptographically
+/// bound to the manifest: the id hashes the *root* xpub, but only account-level
+/// (hardened, one-way) xpubs are persisted, so the root cannot be recovered to
+/// re-derive and verify it. Only structural decode runs here, so a well-formed
+/// but wrong xpub (corrupted/tampered store) is accepted and yields receive
+/// addresses from the wrong key under the original id — the caller must ensure
+/// the persisted manifest for `expected_wallet_id` is authentic. A real binding
+/// (a MAC/commitment over `{wallet_id, network, manifest}` keyed to a
+/// secure-enclave secret, verified fail-closed on load) needs a storage-schema
+/// change and is tracked as a follow-up.
 pub(super) fn build_watch_only_wallet(
     network: Network,
     expected_wallet_id: [u8; 32],
@@ -41,6 +54,9 @@ pub(super) fn build_watch_only_wallet(
     }
     let mut accounts = AccountCollection::new();
     for entry in manifest {
+        // NOTE: `Account::from_xpub` is infallible in the pinned key-wallet rev
+        // (unconditional `Ok`); this map_err is a defensive guard for when its
+        // signature becomes fallible (e.g. xpub/type validation).
         let account = Account::from_xpub(
             Some(expected_wallet_id),
             entry.account_type,
@@ -212,7 +228,7 @@ pub fn apply_persisted_core_state(
                 for utxo in &unspent {
                     account.utxos.insert(utxo.outpoint, (*utxo).clone());
                 }
-                // Eager derivation covers only `0..=gap_limit`; extend each
+                // Eager derivation covers only `0..gap_limit`; extend each
                 // chain to cover restored / used addresses at deeper indices.
                 extend_pools_for_restored_addresses(
                     account,
@@ -307,7 +323,7 @@ fn extend_pools_for_restored_addresses(
 ) -> Result<(), PlatformWalletError> {
     use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-    use std::collections::{BTreeSet, HashSet};
+    use std::collections::HashSet;
 
     let account_type = account.managed_account_type().to_account_type();
 
@@ -325,7 +341,7 @@ fn extend_pools_for_restored_addresses(
     // each probe from index 0 is an accepted, bounded one-time-load cost
     // (per chain capped at MAX_REHYDRATION_DERIVATION_INDEX); rehydration
     // runs once per wallet at startup, never on a hot path.
-    let mut probes: Vec<(AddressPool, BTreeSet<u32>)> = account
+    let mut probes: Vec<(AddressPool, Option<u32>)> = account
         .managed_account_type()
         .address_pools()
         .iter()
@@ -337,7 +353,7 @@ fn extend_pools_for_restored_addresses(
                     p.gap_limit,
                     p.network,
                 ),
-                BTreeSet::new(),
+                None,
             )
         })
         .collect();
@@ -358,12 +374,11 @@ fn extend_pools_for_restored_addresses(
                 .collect()
         };
 
-        for (probe, matched) in probes.iter_mut() {
+        for (probe, deepest_resolved) in probes.iter_mut() {
             if unresolved.is_empty() {
                 break;
             }
             let chain_gap = probe.gap_limit;
-            let mut deepest_resolved: Option<u32> = None;
             let mut index: u32 = 0;
 
             loop {
@@ -378,9 +393,10 @@ fn extend_pools_for_restored_addresses(
                 }
 
                 if let Some(addr) = ensure_derived(probe, key_source, index) {
+                    // Indices are visited in ascending order, so the last match
+                    // is the deepest — record it directly (no per-chain set).
                     if unresolved.remove(&addr) {
-                        matched.insert(index);
-                        deepest_resolved = Some(index);
+                        *deepest_resolved = Some(index);
                     }
                 }
 
@@ -440,18 +456,27 @@ fn extend_pools_for_restored_addresses(
             found: pools.len(),
         });
     }
-    for (pool, (probe, matched)) in pools.iter_mut().zip(probes.iter()) {
+    for (position, (pool, (probe, deepest_resolved))) in
+        pools.iter_mut().zip(probes.iter()).enumerate()
+    {
         // `iter_mut()` over `Vec<&mut AddressPool>` yields `&mut &mut _`;
         // reborrow once so the pool flows into `ensure_derived` cleanly.
         let pool: &mut AddressPool = pool;
-        debug_assert_eq!(
-            pool.pool_type, probe.pool_type,
-            "probe/pool chain order must match for by-position depth apply"
-        );
+
+        // Runtime fail-closed guard (a release build compiles out a
+        // `debug_assert!`): applying a probe's depth to a pool of a different
+        // chain would misattribute derivation to the wrong pool by position.
+        if pool.pool_type != probe.pool_type {
+            return Err(PlatformWalletError::RehydrationPoolTypeMismatch {
+                position,
+                expected: probe.pool_type,
+                found: pool.pool_type,
+            });
+        }
 
         // Derive up to the deepest discovered index so its address exists in
         // the real pool before we mark it used.
-        if let Some(&deepest) = matched.iter().next_back() {
+        if let Some(deepest) = *deepest_resolved {
             if let Some(key_source) = key_source.as_ref() {
                 if ensure_derived(pool, key_source, deepest).is_none() {
                     tracing::warn!(
@@ -571,7 +596,7 @@ mod tests {
     }
 
     /// Regression: after restart-in-place the watch-only pools eagerly
-    /// cover only `0..=gap_limit`, but persisted UTXOs can sit at deeper
+    /// cover only `0..gap_limit`, but persisted UTXOs can sit at deeper
     /// derivation indices. Rehydration must extend each chain's pool to its
     /// deepest restored index so the per-address view reconciles with the
     /// wallet total instead of undercounting.

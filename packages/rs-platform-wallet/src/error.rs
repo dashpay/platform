@@ -2,6 +2,7 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use key_wallet::account::StandardAccountType;
+use key_wallet::managed_account::address_pool::AddressPoolType;
 use key_wallet::Network;
 
 use crate::manager::load_outcome::CorruptKind;
@@ -69,6 +70,24 @@ pub enum PlatformWalletError {
         expected: usize,
         /// Number of real address pools from `address_pools_mut()`.
         found: usize,
+    },
+
+    /// During rehydration a discovery probe and the real address pool it maps
+    /// to **by position** disagreed on `pool_type`, so applying the probe's
+    /// discovered depth would target the wrong chain. Fail-closed rather than
+    /// misattribute a derivation depth. The probes are built from the same
+    /// `address_pools()` enumeration, so a mismatch is a structural invariant
+    /// break, not user-reachable.
+    #[error(
+        "rehydration pool/probe chain-order mismatch at position {position}: real pool is {found:?} but probe is {expected:?}"
+    )]
+    RehydrationPoolTypeMismatch {
+        /// Index into the account's address-pool list where the mismatch was found.
+        position: usize,
+        /// The probe's pool type (discovery order).
+        expected: AddressPoolType,
+        /// The real pool's pool type at the same position.
+        found: AddressPoolType,
     },
 
     #[error("Wallet not found: {0}")]

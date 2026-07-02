@@ -56,6 +56,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// [`initialize`](crate::wallet::platform_addresses::PlatformAddressWallet::initialize)
     /// when the snapshot carries no slice for it.
     ///
+    /// # Trust boundary
+    ///
+    /// The persisted account manifest is trusted as-is — it is **not**
+    /// cryptographically bound to its `wallet_id` (see `build_watch_only_wallet`
+    /// in `rehydrate`). A corrupted or tampered store can rebuild a wallet whose
+    /// receive addresses derive from the wrong key under the original id;
+    /// authenticating the manifest on load is a tracked storage-schema follow-up.
+    ///
     /// [`MnemonicResolverHandle`]: rs_sdk_ffi::MnemonicResolverHandle
     pub async fn load_from_persistor(&self) -> Result<LoadOutcome, PlatformWalletError> {
         let ClientStartState {
