@@ -448,6 +448,14 @@ fn map_spend_result(
                 e.to_string(),
             )
         }
+        // Retryable: the wallet couldn't build the spend against any
+        // Platform-recorded anchor yet (its commitment tree is mid-block after
+        // an index-chunk sync). Nothing was broadcast and the notes were
+        // released, so the host may retry after the next shielded sync.
+        Err(e @ PlatformWalletError::ShieldedNoRecordedAnchor(_)) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
+            format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
+        ),
         // Definitive failure: the transition was not executed and the notes
         // were released; the host may retry.
         Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
@@ -628,6 +636,14 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
                 ),
             )
         }
+        // Retryable: no Platform-recorded anchor covered the selected notes yet
+        // (the commitment tree is mid-block after an index-chunk sync). Nothing
+        // was broadcast and the notes were released, so the host may retry after
+        // the next shielded sync.
+        Err(e @ PlatformWalletError::ShieldedNoRecordedAnchor(_)) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
+            format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
+        ),
         // Definitive failure: the transition was not executed and the spent notes were released.
         Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
@@ -1330,6 +1346,21 @@ mod tests {
         assert!(
             message_of(&result).contains("relay rejected"),
             "broadcast-failed message must carry the wallet Display payload"
+        );
+
+        // No Platform-recorded anchor yet → its own retryable code, distinct
+        // from the "was broadcast, do NOT retry" unconfirmed code above.
+        let no_anchor: Result<(), PlatformWalletError> = Err(
+            PlatformWalletError::ShieldedNoRecordedAnchor("mid-block".to_string()),
+        );
+        let result = map_spend_result(no_anchor, "shielded withdraw");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
+        );
+        assert!(
+            message_of(&result).contains("try again shortly"),
+            "no-recorded-anchor message must be the retryable guidance"
         );
 
         let other: Result<(), PlatformWalletError> =

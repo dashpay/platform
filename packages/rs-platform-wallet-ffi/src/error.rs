@@ -124,6 +124,16 @@ pub enum PlatformWalletFFIResultCode {
     /// must NOT auto-retry — a retry would select different unreserved notes
     /// and could double-send if the original spend landed.
     ErrorShieldedSpendUnconfirmed = 18,
+    /// Maps `PlatformWalletError::ShieldedNoRecordedAnchor`. The wallet could
+    /// not build the spend against any Platform-recorded anchor yet: its local
+    /// commitment tree is mid-block (an index-chunk sync routinely stops
+    /// between block boundaries) while Platform records an anchor only at each
+    /// block boundary. The transition was NOT broadcast and any note
+    /// reservations were released, so this is RETRYABLE — the host should wait
+    /// for the next shielded sync (which advances the tree onto a recorded
+    /// boundary) and try again. Distinct from `ErrorShieldedSpendUnconfirmed`,
+    /// where a spend WAS broadcast and must NOT be retried.
+    ErrorShieldedNoRecordedAnchor = 19,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -236,6 +246,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedSpendUnconfirmed { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
+            }
+            PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
+                PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };

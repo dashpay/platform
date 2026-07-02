@@ -252,13 +252,35 @@ pub trait ShieldedStore: Send + Sync {
     /// Return the current tree root (Sinsemilla anchor, 32 bytes).
     fn tree_anchor(&self) -> Result<[u8; 32], Self::Error>;
 
-    /// Generate a Merkle authentication path for `position`
-    /// against the current tree state. Returns `Ok(None)` if no
-    /// witness is available (position not marked, or pruned).
+    /// Generate a Merkle authentication path for `position` as of the
+    /// checkpoint at `depth` (0 = current tree state, 1 = the previous
+    /// checkpoint, and so on). Returns `Ok(None)` when no witness is
+    /// available at that depth — the position is unmarked/pruned, the
+    /// requested checkpoint depth doesn't exist, or the position was
+    /// appended after that checkpoint.
+    ///
+    /// Building a spend against an older-but-recorded checkpoint is how the
+    /// wallet keeps its anchor consistent with a root Platform actually
+    /// recorded: Platform records one anchor per block while an index-chunk
+    /// sync routinely leaves the tree mid-block, so the depth-0 root is often
+    /// one Platform never recorded.
+    fn witness_at_depth(
+        &self,
+        position: u64,
+        depth: usize,
+    ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error>;
+
+    /// Generate a Merkle authentication path for `position` against the
+    /// current tree state. Returns `Ok(None)` if no witness is available
+    /// (position not marked, or pruned).
+    ///
+    /// Delegates to [`Self::witness_at_depth`] at depth 0.
     fn witness(
         &self,
         position: u64,
-    ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error>;
+    ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error> {
+        self.witness_at_depth(position, 0)
+    }
 
     /// Number of leaves currently in the shared commitment tree
     /// (= highest appended position + 1, or 0 when empty).
@@ -633,9 +655,10 @@ impl ShieldedStore for InMemoryShieldedStore {
         Ok(self.anchor)
     }
 
-    fn witness(
+    fn witness_at_depth(
         &self,
         _position: u64,
+        _depth: usize,
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error> {
         Err(InMemoryStoreError(
             "Merkle witness not supported in in-memory store".into(),

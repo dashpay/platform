@@ -283,19 +283,23 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map_err(|e| FileShieldedStoreError(format!("read tree anchor: {e}")))
     }
 
-    fn witness(
+    fn witness_at_depth(
         &self,
         position: u64,
+        depth: usize,
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error> {
         let tree = self
             .tree
             .lock()
             .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
-        // `checkpoint_depth = 0` = current tree state. The Halo 2
-        // proof we're about to build uses `tree_anchor()` — also
-        // depth 0 — so the witness root must agree.
-        tree.witness(Position::from(position), 0)
-            .map_err(|e| FileShieldedStoreError(format!("witness({position}): {e}")))
+        // `checkpoint_depth = 0` is the current tree state; deeper values
+        // reach older checkpoints so a spend can be built against a root
+        // Platform actually recorded (it records one anchor per block, while
+        // an index-chunk sync routinely leaves the tree mid-block). The proof
+        // uses whichever anchor this witness produces via `MerklePath::root`,
+        // so the anchor and the authentication path always agree.
+        tree.witness(Position::from(position), depth)
+            .map_err(|e| FileShieldedStoreError(format!("witness({position}, depth {depth}): {e}")))
     }
 
     fn tree_size(&self) -> Result<u64, Self::Error> {
@@ -553,6 +557,99 @@ mod tests {
             size, 1,
             "post-reset tree state (1 leaf) must survive persist + reload, \
              confirming reset cleared the SQLite tree tables"
+        );
+    }
+
+    /// Reproduces the shielded **withdrawal-never-lands** root cause (TestFlight
+    /// report B): the wallet builds a spend against its depth-0 (current) tree
+    /// root, but that root is a *Platform-recorded* anchor only when the tree
+    /// sits exactly on a block boundary.
+    ///
+    /// - The spend anchor is `witness(pos, 0).root(cmx)`, which equals
+    ///   `tree_anchor()` (both depth-0; see the comment on `witness`). This test
+    ///   asserts that equality directly.
+    /// - The wallet syncs commitments by index-chunk (`CHUNK_SIZE = 2048` in
+    ///   `sync.rs`), **not** by block, so its tree routinely stops mid-block.
+    /// - drive records **one anchor per block** (`record_anchor_if_changed` at
+    ///   block-processing-end) and `validate_anchor_exists` rejects any anchor
+    ///   it never recorded (`InvalidAnchorError`).
+    ///
+    /// So a mid-block depth-0 anchor is rejected every attempt — repeatable,
+    /// never lands, funds untouched. The team already names this failure at the
+    /// `tree_size` test above ("Anchor not found in the recorded anchors").
+    #[test]
+    fn depth0_spend_anchor_mid_block_is_not_a_recorded_block_boundary_anchor() {
+        use grovedb_commitment_tree::ExtractedNoteCommitment;
+
+        let path = temp_tree_path("anchor_midblock");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        let cmx = |b: u8| {
+            let mut c = [0u8; 32];
+            c[0] = b;
+            c
+        };
+
+        // Two blocks of commitments. drive records ONE anchor per block, at
+        // block-processing-end (after ALL of that block's commitments):
+        //   block 1 = commitments 1..=3  -> recorded anchor at tree size 3
+        //   block 2 = commitments 4..=6  -> recorded anchor at tree size 6
+        for b in 1..=3u8 {
+            store.append_commitment(&cmx(b), true).unwrap();
+        }
+        store.checkpoint_tree(3).unwrap();
+        let recorded_after_block1 = store.tree_anchor().unwrap();
+
+        // The index-chunk sync appends block 2's commitments incrementally; a
+        // chunk/stream boundary that lands mid-block (the common case — a
+        // 2048-leaf chunk rarely ends on a block boundary) leaves the wallet at
+        // tree size 4, and it checkpoints there (sync.rs checkpoints at the
+        // post-append leaf count). Its depth-0 anchor is now the root at size 4
+        // — a state drive never recorded.
+        store.append_commitment(&cmx(4), true).unwrap();
+        store.checkpoint_tree(4).unwrap();
+        let wallet_depth0_mid_block = store.tree_anchor().unwrap();
+
+        // The spend path uses exactly this anchor: `extract_spends_and_anchor`
+        // builds it as `witness(pos, 0).root(cmx)`. Pin that it equals the
+        // mid-block `tree_anchor()`.
+        let cmx0 = ExtractedNoteCommitment::from_bytes(&cmx(1))
+            .into_option()
+            .expect("valid cmx");
+        let spend_anchor = store
+            .witness(0)
+            .unwrap()
+            .expect("witness for marked position 0")
+            .root(cmx0)
+            .to_bytes();
+        assert_eq!(
+            spend_anchor, wallet_depth0_mid_block,
+            "the spend anchor (depth-0 witness root) must equal the mid-block tree_anchor"
+        );
+
+        // Finish block 2. drive records the anchor at tree size 6.
+        store.append_commitment(&cmx(5), true).unwrap();
+        store.append_commitment(&cmx(6), true).unwrap();
+        store.checkpoint_tree(6).unwrap();
+        let recorded_after_block2 = store.tree_anchor().unwrap();
+
+        let _ = std::fs::remove_file(&path);
+
+        // drive's recorded anchor set is {block1, block2}. The wallet's mid-block
+        // spend anchor is neither -> `validate_anchor_exists` rejects it with
+        // InvalidAnchorError, and the withdrawal never lands.
+        assert_ne!(
+            wallet_depth0_mid_block, recorded_after_block1,
+            "mid-block spend anchor must differ from block 1's recorded anchor"
+        );
+        assert_ne!(
+            wallet_depth0_mid_block, recorded_after_block2,
+            "mid-block spend anchor must differ from block 2's recorded anchor"
+        );
+        assert_ne!(
+            recorded_after_block1, recorded_after_block2,
+            "the two block-boundary anchors differ (the tree grew), so drive's \
+             recorded set is exactly these two and the mid-block anchor is outside it"
         );
     }
 }
