@@ -46,7 +46,7 @@
 //!   derived extended keys zero their secret material when they leave
 //!   scope, on every exit path — success, `?`-early-return, and
 //!   panic-unwind. The type is no longer `Copy` as of rust-dashcore rev
-//!   `a8c57fe863c96ac9c7e33833549e7a4f75ac9b5e`, so each move is a real
+//!   `a8a096838b829cf5bec3c2374a23511640a0c35c`, so each move is a real
 //!   move that leaves no stray bitwise duplicate behind.
 //! - **`Zeroizing` wrappers** scrub the plain byte buffers that carry
 //!   no `Drop` of their own: the resolver mnemonic buffer, the BIP-39
@@ -236,7 +236,7 @@ impl MnemonicResolverCoreSigner {
     /// Both the `master` and `derived` extended keys wipe their secret
     /// material when they leave this scope — [`ExtendedPrivKey`] zeroizes on
     /// `Drop` as of rust-dashcore rev
-    /// `a8c57fe863c96ac9c7e33833549e7a4f75ac9b5e`, and is no longer `Copy`, so
+    /// `a8a096838b829cf5bec3c2374a23511640a0c35c`, and is no longer `Copy`, so
     /// each move is a real move that leaves no bitwise duplicate behind. The
     /// key never crosses the call boundary — `extract` only borrows it — so it
     /// cannot outlive the derivation. `extract` returns public material
