@@ -39,6 +39,13 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// outcome. Do NOT auto-retry — a retry would rebuild the bundle and
     /// could double-execute if the original landed.
     case errorShieldedSpendUnconfirmed = 18
+    /// A shielded spend could not be built against a Platform-recorded anchor:
+    /// the wallet's commitment tree isn't synced to a checkpoint Platform has
+    /// recorded (an in-progress / interrupted sync leaves it mid-block). Nothing
+    /// was broadcast and the notes were released. This is retryable — let the
+    /// shielded sync reach a confirmed state and try again. Distinct from
+    /// `errorShieldedSpendUnconfirmed`, which must NOT be retried.
+    case errorShieldedNoRecordedAnchor = 19
     case notFound = 98
     case errorUnknown = 99
 
@@ -82,6 +89,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedBroadcastUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_SPEND_UNCONFIRMED:
             self = .errorShieldedSpendUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_NO_RECORDED_ANCHOR:
+            self = .errorShieldedNoRecordedAnchor
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -177,6 +186,13 @@ public enum PlatformWalletError: LocalizedError {
     /// notes reserved wallet-side (a shield reserves nothing) until the
     /// next sync reconciles the outcome. Do NOT auto-retry.
     case shieldedSpendUnconfirmed(String)
+    /// A shielded spend could not be built against a Platform-recorded anchor —
+    /// the wallet's commitment tree isn't synced to a checkpoint Platform has
+    /// recorded (an in-progress / interrupted sync leaves it mid-block). Nothing
+    /// was broadcast and the notes were released; retryable once the shielded
+    /// sync reaches a confirmed state. Distinct from `shieldedSpendUnconfirmed`,
+    /// which must NOT be retried.
+    case shieldedNoRecordedAnchor(String)
     case notFound(String)
     case unknown(String)
 
@@ -192,6 +208,7 @@ public enum PlatformWalletError: LocalizedError {
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
+             .shieldedNoRecordedAnchor(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -222,6 +239,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
         case .errorShieldedSpendUnconfirmed: self = .shieldedSpendUnconfirmed(detail)
+        case .errorShieldedNoRecordedAnchor: self = .shieldedNoRecordedAnchor(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

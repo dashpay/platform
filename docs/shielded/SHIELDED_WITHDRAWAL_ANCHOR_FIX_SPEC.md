@@ -91,21 +91,25 @@ error.
   root still isn't guaranteed recorded. Rejected.
 
 ## Interface / data-flow changes
-- `ShieldedStore` trait (breaking; implemented by `FileBackedShieldedStore`,
-  `InMemoryShieldedStore`, and any host/FFI persister):
-  - `witness_at_depth(&self, position, depth) -> Result<Option<MerklePath>, Err>`
-    (generalize today's depth-0-only `witness`).
-  - `anchor_at_depth(&self, depth) -> Result<Option<[u8;32]>, Err>` — the tree
-    root at checkpoint depth `d`. Implemented via `witness_at_depth(any_marked_pos,
-    d).root(cmx)` (the repro-test workaround) to avoid touching the pinned
-    external `grovedb-commitment-tree` crate.
-  - `checkpoint_id_at_depth(&self, depth) -> Result<Option<u32>, Err>` — the
-    `checkpoint_id` (== tree size, per `sync.rs`) at depth `d`, for the
-    `position < size*` note filter. (`InMemoryShieldedStore` may return a stub /
-    be excluded from the probe path if it lacks a real tree.)
+- `ShieldedStore` trait: a single new method
+  `witness_at_depth(&self, position, depth) -> Result<Option<MerklePath>, Err>`;
+  the existing `witness` becomes a default delegating to `witness_at_depth(pos, 0)`
+  (so existing callers are unchanged). Implemented by `FileBackedShieldedStore`
+  (passes `depth` to `ClientPersistentCommitmentTree::witness`) and
+  `InMemoryShieldedStore` (same stub as before, `depth`-agnostic). No `dyn`/FFI
+  implementor exists, so the addition is contained.
+  - *As-built note:* the anchor at a depth is derived **inline** from the
+    selected notes' own witnesses (`witness_at_depth(note.position, depth).root(cmx)`),
+    so no separate `anchor_at_depth` was needed. The "note too new for this
+    checkpoint" case is detected directly by `witness_at_depth` returning
+    `Ok(None)`/`Err` at that depth (→ the probe stops), so no
+    `checkpoint_id_at_depth` / explicit `position < size*` filter is needed
+    either — both were considered in earlier drafts but the localized probe
+    subsumes them.
 - `extract_spends_and_anchor` gains `sdk: &Arc<Sdk>` and does the fetch +
-  probe + filter. It has FOUR callers (audit): `withdraw`, `unshield`,
-  `shielded_transfer`, `identity_create_from_shielded_pool`.
+  probe (via the pure, unit-testable `select_recorded_spends`). It has FOUR
+  callers: `withdraw`, `unshield`, `shielded_transfer`,
+  `identity_create_from_shielded_pool`.
 - New retryable error `PlatformWalletError::ShieldedNoRecordedAnchor`; FFI/UI maps
   it to "still syncing — try again shortly" (distinct from `ShieldedSpendUnconfirmed`).
 - Query: `ShieldedAnchors::fetch_current(sdk).await` (existing `FetchCurrent` impl).

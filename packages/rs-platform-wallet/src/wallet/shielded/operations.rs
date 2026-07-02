@@ -1509,9 +1509,12 @@ fn default_orchard_address(keys: &OrchardKeySet) -> Result<OrchardAddress, Platf
     payment_address_to_orchard(&keys.default_address)
 }
 
-/// Checkpoint depths probed for a Platform-recorded anchor. Matches the
-/// commitment tree's `max_checkpoints` retention so the probe can reach every
-/// checkpoint the tree still holds before giving up.
+/// Checkpoint depths probed for a Platform-recorded anchor. Kept equal to the
+/// commitment tree's `max_checkpoints` retention (the store is opened with
+/// `100` — see `PlatformWalletManager`) so the probe reaches every checkpoint
+/// the tree still holds and no further: deeper checkpoints are pruned, so
+/// probing past this bound is wasted work. Coupled by convention — if that
+/// retention changes, update this in lockstep.
 const MAX_ANCHOR_PROBE_DEPTH: usize = 100;
 
 /// Extract `SpendableNote` structs with Merkle witnesses and an anchor
@@ -1538,18 +1541,19 @@ async fn extract_spends_and_anchor<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     notes: &[ShieldedNote],
 ) -> Result<(Vec<SpendableNote>, Anchor), PlatformWalletError> {
+    // Nothing selected — fail before the network round-trip.
+    if notes.is_empty() {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "no spendable notes selected — anchor undefined".to_string(),
+        ));
+    }
+
     // Fetch the recorded anchor set OUTSIDE the store lock so the network
     // round-trip doesn't serialize with other store users, and so the lock is
     // held only for the mutually-consistent depth/witness probe below.
     let dash_sdk::query_types::ShieldedAnchors(recorded_anchors) =
         dash_sdk::query_types::ShieldedAnchors::fetch_current(sdk).await?;
     let recorded: HashSet<[u8; 32]> = recorded_anchors.into_iter().collect();
-
-    if notes.is_empty() {
-        return Err(PlatformWalletError::ShieldedBuildError(
-            "no spendable notes selected — anchor undefined".to_string(),
-        ));
-    }
 
     // Hold a single read lock across the whole probe so the checkpoint depths
     // and the per-note witnesses stay mutually consistent: a concurrent sync
@@ -1576,52 +1580,18 @@ fn select_recorded_spends<S: ShieldedStore>(
 ) -> Result<(Vec<SpendableNote>, Anchor), PlatformWalletError> {
     use grovedb_commitment_tree::ExtractedNoteCommitment;
 
-    // Build every selected note's `SpendableNote` plus the shared anchor at a
-    // single checkpoint `depth`.
-    //
-    // `strict` (depth 0 only): a missing/failed witness is a hard
-    // `ShieldedMerkleWitnessUnavailable` (the note is expected to be
-    // witnessable at the current tip). With `strict == false` (deeper
-    // checkpoints) a missing/`NotContained` witness means the note post-dates
-    // this older checkpoint, so the depth is unusable — return `Ok(None)` and
-    // let the caller stop probing deeper. An anchor disagreement across notes
-    // is always a hard error (the spend builder would reject it downstream).
-    let build_at_depth = |depth: usize,
-                          strict: bool|
-     -> Result<Option<(Vec<SpendableNote>, Anchor)>, PlatformWalletError> {
-        let mut spends = Vec::with_capacity(notes.len());
-        let mut anchor: Option<Anchor> = None;
-        for note in notes {
+    // Deserialize each note and decode its commitment ONCE — both are
+    // independent of the checkpoint depth, so hoisting them out of the probe
+    // keeps the depth walk cheap (each probed depth only re-witnesses).
+    let prepared: Vec<(u64, grovedb_commitment_tree::Note, ExtractedNoteCommitment)> = notes
+        .iter()
+        .map(|note| {
             let orchard_note = deserialize_note(&note.note_data).ok_or_else(|| {
                 PlatformWalletError::ShieldedBuildError(format!(
                     "Failed to deserialize note at position {}",
                     note.position
                 ))
             })?;
-
-            let merkle_path = match store.witness_at_depth(note.position, depth) {
-                Ok(Some(path)) => path,
-                Ok(None) if strict => {
-                    return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
-                        "no witness available for note at position {} (not marked, or pruned past this position)",
-                        note.position
-                    )));
-                }
-                Err(e) if strict => {
-                    return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
-                        e.to_string(),
-                    ));
-                }
-                // depth > 0: the note isn't witnessable at this older checkpoint
-                // (appended after it, or the depth doesn't exist), so this depth
-                // can't cover the selection — signal "unusable depth".
-                Ok(None) | Err(_) => return Ok(None),
-            };
-
-            // The anchor is derived from the witness path itself
-            // (`MerklePath::root(cmx)`); all selected notes must agree on it, or
-            // the store handed back witnesses from different checkpoints and the
-            // spend builder would reject the mismatch downstream.
             let cmx = ExtractedNoteCommitment::from_bytes(&note.cmx)
                 .into_option()
                 .ok_or_else(|| {
@@ -1630,20 +1600,75 @@ fn select_recorded_spends<S: ShieldedStore>(
                         note.position
                     ))
                 })?;
-            let witness_anchor = merkle_path.root(cmx);
+            Ok((note.position, orchard_note, cmx))
+        })
+        .collect::<Result<_, PlatformWalletError>>()?;
+
+    // Build every selected note's `SpendableNote` plus the shared anchor at a
+    // single checkpoint `depth`.
+    //
+    // `strict` (depth 0 only): a missing/failed witness is a hard
+    // `ShieldedMerkleWitnessUnavailable` (the note is expected to be witnessable
+    // at the current tip). At depth > 0, `Ok(None)` means the note post-dates
+    // this older checkpoint, so the depth is unusable — return `Ok(None)` and
+    // let the caller stop probing deeper; a genuine store `Err` (poisoned mutex,
+    // IO, tree corruption) is logged — the probe would otherwise discard the
+    // message — and likewise treated as an unusable depth rather than aborting,
+    // so a transient read can't strand a spend a shallower depth already
+    // covered. An anchor disagreement across notes is always a hard error (the
+    // spend builder would reject it downstream).
+    let build_at_depth = |depth: usize,
+                          strict: bool|
+     -> Result<Option<(Vec<SpendableNote>, Anchor)>, PlatformWalletError> {
+        let mut spends = Vec::with_capacity(prepared.len());
+        let mut anchor: Option<Anchor> = None;
+        for (position, note, cmx) in &prepared {
+            let merkle_path = match store.witness_at_depth(*position, depth) {
+                Ok(Some(path)) => path,
+                Ok(None) if strict => {
+                    return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
+                        "no witness available for note at position {position} (not marked, or pruned past this position)"
+                    )));
+                }
+                Err(e) if strict => {
+                    return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
+                        e.to_string(),
+                    ));
+                }
+                // depth > 0: the note isn't witnessable at this older checkpoint
+                // (appended after it, or the depth doesn't exist).
+                Ok(None) => return Ok(None),
+                // depth > 0: a genuine store failure. Log it so the operator sees
+                // it (the anchor probe otherwise swallows the message), then treat
+                // the depth as unusable — never a mid-probe abort.
+                Err(e) => {
+                    tracing::warn!(
+                        position = *position,
+                        depth,
+                        error = %e,
+                        "shielded anchor probe: witness_at_depth failed at depth > 0; skipping depth"
+                    );
+                    return Ok(None);
+                }
+            };
+
+            // The anchor is derived from the witness path itself
+            // (`MerklePath::root(cmx)`); all selected notes must agree on it, or
+            // the store handed back witnesses from different checkpoints and the
+            // spend builder would reject the mismatch downstream.
+            let witness_anchor = merkle_path.root(*cmx);
             match &anchor {
                 None => anchor = Some(witness_anchor),
                 Some(prev) if prev.to_bytes() != witness_anchor.to_bytes() => {
                     return Err(PlatformWalletError::ShieldedBuildError(format!(
-                        "witness anchor mismatch across selected notes (position {})",
-                        note.position
+                        "witness anchor mismatch across selected notes (position {position})"
                     )));
                 }
                 _ => {}
             }
 
             spends.push(SpendableNote {
-                note: orchard_note,
+                note: *note,
                 merkle_path,
             });
         }
@@ -2619,6 +2644,46 @@ mod select_recorded_spends_tests {
             Err(other) => {
                 panic!("expected ShieldedNoRecordedAnchor, got error: {other:?}")
             }
+            Ok(_) => panic!("expected ShieldedNoRecordedAnchor, got Ok"),
+        }
+    }
+
+    /// A selected note that post-dates the only recorded checkpoint. Depth 0
+    /// (which contains the note) isn't recorded; at depth 1 the note is not yet
+    /// in the tree, so the probe's early-termination fires (a deeper checkpoint
+    /// is older still and can't contain it) and the retryable error is returned
+    /// — even though a recorded anchor exists, it doesn't cover this note. This
+    /// pins the walk's break arm and the value-selection trade-off (a mid-block
+    /// wallet whose selected note is newer than every recorded checkpoint waits
+    /// for the next sync rather than spending).
+    #[test]
+    fn note_newer_than_recorded_checkpoint_breaks_and_returns_retryable_error() {
+        let path = temp_tree_path("toonew");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        // Block 1 = positions 0,1,2 (fillers), checkpointed on its boundary —
+        // the only root Platform recorded.
+        store.append_commitment(&filler_cmx(0xA0), true).unwrap();
+        store.append_commitment(&filler_cmx(0xA1), true).unwrap();
+        store.append_commitment(&filler_cmx(0xA2), true).unwrap();
+        store.checkpoint_tree(3).unwrap();
+        let root_block1 = store.tree_anchor().unwrap();
+
+        // The owned note is appended AFTER block 1 (position 3) and checkpointed:
+        // present at depth 0, absent from the block-1 checkpoint (depth 1).
+        let note = real_note(3);
+        store.append_commitment(&note.cmx, true).unwrap();
+        store.checkpoint_tree(4).unwrap();
+
+        let recorded: HashSet<[u8; 32]> = [root_block1].into_iter().collect();
+
+        let result = select_recorded_spends(&store, std::slice::from_ref(&note), &recorded);
+
+        let _ = std::fs::remove_file(&path);
+
+        match result {
+            Err(PlatformWalletError::ShieldedNoRecordedAnchor(_)) => {}
+            Err(other) => panic!("expected ShieldedNoRecordedAnchor, got error: {other:?}"),
             Ok(_) => panic!("expected ShieldedNoRecordedAnchor, got Ok"),
         }
     }
