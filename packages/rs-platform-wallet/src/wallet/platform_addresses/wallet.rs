@@ -16,6 +16,8 @@ use crate::wallet::persister::WalletPersister;
 
 use super::provider::PlatformPaymentAddressProvider;
 
+use dash_sdk::query_types::AddressInfos;
+
 /// Platform address wallet providing DIP-17 platform payment address functionality.
 #[derive(Clone)]
 pub struct PlatformAddressWallet {
@@ -155,6 +157,100 @@ impl PlatformAddressWallet {
         let mut guard = self.provider.write().await;
         *guard = Some(provider);
         Ok(())
+    }
+
+    /// Reconcile platform-address balances after an identity
+    /// top-up-from-addresses, from the proof-attested `address_infos` the SDK
+    /// returns. Each spent address's `(account_index, address_index)` is
+    /// resolved from the persisted provider state — covering addresses
+    /// restored from disk that are no longer in a live derived pool — its
+    /// in-memory balance is set to the proof's post-spend value, and a
+    /// `PlatformAddressChangeSet` is persisted so the displayed balance and
+    /// the next input selection both reflect on-chain reality.
+    ///
+    /// Without this, the local balances stay frozen at their pre-top-up
+    /// values: the wallet keeps displaying a stale "Platform Balance" and the
+    /// next top-up over-selects the now-drained addresses, which Drive
+    /// rejects with "Insufficient combined address balances".
+    ///
+    /// Locks are released before persisting (the persistence backend runs its
+    /// callbacks inline), and errors are logged rather than propagated —
+    /// Platform already accepted the top-up, and a later sync reconciles.
+    pub async fn apply_top_up_reconciliation(&self, address_infos: &AddressInfos) {
+        // Resolve spent addresses to balance entries under the provider read
+        // lock, then drop it.
+        let entries = {
+            let guard = self.provider.read().await;
+            match guard
+                .as_ref()
+                .and_then(|p| p.per_wallet_state(&self.wallet_id))
+            {
+                Some(state) => {
+                    let per_account: Vec<_> = state
+                        .iter()
+                        .map(|(idx, acct)| (*idx, acct.addresses()))
+                        .collect();
+                    super::provider::build_top_up_balance_entries(
+                        self.wallet_id,
+                        &per_account,
+                        address_infos,
+                    )
+                }
+                None => {
+                    tracing::warn!(
+                        wallet_id = ?self.wallet_id,
+                        "Top-up reconciliation skipped: no platform-address \
+                         provider state for this wallet; local balances stay \
+                         stale until the next platform-address sync"
+                    );
+                    return;
+                }
+            }
+        };
+        if entries.is_empty() {
+            if !address_infos.is_empty() {
+                tracing::warn!(
+                    wallet_id = ?self.wallet_id,
+                    spent_addresses = address_infos.len(),
+                    "Top-up reconciliation resolved none of the proof's spent \
+                     addresses through the persisted provider state; local \
+                     balances stay stale until the next platform-address sync"
+                );
+            }
+            return;
+        }
+        // Apply the proof-attested post-spend balances in memory, then drop
+        // the write lock.
+        {
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                for entry in &entries {
+                    if let Some(account) = info
+                        .core_wallet
+                        .platform_payment_managed_account_at_index_mut(entry.account_index)
+                    {
+                        account.set_address_credit_balance(
+                            entry.address,
+                            entry.funds.balance,
+                            None,
+                        );
+                    }
+                }
+            }
+        }
+        // Persist with no locks held.
+        let cs = crate::PlatformAddressChangeSet {
+            addresses: entries,
+            ..Default::default()
+        };
+        if let Err(e) = self.persister.store(cs.into()) {
+            tracing::error!(
+                error = %e,
+                "Failed to persist top-up platform-address reconciliation; \
+                 in-memory balances are updated but durable rows stay stale \
+                 until the next platform-address sync"
+            );
+        }
     }
 
     /// Get the network from the SDK.

@@ -12,6 +12,8 @@ use dash_sdk::platform::transition::top_up_identity_from_addresses::TopUpIdentit
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 
+use dash_sdk::query_types::AddressInfos;
+
 use crate::error::PlatformWalletError;
 
 use super::*;
@@ -25,6 +27,15 @@ impl IdentityWallet {
     ///
     /// Uses the `TopUpIdentityFromAddresses` SDK trait. Address nonces are
     /// looked up automatically.
+    ///
+    /// Returns the proof-attested post-spend `AddressInfos` alongside the new
+    /// identity balance. The caller MUST reconcile the spent platform-address
+    /// balances from the `AddressInfos` via
+    /// [`PlatformAddressWallet::apply_top_up_reconciliation`] — this method
+    /// only owns the identity-side balance update, because resolving a spent
+    /// address back to its derivation index needs the address provider, which
+    /// lives on the platform-address wallet (and covers addresses restored
+    /// from disk that are no longer in a live derived pool).
     ///
     /// # Arguments
     ///
@@ -40,7 +51,7 @@ impl IdentityWallet {
         inputs: BTreeMap<PlatformAddress, Credits>,
         address_signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<Credits, PlatformWalletError> {
+    ) -> Result<(AddressInfos, Credits), PlatformWalletError> {
         let identity = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -55,7 +66,7 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?
         };
 
-        let (_address_infos, new_balance) = identity
+        let (address_infos, new_balance) = identity
             .top_up_from_addresses(&self.sdk, inputs, address_signer, settings)
             .await
             .map_err(|e| {
@@ -89,6 +100,10 @@ impl IdentityWallet {
             }
         }
 
-        Ok(new_balance)
+        // The spent platform-address balances are reconciled by the caller via
+        // `PlatformAddressWallet::apply_top_up_reconciliation`, which has the
+        // address provider needed to map restored addresses back to their
+        // derivation index.
+        Ok((address_infos, new_balance))
     }
 }

@@ -32,9 +32,12 @@ use key_wallet_manager::WalletManager;
 
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+use crate::PlatformAddressBalanceEntry;
 use dash_sdk::platform::address_sync::{
     AddressFunds, AddressIndex, AddressProvider, AddressSyncResult,
 };
+use dash_sdk::query_types::AddressInfos;
+use dpp::address_funds::PlatformAddress;
 use tokio::sync::RwLock;
 
 /// DIP-17 address coordinates used as both the pending-bimap key and
@@ -202,6 +205,18 @@ pub(crate) struct PlatformPaymentAddressProvider {
 }
 
 impl PlatformPaymentAddressProvider {
+    /// The committed per-account index/balance state for one wallet, or
+    /// `None` if the provider doesn't cover it. Exposes the full persisted
+    /// `index <-> address` bijection — including addresses restored from
+    /// disk that are no longer in a live derived pool — so callers can map a
+    /// spent address back to its derivation index.
+    pub(crate) fn per_wallet_state(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Option<&PerWalletPlatformAddressState> {
+        self.per_wallet.get(wallet_id)
+    }
+
     /// Build a provider covering every platform payment account on
     /// each wallet in `wallet_ids`.
     ///
@@ -811,6 +826,55 @@ impl AddressProvider for PlatformPaymentAddressProvider {
     }
 }
 
+/// Resolve each spent platform address in a top-up's proof-attested
+/// `address_infos` to its `(account_index, address_index)` using the
+/// per-account index bijections, and pair it with the proof's post-spend
+/// balance + nonce. Resolving against the bijections — rather than the live
+/// derived address pool — means addresses restored from disk (present in the
+/// persisted index map but not in `ManagedPlatformAccount::addresses`) are
+/// still reconciled; without this, a top-up that spends a restored cached row
+/// would leave its stale balance behind, preserving the phantom balance.
+///
+/// Addresses the proof returns that the wallet doesn't own (no bijection
+/// entry) are skipped. Pure and lock-free so the reconciliation is
+/// unit-testable.
+pub(crate) fn build_top_up_balance_entries(
+    wallet_id: WalletId,
+    per_account_addresses: &[(u32, &BiBTreeMap<AddressIndex, PlatformP2PKHAddress>)],
+    address_infos: &AddressInfos,
+) -> Vec<PlatformAddressBalanceEntry> {
+    let mut entries = Vec::new();
+    for (addr, maybe_info) in address_infos.iter() {
+        let PlatformAddress::P2pkh(hash) = addr else {
+            continue;
+        };
+        let p2pkh = PlatformP2PKHAddress::new(*hash);
+        let funds = match maybe_info {
+            Some(ai) => AddressFunds {
+                balance: ai.balance,
+                nonce: ai.nonce,
+            },
+            None => AddressFunds {
+                balance: 0,
+                nonce: 0,
+            },
+        };
+        for &(account_index, bimap) in per_account_addresses {
+            if let Some(&address_index) = bimap.get_by_right(&p2pkh) {
+                entries.push(PlatformAddressBalanceEntry {
+                    wallet_id,
+                    account_index,
+                    address_index,
+                    address: p2pkh,
+                    funds,
+                });
+                break;
+            }
+        }
+    }
+    entries
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -835,6 +899,58 @@ mod tests {
 
     fn funds(balance: u64, nonce: u32) -> AddressFunds {
         AddressFunds { balance, nonce }
+    }
+
+    /// Regression for the top-up reconciliation: a spent platform address
+    /// that exists only in the persisted index bijection (restored from
+    /// disk — not in any live derived pool) must still be resolved to its
+    /// derivation index and recorded with the proof's post-spend balance.
+    /// The original fix scanned only the live pool, so it left restored
+    /// rows stale, preserving the phantom Platform Balance the PR targets.
+    #[test]
+    fn build_top_up_entries_resolves_restored_address_outside_live_pool() {
+        use dash_sdk::query_types::AddressInfo;
+
+        // Present in the persisted bijection at index 3, but NOT in a live
+        // derived address pool.
+        let restored = p2pkh(0x11);
+        let mut bimap: BiBTreeMap<AddressIndex, PlatformP2PKHAddress> = BiBTreeMap::new();
+        bimap.insert(3, restored);
+
+        // The top-up spent it; the proof attests post-spend balance 5,
+        // nonce bumped to 4.
+        let restored_addr = PlatformAddress::P2pkh([0x11; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            restored_addr,
+            Some(AddressInfo {
+                address: restored_addr,
+                nonce: 4,
+                balance: 5,
+            }),
+        );
+
+        let per_account: [(u32, &BiBTreeMap<AddressIndex, PlatformP2PKHAddress>); 1] =
+            [(ACCOUNT, &bimap)];
+        let entries = build_top_up_balance_entries(WALLET, &per_account, &address_infos);
+
+        assert_eq!(
+            entries.len(),
+            1,
+            "a restored spent address must still be reconciled"
+        );
+        let e = &entries[0];
+        assert_eq!(e.address, restored);
+        assert_eq!(e.account_index, ACCOUNT);
+        assert_eq!(
+            e.address_index, 3,
+            "index resolved from the persisted bijection, not the live pool"
+        );
+        assert_eq!(
+            e.funds.balance, 5,
+            "records the proof's post-spend balance, not a stale value"
+        );
+        assert_eq!(e.funds.nonce, 4, "records the bumped nonce");
     }
 
     /// Build a provider whose committed `per_wallet` tracks a single
@@ -1134,6 +1250,119 @@ mod tests {
             0,
             "on_address_absent must zero the in-memory managed-account balance"
         );
+    }
+
+    /// Records every changeset handed to `store`, so a test can assert what
+    /// the reconciliation actually persisted.
+    #[derive(Default)]
+    struct CapturingPersister {
+        stored: std::sync::Mutex<Vec<crate::changeset::PlatformWalletChangeSet>>,
+    }
+
+    impl crate::changeset::PlatformWalletPersistence for CapturingPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            self.stored.lock().expect("persister mutex").push(changeset);
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(crate::changeset::ClientStartState::default())
+        }
+    }
+
+    /// Integration regression for the top-up reconciliation *contract* — not
+    /// just the pure entry builder. `apply_top_up_reconciliation` must build
+    /// AND **persist** a `PlatformAddressChangeSet` carrying the proof's
+    /// post-spend balance for a spent address resolved via the provider's
+    /// persisted state. The reported bug was the *missing persist* (the SDK's
+    /// `address_infos` were discarded), so this pins that `store` actually
+    /// fires with the decremented entry — a helper-only test would still pass
+    /// if `apply_top_up_reconciliation` stopped persisting.
+    #[tokio::test]
+    async fn apply_top_up_reconciliation_persists_decremented_balance() {
+        use crate::broadcaster::SpvBroadcaster;
+        use crate::events::PlatformEventManager;
+        use crate::spv::SpvRuntime;
+        use crate::wallet::asset_lock::manager::AssetLockManager;
+        use crate::wallet::persister::WalletPersister;
+        use crate::wallet::platform_addresses::PlatformAddressWallet;
+        use dash_sdk::query_types::AddressInfo;
+        use tokio::sync::Notify;
+
+        let recorder = Arc::new(CapturingPersister::default());
+
+        // Wallet wired to the capturing persister. The rest mirrors the
+        // short-circuit fixture — `apply_top_up_reconciliation` only touches
+        // provider / wallet_manager / persister.
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
+        let persister = WalletPersister::new(WALLET, recorder.clone());
+        let event_manager = Arc::new(PlatformEventManager::new(Vec::new()));
+        let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallet_manager), event_manager));
+        let broadcaster = Arc::new(SpvBroadcaster::new(spv));
+        let asset_locks = Arc::new(AssetLockManager::new(
+            Arc::clone(&sdk),
+            Arc::clone(&wallet_manager),
+            WALLET,
+            Arc::new(Notify::new()),
+            broadcaster,
+            persister.clone(),
+        ));
+        let wallet = PlatformAddressWallet::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            WALLET,
+            asset_locks,
+            persister,
+        );
+
+        // The provider knows the spent address via its persisted bijection
+        // (pre-spend balance 100).
+        let addr = p2pkh(0x11);
+        let provider =
+            provider_tracking_address(Arc::clone(&wallet_manager), WALLET, addr, funds(100, 1));
+        *wallet.provider.write().await = Some(provider);
+
+        // The top-up spent it; the proof attests post-spend balance 5, nonce 4.
+        let spent = PlatformAddress::P2pkh([0x11; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            spent,
+            Some(AddressInfo {
+                address: spent,
+                nonce: 4,
+                balance: 5,
+            }),
+        );
+
+        wallet.apply_top_up_reconciliation(&address_infos).await;
+
+        // The reconciliation must have PERSISTED the decremented entry — the
+        // contract the original bug broke by discarding `address_infos`.
+        let stored = recorder.stored.lock().expect("persister mutex");
+        let entry = stored
+            .iter()
+            .filter_map(|cs| cs.platform_addresses.as_ref())
+            .flat_map(|pa| pa.addresses.iter())
+            .find(|e| e.address == addr)
+            .expect("a persisted platform-address entry for the spent address");
+        assert_eq!(entry.account_index, ACCOUNT);
+        assert_eq!(
+            entry.funds.balance, 5,
+            "persists the proof's post-spend balance, not the stale pre-spend value"
+        );
+        assert_eq!(entry.funds.nonce, 4, "persists the bumped nonce");
     }
 
     /// `reset_sync_state` must zero the incremental watermark AND drop
