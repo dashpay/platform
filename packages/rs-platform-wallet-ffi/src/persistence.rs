@@ -149,11 +149,10 @@ pub struct PersistenceCallbacks {
         ) -> i32,
     >,
     /// Invoked on [`FFIPersister::load`] to pull the persisted wallet
-    /// list back into Rust for external-signable reconstruction.
-    /// (The function name still reads "watch-only" in older docs; the
-    /// reconstructed `Wallet` is built via
-    /// `Wallet::new_external_signable` so the signer surface routes
-    /// back to the host's keychain.)
+    /// list back into Rust. Each entry is rebuilt into a transient
+    /// `Wallet` used only to shape the keyless start-state projection;
+    /// the manager then re-registers the wallet watch-only and signs on
+    /// demand via the host mnemonic resolver.
     ///
     /// Implementations must set `*out_entries` to a Swift-allocated
     /// array of `WalletRestoreEntryFFI` and `*out_count` to the
@@ -2778,30 +2777,50 @@ impl Drop for LoadGuard {
     }
 }
 
-/// Reconstruct an external-signable [`Wallet`] + matching start-state
-/// bucket from a single `WalletRestoreEntryFFI`. The mnemonic / seed
-/// stays in the host's keychain; signing requests route back through
-/// the configured signer surface (see
-/// `Wallet::new_external_signable`). Earlier revisions of this code
-/// path produced a `WatchOnly` wallet — that has been replaced.
-/// Error-message prefix emitted when an account xpub fails to decode.
-/// Shared by the producer and [`corrupt_kind_from_build_err`] so the
-/// `MalformedXpub` classification can't silently drift from the text.
-const MALFORMED_XPUB_ERR_PREFIX: &str = "failed to decode account xpub";
+/// Marker error: an account xpub failed to bincode-decode into a
+/// well-formed extended public key. Boxed into the
+/// `PersistenceError::Backend` `source` so [`corrupt_kind_from_build_err`]
+/// recovers the classification by downcast — a typed discriminator
+/// rather than a `Display`-text match.
+#[derive(Debug)]
+struct MalformedXpubError(String);
 
-/// Classify a [`build_wallet_start_state`] failure for the FFI
-/// `reason_code`: a malformed xpub maps to [`CorruptKind::MalformedXpub`]
-/// (101), anything else to [`CorruptKind::DecodeError`] (102).
-/// String-matched because `PersistenceError` carries no typed discriminator.
-fn corrupt_kind_from_build_err(e: &PersistenceError) -> CorruptKind {
-    let msg = e.to_string();
-    if msg.contains(MALFORMED_XPUB_ERR_PREFIX) {
-        CorruptKind::MalformedXpub
-    } else {
-        CorruptKind::DecodeError(msg)
+impl std::fmt::Display for MalformedXpubError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "failed to decode account xpub: {}", self.0)
     }
 }
 
+impl std::error::Error for MalformedXpubError {}
+
+/// Classify a [`build_wallet_start_state`] failure for the FFI
+/// `reason_code`: a boxed [`MalformedXpubError`] in the backend `source`
+/// maps to [`CorruptKind::MalformedXpub`] (101), anything else to
+/// [`CorruptKind::DecodeError`] (102).
+fn corrupt_kind_from_build_err(e: &PersistenceError) -> CorruptKind {
+    if let PersistenceError::Backend { source, .. } = e {
+        if source.downcast_ref::<MalformedXpubError>().is_some() {
+            return CorruptKind::MalformedXpub;
+        }
+    }
+    CorruptKind::DecodeError(e.to_string())
+}
+
+/// Reconstruct the keyless [`ClientWalletStartState`] (and optional
+/// platform-address bucket) for one persisted `WalletRestoreEntryFFI`.
+///
+/// A transient `Wallet` is built here solely to shape the account
+/// manifest and core-state projection returned below; it never leaves
+/// this function. The manager rehydrates each wallet **watch-only**
+/// (via `Wallet::new_watch_only`) from that manifest and signs on
+/// demand through the host mnemonic resolver — no seed crosses this
+/// boundary.
+///
+/// # Errors
+///
+/// Returns [`PersistenceError`] on any per-row decode/projection
+/// failure (e.g. a malformed account xpub); the caller records the
+/// wallet as skipped and continues restoring the rest.
 fn build_wallet_start_state(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<
@@ -2852,9 +2871,8 @@ fn build_wallet_start_state(
         let xpub_bytes =
             unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
         let (account_xpub, _): (ExtendedPubKey, usize) =
-            bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                PersistenceError::backend(format!("{MALFORMED_XPUB_ERR_PREFIX}: {e}"))
-            })?;
+            bincode::decode_from_slice(xpub_bytes, config::standard())
+                .map_err(|e| PersistenceError::backend(MalformedXpubError(e.to_string())))?;
         let account =
             Account::from_xpub(Some(entry.wallet_id), account_type, account_xpub, network)
                 .map_err(|e| {
@@ -2865,12 +2883,13 @@ fn build_wallet_start_state(
         })?;
     }
 
-    // External-signable wallet — the mnemonic / seed lives in the
-    // iOS Keychain, not in this Rust handle. Signing requests route
-    // back to the host through the configured signer surface; the
-    // host fetches the mnemonic from the Keychain on demand. The
-    // wallet_id is passed in directly (no recomputation from a root
-    // xpub the snapshot doesn't carry).
+    // Transient scratch wallet — used only to shape the account
+    // manifest and core-state projection below, then dropped; its
+    // `WalletType` never reaches the manager, which re-registers the
+    // wallet watch-only and signs on demand via the host mnemonic
+    // resolver (no seed crosses this boundary). The wallet_id is passed
+    // in directly (no recomputation from a root xpub the snapshot
+    // doesn't carry).
     let wallet = Wallet::new_external_signable(network, entry.wallet_id, accounts);
 
     // Stamp the persisted core-chain sync metadata onto the rebuilt
@@ -2899,6 +2918,16 @@ fn build_wallet_start_state(
     // without waiting for SPV to re-apply a fresh CL. SPV persists its
     // own `best_chainlock` independently; this is the symmetric
     // wallet-side restore.
+    //
+    // TRUST BOUNDARY: this chain lock is read from the unauthenticated
+    // local store and is NOT re-verified here — decode enforces the
+    // struct shape only; no BLS/quorum signature check runs on this
+    // path. Treat the value as a cache hint, not a trusted source. It
+    // merely seeds the asset-lock-resume fallback; data integrity for
+    // that path rests on the DOWNSTREAM network re-verification of the
+    // asset-lock proof itself (`proof.rs`), which is authoritative. A
+    // forged/stale local CL can at most trigger an earlier resume
+    // attempt whose proof then fails network verification.
     //
     // Decode failure is treated as miss: malformed bytes here are
     // either a serialisation-shape regression in upstream `ChainLock`
@@ -4162,16 +4191,19 @@ mod tests {
     /// so the host can special-case unrecoverable key-material corruption.
     #[test]
     fn malformed_xpub_error_maps_to_dedicated_corrupt_kind() {
+        // A boxed `MalformedXpubError` must be recovered by downcast,
+        // independently of its human-readable `Display` text.
         let xpub_err =
-            PersistenceError::backend(format!("{MALFORMED_XPUB_ERR_PREFIX}: invalid checksum"));
+            PersistenceError::backend(MalformedXpubError("invalid checksum".to_string()));
         assert_eq!(
             corrupt_kind_from_build_err(&xpub_err),
             CorruptKind::MalformedXpub,
             "an xpub-decode failure must surface as MalformedXpub (code 101)"
         );
 
-        // Any unrelated structural failure keeps the generic family.
-        let other_err = PersistenceError::backend("Account::from_xpub failed: bad network");
+        // Any unrelated structural failure keeps the generic family —
+        // even when its message happens to mention "decode account xpub".
+        let other_err = PersistenceError::backend("failed to decode account xpub: bad network");
         assert!(
             matches!(
                 corrupt_kind_from_build_err(&other_err),
