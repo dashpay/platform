@@ -1,9 +1,10 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Verbatim pool-snapshot reader (WS-B task B6). Covers TC-B-020 (used-set
+//! Verbatim pool-snapshot reader. Covers TC-B-020 (used-set
 //! comes from `core_address_pool`, not `core_utxos` re-derivation), TC-B-023
 //! (deep-derivation window — no horizon-walk truncation), TC-B-025/007
-//! (empty wallet loads empty-but-valid), plus the pre-pool fallback.
+//! (empty wallet loads empty-but-valid), multi-wallet isolation (TC-B-026),
+//! and the pool ∪ `core_utxos` used-set union (pre-pool + mixed stores).
 
 mod common;
 
@@ -166,31 +167,34 @@ fn tc_b_025_empty_wallet_is_empty_but_valid() {
     );
 }
 
-/// Fallback — a pre-pool store (UTXOs, no `core_address_pool` rows) still
-/// yields the reuse-guard set from the `core_utxos`-derived path.
-#[test]
-fn pre_pool_store_falls_back_to_utxo_derived_used_set() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w: WalletId = wid(0x26);
-    ensure_wallet_meta(&persister, &w);
-
-    let addr = p2pkh(0x99);
-    let utxo = Utxo::new(
-        dashcore::OutPoint::new(dashcore::Txid::from_byte_array([0x11; 32]), 0),
+fn utxo_on(addr: &Address, byte: u8, value: u64) -> Utxo {
+    Utxo::new(
+        dashcore::OutPoint::new(dashcore::Txid::from_byte_array([byte; 32]), 0),
         dashcore::TxOut {
-            value: 1000,
+            value,
             script_pubkey: addr.script_pubkey(),
         },
         addr.clone(),
         10,
         false,
-    );
+    )
+}
+
+/// A pre-pool store (UTXOs, no `core_address_pool` rows) yields the
+/// reuse-guard set from the `core_utxos`-derived half of the union.
+#[test]
+fn pre_pool_store_yields_utxo_derived_used_set() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0x26);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr = p2pkh(0x99);
     persister
         .store(
             w,
             PlatformWalletChangeSet {
                 core: Some(CoreChangeSet {
-                    new_utxos: vec![utxo],
+                    new_utxos: vec![utxo_on(&addr, 0x11, 1000)],
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -200,10 +204,141 @@ fn pre_pool_store_falls_back_to_utxo_derived_used_set() {
 
     let state = persister.load().unwrap();
     let slice = state.wallets.get(&w).expect("wallet surfaces");
-    assert_eq!(
-        slice.used_core_addresses.len(),
-        1,
-        "no pool rows → fall back to the UTXO-derived used-set"
-    );
+    assert_eq!(slice.used_core_addresses.len(), 1);
     assert_eq!(slice.used_core_addresses[0].to_string(), addr.to_string());
+}
+
+/// TC-B-026 — reader multi-wallet isolation: two wallets seeded with
+/// distinct, distinguishable used addresses (and balances) load such that
+/// neither wallet's snapshot shows the other's — no cross-wallet leakage.
+#[test]
+fn tc_b_026_reader_isolates_two_wallets() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let a: WalletId = wid(0x2A);
+    let b: WalletId = wid(0x2B);
+    ensure_wallet_meta(&persister, &a);
+    ensure_wallet_meta(&persister, &b);
+
+    let addr_a = p2pkh(0xA1);
+    let addr_b = p2pkh(0xB1);
+    persister
+        .store(
+            a,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    new_utxos: vec![utxo_on(&addr_a, 0x01, 111)],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    persister
+        .store(
+            b,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    new_utxos: vec![utxo_on(&addr_b, 0x02, 222)],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let state = persister.load().unwrap();
+    let a_used: Vec<String> = state.wallets[&a]
+        .used_core_addresses
+        .iter()
+        .map(|x| x.to_string())
+        .collect();
+    let b_used: Vec<String> = state.wallets[&b]
+        .used_core_addresses
+        .iter()
+        .map(|x| x.to_string())
+        .collect();
+    assert_eq!(
+        a_used,
+        vec![addr_a.to_string()],
+        "A sees only its own address"
+    );
+    assert_eq!(
+        b_used,
+        vec![addr_b.to_string()],
+        "B sees only its own address"
+    );
+    assert!(
+        !a_used.contains(&addr_b.to_string()),
+        "A must not see B's address"
+    );
+    assert!(
+        !b_used.contains(&addr_a.to_string()),
+        "B must not see A's address"
+    );
+}
+
+/// Mixed-store regression — a historical `core_utxos` address that
+/// a later partial pool snapshot never enumerates must surface BOTH the
+/// historical UTXO address and the pool used address. The union must never
+/// let the pool set shadow the historical one (address-reuse / funds safety).
+#[test]
+fn mixed_store_unions_utxo_and_pool_used_sets() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0x27);
+    ensure_wallet_meta(&persister, &w);
+
+    // Historical UTXO on address X, written before any pool snapshot exists.
+    let historical = p2pkh(0xAA);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    new_utxos: vec![utxo_on(&historical, 0x12, 500)],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    // A later pool snapshot marks a DIFFERENT address Y used and does not
+    // enumerate the historical address at all.
+    let mut infos = external_infos(0x27);
+    infos.truncate(1);
+    infos[0].used = true;
+    let pool_used = infos[0].address.clone();
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![AccountAddressPoolEntry {
+                    account_type: AccountType::Standard {
+                        index: 0,
+                        standard_account_type: StandardAccountType::BIP44Account,
+                    },
+                    pool_type: AddressPoolType::External,
+                    addresses: infos.clone(),
+                }],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let state = persister.load().unwrap();
+    let slice = state.wallets.get(&w).expect("wallet surfaces");
+    let got: std::collections::BTreeSet<String> = slice
+        .used_core_addresses
+        .iter()
+        .map(|a| a.to_string())
+        .collect();
+    assert!(
+        got.contains(&historical.to_string()),
+        "historical UTXO address must survive a later partial pool snapshot"
+    );
+    assert!(
+        got.contains(&pool_used.to_string()),
+        "pool used address must be present"
+    );
+    assert_eq!(got.len(), 2, "exactly the union of both sources, deduped");
 }

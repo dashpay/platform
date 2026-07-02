@@ -91,10 +91,10 @@ pub fn account_index_for_script(
 }
 
 /// Used addresses for a wallet, read verbatim from `core_address_pool`
-/// (`used = 1`) with no re-derivation. Returns `None` when the wallet has no
-/// pool rows at all — the caller then falls back to the `core_utxos`-derived
-/// set (a pre-pool / migrated-V001 store). `Some(vec)` (possibly empty) means
-/// pool rows exist and their `used` state is authoritative.
+/// (`used = 1`) with no re-derivation. Possibly empty. The caller **unions**
+/// this with the `core_utxos`-derived set — the reuse guard is monotonic, so
+/// a mixed store (historical UTXOs a later partial pool snapshot never
+/// enumerates) must surface both sources, never drop the historical ones.
 ///
 /// `network` turns each stored `script` back into an [`Address`]; a script
 /// that isn't a valid address is a hard error — corruption is never silently
@@ -103,19 +103,7 @@ pub fn load_used_addresses(
     conn: &rusqlite::Connection,
     wallet_id: &WalletId,
     network: dashcore::Network,
-) -> Result<Option<Vec<dashcore::Address>>, WalletStorageError> {
-    let has_rows: bool = conn
-        .query_row(
-            "SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 LIMIT 1",
-            params![wallet_id.as_slice()],
-            |_| Ok(()),
-        )
-        .optional()?
-        .is_some();
-    if !has_rows {
-        return Ok(None);
-    }
-
+) -> Result<Vec<dashcore::Address>, WalletStorageError> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT script FROM core_address_pool \
          WHERE wallet_id = ?1 AND used = 1 ORDER BY script",
@@ -131,7 +119,7 @@ pub fn load_used_addresses(
         })?;
         out.push(address);
     }
-    Ok(Some(out))
+    Ok(out)
 }
 
 #[cfg(test)]

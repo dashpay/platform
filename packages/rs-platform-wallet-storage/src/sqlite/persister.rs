@@ -942,17 +942,25 @@ impl PlatformWalletPersistence for SqlitePersister {
                 .map_err(PersistenceError::from)?;
             // Used addresses drive the reuse guard: a used-then-emptied
             // address must never be handed back as a fresh receive address.
-            // Prefer the verbatim `core_address_pool` used-set (no
-            // re-derivation); fall back to the `core_utxos`-derived set only
-            // for a pre-pool / migrated-V001 store with no pool rows.
-            let used_core_addresses =
-                match schema::core_pool::load_used_addresses(&conn, &wallet_id, network)
-                    .map_err(PersistenceError::from)?
-                {
-                    Some(addrs) => addrs,
-                    None => schema::core_state::load_used_addresses(&conn, &wallet_id, network)
-                        .map_err(PersistenceError::from)?,
-                };
+            // Union the verbatim `core_address_pool` used-set with the
+            // `core_utxos`-derived set (spent + unspent). The guard is
+            // monotonic, so a mixed store — historical UTXOs plus a later
+            // partial pool snapshot that never enumerates them — must surface
+            // both; neither source may shadow the other. Deduped by script.
+            let used_core_addresses = {
+                let mut seen = std::collections::HashSet::new();
+                let mut union = Vec::new();
+                let pool = schema::core_pool::load_used_addresses(&conn, &wallet_id, network)
+                    .map_err(PersistenceError::from)?;
+                let utxo = schema::core_state::load_used_addresses(&conn, &wallet_id, network)
+                    .map_err(PersistenceError::from)?;
+                for addr in pool.into_iter().chain(utxo) {
+                    if seen.insert(addr.script_pubkey().to_bytes()) {
+                        union.push(addr);
+                    }
+                }
+                union
+            };
 
             state.wallets.insert(
                 wallet_id,
