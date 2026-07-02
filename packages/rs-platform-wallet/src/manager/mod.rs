@@ -502,7 +502,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// [`SHUTDOWN_JOIN_TIMEOUT_SECS`] budget; on timeout its handle is
     /// re-parked and the slot reports
     /// [`WorkerStatus::Timeout`] rather than hanging forever
-    /// (F1: a dropped/timed-out join can never detach a live
+    /// (a dropped/timed-out join can never detach a live
     /// thread). The clear-on-panic half rides on unwinding, so it holds
     /// under `panic = "unwind"`; under the iOS `panic = "abort"` profiles a
     /// pass panic aborts the process outright.
@@ -986,12 +986,12 @@ mod tests {
     /// into a context the caller is about to free. The gate's refcount must
     /// return to 0 once teardown completes (no leak).
     ///
-    /// Non-vacuous: against a `shutdown()` that delegates straight to
-    /// `registry.shutdown()` (the prior behaviour — no lifecycle quiesce),
-    /// the per-coordinator gate is never raised, so the wait below times
-    /// out and the test fails. The pure `begin_pass`-rejects-on-gate
-    /// semantics are covered exhaustively by the `coordinator_lifecycle`
-    /// tests; this proves `shutdown()` actually wires the gate up.
+    /// Non-vacuous: a `shutdown()` that delegated straight to
+    /// `registry.shutdown()` (no lifecycle quiesce) would never raise the
+    /// per-coordinator gate, so the wait below would time out. The pure
+    /// `begin_pass`-rejects-on-gate semantics are covered exhaustively by
+    /// the `coordinator_lifecycle` tests; this proves `shutdown()` actually
+    /// wires the gate up.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn shutdown_raises_quiescing_gate_during_teardown() {
         let started = Arc::new(AtomicBool::new(false));
@@ -1020,8 +1020,8 @@ mod tests {
         let shutdown_mgr = Arc::clone(&manager);
         let shutdown_task = tokio::spawn(async move { shutdown_mgr.shutdown().await });
 
-        // The gate must be observed raised mid-teardown. Pre-fix (registry
-        // shutdown only) it never rises and this times out.
+        // The gate must be observed raised mid-teardown; a registry-only
+        // shutdown would never raise it and this wait would time out.
         tokio::time::timeout(Duration::from_secs(5), async {
             while !manager
                 .platform_address_sync_manager
@@ -1078,10 +1078,10 @@ mod tests {
     /// BEFORE shutdown returns. In that window a direct `sync_now()` (with
     /// `is_syncing` free) must still bail purely on `quiescing > 0`.
     ///
-    /// Non-vacuous: against the prior body — which dropped every gate when
-    /// `quiesce_coordinators()` returned — the gate is 0 during this phase,
-    /// so the direct `sync_now()` runs and the completion count climbs to 2;
-    /// the assertion below then fails.
+    /// Non-vacuous: a `shutdown()` that dropped every gate as
+    /// `quiesce_coordinators()` returned would leave the gate at 0 during
+    /// this phase, so the direct `sync_now()` would run and the completion
+    /// count would climb to 2 — the assertion below then fails.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn shutdown_holds_gate_through_registry_teardown() {
         let started = Arc::new(AtomicBool::new(false));
@@ -1127,8 +1127,8 @@ mod tests {
         .await
         .expect("coordinator must join during shutdown");
 
-        // Settle past `quiesce_coordinators()`'s return (so a pre-fix gate has
-        // surely dropped); we are now inside `registry.shutdown()`'s ~1 s reap.
+        // Settle past `quiesce_coordinators()`'s return; we are now inside
+        // `registry.shutdown()`'s ~1 s reap.
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert!(
             !shutdown_task.is_finished(),
@@ -1317,7 +1317,7 @@ mod tests {
         let _ = manager.registry.reap_orphans(Duration::from_secs(5)).await;
     }
 
-    /// TC-002 (F2): `clear_shielded` must refuse while a prior-generation
+    /// `clear_shielded` must refuse while a prior-generation
     /// shielded thread is parked alive — even though the current shielded
     /// quiesce is clean and the other coordinators / the always-on event
     /// adapter are legitimately running. Releasing + reaping the orphan
@@ -1411,7 +1411,7 @@ mod tests {
         let _ = manager.shutdown().await;
     }
 
-    /// SEC-002 continuity under concurrent (re)start during clear: when
+    /// Continuity under concurrent (re)start during clear: when
     /// `clear_shielded` holds both the per-key clearing latch AND the
     /// quiescing gate continuously, a racing `shielded_sync().start()`
     /// must NOT lower the gate even though `start_thread` is refused.
@@ -1447,8 +1447,8 @@ mod tests {
             !manager.shielded_sync_manager.is_running(),
             "registry latch must refuse the start"
         );
-        // ...and the gate stays UP. Pre-fix this would be `false` because
-        // `spawn_periodic_loop` lowered the gate before the latch check.
+        // ...and the gate stays UP: the refused start never touches the
+        // gate, so clear_shielded's continuously-held ref keeps it raised.
         assert!(
             manager
                 .shielded_sync_manager
@@ -1462,7 +1462,7 @@ mod tests {
         let _ = manager.shutdown().await;
     }
 
-    /// SEC-002 continuity under concurrent public `quiesce()` during
+    /// Continuity under concurrent public `quiesce()` during
     /// clear: `CoordinatorLifecycle::quiesce` (reachable via
     /// `ShieldedSyncManager::quiesce`, which is `pub(crate)` but routes
     /// out via `shielded_sync_arc`) must NOT lower the gate `clear_shielded`
@@ -1472,9 +1472,9 @@ mod tests {
     /// `is_clearing` returns false at check time and the clear lands in
     /// the ns-window before the local guard install.
     ///
-    /// Non-vacuous: against the pre-fix `quiesce` (which always
-    /// constructed an `AtomicFlagGuard` and dropped it on return), the
-    /// gate would be `false` after the racing quiesce returned.
+    /// Non-vacuous: a `quiesce` that always constructed an `AtomicFlagGuard`
+    /// and dropped it on return would leave the gate `false` after the
+    /// racing quiesce returned.
     #[cfg(feature = "shielded")]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn shielded_quiesce_during_clear_preserves_quiescing_gate() {
@@ -1492,12 +1492,9 @@ mod tests {
             "precondition: gate raised by the held clearing guard"
         );
 
-        // A racing quiesce arrives (no background loop registered, so
-        // pre-fix quiesce would early-return NotRunning AFTER dropping
-        // its locally-installed `AtomicFlagGuard`, lowering the gate).
-        // Under the refcount design, the `is_clearing` short-circuit
-        // fires here (clearing latch is held) and quiesce returns
-        // without raising/lowering anything.
+        // A racing quiesce arrives. No background loop is registered and the
+        // clearing latch is held, so the `is_clearing` short-circuit fires
+        // and quiesce returns without raising or lowering the gate.
         let status = manager.shielded_sync_manager.quiesce().await;
         assert_eq!(
             status,
@@ -1505,8 +1502,7 @@ mod tests {
             "racing quiesce should observe the clearing latch and bail"
         );
 
-        // Gate stays UP. Pre-fix this would be `false` because the
-        // local `AtomicFlagGuard`'s Drop lowered it.
+        // Gate stays UP: the clear's continuously-held ref keeps it raised.
         assert!(
             manager
                 .shielded_sync_manager
@@ -1520,7 +1516,7 @@ mod tests {
         let _ = manager.shutdown().await;
     }
 
-    /// SEC-001: `clear_shielded` must BOUND its in-flight-pass drain so a
+    /// `clear_shielded` must BOUND its in-flight-pass drain so a
     /// heavy direct `sync_now`/`sync_wallet` that won't drain in time cannot
     /// hang the host's Clear. On the drain deadline the clear reports
     /// `ShieldedShutdownIncomplete` and aborts BEFORE the store wipe, leaving

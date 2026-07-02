@@ -535,23 +535,13 @@ impl<K: RegistryKey> ThreadRegistry<K> {
     /// semantics as [`start_thread`](Self::start_thread); does not require
     /// a multi-thread runtime.
     ///
-    // TODO(rs-dapi-adoption): runtime-flavor assert is asymmetric.
-    // `start_thread` and `shutdown` assert a multi-thread runtime (the
-    // OS-thread `block_on` needs the shared reactor), but `start_task` does
-    // not — a task only needs a runtime handle. So a TASK-ONLY consumer
-    // (rs-dapi, no `start_thread`) can register and run workers on a
-    // `current_thread` runtime, then panic LATE when it finally calls
-    // `shutdown()`. The wallet (which always uses `start_thread`) trips the
-    // assert at start, so it is unaffected. Fix when rs-dapi adopts the
-    // registry: either drop the assert from `shutdown` for all-task
-    // registries (track whether any OS-thread worker was ever started) or
-    // assert in `start_task` too and require multi-thread everywhere.
-    ///
     /// # Panics
     ///
     /// Panics if called outside a Tokio runtime context (`tokio::spawn`'s
     /// own precondition). After [`shutdown`](Self::shutdown) has begun the
     /// call is a no-op (the one-way closing latch).
+    // TODO(rs-dapi-adoption): a task-only consumer can register on a
+    // current_thread runtime yet trip `shutdown`'s multi-thread assert late.
     pub fn start_task<F, Fut>(self: &Arc<Self>, key: K, cfg: WorkerConfig, body: F)
     where
         F: FnOnce(CancellationToken) -> Fut + Send + 'static,
@@ -1211,12 +1201,12 @@ mod tests {
 
     // ----- Group 1: F1 regression -------------------------------------
 
-    /// TC-001 — a `quiesce` whose outer future is dropped (a tiny enclosing
+    /// A `quiesce` whose outer future is dropped (a tiny enclosing
     /// timeout) must re-park the live handle, never drop-and-detach it. The
     /// slot is cleared (`is_running == false`) but the handle lives in
     /// orphans and `any_alive()` stays true.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn tc001_quiesce_drop_reparks_handle_not_detach() {
+    async fn quiesce_drop_reparks_handle_not_detach() {
         let reg = ThreadRegistry::<&str>::new();
         let (release_tx, release_rx) = mpsc::channel::<()>();
         reg.start_thread("alpha", WorkerConfig::default(), wedged_body(release_rx));
@@ -1247,11 +1237,11 @@ mod tests {
         assert!(!reg.any_alive());
     }
 
-    /// TC-001b — internal-budget variant: a wedged worker with a tiny
-    /// `join_budget` makes `quiesce` itself time out, re-park, and return
-    /// `Timeout` (no outer drop involved).
+    /// Internal-budget variant: a wedged worker with a tiny `join_budget`
+    /// makes `quiesce` itself time out, re-park, and return `Timeout` (no
+    /// outer drop involved).
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn tc001b_quiesce_internal_budget_timeout_reparks() {
+    async fn quiesce_internal_budget_timeout_reparks() {
         let reg = ThreadRegistry::<&str>::new();
         let (release_tx, release_rx) = mpsc::channel::<()>();
         let cfg = WorkerConfig {
@@ -1274,12 +1264,12 @@ mod tests {
         assert!(!reg.any_alive());
     }
 
-    /// GAP-006 — the F1 scenario via the `shutdown()` path: a wedged worker
-    /// with a tiny budget surfaces as `Timeout` in the report, its handle
-    /// is re-parked (`detached == 1`, `any_alive`), and the result is
+    /// A wedged worker reached through the `shutdown()` path: with a tiny
+    /// budget it surfaces as `Timeout` in the report, its handle is
+    /// re-parked (`detached == 1`, `any_alive`), and the result is
     /// non-clean — never a clean detach.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn gap006_shutdown_path_reparks_wedged_worker() {
+    async fn shutdown_path_reparks_wedged_worker() {
         let reg = ThreadRegistry::<&str>::new();
         let (release_tx, release_rx) = mpsc::channel::<()>();
         let cfg = WorkerConfig {
@@ -1304,11 +1294,11 @@ mod tests {
 
     // ----- Group 3: registry unit suite -------------------------------
 
-    /// TC-003 — a slow prior-generation thread's epilogue must NOT clear a
-    /// newer generation's token. Restarting reaps the prior generation
-    /// fully (its epilogue runs); the new generation stays tracked.
+    /// A slow prior-generation thread's epilogue must NOT clear a newer
+    /// generation's token. Restarting reaps the prior generation fully (its
+    /// epilogue runs); the new generation stays tracked.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn tc003_generation_match_epilogue_preserves_new_token() {
+    async fn generation_match_epilogue_preserves_new_token() {
         let reg = ThreadRegistry::<&str>::new();
         start_clean(&reg, "beta", WorkerConfig::default()); // gen 1
         assert!(reg.is_running("beta"));
@@ -1327,10 +1317,10 @@ mod tests {
         assert_eq!(reg.quiesce("beta").await, WorkerStatus::Ok);
     }
 
-    /// TC-004 — a naturally-finished prior thread is joined cleanly on
-    /// restart, with no parking.
+    /// A naturally-finished prior thread is joined cleanly on restart, with
+    /// no parking.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn tc004_restart_reaps_finished_prior_without_parking() {
+    async fn restart_reaps_finished_prior_without_parking() {
         let reg = ThreadRegistry::<&str>::new();
         start_clean(&reg, "gamma", WorkerConfig::default());
         // Cancel so the prior exits, then restart: the reap must join it,
@@ -1342,10 +1332,10 @@ mod tests {
         assert_eq!(reg.quiesce("gamma").await, WorkerStatus::Ok);
     }
 
-    /// TC-005 — a prior thread wedged past the reap backstop is parked in
-    /// orphans (not dropped), then drained after release.
+    /// A prior thread wedged past the reap backstop is parked in orphans
+    /// (not dropped), then drained after release.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn tc005_restart_parks_wedged_prior() {
+    async fn restart_parks_wedged_prior() {
         let reg = ThreadRegistry::with_reap_backstop(Duration::from_millis(100));
         let (release_tx, release_rx) = mpsc::channel::<()>();
 
@@ -1383,10 +1373,10 @@ mod tests {
         assert_eq!(reg.quiesce("delta").await, WorkerStatus::Ok);
     }
 
-    /// TC-006 — orphan drain: a survivor at the grace deadline is reported
+    /// Orphan drain: a survivor at the grace deadline is reported
     /// `Detached` and re-parked; once released it reaps `Ok`.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn tc006_orphan_drain_detached_then_ok() {
+    async fn orphan_drain_detached_then_ok() {
         let reg = ThreadRegistry::<&str>::new();
         let (release_tx, release_rx) = mpsc::channel::<()>();
         let wedged = std::thread::spawn(move || {
@@ -1462,10 +1452,9 @@ mod tests {
         assert!(report.all_clean());
     }
 
-    /// TC-007 — weight-ordered shutdown drains a lower tier before a higher
-    /// one.
+    /// Weight-ordered shutdown drains a lower tier before a higher one.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn tc007_weight_ordered_shutdown_drains_low_first() {
+    async fn weight_ordered_shutdown_drains_low_first() {
         let reg = ThreadRegistry::<&str>::new();
         let log = Arc::new(Mutex::new(Vec::<&'static str>::new()));
 
@@ -1515,12 +1504,12 @@ mod tests {
         assert!(pos("w5") < pos("w10"));
     }
 
-    /// TC-008 — equal-weight workers drain concurrently. A shared
-    /// `Barrier(2)` in both drain hooks would deadlock under sequential
-    /// draining (caught by the enclosing timeout); the event log proves
-    /// both arrived before either passed.
+    /// Equal-weight workers drain concurrently. A shared `Barrier(2)` in
+    /// both drain hooks would deadlock under sequential draining (caught by
+    /// the enclosing timeout); the event log proves both arrived before
+    /// either passed.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn tc008_equal_weight_drains_concurrently() {
+    async fn equal_weight_drains_concurrently() {
         let reg = ThreadRegistry::<&str>::new();
         let log = Arc::new(Mutex::new(Vec::<&'static str>::new()));
         let barrier = Arc::new(Barrier::new(2));
@@ -1585,9 +1574,9 @@ mod tests {
         );
     }
 
-    /// TC-009 — `any_alive()` accounts for both live slots and orphans.
+    /// `any_alive()` accounts for both live slots and orphans.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn tc009_any_alive_spans_slots_and_orphans() {
+    async fn any_alive_spans_slots_and_orphans() {
         let reg = ThreadRegistry::<&str>::new();
         start_clean(&reg, "alpha", WorkerConfig::default());
         assert!(reg.any_alive());
@@ -1646,10 +1635,10 @@ mod tests {
         assert_eq!(reg.quiesce("identity").await, WorkerStatus::Ok);
     }
 
-    /// TC-010 — `shutdown()` panics with a documented message on a
-    /// current-thread runtime (R4, variant B).
+    /// `shutdown()` panics with a documented message on a current-thread
+    /// runtime.
     #[test]
-    fn tc010_shutdown_asserts_multi_thread_runtime() {
+    fn shutdown_asserts_multi_thread_runtime() {
         let rt = Builder::new_current_thread().enable_all().build().unwrap();
         let reg = ThreadRegistry::<&str>::new();
         let result = catch_unwind(AssertUnwindSafe(|| {
@@ -1671,10 +1660,10 @@ mod tests {
 
     // ----- Group 4: DrainHook ordering --------------------------------
 
-    /// TC-011 — the drain hook is fully awaited before the cancel signal is
-    /// observed by the worker.
+    /// The drain hook is fully awaited before the cancel signal is observed
+    /// by the worker.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn tc011_drain_hook_completes_before_cancel() {
+    async fn drain_hook_completes_before_cancel() {
         let reg = ThreadRegistry::<&str>::new();
         let log = Arc::new(Mutex::new(Vec::<&'static str>::new()));
 
@@ -1713,10 +1702,10 @@ mod tests {
         assert!(pos("drain_hook_complete") < pos("cancel_observed"));
     }
 
-    /// TC-012 — a `quiesce` blocks in the drain hook until an `is_syncing`
-    /// barrier the hook polls falls, and only then cancels + joins.
+    /// A `quiesce` blocks in the drain hook until an `is_syncing` barrier
+    /// the hook polls falls, and only then cancels + joins.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn tc012_drain_hook_observes_barrier_before_join() {
+    async fn drain_hook_observes_barrier_before_join() {
         let reg = ThreadRegistry::<&str>::new();
         let is_syncing = Arc::new(AtomicBool::new(true));
 
@@ -1766,12 +1755,12 @@ mod tests {
 
     // ----- Group 5: status classification -----------------------------
 
-    /// TC-013 — only the `Task` kind can classify as `Stopped` (from a
-    /// runtime-level cancel/abort JoinError); a cooperatively token-
-    /// cancelled task exits normally as `Ok`. Verifies the kind-dispatch
-    /// at the classification boundary.
+    /// Only the `Task` kind can classify as `Stopped` (from a runtime-level
+    /// cancel/abort JoinError); a cooperatively token-cancelled task exits
+    /// normally as `Ok`. Verifies the kind-dispatch at the classification
+    /// boundary.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn tc013_task_kind_classifies_stopped_and_ok() {
+    async fn task_kind_classifies_stopped_and_ok() {
         // Stopped: an aborted task yields a cancelled JoinError.
         let aborted = tokio::spawn(std::future::pending::<()>());
         aborted.abort();
@@ -1791,10 +1780,10 @@ mod tests {
         assert!(!reg.is_running("task_a"));
     }
 
-    /// TC-014 — an `OsThread` worker yields `Ok` (clean) or `Panicked`
-    /// (`&str` and `String` payloads), never `Stopped`.
+    /// An `OsThread` worker yields `Ok` (clean) or `Panicked` (`&str` and
+    /// `String` payloads), never `Stopped`.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn tc014_os_thread_ok_and_panicked_never_stopped() {
+    async fn os_thread_ok_and_panicked_never_stopped() {
         let reg = ThreadRegistry::<&str>::new();
         start_clean(&reg, "os_clean", WorkerConfig::default());
         let ok = reg.quiesce("os_clean").await;
@@ -1822,10 +1811,10 @@ mod tests {
 
     // ----- Gaps -------------------------------------------------------
 
-    /// GAP-003 — `shutdown()` is idempotent: a second call finds every slot
-    /// already joined and reports `NotRunning`, still clean.
+    /// `shutdown()` is idempotent: a second call finds every slot already
+    /// joined and reports `NotRunning`, still clean.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn gap003_shutdown_is_idempotent() {
+    async fn shutdown_is_idempotent() {
         let reg = ThreadRegistry::<&str>::new();
         start_clean(&reg, "alpha", WorkerConfig::default());
 
@@ -1841,9 +1830,9 @@ mod tests {
         assert!(second.all_clean());
     }
 
-    /// GAP-004 — `cancel(key)` is selective: cancelling A does not touch B.
+    /// `cancel(key)` is selective: cancelling A does not touch B.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn gap004_cancel_is_selective() {
+    async fn cancel_is_selective() {
         let reg = ThreadRegistry::<&str>::new();
         start_clean(&reg, "a", WorkerConfig::default());
         start_clean(&reg, "b", WorkerConfig::default());
@@ -1879,9 +1868,9 @@ mod tests {
         assert!(!reg.any_alive());
     }
 
-    /// GAP-005 — `WorkerConfig::default()` values are pinned.
+    /// `WorkerConfig::default()` values are pinned.
     #[test]
-    fn gap005_worker_config_defaults_pinned() {
+    fn worker_config_defaults_pinned() {
         let cfg = WorkerConfig::default();
         assert_eq!(cfg.weight, ShutdownWeight(0));
         assert!(cfg.drain.is_none());
@@ -1933,13 +1922,9 @@ mod tests {
     /// key keep the latch raised until the LAST guard drops. The inner
     /// guard's drop must NOT release the latch the outer still holds —
     /// otherwise a re-entrant or concurrent caller silently lapses the
-    /// invariant.
-    ///
-    /// Non-vacuous: against the pre-refactor set-membership backing,
-    /// the inner guard's drop removed the entry outright, so the
-    /// `start_clean` between `drop(inner)` and `drop(outer)` would
-    /// succeed and `is_clearing` would return false — both asserted to
-    /// fail below.
+    /// invariant. The `start_clean` between `drop(inner)` and `drop(outer)`
+    /// below stays refused and `is_clearing` stays true, proving the outer
+    /// holder's protection survives the inner drop.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn hold_clearing_inner_drop_does_not_lapse_outer_protection() {
         let reg = ThreadRegistry::<&str>::new();
@@ -1956,9 +1941,7 @@ mod tests {
         drop(inner);
 
         // The outer protection MUST survive: the latch is still raised
-        // and a fresh start is still refused. Pre-refactor (set
-        // semantics) this assertion would fail — the entry was removed
-        // by the inner's drop and the outer's protection lapsed.
+        // and a fresh start is still refused.
         assert!(
             reg.is_clearing("shielded"),
             "outer ClearingGuard must keep the latch raised after the inner drops"
@@ -2176,7 +2159,7 @@ mod tests {
             "panicked worker clears its running flag via the epilogue guard"
         );
 
-        // start() can relaunch a crashed loop (no longer a silent no-op).
+        // start() can relaunch a crashed loop.
         let ran = Arc::new(AtomicBool::new(false));
         let ran_w = Arc::clone(&ran);
         let handle = Handle::current();
