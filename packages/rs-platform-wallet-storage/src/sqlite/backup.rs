@@ -274,6 +274,17 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
 
     // 10. Re-tighten perms (idempotent; SQLite may re-materialise -wal/-shm).
     apply_secure_permissions(dest_db_path)?;
+
+    // 11. Regenerate the store-generation token so the restored copy is
+    //     distinguishable from its source — a client cache keyed on the old
+    //     generation misses rather than serving stale entries. A pre-V002
+    //     backup has no generation table; it is (re)seeded on its later
+    //     migration to V002.
+    {
+        let conn =
+            crate::sqlite::conn::open_conn(dest_db_path, crate::sqlite::conn::Access::ReadWrite)?;
+        crate::sqlite::schema::versions::regenerate_generation(&conn)?;
+    }
     Ok(())
 }
 

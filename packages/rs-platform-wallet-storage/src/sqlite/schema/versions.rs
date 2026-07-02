@@ -193,3 +193,57 @@ pub fn read_seq(
         .optional()?;
     Ok(seq.unwrap_or(0))
 }
+
+/// Read the 16-byte store-generation token seeded by V002. `None` on a
+/// pre-V002 store (the table is absent).
+#[cfg(any(test, feature = "__test-helpers"))]
+pub fn read_generation(
+    conn: &rusqlite::Connection,
+) -> Result<Option<[u8; 16]>, WalletStorageError> {
+    use rusqlite::OptionalExtension;
+    if !generation_table_exists(conn)? {
+        return Ok(None);
+    }
+    let bytes: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT generation FROM meta_store_generation WHERE id = 0",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match bytes {
+        None => Ok(None),
+        Some(b) => {
+            let arr: [u8; 16] = b.as_slice().try_into().map_err(|_| {
+                WalletStorageError::blob_decode("meta_store_generation.generation not 16 bytes")
+            })?;
+            Ok(Some(arr))
+        }
+    }
+}
+
+/// Regenerate the store-generation token so a restored copy is
+/// distinguishable from its source. A no-op on a pre-V002 store (no table);
+/// such a store gets a fresh token when it later migrates to V002.
+pub fn regenerate_generation(conn: &rusqlite::Connection) -> Result<(), WalletStorageError> {
+    if !generation_table_exists(conn)? {
+        return Ok(());
+    }
+    conn.execute(
+        "UPDATE meta_store_generation SET generation = randomblob(16) WHERE id = 0",
+        [],
+    )?;
+    Ok(())
+}
+
+fn generation_table_exists(conn: &rusqlite::Connection) -> Result<bool, WalletStorageError> {
+    use rusqlite::OptionalExtension;
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta_store_generation'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
