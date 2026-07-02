@@ -116,6 +116,13 @@ pub struct ShieldedOutgoingNote {
     pub block_height: u64,
 }
 
+/// A pending reservation that carries a recorded anchor:
+/// `(nullifier, anchor, activity_id)`. Yielded by
+/// [`ShieldedStore::stale_pending_spends`] for the sync reconcile,
+/// which releases the reservation once `anchor` is no longer in
+/// Platform's recorded set (the spend can then never execute).
+pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>);
+
 /// Storage abstraction for shielded wallet state.
 ///
 /// Consumers implement this for their persistence layer. The
@@ -168,6 +175,29 @@ pub trait ShieldedStore: Send + Sync {
     /// `mark_spent`).
     fn clear_pending(&mut self, id: SubwalletId, nullifier: &[u8; 32])
         -> Result<bool, Self::Error>;
+
+    /// Attach the recorded `anchor` the spend was built against, and
+    /// the linked `activity_id`, to `id`'s pending reservation for
+    /// `nullifier` (taken earlier by [`Self::mark_pending`]). No-op
+    /// if the nullifier is no longer pending. The sync reconcile uses
+    /// the stored anchor to detect a stranded spend whose anchor
+    /// Platform has pruned (see [`Self::stale_pending_spends`]).
+    fn set_pending_spend(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+        anchor: [u8; 32],
+        activity_id: [u8; 32],
+    ) -> Result<(), Self::Error>;
+
+    /// Pending reservations for `id` that carry a recorded anchor —
+    /// `(nullifier, anchor, activity_id)` per built-but-unconfirmed
+    /// spend. Empty when `id` has no anchored reservations (the common
+    /// case, which lets the sync reconcile skip its network round-trip).
+    /// The reconcile checks each anchor against Platform's recorded set
+    /// and releases the reservation via [`Self::clear_pending`] when the
+    /// anchor is pruned — the spend can then never execute.
+    fn stale_pending_spends(&self, id: SubwalletId) -> Result<Vec<StalePendingSpend>, Self::Error>;
 
     // ── Outgoing history (per-subwallet) ───────────────────────────────
 
@@ -350,6 +380,28 @@ pub trait ShieldedStore: Send + Sync {
 
 // ── Per-subwallet bookkeeping ──────────────────────────────────────────
 
+/// In-flight-spend bookkeeping for a single reserved nullifier.
+///
+/// A reservation starts life bare (both fields `None`) the moment
+/// [`SubwalletState::mark_pending`] excludes the note from selection.
+/// Once the spend is actually built, [`SubwalletState::set_pending_spend`]
+/// records the Platform-**recorded** anchor it was built against and the
+/// linked activity-log entry, so the sync reconcile can later detect a
+/// stranded (broadcast-accepted-but-never-landed) spend: once that anchor
+/// is pruned from Platform's recorded set the spend can never execute, and
+/// with the nullifier still unspent the reservation is provably dead and
+/// its note can be freed. All in-memory only — a restart drops every
+/// reservation regardless.
+#[derive(Debug, Clone, Default)]
+pub(super) struct PendingSpend {
+    /// The recorded anchor the spend was built against, once known.
+    /// `None` while the note is reserved but the spend isn't built yet.
+    pub anchor: Option<[u8; 32]>,
+    /// The linked activity-log entry id, so a released reservation can
+    /// flip its "Pending" row to "Failed" instead of stranding it.
+    pub activity_id: Option<[u8; 32]>,
+}
+
 /// Per-subwallet note + sync state used by both the in-memory and
 /// file-backed stores. Kept in this module so both share the
 /// exact same shape and the persister callback can serialize it
@@ -364,10 +416,11 @@ pub(super) struct SubwalletState {
     /// global index to scan (exclusive). `0` = nothing scanned yet.
     pub last_synced_index: u64,
     /// Nullifiers of notes currently being spent in an in-flight
-    /// transition. Excluded from `unspent_notes()` so concurrent
-    /// callers can't double-select. In-memory only — never
-    /// persisted; the next sync after a crash reconciles state.
-    pub pending_nullifiers: BTreeSet<[u8; 32]>,
+    /// transition, mapped to the [`PendingSpend`] bookkeeping the
+    /// sync reconcile needs. Excluded from `unspent_notes()` so
+    /// concurrent callers can't double-select. In-memory only —
+    /// never persisted; the next sync after a crash reconciles state.
+    pub pending_nullifiers: BTreeMap<[u8; 32], PendingSpend>,
     /// Notes this subwallet SENT, recovered via OVK during the scan.
     /// Append-only send history in recording order.
     pub outgoing_notes: Vec<ShieldedOutgoingNote>,
@@ -400,7 +453,7 @@ impl SubwalletState {
     pub(super) fn unspent_notes(&self) -> Vec<ShieldedNote> {
         self.notes
             .iter()
-            .filter(|n| !n.is_spent && !self.pending_nullifiers.contains(&n.nullifier))
+            .filter(|n| !n.is_spent && !self.pending_nullifiers.contains_key(&n.nullifier))
             .cloned()
             .collect()
     }
@@ -425,16 +478,60 @@ impl SubwalletState {
     }
 
     /// Reserve `nullifier` against an in-flight spend. Returns
-    /// `true` if newly added.
+    /// `true` if newly added, `false` if it was already reserved.
+    /// Re-reserving is a true no-op: an already-armed entry keeps its
+    /// anchor/activity link (selection excludes pending nullifiers, so
+    /// this shouldn't happen — but a plain `insert` would silently
+    /// wipe the release pass's only handle on a stranded spend if it
+    /// ever did).
     pub(super) fn mark_pending(&mut self, nullifier: &[u8; 32]) -> bool {
-        self.pending_nullifiers.insert(*nullifier)
+        match self.pending_nullifiers.entry(*nullifier) {
+            std::collections::btree_map::Entry::Vacant(e) => {
+                e.insert(PendingSpend::default());
+                true
+            }
+            std::collections::btree_map::Entry::Occupied(_) => false,
+        }
+    }
+
+    /// Attach the built spend's recorded `anchor` and linked
+    /// `activity_id` to an existing reservation for `nullifier`.
+    /// No-op if the nullifier is no longer pending (e.g. the
+    /// reservation was already cleared by a concurrent finalize).
+    pub(super) fn set_pending_spend(
+        &mut self,
+        nullifier: &[u8; 32],
+        anchor: [u8; 32],
+        activity_id: [u8; 32],
+    ) {
+        if let Some(pending) = self.pending_nullifiers.get_mut(nullifier) {
+            pending.anchor = Some(anchor);
+            pending.activity_id = Some(activity_id);
+        }
+    }
+
+    /// Reservations that carry a recorded anchor — i.e. built,
+    /// broadcast-but-unconfirmed spends. Returns `(nullifier,
+    /// anchor, activity_id)` per such entry; reservations still
+    /// awaiting a built spend (`anchor: None`) are skipped. The
+    /// sync reconcile checks each anchor against Platform's recorded
+    /// set and releases the reservation when the anchor is pruned.
+    pub(super) fn stale_pending_spends(&self) -> Vec<StalePendingSpend> {
+        self.pending_nullifiers
+            .iter()
+            .filter_map(|(nullifier, spend)| {
+                spend
+                    .anchor
+                    .map(|anchor| (*nullifier, anchor, spend.activity_id))
+            })
+            .collect()
     }
 
     /// Release a reservation previously taken via `mark_pending`.
     /// Returns `true` if a matching reservation was actually
     /// removed.
     pub(super) fn clear_pending(&mut self, nullifier: &[u8; 32]) -> bool {
-        self.pending_nullifiers.remove(nullifier)
+        self.pending_nullifiers.remove(nullifier).is_some()
     }
 
     /// Record an outgoing (sent) note. Idempotent by `cmx`: returns
@@ -574,6 +671,27 @@ impl ShieldedStore for InMemoryShieldedStore {
             .get_mut(&id)
             .map(|sw| sw.clear_pending(nullifier))
             .unwrap_or(false))
+    }
+
+    fn set_pending_spend(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+        anchor: [u8; 32],
+        activity_id: [u8; 32],
+    ) -> Result<(), Self::Error> {
+        if let Some(sw) = self.subwallets.get_mut(&id) {
+            sw.set_pending_spend(nullifier, anchor, activity_id);
+        }
+        Ok(())
+    }
+
+    fn stale_pending_spends(&self, id: SubwalletId) -> Result<Vec<StalePendingSpend>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::stale_pending_spends)
+            .unwrap_or_default())
     }
 
     fn record_outgoing_note(
@@ -887,5 +1005,152 @@ mod tests {
         // Re-append starts from position 0 again.
         store.append_commitment(&[3u8; 32], true).unwrap();
         assert_eq!(store.tree_size().unwrap(), 1);
+    }
+
+    /// Build a minimal unspent note carrying `nullifier`.
+    fn note_with_nullifier(nullifier: [u8; 32]) -> ShieldedNote {
+        ShieldedNote {
+            position: 0,
+            cmx: [1u8; 32],
+            nullifier,
+            block_height: 1,
+            is_spent: false,
+            value: 1_000,
+            note_data: vec![0u8; 115],
+        }
+    }
+
+    /// A reservation carrying a recorded anchor surfaces via
+    /// `stale_pending_spends`, and the sync reconcile's release decision
+    /// (release iff the anchor is absent from the recorded set) must RETAIN
+    /// it while the anchor is still recorded — a slow-but-landing spend is
+    /// never freed, so its note stays out of the unspent set.
+    #[test]
+    fn pending_spend_with_recorded_anchor_is_retained() {
+        use std::collections::HashSet;
+
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        let nullifier = [0x11; 32];
+        let anchor = [0x22; 32];
+        let activity_id = [0x33; 32];
+
+        store
+            .save_note(id, &note_with_nullifier(nullifier))
+            .unwrap();
+        assert!(
+            store.mark_pending(id, &nullifier).unwrap(),
+            "newly reserved"
+        );
+        store
+            .set_pending_spend(id, &nullifier, anchor, activity_id)
+            .unwrap();
+
+        assert_eq!(
+            store.stale_pending_spends(id).unwrap(),
+            vec![(nullifier, anchor, Some(activity_id))],
+            "an armed reservation surfaces as an anchored (stale-checkable) spend"
+        );
+
+        // Anchor IS still recorded → retain.
+        let recorded: HashSet<[u8; 32]> = [anchor].into_iter().collect();
+        for (n, a, _) in store.stale_pending_spends(id).unwrap() {
+            if !recorded.contains(&a) {
+                store.clear_pending(id, &n).unwrap();
+            }
+        }
+        assert_eq!(
+            store.stale_pending_spends(id).unwrap().len(),
+            1,
+            "a still-recorded anchor must not be released"
+        );
+        assert!(
+            store.get_unspent_notes(id).unwrap().is_empty(),
+            "the retained note stays excluded from selection candidates"
+        );
+    }
+
+    /// The fund-safe release: once the anchor is pruned (absent from the
+    /// recorded set) the spend can never execute, so the reservation is
+    /// released and the freed note becomes spendable again.
+    #[test]
+    fn pending_spend_with_pruned_anchor_is_released() {
+        use std::collections::HashSet;
+
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        let nullifier = [0x11; 32];
+        let anchor = [0x22; 32];
+        let activity_id = [0x33; 32];
+
+        store
+            .save_note(id, &note_with_nullifier(nullifier))
+            .unwrap();
+        store.mark_pending(id, &nullifier).unwrap();
+        store
+            .set_pending_spend(id, &nullifier, anchor, activity_id)
+            .unwrap();
+        assert!(store.get_unspent_notes(id).unwrap().is_empty());
+
+        // Anchor is ABSENT from the recorded set (pruned) → release.
+        let recorded: HashSet<[u8; 32]> = [[0xEE; 32]].into_iter().collect();
+        for (n, a, _) in store.stale_pending_spends(id).unwrap() {
+            if !recorded.contains(&a) {
+                assert!(store.clear_pending(id, &n).unwrap());
+            }
+        }
+        assert!(
+            store.stale_pending_spends(id).unwrap().is_empty(),
+            "a pruned-anchor reservation must be released"
+        );
+        let unspent = store.get_unspent_notes(id).unwrap();
+        assert_eq!(unspent.len(), 1, "the freed note is spendable again");
+        assert_eq!(unspent[0].nullifier, nullifier);
+    }
+
+    /// A reserved note is excluded from `unspent_notes` (so a concurrent
+    /// spend can't re-select it) and re-included once the reservation is
+    /// cleared.
+    #[test]
+    fn unspent_notes_excludes_pending_and_reincludes_after_clear() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        let nullifier = [0x55; 32];
+        store
+            .save_note(id, &note_with_nullifier(nullifier))
+            .unwrap();
+        assert_eq!(store.get_unspent_notes(id).unwrap().len(), 1);
+
+        store.mark_pending(id, &nullifier).unwrap();
+        assert!(
+            store.get_unspent_notes(id).unwrap().is_empty(),
+            "a reserved note is excluded from selection candidates"
+        );
+
+        assert!(store.clear_pending(id, &nullifier).unwrap());
+        assert_eq!(
+            store.get_unspent_notes(id).unwrap().len(),
+            1,
+            "releasing the reservation re-includes the note"
+        );
+    }
+
+    /// `stale_pending_spends` ignores a reservation that was `mark_pending`ed
+    /// but never armed with an anchor (a just-reserved, not-yet-built spend):
+    /// the reconcile must never release such a transient entry.
+    #[test]
+    fn unarmed_reservation_is_not_stale() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        let nullifier = [0x66; 32];
+        store
+            .save_note(id, &note_with_nullifier(nullifier))
+            .unwrap();
+        store.mark_pending(id, &nullifier).unwrap();
+
+        assert!(
+            store.stale_pending_spends(id).unwrap().is_empty(),
+            "a reservation with no recorded anchor must not surface as stale"
+        );
     }
 }
