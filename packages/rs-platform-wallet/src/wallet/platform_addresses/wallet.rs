@@ -192,11 +192,12 @@ impl PlatformAddressWallet {
     /// entries whose nonce is below the committed seed's are dropped (a
     /// fresher state was already committed), see
     /// [`PlatformPaymentAddressProvider::commit_reconciliation`]. The
-    /// provider write lock is held across the provider commit AND the
-    /// account-balance write, so a sync pass — which holds the same lock
-    /// across its scan and its own persist — can never interleave between
-    /// the two; the lock order (provider → wallet manager) matches the
-    /// sync callbacks.
+    /// provider write lock is held across the provider commit, the
+    /// account-balance write, AND the persist — mirroring
+    /// [`sync_balances`](Self::sync_balances), so the two writers' stores
+    /// are totally ordered by the lock and a sync pass can never
+    /// interleave between (or persist across) the seam's steps; the lock
+    /// order (provider → wallet manager) matches the sync callbacks.
     ///
     /// Persistence errors are logged rather than propagated — Platform
     /// already accepted the transition, and a later sync reconciles.
@@ -322,10 +323,15 @@ impl PlatformAddressWallet {
                 }
             }
         }
-        drop(guard);
-
-        // Persist with no locks held (the persistence backend runs its
-        // callbacks inline).
+        // Persist BEFORE releasing the provider lock, mirroring
+        // `sync_balances`. Both writers persisting inside the same
+        // critical section totally orders the stores with the lock: a
+        // sync pass (or another reconciliation) that commits a fresher
+        // seed after us also persists after us, so an older row can
+        // never overwrite a fresher one on disk. Persistence callbacks
+        // must not re-enter wallet APIs (the pre-existing contract —
+        // stores already run under the wallet-manager write lock
+        // elsewhere).
         let cs = crate::PlatformAddressChangeSet {
             addresses: outcome.entries,
             ..Default::default()
@@ -339,6 +345,7 @@ impl PlatformAddressWallet {
                  until the next platform-address sync"
             );
         }
+        drop(guard);
         cs
     }
 

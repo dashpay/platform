@@ -911,8 +911,13 @@ impl PlatformPaymentAddressProvider {
     /// first — covering addresses restored from disk that are no longer in
     /// a live derived pool — then falls back to `pool_indexes` (the live
     /// pools, covering addresses derived since the last sync, e.g. a fresh
-    /// change address). Pool-resolved addresses are merged into the
-    /// bijection so `current_balances` can yield their committed funds.
+    /// change address). The fallback is restricted to accounts the
+    /// provider tracks: every emitted entry is committed to the `found`
+    /// seed, so an account without per-account provider state resolves
+    /// to nothing (it reconciles once `initialize` / `add_provider`
+    /// re-snapshots the account set and the next sync runs).
+    /// Pool-resolved addresses are merged into the bijection so
+    /// `current_balances` can yield their committed funds.
     ///
     /// Freshness guard, per resolved entry:
     /// * zero funds (balance 0, nonce 0 — the address was removed from
@@ -947,18 +952,36 @@ impl PlatformPaymentAddressProvider {
                         return Some((account_index, address_index));
                     }
                 }
-                pool_indexes.get(p2pkh).copied()
+                // Pool fallback only for accounts the provider tracks —
+                // an account added to the live wallet after the provider
+                // snapshot has no per-account state to commit into, so
+                // resolving it here would break the contract that every
+                // emitted entry is committed to the `found` seed. Such
+                // addresses stay unresolved until `initialize` /
+                // `add_provider` re-snapshots the account set.
+                pool_indexes
+                    .get(p2pkh)
+                    .copied()
+                    .filter(|(account_index, _)| wallet_state.contains_key(account_index))
             },
             address_infos,
         );
         outcome.resolved = resolved_entries.len();
 
         for entry in resolved_entries {
-            let account_state = wallet_state.get_mut(&entry.account_index);
-            let existing = account_state
-                .as_ref()
-                .and_then(|s| s.found.get(&entry.address))
-                .copied();
+            // The resolver only yields accounts present in `wallet_state`,
+            // so a miss here is unreachable; skip defensively rather than
+            // emit an entry the seed never committed.
+            let Some(state) = wallet_state.get_mut(&entry.account_index) else {
+                tracing::warn!(
+                    account_index = entry.account_index,
+                    address = %entry.address,
+                    "commit_reconciliation: resolved account has no tracked \
+                     provider state; dropping entry"
+                );
+                continue;
+            };
+            let existing = state.found.get(&entry.address).copied();
             // Zero funds = the address no longer exists in Platform state.
             // That removal is attested by the proof, so it bypasses the
             // nonce guard (the pre-spend seed necessarily has a lower
@@ -976,30 +999,28 @@ impl PlatformPaymentAddressProvider {
                     }
                 }
             }
-            if let Some(state) = account_state {
-                if is_removal {
-                    state.found.remove(&entry.address);
+            if is_removal {
+                state.found.remove(&entry.address);
+            } else {
+                state.found.insert(entry.address, entry.funds);
+            }
+            // Merge pool-resolved addresses into the bijection so
+            // `current_balances` can pair the fresh funds with a
+            // derivation index. Never overwrite an existing pairing —
+            // `BiBTreeMap::insert` evicts conflicting pairs, which
+            // would orphan another address's `found` entry.
+            if state.addresses.get_by_right(&entry.address).is_none() {
+                if state.addresses.contains_left(&entry.address_index) {
+                    tracing::error!(
+                        account_index = entry.account_index,
+                        address_index = entry.address_index,
+                        address = %entry.address,
+                        "commit_reconciliation: derivation index already \
+                         maps to a different address — state drift; \
+                         leaving the bijection untouched"
+                    );
                 } else {
-                    state.found.insert(entry.address, entry.funds);
-                }
-                // Merge pool-resolved addresses into the bijection so
-                // `current_balances` can pair the fresh funds with a
-                // derivation index. Never overwrite an existing pairing —
-                // `BiBTreeMap::insert` evicts conflicting pairs, which
-                // would orphan another address's `found` entry.
-                if state.addresses.get_by_right(&entry.address).is_none() {
-                    if state.addresses.contains_left(&entry.address_index) {
-                        tracing::error!(
-                            account_index = entry.account_index,
-                            address_index = entry.address_index,
-                            address = %entry.address,
-                            "commit_reconciliation: derivation index already \
-                             maps to a different address — state drift; \
-                             leaving the bijection untouched"
-                        );
-                    } else {
-                        state.addresses.insert(entry.address_index, entry.address);
-                    }
+                    state.addresses.insert(entry.address_index, entry.address);
                 }
             }
             outcome.entries.push(entry);
@@ -1683,6 +1704,44 @@ mod tests {
             provider.current_balances().next().is_none(),
             "consumed address must be dropped from the found seed"
         );
+    }
+
+    /// The live-pool fallback must NOT resolve addresses belonging to an
+    /// account the provider doesn't track: there is no per-account state
+    /// to commit the funds into, so emitting the entry would violate the
+    /// contract that every emitted entry is committed to the `found` seed
+    /// (the applied balance would silently diverge from the sync-diff
+    /// baseline).
+    #[test]
+    fn commit_reconciliation_pool_fallback_skips_untracked_account() {
+        use dash_sdk::query_types::AddressInfo;
+
+        let known = p2pkh(0x11);
+        let mut provider = provider_with_one_funded_address(known, funds(700, 3));
+
+        // Live-pool address on an account (7) the provider has no state for.
+        let untracked = p2pkh(0x33);
+        let mut pool_indexes = BTreeMap::new();
+        pool_indexes.insert(untracked, (7u32, 0u32));
+
+        let untracked_addr = PlatformAddress::P2pkh([0x33; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            untracked_addr,
+            Some(AddressInfo {
+                address: untracked_addr,
+                nonce: 0,
+                balance: 9_999,
+            }),
+        );
+
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &pool_indexes);
+
+        assert_eq!(
+            outcome.resolved, 0,
+            "an untracked account's pool address must stay unresolved"
+        );
+        assert!(outcome.entries.is_empty());
     }
 
     /// An address missing from the provider bijection (derived since the
