@@ -11,8 +11,8 @@
 //! RT cases here:
 //! - RT-WO: round-trip — watch-only wallet is registered after reload.
 //! - RT-Corrupt: a row with an empty manifest is skipped with
-//!   `MissingManifest`, the other row loads, a `WalletSkippedOnLoad`
-//!   event fires, `load` returns `Ok`.
+//!   `MissingManifest`, the other row loads, `on_wallet_skipped_on_load`
+//!   fires on the registered handler, `load` returns `Ok`.
 //! - RT-Z: no key/seed material in any `LoadOutcome` / `SkipReason`
 //!   surface (the structural-only contract).
 
@@ -264,8 +264,8 @@ async fn rt_persister_skipped_folds_into_outcome() {
 
 /// RT-Corrupt: a corrupt row (empty manifest) is skipped with
 /// `MissingManifest`; the other row loads cleanly; the load returns
-/// `Ok`; exactly one `WalletSkippedOnLoad` event fires for the skipped
-/// row.
+/// `Ok`; `on_wallet_skipped_on_load` fires exactly once on the
+/// registered handler for the skipped row.
 #[tokio::test]
 async fn rt_corrupt_row_skipped_and_other_loads() {
     let seed_a = [0x31; 64];

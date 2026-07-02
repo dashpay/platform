@@ -26,7 +26,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// The load path never touches the seed, so it performs no wrong-seed
     /// check. Signing happens later, on demand, via the configured
-    /// [`MnemonicResolverHandle`].
+    /// `MnemonicResolverHandle` (`rs-sdk-ffi`).
     ///
     /// # Skip vs hard-fail
     ///
@@ -63,8 +63,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// in `rehydrate`). A corrupted or tampered store can rebuild a wallet whose
     /// receive addresses derive from the wrong key under the original id;
     /// authenticating the manifest on load is a tracked storage-schema follow-up.
-    ///
-    /// [`MnemonicResolverHandle`]: rs_sdk_ffi::MnemonicResolverHandle
     pub async fn load_from_persistor(&self) -> Result<LoadOutcome, PlatformWalletError> {
         let ClientStartState {
             mut platform_addresses,

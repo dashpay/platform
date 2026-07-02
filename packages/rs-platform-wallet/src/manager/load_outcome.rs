@@ -7,15 +7,13 @@ use crate::wallet::platform_wallet::WalletId;
 /// Why a persisted wallet row was skipped during a load pass.
 ///
 /// Load is **watch-only** (no seed material involved): signing keys are
-/// derived later, on demand, via the [`MnemonicResolverHandle`] sign
-/// path. A skip therefore means the persisted row itself was unusable —
-/// a per-row decode/structural failure that fails one wallet without
-/// aborting the batch. The only reason is
+/// derived later, on demand, via the `MnemonicResolverHandle`
+/// (`rs-sdk-ffi`) sign path. A skip therefore means the persisted row
+/// itself was unusable — a per-row decode/structural failure that fails
+/// one wallet without aborting the batch. The only reason is
 /// [`CorruptPersistedRow`](Self::CorruptPersistedRow): the load path
 /// never touches the seed, so it cannot skip for a wrong or unavailable
 /// seed. Variants carry no key material (SECRETS.md SEC-REQ-2.0.1).
-///
-/// [`MnemonicResolverHandle`]: rs_sdk_ffi::MnemonicResolverHandle
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum SkipReason {

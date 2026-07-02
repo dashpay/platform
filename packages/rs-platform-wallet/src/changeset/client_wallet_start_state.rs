@@ -7,10 +7,8 @@
 //! can never mint a `Wallet`; the manager rebuilds a watch-only one via
 //! [`Wallet::new_watch_only`](key_wallet::wallet::Wallet::new_watch_only)
 //! from the manifest, applies this state, and defers signing-key
-//! derivation to the on-demand sign path
-//! ([`sign_with_mnemonic_resolver`] and its siblings).
-//!
-//! [`sign_with_mnemonic_resolver`]: https://docs.rs/rs-platform-wallet-ffi/
+//! derivation to the on-demand sign path (`rs-platform-wallet-ffi`'s
+//! `dash_sdk_sign_with_mnemonic_resolver_and_path` and its siblings).
 
 use std::collections::BTreeMap;
 
@@ -42,8 +40,9 @@ pub struct ClientWalletStartState {
     /// records, IS-locks, sync watermarks, `last_applied_chain_lock`).
     /// The manager applies this onto a fresh
     /// `ManagedWalletInfo::from_wallet` skeleton built from the
-    /// watch-only wallet. Rebuilt by the `core_state::load_state` reader
-    /// (item B).
+    /// watch-only wallet. Populated by the persister's
+    /// [`PlatformWalletPersistence::load`](crate::changeset::PlatformWalletPersistence::load)
+    /// implementation reading the persisted core rows.
     pub core_state: CoreChangeSet,
     /// Lean snapshot of this wallet's
     /// [`IdentityManager`](crate::wallet::identity::IdentityManager).
