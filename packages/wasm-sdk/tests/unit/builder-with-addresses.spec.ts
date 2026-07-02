@@ -162,6 +162,9 @@ describe('WasmSdkBuilder', () => {
           [TEST_ADDRESS_1],
           'testnet',
         );
+        // `withVersion(1)` pins the SDK to platform version 1 exactly.
+        // Pinned versions are not clamped to the network floor — the caller
+        // takes responsibility for the version they specify.
         builder = builder.withVersion(1);
         expect(builder).to.be.an.instanceof(sdk.WasmSdkBuilder);
         const built = await builder.build();
@@ -185,6 +188,7 @@ describe('WasmSdkBuilder', () => {
         const built = await builder.build();
         expect(built).to.be.an.instanceof(sdk.WasmSdk);
         expect(built.version()).to.be.a('number');
+        // Pinned to version 1 — pinned versions are used as-is, not clamped.
         expect(built.version()).to.equal(1);
         built.free();
       });

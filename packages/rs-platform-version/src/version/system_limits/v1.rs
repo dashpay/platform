@@ -26,6 +26,12 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     min_withdrawal_amount: 190_000,
     max_contract_group_size: 256,
     max_token_redemption_cycles: 128,
-    // 16 actions x 408 bytes + ~5,305 bytes overhead = ~11,833 bytes (within 20 KiB max_state_transition_size)
+    // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
+    // top of the 408 B serialized action), so a transition's on-wire size is
+    // ~2,681 B per action + ~2,930 B fixed (measured: 2 actions → 8,294 B,
+    // 6 → 19,018 B). The effective per-transition action bound under the
+    // 20 KiB `max_state_transition_size` is therefore 6, NOT this cap — 16
+    // only becomes reachable if the size limit is raised. Pinned by dpp's
+    // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
 };

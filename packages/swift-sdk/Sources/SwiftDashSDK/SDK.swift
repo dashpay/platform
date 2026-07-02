@@ -247,14 +247,13 @@ public final class SDK: @unchecked Sendable {
   /// This is suitable for mobile applications where proof verification would be resource-intensive.
   ///
   /// `platformVersion`:
-  /// - `0` (default) — pick a network-appropriate version: PV 11 for the
-  ///   public networks still on pre-v3.1 drive-abci (mainnet, testnet),
-  ///   PV 12 (latest) for the leading-edge networks (devnet, regtest).
-  ///   This avoids the V0/V1 `getDocuments` wire-format mismatch that
-  ///   would otherwise make Platform queries fail with
-  ///   `"decoding error: could not decode data contracts query"` on the
-  ///   public networks until they roll forward. Override by passing an
-  ///   explicit non-zero value.
+  /// - `0` (default) — let the Rust SDK seed at the per-network minimum
+  ///   protocol version (mainnet 11, testnet/devnet/regtest 12) with
+  ///   auto-detect on, ratcheting up as the network reports newer
+  ///   versions. The per-network floor encodes the V0/V1 `getDocuments`
+  ///   wire format (mainnet floor 11 = V0 until mainnet upgrades;
+  ///   testnet floor 12 = V1), so this picks the right wire without a
+  ///   Swift-side network→version map.
   /// - non-zero — pin the SDK to this exact `PlatformVersion`.
   public init(network: Network, platformVersion: UInt32 = 0) throws {
     var config = DashSDKConfig()
@@ -264,26 +263,12 @@ public final class SDK: @unchecked Sendable {
     config.skip_asset_lock_proof_verification = false
     config.request_retry_count = 1
     config.request_timeout_ms = 8000 // 8 seconds
-    let resolvedPlatformVersion: UInt32
-    if platformVersion != 0 {
-      resolvedPlatformVersion = platformVersion
-    } else {
-      switch network {
-      case .mainnet, .testnet:
-        // TODO(platform-version-bump): bump mainnet/testnet to 12
-        // (or whatever PV is current) once drive-abci 3.1+ has
-        // rolled out on those networks and the new
-        // `getDocuments` V1 wire format is on by default. The
-        // trigger is: a HardFork shipping the V1 wire format
-        // becomes active on mainnet/testnet. Until then, pinning
-        // 11 keeps the SDK speaking the V0 protocol the active
-        // tenderdash quorums understand.
-        resolvedPlatformVersion = 11
-      case .devnet, .regtest:
-        resolvedPlatformVersion = 12
-      }
-    }
-    config.platform_version = resolvedPlatformVersion
+    // `0` is passed straight through: the FFI `apply_version(builder, 0)`
+    // returns the builder unchanged, so `SdkBuilder::build()` seeds at the
+    // per-network `min_protocol_version` floor with auto-detect on
+    // (version_pinned=false) and ratchets up as the network reports newer
+    // versions. A non-zero value is an explicit pin via `with_version`.
+    config.platform_version = platformVersion
 
     // Create SDK with trusted setup. DAPI / quorum-URL overrides come from
     // UserDefaults and apply on:
@@ -507,6 +492,54 @@ public final class SDK: @unchecked Sendable {
     } catch {
       throw SDKError.serializationError("Failed to decode status: \(error)")
     }
+  }
+
+  /// Refresh this SDK's protocol version from the connected network.
+  ///
+  /// Issues a proven `getEpochsInfo` query on the Rust side and ratchets the
+  /// SDK's auto-detected protocol version up to the network's version through
+  /// the proof + quorum-signature-verified path (no unverified fallback). The
+  /// new version is shared across every clone of the underlying `Sdk`
+  /// (including the clone held by a `PlatformWalletManager`), so fee-sensitive
+  /// flows pick it up automatically.
+  ///
+  /// Call on app start and after every network switch. For an SDK pinned to a
+  /// fixed protocol version (version updating disabled) this is a no-op: no
+  /// network request is made and the pinned version is returned. Bridges
+  /// `dash_sdk_refresh_protocol_version`.
+  ///
+  /// - Returns: the SDK's protocol version number after the (possible) ratchet.
+  @discardableResult
+  public func refreshProtocolVersion() throws -> UInt32 {
+    guard let handle = handle else {
+      throw SDKError.invalidState("SDK not initialized")
+    }
+
+    let result = dash_sdk_refresh_protocol_version(handle)
+
+    if result.error != nil {
+      let error = result.error!.pointee
+      defer {
+        dash_sdk_error_free(result.error)
+      }
+      throw SDKError.fromDashSDKError(error)
+    }
+
+    guard result.data != nil else {
+      throw SDKError.internalError("No protocol version returned")
+    }
+
+    let cStr = result.data.assumingMemoryBound(to: CChar.self)
+    let versionStr = String(cString: cStr)
+    defer {
+      dash_sdk_string_free(cStr)
+    }
+
+    guard let version = UInt32(versionStr) else {
+      throw SDKError.serializationError("Invalid protocol version: \(versionStr)")
+    }
+
+    return version
   }
 
   // TODO: Re-enable when CDashSDKFFI module is working

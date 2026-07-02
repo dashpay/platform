@@ -23,7 +23,7 @@ ROOT_DIR="$SCRIPT_DIR/../../"
 TARGET_DIR="$ROOT_DIR/target"
 PACKAGE="rs-unified-sdk-ffi"
 XCFRAMEWORK="$SCRIPT_DIR/DashSDKFFI.xcframework"
-PROFILE="dev" # Rust doesn't allow us to use "debug" for some reason, the profile name internally is dev
+PROFILE="dev"
 
 # Crates whose cbindgen-generated headers ship in the unified framework.
 # Order matters: earlier headers define types referenced by later ones.
@@ -117,15 +117,13 @@ if ! $BUILD_IOS && ! $BUILD_SIM && ! $BUILD_MAC && ! $BUILD_INTEL_MAC; then
   show_help
 fi
 
+# Map the requested base profile (dev|release) onto its iOS-tuned custom
+# profile by appending "-ios" (dev-ios / release-ios)
+PROFILE="${PROFILE}-ios"
+OUTPUT_DIR="$PROFILE"
+
 log_info "Package: $PACKAGE"
 log_info "Profile: $PROFILE"
-
-# Rust writes the "dev" profile output to the "debug" directory
-if [ "$PROFILE" = "dev" ]; then
-  OUTPUT_DIR="debug"
-else
-  OUTPUT_DIR="$PROFILE"
-fi
 
 # -------------------------------
 # Build commands
@@ -197,6 +195,11 @@ EOF
 # framework ships everything — keep `--features shielded` here so
 # the bundled SDK exposes the platform-wallet shielded FFI.
 CARGO_FEATURES="shielded"
+
+if [ "$PROFILE" = "dev-ios" ]; then
+  CARGO_FEATURES="$CARGO_FEATURES tokio-metrics"
+  log_info "  → tokio-metrics enabled (dev profile)"
+fi
 
 # iOS device
 if $BUILD_IOS; then

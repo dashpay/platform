@@ -124,12 +124,21 @@ struct RecipientPickerView: View {
                 .foregroundColor(.secondary)
         } else {
             Picker("Identity", selection: localBinding) {
-                Text("Choose…").tag(Data?.none)
+                Text("Choose…")
+                    .tag(Data?.none)
+                    .accessibilityIdentifier("recipient.identity.none")
                 ForEach(candidates, id: \.identityId) { id in
-                    Text(id.displayName).tag(Optional(id.identityId))
+                    Text(id.displayName)
+                        .tag(Optional(id.identityId))
+                        .accessibilityIdentifier("recipient.identity.\(id.identityIdBase58)")
                 }
             }
-            .pickerStyle(.menu)
+            // navigationLink (not inline): every call site embeds this
+            // view in a Form `Section`, so the picker pushes a real list
+            // whose rows expose the per-row `recipient.identity.<base58>`
+            // identifiers above (inline would drop them — see
+            // AccessiblePicker.swift).
+            .accessibleFormPicker("recipient.identityPicker")
         }
     }
 

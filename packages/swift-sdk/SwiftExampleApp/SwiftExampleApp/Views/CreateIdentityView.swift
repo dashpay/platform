@@ -58,11 +58,16 @@ struct CreateIdentityView: View {
     /// offered when its `boundWalletId` matches the selected wallet.
     @EnvironmentObject var shieldedService: ShieldedService
 
-    /// Default number of Platform identity authentication keys to
-    /// register in this first-pass flow. First key is MASTER, the
-    /// rest are HIGH. Advanced override is intentionally not exposed
-    /// here yet.
-    private static let defaultKeyCount: UInt32 = 3
+    /// Default number of Platform identity keys to register in this
+    /// first-pass flow. The Rust-owned per-slot policy
+    /// (`dash_sdk_derive_and_persist_identity_keys`) maps these to:
+    /// key 0 AUTHENTICATION/MASTER, key 1 AUTHENTICATION/CRITICAL,
+    /// key 2 AUTHENTICATION/HIGH, key 3 TRANSFER/CRITICAL. The
+    /// TRANSFER/CRITICAL key is required to sign IdentityCreditTransfer
+    /// (ID-04) and IdentityCreditWithdrawal (ID-10) — without it those
+    /// broadcasts are rejected on-chain with "no transfer public key".
+    /// Advanced override is intentionally not exposed here yet.
+    private static let defaultKeyCount: UInt32 = 4
 
     /// Number of extra keys added when `addDashPayKeys` is on
     /// (encryption + decryption).
@@ -124,8 +129,8 @@ struct CreateIdentityView: View {
     /// in `rs-platform-version`:
     ///   identity_create_base_cost (2_000_000 credits)
     ///   + asset_lock_base (200_000 duffs * 1000 credits/duff = 200_000_000)
-    ///   + identity_key_in_creation_cost (6_500_000) * defaultKeyCount (3)
-    ///   = 221_500_000 credits / 1000 = 221_500 duffs (0.002215 DASH).
+    ///   + identity_key_in_creation_cost (6_500_000) * defaultKeyCount (4)
+    ///   = 228_000_000 credits / 1000 = 228_000 duffs (0.002280 DASH).
     /// The v0 floor was 200_000 duffs but with key_in_creation_cost
     /// dynamic at v1, the per-key surcharge has to be added. Submitting
     /// below this gets rejected by Platform with
@@ -133,7 +138,7 @@ struct CreateIdentityView: View {
     /// `minFundingDuffs(forKeyCount:)` for the active per-flow value
     /// when extra keys (e.g. the DashPay encryption/decryption pair)
     /// bump the per-key surcharge.
-    private static let minIdentityFundingDuffsForDefaultKeys: UInt64 = 221_500
+    private static let minIdentityFundingDuffsForDefaultKeys: UInt64 = 228_000
 
     /// Recompute the minimum-funding floor for `keyCount` total
     /// identity keys. Formula above; result is in duffs (credits ÷ 1000).
@@ -423,6 +428,46 @@ struct CreateIdentityView: View {
                         .textSelection(.enabled)
                 }
             }
+        case .unconfirmed(let identityId, let message):
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(
+                        "Broadcast succeeded — confirmation pending",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundColor(.orange)
+                    .font(.headline)
+                    Text(identityId.toBase58String())
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                    Text(message)
+                        .font(.callout)
+                        .foregroundColor(.primary)
+                        .textSelection(.enabled)
+                    Text(
+                        "The transition was broadcast and accepted, but its "
+                        + "execution-result proof couldn't be confirmed. The "
+                        + "identity will appear in the Identities tab after the "
+                        + "next sync. Do NOT re-register these keys — the slot "
+                        + "is held to prevent burning funds."
+                    )
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    // Plain sheet dismiss only — leave the controller on the
+                    // coordinator so the entry stays in Pending Registrations
+                    // until the identity row appears via sync and the user
+                    // dismisses it there.
+                    Button {
+                        dismiss()
+                    } label: {
+                        Text("Close")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .padding(.top, 4)
+                }
+            }
         default:
             EmptyView()
         }
@@ -435,14 +480,18 @@ struct CreateIdentityView: View {
             Picker("Source Wallet", selection: $walletSelection) {
                 Text("Select…")
                     .tag(Optional<WalletSelection>.none)
+                    .accessibilityIdentifier("createIdentity.sourceWallet.none")
                 ForEach(wallets) { wallet in
                     Text(walletLabel(for: wallet))
                         .tag(Optional(WalletSelection.wallet(id: wallet.walletId)))
+                        .accessibilityIdentifier("createIdentity.sourceWallet.wallet.\(wallet.walletId.toHexString())")
                 }
                 Divider()
                 Text("Create without Wallet")
                     .tag(Optional(WalletSelection.walletless))
+                    .accessibilityIdentifier("createIdentity.sourceWallet.walletless")
             }
+            .accessibleFormPicker("createIdentity.sourceWalletPicker")
             .onChange(of: walletSelection) { _, newValue in
                 // Reset downstream selection whenever the wallet
                 // changes so a stale account / proof / denomination
@@ -562,9 +611,11 @@ struct CreateIdentityView: View {
             Picker("Funding Source", selection: $fundingSelection) {
                 Text("Select…")
                     .tag(Optional<FundingSelection>.none)
+                    .accessibilityIdentifier("createIdentity.fundingSource.none")
                 ForEach(options) { option in
                     Text("\(option.label) — \(option.balanceText)")
                         .tag(Optional(FundingSelection.account(id: option.persistentId)))
+                        .accessibilityIdentifier("createIdentity.fundingSource.account.\(option.accountType).\(option.accountIndex)")
                 }
                 if showShielded {
                     let shieldedText = Self.formatDash(
@@ -573,8 +624,10 @@ struct CreateIdentityView: View {
                     )
                     Text("Shielded Balance — \(shieldedText)")
                         .tag(Optional(FundingSelection.shieldedBalance))
+                        .accessibilityIdentifier("createIdentity.fundingSource.shielded")
                 }
             }
+            .accessibleFormPicker("createIdentity.fundingSourcePicker")
             .onChange(of: fundingSelection) { _, newValue in
                 // Pre-fill the amount with the full available balance
                 // of the selected Platform Payment account so the
@@ -588,19 +641,20 @@ struct CreateIdentityView: View {
         } header: {
             Text("Funding Source")
         } footer: {
-            Text(
-                "Any account on the selected wallet with a balance can fund "
-                + "the identity — Core or Platform Payment. Empty accounts "
-                + "are hidden. "
-                + (showShielded
-                    ? "Shielded Balance funds the identity directly from this "
-                      + "wallet's shielded (Orchard) pool by spending a fixed "
-                      + "denomination. "
-                    : "")
-                + "To resume a prior in-flight registration, "
-                + "use the Resumable Registrations section on the Identities tab."
-            )
+            Text(Self.fundingSourceFooterText(showShielded: showShielded))
         }
+    }
+
+    private static func fundingSourceFooterText(showShielded: Bool) -> String {
+        var text = "Any account on the selected wallet with a balance can fund "
+            + "the identity — Core or Platform Payment. Empty accounts are hidden. "
+        if showShielded {
+            text += "Shielded Balance funds the identity directly from this "
+                + "wallet's shielded (Orchard) pool by spending a fixed denomination. "
+        }
+        text += "To resume a prior in-flight registration, "
+            + "use the Resumable Registrations section on the Identities tab."
+        return text
     }
 
     /// Amount (in DASH) to fund the new identity with. Shown for
@@ -687,14 +741,17 @@ struct CreateIdentityView: View {
                 Picker("Denomination", selection: $selectedDenomination) {
                     Text("Select…")
                         .tag(Optional<UInt64>.none)
+                        .accessibilityIdentifier("createIdentity.denomination.none")
                     ForEach(affordable, id: \.self) { denom in
                         Text(Self.formatDash(
                             raw: denom,
                             divisor: Double(Self.creditsPerDash)
                         ))
                         .tag(Optional(denom))
+                        .accessibilityIdentifier("createIdentity.denomination.\(denom)")
                     }
                 }
+                .accessibleFormPicker("createIdentity.denominationPicker")
                 .disabled(isCreating)
             }
         } header: {
@@ -1422,6 +1479,28 @@ struct CreateIdentityView: View {
                     // controller so the destination can render
                     // the inline failure state.
                     return
+                case .unconfirmed:
+                    // Broadcast landed but its result couldn't be confirmed;
+                    // the identity is probably already live on chain. Mark the
+                    // slot used (same as `.completed`) — `usedIdentityIndices`
+                    // unions the persisted `isUsed` reservation with the
+                    // `PersistentIdentity` rows, so this is the reservation
+                    // that holds the slot across app restarts until the next
+                    // sync writes the identity row. It is best-effort (silent
+                    // no-op when the slot row is beyond the derived
+                    // lookahead), so the live `.unconfirmed` controller and
+                    // the dismissibility gate in `PendingRegistrationsList`
+                    // remain as defense in depth. We do NOT persist a
+                    // `PersistentIdentity` row here — the proof-verified
+                    // identity wasn't returned; the next sync writes the row
+                    // once the identity is confirmed on chain.
+                    markIdentitySlotUsed(
+                        walletId: walletId,
+                        identityIndex: identityIndex
+                    )
+                    try? modelContext.save()
+                    self.isCreating = false
+                    return
                 default:
                     continue
                 }
@@ -1448,7 +1527,7 @@ struct CreateIdentityView: View {
                         lastEmitted = phase
                     }
                     switch phase {
-                    case .completed, .failed:
+                    case .completed, .failed, .unconfirmed:
                         continuation.finish()
                         return
                     default:
@@ -1551,9 +1630,14 @@ struct CreateIdentityView: View {
     }
 
     /// Flip `isUsed` on the consumed identity-registration slot so
-    /// the next call to `unusedIdentityIndices` skips it. Silent
-    /// no-op if the slot isn't found — this is cosmetic bookkeeping
-    /// and the Rust side is already the source of truth.
+    /// `usedIdentityIndices` (which unions the flag with the
+    /// `PersistentIdentity` rows) skips it. For confirmed registrations
+    /// this is redundant with the identity row, but for `.unconfirmed`
+    /// Type-20 broadcasts it is the ONLY persisted reservation holding
+    /// the slot until the next sync writes the identity row — losing it
+    /// would offer the same index for a duplicate submission. Silent
+    /// no-op if the slot row isn't found (an index beyond the derived
+    /// lookahead); the Rust side remains the on-chain source of truth.
     private func markIdentitySlotUsed(
         walletId: Data,
         identityIndex: UInt32
@@ -1896,6 +1980,8 @@ struct CreateIdentityView: View {
                 )
                 return FundingAccountOption(
                     persistentId: account.persistentModelID,
+                    accountType: account.accountType,
+                    accountIndex: account.accountIndex,
                     label: Self.fundingLabel(for: account),
                     balanceText: balanceText
                 )
@@ -1944,23 +2030,39 @@ struct CreateIdentityView: View {
         }
     }
 
-    /// Unused identity-registration key indices on the wallet's
-    /// Identity Registration account (FFI type tag 2). Each
-    /// `PersistentCoreAddress` under that account represents one
-    /// registration slot keyed by `addressIndex`; `isUsed` flips to
-    /// true once the slot has been consumed by a prior identity
-    /// creation. Returns an ascending list of the remaining slots.
-    /// Identity-registration indices currently claimed by an existing
-    /// `PersistentIdentity` on this wallet. Single source of truth —
-    /// the deprecated `PersistentCoreAddress.isUsed` flag was a
-    /// denormalized cache that drifted (discovered identities never
-    /// flipped it).
+    /// Identity-registration indices that must not be offered for a new
+    /// registration on this wallet: every index claimed by an existing
+    /// `PersistentIdentity`, UNIONED with the persisted
+    /// `PersistentCoreAddress.isUsed` reservations on the
+    /// identity-registration account.
+    ///
+    /// The union matters for `.unconfirmed` Type-20 registrations: the
+    /// broadcast landed but no `PersistentIdentity` row exists until the
+    /// next sync confirms the identity, so `markIdentitySlotUsed`'s
+    /// persisted `isUsed` flag is the ONLY artifact holding the slot once
+    /// the in-memory controller is gone. Without it the same index would
+    /// be offered again and a duplicate submission would burn funds
+    /// against the registered-key-hash stateful check.
+    ///
+    /// Identity rows stay authoritative for confirmed identities; the flag
+    /// is monotonic extra coverage. Its historical drift (discovered
+    /// identities never flipped it) only under-reports, which the identity
+    /// rows cover, and over-reporting merely skips an index — registration
+    /// indices aren't gap-limited, so a skipped index costs nothing.
     private func usedIdentityIndices(for walletId: Data) -> Set<UInt32> {
-        Set(
+        var used = Set(
             allIdentities
                 .filter { $0.wallet?.walletId == walletId }
                 .map { $0.identityIndex }
         )
+        if let account = identityRegistrationAccount(for: walletId) {
+            used.formUnion(
+                account.coreAddresses
+                    .filter(\.isUsed)
+                    .map(\.addressIndex)
+            )
+        }
+        return used
     }
 
     /// One past the highest used registration index on this wallet,
@@ -2094,6 +2196,17 @@ private enum FundingSelection: Hashable {
 
 private struct FundingAccountOption: Identifiable {
     let persistentId: PersistentIdentifier
+    /// HD account type tag (e.g. 0 = BIP44 standard, 14 = Platform
+    /// Payment). Paired with `accountIndex` in the row's accessibility
+    /// identifier because the index alone is NOT unique across account
+    /// types — this picker lists both Core and Platform Payment
+    /// accounts, so a bare `#0` would collide (BIP44 #0 vs Platform
+    /// Payment #0).
+    let accountType: UInt32
+    /// HD account index, carried only so the accessibility identifier
+    /// for this row can be stable across launches (the
+    /// `PersistentIdentifier` opaque id is not).
+    let accountIndex: UInt32
     let label: String
     /// Human-readable balance suffix (`"0.01 DASH"`). Zero-balance
     /// accounts are filtered out upstream so this is always a

@@ -148,6 +148,13 @@ impl WasmSdk {
 pub struct WasmSdkBuilder {
     inner: SdkBuilder,
     trusted_context: Option<WasmTrustedContext>,
+    /// True when the caller explicitly supplied an address list via
+    /// `withAddresses(...)`. Preset constructors (mainnet/testnet/local/
+    /// newDevnet) leave this `false` so that `withTrustedContext` is free
+    /// to substitute its discovered masternode addresses. When `true`,
+    /// `withTrustedContext` keeps the user-provided addresses and only
+    /// attaches the context for proof verification.
+    has_user_addresses: bool,
 }
 
 impl Deref for WasmSdkBuilder {
@@ -223,6 +230,7 @@ impl WasmSdkBuilder {
         Ok(Self {
             inner: sdk_builder,
             trusted_context: None,
+            has_user_addresses: true,
         })
     }
 
@@ -233,6 +241,7 @@ impl WasmSdkBuilder {
         Self {
             inner: sdk_builder,
             trusted_context: None,
+            has_user_addresses: false,
         }
     }
 
@@ -243,6 +252,7 @@ impl WasmSdkBuilder {
         Self {
             inner: sdk_builder,
             trusted_context: None,
+            has_user_addresses: false,
         }
     }
 
@@ -262,6 +272,7 @@ impl WasmSdkBuilder {
         Self {
             inner: sdk_builder,
             trusted_context: None,
+            has_user_addresses: false,
         }
     }
 
@@ -276,6 +287,7 @@ impl WasmSdkBuilder {
         Self {
             inner: sdk_builder,
             trusted_context: None,
+            has_user_addresses: false,
         }
     }
 
@@ -283,8 +295,15 @@ impl WasmSdkBuilder {
     ///
     /// The context provides quorum keys for proof verification and
     /// discovered masternode addresses for network connectivity.
-    /// If the context has discovered addresses, they replace the
-    /// builder's current address list.
+    ///
+    /// Address-list behavior:
+    /// - If the builder was created via a preset (`mainnet`, `testnet`,
+    ///   `local`, `newDevnet`) and the context has discovered addresses,
+    ///   those discovered addresses replace the preset's default list.
+    /// - If the builder was created via `withAddresses(...)`, the
+    ///   user-provided addresses are preserved and discovered addresses
+    ///   from the context are ignored. The context is still attached for
+    ///   proof verification.
     ///
     /// # Example
     /// ```javascript
@@ -296,8 +315,9 @@ impl WasmSdkBuilder {
     pub fn with_trusted_context(self, context: &WasmTrustedContext) -> Self {
         let discovered = context.discovered_addresses();
 
-        // Replace address list with discovered addresses if available
-        let inner = if !discovered.is_empty() {
+        // Substitute discovered addresses only when the caller did not
+        // explicitly supply their own via `withAddresses(...)`.
+        let inner = if !self.has_user_addresses && !discovered.is_empty() {
             let address_list = dash_sdk::sdk::AddressList::from_iter(discovered.to_vec());
             self.inner
                 .with_address_list(address_list)
@@ -309,6 +329,7 @@ impl WasmSdkBuilder {
         Self {
             inner,
             trusted_context: Some(context.clone()),
+            ..self
         }
     }
 
@@ -328,6 +349,7 @@ impl WasmSdkBuilder {
         Self {
             inner: self.inner.with_context_provider(context_provider),
             trusted_context: None,
+            ..self
         }
     }
 
@@ -353,7 +375,7 @@ impl WasmSdkBuilder {
 
         Ok(Self {
             inner: self.inner.with_version(version),
-            trusted_context: self.trusted_context,
+            ..self
         })
     }
 
@@ -392,7 +414,7 @@ impl WasmSdkBuilder {
 
         Self {
             inner: self.inner.with_settings(settings),
-            trusted_context: self.trusted_context,
+            ..self
         }
     }
 
@@ -403,7 +425,7 @@ impl WasmSdkBuilder {
     ) -> Self {
         Self {
             inner: self.inner.with_proofs(enable_proofs),
-            trusted_context: self.trusted_context,
+            ..self
         }
     }
 }
@@ -433,5 +455,168 @@ impl WasmSdkBuilder {
     ) -> Result<Self, WasmSdkError> {
         crate::logging::set_log_level(level_or_filter)?;
         Ok(self)
+    }
+}
+
+#[cfg(test)]
+impl WasmSdkBuilder {
+    pub(crate) fn has_user_addresses(&self) -> bool {
+        self.has_user_addresses
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dash_sdk::sdk::Uri;
+    use rs_dapi_client::Address;
+
+    const USER_ADDR_1: &str = "https://203.0.113.10:1443";
+    const USER_ADDR_2: &str = "https://203.0.113.11:1443";
+    const DISCOVERED_ADDR_1: &str = "https://198.51.100.20:1443";
+    const DISCOVERED_ADDR_2: &str = "https://198.51.100.21:1443";
+
+    fn parse(addr: &'static str) -> Address {
+        Address::try_from(Uri::from_maybe_shared(addr).unwrap()).unwrap()
+    }
+
+    fn user_builder() -> WasmSdkBuilder {
+        WasmSdkBuilder::new_with_addresses(
+            vec![USER_ADDR_1.to_string(), USER_ADDR_2.to_string()],
+            "testnet".to_string(),
+        )
+        .expect("withAddresses should accept valid testnet addresses")
+    }
+
+    fn sdk_addresses(sdk: &WasmSdk) -> Vec<String> {
+        sdk.address_list()
+            .ban_info()
+            .into_iter()
+            .map(|info| info.uri.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn with_addresses_sets_user_addresses_flag() {
+        let b = user_builder();
+        assert!(b.has_user_addresses());
+    }
+
+    #[test]
+    fn preset_constructors_do_not_set_user_addresses_flag() {
+        assert!(!WasmSdkBuilder::new_mainnet().has_user_addresses());
+        assert!(!WasmSdkBuilder::new_testnet().has_user_addresses());
+        assert!(!WasmSdkBuilder::new_local().has_user_addresses());
+        assert!(!WasmSdkBuilder::new_devnet().has_user_addresses());
+    }
+
+    #[test]
+    fn chain_methods_preserve_user_addresses_flag() {
+        let b = user_builder()
+            .with_proofs(true)
+            .with_settings(Some(1000), Some(2000), Some(1), Some(false))
+            .with_version(1)
+            .expect("withVersion(1) is valid")
+            .with_context_provider(WasmContext {})
+            .with_logs("off")
+            .expect("withLogs(\"off\") is valid");
+        assert!(b.has_user_addresses());
+
+        let preset = WasmSdkBuilder::new_testnet()
+            .with_proofs(true)
+            .with_settings(None, None, None, None);
+        assert!(!preset.has_user_addresses());
+    }
+
+    /// Repro of the bug behind the fix: a user calling
+    /// `withAddresses([...]).withTrustedContext(ctx)` must keep their
+    /// explicit addresses, not get them silently replaced by discovered
+    /// masternodes from the trusted context.
+    #[test]
+    fn with_trusted_context_preserves_user_addresses() {
+        let ctx = WasmTrustedContext::for_testing(vec![
+            parse(DISCOVERED_ADDR_1),
+            parse(DISCOVERED_ADDR_2),
+        ]);
+
+        let sdk = user_builder()
+            .with_trusted_context(&ctx)
+            .build()
+            .expect("build should succeed with explicit addresses + trusted context");
+
+        let addrs = sdk_addresses(&sdk);
+
+        assert_eq!(
+            addrs.len(),
+            2,
+            "user addresses must be preserved (got {:?})",
+            addrs
+        );
+        assert!(
+            addrs.iter().any(|a| a.contains("203.0.113.10")),
+            "missing first user address in {:?}",
+            addrs
+        );
+        assert!(
+            addrs.iter().any(|a| a.contains("203.0.113.11")),
+            "missing second user address in {:?}",
+            addrs
+        );
+        assert!(
+            !addrs.iter().any(|a| a.contains("198.51.100")),
+            "discovered address must not leak in: {:?}",
+            addrs
+        );
+    }
+
+    /// Counterpart: a preset builder + trusted context with discovered
+    /// addresses must adopt the discovered list. This guards against an
+    /// over-correction that would always preserve the preset defaults.
+    #[test]
+    fn with_trusted_context_replaces_preset_addresses() {
+        let ctx = WasmTrustedContext::for_testing(vec![
+            parse(DISCOVERED_ADDR_1),
+            parse(DISCOVERED_ADDR_2),
+        ]);
+
+        let sdk = WasmSdkBuilder::new_testnet()
+            .with_trusted_context(&ctx)
+            .build()
+            .expect("build should succeed for preset + trusted context");
+
+        let addrs = sdk_addresses(&sdk);
+
+        assert_eq!(
+            addrs.len(),
+            2,
+            "preset addresses should be replaced by the two discovered ones (got {:?})",
+            addrs
+        );
+        assert!(
+            addrs.iter().all(|a| a.contains("198.51.100")),
+            "preset addresses must be replaced by discovered ones: {:?}",
+            addrs
+        );
+    }
+
+    /// A trusted context with no discovered addresses should never wipe
+    /// the existing address list, regardless of where it came from.
+    #[test]
+    fn with_trusted_context_no_discovered_keeps_existing_addresses() {
+        let ctx = WasmTrustedContext::for_testing(vec![]);
+        let sdk = user_builder()
+            .with_trusted_context(&ctx)
+            .build()
+            .expect("build should succeed");
+        assert_eq!(sdk.address_list().ban_info().len(), 2);
+    }
+
+    /// Flag must survive chaining *through* withTrustedContext as well —
+    /// later builder steps must still see has_user_addresses=true.
+    #[test]
+    fn with_trusted_context_propagates_user_addresses_flag() {
+        let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
+        let b = user_builder().with_trusted_context(&ctx);
+        assert!(b.has_user_addresses());
     }
 }

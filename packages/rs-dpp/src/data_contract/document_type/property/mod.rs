@@ -26,6 +26,9 @@ use serde::Serialize;
 
 pub mod array;
 
+#[cfg(test)]
+mod byte_array_encoding_flip_tests;
+
 // This struct will be changed in future to support more validation logic and serialization
 // It will become versioned and it will be introduced by a new document type version
 // @append_only

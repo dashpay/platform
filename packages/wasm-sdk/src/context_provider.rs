@@ -304,4 +304,27 @@ impl WasmTrustedContext {
     pub fn add_known_token_configuration(&self, token_id: Identifier, config: TokenConfiguration) {
         self.inner.add_known_token_configuration(token_id, config);
     }
+
+    /// Build a `WasmTrustedContext` with the given `discovered_addresses` for
+    /// use in unit tests. The inner provider is constructed against a local
+    /// loopback URL — its quorum/contract caches are unused by the tests and
+    /// the URL is never dialled — so we get a real `Arc<TrustedHttpContextProvider>`
+    /// without any network side effects.
+    #[cfg(test)]
+    pub(crate) fn for_testing(
+        discovered_addresses: Vec<rs_dapi_client::Address>,
+    ) -> WasmTrustedContext {
+        let cache_size = std::num::NonZeroUsize::new(1).unwrap();
+        let inner = rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
+            dash_sdk::dpp::dashcore::Network::Regtest,
+            "http://127.0.0.1:22444".to_string(),
+            cache_size,
+        )
+        .expect("loopback URL must construct a TrustedHttpContextProvider");
+
+        WasmTrustedContext {
+            inner: Arc::new(inner),
+            discovered_addresses,
+        }
+    }
 }

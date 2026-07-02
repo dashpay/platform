@@ -279,7 +279,11 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V5: DriveAbciValidationVersions =
             shielded_anchor_retention_blocks: 1000,
             shielded_anchor_pruning_interval: 100,
             shielded_proof_verification_fee: 100_000_000,
-            shielded_per_action_processing_fee: 3_000_000,
+            // Uniform with v8 (#3800): the shielded family only activates at v12, so no
+            // earlier-version block ever priced a shielded action under the old placeholder.
+            // Pinning every version to the same per-action fee lets a client computing the
+            // fee under a stale protocol version still reserve the consensus-correct amount.
+            shielded_per_action_processing_fee: 22_000_000,
             shielded_implicit_fee_cap: 20_000_000_000,
             shielded_identity_create_denominations: &[],
         },
