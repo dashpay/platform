@@ -571,3 +571,174 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_wallet(
         ),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        platform_wallet_manager_shielded_sync_is_syncing,
+        platform_wallet_manager_shielded_sync_start, platform_wallet_manager_shielded_sync_stop,
+    };
+    use crate::error::PlatformWalletFFIResultCode;
+    use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
+    use crate::handle::{Handle, PLATFORM_WALLET_MANAGER_STORAGE};
+    use crate::manager::platform_wallet_manager_destroy;
+    use crate::persistence::{FFIPersister, PersistenceCallbacks};
+    use crate::runtime::runtime;
+    use crate::shielded_types::ShieldedSyncWalletResultFFI;
+
+    use platform_wallet::{PlatformEventHandler, PlatformWalletManager};
+
+    use std::os::raw::c_void;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::{Duration, Instant};
+
+    /// How long the slow shielded-completed callback parks the in-flight
+    /// pass. Comfortably longer than any plausible cancel latency, so the
+    /// `stop` promptness bound below can never race the drain.
+    const IN_FLIGHT_PASS_MILLIS: u64 = 1000;
+
+    /// Shared state the slow completion callback reaches through the FFI
+    /// `context` pointer: `started` flips when a pass callback enters,
+    /// `completed` flips only after it has parked for the full duration —
+    /// i.e. after the pass has actually drained.
+    struct SlowPassState {
+        started: AtomicBool,
+        completed: AtomicBool,
+    }
+
+    /// Slow `on_shielded_sync_completed` callback. Fires (with null/0
+    /// results) even for the empty pass an unconfigured coordinator
+    /// produces, so it holds `is_syncing` across a real sleep without
+    /// needing a bound wallet. Reads `context` as a `SlowPassState`.
+    ///
+    /// # Safety
+    /// `context` must point at a live `SlowPassState` (this crate's tests
+    /// keep the box alive until after `destroy` has joined every worker).
+    unsafe extern "C" fn slow_shielded_completed(
+        context: *mut c_void,
+        _results: *const ShieldedSyncWalletResultFFI,
+        _count: usize,
+        _sync_unix_seconds: u64,
+    ) {
+        let state = &*(context as *const SlowPassState);
+        state.started.store(true, Ordering::Release);
+        std::thread::sleep(Duration::from_millis(IN_FLIGHT_PASS_MILLIS));
+        state.completed.store(true, Ordering::Release);
+    }
+
+    fn event_callbacks(context: *mut c_void, slow: bool) -> EventHandlerCallbacks {
+        EventHandlerCallbacks {
+            context,
+            on_wallet_event_fn: None,
+            on_error_fn: None,
+            on_platform_address_sync_completed_fn: None,
+            on_shielded_sync_completed_fn: slow.then_some(slow_shielded_completed),
+            on_shielded_sync_progress_fn: None,
+            on_shielded_tree_progress_fn: None,
+        }
+    }
+
+    /// Insert a manager (mock SDK + no-op persister + the given handler)
+    /// into the FFI handle storage and return its handle. Enters the FFI
+    /// runtime for the event-adapter spawn `new` performs, mirroring
+    /// `platform_wallet_manager_create`.
+    fn insert_manager(callbacks: EventHandlerCallbacks) -> Handle {
+        let sdk = std::sync::Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = std::sync::Arc::new(FFIPersister::new(PersistenceCallbacks::default()));
+        let handler: std::sync::Arc<dyn PlatformEventHandler> =
+            std::sync::Arc::new(FFIEventHandler::new(callbacks));
+        let _entered = runtime().enter();
+        let manager = PlatformWalletManager::new(sdk, persister, handler);
+        PLATFORM_WALLET_MANAGER_STORAGE.insert(manager)
+    }
+
+    fn is_syncing(handle: Handle) -> bool {
+        let mut out = false;
+        let result = unsafe { platform_wallet_manager_shielded_sync_is_syncing(handle, &mut out) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        out
+    }
+
+    /// `platform_wallet_manager_shielded_sync_stop` is cancel-only: it
+    /// signals the loop and returns promptly *without* joining the
+    /// in-flight pass, and `platform_wallet_manager_destroy` is where the
+    /// drain is actually observed.
+    ///
+    /// A slow completion callback parks the shielded pass in flight
+    /// (`is_syncing` held). We assert `stop` returns while that pass is
+    /// still parked (`completed == false`) and well under the park time —
+    /// so it cannot have `block_on`'d the quiesce. We then assert `destroy`
+    /// reports a clean `ShutdownReport` and only returns once the parked
+    /// pass has drained (`completed == true`), proving `destroy` is the
+    /// real join point.
+    #[test]
+    fn shielded_sync_stop_is_cancel_only_and_destroy_is_the_join_point() {
+        let state = Box::new(SlowPassState {
+            started: AtomicBool::new(false),
+            completed: AtomicBool::new(false),
+        });
+        let state_ptr = &*state as *const SlowPassState as *mut c_void;
+        let handle = insert_manager(event_callbacks(state_ptr, true));
+
+        // Start the background loop; its first pass fires immediately and
+        // dispatches the slow completion callback, parking `is_syncing`.
+        let started = unsafe { platform_wallet_manager_shielded_sync_start(handle) };
+        assert_eq!(started.code, PlatformWalletFFIResultCode::Success);
+
+        // Wait (bounded) for the pass callback to be genuinely in flight.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !state.started.load(Ordering::Acquire) {
+            assert!(
+                Instant::now() < deadline,
+                "shielded pass callback never entered — nothing to cancel"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(is_syncing(handle), "precondition: a pass is in flight");
+
+        // stop() must return promptly and cancel-only: the parked pass has
+        // NOT drained (`completed == false`) when it returns.
+        let t0 = Instant::now();
+        let stopped = unsafe { platform_wallet_manager_shielded_sync_stop(handle) };
+        let stop_elapsed = t0.elapsed();
+        assert_eq!(stopped.code, PlatformWalletFFIResultCode::Success);
+        assert!(
+            !state.completed.load(Ordering::Acquire),
+            "stop() returned before the in-flight pass drained — it must be cancel-only"
+        );
+        assert!(
+            stop_elapsed < Duration::from_millis(IN_FLIGHT_PASS_MILLIS / 2),
+            "stop() must not block on the drain; took {stop_elapsed:?}"
+        );
+
+        // destroy() is the real join point: it drains + joins, so it only
+        // returns once the parked pass has completed, and reports clean.
+        let destroyed = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(
+            destroyed.code,
+            PlatformWalletFFIResultCode::Success,
+            "destroy must report a clean ShutdownReport once every worker joins"
+        );
+        assert!(
+            state.completed.load(Ordering::Acquire),
+            "destroy must observe the in-flight pass drain — it is the join point, not stop()"
+        );
+
+        // `state` outlived every worker: destroy joined them, so no callback
+        // can still be reading `state_ptr` as the box drops here.
+    }
+
+    /// `stop` on a coordinator that was never started is a prompt,
+    /// successful no-op, and `destroy` on the idle manager reports clean.
+    #[test]
+    fn shielded_sync_stop_on_idle_coordinator_is_ok_noop() {
+        let handle = insert_manager(event_callbacks(std::ptr::null_mut(), false));
+
+        let stopped = unsafe { platform_wallet_manager_shielded_sync_stop(handle) };
+        assert_eq!(stopped.code, PlatformWalletFFIResultCode::Success);
+        assert!(!is_syncing(handle), "no pass runs on a never-started loop");
+
+        let destroyed = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(destroyed.code, PlatformWalletFFIResultCode::Success);
+    }
+}
