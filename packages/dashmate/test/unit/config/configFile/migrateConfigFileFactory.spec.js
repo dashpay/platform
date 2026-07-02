@@ -45,4 +45,44 @@ describe('migrateConfigFileFactory', () => {
 
     expect(migratedConfigFileData).to.be.deep.equal(currentConfigFileData);
   });
+
+  it('should refresh the version-derived platform images when upgrading from a recent version', async () => {
+    // The drive and rs-dapi image tags are derived from the package major
+    // version. An operator upgrading from a recent version (e.g. a prerelease
+    // of the same major) sits past the legacy 0.25.x migrations that refresh
+    // images from the base config, so a per-release migration must re-pin them
+    // or they stay stuck on the old/prerelease tag.
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const defaultConfigFileData = createConfigFile().toObject();
+    const [firstConfigName] = Object.keys(defaultConfigFileData.configs);
+    const expectedDriveImage = defaultConfigFileData
+      .configs[firstConfigName].platform.drive.abci.docker.image;
+    const expectedRsDapiImage = defaultConfigFileData
+      .configs[firstConfigName].platform.dapi.rsDapi.docker.image;
+
+    const staleConfigFileData = createConfigFile().toObject();
+    staleConfigFileData.configFormatVersion = '4.0.0-rc.2';
+    for (const options of Object.values(staleConfigFileData.configs)) {
+      options.platform.drive.abci.docker.image = 'dashpay/drive:4-rc';
+      options.platform.dapi.rsDapi.docker.image = 'dashpay/rs-dapi:4-rc';
+    }
+
+    const migratedConfigFileData = migrateConfigFile(
+      staleConfigFileData,
+      staleConfigFileData.configFormatVersion,
+      version,
+    );
+
+    for (const [name, options] of Object.entries(migratedConfigFileData.configs)) {
+      expect(options.platform.drive.abci.docker.image).to.equal(
+        expectedDriveImage,
+        `drive image not refreshed for ${name}`,
+      );
+      expect(options.platform.dapi.rsDapi.docker.image).to.equal(
+        expectedRsDapiImage,
+        `rs-dapi image not refreshed for ${name}`,
+      );
+    }
+  });
 });
