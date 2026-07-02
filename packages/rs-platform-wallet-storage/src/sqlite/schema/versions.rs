@@ -71,9 +71,11 @@ impl Domain {
     ];
 }
 
-/// Domains carrying data in `cs`. The exhaustive destructure makes a newly
-/// added changeset field a compile error here until it is assigned a
-/// version domain (or explicitly excluded) — the R8 forgotten-domain guard.
+/// Domains carrying data in `cs`. The named destructure catches a renamed or
+/// removed changeset field at compile time; the trailing `..` absorbs only
+/// feature-gated fields (`shielded`), which the storage layer does not
+/// version here. A newly added persisted field must gain a `Domain` variant
+/// and an arm below — `tc_b_013_every_domain_maps_and_isolates` guards that.
 pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     let PlatformWalletChangeSet {
         core,
@@ -88,12 +90,8 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
         wallet_metadata,
         account_registrations,
         account_address_pools,
-        #[cfg(feature = "shielded")]
-        shielded,
+        ..
     } = cs;
-    // Shielded state is persisted by a separate store, not `meta_data_versions`.
-    #[cfg(feature = "shielded")]
-    let _ = shielded;
 
     // A sub-changeset carried but empty (`Some(default)`) is not a real
     // change; the `Merge::is_empty` bound is the shared emptiness contract.
@@ -145,7 +143,7 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
 }
 
 /// Saturating increment of one domain's `seq`, inside the caller's flush tx.
-/// First bump seeds `seq = 1`; thereafter it increments but never wraps past
+/// The first bump sets `seq = 1`; thereafter it increments but never wraps past
 /// `i64::MAX` — a wrap to a lower value would look like a rollback to a
 /// client's memoized `(generation, domain, seq)` cache and silently
 /// reintroduce staleness (the exact bug class R8 exists to prevent).
@@ -194,7 +192,7 @@ pub fn read_seq(
     Ok(seq.unwrap_or(0))
 }
 
-/// Read the 16-byte store-generation token seeded by V002. `None` on a
+/// Read the 16-byte store-generation token written by V002. `None` on a
 /// pre-V002 store (the table is absent).
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn read_generation(

@@ -17,8 +17,8 @@
 //!   No FK (a domain row may be written before its typed parent syncs,
 //!   mirroring the `meta_*` tables); a soft-cascade trigger reaps rows on
 //!   wallet delete.
-//! - `meta_store_generation` — a single-row store-generation token, seeded
-//!   with `randomblob(16)` so the rendered SQL stays deterministic (the
+//! - `meta_store_generation` — a single-row store-generation token,
+//!   initialized with `randomblob(16)` so the rendered SQL stays deterministic (the
 //!   content fingerprint pins the text, the runtime value is unique per
 //!   store). Regenerated on restore.
 //!
