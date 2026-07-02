@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Migration execution against the populated-V001 fixture (WS-B task B8).
+//! Migration execution against the populated-V001 fixture.
 //! Covers TC-B-031 (data preserved), TC-B-032 (pre-migration auto-backup),
 //! TC-B-033 (backup restorable + re-migration determinism), TC-B-034
 //! (forward-version rejection at the new max), TC-B-035 (idempotent
@@ -281,29 +281,110 @@ fn tc_b_034_forward_version_rejected_at_new_max() {
     }
 }
 
-/// TC-B-035 — re-entry idempotency: reopening a fully-migrated store applies
-/// no further migration and leaves the end state byte-stable. Refinery runs
-/// each migration in its own transaction, so a crash mid-migrate leaves the
-/// store at the last committed version and reopening resumes deterministically
-/// to this same state.
-#[test]
-fn tc_b_035_reentry_is_idempotent() {
-    let tmp = tempfile::tempdir().unwrap();
-    let path = copy_fixture(tmp.path());
-
-    let snapshot = |conn: &Connection| -> (i64, i64, i64, [u8; 16]) {
-        let full = wid(FULL_WALLET);
-        let utxos = count(
+/// A structural + row snapshot of the affected tables, for convergence
+/// comparison between a clean migration and a recovered one. Excludes the
+/// per-store random generation token (unique by design).
+fn migration_snapshot(conn: &Connection) -> Vec<i64> {
+    let full = wid(FULL_WALLET);
+    vec![
+        schema_version(conn),
+        conn.query_row("SELECT COUNT(*) FROM wallets", [], |r| r.get(0))
+            .unwrap(),
+        count(
             conn,
             "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1",
             &full,
-        );
-        let idents = count(
+        ),
+        count(
+            conn,
+            "SELECT COUNT(*) FROM core_transactions WHERE wallet_id = ?1",
+            &full,
+        ),
+        count(
             conn,
             "SELECT COUNT(*) FROM identities WHERE wallet_id = ?1",
             &full,
+        ),
+        count(
+            conn,
+            "SELECT COUNT(*) FROM contacts WHERE wallet_id = ?1",
+            &full,
+        ),
+        count(
+            conn,
+            "SELECT COUNT(*) FROM account_registrations WHERE wallet_id = ?1",
+            &full,
+        ),
+        i64::from(table_exists(conn, "core_address_pool")),
+        i64::from(table_exists(conn, "meta_data_versions")),
+        i64::from(table_exists(conn, "meta_store_generation")),
+    ]
+}
+
+/// TC-B-035 — crash mid-migrate: an interrupted V002 (partial DDL, no commit)
+/// leaves the store at the last committed version (V001) with no partial
+/// tables; re-opening resumes and converges byte-equal to a clean direct
+/// migration. Empirically demonstrates refinery's per-migration transaction
+/// guarantee (one tx per migration — no `set_grouped`/`no_transaction`).
+#[test]
+fn tc_b_035_interrupted_migration_recovers_to_clean_state() {
+    // Reference: a fresh copy migrated straight through.
+    let clean_dir = tempfile::tempdir().unwrap();
+    let clean_path = copy_fixture(clean_dir.path());
+    let clean_snapshot = {
+        let p = SqlitePersister::open(SqlitePersisterConfig::new(&clean_path)).unwrap();
+        let conn = p.lock_conn_for_test();
+        migration_snapshot(&conn)
+    };
+    assert_eq!(clean_snapshot[0], 2, "clean migration reaches V002");
+
+    // Crash simulation: apply part of V002's DDL inside a transaction that is
+    // rolled back before commit — exactly what a crash before the migration's
+    // single COMMIT leaves behind (SQLite DDL is transactional).
+    let crash_dir = tempfile::tempdir().unwrap();
+    let crash_path = copy_fixture(crash_dir.path());
+    {
+        let conn = Connection::open(&crash_path).unwrap();
+        conn.execute_batch(
+            "BEGIN; \
+             CREATE TABLE core_address_pool ( \
+                wallet_id BLOB NOT NULL, account_index INTEGER NOT NULL, \
+                key_class INTEGER NOT NULL, pool_type INTEGER NOT NULL, \
+                address_index INTEGER NOT NULL, script BLOB NOT NULL, \
+                used INTEGER NOT NULL); \
+             ROLLBACK;",
+        )
+        .unwrap();
+        // The rolled-back DDL left no trace: still V001, no partial table.
+        let pre = ro_conn(&crash_path);
+        assert_eq!(schema_version(&pre), 1, "interrupted migrate stays at V001");
+        assert!(
+            !table_exists(&pre, "core_address_pool"),
+            "partial DDL must have rolled back"
         );
-        let version = schema_version(conn);
+    }
+
+    // Recovery: re-open runs the pending migration cleanly.
+    let recovered_snapshot = {
+        let p = SqlitePersister::open(SqlitePersisterConfig::new(&crash_path)).unwrap();
+        let conn = p.lock_conn_for_test();
+        migration_snapshot(&conn)
+    };
+    assert_eq!(
+        recovered_snapshot, clean_snapshot,
+        "a store recovered from an interrupted migration must converge to the \
+         same end state as a clean direct migration"
+    );
+}
+
+/// Re-entry idempotency: reopening a fully-migrated store is a no-op — no
+/// further migration, and the generation token does not rotate (it only
+/// rotates on migrate/restore, not a plain reopen).
+#[test]
+fn reopen_of_migrated_store_is_idempotent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = copy_fixture(tmp.path());
+    let read = |conn: &Connection| -> (Vec<i64>, [u8; 16]) {
         let gen: Vec<u8> = conn
             .query_row(
                 "SELECT generation FROM meta_store_generation WHERE id = 0",
@@ -311,23 +392,18 @@ fn tc_b_035_reentry_is_idempotent() {
                 |r| r.get(0),
             )
             .unwrap();
-        (version, utxos, idents, gen.try_into().unwrap())
+        (migration_snapshot(conn), gen.try_into().unwrap())
     };
-
     let first = {
         let p = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
         let conn = p.lock_conn_for_test();
-        snapshot(&conn)
+        read(&conn)
     };
     let second = {
         let p = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
         let conn = p.lock_conn_for_test();
-        snapshot(&conn)
+        read(&conn)
     };
-    assert_eq!(first.0, 2, "first open migrates to V002");
-    assert_eq!(
-        first, second,
-        "reopening a migrated store is a no-op — version, data, and generation \
-         are byte-stable (generation only rotates on migrate/restore, not reopen)"
-    );
+    assert_eq!(first.0[0], 2, "first open migrates to V002");
+    assert_eq!(first, second, "reopen is a byte-stable no-op");
 }
