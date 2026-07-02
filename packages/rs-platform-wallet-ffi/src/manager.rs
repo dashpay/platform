@@ -183,6 +183,10 @@ pub const LOAD_SKIP_REASON_MALFORMED_XPUB: u32 = 101;
 /// `reason_code`: any other structural decode / projection failure on
 /// the persisted row.
 pub const LOAD_SKIP_REASON_DECODE_ERROR: u32 = 102;
+/// `reason_code`: the carried managed-info snapshot does not describe its
+/// persisted row (wallet_id/network differ, or its account set diverges
+/// from the row's account manifest) — a wrong-row snapshot.
+pub const LOAD_SKIP_REASON_SNAPSHOT_IDENTITY_MISMATCH: u32 = 103;
 /// `reason_code`: an unrecognized `CorruptKind` — forward-compat
 /// fallback until this crate maps a newly added corrupt-row family.
 pub const LOAD_SKIP_REASON_CORRUPT_OTHER: u32 = 199;
@@ -203,6 +207,7 @@ pub struct SkippedWalletFFI {
     /// constants: [`LOAD_SKIP_REASON_MISSING_MANIFEST`] (100),
     /// [`LOAD_SKIP_REASON_MALFORMED_XPUB`] (101),
     /// [`LOAD_SKIP_REASON_DECODE_ERROR`] (102),
+    /// [`LOAD_SKIP_REASON_SNAPSHOT_IDENTITY_MISMATCH`] (103),
     /// [`LOAD_SKIP_REASON_CORRUPT_OTHER`] (199), or
     /// [`LOAD_SKIP_REASON_OTHER`] (200). No secret material is ever
     /// carried.
@@ -234,6 +239,7 @@ fn skip_reason_code(reason: &platform_wallet::SkipReason) -> u32 {
         platform_wallet::SkipReason::CorruptPersistedRow { kind } => match kind {
             CorruptKind::MissingManifest => LOAD_SKIP_REASON_MISSING_MANIFEST,
             CorruptKind::MalformedXpub => LOAD_SKIP_REASON_MALFORMED_XPUB,
+            CorruptKind::SnapshotIdentityMismatch => LOAD_SKIP_REASON_SNAPSHOT_IDENTITY_MISMATCH,
             CorruptKind::DecodeError(_) => LOAD_SKIP_REASON_DECODE_ERROR,
             // `CorruptKind` is #[non_exhaustive]; a future variant maps to a
             // generic corrupt-row code until this mapping is extended.
@@ -582,6 +588,7 @@ mod tests {
         assert_eq!(LOAD_SKIP_REASON_MISSING_MANIFEST, 100);
         assert_eq!(LOAD_SKIP_REASON_MALFORMED_XPUB, 101);
         assert_eq!(LOAD_SKIP_REASON_DECODE_ERROR, 102);
+        assert_eq!(LOAD_SKIP_REASON_SNAPSHOT_IDENTITY_MISMATCH, 103);
         assert_eq!(LOAD_SKIP_REASON_CORRUPT_OTHER, 199);
         assert_eq!(LOAD_SKIP_REASON_OTHER, 200);
     }
@@ -599,6 +606,10 @@ mod tests {
         assert_eq!(
             skip_reason_code(&corrupt(CorruptKind::MalformedXpub)),
             LOAD_SKIP_REASON_MALFORMED_XPUB
+        );
+        assert_eq!(
+            skip_reason_code(&corrupt(CorruptKind::SnapshotIdentityMismatch)),
+            LOAD_SKIP_REASON_SNAPSHOT_IDENTITY_MISMATCH
         );
         assert_eq!(
             skip_reason_code(&corrupt(CorruptKind::DecodeError("boom".into()))),

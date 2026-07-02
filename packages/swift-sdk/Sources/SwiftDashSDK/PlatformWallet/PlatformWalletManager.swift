@@ -329,19 +329,24 @@ public class PlatformWalletManager: ObservableObject {
     /// One wallet Rust skipped during `load_from_persistor` because its
     /// persisted row was structurally corrupt. `reasonCode` is one of the
     /// Rust-side `LOAD_SKIP_REASON_*` constants (100 missing manifest,
-    /// 101 malformed xpub, 102 decode error, 199 other corrupt row,
-    /// 200 other skip); [`reasonDescription`] renders it for display.
+    /// 101 malformed xpub, 102 decode error, 103 snapshot identity
+    /// mismatch, 199 other corrupt row, 200 other skip);
+    /// [`reasonDescription`] renders it for display.
     public struct SkippedWalletOnLoad {
         public let walletId: Data
         public let reasonCode: UInt32
 
         /// Human-readable rendering of `reasonCode`, mirroring the Rust
-        /// `LOAD_SKIP_REASON_*` constants.
+        /// `LOAD_SKIP_REASON_*` constants. These numbers are the wire
+        /// contract defined in `rs-platform-wallet-ffi/src/manager.rs`;
+        /// they are not surfaced as named symbols in the generated C
+        /// header, so the cases are matched by value against that source.
         public var reasonDescription: String {
             switch reasonCode {
             case 100: return "missing account manifest"
             case 101: return "malformed account xpub"
             case 102: return "decode error"
+            case 103: return "snapshot does not match its persisted row"
             case 199: return "other corrupt row"
             case 200: return "other skip"
             default: return "unknown skip reason (\(reasonCode))"

@@ -544,8 +544,8 @@ async fn rt_snapshot_preserves_attribution_and_pools() {
 }
 
 /// RT-Snapshot-Mismatch: a snapshot whose `wallet_id` does not match its
-/// row key is a corrupt row — skipped with `DecodeError`, never
-/// registered, and the batch continues.
+/// row key is a corrupt row — skipped with `SnapshotIdentityMismatch`,
+/// never registered, and the batch continues.
 #[tokio::test]
 async fn rt_snapshot_wallet_id_mismatch_is_skipped() {
     use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -579,7 +579,64 @@ async fn rt_snapshot_wallet_id_mismatch_is_skipped() {
     assert!(matches!(
         reason,
         SkipReason::CorruptPersistedRow {
-            kind: CorruptKind::DecodeError(_)
+            kind: CorruptKind::SnapshotIdentityMismatch
+        }
+    ));
+    assert!(mgr.get_wallet(&id_a).await.is_none());
+    assert_eq!(h.skipped.lock().unwrap().len(), 1);
+}
+
+/// RT-Snapshot-AccountMismatch: a snapshot whose `wallet_id`/`network`
+/// agree with the row but whose account set diverges from the row's
+/// account manifest is a wrong-row snapshot — skipped with
+/// `SnapshotIdentityMismatch`, never registered.
+#[tokio::test]
+async fn rt_snapshot_account_set_mismatch_is_skipped() {
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+    let seed = [0x79; 64];
+    let p = Arc::new(FixedLoadPersister::new());
+    let h = Arc::new(RecordingHandler::default());
+
+    // Row keyed by wallet A with a full snapshot of A, but the row's
+    // manifest is truncated to a single account — the account sets diverge
+    // even though wallet_id and network match.
+    let wallet_a = Wallet::from_seed_bytes(
+        seed,
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let id_a = wallet_a.compute_wallet_id();
+    let (full_manifest, _) = manifest_and_id(seed);
+    assert!(
+        full_manifest.len() > 1,
+        "fixture: Default creation yields more than one account"
+    );
+    let truncated_manifest = vec![full_manifest[0].clone()];
+
+    let (_, mut s) = slice(seed);
+    s.account_manifest = truncated_manifest;
+    s.core_wallet_info = Some(Box::new(ManagedWalletInfo::from_wallet(&wallet_a, 1)));
+
+    let mut st = ClientStartState::default();
+    st.wallets.insert(id_a, s);
+    p.set(st);
+
+    let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
+    let outcome = mgr.load_from_persistor().await.expect("Ok");
+
+    assert!(
+        outcome.loaded.is_empty(),
+        "account-set mismatch must not load"
+    );
+    assert_eq!(outcome.skipped.len(), 1);
+    let (skipped_id, reason) = &outcome.skipped[0];
+    assert_eq!(*skipped_id, id_a);
+    assert!(matches!(
+        reason,
+        SkipReason::CorruptPersistedRow {
+            kind: CorruptKind::SnapshotIdentityMismatch
         }
     ));
     assert!(mgr.get_wallet(&id_a).await.is_none());

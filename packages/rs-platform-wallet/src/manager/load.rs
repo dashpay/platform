@@ -169,19 +169,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 // skips a second eager gap-window derivation.
                 Some(info) => {
                     let mut info = *info;
-                    // The snapshot must describe this row's wallet; a
-                    // mismatch is a corrupt row, skipped like any other
-                    // structural failure.
-                    if info.wallet_id != expected_wallet_id || info.network != network {
+                    // The snapshot must describe this row's wallet and its
+                    // account set must agree with the manifest that built
+                    // the watch-only wallet above. Either mismatch is a
+                    // wrong-row snapshot — skipped like any structural
+                    // failure, kept distinct from unreadable bytes.
+                    if info.wallet_id != expected_wallet_id
+                        || info.network != network
+                        || !snapshot_accounts_match_manifest(&info, &account_manifest)
+                    {
                         let reason = SkipReason::CorruptPersistedRow {
-                            kind: CorruptKind::DecodeError(format!(
-                                "managed-info snapshot (wallet {}, network {:?}) does not \
-                                 match its row (wallet {}, network {:?})",
-                                hex::encode(info.wallet_id),
-                                info.network,
-                                hex::encode(expected_wallet_id),
-                                network,
-                            )),
+                            kind: CorruptKind::SnapshotIdentityMismatch,
                         };
                         outcome.skipped.push((expected_wallet_id, reason.clone()));
                         self.event_manager
@@ -327,4 +325,47 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         Ok(outcome)
     }
+}
+
+/// Whether the snapshot's account set matches the row's account manifest.
+///
+/// The manifest is the account-set oracle used to build the watch-only
+/// wallet; a snapshot carrying a different set of account types describes
+/// a different wallet and must not be consumed.
+///
+/// The manifest is enumerated from `Wallet::all_accounts` (ECDSA-only:
+/// carries `PlatformPayment`, omits the BLS `ProviderOperatorKeys` /
+/// EdDSA `ProviderPlatformKeys`); the snapshot from
+/// `ManagedWalletInfo::all_managed_accounts` (the mirror: carries the
+/// BLS/EdDSA provider keys, omits `PlatformPayment`). Comparison is
+/// restricted to the families both enumerations can carry so this known
+/// asymmetry never rejects a legitimate snapshot.
+fn snapshot_accounts_match_manifest(
+    info: &ManagedWalletInfo,
+    manifest: &[crate::changeset::AccountRegistrationEntry],
+) -> bool {
+    use key_wallet::account::AccountType;
+    use std::collections::BTreeSet;
+
+    fn comparable(t: &AccountType) -> bool {
+        !matches!(
+            t,
+            AccountType::ProviderOperatorKeys
+                | AccountType::ProviderPlatformKeys
+                | AccountType::PlatformPayment { .. }
+        )
+    }
+
+    let manifest_types: BTreeSet<AccountType> = manifest
+        .iter()
+        .map(|e| e.account_type)
+        .filter(comparable)
+        .collect();
+    let snapshot_types: BTreeSet<AccountType> = info
+        .all_managed_accounts()
+        .iter()
+        .map(|a| a.managed_account_type().to_account_type())
+        .filter(comparable)
+        .collect();
+    manifest_types == snapshot_types
 }
