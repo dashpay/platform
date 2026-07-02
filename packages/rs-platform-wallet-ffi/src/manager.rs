@@ -174,6 +174,22 @@ unsafe fn create_wallet_from_mnemonic_impl(
     PlatformWalletFFIResult::ok()
 }
 
+/// `reason_code`: the persisted row had no usable account manifest to
+/// rebuild the account collection from.
+pub const LOAD_SKIP_REASON_MISSING_MANIFEST: u32 = 100;
+/// `reason_code`: a manifest `account_xpub` failed to parse as a
+/// well-formed extended public key.
+pub const LOAD_SKIP_REASON_MALFORMED_XPUB: u32 = 101;
+/// `reason_code`: any other structural decode / projection failure on
+/// the persisted row.
+pub const LOAD_SKIP_REASON_DECODE_ERROR: u32 = 102;
+/// `reason_code`: an unrecognized `CorruptKind` — forward-compat
+/// fallback until this crate maps a newly added corrupt-row family.
+pub const LOAD_SKIP_REASON_CORRUPT_OTHER: u32 = 199;
+/// `reason_code`: an unrecognized `SkipReason` — forward-compat
+/// fallback until this crate maps a newly added skip reason.
+pub const LOAD_SKIP_REASON_OTHER: u32 = 200;
+
 /// One wallet skipped during `load_from_persistor` because its
 /// persisted row was structurally corrupt (per-row decode failure).
 /// The load path is seedless and watch-only, so this is the only skip
@@ -183,9 +199,13 @@ unsafe fn create_wallet_from_mnemonic_impl(
 pub struct SkippedWalletFFI {
     /// The (public) 32-byte wallet id that was skipped.
     pub wallet_id: [u8; 32],
-    /// Structural skip reason. `100` = missing account manifest,
-    /// `101` = malformed account xpub, `102` = any other structural
-    /// decode error. No secret material is ever carried.
+    /// Structural skip reason — one of the `LOAD_SKIP_REASON_*`
+    /// constants: [`LOAD_SKIP_REASON_MISSING_MANIFEST`] (100),
+    /// [`LOAD_SKIP_REASON_MALFORMED_XPUB`] (101),
+    /// [`LOAD_SKIP_REASON_DECODE_ERROR`] (102),
+    /// [`LOAD_SKIP_REASON_CORRUPT_OTHER`] (199), or
+    /// [`LOAD_SKIP_REASON_OTHER`] (200). No secret material is ever
+    /// carried.
     pub reason_code: u32,
 }
 
@@ -212,16 +232,16 @@ fn skip_reason_code(reason: &platform_wallet::SkipReason) -> u32 {
     use platform_wallet::manager::load_outcome::CorruptKind;
     match reason {
         platform_wallet::SkipReason::CorruptPersistedRow { kind } => match kind {
-            CorruptKind::MissingManifest => 100,
-            CorruptKind::MalformedXpub => 101,
-            CorruptKind::DecodeError(_) => 102,
+            CorruptKind::MissingManifest => LOAD_SKIP_REASON_MISSING_MANIFEST,
+            CorruptKind::MalformedXpub => LOAD_SKIP_REASON_MALFORMED_XPUB,
+            CorruptKind::DecodeError(_) => LOAD_SKIP_REASON_DECODE_ERROR,
             // `CorruptKind` is #[non_exhaustive]; a future variant maps to a
             // generic corrupt-row code until this mapping is extended.
-            _ => 199,
+            _ => LOAD_SKIP_REASON_CORRUPT_OTHER,
         },
         // `SkipReason` is #[non_exhaustive]; a future reason maps to a
         // generic skip code until this mapping is extended.
-        _ => 200,
+        _ => LOAD_SKIP_REASON_OTHER,
     }
 }
 
@@ -371,6 +391,21 @@ pub unsafe extern "C" fn platform_wallet_manager_load_from_persistor(
     manager_handle: Handle,
     out_outcome: *mut LoadOutcomeFFI,
 ) -> PlatformWalletFFIResult {
+    // Initialize the out-param first so every early-return path below
+    // leaves it releasable (zeroed counts, null `skipped`) — matches this
+    // crate's null-init-first out-pointer idiom and keeps
+    // `platform_wallet_load_outcome_free` safe on the error paths too.
+    if !out_outcome.is_null() {
+        std::ptr::write(
+            out_outcome,
+            LoadOutcomeFFI {
+                loaded_count: 0,
+                skipped_count: 0,
+                skipped: std::ptr::null_mut(),
+            },
+        );
+    }
+
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
         runtime().block_on(manager.load_from_persistor())
     });
@@ -544,5 +579,59 @@ mod tests {
     fn birth_height_override_opt_false_is_none_regardless_of_value() {
         assert_eq!(birth_height_override_opt(false, 0), None);
         assert_eq!(birth_height_override_opt(false, 99), None);
+    }
+
+    #[test]
+    fn load_skip_reason_wire_values_are_stable() {
+        // FFI consumers hardcode these numbers; the ABI must not drift.
+        assert_eq!(LOAD_SKIP_REASON_MISSING_MANIFEST, 100);
+        assert_eq!(LOAD_SKIP_REASON_MALFORMED_XPUB, 101);
+        assert_eq!(LOAD_SKIP_REASON_DECODE_ERROR, 102);
+        assert_eq!(LOAD_SKIP_REASON_CORRUPT_OTHER, 199);
+        assert_eq!(LOAD_SKIP_REASON_OTHER, 200);
+    }
+
+    #[test]
+    fn skip_reason_code_maps_known_kinds_to_constants() {
+        use platform_wallet::manager::load_outcome::CorruptKind;
+        use platform_wallet::SkipReason;
+
+        let corrupt = |kind| SkipReason::CorruptPersistedRow { kind };
+        assert_eq!(
+            skip_reason_code(&corrupt(CorruptKind::MissingManifest)),
+            LOAD_SKIP_REASON_MISSING_MANIFEST
+        );
+        assert_eq!(
+            skip_reason_code(&corrupt(CorruptKind::MalformedXpub)),
+            LOAD_SKIP_REASON_MALFORMED_XPUB
+        );
+        assert_eq!(
+            skip_reason_code(&corrupt(CorruptKind::DecodeError("boom".into()))),
+            LOAD_SKIP_REASON_DECODE_ERROR
+        );
+    }
+
+    #[test]
+    fn load_from_persistor_initializes_out_param_on_early_return() {
+        // An unknown handle early-returns before the success block. The
+        // out-param must be reset to a releasable zeroed state so a caller
+        // that later calls `platform_wallet_load_outcome_free` never does
+        // `Box::from_raw` on the uninitialized `skipped` pointer.
+        let mut outcome = LoadOutcomeFFI {
+            loaded_count: 42,
+            skipped_count: 7,
+            skipped: std::ptr::NonNull::<SkippedWalletFFI>::dangling().as_ptr(),
+        };
+
+        let result =
+            unsafe { platform_wallet_manager_load_from_persistor(NULL_HANDLE, &mut outcome) };
+
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(outcome.loaded_count, 0);
+        assert_eq!(outcome.skipped_count, 0);
+        assert!(outcome.skipped.is_null());
+
+        // Null `skipped` now makes the release path a safe no-op.
+        unsafe { platform_wallet_load_outcome_free(&mut outcome) };
     }
 }
