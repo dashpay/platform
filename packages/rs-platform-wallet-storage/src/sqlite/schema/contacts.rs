@@ -1,45 +1,36 @@
 //! Unified `contacts` table writer and per-wallet reader.
 //!
-//! One row per `(wallet_id, owner_id, contact_id)` relationship. The
-//! `state` column records which lifecycle stage the relationship is in
-//! (`sent` / `received` / `established`), collapsing what used to be
-//! three sibling tables into one. A pending relationship is `sent` XOR
-//! `received` and carries only the matching request blob; an
-//! `established` relationship carries both request blobs plus the four
+//! One row per `(wallet_id, owner_id, contact_id)` relationship; the `state`
+//! column records its lifecycle stage (`sent` / `received` / `established`). A
+//! pending relationship is `sent` XOR `received` and carries only the matching
+//! request blob; an `established` one carries both request blobs plus the four
 //! metadata columns (`alias`, `note`, `is_hidden`, `accepted_accounts`).
 
-use rusqlite::{params, Transaction};
+use std::collections::BTreeMap;
 
-use platform_wallet::changeset::ContactChangeSet;
+use rusqlite::{params, Connection, Transaction};
+
+use dpp::prelude::Identifier;
+use platform_wallet::changeset::{
+    ContactChangeSet, ContactRequestEntry, ReceivedContactRequestKey, SentContactRequestKey,
+};
+use platform_wallet::wallet::identity::{ContactRequest, EstablishedContact};
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
+use crate::sqlite::schema::blob::impl_persistable_blob;
 
-#[cfg(feature = "__test-helpers")]
-use dpp::prelude::Identifier;
-#[cfg(feature = "__test-helpers")]
-use platform_wallet::changeset::{
-    ContactRequestEntry, ReceivedContactRequestKey, SentContactRequestKey,
-};
-#[cfg(feature = "__test-helpers")]
-use platform_wallet::wallet::identity::{ContactRequest, EstablishedContact};
-#[cfg(feature = "__test-helpers")]
-use rusqlite::Connection;
-#[cfg(feature = "__test-helpers")]
-use std::collections::BTreeMap;
+// PUBLIC material only: contact-request types + the accepted-account
+// index reaching the contacts `_blob` columns (contact requests carry
+// public keys/refs; accepted_accounts is a list of account indices).
+impl_persistable_blob!(ContactRequest, Vec<u32>);
 
-/// Single source of truth for the `contacts.state` TEXT-column domain.
-///
-/// One label per lifecycle stage of a DashPay contact relationship
-/// (writer side: [`contact_state_db_label`]). The migration in
-/// `migrations/V001__initial.rs` interpolates this array into the
-/// `CHECK (state IN (...))` clause so an unknown label is rejected at
-/// insert time rather than landing as silent garbage. The
-/// `contact_state_labels_match_enum` unit test below enforces
-/// set-equality between this array and the writer's output — drift (a
-/// renamed/added stage) becomes a failing test, not a runtime
-/// divergence between Rust and SQLite.
+/// Source of truth for the `contacts.state` TEXT domain, one label per
+/// contact-relationship lifecycle stage. `migrations/V001__initial.rs`
+/// interpolates it into a `CHECK (state IN (...))`;
+/// `contact_state_labels_match_enum` keeps it in sync with
+/// [`contact_state_db_label`].
 pub(crate) const CONTACT_STATE_LABELS: &[&str] = &["sent", "received", "established"];
 
 /// Lifecycle stage of a `contacts` row.
@@ -67,7 +58,6 @@ fn contact_state_db_label(state: ContactState) -> &'static str {
 /// unknown label is a hard error — the migration's `CHECK` constraint
 /// already rejects writes outside the domain, so reaching this arm
 /// means on-disk corruption or a forward-incompatible row.
-#[cfg(feature = "__test-helpers")]
 fn contact_state_from_label(label: &str) -> Result<ContactState, WalletStorageError> {
     match label {
         "sent" => Ok(ContactState::Sent),
@@ -79,16 +69,21 @@ fn contact_state_from_label(label: &str) -> Result<ContactState, WalletStorageEr
     }
 }
 
-/// Storage-internal snapshot of one wallet's `contacts` rows.
-///
-/// Mirrors the populated-only subset of
-/// [`ContactChangeSet`](platform_wallet::changeset::ContactChangeSet);
-/// `removed_*` are absent because deletes never reach storage as rows
-/// (the writer applies them as `DELETE`s). Only built by the
-/// `__test-helpers` reader path so this crate's own integration tests
-/// can assert on the hardened (fail-hard) contacts reader; the
-/// production `load()` reconstruction that consumes it lands with the
-/// rehydration feature.
+/// Storage-internal snapshot of one wallet's `contacts` rows: the
+/// populated-only subset of
+/// [`ContactChangeSet`](platform_wallet::changeset::ContactChangeSet)
+/// (`removed_*` absent — deletes reach storage as `DELETE`s). `pub(crate)`;
+/// the public feed is [`load_changeset`]. Promoted to `pub` under
+/// `__test-helpers` for this crate's integration tests.
+#[derive(Debug, Default, PartialEq)]
+#[cfg(not(feature = "__test-helpers"))]
+pub(crate) struct ContactsRecords {
+    pub sent_requests: BTreeMap<SentContactRequestKey, ContactRequestEntry>,
+    pub incoming_requests: BTreeMap<ReceivedContactRequestKey, ContactRequestEntry>,
+    pub established: BTreeMap<SentContactRequestKey, EstablishedContact>,
+}
+
+/// See the `not(__test-helpers)` definition for the canonical docs.
 #[derive(Debug, Default, PartialEq)]
 #[cfg(feature = "__test-helpers")]
 pub struct ContactsRecords {
@@ -97,26 +92,20 @@ pub struct ContactsRecords {
     pub established: BTreeMap<SentContactRequestKey, EstablishedContact>,
 }
 
-/// Apply a [`ContactChangeSet`] onto the unified `contacts` table.
-///
-/// Ordering matches the previous three-table writer: inserts before
-/// removes. The auto-establishment contract is honoured by `state`
-/// precedence — a pending upsert (`sent` / `received`) never downgrades
-/// an already-`established` row, and an `established` upsert collapses
-/// any prior pending row for the same pair (both request blobs + the
-/// four metadata columns are set, `state = 'established'`).
+/// Apply a [`ContactChangeSet`] onto the `contacts` table (inserts before
+/// removes). Auto-establishment is honoured by `state` precedence: a pending
+/// upsert never downgrades an already-`established` row, and an `established`
+/// upsert collapses any prior pending row for the pair (both request blobs +
+/// the four metadata columns, `state = 'established'`).
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     cs: &ContactChangeSet,
 ) -> Result<(), WalletStorageError> {
     if !cs.sent_requests.is_empty() {
-        // Pending-sent upsert. `outgoing_request` is set; `state` becomes
-        // 'sent' UNLESS the row is already established (don't downgrade)
-        // or an incoming request blob is already stored — in which case
-        // both sides are present and the row promotes to 'established' in
-        // the same statement. The inserted label flows through
-        // `contact_state_db_label` so it stays the writer's codomain.
+        // Pending-sent upsert: `state` becomes 'sent' unless the row is
+        // already established or an incoming blob is present, in which case
+        // both sides exist and it promotes to 'established' in one statement.
         let sent = contact_state_db_label(ContactState::Sent);
         let mut stmt = tx.prepare_cached(
             "INSERT INTO contacts (wallet_id, owner_id, contact_id, state, outgoing_request) \
@@ -152,11 +141,7 @@ pub fn apply(
         }
     }
     if !cs.incoming_requests.is_empty() {
-        // Pending-received upsert. Symmetric to the sent path:
-        // `incoming_request` is set, `state` becomes 'received' unless the
-        // row is already established or an outgoing request blob is already
-        // stored — in which case both sides are present and the row
-        // promotes to 'established' in the same statement.
+        // Pending-received upsert, symmetric to the sent path.
         let received = contact_state_db_label(ContactState::Received);
         let mut stmt = tx.prepare_cached(
             "INSERT INTO contacts (wallet_id, owner_id, contact_id, state, incoming_request) \
@@ -192,9 +177,8 @@ pub fn apply(
         }
     }
     if !cs.established.is_empty() {
-        // Establishment collapses any prior pending row for the pair: set
-        // both request blobs + the four metadata columns and force the
-        // `established` state.
+        // Collapse any prior pending row: both request blobs + the four
+        // metadata columns, forcing the `established` state.
         let established_label = contact_state_db_label(ContactState::Established);
         let mut stmt = tx.prepare_cached(
             "INSERT INTO contacts \
@@ -236,16 +220,21 @@ pub fn apply(
 /// decode (bad blob, non-32-byte id, unknown state, or a pending row
 /// missing its request blob) is a hard error — corruption is never
 /// silently dropped.
-#[cfg(feature = "__test-helpers")]
 pub(crate) fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<ContactsRecords, WalletStorageError> {
     let mut state = ContactsRecords::default();
 
+    // `length()` for each blob column is read before the column itself so an
+    // oversize blob is caught before the Vec is allocated.  NULL blobs return
+    // NULL from `length()`, which maps to `None` here — no gate needed.
     let mut stmt = conn.prepare(
-        "SELECT owner_id, contact_id, state, outgoing_request, incoming_request, \
-                alias, note, is_hidden, accepted_accounts \
+        "SELECT owner_id, contact_id, state, \
+                length(outgoing_request), outgoing_request, \
+                length(incoming_request), incoming_request, \
+                alias, note, is_hidden, \
+                length(accepted_accounts), accepted_accounts \
          FROM contacts WHERE wallet_id = ?1",
     )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
@@ -253,13 +242,21 @@ pub(crate) fn load_state(
         let owner: Vec<u8> = row.get(0)?;
         let contact: Vec<u8> = row.get(1)?;
         let label: String = row.get(2)?;
-        let outgoing: Option<Vec<u8>> = row.get(3)?;
-        let incoming: Option<Vec<u8>> = row.get(4)?;
+        if let Some(n) = row.get::<_, Option<i64>>(3)? {
+            blob::check_size(n)?;
+        }
+        let outgoing: Option<Vec<u8>> = row.get(4)?;
+        if let Some(n) = row.get::<_, Option<i64>>(5)? {
+            blob::check_size(n)?;
+        }
+        let incoming: Option<Vec<u8>> = row.get(6)?;
         let (owner_id, contact_id) = decode_pair_key(&owner, &contact)?;
 
         match contact_state_from_label(&label)? {
             ContactState::Sent => {
                 let request = decode_request("outgoing_request", outgoing.as_deref())?;
+                // We are the sender; the contact is the recipient.
+                check_request_parties(&request, &owner_id, &contact_id)?;
                 state.sent_requests.insert(
                     SentContactRequestKey {
                         owner_id,
@@ -270,6 +267,8 @@ pub(crate) fn load_state(
             }
             ContactState::Received => {
                 let request = decode_request("incoming_request", incoming.as_deref())?;
+                // The contact is the sender; we are the recipient.
+                check_request_parties(&request, &contact_id, &owner_id)?;
                 state.incoming_requests.insert(
                     ReceivedContactRequestKey {
                         owner_id,
@@ -281,10 +280,16 @@ pub(crate) fn load_state(
             ContactState::Established => {
                 let outgoing_request = decode_request("outgoing_request", outgoing.as_deref())?;
                 let incoming_request = decode_request("incoming_request", incoming.as_deref())?;
-                let alias: Option<String> = row.get(5)?;
-                let note: Option<String> = row.get(6)?;
-                let is_hidden: bool = row.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0;
-                let accepted_blob: Option<Vec<u8>> = row.get(8)?;
+                // Outgoing = us→contact; incoming = contact→us.
+                check_request_parties(&outgoing_request, &owner_id, &contact_id)?;
+                check_request_parties(&incoming_request, &contact_id, &owner_id)?;
+                let alias: Option<String> = row.get(7)?;
+                let note: Option<String> = row.get(8)?;
+                let is_hidden: bool = row.get::<_, Option<i64>>(9)?.unwrap_or(0) != 0;
+                if let Some(n) = row.get::<_, Option<i64>>(10)? {
+                    blob::check_size(n)?;
+                }
+                let accepted_blob: Option<Vec<u8>> = row.get(11)?;
                 let accepted_accounts: Vec<u32> = match accepted_blob {
                     Some(bytes) => blob::decode(&bytes)?,
                     None => Vec::new(),
@@ -311,11 +316,29 @@ pub(crate) fn load_state(
     Ok(state)
 }
 
+/// Build a keyless [`ContactChangeSet`] for one wallet — the
+/// rehydration feed the manager layers onto the restored managed
+/// identities. PUBLIC material only; `removed_*` are always empty
+/// (deletes never reach storage as rows). Fail-hard on a corrupt row,
+/// inherited from [`load_state`].
+pub fn load_changeset(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<ContactChangeSet, WalletStorageError> {
+    let records = load_state(conn, wallet_id)?;
+    Ok(ContactChangeSet {
+        sent_requests: records.sent_requests,
+        incoming_requests: records.incoming_requests,
+        established: records.established,
+        removed_sent: Default::default(),
+        removed_incoming: Default::default(),
+    })
+}
+
 /// Decode a `ContactRequest` from a nullable request column. A NULL
 /// column on a state that requires it (a pending row missing its blob,
 /// or an established row missing either side) is a hard error — the
 /// shape invariant is part of the on-disk contract.
-#[cfg(feature = "__test-helpers")]
 fn decode_request(
     column: &'static str,
     bytes: Option<&[u8]>,
@@ -329,7 +352,23 @@ fn decode_request(
     }
 }
 
-#[cfg(feature = "__test-helpers")]
+/// Cross-check a decoded [`ContactRequest`]'s parties against the typed
+/// `(owner_id, contact_id)` columns it was selected by. A blob that names a
+/// different sender/recipient than its indexed columns is corruption (or a
+/// mis-filed row) and is rejected rather than rehydrated into the wrong slot.
+fn check_request_parties(
+    request: &ContactRequest,
+    expected_sender: &Identifier,
+    expected_recipient: &Identifier,
+) -> Result<(), WalletStorageError> {
+    if request.sender_id != *expected_sender || request.recipient_id != *expected_recipient {
+        return Err(WalletStorageError::blob_decode(
+            "contacts request sender/recipient disagree with the typed owner/contact columns",
+        ));
+    }
+    Ok(())
+}
+
 fn decode_pair_key(a: &[u8], b: &[u8]) -> Result<(Identifier, Identifier), WalletStorageError> {
     let a32 = <[u8; 32]>::try_from(a)
         .map_err(|_| WalletStorageError::blob_decode("contacts.id column is not 32 bytes"))?;
@@ -338,9 +377,8 @@ fn decode_pair_key(a: &[u8], b: &[u8]) -> Result<(Identifier, Identifier), Walle
     Ok((Identifier::from(a32), Identifier::from(b32)))
 }
 
-/// Test-helper wrapper over [`load_state`] so this crate's integration
-/// tests can assert on the hardened (fail-hard) contacts reader without
-/// promoting the production surface beyond `pub(crate)`.
+/// Test-helper wrapper over [`load_state`] without promoting the production
+/// surface beyond `pub(crate)`.
 #[cfg(feature = "__test-helpers")]
 pub fn load_state_for_test(
     conn: &Connection,
@@ -354,10 +392,8 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    /// Exhaustive sample of every [`ContactState`] variant. The match
-    /// arm uses no wildcard, so an added variant becomes a compile error
-    /// here and forces the sample list, `contact_state_db_label`, and
-    /// [`CONTACT_STATE_LABELS`] to be updated together.
+    /// Every [`ContactState`] variant; the wildcard-free match below fails to
+    /// compile if one is added.
     fn all_contact_state_variants() -> Vec<ContactState> {
         let variants = vec![
             ContactState::Sent,

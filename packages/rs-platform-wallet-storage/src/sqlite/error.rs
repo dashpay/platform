@@ -1,18 +1,13 @@
 //! Typed errors for `platform-wallet-storage`.
 //!
-//! Every variant carries the upstream error via `#[source]` (or
-//! `#[from]` where the conversion is the only thing the trait does),
-//! never via a stringified copy. Variants never store user-facing
-//! prose — the `#[error("...")]` attribute provides the renderable
-//! `Display` form; the typed fields carry diagnostics.
+//! Variants carry the upstream error via `#[source]`/`#[from]`, never a
+//! stringified copy; the `#[error("...")]` attribute provides `Display`.
 //!
-//! At the `PlatformWalletPersistence` trait boundary, this type
-//! converts into `PersistenceError`: `LockPoisoned` keeps its
-//! dedicated variant; everything else flows through
-//! `PersistenceError::Backend { kind, source }` — `kind` is classified
-//! by [`WalletStorageError::persistence_kind`] (Transient / Constraint /
-//! Fatal) and `source` carries the boxed typed error so consumers can
-//! walk `Error::source()` to the underlying `rusqlite` payload.
+//! At the `PlatformWalletPersistence` boundary this converts into
+//! `PersistenceError`: `LockPoisoned` keeps its dedicated variant, and
+//! everything else flows through `Backend { kind, source }` where `kind`
+//! comes from [`WalletStorageError::persistence_kind`] and `source`
+//! preserves the typed error for `Error::source()` walking.
 
 use std::path::PathBuf;
 
@@ -99,7 +94,7 @@ pub enum WalletStorageError {
     },
 
     /// `delete_wallet` (or another wallet-id-keyed operation) was
-    /// called with an id that has no matching `wallet_metadata` row.
+    /// called with an id that has no matching `wallets` row.
     #[error("wallet not found: {}", hex::encode(wallet_id))]
     WalletNotFound { wallet_id: [u8; 32] },
 
@@ -199,12 +194,20 @@ pub enum WalletStorageError {
     #[error("identity entry id disagrees with its map key")]
     IdentityEntryIdMismatch,
 
+    /// An `account_registrations` row's typed `(account_type, account_index)`
+    /// columns disagreed with the decoded `AccountRegistrationEntry` blob.
+    /// Rejected at decode time so the manifest oracle never hands back an
+    /// entry that names a different account type or index than the indexed
+    /// columns it was selected by.
+    #[error(
+        "account_registrations entry fields disagree with typed columns \
+         (typed columns vs blob account_type or account_index mismatch)"
+    )]
+    AccountRegistrationEntryMismatch,
+
     /// An `asset_locks` row's typed-column `(outpoint, account_index)`
-    /// disagreed with the lifecycle blob's `(out_point, account_index)`.
-    /// Mirrors `IdentityKeyEntryMismatch` — a torn write, partial
-    /// migration, or restored corruption that survives the per-row
-    /// `integrity_check` is still rejected at decode time rather than
-    /// mis-bucketing the lock under the wrong account.
+    /// disagreed with the lifecycle blob's. Rejected at decode time rather
+    /// than mis-bucketing the lock under the wrong account.
     #[error(
         "asset_lock entry fields disagree with typed columns \
          (typed outpoint={typed_outpoint}, blob outpoint={blob_outpoint}, \
@@ -217,25 +220,14 @@ pub enum WalletStorageError {
         blob_account_index: u32,
     },
 
-    /// A blob payload exceeded the configured allocation cap during
-    /// decode. Surfaced separately from generic [`Self::BlobDecode`] so
-    /// operators can distinguish a hostile or corrupted oversize blob
-    /// from a structural decode failure. Defaults to 16 MiB — well
-    /// above any legitimate per-row payload.
+    /// A blob exceeded the decode allocation cap (default 16 MiB).
+    /// Separate from [`Self::BlobDecode`] so operators can distinguish an
+    /// oversize blob from a structural decode failure.
     #[error("blob exceeded decode size limit ({len_bytes} bytes > {limit_bytes} byte cap)")]
     BlobTooLarge {
         len_bytes: usize,
         limit_bytes: usize,
     },
-
-    /// An unspent UTXO named an address absent from
-    /// `core_derived_addresses`, so its owning account index can't be
-    /// resolved. Persisting it would mis-file live funds under account
-    /// 0 with no path back to the real account, so the write is refused.
-    /// Spent-only placeholder rows tolerate a missing mapping (they're
-    /// excluded from the unspent set) and do not raise this.
-    #[error("unspent utxo address {address} is not in core_derived_addresses")]
-    UtxoAddressNotDerived { address: String },
 
     /// `PRAGMA foreign_keys = ON` was issued on open but the read-back
     /// reported the constraint enforcement is still off — the linked
@@ -243,6 +235,42 @@ pub enum WalletStorageError {
     /// in). Hard-error at open rather than letting orphan rows accrue.
     #[error("SQLite foreign-key enforcement could not be enabled on this connection")]
     ForeignKeysNotEnforced,
+
+    /// The requested `journal_mode` read back as a different mode —
+    /// SQLite silently fell back (e.g. WAL→DELETE on some FUSE mounts).
+    /// With `synchronous=NORMAL` that risks corruption on power loss, so
+    /// open hard-errors instead of running downgraded.
+    #[error("journal_mode {requested} could not be applied (SQLite reports {actual})")]
+    JournalModeNotApplied {
+        requested: &'static str,
+        actual: String,
+    },
+
+    /// A pre-existing / restored DB passed `integrity_check` but its
+    /// `refinery_schema_history` carries a malformed row (non-RFC3339
+    /// `applied_on` or non-numeric `checksum`). Probed BEFORE refinery
+    /// runs so a foreign or corrupted-but-integrity-valid input returns
+    /// a typed error instead of refinery panicking on the parse.
+    #[error("refinery_schema_history is malformed: {reason}")]
+    SchemaHistoryMalformed { reason: &'static str },
+
+    /// A restore source / opened DB carries a `refinery_schema_history`
+    /// (so it is refinery-versioned) but its `application_id` header does
+    /// not match the wallet-storage magic — it is a foreign SQLite DB,
+    /// not a wallet database. Rejected before it can be persisted over
+    /// the live wallet DB or migrated in place.
+    #[error(
+        "not a platform-wallet-storage database: application_id {found:#010x} != expected {expected:#010x}"
+    )]
+    NotAWalletDb { expected: i32, found: i32 },
+
+    /// A second [`SqlitePersister`](crate::SqlitePersister) `open()` on a
+    /// path already open in THIS process. Each handle has its own
+    /// `Mutex<Connection>` and write buffer, so buffered writes on one are
+    /// invisible to the other — silent state divergence. Refused until the
+    /// first persister drops.
+    #[error("a SqlitePersister is already open on {} in this process", path.display())]
+    AlreadyOpen { path: PathBuf },
 
     /// A value couldn't be cast to the database's native i64
     /// representation without losing magnitude.
@@ -253,20 +281,11 @@ pub enum WalletStorageError {
         target: SafeCastTarget,
     },
 
-    /// Flush failed transiently (e.g. `SQLITE_BUSY` / `SQLITE_LOCKED`)
-    /// for `wallet_id`. The buffered changeset has been restored — the
-    /// next `flush(wallet_id)` will retry the same data merged with
-    /// anything stored in between. Callers should back off and retry
-    /// rather than dropping state.
-    ///
-    /// **Use exponential backoff; do NOT tight-loop on this error** —
-    /// hammering the persister at full speed turns a transient lock
-    /// contention into a hot CPU spin and delays whoever holds the
-    /// lock from releasing it.
-    ///
-    /// The variant name `FlushRetryable` is intentionally embedded in
-    /// the `Display` output so operators grepping production logs can
-    /// match on the variant directly.
+    /// Flush failed transiently (e.g. `SQLITE_BUSY` / `SQLITE_LOCKED`) for
+    /// `wallet_id`. The buffered changeset is restored, so the next
+    /// `flush(wallet_id)` retries it merged with anything stored in
+    /// between. Use **exponential backoff** — tight-looping turns lock
+    /// contention into a CPU spin that starves the lock holder.
     #[error(
         "FlushRetryable: flush failed transiently for wallet {}; buffer preserved for retry",
         hex::encode(wallet_id)
@@ -291,31 +310,21 @@ impl From<WalletStorageError> for PersistenceError {
 }
 
 impl WalletStorageError {
-    /// Construct a typed `BlobDecode` error from a static reason.
-    /// Used by schema modules that hit a structural decode error
-    /// (e.g. a 32-byte id column with the wrong length, or trailing
-    /// bytes after a payload).
+    /// Construct a `BlobDecode` error from a static reason. Used by schema
+    /// modules on a structural decode error (wrong-length id, trailing
+    /// bytes).
     pub(crate) fn blob_decode(reason: &'static str) -> Self {
         Self::BlobDecode { reason }
     }
 
-    /// `true` when the underlying failure is safe to retry — the
-    /// caller should preserve in-flight state and call again.
-    /// Transient codes:
-    /// - `DatabaseBusy` / `DatabaseLocked`: contention.
-    /// - `DiskFull`: operator clears disk space.
-    /// - `SystemIoFailure`: kernel-level I/O blip (NFS, raid rebuild).
-    /// - `OutOfMemory`: transient memory pressure.
+    /// `true` when the failure is safe to retry — the caller should
+    /// preserve in-flight state and call again. Transient codes are the
+    /// recoverable environmental ones: `DatabaseBusy`/`DatabaseLocked`
+    /// (contention), `DiskFull`, `SystemIoFailure`, `OutOfMemory`.
     ///
-    /// All four classes are recoverable environmental conditions —
-    /// dropping buffered state on them would be data loss for a
-    /// problem the operator (or kernel) clears on its own.
-    ///
-    /// The OUTER match on `WalletStorageError` is intentionally
-    /// wildcard-free: the enum MUST NOT gain `#[non_exhaustive]` so a
-    /// future variant forces the author to classify it here. The
-    /// INNER match on `rusqlite::ErrorCode` uses a wildcard because
-    /// `ErrorCode` is `#[non_exhaustive]` upstream.
+    /// The OUTER match is intentionally wildcard-free so a future variant
+    /// forces explicit classification here; the INNER `ErrorCode` match
+    /// needs a wildcard because that enum is upstream `#[non_exhaustive]`.
     pub fn is_transient(&self) -> bool {
         use rusqlite::ErrorCode;
         match self {
@@ -343,13 +352,10 @@ impl WalletStorageError {
             | Self::AutoBackupDirUnwritable { .. }
             | Self::WalletNotFound { .. }
             | Self::WalletIdMismatch { .. }
-            // TODO(qa): `LockPoisoned` is classified as fatal here, but
-            // the end-to-end mutex-poison flow has no automated test (a
-            // panicking thread + join is hard to reproduce
-            // deterministically). Manual verification only via the
-            // table-driven test in `tests/sqlite_error_classification`.
-            // If you change this classification, re-derive
-            // `handle_flush_error`'s fatal-branch behavior to match.
+            // TODO(qa): `LockPoisoned` fatal classification has no e2e
+            // mutex-poison test; verified manually via
+            // `tests/sqlite_error_classification`. Re-check
+            // `handle_flush_error`'s fatal branch if you change it.
             | Self::LockPoisoned
             | Self::RestoreDestinationLocked
             | Self::InvalidWalletIdHex { .. }
@@ -362,28 +368,27 @@ impl WalletStorageError {
             | Self::ConsensusCodec { .. }
             | Self::BackupDestinationExists { .. }
             | Self::ForeignKeysNotEnforced
+            | Self::JournalModeNotApplied { .. }
+            | Self::SchemaHistoryMalformed { .. }
+            | Self::NotAWalletDb { .. }
+            | Self::AlreadyOpen { .. }
             | Self::IdentityKeyEntryMismatch
             | Self::IdentityEntryIdMismatch
+            | Self::AccountRegistrationEntryMismatch
             | Self::AssetLockEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
-            | Self::UtxoAddressNotDerived { .. }
             | Self::IntegerOverflow { .. } => false,
         }
     }
 
-    /// Trait-boundary classification for the
-    /// [`PersistenceError::Backend`] kind field. Three classes:
+    /// Trait-boundary classification for [`PersistenceError::Backend`]:
     ///
-    /// - [`PersistenceErrorKind::Transient`] — every variant where
-    ///   [`Self::is_transient`] is `true`. Caller MAY retry.
-    /// - [`PersistenceErrorKind::Constraint`] — SQL constraint /
-    ///   FK / NOT NULL / UNIQUE / PK / CHECK violations. Schema /
-    ///   integrity failure; caller bug, not infra.
+    /// - [`PersistenceErrorKind::Transient`] — [`Self::is_transient`] true; caller MAY retry.
+    /// - [`PersistenceErrorKind::Constraint`] — SQL constraint/FK/CHECK violation; caller bug.
     /// - [`PersistenceErrorKind::Fatal`] — everything else.
     ///
-    /// [`Self::LockPoisoned`] is handled by the `From` impl directly
-    /// (it maps to [`PersistenceError::LockPoisoned`] rather than
-    /// flowing through `Backend`).
+    /// [`Self::LockPoisoned`] never reaches here; the `From` impl maps it
+    /// straight to [`PersistenceError::LockPoisoned`].
     pub fn persistence_kind(&self) -> PersistenceErrorKind {
         use rusqlite::ErrorCode;
         if self.is_transient() {
@@ -395,10 +400,8 @@ impl WalletStorageError {
             {
                 PersistenceErrorKind::Constraint
             }
-            // Refinery surfaces FK / constraint problems through
-            // rusqlite; if that path leaks through here the typed
-            // variant lives in `Self::Migration`, which we leave as
-            // `Fatal` since a migration failure isn't a caller bug.
+            // A migration failure (`Self::Migration`) isn't a caller bug,
+            // so it stays `Fatal` rather than `Constraint`.
             _ => PersistenceErrorKind::Fatal,
         }
     }
@@ -442,11 +445,15 @@ impl WalletStorageError {
             Self::ConsensusCodec { .. } => "consensus_codec",
             Self::BackupDestinationExists { .. } => "backup_destination_exists",
             Self::ForeignKeysNotEnforced => "foreign_keys_not_enforced",
+            Self::JournalModeNotApplied { .. } => "journal_mode_not_applied",
+            Self::SchemaHistoryMalformed { .. } => "schema_history_malformed",
+            Self::NotAWalletDb { .. } => "not_a_wallet_db",
+            Self::AlreadyOpen { .. } => "already_open",
             Self::IdentityKeyEntryMismatch => "identity_key_entry_mismatch",
             Self::IdentityEntryIdMismatch => "identity_entry_id_mismatch",
+            Self::AccountRegistrationEntryMismatch => "account_registration_entry_mismatch",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
-            Self::UtxoAddressNotDerived { .. } => "utxo_address_not_derived",
             Self::IntegerOverflow { .. } => "integer_overflow",
         }
     }

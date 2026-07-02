@@ -30,12 +30,12 @@ fn tc078_object_safety() {
 /// rarely do.
 const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     (
-        "wallet_meta.rs",
-        "SELECT wallet_id FROM wallet_metadata ORDER BY wallet_id",
+        "wallets.rs",
+        "SELECT wallet_id FROM wallets ORDER BY wallet_id",
     ),
     (
-        "wallet_meta.rs",
-        "SELECT network, birth_height FROM wallet_metadata WHERE wallet_id",
+        "wallets.rs",
+        "SELECT network, birth_height FROM wallets WHERE wallet_id",
     ),
     ("asset_locks.rs", "SELECT outpoint, account_index"),
     ("platform_addrs.rs", "SELECT account_index, address_index"),
@@ -47,21 +47,53 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     ),
     (
         "platform_addrs.rs",
-        "SELECT wallet_id, account_index, address_index, address, balance, nonce",
+        "SELECT wallet_id, account_index, address_index, length(address), address, balance, nonce",
+    ),
+    // Pre-read `length()` gates added by PR #3968 review — substrings updated
+    // to reflect the new `length(<col>)` column in each SELECT.
+    (
+        "accounts.rs",
+        "SELECT account_index, length(account_xpub_bytes), account_xpub_bytes",
     ),
     (
         "accounts.rs",
-        "SELECT account_index, account_xpub_bytes FROM account_registrations",
+        "SELECT wallet_id, account_index, length(account_xpub_bytes), account_xpub_bytes",
     ),
-    (
-        "accounts.rs",
-        "SELECT wallet_id, account_index, account_xpub_bytes FROM account_registrations",
-    ),
+    // list_unspent_utxos (test-helper reader, ungated — global SQLITE_LIMIT_LENGTH covers it).
     ("core_state.rs", "SELECT outpoint, value, script, height"),
+    // load_state unspent-UTXO reader: pre-read length() gates on outpoint and script.
+    (
+        "core_state.rs",
+        "SELECT length(outpoint), outpoint, value, length(script), script, height",
+    ),
+    ("core_state.rs", "SELECT DISTINCT script FROM core_utxos"),
+    // Full-rehydration readers — one-shot SELECTs in `load_state`.
+    (
+        "accounts.rs",
+        "SELECT account_type, account_index, key_class, user_identity_id, friend_identity_id,",
+    ),
+    (
+        "core_state.rs",
+        "SELECT length(record_blob), record_blob FROM core_transactions",
+    ),
+    (
+        "core_state.rs",
+        "SELECT txid, length(islock_blob), islock_blob",
+    ),
+    (
+        "core_state.rs",
+        "SELECT last_processed_height, synced_height,",
+    ),
+    (
+        "identity_keys.rs",
+        "SELECT identity_id, key_id, length(public_key_blob), public_key_blob",
+    ),
     // P4 readers — `load_state` per area uses one-shot SELECTs.
+    // Substring covers both `fetch` (`SELECT length(entry_blob)…`) and
+    // `load_state` (`SELECT identity_id, length(entry_blob)…`).
     (
         "identities.rs",
-        "SELECT identity_id, entry_blob, tombstoned",
+        "length(entry_blob), entry_blob, tombstoned",
     ),
     ("contacts.rs", "SELECT owner_id, contact_id, state"),
 ];

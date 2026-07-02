@@ -2,13 +2,93 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use key_wallet::account::StandardAccountType;
+use key_wallet::managed_account::address_pool::AddressPoolType;
 use key_wallet::Network;
+
+use crate::manager::load_outcome::CorruptKind;
+
+/// Per-row failure surfacing during watch-only rehydration of a single
+/// persisted wallet. Maps 1:1 to [`CorruptKind`] for the
+/// [`SkipReason`](crate::manager::load_outcome::SkipReason) the load loop
+/// records.
+#[derive(Debug)]
+pub(crate) enum RehydrateRowError {
+    /// Manifest was empty — no account to rebuild the wallet around.
+    MissingManifest,
+    /// Building a watch-only [`Account`](key_wallet::account::Account) from a
+    /// manifest entry failed (xpub structurally malformed for its
+    /// [`AccountType`](key_wallet::account::AccountType)).
+    MalformedXpub,
+    /// `AccountCollection::insert` rejected an account (typically a
+    /// duplicate `account_type` within the manifest).
+    DecodeError(String),
+}
+
+impl From<RehydrateRowError> for CorruptKind {
+    fn from(e: RehydrateRowError) -> Self {
+        match e {
+            RehydrateRowError::MissingManifest => CorruptKind::MissingManifest,
+            RehydrateRowError::MalformedXpub => CorruptKind::MalformedXpub,
+            RehydrateRowError::DecodeError(s) => CorruptKind::DecodeError(s),
+        }
+    }
+}
 
 /// Errors that can occur in platform wallet operations
 #[derive(Debug, thiserror::Error)]
 pub enum PlatformWalletError {
     #[error("Wallet creation failed: {0}")]
     WalletCreation(String),
+
+    /// The persisted wallet has UTXOs to restore but no funds-bearing
+    /// account in its reconstructed account collection to hold them.
+    /// Fail-closed rather than reconstructing a silent zero balance —
+    /// the no-silent-zero mandate. Carries only the (public) wallet id
+    /// and the dropped-UTXO count, never key material.
+    #[error(
+        "rehydration topology unsupported for wallet {}: {utxo_count} persisted UTXO(s) but no funds-bearing account",
+        hex::encode(wallet_id)
+    )]
+    RehydrationTopologyUnsupported {
+        /// The wallet whose topology could not hold the persisted UTXOs.
+        wallet_id: [u8; 32],
+        /// How many persisted UTXOs would have been silently dropped.
+        utxo_count: usize,
+    },
+
+    /// The deep-index discovery probes did not mirror the account's real
+    /// address pools 1:1 during rehydration, so applying probe depths by
+    /// position would index the wrong pool. Fail-closed instead of risking
+    /// a misattributed derivation — the probes are built directly from the
+    /// same `address_pools()` enumeration, so a mismatch is a structural
+    /// invariant break, not user-reachable.
+    #[error(
+        "rehydration pool/probe mismatch: expected {expected} address pool(s) to mirror the discovery probes, found {found}"
+    )]
+    RehydrationPoolMismatch {
+        /// Number of discovery probes built from `address_pools()`.
+        expected: usize,
+        /// Number of real address pools from `address_pools_mut()`.
+        found: usize,
+    },
+
+    /// During rehydration a discovery probe and the real address pool it maps
+    /// to **by position** disagreed on `pool_type`, so applying the probe's
+    /// discovered depth would target the wrong chain. Fail-closed rather than
+    /// misattribute a derivation depth. The probes are built from the same
+    /// `address_pools()` enumeration, so a mismatch is a structural invariant
+    /// break, not user-reachable.
+    #[error(
+        "rehydration pool/probe chain-order mismatch at position {position}: real pool is {found:?} but probe is {expected:?}"
+    )]
+    RehydrationPoolTypeMismatch {
+        /// Index into the account's address-pool list where the mismatch was found.
+        position: usize,
+        /// The probe's pool type (discovery order).
+        expected: AddressPoolType,
+        /// The real pool's pool type at the same position.
+        found: AddressPoolType,
+    },
 
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),

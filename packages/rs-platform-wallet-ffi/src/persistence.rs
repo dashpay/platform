@@ -23,6 +23,7 @@ use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
     Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
+use platform_wallet::manager::load_outcome::{CorruptKind, SkipReason};
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
 use std::collections::BTreeMap;
@@ -148,11 +149,10 @@ pub struct PersistenceCallbacks {
         ) -> i32,
     >,
     /// Invoked on [`FFIPersister::load`] to pull the persisted wallet
-    /// list back into Rust for external-signable reconstruction.
-    /// (The function name still reads "watch-only" in older docs; the
-    /// reconstructed `Wallet` is built via
-    /// `Wallet::new_external_signable` so the signer surface routes
-    /// back to the host's keychain.)
+    /// list back into Rust. Each entry is rebuilt into a transient
+    /// `Wallet` used only to shape the keyless start-state projection;
+    /// the manager then re-registers the wallet watch-only and signs on
+    /// demand via the host mnemonic resolver.
     ///
     /// Implementations must set `*out_entries` to a Swift-allocated
     /// array of `WalletRestoreEntryFFI` and `*out_count` to the
@@ -1541,11 +1541,36 @@ impl PlatformWalletPersistence for FFIPersister {
         // fires before we leave this function.
         let entries = unsafe { slice::from_raw_parts(entries_ptr, count) };
         for entry in entries {
-            let (wallet_state, platform_address_state) = build_wallet_start_state(entry)?;
-            out.wallets.insert(entry.wallet_id, wallet_state);
-            if let Some(platform_address_state) = platform_address_state {
-                out.platform_addresses
-                    .insert(entry.wallet_id, platform_address_state);
+            match build_wallet_start_state(entry) {
+                Ok((wallet_state, platform_address_state)) => {
+                    out.wallets.insert(entry.wallet_id, wallet_state);
+                    if let Some(platform_address_state) = platform_address_state {
+                        out.platform_addresses
+                            .insert(entry.wallet_id, platform_address_state);
+                    }
+                }
+                Err(e) => {
+                    // One corrupt SwiftData row must never abort the whole
+                    // restore. Errors from `build_wallet_start_state` are
+                    // inherently per-row (decode / projection of THIS entry,
+                    // e.g. a malformed account xpub), so record the wallet as
+                    // skipped and continue — the manager folds this into
+                    // `LoadOutcome::skipped` and fires
+                    // `on_wallet_skipped_on_load`, and the other rows still
+                    // load. `PersistenceError`'s Display is structural (no
+                    // raw row bytes / key material), safe for `DecodeError`.
+                    tracing::warn!(
+                        wallet_id = %hex::encode(entry.wallet_id),
+                        error = %e,
+                        "load: skipping corrupt wallet restore-entry; continuing with the rest"
+                    );
+                    out.skipped.push((
+                        entry.wallet_id,
+                        SkipReason::CorruptPersistedRow {
+                            kind: corrupt_kind_from_build_err(&e),
+                        },
+                    ));
+                }
             }
         }
 
@@ -2752,12 +2777,50 @@ impl Drop for LoadGuard {
     }
 }
 
-/// Reconstruct an external-signable [`Wallet`] + matching start-state
-/// bucket from a single `WalletRestoreEntryFFI`. The mnemonic / seed
-/// stays in the host's keychain; signing requests route back through
-/// the configured signer surface (see
-/// `Wallet::new_external_signable`). Earlier revisions of this code
-/// path produced a `WatchOnly` wallet — that has been replaced.
+/// Marker error: an account xpub failed to bincode-decode into a
+/// well-formed extended public key. Boxed into the
+/// `PersistenceError::Backend` `source` so [`corrupt_kind_from_build_err`]
+/// recovers the classification by downcast — a typed discriminator
+/// rather than a `Display`-text match.
+#[derive(Debug)]
+struct MalformedXpubError(String);
+
+impl std::fmt::Display for MalformedXpubError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "failed to decode account xpub: {}", self.0)
+    }
+}
+
+impl std::error::Error for MalformedXpubError {}
+
+/// Classify a [`build_wallet_start_state`] failure for the FFI
+/// `reason_code`: a boxed [`MalformedXpubError`] in the backend `source`
+/// maps to [`CorruptKind::MalformedXpub`] (101), anything else to
+/// [`CorruptKind::DecodeError`] (102).
+fn corrupt_kind_from_build_err(e: &PersistenceError) -> CorruptKind {
+    if let PersistenceError::Backend { source, .. } = e {
+        if source.downcast_ref::<MalformedXpubError>().is_some() {
+            return CorruptKind::MalformedXpub;
+        }
+    }
+    CorruptKind::DecodeError(e.to_string())
+}
+
+/// Reconstruct the keyless [`ClientWalletStartState`] (and optional
+/// platform-address bucket) for one persisted `WalletRestoreEntryFFI`.
+///
+/// A transient `Wallet` is built here solely to shape the account
+/// manifest and core-state projection returned below; it never leaves
+/// this function. The manager rehydrates each wallet **watch-only**
+/// (via `Wallet::new_watch_only`) from that manifest and signs on
+/// demand through the host mnemonic resolver — no seed crosses this
+/// boundary.
+///
+/// # Errors
+///
+/// Returns [`PersistenceError`] on any per-row decode/projection
+/// failure (e.g. a malformed account xpub); the caller records the
+/// wallet as skipped and continues restoring the rest.
 fn build_wallet_start_state(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<
@@ -2808,9 +2871,8 @@ fn build_wallet_start_state(
         let xpub_bytes =
             unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
         let (account_xpub, _): (ExtendedPubKey, usize) =
-            bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                PersistenceError::backend(format!("failed to decode account xpub: {}", e))
-            })?;
+            bincode::decode_from_slice(xpub_bytes, config::standard())
+                .map_err(|e| PersistenceError::backend(MalformedXpubError(e.to_string())))?;
         let account =
             Account::from_xpub(Some(entry.wallet_id), account_type, account_xpub, network)
                 .map_err(|e| {
@@ -2821,12 +2883,13 @@ fn build_wallet_start_state(
         })?;
     }
 
-    // External-signable wallet — the mnemonic / seed lives in the
-    // iOS Keychain, not in this Rust handle. Signing requests route
-    // back to the host through the configured signer surface; the
-    // host fetches the mnemonic from the Keychain on demand. The
-    // wallet_id is passed in directly (no recomputation from a root
-    // xpub the snapshot doesn't carry).
+    // Transient scratch wallet — used only to shape the account
+    // manifest and core-state projection below, then dropped; its
+    // `WalletType` never reaches the manager, which re-registers the
+    // wallet watch-only and signs on demand via the host mnemonic
+    // resolver (no seed crosses this boundary). The wallet_id is passed
+    // in directly (no recomputation from a root xpub the snapshot
+    // doesn't carry).
     let wallet = Wallet::new_external_signable(network, entry.wallet_id, accounts);
 
     // Stamp the persisted core-chain sync metadata onto the rebuilt
@@ -2847,13 +2910,24 @@ fn build_wallet_start_state(
     }
 
     // Persisted `last_applied_chain_lock` — bincode-decoded from the
-    // bytes Swift handed back. Restoring this before the wallet
-    // enters the manager means the asset-lock-resume CL-from-metadata
-    // fallback (`proof.rs`) can fire immediately at app launch on
-    // any tracked lock whose funding block height is `<= cl.block_height`,
-    // without waiting for SPV to re-apply a fresh CL. SPV persists
-    // its own `best_chainlock` independently; this is the symmetric
+    // bytes Swift handed back onto the local `wallet_info`. It is then
+    // carried into the keyless `CoreChangeSet` below and re-applied by
+    // `apply_persisted_core_state`, so the asset-lock-resume
+    // CL-from-metadata fallback (`proof.rs`) fires at app launch on any
+    // tracked lock whose funding block height is `<= cl.block_height`,
+    // without waiting for SPV to re-apply a fresh CL. SPV persists its
+    // own `best_chainlock` independently; this is the symmetric
     // wallet-side restore.
+    //
+    // TRUST BOUNDARY: this chain lock is read from the unauthenticated
+    // local store and is NOT re-verified here — decode enforces the
+    // struct shape only; no BLS/quorum signature check runs on this
+    // path. Treat the value as a cache hint, not a trusted source. It
+    // merely seeds the asset-lock-resume fallback; data integrity for
+    // that path rests on the DOWNSTREAM network re-verification of the
+    // asset-lock proof itself (`proof.rs`), which is authoritative. A
+    // forged/stale local CL can at most trigger an earlier resume
+    // attempt whose proof then fails network verification.
     //
     // Decode failure is treated as miss: malformed bytes here are
     // either a serialisation-shape regression in upstream `ChainLock`
@@ -3377,11 +3451,85 @@ fn build_wallet_start_state(
     // status without rebroadcasting.
     let unused_asset_locks = build_unused_asset_locks(entry)?;
 
+    // Project the reconstructed `wallet` + `wallet_info` into the
+    // keyless `ClientWalletStartState` the persister contract requires
+    // (SECRETS.md: no `Wallet`/seed crosses `load()`). The manager
+    // rebuilds a watch-only wallet from this manifest via
+    // `Wallet::new_watch_only` and applies this `core_state` projection.
+    // Signing happens later via the on-demand
+    // `sign_with_mnemonic_resolver` path, which fail-closed gates the
+    // resolver-supplied seed against the loaded `wallet_id`. The
+    // locally-built `wallet` is dropped — it was only needed to shape
+    // the account collection / UTXO routing above.
+    let account_manifest: Vec<AccountRegistrationEntry> = wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .map(|a| AccountRegistrationEntry {
+            account_type: a.account_type,
+            account_xpub: a.account_xpub,
+        })
+        .collect();
+    let new_utxos: Vec<key_wallet::Utxo> = wallet_info
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .flat_map(|acct| acct.utxos.values().cloned())
+        .collect();
+    let core_state = platform_wallet::changeset::CoreChangeSet {
+        new_utxos,
+        last_processed_height: (wallet_info.metadata.last_processed_height > 0)
+            .then_some(wallet_info.metadata.last_processed_height),
+        synced_height: (wallet_info.metadata.synced_height > 0)
+            .then_some(wallet_info.metadata.synced_height),
+        // Carry the decoded chainlock through the keyless projection;
+        // `apply_persisted_core_state` re-applies it onto the rebuilt wallet.
+        last_applied_chain_lock: wallet_info.metadata.last_applied_chain_lock.clone(),
+        ..Default::default()
+    };
+
+    // `contacts` / `identity_keys` are the PR-3 keyless feed the
+    // manager layers onto the managed identities via
+    // `apply_contacts_and_keys`. The iOS path does NOT use them:
+    // identity PUBLIC keys are already reconstructed straight into
+    // `Identity.public_keys` by `build_wallet_identity_bucket` (feeding
+    // the slot too would double-apply), and `WalletRestoreEntryFFI`
+    // carries no contacts back from Swift on load — surfacing them
+    // would need a new cross-boundary struct field + Swift wiring,
+    // tracked as a follow-up. Empty slots make `apply_contacts_and_keys`
+    // a no-op for this path, preserving the established iOS behaviour.
+    // Carry the persisted pool used-state through the keyless projection.
+    // The pool-decode block above already merged the persisted `used`
+    // flags into `wallet_info`; project the used addresses out so
+    // `apply_persisted_core_state` can re-mark them used on rehydrate.
+    // Without this a previously-used address whose funds were since spent
+    // comes back marked unused and could be handed out again as a fresh
+    // receive address — an address-reuse privacy leak.
+    let used_core_addresses: Vec<key_wallet::Address> = {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        let mut used = Vec::new();
+        for acct in wallet_info.accounts.all_funding_accounts() {
+            for pool in acct.managed_account_type().address_pools() {
+                for info in pool.addresses.values() {
+                    if info.used {
+                        used.push(info.address.clone());
+                    }
+                }
+            }
+        }
+        used
+    };
+
     let wallet_state = ClientWalletStartState {
-        wallet,
-        wallet_info,
+        network,
+        birth_height: entry.birth_height,
+        account_manifest,
+        core_state,
         identity_manager,
         unused_asset_locks,
+        contacts: Default::default(),
+        identity_keys: Default::default(),
+        used_core_addresses,
     };
 
     let platform_address_state = if per_account.is_empty()
@@ -4037,6 +4185,33 @@ mod tests {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::mnemonic::{Language, Mnemonic};
     use key_wallet::wallet::Wallet;
+
+    /// A malformed-xpub failure must surface as `MalformedXpub` (FFI
+    /// `reason_code` 101), distinct from the generic `DecodeError` (102),
+    /// so the host can special-case unrecoverable key-material corruption.
+    #[test]
+    fn malformed_xpub_error_maps_to_dedicated_corrupt_kind() {
+        // A boxed `MalformedXpubError` must be recovered by downcast,
+        // independently of its human-readable `Display` text.
+        let xpub_err =
+            PersistenceError::backend(MalformedXpubError("invalid checksum".to_string()));
+        assert_eq!(
+            corrupt_kind_from_build_err(&xpub_err),
+            CorruptKind::MalformedXpub,
+            "an xpub-decode failure must surface as MalformedXpub (code 101)"
+        );
+
+        // Any unrelated structural failure keeps the generic family —
+        // even when its message happens to mention "decode account xpub".
+        let other_err = PersistenceError::backend("failed to decode account xpub: bad network");
+        assert!(
+            matches!(
+                corrupt_kind_from_build_err(&other_err),
+                CorruptKind::DecodeError(_)
+            ),
+            "non-xpub failures must stay DecodeError (code 102)"
+        );
+    }
 
     /// Regression: restored pool addresses must be tagged with the
     /// WALLET's network, not the network the base58 string parses as.

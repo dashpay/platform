@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
+use dashcore::ephemerealdata::chain_lock::ChainLock;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::Utxo;
 use platform_wallet::changeset::CoreChangeSet;
@@ -12,6 +13,55 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
+use crate::sqlite::schema::blob::impl_persistable_blob;
+
+// PUBLIC material only: core-chain state reaching `record_blob` /
+// `islock_blob` (transaction records + InstantLocks are public chain data).
+impl_persistable_blob!(TransactionRecord, dashcore::InstantLock);
+
+/// Encode a `ChainLock` to bytes for storage in `core_sync_state`.
+fn encode_chain_lock(cl: &ChainLock) -> Result<Vec<u8>, WalletStorageError> {
+    Ok(bincode::encode_to_vec(cl, blob::bounded_config())?)
+}
+
+/// Decode a `ChainLock` from `core_sync_state.last_applied_chain_lock`.
+/// Returns `None` + emits a `tracing::warn` on any decode failure so a
+/// single corrupt byte cannot prevent the wallet from loading (the next
+/// ChainLock event will repopulate the column).
+fn decode_chain_lock_soft(bytes: &[u8]) -> Option<ChainLock> {
+    match bincode::decode_from_slice::<ChainLock, _>(bytes, blob::bounded_config()) {
+        // Reject a valid-prefix + trailing-garbage payload (bincode stops
+        // after the typed length) the same way the BLOB decoders do.
+        Ok((cl, consumed)) if consumed == bytes.len() => Some(cl),
+        Ok(_) => {
+            tracing::warn!(
+                "core_sync_state.last_applied_chain_lock: trailing bytes after \
+                 ChainLock; field left None — the next ChainLock sync will repopulate"
+            );
+            None
+        }
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "core_sync_state.last_applied_chain_lock: decode failed; \
+                 field left None — the next ChainLock sync will repopulate"
+            );
+            None
+        }
+    }
+}
+
+/// Block height of an encoded `last_applied_chain_lock` blob, or `None` if it
+/// can't be decoded. Used to monotonic-max-merge the chain lock so an
+/// out-of-order lower-height update never regresses the finalized checkpoint.
+fn chain_lock_height(bytes: &[u8]) -> Option<u32> {
+    match bincode::decode_from_slice::<ChainLock, _>(bytes, blob::bounded_config()) {
+        // Require full consumption (like `decode_chain_lock_soft`) so a corrupt
+        // stored blob can't out-rank a later valid update and stay stuck.
+        Ok((cl, consumed)) if consumed == bytes.len() => Some(cl.block_height),
+        _ => None,
+    }
+}
 
 /// Apply a `CoreChangeSet` inside a transaction.
 pub fn apply(
@@ -49,40 +99,15 @@ pub fn apply(
             ])?;
         }
     }
-    // Derived addresses are written BEFORE UTXOs (within the same
-    // transaction) so the UTXO writer's address→account_index lookup
-    // sees the freshly recorded rows.
-    if !cs.addresses_derived.is_empty() {
-        let mut stmt = tx.prepare_cached(
-            "INSERT INTO core_derived_addresses \
-                (wallet_id, account_type, account_index, address, derivation_path, used) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
-             ON CONFLICT(wallet_id, account_type, address) DO UPDATE SET \
-                account_index = excluded.account_index, \
-                derivation_path = excluded.derivation_path",
-        )?;
-        for da in &cs.addresses_derived {
-            let account_type =
-                crate::sqlite::schema::accounts::account_type_db_label(&da.account_type);
-            let account_index = crate::sqlite::schema::accounts::account_index(&da.account_type);
-            let pool_type = crate::sqlite::schema::accounts::pool_type_db_label(&da.pool_type);
-            let address = da.address.to_string();
-            let path = format!("{}/{}", pool_type, da.derivation_index);
-            stmt.execute(params![
-                wallet_id.as_slice(),
-                account_type,
-                i64::from(account_index),
-                address,
-                path,
-                false
-            ])?;
-        }
-    }
+    // `addresses_derived` is intentionally NOT persisted here. The iOS
+    // address registry is fed by the FFI `addresses_derived` callback (fired
+    // before the UTXO changeset in the same round), and UTXO attribution is
+    // hardcoded to the default account (index 0); the storage layer keeps no
+    // derived-address lookup table.
     if !cs.new_utxos.is_empty() {
         let mut stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
-        let mut lookup_stmt = tx.prepare_cached(ACCOUNT_INDEX_BY_ADDRESS_SQL)?;
         for utxo in &cs.new_utxos {
-            execute_upsert_utxo(&mut stmt, &mut lookup_stmt, wallet_id, utxo, false)?;
+            execute_upsert_utxo(&mut stmt, wallet_id, utxo, false)?;
         }
     }
     if !cs.spent_utxos.is_empty() {
@@ -92,7 +117,6 @@ pub fn apply(
             "UPDATE core_utxos SET spent = 1 WHERE wallet_id = ?1 AND outpoint = ?2",
         )?;
         let mut upsert_stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
-        let mut lookup_stmt = tx.prepare_cached(ACCOUNT_INDEX_BY_ADDRESS_SQL)?;
         for utxo in &cs.spent_utxos {
             let op = blob::encode_outpoint(&utxo.outpoint)?;
             let exists: bool = exists_stmt
@@ -102,12 +126,11 @@ pub fn apply(
             if exists {
                 mark_spent_stmt.execute(params![wallet_id.as_slice(), &op[..]])?;
             } else {
-                // Spent-only synthetic row: best-effort account_index
-                // from the derived-address map. A spend of an
-                // externally-funded address we never derived defaults
-                // to 0 (logged) — harmless, since spent rows are
-                // excluded from `list_unspent_utxos`.
-                execute_upsert_utxo(&mut upsert_stmt, &mut lookup_stmt, wallet_id, utxo, true)?;
+                // Spent-only synthetic row for a UTXO we never saw unspent.
+                // account_index is the hardcoded default like every row, and
+                // inert anyway since spent rows are excluded from
+                // `list_unspent_utxos`.
+                execute_upsert_utxo(&mut upsert_stmt, wallet_id, utxo, true)?;
             }
         }
     }
@@ -126,17 +149,25 @@ pub fn apply(
             ])?;
         }
     }
-    if cs.last_processed_height.is_some() || cs.synced_height.is_some() {
-        upsert_sync_state(tx, wallet_id, cs.last_processed_height, cs.synced_height)?;
+    if cs.last_processed_height.is_some()
+        || cs.synced_height.is_some()
+        || cs.last_applied_chain_lock.is_some()
+    {
+        let cl_bytes = cs
+            .last_applied_chain_lock
+            .as_ref()
+            .map(encode_chain_lock)
+            .transpose()?;
+        upsert_sync_state(
+            tx,
+            wallet_id,
+            cs.last_processed_height,
+            cs.synced_height,
+            cl_bytes,
+        )?;
     }
     Ok(())
 }
-
-/// Resolve the owning account index for a UTXO by its rendered address,
-/// joining against the `core_derived_addresses` map written earlier in
-/// the same transaction.
-const ACCOUNT_INDEX_BY_ADDRESS_SQL: &str =
-    "SELECT account_index FROM core_derived_addresses WHERE wallet_id = ?1 AND address = ?2";
 
 const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
@@ -148,49 +179,30 @@ const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         account_index = excluded.account_index, \
         spent = excluded.spent";
 
+/// Account index written for every `core_utxos` row. The product uses only
+/// the default account (index 0); a non-default funds account causes
+/// `core_bridge::warn_if_non_default_account` to emit a `warn!` log but
+/// the record is still persisted under index 0 (dropping it would
+/// undercount the balance and lose funds). The one reader
+/// (`list_unspent_utxos` per-account grouping) groups everything under 0.
+const CORE_UTXO_ACCOUNT_INDEX: i64 = 0;
+
+/// Upsert one `core_utxos` row. `account_index` is the hardcoded default
+/// ([`CORE_UTXO_ACCOUNT_INDEX`]); `spent` marks spent-only synthetic rows.
 fn execute_upsert_utxo(
     stmt: &mut rusqlite::CachedStatement<'_>,
-    lookup_stmt: &mut rusqlite::CachedStatement<'_>,
     wallet_id: &WalletId,
     utxo: &Utxo,
     spent: bool,
 ) -> Result<(), WalletStorageError> {
     let op = blob::encode_outpoint(&utxo.outpoint)?;
-    let address = utxo.address.to_string();
-    // `Utxo` carries no account index; recover it from the
-    // derived-address map written earlier in this transaction.
-    let looked_up: Option<i64> = lookup_stmt
-        .query_row(params![wallet_id.as_slice(), &address], |row| row.get(0))
-        .optional()?;
-    let account_index: i64 = match looked_up {
-        Some(idx) => idx,
-        // An unspent UTXO whose address we never derived would land in
-        // the wallet's funds under account 0 and never re-derive — silent
-        // mis-bucketing of live money. Refuse it. The spent-only
-        // placeholder path tolerates the fallback because spent rows are
-        // excluded from `list_unspent_utxos`, so a wrong index there is
-        // inert.
-        None if !spent => {
-            return Err(WalletStorageError::UtxoAddressNotDerived {
-                address: address.clone(),
-            });
-        }
-        None => {
-            tracing::debug!(
-                wallet_id = %hex::encode(wallet_id),
-                address = %address,
-                "spent-only UTXO address not found in core_derived_addresses; using account_index 0 placeholder"
-            );
-            0
-        }
-    };
     stmt.execute(params![
         wallet_id.as_slice(),
         &op[..],
         crate::sqlite::util::safe_cast::u64_to_i64("core_utxos.value", utxo.value())?,
         utxo.txout.script_pubkey.as_bytes(),
         i64::from(utxo.height),
-        account_index,
+        CORE_UTXO_ACCOUNT_INDEX,
         spent,
     ])?;
     Ok(())
@@ -201,16 +213,20 @@ fn upsert_sync_state(
     wallet_id: &WalletId,
     last_processed: Option<u32>,
     synced: Option<u32>,
+    chain_lock_bytes: Option<Vec<u8>>,
 ) -> Result<(), WalletStorageError> {
-    // Monotonic-max semantics — keep the larger of (current, new).
-    let current_raw: (Option<i64>, Option<i64>) = tx
+    // Read current row for monotonic-max height merge + to carry forward any
+    // existing chain lock when the changeset doesn't include a new one.
+    let current_raw: (Option<i64>, Option<i64>, Option<Vec<u8>>) = tx
         .query_row(
-            "SELECT last_processed_height, synced_height FROM core_sync_state WHERE wallet_id = ?1",
+            "SELECT last_processed_height, synced_height, last_applied_chain_lock \
+             FROM core_sync_state WHERE wallet_id = ?1",
             params![wallet_id.as_slice()],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?
-        .unwrap_or((None, None));
+        .unwrap_or((None, None, None));
+    // Monotonic-max semantics for sync watermarks.
     let current = (
         sync_height_u32("core_sync_state.last_processed_height", current_raw.0)?,
         sync_height_u32("core_sync_state.synced_height", current_raw.1)?,
@@ -223,15 +239,203 @@ fn upsert_sync_state(
         (Some(a), Some(b)) => Some(a.max(b)),
         (a, b) => a.or(b),
     };
+    // Chain lock: monotonic-max by height like the sync watermarks above.
+    // A new chain lock replaces the stored one only when its height is >=
+    // the stored height, so an out-of-order lower-height update can't
+    // regress the finalized checkpoint. `None` (no update) keeps existing.
+    let cl_final = match (chain_lock_bytes, current_raw.2) {
+        (Some(new_bytes), Some(existing_bytes)) => {
+            if chain_lock_height(&new_bytes) >= chain_lock_height(&existing_bytes) {
+                Some(new_bytes)
+            } else {
+                Some(existing_bytes)
+            }
+        }
+        (Some(new_bytes), None) => Some(new_bytes),
+        (None, existing) => existing,
+    };
     tx.execute(
-        "INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) \
-         VALUES (?1, ?2, ?3) \
+        "INSERT INTO core_sync_state \
+            (wallet_id, last_processed_height, synced_height, last_applied_chain_lock) \
+         VALUES (?1, ?2, ?3, ?4) \
          ON CONFLICT(wallet_id) DO UPDATE SET \
             last_processed_height = excluded.last_processed_height, \
-            synced_height = excluded.synced_height",
-        params![wallet_id.as_slice(), lp.map(i64::from), sy.map(i64::from),],
+            synced_height = excluded.synced_height, \
+            last_applied_chain_lock = excluded.last_applied_chain_lock",
+        params![
+            wallet_id.as_slice(),
+            lp.map(i64::from),
+            sy.map(i64::from),
+            cl_final
+        ],
     )?;
     Ok(())
+}
+
+/// Bulk-reconstruct the keyless [`CoreChangeSet`] projection for one wallet
+/// from the `core_*` tables. PUBLIC material only; mints no `Wallet`. `network`
+/// (from `wallets`) turns a persisted `script` back into an `Address`.
+///
+/// # Reconstructed (safety-critical-correct)
+///
+/// - **Unspent UTXOs** (`new_utxos`): every `spent = 0` row — the balance
+///   source (no-silent-zero); a row with a block `height` is confirmed.
+/// - **Transaction records** / **IS-locks** / **sync watermarks**: decoded
+///   bit-exact, fail-hard on a corrupt blob.
+///
+/// # Deferred to the first post-load `sync` (safe re-warm)
+///
+/// - **Per-account UTXO attribution / `is_coinbase` / `is_instantlocked` /
+///   `is_trusted` / `used` flags**: not carried by `core_utxos`; defaulted and
+///   refreshed on the next scan. The wallet *total* balance is unaffected.
+pub fn load_state(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    network: dashcore::Network,
+) -> Result<CoreChangeSet, WalletStorageError> {
+    let mut cs = CoreChangeSet::default();
+
+    // Unspent UTXOs → new_utxos (the balance source).
+    // Pre-read `length()` gates on `outpoint` and `script` before materializing
+    // the Vec so tampered oversize values are caught before heap allocation.
+    // Uses `prepare + query + while let` (not `query_map`) so the typed
+    // `BlobTooLarge` error can be returned from the loop body directly.
+    {
+        let mut stmt = conn.prepare(
+            "SELECT length(outpoint), outpoint, value, length(script), script, height \
+             FROM core_utxos WHERE wallet_id = ?1 AND spent = 0",
+        )?;
+        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        while let Some(row) = rows.next()? {
+            // col 0: length(outpoint) — gate before materializing
+            blob::check_size(row.get::<_, i64>(0)?)?;
+            let op_bytes: Vec<u8> = row.get(1)?;
+            let value: i64 = row.get(2)?;
+            // col 3: length(script) — gate before materializing
+            blob::check_size(row.get::<_, i64>(3)?)?;
+            let script_bytes: Vec<u8> = row.get(4)?;
+            let height: Option<i64> = row.get(5)?;
+            let outpoint = blob::decode_outpoint(&op_bytes)?;
+            let value = crate::sqlite::util::safe_cast::i64_to_u64("core_utxos.value", value)?;
+            let height_u32 = match height {
+                None => 0u32,
+                Some(h) => crate::sqlite::util::safe_cast::i64_to_u32("core_utxos.height", h)?,
+            };
+            let script = dashcore::ScriptBuf::from_bytes(script_bytes);
+            let address = dashcore::Address::from_script(&script, network)
+                .map_err(|_| WalletStorageError::blob_decode("core_utxos.script not an address"))?;
+            let confirmed = height.map(|h| h > 0).unwrap_or(false);
+            let utxo = Utxo {
+                outpoint,
+                txout: dashcore::TxOut {
+                    value,
+                    script_pubkey: script,
+                },
+                address,
+                height: height_u32,
+                is_coinbase: false,
+                is_confirmed: confirmed,
+                is_instantlocked: false,
+                is_locked: false,
+                is_trusted: false,
+            };
+            cs.new_utxos.push(utxo);
+        }
+    }
+
+    {
+        // Pre-read `length()` gate (O(1) from the row header) before
+        // materializing the blob so a tampered oversize `record_blob` can't
+        // force a multi-gigabyte allocation.
+        let mut stmt = conn.prepare(
+            "SELECT length(record_blob), record_blob FROM core_transactions WHERE wallet_id = ?1",
+        )?;
+        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        while let Some(row) = rows.next()? {
+            blob::check_size(row.get::<_, i64>(0)?)?;
+            let payload: Vec<u8> = row.get(1)?;
+            cs.records
+                .push(blob::decode::<TransactionRecord>(&payload)?);
+        }
+    }
+
+    {
+        // Same pre-read length gate as `record_blob` above.
+        let mut stmt = conn.prepare(
+            "SELECT txid, length(islock_blob), islock_blob \
+             FROM core_instant_locks WHERE wallet_id = ?1",
+        )?;
+        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        while let Some(row) = rows.next()? {
+            use dashcore::hashes::Hash;
+            let txid_bytes: Vec<u8> = row.get(0)?;
+            blob::check_size(row.get::<_, i64>(1)?)?;
+            let blob_bytes: Vec<u8> = row.get(2)?;
+            let txid = dashcore::Txid::from_slice(&txid_bytes)
+                .map_err(|_| WalletStorageError::blob_decode("core_instant_locks.txid"))?;
+            let islock: dashcore::ephemerealdata::instant_lock::InstantLock =
+                blob::decode(&blob_bytes)?;
+            cs.instant_locks_for_non_final_records.insert(txid, islock);
+        }
+    }
+
+    // Sync watermarks + persisted chain lock. Read `length()` first so an
+    // oversize chain-lock blob is rejected before the Vec is allocated.
+    {
+        let mut stmt = conn.prepare(
+            "SELECT last_processed_height, synced_height, \
+                    length(last_applied_chain_lock), last_applied_chain_lock \
+             FROM core_sync_state WHERE wallet_id = ?1",
+        )?;
+        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        if let Some(row) = rows.next()? {
+            let lp: Option<i64> = row.get(0)?;
+            let sy: Option<i64> = row.get(1)?;
+            // Gate before materializing: NULL length means no chain lock.
+            if let Some(n) = row.get::<_, Option<i64>>(2)? {
+                blob::check_size(n)?;
+            }
+            let cl_bytes: Option<Vec<u8>> = row.get(3)?;
+            // Fail-hard on an out-of-range watermark (corruption never skipped).
+            cs.last_processed_height =
+                sync_height_u32("core_sync_state.last_processed_height", lp)?;
+            cs.synced_height = sync_height_u32("core_sync_state.synced_height", sy)?;
+            // Soft-fail on a corrupt chain-lock blob — a single bad byte must
+            // not prevent loading; the next ChainLock event repopulates.
+            if let Some(bytes) = cl_bytes {
+                cs.last_applied_chain_lock = decode_chain_lock_soft(&bytes);
+            }
+        }
+    }
+
+    Ok(cs)
+}
+
+/// Every address that has ever held a `core_utxos` row for this wallet —
+/// spent **and** unspent — deduplicated. The rehydration address-reuse
+/// guard: an address whose UTXO was since spent must still be marked used
+/// so it's never handed back out as a fresh receive address. `network`
+/// turns each persisted `script` back into an [`Address`](dashcore::Address);
+/// a script that isn't a valid address is a hard error (corruption is never
+/// silently dropped), matching [`load_state`]'s unspent-UTXO handling.
+pub fn load_used_addresses(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    network: dashcore::Network,
+) -> Result<Vec<dashcore::Address>, WalletStorageError> {
+    let mut stmt = conn
+        .prepare("SELECT DISTINCT script FROM core_utxos WHERE wallet_id = ?1 ORDER BY script")?;
+    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+        row.get::<_, Vec<u8>>(0)
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        let script = dashcore::ScriptBuf::from_bytes(r?);
+        let address = dashcore::Address::from_script(&script, network)
+            .map_err(|_| WalletStorageError::blob_decode("core_utxos.script not an address"))?;
+        out.push(address);
+    }
+    Ok(out)
 }
 
 /// Convert a stored sync-height column to `u32`, erroring on overflow
@@ -240,16 +444,9 @@ fn sync_height_u32(
     field: &'static str,
     value: Option<i64>,
 ) -> Result<Option<u32>, WalletStorageError> {
-    match value {
-        None => Ok(None),
-        Some(v) => Ok(Some(u32::try_from(v).map_err(|_| {
-            WalletStorageError::IntegerOverflow {
-                field,
-                value: v as u64,
-                target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-            }
-        })?)),
-    }
+    value
+        .map(|v| crate::sqlite::util::safe_cast::i64_to_u32(field, v))
+        .transpose()
 }
 
 /// Fetch a single transaction record by txid. Returns `Ok(None)` if
@@ -259,17 +456,19 @@ pub fn get_tx_record(
     wallet_id: &WalletId,
     txid: &dashcore::Txid,
 ) -> Result<Option<TransactionRecord>, WalletStorageError> {
-    let row: Option<Vec<u8>> = conn
-        .query_row(
-            "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
-            params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(txid)],
-            |row| row.get(0),
-        )
-        .optional()?;
-    match row {
-        None => Ok(None),
-        Some(payload) => Ok(Some(blob::decode(&payload)?)),
-    }
+    // Pre-read `length()` gate before materializing, consistent with the
+    // bulk load_state path above.
+    let mut stmt = conn.prepare(
+        "SELECT length(record_blob), record_blob FROM core_transactions \
+         WHERE wallet_id = ?1 AND txid = ?2",
+    )?;
+    let mut rows = stmt.query(params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(txid)])?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+    blob::check_size(row.get::<_, i64>(0)?)?;
+    let payload: Vec<u8> = row.get(1)?;
+    Ok(Some(blob::decode(&payload)?))
 }
 
 /// Row representing one unspent UTXO. Used by tests that probe the
@@ -310,20 +509,13 @@ pub fn list_unspent_utxos(
         let value = crate::sqlite::util::safe_cast::i64_to_u64("core_utxos.value", value)?;
         let height = match height {
             None => None,
-            Some(h) => Some(
-                u32::try_from(h).map_err(|_| WalletStorageError::IntegerOverflow {
-                    field: "core_utxos.height",
-                    value: h as u64,
-                    target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-                })?,
-            ),
+            Some(h) => Some(crate::sqlite::util::safe_cast::i64_to_u32(
+                "core_utxos.height",
+                h,
+            )?),
         };
         let account_index =
-            u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
-                field: "core_utxos.account_index",
-                value: account_index as u64,
-                target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-            })?;
+            crate::sqlite::util::safe_cast::i64_to_u32("core_utxos.account_index", account_index)?;
         let row = UnspentRow {
             outpoint,
             value,
@@ -334,4 +526,31 @@ pub fn list_unspent_utxos(
         by_account.entry(account_index).or_default().push(row);
     }
     Ok(by_account)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dashcore::hashes::Hash;
+    use dashcore::BlockHash;
+
+    fn sample_chain_lock(height: u32) -> ChainLock {
+        ChainLock {
+            block_height: height,
+            block_hash: BlockHash::from_byte_array([0x11u8; 32]),
+            signature: [0x22u8; 96].into(),
+        }
+    }
+
+    #[test]
+    fn chain_lock_height_rejects_trailing_bytes() {
+        let bytes = encode_chain_lock(&sample_chain_lock(100_000)).expect("encode");
+        assert_eq!(chain_lock_height(&bytes), Some(100_000));
+
+        // A corrupt blob (valid prefix + trailing garbage) must not yield a
+        // height, else it stays stuck atop later valid lower-height updates.
+        let mut corrupt = bytes.clone();
+        corrupt.extend_from_slice(&[0xFFu8; 4]);
+        assert_eq!(chain_lock_height(&corrupt), None);
+    }
 }
