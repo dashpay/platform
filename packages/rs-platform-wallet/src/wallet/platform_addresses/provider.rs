@@ -490,6 +490,36 @@ impl PlatformPaymentAddressProvider {
         self.last_known_recent_block = last_known_recent_block;
     }
 
+    /// Reset the incremental-sync watermark and drop every cached
+    /// balance so the next `sync_balances` performs a full
+    /// trunk/branch/compact rescan from genesis instead of an
+    /// incremental catch-up.
+    ///
+    /// Backs the host's "Clear" flow. Zeroing the three watermark
+    /// scalars alone is not enough: `found` doubles as the
+    /// `current_balances()` seed for the next pass (and the `before`
+    /// snapshot for the persistence diff), so a non-empty `found`
+    /// would re-seed the very balances Clear is meant to wipe.
+    /// `sync_timestamp == 0` is what flips `last_sync_timestamp()`
+    /// back to `None` and the SDK back into full-scan mode.
+    ///
+    /// The `addresses` bijection is intentionally preserved —
+    /// `prepare_for_sync` rebuilds `pending` from it each pass, so
+    /// keeping it avoids needless re-derivation while still forcing a
+    /// full rescan.
+    pub(crate) fn reset_sync_state(&mut self) {
+        self.sync_height = 0;
+        self.sync_timestamp = 0;
+        self.last_known_recent_block = 0;
+        self.per_wallet_in_sync.clear();
+        for state in self.per_wallet.values_mut() {
+            for account_state in state.values_mut() {
+                account_state.found.clear();
+                account_state.absent.clear();
+            }
+        }
+    }
+
     /// Diagnostic snapshot counts used by the read-only memory
     /// explorer surface on
     /// [`crate::manager::PlatformWalletManager::platform_address_provider_state_blocking`].
@@ -1333,5 +1363,39 @@ mod tests {
             "persists the proof's post-spend balance, not the stale pre-spend value"
         );
         assert_eq!(entry.funds.nonce, 4, "persists the bumped nonce");
+    }
+
+    /// `reset_sync_state` must zero the incremental watermark AND drop
+    /// the cached `found` seed, so the next pass is a full rescan rather
+    /// than an incremental catch-up. This is the core of the platform
+    /// "Clear" fix — without the seed drop, a non-empty `found` would
+    /// re-seed the balances the next incremental round, and a non-zero
+    /// `sync_timestamp` would keep the SDK out of full-scan mode.
+    #[tokio::test]
+    async fn reset_sync_state_clears_watermark_and_seed() {
+        let addr = p2pkh(1);
+        let mut provider = provider_with_one_funded_address(addr, funds(294_627_247_940, 5));
+
+        // Simulate a wallet mid-incremental-sync: non-zero watermark and
+        // a populated balance seed.
+        provider.set_stored_sync_state(10, 20, 30);
+        assert_eq!(provider.last_sync_height(), 10);
+        assert_eq!(provider.last_sync_timestamp(), Some(20));
+        assert_eq!(provider.last_known_recent_block(), 30);
+        assert_eq!(provider.current_balances().count(), 1);
+
+        provider.reset_sync_state();
+
+        // Watermark fully zeroed → SDK drops back to full-scan mode
+        // (`last_sync_timestamp() == None` is the full-scan trigger).
+        assert_eq!(provider.last_sync_height(), 0);
+        assert_eq!(provider.last_sync_timestamp(), None);
+        assert_eq!(provider.last_known_recent_block(), 0);
+        // Seed emptied → nothing re-seeds the next incremental pass.
+        assert_eq!(
+            provider.current_balances().count(),
+            0,
+            "reset must drop the cached `found` seed"
+        );
     }
 }
