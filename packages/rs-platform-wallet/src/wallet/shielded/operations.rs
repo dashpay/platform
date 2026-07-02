@@ -330,6 +330,33 @@ async fn record_activity_status<S: ShieldedStore>(
     queue_shielded_changeset(persister, wallet_id, changeset_for_entry(id, next));
 }
 
+/// Flip the activity row identified by `entry_id` (if present) to
+/// `status`, reusing [`record_activity_status`]'s semantics — it re-reads
+/// the CURRENT stored row and leaves a scan-`Confirmed`-with-height row
+/// untouched. Used by the sync reconcile, which knows only the reservation's
+/// stored `activity_id`, not the whole entry. No-op if no such row exists.
+pub(super) async fn record_activity_status_by_id<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    entry_id: &[u8; 32],
+    status: ShieldedActivityStatus,
+) {
+    let entry = match store.read().await.get_activity_by_entry_id(id, entry_id) {
+        Ok(entry) => entry,
+        Err(e) => {
+            warn!(
+                entry_id = %hex::encode(entry_id),
+                error = %e,
+                "activity status flip by id: lookup failed; skipping"
+            );
+            return;
+        }
+    };
+    record_activity_status(store, persister, wallet_id, id, &entry, status, None).await;
+}
+
 // -------------------------------------------------------------------------
 // Shield: platform addresses -> shielded pool (Type 15)
 // -------------------------------------------------------------------------
@@ -664,6 +691,10 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     let mut pending_entry = None;
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        // Capture the recorded anchor before the builder consumes it, so a
+        // broadcast-accepted-but-unconfirmed spend can be auto-released once
+        // this anchor is pruned from Platform's recorded set.
+        let anchor_bytes = anchor.to_bytes();
 
         // The builder computes and returns the fee authoritatively; `exact_fee` (== the
         // minimum) was already used above for note reservation.
@@ -708,6 +739,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             },
         )
         .await;
+        arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("Unshield: state transition built, broadcasting...");
         broadcast_shielded_spend(sdk, &state_transition, "unshield").await
@@ -826,6 +858,10 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     let mut pending_entry = None;
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        // Capture the recorded anchor before the builder consumes it, so a
+        // broadcast-accepted-but-unconfirmed spend can be auto-released once
+        // this anchor is pruned from Platform's recorded set.
+        let anchor_bytes = anchor.to_bytes();
 
         // The builder computes and returns the fee authoritatively; `exact_fee` (== the
         // minimum) was already used above for note reservation.
@@ -870,6 +906,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             },
         )
         .await;
+        arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("Shielded transfer: state transition built, broadcasting...");
         broadcast_shielded_spend(sdk, &state_transition, "transfer").await
@@ -976,6 +1013,10 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     let mut pending_entry = None;
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        // Capture the recorded anchor before the builder consumes it, so a
+        // broadcast-accepted-but-unconfirmed spend can be auto-released once
+        // this anchor is pruned from Platform's recorded set.
+        let anchor_bytes = anchor.to_bytes();
 
         // The builder computes and returns the fee authoritatively; `exact_fee` (== the
         // minimum) was already used above for note reservation.
@@ -1022,6 +1063,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             },
         )
         .await;
+        arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("Shielded withdrawal: state transition built, broadcasting...");
         broadcast_shielded_spend(sdk, &state_transition, "withdraw").await
@@ -1165,6 +1207,10 @@ where
     let mut pending_entry = None;
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+        // Capture the recorded anchor before the builder consumes it, so a
+        // broadcast-accepted-but-unconfirmed create can be auto-released once
+        // this anchor is pruned from Platform's recorded set.
+        let anchor_bytes = anchor.to_bytes();
 
         let build = build_identity_create_from_shielded_pool_transition(
             public_keys,
@@ -1211,6 +1257,7 @@ where
             },
         )
         .await;
+        arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("IdentityCreateFromShieldedPool: built, broadcasting via SDK...");
         // Stage the broadcast and the result-wait SEPARATELY (instead of one `broadcast_and_wait`)
@@ -1853,6 +1900,42 @@ async fn cancel_pending<S: ShieldedStore>(
     }
 }
 
+/// Record the recorded `anchor` the spend was built against and the
+/// linked activity entry on every selected note's reservation, so a
+/// spend that ends broadcast-accepted-but-unconfirmed can be released
+/// on a later sync once that anchor is pruned from Platform's recorded
+/// set (see `NetworkShieldedCoordinator::release_stranded_spends`).
+///
+/// No-op when no activity entry was recorded (an output-less bundle —
+/// unreachable for our own builders, which always carry a visible
+/// output). Best-effort: a store write failure only means the
+/// reservation won't self-release on a pruned anchor (it still frees
+/// on the next restart), so it must never abort a spend about to
+/// broadcast. A success (`finalize_pending`) or a definite failure
+/// (`cancel_pending`) removes the entry, so only an ambiguous
+/// unconfirmed outcome leaves it carrying the anchor.
+async fn arm_pending_release<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    anchor: [u8; 32],
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    notes: &[ShieldedNote],
+) {
+    let Some(entry) = pending_entry else {
+        return;
+    };
+    let mut store = store.write().await;
+    for note in notes {
+        if let Err(e) = store.set_pending_spend(id, &note.nullifier, anchor, entry.id) {
+            warn!(
+                error = %e,
+                "set_pending_spend failed; this reservation won't self-release on a pruned \
+                 anchor (it still frees on the next restart)"
+            );
+        }
+    }
+}
+
 /// Whether an SDK error carries Platform's own consensus verdict on the
 /// transition. Two shapes qualify:
 ///
@@ -2433,6 +2516,58 @@ mod record_activity_status_tests {
             .expect("row must exist");
         assert_eq!(stored.status, ShieldedActivityStatus::Confirmed);
         assert_eq!(stored.block_height, Some(900));
+    }
+
+    /// The by-id flip the sync reconcile uses: it knows only the
+    /// reservation's stored `activity_id`, so it looks the row up and flips
+    /// it — a released stranded spend moves Pending → Failed.
+    #[tokio::test]
+    async fn status_flip_by_id_flips_pending_to_failed() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = sub();
+        let pending = captured_pending();
+        store.write().await.save_activity(id, &pending).unwrap();
+
+        record_activity_status_by_id(
+            &store,
+            None,
+            id.wallet_id,
+            id,
+            &pending.id,
+            ShieldedActivityStatus::Failed,
+        )
+        .await;
+
+        let stored = store
+            .read()
+            .await
+            .get_activity_by_entry_id(id, &pending.id)
+            .unwrap()
+            .expect("row must exist");
+        assert_eq!(stored.status, ShieldedActivityStatus::Failed);
+    }
+
+    /// A by-id flip for an entry that doesn't exist is a silent no-op
+    /// (nothing to flip), never a panic.
+    #[tokio::test]
+    async fn status_flip_by_id_missing_entry_is_noop() {
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let id = sub();
+        record_activity_status_by_id(
+            &store,
+            None,
+            id.wallet_id,
+            id,
+            &[0xDE; 32],
+            ShieldedActivityStatus::Failed,
+        )
+        .await;
+        assert!(store
+            .read()
+            .await
+            .get_activity_by_entry_id(id, &[0xDE; 32])
+            .unwrap()
+            .is_none());
     }
 }
 

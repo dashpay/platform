@@ -20,7 +20,8 @@ use std::sync::Mutex;
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
 
 use super::store::{
-    ShieldedNote, ShieldedOutgoingNote, ShieldedStore, SubwalletId, SubwalletState,
+    ShieldedNote, ShieldedOutgoingNote, ShieldedStore, StalePendingSpend, SubwalletId,
+    SubwalletState,
 };
 use crate::wallet::platform_wallet::WalletId;
 
@@ -180,6 +181,27 @@ impl ShieldedStore for FileBackedShieldedStore {
             .get_mut(&id)
             .map(|sw| sw.clear_pending(nullifier))
             .unwrap_or(false))
+    }
+
+    fn set_pending_spend(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+        anchor: [u8; 32],
+        activity_id: [u8; 32],
+    ) -> Result<(), Self::Error> {
+        if let Some(sw) = self.subwallets.get_mut(&id) {
+            sw.set_pending_spend(nullifier, anchor, activity_id);
+        }
+        Ok(())
+    }
+
+    fn stale_pending_spends(&self, id: SubwalletId) -> Result<Vec<StalePendingSpend>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::stale_pending_spends)
+            .unwrap_or_default())
     }
 
     fn record_outgoing_note(
