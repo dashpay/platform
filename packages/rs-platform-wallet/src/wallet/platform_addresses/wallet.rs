@@ -196,10 +196,27 @@ impl PlatformAddressWallet {
                         address_infos,
                     )
                 }
-                None => Vec::new(),
+                None => {
+                    tracing::warn!(
+                        wallet_id = ?self.wallet_id,
+                        "Top-up reconciliation skipped: no platform-address \
+                         provider state for this wallet; local balances stay \
+                         stale until the next platform-address sync"
+                    );
+                    return;
+                }
             }
         };
         if entries.is_empty() {
+            if !address_infos.is_empty() {
+                tracing::warn!(
+                    wallet_id = ?self.wallet_id,
+                    spent_addresses = address_infos.len(),
+                    "Top-up reconciliation resolved none of the proof's spent \
+                     addresses through the persisted provider state; local \
+                     balances stay stale until the next platform-address sync"
+                );
+            }
             return;
         }
         // Apply the proof-attested post-spend balances in memory, then drop
