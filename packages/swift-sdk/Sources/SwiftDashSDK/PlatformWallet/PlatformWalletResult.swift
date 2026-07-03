@@ -46,6 +46,16 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// shielded sync reach a confirmed state and try again. Distinct from
     /// `errorShieldedSpendUnconfirmed`, which must NOT be retried.
     case errorShieldedNoRecordedAnchor = 19
+    /// The wallet couldn't build a Merkle witness for a selected note against
+    /// any probed checkpoint (a transient store read failure — poisoned mutex,
+    /// IO, or commitment-tree corruption — skipped every anchor depth).
+    /// Nothing was broadcast and the notes were released; retryable once the
+    /// underlying read failure clears (typically the next shielded sync or an
+    /// app restart). Distinct from `errorShieldedNoRecordedAnchor` (Platform
+    /// simply hasn't recorded a covering anchor yet) and from
+    /// `errorShieldedSpendUnconfirmed` (a spend WAS broadcast and must NOT be
+    /// retried).
+    case errorShieldedMerkleWitnessUnavailable = 20
     case notFound = 98
     case errorUnknown = 99
 
@@ -91,6 +101,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedSpendUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_NO_RECORDED_ANCHOR:
             self = .errorShieldedNoRecordedAnchor
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_MERKLE_WITNESS_UNAVAILABLE:
+            self = .errorShieldedMerkleWitnessUnavailable
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -193,6 +205,11 @@ public enum PlatformWalletError: LocalizedError {
     /// sync reaches a confirmed state. Distinct from `shieldedSpendUnconfirmed`,
     /// which must NOT be retried.
     case shieldedNoRecordedAnchor(String)
+    /// The wallet couldn't build a Merkle witness for a selected note because
+    /// a transient store read failure (poisoned mutex / IO / tree corruption)
+    /// skipped every probed anchor depth. Nothing was broadcast and the notes
+    /// were released; retryable once the underlying read failure clears.
+    case shieldedMerkleWitnessUnavailable(String)
     case notFound(String)
     case unknown(String)
 
@@ -208,7 +225,7 @@ public enum PlatformWalletError: LocalizedError {
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
-             .shieldedNoRecordedAnchor(let m),
+             .shieldedNoRecordedAnchor(let m), .shieldedMerkleWitnessUnavailable(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -240,6 +257,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
         case .errorShieldedSpendUnconfirmed: self = .shieldedSpendUnconfirmed(detail)
         case .errorShieldedNoRecordedAnchor: self = .shieldedNoRecordedAnchor(detail)
+        case .errorShieldedMerkleWitnessUnavailable: self = .shieldedMerkleWitnessUnavailable(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

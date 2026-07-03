@@ -134,6 +134,18 @@ pub enum PlatformWalletFFIResultCode {
     /// boundary) and try again. Distinct from `ErrorShieldedSpendUnconfirmed`,
     /// where a spend WAS broadcast and must NOT be retried.
     ErrorShieldedNoRecordedAnchor = 19,
+    /// Maps `PlatformWalletError::ShieldedMerkleWitnessUnavailable`. The wallet
+    /// couldn't build a Merkle witness for a selected note against any probed
+    /// checkpoint (a transient store read failure — poisoned mutex, IO, or
+    /// commitment-tree corruption — skipped every anchor depth). Like
+    /// `ErrorShieldedNoRecordedAnchor` this fires *before* broadcast so
+    /// nothing landed on chain and the note reservations were released — the
+    /// host may retry after the next shielded sync (or an app restart) clears
+    /// the underlying read failure. Distinct from `ErrorShieldedNoRecordedAnchor`
+    /// (Platform simply hasn't recorded a covering anchor yet) and from
+    /// `ErrorShieldedSpendUnconfirmed` (a spend WAS broadcast and must NOT be
+    /// retried).
+    ErrorShieldedMerkleWitnessUnavailable = 20,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -249,6 +261,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
+            }
+            PlatformWalletError::ShieldedMerkleWitnessUnavailable(..) => {
+                PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
@@ -601,6 +616,26 @@ mod tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
             "ShieldedSpendUnconfirmed should map to ErrorShieldedSpendUnconfirmed (rendered: {rendered})"
+        );
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered, "Display payload must survive verbatim");
+
+        // The transient witness-build failure gets its own retryable code so
+        // the caller preserves the "nothing broadcast, safe to retry"
+        // semantics instead of flattening to the generic wallet-operation
+        // error.
+        let no_witness = PlatformWalletError::ShieldedMerkleWitnessUnavailable(
+            "store IO failed at every probed depth".to_string(),
+        );
+        let rendered = no_witness.to_string();
+        let result: PlatformWalletFFIResult = no_witness.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable,
+            "ShieldedMerkleWitnessUnavailable should map to \
+             ErrorShieldedMerkleWitnessUnavailable (rendered: {rendered})"
         );
         let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
             .to_string_lossy()

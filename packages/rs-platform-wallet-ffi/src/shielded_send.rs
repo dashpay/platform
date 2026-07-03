@@ -510,6 +510,17 @@ fn map_spend_result(
             PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
             format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
         ),
+        // Retryable: a store read (poisoned mutex / IO / tree corruption)
+        // skipped every probed anchor depth so no Merkle witness could be
+        // built for the selected notes. Nothing was broadcast and the notes
+        // were released, so the host may retry after the transient store
+        // failure clears (typically the next shielded sync or an app restart).
+        Err(e @ PlatformWalletError::ShieldedMerkleWitnessUnavailable(_)) => {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable,
+                format!("Wallet couldn't build a Merkle witness — try again shortly. ({e})"),
+            )
+        }
         // Definitive failure: the transition was not executed and the notes
         // were released; the host may retry.
         Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
@@ -700,6 +711,15 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
             PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
             format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
         ),
+        // Retryable: a store read (poisoned mutex / IO / tree corruption)
+        // skipped every probed anchor depth so no Merkle witness could be
+        // built. Nothing was broadcast and the notes were released.
+        Err(e @ PlatformWalletError::ShieldedMerkleWitnessUnavailable(_)) => {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable,
+                format!("Wallet couldn't build a Merkle witness — try again shortly. ({e})"),
+            )
+        }
         // Definitive failure: the transition was not executed and the spent notes were released.
         Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
@@ -1417,6 +1437,29 @@ mod tests {
         assert!(
             message_of(&result).contains("try again shortly"),
             "no-recorded-anchor message must be the retryable guidance"
+        );
+
+        // Transient witness build failure (store IO / poisoned mutex /
+        // tree corruption) → its own retryable code, distinct from
+        // ErrorWalletOperation so hosts can preserve the "nothing
+        // broadcast, safe to retry" semantics instead of surfacing a
+        // generic wallet error.
+        let no_witness: Result<(), PlatformWalletError> =
+            Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
+                "anchor probe skipped depths on a store failure".to_string(),
+            ));
+        let result = map_spend_result(no_witness, "shielded transfer");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable
+        );
+        assert!(
+            message_of(&result).contains("try again shortly"),
+            "merkle-witness-unavailable message must be the retryable guidance"
+        );
+        assert!(
+            message_of(&result).contains("anchor probe skipped depths"),
+            "merkle-witness-unavailable message must carry the wallet Display payload"
         );
 
         let other: Result<(), PlatformWalletError> =
