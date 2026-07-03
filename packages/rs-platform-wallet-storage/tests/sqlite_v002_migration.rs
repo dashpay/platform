@@ -84,8 +84,8 @@ fn tc_b_030_fresh_store_migrates_to_latest_version() {
 }
 
 /// Schema half of TC-B-001 — `core_address_pool` carries per-index rows
-/// scoped by `(wallet_id, account_index, key_class, pool_type,
-/// address_index)`, a stored `address`, and a `used` flag.
+/// scoped by `(wallet_id, account_type, account_index, key_class, pool_type,
+/// address_index)`, a stored `script`, and a `used` flag.
 #[test]
 fn tc_b_001_core_address_pool_shape() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -94,6 +94,7 @@ fn tc_b_001_core_address_pool_shape() {
 
     for (name, ty) in [
         ("wallet_id", "BLOB"),
+        ("account_type", "TEXT"),
         ("account_index", "INTEGER"),
         ("key_class", "INTEGER"),
         ("pool_type", "INTEGER"),
@@ -107,8 +108,9 @@ fn tc_b_001_core_address_pool_shape() {
         assert_eq!(col.0, ty, "column {name} has unexpected type");
     }
 
-    // Composite PK includes pool_type so External/Internal pools never
-    // collide at the same address_index.
+    // Composite PK includes account_type so accounts collapsing to the same
+    // (account_index, key_class) sentinel never overwrite each other, and
+    // pool_type so External/Internal pools never collide at one address_index.
     let pk: BTreeMap<i64, String> = cols
         .iter()
         .filter(|(_, (_, _, pk))| *pk > 0)
@@ -119,12 +121,14 @@ fn tc_b_001_core_address_pool_shape() {
         pk_order,
         vec![
             "wallet_id",
+            "account_type",
             "account_index",
             "key_class",
             "pool_type",
             "address_index"
         ],
-        "core_address_pool PK must be (wallet_id, account_index, key_class, pool_type, address_index)"
+        "core_address_pool PK must be (wallet_id, account_type, account_index, key_class, \
+         pool_type, address_index)"
     );
 }
 

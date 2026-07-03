@@ -1,11 +1,11 @@
 //! Writer + account-attribution helper for the `core_address_pool` table.
 //!
 //! Per-index address-pool rows carrying a `used` flag, scoped by
-//! `(wallet_id, account_index, key_class, pool_type, address_index)`. The
-//! first-class row store the reader consumes verbatim — no `core_utxos`
-//! script-derivation, no horizon-walk re-derivation. Populated from the
-//! `account_address_pools` changeset snapshots; the UTXO writer reads it
-//! back to attribute an outpoint to its owning account.
+//! `(wallet_id, account_type, account_index, key_class, pool_type,
+//! address_index)`. The first-class row store the reader consumes verbatim —
+//! no `core_utxos` script-derivation, no horizon-walk re-derivation. Populated
+//! from the `account_address_pools` changeset snapshots; the UTXO writer reads
+//! it back to attribute an outpoint to its owning account.
 
 use rusqlite::{params, OptionalExtension, Transaction};
 
@@ -16,6 +16,7 @@ use key_wallet::managed_account::address_pool::AddressPoolType;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::accounts;
+use crate::sqlite::schema::blob;
 
 /// Stored `pool_type` discriminant. Kept in the primary key so an External
 /// and an Internal pool never collide at the same `address_index`.
@@ -29,9 +30,10 @@ pub(crate) fn pool_type_to_i64(pool_type: AddressPoolType) -> i64 {
 }
 
 const UPSERT_POOL_SQL: &str = "INSERT INTO core_address_pool \
-        (wallet_id, account_index, key_class, pool_type, address_index, script, used) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
-     ON CONFLICT(wallet_id, account_index, key_class, pool_type, address_index) DO UPDATE SET \
+        (wallet_id, account_type, account_index, key_class, pool_type, address_index, script, used) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+     ON CONFLICT(wallet_id, account_type, account_index, key_class, pool_type, address_index) \
+     DO UPDATE SET \
         script = excluded.script, \
         used = MAX(used, excluded.used)";
 
@@ -49,6 +51,11 @@ pub fn apply_pools(
     }
     let mut stmt = tx.prepare_cached(UPSERT_POOL_SQL)?;
     for entry in pools {
+        // `account_type` discriminates accounts that collapse to the same
+        // `(account_index, key_class)` sentinel (e.g. `IdentityRegistration`
+        // and `ProviderVotingKeys`, both `0, 0`); without it they would upsert
+        // onto the same PK and overwrite each other's rows.
+        let account_type = accounts::account_type_db_label(&entry.account_type);
         let account_index = i64::from(accounts::account_index(&entry.account_type));
         // TODO(key_class): PlatformPayment carries a real key_class; every
         // other account maps to the 0 sentinel until the pool snapshot
@@ -58,6 +65,7 @@ pub fn apply_pools(
         for info in &entry.addresses {
             stmt.execute(params![
                 wallet_id.as_slice(),
+                account_type,
                 account_index,
                 key_class,
                 pool_type,
@@ -79,10 +87,16 @@ pub fn account_index_for_script(
     wallet_id: &WalletId,
     script: &[u8],
 ) -> Result<Option<u32>, WalletStorageError> {
+    // A script can appear under several pool rows (distinct account_type /
+    // key_class / pool_type share the same `script_pubkey` for reused keys);
+    // an explicit PK-ordered tie-break makes the pick deterministic instead of
+    // relying on SQLite's arbitrary `LIMIT 1` row.
     let idx: Option<i64> = tx
         .prepare_cached(
             "SELECT account_index FROM core_address_pool \
-             WHERE wallet_id = ?1 AND script = ?2 LIMIT 1",
+             WHERE wallet_id = ?1 AND script = ?2 \
+             ORDER BY account_type, account_index, key_class, pool_type, address_index ASC \
+             LIMIT 1",
         )?
         .query_row(params![wallet_id.as_slice(), script], |row| row.get(0))
         .optional()?;
@@ -104,6 +118,19 @@ pub fn load_used_addresses(
     wallet_id: &WalletId,
     network: dashcore::Network,
 ) -> Result<Vec<dashcore::Address>, WalletStorageError> {
+    // Gate the largest stored `script` with a cheap aggregate BEFORE the
+    // `DISTINCT ... ORDER BY script` read materializes or sorts any blob, so a
+    // corrupt/oversize column raises a typed `BlobTooLarge` (the crate's 16 MiB
+    // cap) rather than SQLite's own `TooBig` mid-sort, and never OOMs the host.
+    let max_script_len: Option<i64> = conn.query_row(
+        "SELECT MAX(length(script)) FROM core_address_pool \
+         WHERE wallet_id = ?1 AND used = 1",
+        params![wallet_id.as_slice()],
+        |row| row.get(0),
+    )?;
+    if let Some(len) = max_script_len {
+        blob::check_size(len)?;
+    }
     let mut stmt = conn.prepare(
         "SELECT DISTINCT script FROM core_address_pool \
          WHERE wallet_id = ?1 AND used = 1 ORDER BY script",
@@ -125,6 +152,55 @@ pub fn load_used_addresses(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// In-memory connection with the full schema migrated in, so tests insert
+    /// through the production DDL.
+    fn migrated_conn() -> rusqlite::Connection {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        conn
+    }
+
+    /// `account_index_for_script` is deterministic when several pool rows
+    /// share one script: the PK-ordered tie-break (`account_type` first) picks
+    /// the same row regardless of insert order, closing the `LIMIT 1`-without-
+    /// `ORDER BY` non-determinism.
+    #[test]
+    fn account_index_for_script_is_deterministic_on_shared_script() {
+        let mut conn = migrated_conn();
+        let w = [0x77u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&w[..]],
+        )
+        .unwrap();
+        let script = [0xABu8; 25];
+        let tx = conn.transaction().unwrap();
+        // Same script under two account types with different account_index.
+        // Insert the later-sorting `standard_bip44` FIRST so a bare `LIMIT 1`
+        // could return either row depending on SQLite's scan order.
+        tx.execute(
+            "INSERT INTO core_address_pool \
+                (wallet_id, account_type, account_index, key_class, pool_type, \
+                 address_index, script, used) \
+             VALUES (?1, 'standard_bip44', 9, 0, 0, 0, ?2, 1)",
+            params![&w[..], &script[..]],
+        )
+        .unwrap();
+        tx.execute(
+            "INSERT INTO core_address_pool \
+                (wallet_id, account_type, account_index, key_class, pool_type, \
+                 address_index, script, used) \
+             VALUES (?1, 'coinjoin', 4, 0, 0, 0, ?2, 1)",
+            params![&w[..], &script[..]],
+        )
+        .unwrap();
+        // ORDER BY account_type ASC: 'coinjoin' < 'standard_bip44', so the
+        // coinjoin row (account_index 4) is the deterministic winner.
+        let got = account_index_for_script(&tx, &w, &script).unwrap();
+        assert_eq!(got, Some(4), "tie-break must pick the account_type-min row");
+        tx.commit().unwrap();
+    }
 
     #[test]
     fn pool_type_discriminants_are_stable_and_distinct() {

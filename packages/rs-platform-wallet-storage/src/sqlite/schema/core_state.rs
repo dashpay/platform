@@ -433,6 +433,20 @@ pub fn load_used_addresses(
     wallet_id: &WalletId,
     network: dashcore::Network,
 ) -> Result<Vec<dashcore::Address>, WalletStorageError> {
+    // Gate the largest stored `script` with a cheap aggregate BEFORE the
+    // `DISTINCT ... ORDER BY script` read materializes or sorts any blob, so a
+    // corrupt/oversize column raises a typed `BlobTooLarge` (the crate's 16 MiB
+    // cap) rather than SQLite's own `TooBig` mid-sort, and never OOMs the host.
+    // `core_utxos` has no `(wallet_id, script)` index, so the read would sort
+    // the blob; the aggregate gate fires first regardless of query plan.
+    let max_script_len: Option<i64> = conn.query_row(
+        "SELECT MAX(length(script)) FROM core_utxos WHERE wallet_id = ?1",
+        params![wallet_id.as_slice()],
+        |row| row.get(0),
+    )?;
+    if let Some(len) = max_script_len {
+        blob::check_size(len)?;
+    }
     let mut stmt = conn
         .prepare("SELECT DISTINCT script FROM core_utxos WHERE wallet_id = ?1 ORDER BY script")?;
     let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
