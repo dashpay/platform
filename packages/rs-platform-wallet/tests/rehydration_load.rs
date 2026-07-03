@@ -25,8 +25,8 @@ use std::sync::{Arc, Mutex};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::Wallet;
 use platform_wallet::changeset::{
-    AccountRegistrationEntry, ClientStartState, ClientWalletStartState, CoreChangeSet,
-    PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
+    AccountRegistrationEntry, ClientStartState, ClientWalletStartState, PersistenceError,
+    PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::error::PlatformWalletError;
 use platform_wallet::events::{EventHandler, PlatformEventHandler};
@@ -75,12 +75,10 @@ impl PlatformWalletPersistence for FixedLoadPersister {
                             birth_height: w.birth_height,
                             account_manifest: w.account_manifest.clone(),
                             core_wallet_info: w.core_wallet_info.clone(),
-                            core_state: w.core_state.clone(),
                             identity_manager: Default::default(),
                             unused_asset_locks: Default::default(),
                             contacts: Default::default(),
                             identity_keys: Default::default(),
-                            used_core_addresses: w.used_core_addresses.clone(),
                         },
                     );
                 }
@@ -153,20 +151,34 @@ fn manifest_and_id(seed: [u8; 64]) -> (Vec<AccountRegistrationEntry>, [u8; 32]) 
 }
 
 fn slice(seed: [u8; 64]) -> (WalletId, ClientWalletStartState) {
-    let (manifest, id) = manifest_and_id(seed);
+    let wallet = Wallet::from_seed_bytes(
+        seed,
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let id = wallet.compute_wallet_id();
+    let account_manifest = wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .map(|a| AccountRegistrationEntry {
+            account_type: a.account_type,
+            account_xpub: a.account_xpub,
+        })
+        .collect();
+    let info = key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::from_wallet(&wallet, 1);
     (
         id,
         ClientWalletStartState {
             network: key_wallet::Network::Testnet,
             birth_height: 1,
-            account_manifest: manifest,
-            core_wallet_info: None,
-            core_state: CoreChangeSet::default(),
+            account_manifest,
+            core_wallet_info: Box::new(info),
             identity_manager: Default::default(),
             unused_asset_locks: Default::default(),
             contacts: Default::default(),
             identity_keys: Default::default(),
-            used_core_addresses: Default::default(),
         },
     )
 }
@@ -305,21 +317,11 @@ async fn rt_corrupt_row_skipped_and_other_loads() {
     let p = Arc::new(FixedLoadPersister::new());
     let h = Arc::new(RecordingHandler::default());
     let (id_a, sa) = slice(seed_a);
-    let (id_b, _sb) = slice(seed_b);
+    let (id_b, mut sb_corrupt) = slice(seed_b);
 
-    // B's row is structurally corrupt — empty manifest.
-    let sb_corrupt = ClientWalletStartState {
-        network: key_wallet::Network::Testnet,
-        birth_height: 1,
-        account_manifest: Vec::new(),
-        core_wallet_info: None,
-        core_state: CoreChangeSet::default(),
-        identity_manager: Default::default(),
-        unused_asset_locks: Default::default(),
-        contacts: Default::default(),
-        identity_keys: Default::default(),
-        used_core_addresses: Default::default(),
-    };
+    // B's row is structurally corrupt — empty manifest. The empty manifest
+    // aborts the watch-only rebuild before the snapshot is ever consulted.
+    sb_corrupt.account_manifest = Vec::new();
 
     let mut st = ClientStartState::default();
     st.wallets.insert(id_a, sa);
@@ -373,21 +375,10 @@ async fn rt_z_secret_hygiene_surfaces() {
     let seed = [0xAB; 64];
     let p = Arc::new(FixedLoadPersister::new());
     let h = Arc::new(RecordingHandler::default());
-    let (id, _s) = slice(seed);
+    let (id, mut corrupt) = slice(seed);
 
     // Corrupt row to force a skip and inspect every public surface.
-    let corrupt = ClientWalletStartState {
-        network: key_wallet::Network::Testnet,
-        birth_height: 1,
-        account_manifest: Vec::new(),
-        core_wallet_info: None,
-        core_state: CoreChangeSet::default(),
-        identity_manager: Default::default(),
-        unused_asset_locks: Default::default(),
-        contacts: Default::default(),
-        identity_keys: Default::default(),
-        used_core_addresses: Default::default(),
-    };
+    corrupt.account_manifest = Vec::new();
     let mut st = ClientStartState::default();
     st.wallets.insert(id, corrupt);
     p.set(st);
@@ -529,7 +520,7 @@ async fn rt_snapshot_preserves_attribution_and_pools() {
     info.update_balance();
 
     let (_, mut s) = slice(seed);
-    s.core_wallet_info = Some(Box::new(info));
+    s.core_wallet_info = Box::new(info);
     let p = Arc::new(FixedLoadPersister::new());
     let h = Arc::new(RecordingHandler::default());
     let mut st = ClientStartState::default();
@@ -589,7 +580,7 @@ async fn rt_snapshot_wallet_id_mismatch_is_skipped() {
         WalletAccountCreationOptions::Default,
     )
     .unwrap();
-    s.core_wallet_info = Some(Box::new(ManagedWalletInfo::from_wallet(&wallet_b, 1)));
+    s.core_wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_b, 1));
 
     let mut st = ClientStartState::default();
     st.wallets.insert(id_a, s);
@@ -643,7 +634,7 @@ async fn rt_snapshot_account_set_mismatch_is_skipped() {
 
     let (_, mut s) = slice(seed);
     s.account_manifest = truncated_manifest;
-    s.core_wallet_info = Some(Box::new(ManagedWalletInfo::from_wallet(&wallet_a, 1)));
+    s.core_wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_a, 1));
 
     let mut st = ClientStartState::default();
     st.wallets.insert(id_a, s);
@@ -693,7 +684,7 @@ async fn rt_snapshot_mismatch_skip_coexists_with_healthy_load() {
     .unwrap();
     let id_ok = wallet_ok.compute_wallet_id();
     let (_, mut s_ok) = slice(seed_ok);
-    s_ok.core_wallet_info = Some(Box::new(ManagedWalletInfo::from_wallet(&wallet_ok, 1)));
+    s_ok.core_wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_ok, 1));
 
     // Mismatched row: keyed by wallet BAD, snapshot built from wallet OTHER.
     let (id_bad, mut s_bad) = slice(seed_bad);
@@ -703,7 +694,7 @@ async fn rt_snapshot_mismatch_skip_coexists_with_healthy_load() {
         WalletAccountCreationOptions::Default,
     )
     .unwrap();
-    s_bad.core_wallet_info = Some(Box::new(ManagedWalletInfo::from_wallet(&wallet_other, 1)));
+    s_bad.core_wallet_info = Box::new(ManagedWalletInfo::from_wallet(&wallet_other, 1));
 
     let mut st = ClientStartState::default();
     st.wallets.insert(id_ok, s_ok);

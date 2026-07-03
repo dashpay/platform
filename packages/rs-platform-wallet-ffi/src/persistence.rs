@@ -2910,9 +2910,8 @@ fn build_wallet_start_state(
     }
 
     // Persisted `last_applied_chain_lock` — bincode-decoded from the
-    // bytes Swift handed back onto the local `wallet_info`. It is then
-    // carried into the keyless `CoreChangeSet` below and re-applied by
-    // `apply_persisted_core_state`, so the asset-lock-resume
+    // bytes Swift handed back onto the local `wallet_info` metadata. The
+    // manager consumes this snapshot verbatim, so the asset-lock-resume
     // CL-from-metadata fallback (`proof.rs`) fires at app launch on any
     // tracked lock whose funding block height is `<= cl.block_height`,
     // without waiting for SPV to re-apply a fresh CL. SPV persists its
@@ -3485,22 +3484,15 @@ fn build_wallet_start_state(
     // would need a new cross-boundary struct field + Swift wiring,
     // tracked as a follow-up. Empty slots make `apply_contacts_and_keys`
     // a no-op for this path, preserving the established iOS behaviour.
-    //
-    // `core_state` / `used_core_addresses` stay empty: they are the
-    // projection fallback for persisters that cannot reconstruct a full
-    // snapshot (the SQLite path until dashpay/platform#3968), and the
-    // manager ignores them when `core_wallet_info` is `Some`.
     let wallet_state = ClientWalletStartState {
         network,
         birth_height: entry.birth_height,
         account_manifest,
-        core_wallet_info: Some(Box::new(wallet_info)),
-        core_state: Default::default(),
+        core_wallet_info: Box::new(wallet_info),
         identity_manager,
         unused_asset_locks,
         contacts: Default::default(),
         identity_keys: Default::default(),
-        used_core_addresses: Vec::new(),
     };
 
     let platform_address_state = if per_account.is_empty()

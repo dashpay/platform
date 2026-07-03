@@ -24,17 +24,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// manifest, the managed core state is restored, and the result is
     /// registered into the manager.
     ///
-    /// Core state comes in one of two shapes, per wallet:
-    /// - a full keyless snapshot
-    ///   ([`ClientWalletStartState::core_wallet_info`]) — consumed
-    ///   directly, preserving per-account UTXO/record attribution and
-    ///   exact pool contents (the FFI/iOS persister); or
-    /// - the keyless projection
-    ///   ([`core_state`](ClientWalletStartState::core_state) +
-    ///   [`used_core_addresses`](ClientWalletStartState::used_core_addresses)),
-    ///   replayed onto a fresh skeleton via
-    ///   [`apply_persisted_core_state`](super::rehydrate::apply_persisted_core_state)
-    ///   (persisters that cannot reconstruct the snapshot).
+    /// Core state arrives as a full keyless snapshot
+    /// ([`ClientWalletStartState::core_wallet_info`]) — consumed directly,
+    /// preserving per-account UTXO/record attribution and exact pool
+    /// contents — after its `wallet_id`/`network`/account-set are
+    /// validated against the row.
     ///
     /// The load path never touches the seed, so it performs no wrong-seed
     /// check. Signing happens later, on demand, via the configured
@@ -50,9 +44,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///   [`on_wallet_skipped_on_load`](crate::PlatformEventHandler::on_wallet_skipped_on_load)
     ///   is called on each registered handler. One bad row
     ///   never aborts the others; the call still returns `Ok`.
-    /// - **Whole-load failure** (persister I/O, programmer error, the
-    ///   no-silent-zero topology check in
-    ///   [`apply_persisted_core_state`](super::rehydrate::apply_persisted_core_state)):
+    /// - **Whole-load failure** (persister I/O, programmer error,
+    ///   registering a persisted wallet in `WalletManager`):
     ///   `Err(_)` — every wallet inserted earlier in this pass is
     ///   rolled back. Skipped wallets never entered the maps so the
     ///   rollback path never sees them.
@@ -110,15 +103,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         'load: for (expected_wallet_id, wallet_state) in wallets {
             let ClientWalletStartState {
                 network,
-                birth_height,
+                // The carried snapshot supplies its own sync metadata, so
+                // the row's birth height is not needed on this path.
+                birth_height: _,
                 account_manifest,
                 core_wallet_info,
-                core_state,
                 identity_manager,
                 unused_asset_locks,
                 contacts,
                 identity_keys,
-                used_core_addresses,
             } = wallet_state;
 
             // Idempotency, checked FIRST: a wallet already registered (a
@@ -154,62 +147,37 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 }
             };
 
-            let wallet_info = match core_wallet_info {
-                // Full keyless snapshot carried by the persister (the
-                // FFI/iOS path): consume it directly. This preserves
-                // per-account UTXO/record attribution, the exact pool
-                // contents (derived-but-unused addresses stay in the SPV
-                // watch set), and per-index used flags — none of which
-                // the projection replay below can reconstruct — and
-                // skips a second eager gap-window derivation.
-                Some(info) => {
-                    let mut info = *info;
-                    // The snapshot must describe this row's wallet and its
-                    // account set must agree with the manifest that built
-                    // the watch-only wallet above. Either mismatch is a
-                    // wrong-row snapshot — skipped like any structural
-                    // failure, kept distinct from unreadable bytes.
-                    if info.wallet_id != expected_wallet_id
-                        || info.network != network
-                        || !snapshot_accounts_match_manifest(&info, &account_manifest)
-                    {
-                        let reason = SkipReason::CorruptPersistedRow {
-                            kind: CorruptKind::SnapshotIdentityMismatch,
-                        };
-                        outcome.skipped.push((expected_wallet_id, reason.clone()));
-                        self.event_manager
-                            .on_wallet_skipped_on_load(expected_wallet_id, &reason);
-                        continue 'load;
-                    }
-                    // Recompute totals from the carried UTXO set so the
-                    // lock-free balance mirrored below can never drift
-                    // from it (no-silent-zero holds by recomputation).
-                    {
-                        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-                        info.update_balance();
-                    }
-                    info
+            // Full keyless snapshot carried by the persister: consume it
+            // directly. This preserves per-account UTXO/record attribution,
+            // the exact pool contents (derived-but-unused addresses stay in
+            // the SPV watch set), and per-index used flags.
+            let wallet_info = {
+                let mut info = *core_wallet_info;
+                // The snapshot must describe this row's wallet and its
+                // account set must agree with the manifest that built the
+                // watch-only wallet above. Either mismatch is a wrong-row
+                // snapshot — skipped like any structural failure, kept
+                // distinct from unreadable bytes.
+                if info.wallet_id != expected_wallet_id
+                    || info.network != network
+                    || !snapshot_accounts_match_manifest(&info, &account_manifest)
+                {
+                    let reason = SkipReason::CorruptPersistedRow {
+                        kind: CorruptKind::SnapshotIdentityMismatch,
+                    };
+                    outcome.skipped.push((expected_wallet_id, reason.clone()));
+                    self.event_manager
+                        .on_wallet_skipped_on_load(expected_wallet_id, &reason);
+                    continue 'load;
                 }
-                // No snapshot (native/SQLite persister until
-                // dashpay/platform#3968): mint the managed-info skeleton
-                // from the watch-only wallet, then replay the keyless
-                // projection (UTXOs, sync watermarks, used addresses). A
-                // wallet with persisted UTXOs but no funds account
-                // hard-fails here rather than reconstructing a silent
-                // zero balance.
-                None => {
-                    let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
-                    if let Err(e) = super::rehydrate::apply_persisted_core_state(
-                        &mut wallet_info,
-                        &account_manifest,
-                        &core_state,
-                        &used_core_addresses,
-                    ) {
-                        load_error = Some(e);
-                        break 'load;
-                    }
-                    wallet_info
+                // Recompute totals from the carried UTXO set so the
+                // lock-free balance mirrored below can never drift from it
+                // (no-silent-zero holds by recomputation).
+                {
+                    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+                    info.update_balance();
                 }
+                info
             };
 
             // Flatten the (account → outpoint → lock) map.
@@ -324,9 +292,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
 /// Whether the snapshot's account set matches the row's account manifest.
 ///
-/// The manifest is the account-set oracle used to build the watch-only
-/// wallet; a snapshot carrying a different set of account types describes
-/// a different wallet and must not be consumed.
+/// A **self-consistency** check between two pieces of the same persisted
+/// row, not an authenticity guard: the manifest is the account-set oracle
+/// used to build the watch-only wallet, and a snapshot carrying a
+/// different set of account types is internally inconsistent with it and
+/// must not be consumed. It does not attest that the manifest itself is
+/// genuine — that trust boundary lives in `build_watch_only_wallet`.
 ///
 /// The manifest is enumerated from `Wallet::all_accounts` (ECDSA-only:
 /// carries `PlatformPayment`, omits the BLS `ProviderOperatorKeys` /

@@ -2,9 +2,8 @@
 //!
 //! **Keyless by type.** This carries everything needed to *reconstruct*
 //! a watch-only wallet — network, birth height, the account manifest,
-//! the managed-state snapshot (or its keyless projection), identities,
-//! filtered asset locks —
-//! but **no** [`Wallet`](key_wallet::Wallet) and no seed. The persister
+//! the managed-state snapshot, identities, filtered asset locks — but
+//! **no** [`Wallet`](key_wallet::Wallet) and no seed. The persister
 //! can never mint a `Wallet`; the manager rebuilds a watch-only one via
 //! [`Wallet::new_watch_only`](key_wallet::wallet::Wallet::new_watch_only)
 //! from the manifest, applies this state, and defers signing-key
@@ -14,13 +13,11 @@
 use std::collections::BTreeMap;
 
 use crate::changeset::identity_manager_start_state::IdentityManagerStartState;
-use crate::changeset::{
-    AccountRegistrationEntry, ContactChangeSet, CoreChangeSet, IdentityKeysChangeSet,
-};
+use crate::changeset::{AccountRegistrationEntry, ContactChangeSet, IdentityKeysChangeSet};
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 use dashcore::OutPoint;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
-use key_wallet::{Address, Network};
+use key_wallet::Network;
 
 /// Keyless per-wallet slice of the startup snapshot.
 ///
@@ -38,34 +35,19 @@ pub struct ClientWalletStartState {
     /// Keyless account manifest — the account-set oracle for building the
     /// watch-only wallet (one watch-only account per entry's xpub).
     pub account_manifest: Vec<AccountRegistrationEntry>,
-    /// Full keyless managed-wallet snapshot for persisters that can
-    /// reconstruct one — pools with exact derivation indices and `used`
-    /// flags, per-account UTXO and tx-record attribution, IS-lock set,
-    /// and sync metadata. [`ManagedWalletInfo`] carries **no key
-    /// material** (see its docs: balances, account metadata, UTXO set),
-    /// so the SECRETS.md boundary holds: still no `Wallet`, no seed.
+    /// Full keyless managed-wallet snapshot: pools with exact derivation
+    /// indices and `used` flags, per-account UTXO and tx-record
+    /// attribution, IS-lock set, and sync metadata. [`ManagedWalletInfo`]
+    /// carries **no key material** (see its docs: balances, account
+    /// metadata, UTXO set), so the SECRETS.md boundary holds: still no
+    /// `Wallet`, no seed.
     ///
-    /// When `Some`, the manager consumes it directly (after validating
-    /// its `wallet_id`/`network` against the row) instead of minting a
-    /// `ManagedWalletInfo::from_wallet` skeleton and replaying the
-    /// projection below — preserving per-account attribution, the full
-    /// SPV watch set, and pool used-state verbatim, without re-deriving
-    /// anything. The FFI/iOS persister populates this. When `None` (the
-    /// native/SQLite persister until dashpay/platform#3968), the manager
-    /// falls back to the skeleton + [`core_state`](Self::core_state) /
-    /// [`used_core_addresses`](Self::used_core_addresses) replay.
-    pub core_wallet_info: Option<Box<ManagedWalletInfo>>,
-    /// Keyless projection of the persisted core rows (UTXOs, tx
-    /// records, IS-locks, sync watermarks, `last_applied_chain_lock`).
-    /// The manager applies this onto a fresh
-    /// `ManagedWalletInfo::from_wallet` skeleton built from the
-    /// watch-only wallet. Populated by the persister's
-    /// [`PlatformWalletPersistence::load`](crate::changeset::PlatformWalletPersistence::load)
-    /// implementation reading the persisted core rows.
-    ///
-    /// Ignored when [`core_wallet_info`](Self::core_wallet_info) is
-    /// `Some` — the full snapshot supersedes the projection.
-    pub core_state: CoreChangeSet,
+    /// The manager consumes it directly after validating its
+    /// `wallet_id`/`network` against the row and its account set against
+    /// the manifest — preserving per-account attribution, the full SPV
+    /// watch set, and pool used-state verbatim, without re-deriving
+    /// anything. The FFI/iOS persister populates this.
+    pub core_wallet_info: Box<ManagedWalletInfo>,
     /// Lean snapshot of this wallet's
     /// [`IdentityManager`](crate::wallet::identity::IdentityManager).
     pub identity_manager: IdentityManagerStartState,
@@ -84,15 +66,4 @@ pub struct ClientWalletStartState {
     /// `Identity.public_keys` is populated at load time instead of
     /// only after the next sync. `removed` is always empty.
     pub identity_keys: IdentityKeysChangeSet,
-    /// Addresses the persisted pool snapshot marked **used**, flattened
-    /// across every funds account / pool. `apply_persisted_core_state`
-    /// derives each into its pool slot (if needed) and marks it used, in
-    /// union with the still-unspent UTXO addresses. This is the
-    /// address-reuse guard: a previously-used address whose funds were
-    /// since spent must never be handed back out as a fresh receive
-    /// address. EMPTY default = no pool used-state carried, so rehydrate
-    /// falls back to marking only currently-unspent UTXO addresses (the
-    /// native/SQLite persister until dashpay/platform#3968 wires its pool
-    /// readers to populate this).
-    pub used_core_addresses: Vec<Address>,
 }
