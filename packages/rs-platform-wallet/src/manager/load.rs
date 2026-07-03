@@ -352,3 +352,173 @@ fn snapshot_accounts_match_manifest(
         .collect();
     manifest_types == snapshot_types
 }
+
+#[cfg(test)]
+mod rollback_tests {
+    //! In-crate because constructing the mid-batch hard-fail needs
+    //! `PerAccountPlatformAddressState` + `bimap::BiBTreeMap`, which are
+    //! not reachable from the external integration-test crate.
+
+    use std::sync::Arc;
+
+    use bimap::BiBTreeMap;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+    use key_wallet::wallet::Wallet;
+
+    use crate::changeset::{
+        AccountRegistrationEntry, ClientStartState, ClientWalletStartState, PersistenceError,
+        PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::error::PlatformWalletError;
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
+    use crate::{PlatformAddressSyncStartState, PlatformWalletManager};
+
+    fn slice(seed: [u8; 64]) -> (WalletId, ClientWalletStartState) {
+        let wallet = Wallet::from_seed_bytes(
+            seed,
+            key_wallet::Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let id = wallet.compute_wallet_id();
+        let account_manifest: Vec<AccountRegistrationEntry> = wallet
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .map(|a| AccountRegistrationEntry {
+                account_type: a.account_type,
+                account_xpub: a.account_xpub,
+            })
+            .collect();
+        let info = ManagedWalletInfo::from_wallet(&wallet, 1);
+        (
+            id,
+            ClientWalletStartState {
+                network: key_wallet::Network::Testnet,
+                birth_height: 1,
+                account_manifest,
+                core_wallet_info: Box::new(info),
+                identity_manager: Default::default(),
+                unused_asset_locks: Default::default(),
+                contacts: Default::default(),
+                identity_keys: Default::default(),
+            },
+        )
+    }
+
+    /// Two healthy wallets plus a platform-address restore state for the
+    /// second that references an account index the wallet does not have
+    /// as a platform-payment account, so `initialize_from_persisted`
+    /// hard-fails mid-batch. Rebuilt fresh on every `load` — the platform
+    /// address state types are not `Clone`.
+    struct RollbackPersister {
+        healthy_seed: [u8; 64],
+        fail_seed: [u8; 64],
+    }
+
+    impl PlatformWalletPersistence for RollbackPersister {
+        fn store(&self, _: WalletId, _: PlatformWalletChangeSet) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            let mut st = ClientStartState::default();
+            let (healthy_id, healthy) = slice(self.healthy_seed);
+            let (fail_id, fail) = slice(self.fail_seed);
+            let bogus_xpub = fail.account_manifest[0].account_xpub;
+            st.wallets.insert(healthy_id, healthy);
+            st.wallets.insert(fail_id, fail);
+
+            // A per-account restore entry keyed to an account index the
+            // wallet has no platform-payment account for: `from_persisted`
+            // returns `AddressSync`, which the manager treats as a hard
+            // failure (not a per-row skip).
+            let mut per_account = PerWalletPlatformAddressState::new();
+            per_account.insert(
+                9_999,
+                PerAccountPlatformAddressState::from_persisted(
+                    bogus_xpub,
+                    BiBTreeMap::new(),
+                    std::collections::BTreeMap::new(),
+                ),
+            );
+            st.platform_addresses.insert(
+                fail_id,
+                PlatformAddressSyncStartState {
+                    per_account,
+                    sync_height: 0,
+                    sync_timestamp: 0,
+                    last_known_recent_block: 0,
+                },
+            );
+            Ok(st)
+        }
+    }
+
+    struct NoopHandler;
+    impl EventHandler for NoopHandler {}
+    impl PlatformEventHandler for NoopHandler {}
+
+    /// A hard failure part-way through a batch must roll back every wallet
+    /// already inserted this pass — from BOTH `self.wallets` and
+    /// `wallet_manager` — and surface as `Err`. Nothing asserted this
+    /// before.
+    #[tokio::test]
+    async fn hard_fail_rolls_back_already_loaded_healthy_wallet() {
+        // Order the seeds so the healthy wallet sorts BEFORE the failing
+        // one (wallets load in BTreeMap key order), guaranteeing the
+        // healthy wallet is fully inserted before the failure aborts.
+        let (id_a, _) = slice([0xA1; 64]);
+        let (id_b, _) = slice([0xB2; 64]);
+        let (healthy_seed, fail_seed) = if id_a < id_b {
+            ([0xA1; 64], [0xB2; 64])
+        } else {
+            ([0xB2; 64], [0xA1; 64])
+        };
+        let (healthy_id, _) = slice(healthy_seed);
+
+        let persister = Arc::new(RollbackPersister {
+            healthy_seed,
+            fail_seed,
+        });
+        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopHandler);
+        let mgr = Arc::new(PlatformWalletManager::new(sdk, persister, handler));
+
+        let err = mgr
+            .load_from_persistor()
+            .await
+            .expect_err("a mid-batch hard failure must surface as Err");
+        assert!(
+            matches!(err, PlatformWalletError::WalletCreation(_)),
+            "a platform-address restore failure is a WalletCreation hard error, got {err:?}"
+        );
+
+        // The healthy wallet was fully inserted, then rolled back on the
+        // failure — gone from self.wallets...
+        assert!(
+            mgr.get_wallet(&healthy_id).await.is_none(),
+            "the already-loaded healthy wallet must be evicted from self.wallets"
+        );
+        assert!(
+            mgr.wallet_ids().await.is_empty(),
+            "self.wallets must be fully rolled back"
+        );
+        // ...and from wallet_manager (read via the blocking accessor).
+        let rows = {
+            let mgr = Arc::clone(&mgr);
+            tokio::task::spawn_blocking(move || mgr.account_balances_blocking(&healthy_id))
+                .await
+                .unwrap()
+        };
+        assert!(
+            rows.is_empty(),
+            "the already-loaded healthy wallet must be evicted from wallet_manager too"
+        );
+    }
+}

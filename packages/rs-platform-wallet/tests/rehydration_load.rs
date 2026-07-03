@@ -796,3 +796,100 @@ async fn rt_persister_load_permanent_error_is_typed_and_not_retryable() {
         other => panic!("expected PersisterLoad, got {other:?}"),
     }
 }
+
+/// RT-EmptyFirstRun: a genuinely fresh install — the persister returns
+/// `ClientStartState::default()` with no rows at all — loads cleanly as
+/// `LoadOutcome::Loaded` with empty loaded/skipped and fires zero skip
+/// handlers. This is the condition every first launch hits.
+#[tokio::test]
+async fn rt_empty_first_run_is_clean_with_no_handler_calls() {
+    // `FixedLoadPersister::new()` without `set()` returns the default
+    // (empty) ClientStartState from `load()`.
+    let p = Arc::new(FixedLoadPersister::new());
+    let h = Arc::new(RecordingHandler::default());
+
+    let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
+    let outcome = mgr
+        .load_from_persistor()
+        .await
+        .expect("an empty store must load cleanly");
+
+    assert!(
+        matches!(outcome, LoadOutcome::Loaded { .. }),
+        "an empty store is a full (Loaded) outcome, not partial/none-usable"
+    );
+    assert!(
+        outcome.loaded().is_empty(),
+        "nothing to load on a fresh install"
+    );
+    assert!(
+        outcome.skipped().is_empty(),
+        "nothing to skip on a fresh install"
+    );
+    assert!(mgr.wallet_ids().await.is_empty(), "no wallets registered");
+    assert!(
+        h.skipped.lock().unwrap().is_empty(),
+        "no skip handler fires on a fresh install"
+    );
+}
+
+/// RT-Concurrent: two concurrent `load_from_persistor` passes against the
+/// same manager and multi-wallet snapshot. Both must complete without
+/// error, every wallet must register exactly once (the idempotency check
+/// releases its read lock before the write-lock insert — a check-then-act
+/// window), and the outcomes must be consistent: each wallet is freshly
+/// loaded by exactly one pass and reported `AlreadyRegistered` by the
+/// other (never a corruption skip, never a hard error).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rt_concurrent_loads_register_each_wallet_exactly_once() {
+    let p = Arc::new(FixedLoadPersister::new());
+    let h = Arc::new(RecordingHandler::default());
+    let (id1, s1) = slice([0xC1; 64]);
+    let (id2, s2) = slice([0xC2; 64]);
+    let mut st = ClientStartState::default();
+    st.wallets.insert(id1, s1);
+    st.wallets.insert(id2, s2);
+    p.set(st);
+
+    let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
+    let m1 = Arc::clone(&mgr);
+    let m2 = Arc::clone(&mgr);
+    let t1 = tokio::spawn(async move { m1.load_from_persistor().await });
+    let t2 = tokio::spawn(async move { m2.load_from_persistor().await });
+    let o1 = t1.await.unwrap().expect("first concurrent load Ok");
+    let o2 = t2.await.unwrap().expect("second concurrent load Ok");
+
+    // Each wallet registered exactly once, in both maps.
+    assert!(mgr.get_wallet(&id1).await.is_some());
+    assert!(mgr.get_wallet(&id2).await.is_some());
+    assert_eq!(
+        mgr.wallet_ids().await.len(),
+        2,
+        "each wallet registered exactly once despite the concurrent passes"
+    );
+
+    // Every wallet is freshly loaded by exactly one of the two passes.
+    let mut loaded_union: std::collections::BTreeSet<WalletId> =
+        o1.loaded().iter().copied().collect();
+    for id in o2.loaded() {
+        assert!(
+            loaded_union.insert(*id),
+            "a wallet must be freshly loaded by at most one pass"
+        );
+    }
+    assert!(
+        loaded_union.contains(&id1) && loaded_union.contains(&id2),
+        "both wallets loaded across the two passes"
+    );
+
+    // Any overlap surfaces as an AlreadyRegistered skip, never corruption.
+    for outcome in [&o1, &o2] {
+        for (_, reason) in outcome.skipped() {
+            assert_eq!(
+                *reason,
+                SkipReason::AlreadyRegistered,
+                "a concurrent overlap is an AlreadyRegistered skip, not a corrupt row"
+            );
+        }
+    }
+}
