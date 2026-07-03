@@ -1296,10 +1296,9 @@ mod plan_withdrawal_seam_tests {
     async fn plan_withdrawal_sizes_inputs_from_chain_not_doubled_cache() {
         use dash_sdk::query_types::{AddressInfo, AddressInfos};
 
-        const WALLET: WalletId = [7u8; 32];
         const ACCOUNT: u32 = 0;
 
-        // Addr#1 = the ADDR-02 recipient; Addr#0 = the large fee-source origin.
+        // Addr#0 = the ADDR-02 recipient; Addr#1 = the large fee-source origin.
         let recipient_byte = 0x11u8;
         let origin_byte = 0x22u8;
         let recipient_on_chain: u64 = 100_000_000;

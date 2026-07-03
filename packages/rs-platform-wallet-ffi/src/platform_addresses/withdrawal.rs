@@ -5,6 +5,7 @@ use crate::error::*;
 use crate::handle::*;
 use crate::platform_address_types::*;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
+use dash_sdk::dapi_client::CanRetry;
 use dpp::identity::core_script::CoreScript;
 use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
@@ -197,6 +198,52 @@ pub unsafe extern "C" fn platform_address_wallet_withdraw_to_address(
     PlatformWalletFFIResult::ok()
 }
 
+/// How `platform_address_wallet_preflight_withdrawal` should present a
+/// `PlatformWalletError` returned by the planner.
+///
+/// Extracted from the FFI entry point so the exact error→outcome mapping is
+/// unit-testable without a wallet handle or a mock SDK (the classification is
+/// the part that carries the retryability policy; see
+/// [`classify_preflight_error`]).
+#[derive(Debug, PartialEq, Eq)]
+enum PreflightOutcome {
+    /// Not an FFI error: write `can_withdraw = false` (zeroed figures) and
+    /// return a Success-coded result whose message is the error's `Display`.
+    /// Covers both the permanent "can't fund" states and transient, RETRYABLE
+    /// "can't confirm right now" failures.
+    DisabledWithReason,
+    /// A genuine fault: leave `out` untouched and return the mapped FFI error
+    /// code (via the blanket `From<PlatformWalletError>`), so callers can
+    /// surface/monitor it through `throwIfError()`.
+    Structural,
+}
+
+/// Classify a planner error into the FFI outcome the preflight entry point
+/// should present.
+///
+/// * `OnlyDustInputs` / `AddressOperation` — the planner's typed "can't fund"
+///   states (dust-only, fee/per-input/minimum headroom, too-many-inputs,
+///   above-maximum, no funded addresses) → [`PreflightOutcome::DisabledWithReason`].
+/// * `Sdk(e)` where `e.can_retry()` — the balance query
+///   (`AddressInfo::fetch_many`) failed transiently (stale node, timeout, or
+///   proof-verification error, per [`CanRetry::can_retry`]); a retry could
+///   clear it → [`PreflightOutcome::DisabledWithReason`] ("can't confirm right
+///   now").
+/// * Everything else — a bad/missing handle-or-account (`WalletNotFound` /
+///   `AddressSync`) AND NON-retryable `Sdk` errors (misconfiguration, invariant
+///   violation, protocol/consensus error, …) → [`PreflightOutcome::Structural`].
+///   A non-retryable SDK fault must NOT masquerade as a retryable "can't fund";
+///   it is a real error a caller should see.
+fn classify_preflight_error(err: &PlatformWalletError) -> PreflightOutcome {
+    match err {
+        PlatformWalletError::OnlyDustInputs { .. } | PlatformWalletError::AddressOperation(_) => {
+            PreflightOutcome::DisabledWithReason
+        }
+        PlatformWalletError::Sdk(e) if e.can_retry() => PreflightOutcome::DisabledWithReason,
+        _ => PreflightOutcome::Structural,
+    }
+}
+
 /// Preflight an AUTO withdrawal of a platform-payment account WITHOUT signing,
 /// broadcasting, or consuming a Core receive address.
 ///
@@ -228,19 +275,27 @@ pub unsafe extern "C" fn platform_address_wallet_withdraw_to_address(
 /// explanation can read it without mirroring protocol constants in Swift). The
 /// authoritative signal is `can_withdraw`; the message is advisory.
 ///
-/// A **transient** network / proof-verification failure — the planner's
-/// `AddressInfo::fetch_many` balance query couldn't reach a node or its proof
-/// failed to verify (`PlatformWalletError::Sdk`) — is ALSO reported as
-/// `can_withdraw = false` with a Success code and the SDK error's message,
-/// NOT as a structural FFI error. Rationale: from the UI's perspective this is
-/// "can't confirm you can withdraw right now" (retry when connectivity
-/// returns), not "this handle/account is broken." Surfacing it as a normal
-/// disabled-with-reason result lets the caller show a retryable explanation
-/// instead of a silent structural throw indistinguishable from a bad handle.
+/// A **transient, RETRYABLE** network / proof-verification failure — the
+/// planner's `AddressInfo::fetch_many` balance query couldn't reach a node or
+/// its proof failed to verify — is ALSO reported as `can_withdraw = false` with
+/// a Success code and the SDK error's message, NOT as a structural FFI error.
+/// "Retryable" is decided authoritatively by
+/// [`dash_sdk::Error::can_retry()`](dash_sdk::dapi_client::CanRetry::can_retry)
+/// (true for stale-node, timeout, and proof-verification errors), so only SDK
+/// errors that a retry could actually clear take this arm. Rationale: from the
+/// UI's perspective a retryable failure is "can't confirm you can withdraw
+/// right now" (retry when connectivity returns), not "this handle/account is
+/// broken." Surfacing it as a normal disabled-with-reason result lets the
+/// caller show a retryable explanation instead of a silent structural throw
+/// indistinguishable from a bad handle.
 ///
-/// Only a **structural** failure — a bad/destroyed handle, or a missing
-/// account at `account_index` (`WalletNotFound` / `AddressSync`) — is reported
-/// as an FFI error code with `out` left untouched.
+/// A **structural** failure is reported as an FFI error code with `out` left
+/// untouched: a bad/destroyed handle, a missing account at `account_index`
+/// (`WalletNotFound` / `AddressSync`), OR a NON-retryable SDK error —
+/// misconfiguration, an invariant violation, a protocol/consensus error, etc.
+/// (`PlatformWalletError::Sdk(e)` where `!e.can_retry()`). Those are genuine
+/// faults a caller should surface/monitor via `throwIfError()`, not silently
+/// present as a retryable "can't fund."
 ///
 /// # Safety
 /// - `out` must be a valid, non-null, writable `*mut WithdrawalPreflightFFI`.
@@ -274,46 +329,30 @@ pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal(
             };
             PlatformWalletFFIResult::ok()
         }
-        // "Can't fund" (and "can't confirm right now") is a NORMAL result, not
-        // an FFI error: report it as `can_withdraw = false` with zeroed figures
-        // so the UI can disable submit and explain why, without treating it as
-        // a failure.
-        //
-        // `OnlyDustInputs` (every funded address below `min_input_amount`) and
-        // `AddressOperation` (the fee / per-input / min-withdrawal headroom
-        // failures, the too-many-inputs and above-max-withdrawal gates inside
-        // `reserve_withdrawal_fee_on_largest_input`, plus the "no funded
-        // addresses" case in `select_withdrawable_inputs`) are all genuine
-        // can't-fund states.
-        //
-        // `Sdk(_)` is the planner's `AddressInfo::fetch_many` balance query
-        // failing transiently (node unreachable / proof didn't verify). That is
-        // "can't confirm you can withdraw right now" — a retryable, non-
-        // structural condition — so it belongs here rather than on the error
-        // path where it would be indistinguishable from a bad handle and leave
-        // the UI with a silently-disabled button and no reason. The SDK error's
-        // `Display` is surfaced verbatim as the reason.
-        Err(
-            e @ (PlatformWalletError::OnlyDustInputs { .. }
-            | PlatformWalletError::AddressOperation(_)
-            | PlatformWalletError::Sdk(_)),
-        ) => {
-            *out = WithdrawalPreflightFFI {
-                can_withdraw: false,
-                net_withdrawable: 0,
-                estimated_fee: 0,
-            };
-            // Carry the typed reason as a Success-coded message so callers that
-            // want a human-readable explanation can read it; the `can_withdraw`
-            // flag is the authoritative signal and the Success code keeps this
-            // off the error path (`.check()` on the Swift side only inspects
-            // the code).
-            PlatformWalletFFIResult::success_with_message(e.to_string())
-        }
-        // Structural failures (bad handle / missing wallet / missing account)
-        // stay FFI errors with `out` untouched, mapped via the blanket
-        // `From<PlatformWalletError>`.
-        Err(other) => other.into(),
+        // Route the error through the shared classifier so the retryability
+        // policy lives in one unit-testable place (`classify_preflight_error`).
+        Err(err) => match classify_preflight_error(&err) {
+            // "Can't fund" (permanent) and "can't confirm right now" (transient
+            // but RETRYABLE) both present as a NORMAL result, not an FFI error:
+            // `can_withdraw = false` with zeroed figures so the UI can disable
+            // submit and explain why. Carry the typed reason as a Success-coded
+            // message so callers that want a human-readable explanation can read
+            // it; the `can_withdraw` flag is the authoritative signal and the
+            // Success code keeps this off the error path (`.check()` on the Swift
+            // side only inspects the code).
+            PreflightOutcome::DisabledWithReason => {
+                *out = WithdrawalPreflightFFI {
+                    can_withdraw: false,
+                    net_withdrawable: 0,
+                    estimated_fee: 0,
+                };
+                PlatformWalletFFIResult::success_with_message(err.to_string())
+            }
+            // Structural failures (bad handle / missing wallet / missing account,
+            // and NON-retryable SDK errors) stay FFI errors with `out` untouched,
+            // mapped via the blanket `From<PlatformWalletError>`.
+            PreflightOutcome::Structural => err.into(),
+        },
     }
 }
 
@@ -352,6 +391,80 @@ mod tests {
         assert!(
             core_script.is_p2pkh(),
             "a P2PKH address must produce a P2PKH CoreScript"
+        );
+    }
+
+    // ---- Preflight error classification -------------------------------------
+    //
+    // Pin the exact `PlatformWalletError` → outcome mapping the preflight FFI
+    // relies on, so the retryability policy can't silently regress. The
+    // classifier is the load-bearing part: a NON-retryable SDK error
+    // (misconfig / invariant / consensus) must stay STRUCTURAL — presenting it
+    // as a Success-coded retryable "can't fund" would hide a genuine fault from
+    // `throwIfError()` monitoring. Retryable SDK errors and the planner's typed
+    // can't-fund states must be disabled-with-reason.
+
+    /// A RETRYABLE SDK error (per `dash_sdk::Error::can_retry()` — here a
+    /// timeout) must be `DisabledWithReason`: the balance query can be retried,
+    /// so the UI shows "can't confirm right now," not a structural throw.
+    #[test]
+    fn retryable_sdk_error_is_disabled_with_reason() {
+        let err = PlatformWalletError::Sdk(dash_sdk::Error::TimeoutReached(
+            std::time::Duration::from_secs(1),
+            "balance query timed out".to_string(),
+        ));
+        // Guard the premise: this variant really is retryable.
+        assert!(
+            matches!(&err, PlatformWalletError::Sdk(e) if e.can_retry()),
+            "test premise: TimeoutReached must be retryable"
+        );
+        assert_eq!(
+            classify_preflight_error(&err),
+            PreflightOutcome::DisabledWithReason
+        );
+    }
+
+    /// A NON-retryable SDK error (here a misconfiguration) must be
+    /// `Structural`: a retry can't clear it, so it stays a real FFI error that
+    /// `throwIfError()` surfaces — NOT a Success-coded retryable "can't fund".
+    /// This is the exact over-broad-catch-all case the second review flagged.
+    #[test]
+    fn non_retryable_sdk_error_is_structural() {
+        let err =
+            PlatformWalletError::Sdk(dash_sdk::Error::Config("bad SDK configuration".to_string()));
+        // Guard the premise: this variant is NOT retryable.
+        assert!(
+            matches!(&err, PlatformWalletError::Sdk(e) if !e.can_retry()),
+            "test premise: Config must NOT be retryable"
+        );
+        assert_eq!(classify_preflight_error(&err), PreflightOutcome::Structural);
+    }
+
+    /// A missing wallet handle / account is structural.
+    #[test]
+    fn wallet_not_found_is_structural() {
+        let err = PlatformWalletError::WalletNotFound("0xdeadbeef".to_string());
+        assert_eq!(classify_preflight_error(&err), PreflightOutcome::Structural);
+    }
+
+    /// The planner's typed can't-fund states are disabled-with-reason (the UI
+    /// shows the reason and keeps submit disabled — no throw).
+    #[test]
+    fn cant_fund_states_are_disabled_with_reason() {
+        let dust = PlatformWalletError::OnlyDustInputs {
+            sub_min_count: 3,
+            sub_min_aggregate: 500,
+            min_input_amount: 100_000,
+        };
+        assert_eq!(
+            classify_preflight_error(&dust),
+            PreflightOutcome::DisabledWithReason
+        );
+
+        let op = PlatformWalletError::AddressOperation("net below minimum withdrawal".to_string());
+        assert_eq!(
+            classify_preflight_error(&op),
+            PreflightOutcome::DisabledWithReason
         );
     }
 }
