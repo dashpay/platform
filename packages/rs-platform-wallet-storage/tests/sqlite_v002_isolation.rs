@@ -39,15 +39,16 @@ fn tc_b_006_v002_tables_isolate_and_cascade_per_wallet() {
     ensure_wallet_meta(&persister, &a);
     ensure_wallet_meta(&persister, &b);
 
-    // Identical (account_index, key_class, pool_type, address_index, domain)
-    // for both wallets — only wallet_id differs.
+    // Identical (account_type, account_index, key_class, pool_type,
+    // address_index, domain) for both wallets — only wallet_id differs.
     {
         let conn = persister.lock_conn_for_test();
         for w in [&a, &b] {
             conn.execute(
                 "INSERT INTO core_address_pool \
-                    (wallet_id, account_index, key_class, pool_type, address_index, script, used) \
-                 VALUES (?1, 0, 0, 0, 0, ?2, 1)",
+                    (wallet_id, account_type, account_index, key_class, pool_type, \
+                     address_index, script, used) \
+                 VALUES (?1, 'standard_bip44', 0, 0, 0, 0, ?2, 1)",
                 rusqlite::params![w.as_slice(), &[0xEEu8; 25][..]],
             )
             .expect("overlapping-key pool rows must not collide across wallets");

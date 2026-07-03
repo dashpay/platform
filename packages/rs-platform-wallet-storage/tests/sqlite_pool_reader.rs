@@ -118,8 +118,9 @@ fn tc_b_023_deep_derivation_window_not_truncated() {
             let used = i32::from(i <= 45);
             conn.execute(
                 "INSERT INTO core_address_pool \
-                    (wallet_id, account_index, key_class, pool_type, address_index, script, used) \
-                 VALUES (?1, 0, 0, 0, ?2, ?3, ?4)",
+                    (wallet_id, account_type, account_index, key_class, pool_type, \
+                     address_index, script, used) \
+                 VALUES (?1, 'standard_bip44', 0, 0, 0, ?2, ?3, ?4)",
                 rusqlite::params![
                     w.as_slice(),
                     i64::from(i),

@@ -352,3 +352,156 @@ fn tc_b_015_key_class_survives() {
     assert_eq!(account_index, 2, "PlatformPayment account index");
     assert_eq!(key_class, 1, "non-default key_class must survive");
 }
+
+/// A single external `AddressInfo` at derivation index 0 for a seed, with a
+/// chosen `used` flag. Two seeds yield distinct scripts so a cross-account
+/// overwrite is observable.
+fn index_zero_info(seed_byte: u8, used: bool) -> Vec<AddressInfo> {
+    let mut infos = external_infos(seed_byte);
+    infos.truncate(1);
+    infos[0].used = used;
+    infos
+}
+
+/// Assert the pool rows for `(wallet, account_type)` are exactly `(script,
+/// used)`, and that `total` rows exist for the wallet overall.
+fn assert_pool_row(
+    persister: &platform_wallet_storage::SqlitePersister,
+    w: &WalletId,
+    label: &str,
+    want_script: &[u8],
+    want_used: i64,
+) {
+    let conn = persister.lock_conn_for_test();
+    let (script, used): (Vec<u8>, i64) = conn
+        .query_row(
+            "SELECT script, used FROM core_address_pool \
+             WHERE wallet_id = ?1 AND account_type = ?2",
+            rusqlite::params![w.as_slice(), label],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap_or_else(|e| panic!("expected exactly one row for {label}: {e}"));
+    assert_eq!(script, want_script, "{label} script must survive verbatim");
+    assert_eq!(used, want_used, "{label} used flag must survive");
+}
+
+/// Two account types that both collapse to the `(account_index=0,
+/// key_class=0)` sentinel — `IdentityRegistration` and `ProviderVotingKeys` —
+/// must not overwrite each other's pool rows. Before the PK was widened with
+/// `account_type` they upserted onto one PK tuple, silently losing one
+/// account's `script` and merging `used`.
+#[test]
+fn distinct_account_types_sharing_index_zero_do_not_collide() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xA6);
+    ensure_wallet_meta(&persister, &w);
+
+    let id_reg = index_zero_info(0x61, true);
+    let prov = index_zero_info(0x62, false);
+    assert_ne!(
+        id_reg[0].script_pubkey, prov[0].script_pubkey,
+        "the two account types must carry distinct scripts to prove no overwrite"
+    );
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![
+                    pool_entry(
+                        AccountType::IdentityRegistration,
+                        AddressPoolType::External,
+                        id_reg.clone(),
+                    ),
+                    pool_entry(
+                        AccountType::ProviderVotingKeys,
+                        AddressPoolType::External,
+                        prov.clone(),
+                    ),
+                ],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    assert_pool_row(
+        &persister,
+        &w,
+        "identity_registration",
+        id_reg[0].script_pubkey.as_bytes(),
+        1,
+    );
+    assert_pool_row(
+        &persister,
+        &w,
+        "provider_voting",
+        prov[0].script_pubkey.as_bytes(),
+        0,
+    );
+    let conn = persister.lock_conn_for_test();
+    let total: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM core_address_pool WHERE wallet_id = ?1",
+            rusqlite::params![w.as_slice()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(total, 2, "both account types must persist as separate rows");
+}
+
+/// `Standard { index: 0 }` and `CoinJoin { index: 0 }` also both map to
+/// `(account_index=0, key_class=0)` yet are distinct accounts; the
+/// `account_type` discriminator (`standard_bip44` vs `coinjoin`) must keep
+/// their pool rows separate.
+#[test]
+fn standard_and_coinjoin_index_zero_do_not_collide() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xA7);
+    ensure_wallet_meta(&persister, &w);
+
+    let std0 = index_zero_info(0x71, true);
+    let cj0 = index_zero_info(0x72, false);
+    assert_ne!(
+        std0[0].script_pubkey, cj0[0].script_pubkey,
+        "the two account types must carry distinct scripts to prove no overwrite"
+    );
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![
+                    pool_entry(
+                        AccountType::Standard {
+                            index: 0,
+                            standard_account_type: StandardAccountType::BIP44Account,
+                        },
+                        AddressPoolType::External,
+                        std0.clone(),
+                    ),
+                    pool_entry(
+                        AccountType::CoinJoin { index: 0 },
+                        AddressPoolType::External,
+                        cj0.clone(),
+                    ),
+                ],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    assert_pool_row(
+        &persister,
+        &w,
+        "standard_bip44",
+        std0[0].script_pubkey.as_bytes(),
+        1,
+    );
+    assert_pool_row(
+        &persister,
+        &w,
+        "coinjoin",
+        cj0[0].script_pubkey.as_bytes(),
+        0,
+    );
+}

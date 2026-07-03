@@ -348,7 +348,8 @@ fn tc_b_035_interrupted_migration_recovers_to_clean_state() {
         conn.execute_batch(
             "BEGIN; \
              CREATE TABLE core_address_pool ( \
-                wallet_id BLOB NOT NULL, account_index INTEGER NOT NULL, \
+                wallet_id BLOB NOT NULL, account_type TEXT NOT NULL, \
+                account_index INTEGER NOT NULL, \
                 key_class INTEGER NOT NULL, pool_type INTEGER NOT NULL, \
                 address_index INTEGER NOT NULL, script BLOB NOT NULL, \
                 used INTEGER NOT NULL); \

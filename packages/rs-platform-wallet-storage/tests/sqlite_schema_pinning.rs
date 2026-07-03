@@ -21,7 +21,7 @@ const EXPECTED_ID_FINGERPRINT: &str =
 /// Bump deliberately only when the DDL body itself changes; an accidental
 /// change (a silent table rename) must fail this test, not slip through.
 const EXPECTED_SQL_FINGERPRINT: &str =
-    "5db11d3c4dda87e16a19b03a86c53b1915316666286cfae7945570a3c603dff1";
+    "98f2a7c86a1383fc32922551c537d1af9955428f6068afde9dd33f2a8a49d90d";
 
 /// Table names that lost the cross-branch reconciliation and must never
 /// resurface as SQL identifiers on this frozen (`wallets`) baseline.
