@@ -4188,6 +4188,76 @@ mod tests {
         );
     }
 
+    /// A `len` past `isize::MAX` is a corrupt host-supplied length —
+    /// handing it to `from_raw_parts` would be UB, so the guard yields an
+    /// empty slice. The pointer is non-null but never dereferenced: the
+    /// guard short-circuits before any read.
+    #[test]
+    fn slice_from_raw_rejects_overflowing_len() {
+        let ptr = std::ptr::NonNull::<u8>::dangling().as_ptr() as *const u8;
+        let slice = unsafe { slice_from_raw(ptr, isize::MAX as usize + 1) };
+        assert_eq!(
+            slice,
+            &[] as &[u8],
+            "a len exceeding isize::MAX must yield an empty slice, not touch the pointer"
+        );
+    }
+
+    /// End-to-end coverage of the malformed-xpub classification at its
+    /// real call site: `build_wallet_start_state` fed a well-formed
+    /// buffer that is not a decodable `ExtendedPubKey` must surface a
+    /// `MalformedXpub` (code 101), not the generic decode-error family.
+    #[test]
+    fn build_wallet_start_state_malformed_xpub_classifies_as_malformed() {
+        let bad_xpub: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
+        let spec = AccountSpecFFI {
+            type_tag: AccountTypeTagFFI::Standard as u8,
+            standard_tag: StandardAccountTypeTagFFI::Bip44 as u8,
+            index: 0,
+            registration_index: 0,
+            key_class: 0,
+            user_identity_id: [0u8; 32],
+            friend_identity_id: [0u8; 32],
+            account_xpub_bytes: bad_xpub.as_ptr(),
+            account_xpub_bytes_len: bad_xpub.len(),
+        };
+        let entry = WalletRestoreEntryFFI {
+            wallet_id: [0u8; 32],
+            network: FFINetwork::Testnet,
+            accounts: &spec,
+            accounts_count: 1,
+            platform_address_balances: std::ptr::null(),
+            platform_address_balances_count: 0,
+            platform_sync_height: 0,
+            platform_sync_timestamp: 0,
+            platform_last_known_recent_block: 0,
+            identities: std::ptr::null(),
+            identities_count: 0,
+            birth_height: 0,
+            synced_height: 0,
+            last_processed_height: 0,
+            last_synced: 0,
+            utxos: std::ptr::null(),
+            utxos_count: 0,
+            tracked_asset_locks: std::ptr::null(),
+            tracked_asset_locks_count: 0,
+            unresolved_asset_lock_tx_records: std::ptr::null(),
+            unresolved_asset_lock_tx_records_count: 0,
+            core_address_pools: std::ptr::null(),
+            core_address_pools_count: 0,
+            last_applied_chain_lock_bytes: std::ptr::null(),
+            last_applied_chain_lock_bytes_len: 0,
+        };
+
+        let err = build_wallet_start_state(&entry)
+            .expect_err("a malformed account xpub must fail the rebuild");
+        assert_eq!(
+            corrupt_kind_from_build_err(&err),
+            CorruptKind::MalformedXpub,
+            "a malformed account xpub must classify as MalformedXpub (code 101) end-to-end"
+        );
+    }
+
     /// Regression: restored pool addresses must be tagged with the
     /// WALLET's network, not the network the base58 string parses as.
     /// Devnet shares testnet's base58 prefixes, so a devnet wallet's

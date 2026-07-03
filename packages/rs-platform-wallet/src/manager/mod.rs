@@ -5,7 +5,7 @@ pub mod identity_sync;
 mod load;
 pub mod load_outcome;
 pub mod platform_address_sync;
-pub mod rehydrate;
+mod rehydrate;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
 mod wallet_lifecycle;

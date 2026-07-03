@@ -54,8 +54,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///   check or as `WalletExists` at insert): the wallet is **skipped**
     ///   with [`SkipReason::AlreadyRegistered`] and left untouched — kept
     ///   out of the rollback set so a later hard-fail never evicts it. A
-    ///   second `load_from_persistor` is therefore idempotent, and the
-    ///   caller can tell an already-present wallet from one freshly loaded.
+    ///   second `load_from_persistor` therefore mutates no state and returns
+    ///   `Ok(LoadOutcome)` — a repeat where every wallet is already
+    ///   registered is a [`NoneUsable`](LoadOutcome::NoneUsable) no-op, not a
+    ///   failure — and the caller can tell an already-present wallet from one
+    ///   freshly loaded via [`loaded`](LoadOutcome::loaded) /
+    ///   [`skipped`](LoadOutcome::skipped).
     /// - **Whole-load failure** (persister I/O, programmer error,
     ///   registering a persisted wallet in `WalletManager`):
     ///   `Err(_)` — every wallet inserted earlier in this pass is
