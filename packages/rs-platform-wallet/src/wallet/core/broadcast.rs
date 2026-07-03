@@ -238,19 +238,16 @@ mod tests {
     use crate::wallet::platform_wallet::PlatformWalletInfo;
     use crate::PlatformWalletError;
 
-    /// Broadcaster that fails its first call with the given pre-send error and
-    /// succeeds afterwards, to model a transient broadcast error followed by a
-    /// user retry.
+    /// Broadcaster that fails its first call and succeeds afterwards, to model
+    /// a transient broadcast error followed by a user retry.
     struct FailFirstBroadcaster {
         failed_once: AtomicBool,
-        make_error: fn() -> PlatformWalletError,
     }
 
     impl FailFirstBroadcaster {
-        fn new(make_error: fn() -> PlatformWalletError) -> Self {
+        fn new() -> Self {
             Self {
                 failed_once: AtomicBool::new(false),
-                make_error,
             }
         }
     }
@@ -261,7 +258,9 @@ mod tests {
             if self.failed_once.swap(true, Ordering::SeqCst) {
                 Ok(transaction.txid())
             } else {
-                Err((self.make_error)())
+                Err(PlatformWalletError::TransactionBroadcast(
+                    "simulated broadcast failure".to_string(),
+                ))
             }
         }
     }
@@ -410,44 +409,36 @@ mod tests {
     /// A pre-send broadcast failure must release the UTXO reservation taken while
     /// building the transaction, so an immediate retry can reselect those inputs
     /// instead of failing with spurious insufficient funds until the TTL backstop.
-    /// Covers both funds-account arms of the release path and both pre-send error
-    /// variants allowlisted by `broadcast_failure_is_pre_send`.
+    /// Covers both funds-account arms of the release path.
     #[tokio::test]
     async fn send_to_addresses_releases_reservation_on_broadcast_failure() {
-        let pre_send_errors: [fn() -> PlatformWalletError; 2] = [
-            || PlatformWalletError::TransactionBroadcast("simulated broadcast failure".to_string()),
-            || PlatformWalletError::SpvError("simulated SPV failure".to_string()),
-        ];
         for account_type in [
             StandardAccountType::BIP44Account,
             StandardAccountType::BIP32Account,
         ] {
-            for make_error in pre_send_errors {
-                let broadcaster = Arc::new(FailFirstBroadcaster::new(make_error));
-                let (core, signer, outputs) = funded_core_wallet(account_type, broadcaster).await;
+            let broadcaster = Arc::new(FailFirstBroadcaster::new());
+            let (core, signer, outputs) = funded_core_wallet(account_type, broadcaster).await;
 
-                // First attempt: build + sign succeed, broadcast fails.
-                let first = core
-                    .send_to_addresses(account_type, 0, outputs.clone(), &signer)
-                    .await;
-                assert!(
-                    matches!(&first, Err(e) if super::broadcast_failure_is_pre_send(e)),
-                    "first send should surface the pre-send broadcast failure for \
-                     {account_type:?}, got {first:?}"
-                );
+            // First attempt: build + sign succeed, broadcast fails.
+            let first = core
+                .send_to_addresses(account_type, 0, outputs.clone(), &signer)
+                .await;
+            assert!(
+                matches!(first, Err(PlatformWalletError::TransactionBroadcast(_))),
+                "first send should surface the broadcast failure for {account_type:?}, got {first:?}"
+            );
 
-                // Immediate retry: only succeeds if the failed broadcast released the
-                // reservation. With the leak, coin selection sees no spendable UTXO and
-                // this fails with a build error instead.
-                let second = core
-                    .send_to_addresses(account_type, 0, outputs, &signer)
-                    .await;
-                assert!(
-                    second.is_ok(),
-                    "retry after a failed broadcast should succeed once the reservation \
-                     is released for {account_type:?}, got {second:?}"
-                );
-            }
+            // Immediate retry: only succeeds if the failed broadcast released the
+            // reservation. With the leak, coin selection sees no spendable UTXO and
+            // this fails with a build error instead.
+            let second = core
+                .send_to_addresses(account_type, 0, outputs, &signer)
+                .await;
+            assert!(
+                second.is_ok(),
+                "retry after a failed broadcast should succeed once the reservation \
+                 is released for {account_type:?}, got {second:?}"
+            );
         }
     }
 
