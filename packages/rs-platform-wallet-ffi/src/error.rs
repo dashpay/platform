@@ -174,6 +174,24 @@ impl PlatformWalletFFIResult {
             message: c_msg.into_raw(),
         }
     }
+
+    /// A `Success`-coded result that still carries an advisory `message`.
+    ///
+    /// Used by non-error outcomes that want to convey a human-readable
+    /// explanation alongside an out-parameter — e.g. the withdrawal preflight's
+    /// "can't fund" case, where `can_withdraw = false` is the authoritative
+    /// signal and the message is the planner's typed reason. The `Success` code
+    /// keeps it off the error path (`.check()` on language bindings only
+    /// inspects the code); the message is freed like any other via
+    /// [`platform_wallet_ffi_result_free`] / `Drop`.
+    pub fn success_with_message(message: impl Into<String>) -> Self {
+        let msg = message.into();
+        let c_msg = CString::new(msg).unwrap_or_else(|_| CString::new("<invalid UTF-8>").unwrap());
+        Self {
+            code: PlatformWalletFFIResultCode::Success,
+            message: c_msg.into_raw(),
+        }
+    }
 }
 
 /// Free the Rust-owned message held by an error result.

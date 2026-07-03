@@ -103,11 +103,17 @@ pub enum PlatformWalletError {
         min_input_amount: Credits,
     },
 
+    // The `Display` text is surfaced verbatim to the user by the withdrawal
+    // preflight (the FFI carries `e.to_string()` as the can't-fund reason), so
+    // it is kept user-presentable: it explains the situation and the action
+    // ("consolidate funds onto fewer addresses") without naming an internal
+    // selection API. The numeric fields stay in the message as an actionable
+    // breadcrumb.
     #[error(
-        "no selectable inputs: every funded address is below the per-input \
-         minimum (sub_min_count={sub_min_count}, sub_min_aggregate={sub_min_aggregate} \
-         credits, min_input_amount={min_input_amount}); consolidate funds or use \
-         InputSelection::Explicit"
+        "Every funded address holds less than the per-input minimum of \
+         {min_input_amount} credits ({sub_min_count} addresses totaling \
+         {sub_min_aggregate} credits), so none can fund this operation on \
+         its own. Consolidate funds onto fewer addresses, then try again."
     )]
     OnlyDustInputs {
         /// Number of addresses with a positive balance below `min_input_amount`.
