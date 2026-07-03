@@ -2,7 +2,6 @@
 //!
 //! [`load_from_persistor`]: super::PlatformWalletManager::load_from_persistor
 
-use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::WalletId;
 
 /// Why a persisted wallet row was passed over during a load pass.
@@ -88,11 +87,11 @@ impl std::fmt::Display for CorruptKind {
 /// call). The load path is watch-only and never touches the seed, so no
 /// wrong-seed outcome appears here.
 ///
-/// Convert into a [`Result`] with `Result::from` / `.into()` when an
-/// incomplete load should read as a failure: [`Loaded`](Self::Loaded)
-/// maps to `Ok`, while [`Partial`](Self::Partial) and
-/// [`NoneUsable`](Self::NoneUsable) map to
-/// [`PlatformWalletError::LoadIncomplete`].
+/// Inspect the outcome via [`loaded`](Self::loaded) / [`skipped`](Self::skipped):
+/// the skip reasons are what separate a harmless repeat
+/// ([`AlreadyRegistered`](SkipReason::AlreadyRegistered)) from genuine
+/// corruption ([`CorruptPersistedRow`](SkipReason::CorruptPersistedRow)) — a
+/// distinction a flat `Result` shape would erase.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum LoadOutcome {
@@ -142,25 +141,6 @@ impl LoadOutcome {
         match self {
             Self::Partial { skipped, .. } | Self::NoneUsable { skipped } => skipped,
             Self::Loaded { .. } => &[],
-        }
-    }
-}
-
-impl From<LoadOutcome> for Result<LoadOutcome, PlatformWalletError> {
-    /// A partial or nothing-usable load converts to `Err` so a caller
-    /// using `?` treats an incomplete load as a failure; a full load is
-    /// `Ok`.
-    fn from(outcome: LoadOutcome) -> Self {
-        match outcome {
-            LoadOutcome::Loaded { .. } => Ok(outcome),
-            LoadOutcome::Partial { loaded, skipped } => Err(PlatformWalletError::LoadIncomplete {
-                loaded_count: loaded.len(),
-                skipped,
-            }),
-            LoadOutcome::NoneUsable { skipped } => Err(PlatformWalletError::LoadIncomplete {
-                loaded_count: 0,
-                skipped,
-            }),
         }
     }
 }
