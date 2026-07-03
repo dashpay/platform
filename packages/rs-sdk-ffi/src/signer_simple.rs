@@ -417,8 +417,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
     // Copy the 32 secret bytes into a `Zeroizing` so this fresh array —
     // which has no `Drop` of its own — is scrubbed when the function
     // returns. `derived` self-wipes separately: `ExtendedPrivKey`
-    // zeroizes on `Drop` as of rust-dashcore rev
-    // a8a096838b829cf5bec3c2374a23511640a0c35c.
+    // zeroizes on `Drop`.
     let secret_bytes: zeroize::Zeroizing<[u8; 32]> =
         zeroize::Zeroizing::new(derived.private_key.secret_bytes());
 

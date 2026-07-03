@@ -45,9 +45,8 @@
 //! - **[`ExtendedPrivKey`] self-wipes on `Drop`.** The master and
 //!   derived extended keys zero their secret material when they leave
 //!   scope, on every exit path — success, `?`-early-return, and
-//!   panic-unwind. The type is no longer `Copy` as of rust-dashcore rev
-//!   `a8a096838b829cf5bec3c2374a23511640a0c35c`, so each move is a real
-//!   move that leaves no stray bitwise duplicate behind.
+//!   panic-unwind. The type is not `Copy`, so each move is a real move
+//!   that leaves no stray bitwise duplicate behind.
 //! - **`Zeroizing` wrappers** scrub the plain byte buffers that carry
 //!   no `Drop` of their own: the resolver mnemonic buffer, the BIP-39
 //!   seed, and the final derived 32-byte scalar.
@@ -66,7 +65,7 @@ use std::os::raw::c_char;
 use async_trait::async_trait;
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::dashcore::secp256k1::{self, Secp256k1};
-use key_wallet::signer::{Signer, SignerMethod};
+use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::Network;
 use thiserror::Error;
 use zeroize::Zeroizing;
@@ -235,9 +234,8 @@ impl MnemonicResolverCoreSigner {
     ///
     /// Both the `master` and `derived` extended keys wipe their secret
     /// material when they leave this scope — [`ExtendedPrivKey`] zeroizes on
-    /// `Drop` as of rust-dashcore rev
-    /// `a8a096838b829cf5bec3c2374a23511640a0c35c`, and is no longer `Copy`, so
-    /// each move is a real move that leaves no bitwise duplicate behind. The
+    /// `Drop` and is not `Copy`, so each move is a real move that leaves no
+    /// bitwise duplicate behind. The
     /// key never crosses the call boundary — `extract` only borrows it — so it
     /// cannot outlive the derivation. `extract` returns public material
     /// (`ExtendedPubKey`) or a `Zeroizing` scalar copy; the caller wipes the
@@ -382,7 +380,10 @@ impl Signer for MnemonicResolverCoreSigner {
         secret.non_secure_erase();
         Ok(pubkey)
     }
+}
 
+#[async_trait]
+impl ExtendedPubKeySigner for MnemonicResolverCoreSigner {
     /// Derive the BIP-32 extended public key at `path`.
     ///
     /// Returns the full [`ExtendedPubKey`] (public point + chain code) so
