@@ -58,7 +58,6 @@ final class TransactionDecoderTests: XCTestCase {
     func testTxidDisplayHexMatchesExplorerOrder() throws {
         let decoded = try TransactionDecoder.decode(fixtureData, network: .testnet)
         XCTAssertEqual(decoded.txidDisplayHex, Self.fixtureTxidDisplay)
-        XCTAssertEqual(decoded.txid, Data(decoded.txid.reversed().reversed()))
     }
 
     func testNetworkChangesRenderedAddresses() throws {
@@ -70,11 +69,29 @@ final class TransactionDecoderTests: XCTestCase {
     func testMalformedBytesThrowDeserialization() {
         var bytes = fixtureData
         bytes.append(contentsOf: [0xDE, 0xAD]) // trailing garbage
-        XCTAssertThrowsError(try TransactionDecoder.decode(bytes, network: .testnet))
-        XCTAssertThrowsError(try TransactionDecoder.decode(Data([0xFF, 0xFF, 0xFF]), network: .testnet))
+        XCTAssertThrowsError(try TransactionDecoder.decode(bytes, network: .testnet)) { error in
+            if case PlatformWalletError.deserialization = error {
+                // Expected
+            } else {
+                XCTFail("Expected deserialization error, got \(error)")
+            }
+        }
+        XCTAssertThrowsError(try TransactionDecoder.decode(Data([0xFF, 0xFF, 0xFF]), network: .testnet)) { error in
+            if case PlatformWalletError.deserialization = error {
+                // Expected
+            } else {
+                XCTFail("Expected deserialization error, got \(error)")
+            }
+        }
     }
 
     func testEmptyInputThrowsInvalidParameter() {
-        XCTAssertThrowsError(try TransactionDecoder.decode(Data(), network: .testnet))
+        XCTAssertThrowsError(try TransactionDecoder.decode(Data(), network: .testnet)) { error in
+            if case PlatformWalletError.invalidParameter = error {
+                // Expected
+            } else {
+                XCTFail("Expected invalidParameter error, got \(error)")
+            }
+        }
     }
 }
