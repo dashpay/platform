@@ -87,6 +87,21 @@ struct WithdrawPlatformAddressView: View {
     /// changes (and on appear), never on a hot per-render path.
     @State private var preflight: ManagedPlatformAddressWallet.WithdrawalPreflight? = nil
 
+    /// The in-flight preflight task, so a new input change can cancel-and-
+    /// replace a still-running one. `preflightWithdrawal` now issues a DAPI
+    /// proof query (see its doc), so responses can arrive out of order: without
+    /// cancel-and-replace, a slow response for account A could land after — and
+    /// clobber — a newer result for account B. `recomputePreflight` cancels
+    /// this before launching the next, and the launched task ignores its own
+    /// result when `Task.isCancelled`.
+    @State private var preflightTask: Task<Void, Never>? = nil
+
+    /// `true` while a preflight query is in flight. Keeps `canSubmit` closed
+    /// (so we never enable on a stale result mid-refresh) and lets the summary
+    /// show a neutral "Checking…" instead of flashing a false can't-fund
+    /// reason before the fresh result lands.
+    @State private var isCheckingPreflight: Bool = false
+
     // MARK: - Core readiness
 
     /// nil = not yet checked, true/false = Core wallet usable.
@@ -174,13 +189,21 @@ struct WithdrawPlatformAddressView: View {
             }
             // Recompute the Rust-owned preflight only when an input it depends
             // on actually changes — the selected source account or the fee
-            // rate — never on a hot per-render path. The preflight is a local
-            // in-memory computation (no network), so this stays cheap.
+            // rate — never on a hot per-render path. The preflight now issues a
+            // DAPI proof query (it reads authoritative on-chain balances), so it
+            // runs off the main actor and is cancel-on-change: each call cancels
+            // the previous one so a slow response can't clobber a newer input.
             .onChange(of: sourceAccountIndex) { _, _ in
                 recomputePreflight()
             }
             .onChange(of: coreFeePerByte) { _, _ in
                 recomputePreflight()
+            }
+            .onDisappear {
+                // Tear down any in-flight preflight when the sheet closes so a
+                // late response can't touch a torn-down view's state.
+                preflightTask?.cancel()
+                preflightTask = nil
             }
             // Block swipe-to-dismiss while a withdrawal is in flight —
             // only the (disabled) Cancel button otherwise gates it, so a
@@ -326,7 +349,18 @@ struct WithdrawPlatformAddressView: View {
                     .foregroundColor(.secondary)
             }
 
-            if let preflight, preflight.canWithdraw {
+            if isCheckingPreflight {
+                // A preflight query is in flight (it reads on-chain balances
+                // over DAPI). Show a neutral "checking" row rather than the
+                // previous result's figures or a stale can't-fund reason, so we
+                // never flash a false gate while the fresh answer is loading.
+                HStack {
+                    ProgressView()
+                    Text("Checking withdrawable balance…")
+                        .foregroundColor(.secondary)
+                }
+                .accessibilityIdentifier("withdrawPlatform.checkingPreflight")
+            } else if let preflight, preflight.canWithdraw {
                 // Rust-owned figures: the net the chain actually pays out and
                 // the transition fee reserved on the fee-source input.
                 HStack {
@@ -343,10 +377,10 @@ struct WithdrawPlatformAddressView: View {
                         .accessibilityIdentifier("withdrawPlatform.netWithdrawable")
                 }
             } else if sourceAccountIndex != nil, let reason = cantWithdrawReason {
-                // A resolved preflight that can't fund: explain why and keep
-                // submit disabled. (`cantWithdrawReason` is nil while the
-                // preflight is still unresolved, so we don't flash a false
-                // negative before the first computation lands.)
+                // A resolved preflight that can't fund (or couldn't confirm):
+                // explain why and keep submit disabled. (`cantWithdrawReason` is
+                // nil while the preflight is still unresolved, so we don't flash
+                // a false negative before the first computation lands.)
                 Label(reason, systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
                     .foregroundColor(.orange)
@@ -484,6 +518,11 @@ struct WithdrawPlatformAddressView: View {
     private var canSubmit: Bool {
         guard
             !isSubmitting,
+            // While a preflight is in flight the current `preflight` may be
+            // stale (a previous account/fee), so keep the gate closed until the
+            // fresh result lands — otherwise a fast tap during a refresh could
+            // submit against outdated figures.
+            !isCheckingPreflight,
             coreReady == true,
             sourceAccountIndex != nil,
             // The authoritative gate: the Rust-owned preflight must have
@@ -501,21 +540,22 @@ struct WithdrawPlatformAddressView: View {
         return true
     }
 
-    /// Human-readable reason the selected account can't fund a withdrawal, or
+    /// Human-readable reason the selected account can't withdraw right now, or
     /// `nil` when the preflight is unresolved or the account CAN withdraw. Used
     /// only for display; the authoritative gate is `preflight?.canWithdraw`.
     ///
-    /// The reason is the Rust planner's own message, surfaced verbatim through
-    /// `WithdrawalPreflight.reason`. The planner is the single source of the
-    /// can't-fund classification (dust-only, fee/minimum headroom, too many
-    /// inputs, or above the maximum withdrawal); Swift must NOT re-derive it
-    /// from balances, which would mean mirroring protocol decisions on the
-    /// wrong side of the FFI boundary. The generic fallback covers only the
-    /// unexpected case where a `canWithdraw == false` result arrives without a
-    /// message.
+    /// The reason is the Rust side's own message, surfaced verbatim through
+    /// `WithdrawalPreflight.reason`. Rust is the single source of the
+    /// classification — both the permanent can't-fund cases (dust-only,
+    /// fee/minimum headroom, too many inputs, above the maximum withdrawal) and
+    /// the transient "couldn't confirm balances right now" network/proof case,
+    /// which is retryable. Swift must NOT re-derive it from balances, which
+    /// would mean mirroring protocol decisions on the wrong side of the FFI
+    /// boundary. The generic fallback covers only the unexpected case where a
+    /// `canWithdraw == false` result arrives without a message.
     private var cantWithdrawReason: String? {
         guard let preflight, !preflight.canWithdraw else { return nil }
-        return preflight.reason ?? "This account can't fund a withdrawal right now."
+        return preflight.reason ?? "This account can't withdraw right now."
     }
 
     // MARK: - Actions
@@ -587,35 +627,66 @@ struct WithdrawPlatformAddressView: View {
     /// source account at the current fee rate, storing it in `preflight`.
     ///
     /// Called on appear and whenever `sourceAccountIndex` / `coreFeePerByte`
-    /// changes — never on a hot per-render path. The preflight is a local
-    /// in-memory computation (`platform_address_wallet_preflight_withdrawal`
-    /// runs the planner over cached balances, no network), so it's cheap enough
-    /// to run synchronously on these input changes.
+    /// changes — never on a hot per-render path. `preflightWithdrawal` now
+    /// issues a DAPI proof query to read authoritative on-chain balances (see
+    /// its doc), so it is `async` and MUST run off the main actor; this method
+    /// launches a `Task` that awaits it and assigns state back on the
+    /// MainActor.
+    ///
+    /// **Cancel-and-replace.** Because responses can arrive out of order (the
+    /// fee slider fires rapidly), we cancel any in-flight `preflightTask`
+    /// before launching the next and ignore a task's own result once it's been
+    /// cancelled — otherwise a slow response for the previous input could
+    /// clobber a newer one. `isCheckingPreflight` keeps `canSubmit` closed and
+    /// shows a neutral "checking" row while the fresh result loads, so we never
+    /// enable submit against stale figures or flash a false can't-fund reason.
     ///
     /// When no source account is selected we clear the result (`nil`), which
     /// keeps `canSubmit` closed. A thrown preflight (bad handle / missing
     /// account — a structural failure, NOT a "can't fund") also clears it,
     /// resolving gracefully by leaving submit disabled rather than enabling on
-    /// a guess; "can't fund" is a normal non-throwing result with
-    /// `canWithdraw == false`.
+    /// a guess. Both "can't fund" and a transient "can't confirm right now"
+    /// (network/proof failure) are normal non-throwing results with
+    /// `canWithdraw == false` and a `reason`.
     private func recomputePreflight() {
+        // Cancel any in-flight query so its result can't land after ours.
+        preflightTask?.cancel()
+
         guard let idx = sourceAccountIndex else {
+            preflightTask = nil
+            isCheckingPreflight = false
             preflight = nil
             return
         }
         guard let managedHolder = walletManager.wallet(for: wallet.walletId) else {
+            preflightTask = nil
+            isCheckingPreflight = false
             preflight = nil
             return
         }
-        do {
-            let addressWallet = try managedHolder.platformAddressWallet()
-            preflight = try addressWallet.preflightWithdrawal(
-                accountIndex: idx,
-                coreFeePerByte: coreFeePerByte
-            )
-        } catch {
-            // Structural failure: leave submit disabled (don't under-gate).
-            preflight = nil
+
+        let fee = coreFeePerByte
+        isCheckingPreflight = true
+        preflightTask = Task { @MainActor in
+            let result: ManagedPlatformAddressWallet.WithdrawalPreflight?
+            do {
+                let addressWallet = try managedHolder.platformAddressWallet()
+                result = try await addressWallet.preflightWithdrawal(
+                    accountIndex: idx,
+                    coreFeePerByte: fee
+                )
+            } catch {
+                // Structural failure (bad handle / missing account): leave
+                // submit disabled (don't under-gate). Transient network/proof
+                // errors don't reach here — the FFI reports those as a
+                // non-throwing `canWithdraw == false` with a reason.
+                result = nil
+            }
+            // A newer input change already superseded this query; drop the
+            // result so it can't clobber the fresher one still in flight.
+            guard !Task.isCancelled else { return }
+            preflight = result
+            isCheckingPreflight = false
         }
     }
 
@@ -681,7 +752,10 @@ struct WithdrawPlatformAddressView: View {
                 // the display and block instead of withdrawing an amount
                 // the user never saw.
                 let confirmed = preflight
-                let latest = try addressWallet.preflightWithdrawal(accountIndex: sourceAccount)
+                let latest = try await addressWallet.preflightWithdrawal(
+                    accountIndex: sourceAccount,
+                    coreFeePerByte: feePerByte
+                )
                 guard let confirmed,
                     latest.canWithdraw,
                     latest.netWithdrawable == confirmed.netWithdrawable,

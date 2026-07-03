@@ -1222,3 +1222,257 @@ mod tests {
         }
     }
 }
+
+/// Integration test for the cache-vs-chain seam that this PR moves: the
+/// `plan_withdrawal` orchestrator must size each input from the balance the
+/// SDK's `AddressInfo::fetch_many` proof query returns (the on-chain truth the
+/// spend re-checks), NOT from the wallet's cached `address_credit_balance`.
+///
+/// This is the behavior the ADDR-04 fix actually changes; the pure-function
+/// tests above can't reach it because they call
+/// `reserve_withdrawal_fee_on_largest_input` directly with balances already
+/// chosen. Here we deliberately make the cache DISAGREE with the chain (a
+/// doubled/stale cached balance for one address) and assert the plan follows
+/// the chain. A future regression that reintroduced a cache read (e.g.
+/// `.unwrap_or_else(|| cached_balance)`) would fail this test.
+#[cfg(test)]
+mod plan_withdrawal_seam_tests {
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
+
+    use dpp::address_funds::PlatformAddress;
+    use dpp::version::PlatformVersion;
+    use key_wallet::bip32::{ChildNumber, DerivationPath};
+    use key_wallet::managed_account::address_pool::{
+        AddressInfo as PoolAddressInfo, AddressPool, AddressPoolType,
+    };
+    use key_wallet::managed_account::managed_platform_account::ManagedPlatformAccount;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::{Network, PlatformP2PKHAddress};
+    use key_wallet_manager::WalletManager;
+    use tokio::sync::RwLock;
+
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::wallet::PlatformAddressWallet;
+
+    /// A deterministic testnet P2PKH address for a known 20-byte hash.
+    fn address_for(byte: u8) -> dashcore::Address {
+        PlatformP2PKHAddress::new([byte; 20]).to_address(Network::Testnet)
+    }
+
+    /// The `PlatformAddress::P2pkh` a given hash byte maps to (what
+    /// `plan_withdrawal` derives from a pool entry, and the mock query key).
+    fn platform_addr(byte: u8) -> PlatformAddress {
+        PlatformAddress::P2pkh([byte; 20])
+    }
+
+    /// Build a `PoolAddressInfo` for a known testnet P2PKH address at `index`,
+    /// via the public script-pubkey constructor (no private key needed).
+    fn pool_entry(byte: u8, index: u32) -> PoolAddressInfo {
+        let address = address_for(byte);
+        let base_path = DerivationPath::from(vec![
+            ChildNumber::from_hardened_idx(9).expect("purpose"),
+            ChildNumber::from_hardened_idx(1).expect("coin type"),
+            ChildNumber::from_hardened_idx(17).expect("feature"),
+            ChildNumber::from_hardened_idx(0).expect("subfeature"),
+            ChildNumber::from_hardened_idx(0).expect("account"),
+        ]);
+        PoolAddressInfo::new_from_script_pubkey_p2pkh(
+            address.script_pubkey(),
+            index,
+            base_path,
+            Network::Testnet,
+        )
+        .expect("known testnet P2PKH script")
+    }
+
+    /// The DOUBLED cache case: the recipient address's cached
+    /// `address_credit_balance` is 200M (2× reality — the ADDR-04 bug), but the
+    /// chain (via mocked `fetch_many`) reports its true 100M. `plan_withdrawal`
+    /// must size that input at the on-chain 100M, so the plan is spendable and
+    /// the spend path's `ensure_address_balance` would accept it — the cache's
+    /// doubled value must NOT leak into the plan.
+    #[tokio::test]
+    async fn plan_withdrawal_sizes_inputs_from_chain_not_doubled_cache() {
+        use dash_sdk::query_types::{AddressInfo, AddressInfos};
+
+        const WALLET: WalletId = [7u8; 32];
+        const ACCOUNT: u32 = 0;
+
+        // Addr#1 = the ADDR-02 recipient; Addr#0 = the large fee-source origin.
+        let recipient_byte = 0x11u8;
+        let origin_byte = 0x22u8;
+        let recipient_on_chain: u64 = 100_000_000;
+        let recipient_cached_doubled: u64 = 200_000_000; // the bug's 2x cache
+        let origin_balance: u64 = dpp::dash_to_credits!(0.05);
+
+        // --- Mock SDK: fetch_many returns the TRUE on-chain balances. The
+        // query key is the exact BTreeSet plan_withdrawal builds from the pool.
+        let mut sdk = dash_sdk::Sdk::new_mock();
+        let query: BTreeSet<PlatformAddress> =
+            [platform_addr(recipient_byte), platform_addr(origin_byte)]
+                .into_iter()
+                .collect();
+        let response: AddressInfos = [
+            (
+                platform_addr(recipient_byte),
+                Some(AddressInfo {
+                    address: platform_addr(recipient_byte),
+                    nonce: 1,
+                    balance: recipient_on_chain,
+                }),
+            ),
+            (
+                platform_addr(origin_byte),
+                Some(AddressInfo {
+                    address: platform_addr(origin_byte),
+                    nonce: 1,
+                    balance: origin_balance,
+                }),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        sdk.mock()
+            .expect_fetch_many::<PlatformAddress, AddressInfo, _, AddressInfos>(
+                query,
+                Some(response),
+            )
+            .await
+            .expect("set fetch_many expectation");
+        let sdk = Arc::new(sdk);
+
+        // --- Wallet manager with a platform account whose pool holds the two
+        // known addresses, and whose CACHE is seeded with the DOUBLED recipient
+        // balance (the stale/wrong value the planner must ignore).
+        let mut wm = WalletManager::<crate::wallet::platform_wallet::PlatformWalletInfo>::new(
+            Network::Testnet,
+        );
+        let wallet_id = wm
+            .create_wallet_with_random_mnemonic(WalletAccountCreationOptions::None)
+            .expect("create wallet");
+        {
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            let base_path = DerivationPath::from(vec![
+                ChildNumber::from_hardened_idx(9).expect("purpose"),
+                ChildNumber::from_hardened_idx(1).expect("coin type"),
+                ChildNumber::from_hardened_idx(17).expect("feature"),
+                ChildNumber::from_hardened_idx(0).expect("subfeature"),
+                ChildNumber::from_hardened_idx(0).expect("account"),
+            ]);
+            let mut pool = AddressPool::new_without_generation(
+                base_path,
+                AddressPoolType::Absent,
+                20,
+                Network::Testnet,
+            );
+            pool.addresses.insert(0, pool_entry(recipient_byte, 0));
+            pool.addresses.insert(1, pool_entry(origin_byte, 1));
+
+            let mut platform_account = ManagedPlatformAccount::new(ACCOUNT, 0, pool, false);
+            // Seed the cache to DISAGREE with the chain: recipient doubled.
+            platform_account.set_address_credit_balance(
+                PlatformP2PKHAddress::new([recipient_byte; 20]),
+                recipient_cached_doubled,
+                None,
+            );
+            platform_account.set_address_credit_balance(
+                PlatformP2PKHAddress::new([origin_byte; 20]),
+                origin_balance,
+                None,
+            );
+            info.core_wallet
+                .accounts
+                .insert_platform_account(platform_account);
+        }
+
+        // Sanity: the cache really holds the doubled value the planner must
+        // ignore.
+        {
+            let account = wm
+                .get_wallet_info(&wallet_id)
+                .expect("wallet info")
+                .core_wallet
+                .platform_payment_managed_account_at_index(ACCOUNT)
+                .expect("platform account");
+            assert_eq!(
+                account.address_credit_balance(&PlatformP2PKHAddress::new([recipient_byte; 20])),
+                recipient_cached_doubled,
+                "test setup: the cache must hold the doubled recipient balance"
+            );
+        }
+
+        let wallet_manager = Arc::new(RwLock::new(wm));
+        let wallet = build_seam_test_wallet(sdk, wallet_manager, wallet_id);
+
+        // --- Plan against a fixed version, then assert the recipient input is
+        // sized from the CHAIN (100M), not the doubled cache (200M).
+        let pv = PlatformVersion::latest();
+        let plan = wallet
+            .plan_withdrawal(ACCOUNT, pv)
+            .await
+            .expect("plan must succeed against the on-chain balances");
+
+        assert_eq!(
+            plan.inputs.get(&platform_addr(recipient_byte)).copied(),
+            Some(recipient_on_chain),
+            "the recipient input must be sized from the on-chain balance (100M), \
+             NOT the doubled cache (200M)"
+        );
+        assert_ne!(
+            plan.inputs.get(&platform_addr(recipient_byte)).copied(),
+            Some(recipient_cached_doubled),
+            "the doubled cached balance must never leak into the plan (ADDR-04)"
+        );
+
+        // The origin is the fee source (largest), so it is planned at
+        // balance − fee; it must still be ≤ its on-chain balance.
+        let origin_planned = plan
+            .inputs
+            .get(&platform_addr(origin_byte))
+            .copied()
+            .expect("origin input present");
+        assert!(
+            origin_planned <= origin_balance,
+            "the fee-source input must not exceed its on-chain balance"
+        );
+        assert_eq!(
+            origin_planned,
+            origin_balance - plan.estimated_fee,
+            "the fee source keeps exactly the estimated-fee headroom"
+        );
+    }
+
+    /// Assemble a `PlatformAddressWallet` around a mock SDK + a seeded wallet
+    /// manager. `plan_withdrawal` reads only the SDK and the wallet manager
+    /// (never the provider), so the provider is left uninitialised. Mirrors the
+    /// wiring in `provider::tests::reconcile_address_infos_persists_decremented_balance`.
+    fn build_seam_test_wallet(
+        sdk: Arc<dash_sdk::Sdk>,
+        wallet_manager: Arc<
+            RwLock<WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>>,
+        >,
+        wallet_id: WalletId,
+    ) -> PlatformAddressWallet {
+        use crate::broadcaster::SpvBroadcaster;
+        use crate::events::PlatformEventManager;
+        use crate::spv::SpvRuntime;
+        use crate::wallet::asset_lock::manager::AssetLockManager;
+        use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+        use tokio::sync::Notify;
+
+        let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+        let event_manager = Arc::new(PlatformEventManager::new(Vec::new()));
+        let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallet_manager), event_manager));
+        let broadcaster = Arc::new(SpvBroadcaster::new(spv));
+        let asset_locks = Arc::new(AssetLockManager::new(
+            Arc::clone(&sdk),
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            broadcaster,
+            persister.clone(),
+        ));
+        PlatformAddressWallet::new(sdk, wallet_manager, wallet_id, asset_locks, persister)
+    }
+}
