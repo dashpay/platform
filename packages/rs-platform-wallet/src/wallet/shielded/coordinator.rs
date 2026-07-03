@@ -638,13 +638,46 @@ impl NetworkShieldedCoordinator {
         // `notes` result and `notes.changeset` the receipts do.
         let newly_spent_per_sub = notes.per_subwallet_newly_spent.clone();
 
-        // Residual-spend reconcile: `sync_notes_across` above marked every
-        // landed spend (clearing its reservation). Now release any still-
-        // pending pre-scan reservation whose recorded anchor Platform had
-        // already pruned before the scan — a spend broadcast-accepted but
-        // never landed, otherwise stranded for the session. Runs before the
-        // balance read so freed notes are reflected in this pass's balances.
+        // Residual-spend resolution: `sync_notes_across` above marked every
+        // landed spend (clearing its reservation and dropping its redrive
+        // record via the store hook). Two passes over what's left, both
+        // judged against the PRE-scan recorded-anchor set:
+        //
+        // 1. Re-drive — for each armed unconfirmed spend whose anchor is
+        //    still recorded, re-broadcast the stored byte-identical
+        //    transition (bounded by MAX_REDRIVE_ATTEMPTS) to actively
+        //    resolve the ambiguity instead of waiting out the retention
+        //    window.
+        // 2. Prune backstop — release any still-pending pre-scan
+        //    reservation whose anchor was already pruned (the spend can
+        //    never execute).
+        //
+        // Runs before the balance read so freed notes are reflected in
+        // this pass's balances.
         if let Some((snapshot, recorded)) = stranded_release {
+            // Snapshot the per-wallet persisters BEFORE the loop and drop
+            // the read guard: `redrive_pending_spends` performs network
+            // broadcasts, and holding the persisters lock across those
+            // awaits would block wallet register/unregister for the
+            // duration of the round trips.
+            let subwallet_persisters: Vec<(SubwalletId, Option<WalletPersister>)> = {
+                let persisters = self.persisters.read().await;
+                subwallets
+                    .iter()
+                    .map(|(id, _)| (*id, persisters.get(&id.wallet_id).cloned()))
+                    .collect()
+            };
+            for (id, persister) in &subwallet_persisters {
+                super::operations::redrive_pending_spends(
+                    &self.sdk,
+                    &self.store,
+                    persister.as_ref(),
+                    id.wallet_id,
+                    *id,
+                    &recorded,
+                )
+                .await;
+            }
             self.release_stranded_spends(snapshot, &recorded).await;
         }
 

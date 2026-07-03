@@ -27,7 +27,7 @@ use super::keys::OrchardKeySet;
 use super::note_selection::{
     select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind,
 };
-use super::store::{ShieldedNote, ShieldedStore, SubwalletId};
+use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::PlatformWalletError;
 use crate::wallet::persister::WalletPersister;
@@ -61,7 +61,7 @@ use dpp::state_transition::StateTransition;
 use dpp::withdrawal::Pooling;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
-use tracing::{info, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 /// Number of Orchard actions in a `Shield` (Type 15) bundle.
 ///
@@ -742,7 +742,17 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("Unshield: state transition built, broadcasting...");
-        broadcast_shielded_spend(sdk, &state_transition, "unshield").await
+        broadcast_shielded_spend_with_redrive(
+            sdk,
+            store,
+            id,
+            &pending_entry,
+            anchor_bytes,
+            &selected_notes,
+            &state_transition,
+            "unshield",
+        )
+        .await
     }
     .await;
 
@@ -909,7 +919,17 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
         arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("Shielded transfer: state transition built, broadcasting...");
-        broadcast_shielded_spend(sdk, &state_transition, "transfer").await
+        broadcast_shielded_spend_with_redrive(
+            sdk,
+            store,
+            id,
+            &pending_entry,
+            anchor_bytes,
+            &selected_notes,
+            &state_transition,
+            "transfer",
+        )
+        .await
     }
     .await;
 
@@ -1066,7 +1086,17 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
         arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("Shielded withdrawal: state transition built, broadcasting...");
-        broadcast_shielded_spend(sdk, &state_transition, "withdraw").await
+        broadcast_shielded_spend_with_redrive(
+            sdk,
+            store,
+            id,
+            &pending_entry,
+            anchor_bytes,
+            &selected_notes,
+            &state_transition,
+            "withdraw",
+        )
+        .await
     }
     .await;
 
@@ -1355,6 +1385,21 @@ where
                         ));
                     }
                     None => {
+                        // Arm the persisted re-drive before surfacing the
+                        // ambiguity: the sync-time pass re-checks the
+                        // nullifiers, then re-broadcasts this
+                        // byte-identical transition up to
+                        // MAX_REDRIVE_ATTEMPTS times.
+                        arm_redrive_record(
+                            store,
+                            id,
+                            &pending_entry,
+                            anchor_bytes,
+                            &selected_notes,
+                            &st,
+                            "identity_create",
+                        )
+                        .await;
                         return Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
                             identity_id,
                             reason: wait_err.to_string(),
@@ -1936,6 +1981,297 @@ async fn arm_pending_release<S: ShieldedStore>(
     }
 }
 
+/// Maximum sync-time re-broadcast attempts for a
+/// broadcast-accepted-but-unconfirmed spend before the re-drive stops
+/// and the anchor-prune release backstop owns the reservation.
+pub(super) const MAX_REDRIVE_ATTEMPTS: u32 = 3;
+
+/// Broadcast a built shielded spend and, on the AMBIGUOUS outcome only
+/// (`ShieldedSpendUnconfirmed` — accepted broadcast, failed result
+/// wait), persist a [`PendingRedrive`] so the sync-time re-drive can
+/// resolve the ambiguity actively: the next scan detects a landing via
+/// the nullifiers; otherwise the byte-identical transition is
+/// re-broadcast up to [`MAX_REDRIVE_ATTEMPTS`] times (fund-safe —
+/// identical nullifiers cannot double-spend); only if every attempt
+/// stays silent does the anchor-prune release backstop take over.
+#[allow(clippy::too_many_arguments)]
+async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    anchor: [u8; 32],
+    notes: &[ShieldedNote],
+    state_transition: &StateTransition,
+    operation: &'static str,
+) -> Result<(), PlatformWalletError> {
+    let result = broadcast_shielded_spend(sdk, state_transition, operation).await;
+    if matches!(
+        &result,
+        Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+    ) {
+        arm_redrive_record(
+            store,
+            id,
+            pending_entry,
+            anchor,
+            notes,
+            state_transition,
+            operation,
+        )
+        .await;
+    }
+    result
+}
+
+/// Persist the re-drivable record for an ambiguous spend. Best-effort:
+/// a failure here only demotes the resolution path to the anchor-prune
+/// backstop (plus restart-loss of the reservation), never fails the
+/// spend call itself — the ambiguity already happened.
+async fn arm_redrive_record<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    anchor: [u8; 32],
+    notes: &[ShieldedNote],
+    state_transition: &StateTransition,
+    operation: &'static str,
+) {
+    use dpp::serialization::PlatformSerializable;
+
+    let Some(entry) = pending_entry else {
+        return;
+    };
+    let st_bytes = match state_transition.serialize_to_bytes() {
+        Ok(b) => b,
+        Err(e) => {
+            warn!(
+                operation,
+                error = %e,
+                "failed to serialize the unconfirmed transition; re-drive disabled for this \
+                 spend (prune backstop still applies)"
+            );
+            return;
+        }
+    };
+    let redrive = PendingRedrive {
+        activity_id: entry.id,
+        anchor,
+        nullifiers: notes.iter().map(|n| n.nullifier).collect(),
+        st_bytes,
+        attempts: 0,
+    };
+    if let Err(e) = store.write().await.arm_redrive(id, redrive) {
+        warn!(
+            operation,
+            error = %e,
+            "failed to persist the redrive record; re-drive disabled for this spend (prune \
+             backstop still applies)"
+        );
+    }
+}
+
+/// Whether an SDK error is Platform's `NullifierAlreadySpentError` —
+/// on a RE-broadcast of our own byte-identical transition this means
+/// the ORIGINAL broadcast executed: the nullifiers are consumed by the
+/// very spend being re-driven, so it is a success signal (the next scan
+/// confirms the notes spent), never a failure.
+fn is_nullifier_already_spent(e: &dash_sdk::Error) -> bool {
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+
+    let consensus: Option<&ConsensusError> = match e {
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(c)) => Some(c),
+        dash_sdk::Error::StateTransitionBroadcastError(b) => b.cause.as_ref(),
+        _ => None,
+    };
+    matches!(
+        consensus,
+        Some(ConsensusError::StateError(
+            StateError::NullifierAlreadySpentError(_)
+        ))
+    )
+}
+
+/// Pure outcome classification for one re-broadcast attempt. Extracted
+/// from the redrive loop so the arm ORDER — `AlreadyExecuted` must win
+/// over the generic consensus-rejection check, since
+/// `NullifierAlreadySpent` is itself a consensus error — is pinned by
+/// unit tests without needing a broadcast-mockable network seam.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RedriveBroadcastOutcome {
+    /// Relay accepted the re-broadcast; the next scan detects a landing.
+    Accepted,
+    /// `NullifierAlreadySpent`: the ORIGINAL broadcast executed — a
+    /// success signal, never a failure.
+    AlreadyExecuted,
+    /// Any other consensus verdict: the transition can never execute.
+    DefinitiveRejection,
+    /// Transport noise / `AlreadyExists` / anything non-definitive.
+    Inconclusive,
+}
+
+fn classify_redrive_broadcast(result: &Result<(), dash_sdk::Error>) -> RedriveBroadcastOutcome {
+    match result {
+        Ok(()) => RedriveBroadcastOutcome::Accepted,
+        Err(e) if is_nullifier_already_spent(e) => RedriveBroadcastOutcome::AlreadyExecuted,
+        Err(e) if carries_consensus_rejection(e) => RedriveBroadcastOutcome::DefinitiveRejection,
+        Err(_) => RedriveBroadcastOutcome::Inconclusive,
+    }
+}
+
+/// Bump a redrive attempt counter, logging (rather than discarding) a
+/// persistence failure. On `Err` the durable counter did not advance and
+/// the file store's persist-first ordering leaves memory untouched, so
+/// the same attempt slot is retried on the next pass — the log line is
+/// what makes that visible.
+async fn bump_redrive_attempts_logged<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    activity_id: &[u8; 32],
+) -> u32 {
+    match store.write().await.bump_redrive_attempts(id, activity_id) {
+        Ok(attempts) => attempts,
+        Err(e) => {
+            warn!(
+                error = %e,
+                "redrive: failed to persist the attempt counter; the attempt will be \
+                 retried on the next pass"
+            );
+            0
+        }
+    }
+}
+
+/// Sync-time re-drive for `id`'s armed unconfirmed spends: for each
+/// [`PendingRedrive`] whose anchor is still in Platform's `recorded`
+/// set and whose attempt budget remains, re-broadcast the stored
+/// byte-identical transition (relay-ACK only — the landing itself is
+/// detected by the NEXT scan's nullifier reconcile) and classify:
+///
+/// - accepted / inconclusive → count the attempt; wait for the next scan;
+/// - `NullifierAlreadySpent` → the original executed; the next scan
+///   confirms — touch nothing;
+/// - any other consensus verdict → provably dead NOW: release the
+///   reservation and flip the activity row to Failed, hours before the
+///   prune backstop would;
+/// - pruned anchor / exhausted attempts → leave it to the
+///   prune-backstop release pass.
+///
+/// Runs after the scan's spent-note reconcile (a landed spend's record
+/// was already dropped by the `mark_spent` hook, so anything still
+/// armed here is genuinely unresolved).
+pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    recorded: &std::collections::HashSet<[u8; 32]>,
+) {
+    use dpp::serialization::PlatformDeserializable;
+
+    let redrives = match store.read().await.pending_redrives(id) {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(
+                error = %e,
+                "redrive: pending_redrives failed; skipping subwallet"
+            );
+            return;
+        }
+    };
+    for redrive in redrives {
+        // A pruned anchor is the release pass's call, not ours; an
+        // exhausted budget means we've said our three pieces.
+        if !recorded.contains(&redrive.anchor) || redrive.attempts >= MAX_REDRIVE_ATTEMPTS {
+            continue;
+        }
+        let st = match StateTransition::deserialize_from_bytes(&redrive.st_bytes) {
+            Ok(st) => st,
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    "redrive: stored transition failed to deserialize; dropping the record \
+                     (the prune backstop still frees the notes)"
+                );
+                if let Err(e) = store.write().await.clear_redrive(id, &redrive.activity_id) {
+                    warn!(error = %e, "redrive: clear_redrive failed");
+                }
+                continue;
+            }
+        };
+        let broadcast_result = st.broadcast(sdk, None).await;
+        let err_display = broadcast_result
+            .as_ref()
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        match classify_redrive_broadcast(&broadcast_result) {
+            RedriveBroadcastOutcome::Accepted => {
+                let attempts = bump_redrive_attempts_logged(store, id, &redrive.activity_id).await;
+                info!(
+                    attempts,
+                    max = MAX_REDRIVE_ATTEMPTS,
+                    "redrive: re-broadcast accepted; the next scan detects the landing"
+                );
+            }
+            RedriveBroadcastOutcome::AlreadyExecuted => {
+                // Success signal — but still consume an attempt: the scan
+                // normally confirms the landing and drops the record, and
+                // if it lags, this arm must not re-broadcast unboundedly
+                // on every pass. The cap parks the record for the scan /
+                // prune passes to settle.
+                let attempts = bump_redrive_attempts_logged(store, id, &redrive.activity_id).await;
+                info!(
+                    attempts,
+                    max = MAX_REDRIVE_ATTEMPTS,
+                    "redrive: transition already executed on-chain; the next scan confirms \
+                     the notes spent"
+                );
+            }
+            RedriveBroadcastOutcome::DefinitiveRejection => {
+                warn!(
+                    error = %err_display,
+                    "redrive: definitive consensus rejection; the spend can never execute — \
+                     releasing the reservation"
+                );
+                {
+                    let mut guard = store.write().await;
+                    for n in &redrive.nullifiers {
+                        // Also drops the redrive record via the
+                        // clear_pending hook.
+                        if let Err(e) = guard.clear_pending(id, n) {
+                            warn!(error = %e, "redrive: clear_pending failed");
+                        }
+                    }
+                }
+                record_activity_status_by_id(
+                    store,
+                    persister,
+                    wallet_id,
+                    id,
+                    &redrive.activity_id,
+                    ShieldedActivityStatus::Failed,
+                )
+                .await;
+            }
+            RedriveBroadcastOutcome::Inconclusive => {
+                // `AlreadyExists` (still in a mempool after a lost-ACK
+                // retry) or transport noise: inconclusive; counts toward
+                // the cap.
+                let attempts = bump_redrive_attempts_logged(store, id, &redrive.activity_id).await;
+                debug!(
+                    attempts,
+                    max = MAX_REDRIVE_ATTEMPTS,
+                    error = %err_display,
+                    "redrive: re-broadcast inconclusive"
+                );
+            }
+        }
+    }
+}
+
 /// Whether an SDK error carries Platform's own consensus verdict on the
 /// transition. Two shapes qualify:
 ///
@@ -2173,6 +2509,146 @@ fn deserialize_note(data: &[u8]) -> Option<grovedb_commitment_tree::Note> {
     let rseed = RandomSeed::from_bytes(rseed_bytes, &rho).into_option()?;
 
     Note::from_parts(recipient, value, rho, rseed).into_option()
+}
+
+#[cfg(test)]
+mod redrive_tests {
+    use super::*;
+    use crate::wallet::shielded::store::InMemoryShieldedStore;
+    use dash_sdk::error::StateTransitionBroadcastError;
+    use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+
+    /// On a re-broadcast of our own byte-identical transition,
+    /// `NullifierAlreadySpent` means the ORIGINAL executed — the
+    /// classification must treat it as a success signal, distinct from
+    /// every other consensus verdict.
+    #[test]
+    fn nullifier_already_spent_is_a_success_signal() {
+        let cause = ConsensusError::StateError(StateError::NullifierAlreadySpentError(
+            NullifierAlreadySpentError::new([1u8; 32]),
+        ));
+        let err = dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+            code: 1,
+            message: "state error".to_string(),
+            cause: Some(cause),
+        });
+        assert!(is_nullifier_already_spent(&err));
+        // ...and it still counts as a consensus-rejection shape, so arm
+        // ordering matters: the already-spent check must run first.
+        assert!(carries_consensus_rejection(&err));
+
+        let other = dash_sdk::Error::TimeoutReached(
+            std::time::Duration::from_secs(1),
+            "waiting".to_string(),
+        );
+        assert!(!is_nullifier_already_spent(&other));
+    }
+
+    /// The re-broadcast outcome classifier, arm order included:
+    /// `NullifierAlreadySpent` is itself a consensus error, so the
+    /// `AlreadyExecuted` arm must win over `DefinitiveRejection`.
+    #[test]
+    fn redrive_broadcast_classification_matrix() {
+        assert_eq!(
+            classify_redrive_broadcast(&Ok(())),
+            RedriveBroadcastOutcome::Accepted
+        );
+
+        let already_spent = ConsensusError::StateError(StateError::NullifierAlreadySpentError(
+            NullifierAlreadySpentError::new([1u8; 32]),
+        ));
+        let already_spent_err =
+            dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+                code: 1,
+                message: "state error".to_string(),
+                cause: Some(already_spent),
+            });
+        assert_eq!(
+            classify_redrive_broadcast(&Err(already_spent_err)),
+            RedriveBroadcastOutcome::AlreadyExecuted,
+            "already-spent must classify as success BEFORE the generic rejection arm"
+        );
+
+        let other_rejection = ConsensusError::BasicError(
+            dpp::consensus::basic::BasicError::ProtocolVersionParsingError(
+                dpp::consensus::basic::decode::ProtocolVersionParsingError::new(
+                    "bad version".to_string(),
+                ),
+            ),
+        );
+        let rejection_err =
+            dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+                code: 1,
+                message: "state error".to_string(),
+                cause: Some(other_rejection),
+            });
+        assert_eq!(
+            classify_redrive_broadcast(&Err(rejection_err)),
+            RedriveBroadcastOutcome::DefinitiveRejection
+        );
+
+        let timeout = dash_sdk::Error::TimeoutReached(
+            std::time::Duration::from_secs(1),
+            "waiting".to_string(),
+        );
+        assert_eq!(
+            classify_redrive_broadcast(&Err(timeout)),
+            RedriveBroadcastOutcome::Inconclusive
+        );
+    }
+
+    /// Decision paths that must NOT touch the network (the mock SDK has
+    /// no broadcast expectation, so any attempt would error into the
+    /// inconclusive arm and bump the counter): a pruned anchor belongs
+    /// to the release backstop, an exhausted budget stays parked, and a
+    /// corrupt stored transition is dropped so it can't wedge the pass.
+    #[tokio::test]
+    async fn redrive_skips_pruned_and_exhausted_and_drops_garbage() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+        let wallet_id = [5u8; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+
+        let rec = |activity: u8, anchor: u8, attempts: u32| PendingRedrive {
+            activity_id: [activity; 32],
+            anchor: [anchor; 32],
+            nullifiers: vec![[activity ^ 0xFF; 32]],
+            st_bytes: vec![0xDE, 0xAD], // never deserializes
+            attempts,
+        };
+        {
+            let mut guard = store.write().await;
+            // Pruned anchor (10 not in recorded set) → untouched.
+            guard.arm_redrive(id, rec(1, 10, 0)).unwrap();
+            // Recorded anchor but attempts exhausted → untouched.
+            guard
+                .arm_redrive(id, rec(2, 11, MAX_REDRIVE_ATTEMPTS))
+                .unwrap();
+            // Recorded anchor, budget left, garbage bytes → dropped
+            // before any broadcast.
+            guard.arm_redrive(id, rec(3, 12, 0)).unwrap();
+        }
+        let recorded: std::collections::HashSet<[u8; 32]> =
+            [[11u8; 32], [12u8; 32]].into_iter().collect();
+
+        redrive_pending_spends(&sdk, &store, None, wallet_id, id, &recorded).await;
+
+        let left = store.read().await.pending_redrives(id).unwrap();
+        let ids: Vec<[u8; 32]> = left.iter().map(|r| r.activity_id).collect();
+        assert!(ids.contains(&[1u8; 32]), "pruned-anchor record left alone");
+        assert!(ids.contains(&[2u8; 32]), "exhausted record left alone");
+        assert!(
+            !ids.contains(&[3u8; 32]),
+            "corrupt record dropped without a broadcast attempt"
+        );
+        assert_eq!(
+            left.iter().map(|r| r.attempts).max(),
+            Some(MAX_REDRIVE_ATTEMPTS),
+            "no attempt counters were bumped — nothing touched the network"
+        );
+    }
 }
 
 #[cfg(test)]

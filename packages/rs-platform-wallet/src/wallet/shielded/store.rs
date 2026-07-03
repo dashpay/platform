@@ -123,6 +123,35 @@ pub struct ShieldedOutgoingNote {
 /// Platform's recorded set (the spend can then never execute).
 pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>);
 
+/// A re-drivable broadcast-accepted-but-unconfirmed spend: the signed
+/// transition bytes plus everything the sync-time re-drive needs to
+/// resolve the ambiguity actively — re-broadcast the transition
+/// ([`nullifiers`](Self::nullifiers) detect a landing, `anchor` feeds
+/// the prune backstop, `activity_id` links the UI row, `attempts`
+/// bounds the retries.
+///
+/// Armed only on the ambiguous outcome (`ShieldedSpendUnconfirmed`):
+/// the broadcast was accepted but the result wait failed, so the spend
+/// may or may not have executed. Re-broadcasting the byte-identical
+/// transition is fund-safe — identical nullifiers cannot double-spend —
+/// and converts silence into either a confirmation (next scan sees the
+/// nullifiers spent) or a definitive consensus verdict.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingRedrive {
+    /// Activity-entry id of the spend (sha256 of visible output cmxs);
+    /// the spend-level key — every nullifier of one spend shares it.
+    pub activity_id: [u8; 32],
+    /// Platform-recorded anchor the spend was built against.
+    pub anchor: [u8; 32],
+    /// Nullifiers of every note the spend consumes.
+    pub nullifiers: Vec<[u8; 32]>,
+    /// The signed state transition, platform-serialized byte-exact as
+    /// originally broadcast.
+    pub st_bytes: Vec<u8>,
+    /// Re-broadcast attempts made so far.
+    pub attempts: u32,
+}
+
 /// Storage abstraction for shielded wallet state.
 ///
 /// Consumers implement this for their persistence layer. The
@@ -198,6 +227,39 @@ pub trait ShieldedStore: Send + Sync {
     /// and releases the reservation via [`Self::clear_pending`] when the
     /// anchor is pruned — the spend can then never execute.
     fn stale_pending_spends(&self, id: SubwalletId) -> Result<Vec<StalePendingSpend>, Self::Error>;
+
+    // ── Re-drivable unconfirmed spends (per-subwallet) ─────────────────
+
+    /// Persist a re-drivable record for a broadcast-accepted spend whose
+    /// result wait failed ambiguously. Keyed by `redrive.activity_id`;
+    /// re-arming the same id overwrites. Unlike the bare `mark_pending`
+    /// reservations, redrive records survive a restart where the backend
+    /// persists them (the file store does): on reopen both the record
+    /// and its note reservations are rehydrated, so the re-drive — and
+    /// the linked activity row's eventual Confirmed/Failed flip —
+    /// continue across relaunches.
+    fn arm_redrive(&mut self, id: SubwalletId, redrive: PendingRedrive) -> Result<(), Self::Error>;
+
+    /// Every armed redrive record for `id`.
+    fn pending_redrives(&self, id: SubwalletId) -> Result<Vec<PendingRedrive>, Self::Error>;
+
+    /// Increment the attempt counter on `id`'s redrive keyed by
+    /// `activity_id`, returning the new count (`0` when no such record
+    /// exists).
+    fn bump_redrive_attempts(
+        &mut self,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+    ) -> Result<u32, Self::Error>;
+
+    /// Drop the redrive record keyed by `activity_id` — the spend
+    /// resolved (landed, definitively rejected, or released by the
+    /// anchor-prune backstop). Implementations also drop the record
+    /// implicitly when [`Self::mark_spent`] or [`Self::clear_pending`]
+    /// resolves one of its nullifiers, since a transition lands or dies
+    /// atomically for all of its nullifiers.
+    fn clear_redrive(&mut self, id: SubwalletId, activity_id: &[u8; 32])
+        -> Result<(), Self::Error>;
 
     // ── Outgoing history (per-subwallet) ───────────────────────────────
 
@@ -418,9 +480,19 @@ pub(super) struct SubwalletState {
     /// Nullifiers of notes currently being spent in an in-flight
     /// transition, mapped to the [`PendingSpend`] bookkeeping the
     /// sync reconcile needs. Excluded from `unspent_notes()` so
-    /// concurrent callers can't double-select. In-memory only —
-    /// never persisted; the next sync after a crash reconciles state.
+    /// concurrent callers can't double-select. Held in memory; a
+    /// pre-broadcast reservation dies with the process, but a
+    /// reservation belonging to an armed [`PendingRedrive`] is
+    /// rehydrated on file-store open (the redrive row carries its
+    /// nullifiers), so an unconfirmed broadcast keeps its notes
+    /// reserved across restarts.
     pub pending_nullifiers: BTreeMap<[u8; 32], PendingSpend>,
+    /// Armed re-drivable unconfirmed spends, keyed by activity id.
+    /// See [`PendingRedrive`]. Kept consistent with
+    /// `pending_nullifiers`: resolving any of a redrive's nullifiers
+    /// (mark_spent / clear_pending) drops the whole record — a
+    /// transition lands or dies atomically for all its nullifiers.
+    pub redrives: BTreeMap<[u8; 32], PendingRedrive>,
     /// Notes this subwallet SENT, recovered via OVK during the scan.
     /// Append-only send history in recording order.
     pub outgoing_notes: Vec<ShieldedOutgoingNote>,
@@ -471,10 +543,30 @@ impl SubwalletState {
                 // common path already cleared pending in the
                 // spend-flow finalizer.
                 self.pending_nullifiers.remove(nullifier);
+                // The spend landed — its redrive record (if armed) is
+                // resolved for every nullifier it carries.
+                self.drop_redrives_containing(nullifier);
                 return true;
             }
         }
         false
+    }
+
+    /// Drop every redrive record that carries `nullifier`, returning
+    /// the dropped activity ids (the file store mirrors the deletions
+    /// to SQLite). A transition lands or dies atomically for all of
+    /// its nullifiers, so resolving one resolves the record.
+    pub(super) fn drop_redrives_containing(&mut self, nullifier: &[u8; 32]) -> Vec<[u8; 32]> {
+        let dropped: Vec<[u8; 32]> = self
+            .redrives
+            .iter()
+            .filter(|(_, r)| r.nullifiers.contains(nullifier))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &dropped {
+            self.redrives.remove(id);
+        }
+        dropped
     }
 
     /// Reserve `nullifier` against an in-flight spend. Returns
@@ -531,7 +623,43 @@ impl SubwalletState {
     /// Returns `true` if a matching reservation was actually
     /// removed.
     pub(super) fn clear_pending(&mut self, nullifier: &[u8; 32]) -> bool {
-        self.pending_nullifiers.remove(nullifier).is_some()
+        let removed = self.pending_nullifiers.remove(nullifier).is_some();
+        if removed {
+            // Releasing a reservation resolves its spend for good
+            // (definitive rejection or prune backstop) — the redrive
+            // record goes with it.
+            self.drop_redrives_containing(nullifier);
+        }
+        removed
+    }
+
+    /// Arm (or overwrite by activity id) a re-drivable record.
+    pub(super) fn arm_redrive(&mut self, redrive: PendingRedrive) {
+        self.redrives.insert(redrive.activity_id, redrive);
+    }
+
+    pub(super) fn pending_redrives(&self) -> Vec<PendingRedrive> {
+        self.redrives.values().cloned().collect()
+    }
+
+    /// Current attempt count for `activity_id`'s redrive, if armed.
+    pub(super) fn redrive_attempts(&self, activity_id: &[u8; 32]) -> Option<u32> {
+        self.redrives.get(activity_id).map(|r| r.attempts)
+    }
+
+    /// Bump the attempt counter; `0` when no such record exists.
+    pub(super) fn bump_redrive_attempts(&mut self, activity_id: &[u8; 32]) -> u32 {
+        self.redrives
+            .get_mut(activity_id)
+            .map(|r| {
+                r.attempts += 1;
+                r.attempts
+            })
+            .unwrap_or(0)
+    }
+
+    pub(super) fn clear_redrive(&mut self, activity_id: &[u8; 32]) {
+        self.redrives.remove(activity_id);
     }
 
     /// Record an outgoing (sent) note. Idempotent by `cmx`: returns
@@ -692,6 +820,42 @@ impl ShieldedStore for InMemoryShieldedStore {
             .get(&id)
             .map(SubwalletState::stale_pending_spends)
             .unwrap_or_default())
+    }
+
+    fn arm_redrive(&mut self, id: SubwalletId, redrive: PendingRedrive) -> Result<(), Self::Error> {
+        self.subwallets.entry(id).or_default().arm_redrive(redrive);
+        Ok(())
+    }
+
+    fn pending_redrives(&self, id: SubwalletId) -> Result<Vec<PendingRedrive>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::pending_redrives)
+            .unwrap_or_default())
+    }
+
+    fn bump_redrive_attempts(
+        &mut self,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+    ) -> Result<u32, Self::Error> {
+        Ok(self
+            .subwallets
+            .get_mut(&id)
+            .map(|sw| sw.bump_redrive_attempts(activity_id))
+            .unwrap_or(0))
+    }
+
+    fn clear_redrive(
+        &mut self,
+        id: SubwalletId,
+        activity_id: &[u8; 32],
+    ) -> Result<(), Self::Error> {
+        if let Some(sw) = self.subwallets.get_mut(&id) {
+            sw.clear_redrive(activity_id);
+        }
+        Ok(())
     }
 
     fn record_outgoing_note(
@@ -883,6 +1047,53 @@ mod tests {
         assert!(all[0].is_spent);
         // Marking again returns false (already spent).
         assert!(!store.mark_spent(id, &nullifier).unwrap());
+    }
+
+    /// Resolving any of a redrive's nullifiers — landing (`mark_spent`)
+    /// or release (`clear_pending`) — drops the whole record: a
+    /// transition lands or dies atomically for all its nullifiers.
+    #[test]
+    fn resolving_a_nullifier_drops_the_redrive_record() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = test_id(0);
+        let n1 = [3u8; 32];
+        let n2 = [4u8; 32];
+        let note = ShieldedNote {
+            position: 0,
+            cmx: [1u8; 32],
+            nullifier: n1,
+            block_height: 50,
+            is_spent: false,
+            value: 500,
+            note_data: vec![0u8; 115],
+        };
+        store.save_note(id, &note).unwrap();
+        let redrive = PendingRedrive {
+            activity_id: [9u8; 32],
+            anchor: [8u8; 32],
+            nullifiers: vec![n1, n2],
+            st_bytes: vec![1, 2, 3],
+            attempts: 0,
+        };
+
+        // Landing path: mark_spent on one nullifier drops the record.
+        store.mark_pending(id, &n1).unwrap();
+        store.arm_redrive(id, redrive.clone()).unwrap();
+        assert_eq!(store.pending_redrives(id).unwrap().len(), 1);
+        assert!(store.mark_spent(id, &n1).unwrap());
+        assert!(
+            store.pending_redrives(id).unwrap().is_empty(),
+            "landed spend drops its redrive record"
+        );
+
+        // Release path: clear_pending on a nullifier drops the record.
+        store.mark_pending(id, &n2).unwrap();
+        store.arm_redrive(id, redrive).unwrap();
+        assert!(store.clear_pending(id, &n2).unwrap());
+        assert!(
+            store.pending_redrives(id).unwrap().is_empty(),
+            "released reservation drops its redrive record"
+        );
     }
 
     #[test]

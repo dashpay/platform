@@ -311,9 +311,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     // calling thread.
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
-        wallet
+        let r = wallet
             .shielded_transfer_to(&coordinator, account, &recipient, amount, memo, &prover)
-            .await
+            .await;
+        poke_sync_on_unconfirmed(&r, handle);
+        r
     });
     map_spend_result(result, "shielded transfer")
 }
@@ -363,9 +365,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
 
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
-        wallet
+        let r = wallet
             .shielded_unshield_to(&coordinator, account, &to_addr_str, amount, &prover)
-            .await
+            .await;
+        poke_sync_on_unconfirmed(&r, handle);
+        r
     });
     map_spend_result(result, "shielded unshield")
 }
@@ -412,7 +416,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
-        wallet
+        let r = wallet
             .shielded_withdraw_to(
                 &coordinator,
                 account,
@@ -421,9 +425,59 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
                 core_fee_per_byte,
                 &prover,
             )
-            .await
+            .await;
+        poke_sync_on_unconfirmed(&r, handle);
+        r
     });
     map_spend_result(result, "shielded withdraw")
+}
+
+/// On the AMBIGUOUS outcome (broadcast accepted, result unconfirmed),
+/// kick an immediate forced shielded sync so the first re-drive check —
+/// nullifier re-check, then re-broadcast of the persisted transition —
+/// happens now instead of at the next background tick.
+///
+/// Routed through the manager's [`ShieldedSyncManager::sync_now`] so the
+/// pass respects the same `is_syncing` CAS + `quiescing` drain barrier as
+/// the periodic loop and the host's Sync Now button — a raw
+/// `coordinator.sync(...)` here would race both. `force = true` bypasses
+/// only the caught-up cooldown, never the serialization gate. If a pass
+/// is already in flight the poke no-ops (empty summary) and the next
+/// tick's pass picks the redrive up — that pass's pre-scan snapshot may
+/// predate this arm, which is fine.
+///
+/// Fire-and-forget: the spend's own result is already decided and the
+/// sync pass owns resolution from here (`redrive_pending_spends` + the
+/// prune backstop); the pass outcome is logged, not surfaced.
+///
+/// [`ShieldedSyncManager::sync_now`]: platform_wallet::manager::shielded_sync::ShieldedSyncManager::sync_now
+fn poke_sync_on_unconfirmed<T>(result: &Result<T, PlatformWalletError>, handle: Handle) {
+    let ambiguous = matches!(
+        result,
+        Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+            | Err(PlatformWalletError::ShieldedBroadcastUnconfirmed { .. })
+    );
+    if !ambiguous {
+        return;
+    }
+    let Some(sync_manager) =
+        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.shielded_sync_arc())
+    else {
+        return;
+    };
+    runtime().spawn(async move {
+        let summary = sync_manager.sync_now(true).await;
+        if summary.sync_unix_seconds == 0 {
+            tracing::debug!(
+                "post-unconfirmed shielded sync poke skipped (a pass was already in flight                  or shielded is unconfigured); the next pass owns the re-drive"
+            );
+        } else {
+            tracing::debug!(
+                wallets = summary.wallet_results.len(),
+                "post-unconfirmed shielded sync pass completed"
+            );
+        }
+    });
 }
 
 /// Map a shielded operation outcome (shield / unshield / transfer /
@@ -600,7 +654,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         // `Signer<IdentityPublicKey>`.
         let identity_signer: &VTableSigner = &*(signer_identity_addr as *const VTableSigner);
         let prover = CachedOrchardProver::new();
-        wallet
+        let r = wallet
             .shielded_identity_create_from_pool(
                 &coordinator,
                 account,
@@ -611,7 +665,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
                 identity_signer,
                 &prover,
             )
-            .await
+            .await;
+        poke_sync_on_unconfirmed(&r, handle);
+        r
     });
 
     match result {
