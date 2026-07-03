@@ -295,11 +295,14 @@ impl ShieldedStore for FileBackedShieldedStore {
         let Some(sw) = self.subwallets.get_mut(&id) else {
             return Ok(false);
         };
+        let known = sw.nullifier_index.contains_key(nullifier);
         let marked = sw.mark_spent(nullifier);
-        if marked {
+        if known {
             // `SubwalletState::mark_spent` dropped any redrive carrying
-            // this nullifier from memory; mirror the deletions. The
-            // in-memory transition already happened, so a SQLite failure
+            // this nullifier from memory — even when the note was
+            // already spent (a redrive row can rehydrate after the
+            // promotion); mirror the deletions. The in-memory
+            // transition already happened, so a SQLite failure
             // must not abort the call — log it and keep the trait
             // behavior consistent. A surviving stale row rehydrates a
             // reservation on the next open, which the reconcile / prune
@@ -611,13 +614,24 @@ impl ShieldedStore for FileBackedShieldedStore {
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
         // Per-subwallet note / watermark / checkpoint state is
         // in-memory only (`subwallets`); the commitment tree in
-        // SQLite is chain-wide and intentionally left intact.
+        // SQLite is chain-wide and intentionally left intact. The
+        // wallet's persisted redrive rows must go too, or they would
+        // rehydrate reservations for a wallet that no longer exists.
         self.subwallets.retain(|id, _| id.wallet_id != wallet_id);
+        let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        conn.execute(
+            "DELETE FROM shielded_pending_spends WHERE wallet_id = ?1",
+            rusqlite::params![wallet_id.as_slice()],
+        )
+        .map_err(|e| FileShieldedStoreError(format!("purge wallet redrive rows: {e}")))?;
         Ok(())
     }
 
     fn purge_all_subwallets(&mut self) -> Result<(), Self::Error> {
         self.subwallets.clear();
+        let conn = self.pending_conn.lock().expect("pending_conn mutex");
+        conn.execute("DELETE FROM shielded_pending_spends", [])
+            .map_err(|e| FileShieldedStoreError(format!("purge redrive rows: {e}")))?;
         Ok(())
     }
 

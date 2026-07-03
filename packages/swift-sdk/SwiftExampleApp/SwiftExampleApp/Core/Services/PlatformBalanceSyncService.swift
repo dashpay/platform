@@ -67,6 +67,10 @@ class PlatformBalanceSyncService: ObservableObject {
     /// Last error message, cleared on successful sync.
     @Published var lastError: String?
 
+    /// Whether `clearLocalState` is in flight. Views disable "Sync Now"
+    /// and "Clear" while set so a sync can't race the wipe.
+    @Published var isClearing = false
+
     // MARK: - Internal
 
     /// The platform address wallet handle used to refresh address
@@ -87,6 +91,12 @@ class PlatformBalanceSyncService: ObservableObject {
 
     /// Mirrors the Rust manager's current `is_syncing` flag for the UI.
     private var syncStateCancellable: AnyCancellable?
+
+    /// Invalidation token for in-flight `refreshBalanceSnapshot` calls.
+    /// `clearLocalState` bumps it, so a snapshot that was already off
+    /// the main actor fetching pre-clear balances discards its result
+    /// instead of republishing the cleared data.
+    private var refreshGeneration: UInt64 = 0
 
     // MARK: - Lifecycle
 
@@ -227,6 +237,17 @@ class PlatformBalanceSyncService: ObservableObject {
         network: Network,
         walletIdsOnNetwork: Set<Data>
     ) async {
+        // Invalidate any in-flight balance snapshot refresh FIRST: a
+        // refresh that already read pre-clear balances off the main
+        // actor would otherwise republish them right over the cleared
+        // display. Bumping the generation makes it drop its result.
+        refreshGeneration &+= 1
+        isClearing = true
+        defer {
+            refreshGeneration &+= 1
+            isClearing = false
+        }
+
         // 1) Reset the Rust-owned state BEFORE touching disk. Without
         //    this the in-memory watermark survives and the next "Sync
         //    Now" resumes incrementally (fast) instead of doing a full
@@ -307,7 +328,7 @@ class PlatformBalanceSyncService: ObservableObject {
     /// whole call and the subscription never fires, so we have to
     /// reset locally regardless of outcome.
     func performSync() async {
-        guard !isSyncing else { return }
+        guard !isSyncing, !isClearing else { return }
         guard let walletManager = walletManager else {
             lastError = "Platform address wallet not configured"
             return
@@ -366,7 +387,9 @@ class PlatformBalanceSyncService: ObservableObject {
     }
 
     private func refreshBalanceSnapshot() async {
+        guard !isClearing else { return }
         guard let wallet = platformAddressWallet else { return }
+        let generation = refreshGeneration
 
         do {
             let (balances, credits) = try await Task.detached { [wallet] in
@@ -374,6 +397,17 @@ class PlatformBalanceSyncService: ObservableObject {
                 let credits = try wallet.totalCredits()
                 return (balances, credits)
             }.value
+
+            // A clear ran while we were off the main actor — these
+            // balances predate it; publishing them would resurrect the
+            // just-cleared display.
+            guard generation == refreshGeneration else {
+                SDKLogger.log(
+                    "BLAST snapshot refresh discarded: local state cleared mid-refresh",
+                    minimumLevel: .medium
+                )
+                return
+            }
 
             var newBalances: [String: UInt64] = [:]
             var total: UInt64 = 0
@@ -395,6 +429,9 @@ class PlatformBalanceSyncService: ObservableObject {
                 minimumLevel: .medium
             )
         } catch {
+            // Same staleness rule as the success path: a clear reset
+            // `lastError`, so a pre-clear failure shouldn't repopulate it.
+            guard generation == refreshGeneration else { return }
             lastError = error.localizedDescription
             SDKLogger.log(
                 "BLAST sync snapshot refresh error: \(error.localizedDescription)",

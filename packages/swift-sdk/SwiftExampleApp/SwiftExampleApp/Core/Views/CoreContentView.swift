@@ -369,10 +369,15 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.blue)
                         .controlSize(.mini)
-                        .disabled(platformBalanceSyncService.isSyncing)
+                        // Also gated on `isClearing` so a sync kicked
+                        // off mid-clear can't re-persist the rows the
+                        // clear is wiping.
+                        .disabled(platformBalanceSyncService.isSyncing || platformBalanceSyncService.isClearing)
 
                         Button {
                             Task {
+                                // `clearLocalState` drives the service's
+                                // `isClearing` flag; both buttons reflect it.
                                 await platformBalanceSyncService.clearLocalState(
                                     modelContext: modelContext,
                                     network: platformState.currentNetwork,
@@ -387,6 +392,7 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
                         .controlSize(.mini)
+                        .disabled(platformBalanceSyncService.isSyncing || platformBalanceSyncService.isClearing)
                     }
                 }
                 .padding(.vertical, 4)

@@ -535,21 +535,23 @@ impl SubwalletState {
     }
 
     pub(super) fn mark_spent(&mut self, nullifier: &[u8; 32]) -> bool {
-        if let Some(&idx) = self.nullifier_index.get(nullifier) {
-            if !self.notes[idx].is_spent {
-                self.notes[idx].is_spent = true;
-                // Promotion implies the spend confirmed; drop any
-                // matching pending reservation. Idempotent — the
-                // common path already cleared pending in the
-                // spend-flow finalizer.
-                self.pending_nullifiers.remove(nullifier);
-                // The spend landed — its redrive record (if armed) is
-                // resolved for every nullifier it carries.
-                self.drop_redrives_containing(nullifier);
-                return true;
-            }
+        let Some(&idx) = self.nullifier_index.get(nullifier) else {
+            return false;
+        };
+        // A confirmed spend resolves any matching reservation and
+        // redrive record even when the note is already marked spent —
+        // a reservation rehydrated after the note was promoted must
+        // not survive this call. Idempotent — the common path already
+        // cleared pending in the spend-flow finalizer.
+        self.pending_nullifiers.remove(nullifier);
+        // The spend landed — its redrive record (if armed) is
+        // resolved for every nullifier it carries.
+        self.drop_redrives_containing(nullifier);
+        if self.notes[idx].is_spent {
+            return false;
         }
-        false
+        self.notes[idx].is_spent = true;
+        true
     }
 
     /// Drop every redrive record that carries `nullifier`, returning

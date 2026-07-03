@@ -999,6 +999,25 @@ impl PlatformPaymentAddressProvider {
                     }
                 }
             }
+            // Drop the entry outright when its derivation index is
+            // already paired with a DIFFERENT address — committing it
+            // would either evict that pairing (`BiBTreeMap::insert`
+            // drops conflicting pairs, orphaning the other address's
+            // `found` entry) or persist an address `current_balances`
+            // can't round-trip back out of the committed seed.
+            if state.addresses.get_by_right(&entry.address).is_none()
+                && state.addresses.contains_left(&entry.address_index)
+            {
+                tracing::error!(
+                    account_index = entry.account_index,
+                    address_index = entry.address_index,
+                    address = %entry.address,
+                    "commit_reconciliation: derivation index already \
+                     maps to a different address — state drift; \
+                     dropping the reconciliation entry"
+                );
+                continue;
+            }
             if is_removal {
                 state.found.remove(&entry.address);
             } else {
@@ -1006,22 +1025,10 @@ impl PlatformPaymentAddressProvider {
             }
             // Merge pool-resolved addresses into the bijection so
             // `current_balances` can pair the fresh funds with a
-            // derivation index. Never overwrite an existing pairing —
-            // `BiBTreeMap::insert` evicts conflicting pairs, which
-            // would orphan another address's `found` entry.
+            // derivation index. The conflict guard above already
+            // ensured this never overwrites an existing pairing.
             if state.addresses.get_by_right(&entry.address).is_none() {
-                if state.addresses.contains_left(&entry.address_index) {
-                    tracing::error!(
-                        account_index = entry.account_index,
-                        address_index = entry.address_index,
-                        address = %entry.address,
-                        "commit_reconciliation: derivation index already \
-                         maps to a different address — state drift; \
-                         leaving the bijection untouched"
-                    );
-                } else {
-                    state.addresses.insert(entry.address_index, entry.address);
-                }
+                state.addresses.insert(entry.address_index, entry.address);
             }
             outcome.entries.push(entry);
         }

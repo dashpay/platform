@@ -132,21 +132,41 @@ impl IdentityWallet {
         }
         let identity = registered_identity;
 
-        // Step 3: Add the identity to the local manager (with its HD
-        // index) so subsequent operations route through it.
+        // Step 3 (best-effort): add the identity to the local manager
+        // (with its HD index) so subsequent operations route through it.
+        // Platform has already accepted the registration, so a local
+        // persistence failure must not suppress the `(identity,
+        // address_infos)` return — the caller still needs it to
+        // reconcile the spent address balances, and the missed local
+        // add self-heals on the next identity re-sync.
         {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            info.identity_manager.add_identity(
-                identity.clone(),
-                identity_index,
-                self.wallet_id,
-                &self.persister,
-            )?;
+            match wm.get_wallet_info_mut(&self.wallet_id) {
+                Some(info) => {
+                    if let Err(e) = info.identity_manager.add_identity(
+                        identity.clone(),
+                        identity_index,
+                        self.wallet_id,
+                        &self.persister,
+                    ) {
+                        tracing::warn!(
+                            error = %e,
+                            identity_id = %identity.id(),
+                            "register_from_addresses: identity registered on \
+                             Platform but local add_identity failed; returning \
+                             the registered identity anyway"
+                        );
+                    }
+                }
+                None => {
+                    tracing::warn!(
+                        identity_id = %identity.id(),
+                        "register_from_addresses: identity registered on \
+                         Platform but wallet info was not found locally; \
+                         skipping local persistence"
+                    );
+                }
+            }
         }
 
         // The spent platform-address balances are reconciled by the

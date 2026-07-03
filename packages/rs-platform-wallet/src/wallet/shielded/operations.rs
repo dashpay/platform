@@ -1696,22 +1696,33 @@ fn select_recorded_spends<S: ShieldedStore>(
         })
         .collect::<Result<_, PlatformWalletError>>()?;
 
+    // What probing a single checkpoint depth concluded. `NoteNotCovered` and
+    // `StoreError` are deliberately distinct: the former proves no deeper
+    // (older) checkpoint can cover the note either, while the latter only
+    // invalidates this one depth's probe.
+    enum DepthProbe {
+        Built(Vec<SpendableNote>, Anchor),
+        /// A selected note post-dates this checkpoint (or the depth doesn't
+        /// exist) — stop probing deeper.
+        NoteNotCovered,
+        /// A genuine store failure (poisoned mutex, IO, tree corruption) at
+        /// this depth — skip it, and surface the failure if no depth succeeds.
+        StoreError(String),
+    }
+
     // Build every selected note's `SpendableNote` plus the shared anchor at a
     // single checkpoint `depth`.
     //
     // `strict` (depth 0 only): a missing/failed witness is a hard
     // `ShieldedMerkleWitnessUnavailable` (the note is expected to be witnessable
-    // at the current tip). At depth > 0, `Ok(None)` means the note post-dates
-    // this older checkpoint, so the depth is unusable — return `Ok(None)` and
-    // let the caller stop probing deeper; a genuine store `Err` (poisoned mutex,
-    // IO, tree corruption) is logged — the probe would otherwise discard the
-    // message — and likewise treated as an unusable depth rather than aborting,
-    // so a transient read can't strand a spend a shallower depth already
-    // covered. An anchor disagreement across notes is always a hard error (the
-    // spend builder would reject it downstream).
-    let build_at_depth = |depth: usize,
-                          strict: bool|
-     -> Result<Option<(Vec<SpendableNote>, Anchor)>, PlatformWalletError> {
+    // at the current tip). At depth > 0, a missing witness means the note
+    // post-dates this older checkpoint (`NoteNotCovered`), while a store `Err`
+    // is logged — the probe would otherwise discard the message — and reported
+    // as `StoreError` so the caller can keep probing without mistaking a
+    // transient read failure for an uncoverable note. An anchor disagreement
+    // across notes is always a hard error (the spend builder would reject it
+    // downstream).
+    let build_at_depth = |depth: usize, strict: bool| -> Result<DepthProbe, PlatformWalletError> {
         let mut spends = Vec::with_capacity(prepared.len());
         let mut anchor: Option<Anchor> = None;
         for (position, note, cmx) in &prepared {
@@ -1729,10 +1740,11 @@ fn select_recorded_spends<S: ShieldedStore>(
                 }
                 // depth > 0: the note isn't witnessable at this older checkpoint
                 // (appended after it, or the depth doesn't exist).
-                Ok(None) => return Ok(None),
+                Ok(None) => return Ok(DepthProbe::NoteNotCovered),
                 // depth > 0: a genuine store failure. Log it so the operator sees
-                // it (the anchor probe otherwise swallows the message), then treat
-                // the depth as unusable — never a mid-probe abort.
+                // it (the anchor probe otherwise swallows the message), then let
+                // the caller skip just this depth — never a mid-probe abort, and
+                // never conflated with an uncoverable note.
                 Err(e) => {
                     tracing::warn!(
                         position = *position,
@@ -1740,7 +1752,7 @@ fn select_recorded_spends<S: ShieldedStore>(
                         error = %e,
                         "shielded anchor probe: witness_at_depth failed at depth > 0; skipping depth"
                     );
-                    return Ok(None);
+                    return Ok(DepthProbe::StoreError(e.to_string()));
                 }
             };
 
@@ -1771,19 +1783,16 @@ fn select_recorded_spends<S: ShieldedStore>(
                 "no spendable notes selected — anchor undefined".to_string(),
             )
         })?;
-        Ok(Some((spends, anchor)))
+        Ok(DepthProbe::Built(spends, anchor))
     };
 
     // Fast path: a fully-synced wallet's depth-0 root is a recorded anchor.
-    let (spends, anchor) = match build_at_depth(0, true)? {
-        Some(pair) => pair,
-        // Unreachable — a strict build returns `Some` or errors — but stay
+    let DepthProbe::Built(spends, anchor) = build_at_depth(0, true)? else {
+        // Unreachable — a strict build returns `Built` or errors — but stay
         // fund-safe (a clean error, never a panic) if that invariant breaks.
-        None => {
-            return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
-                "depth-0 witness probe returned no witness for a selected note".to_string(),
-            ));
-        }
+        return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
+            "depth-0 witness probe returned no witness for a selected note".to_string(),
+        ));
     };
     if recorded.contains(&anchor.to_bytes()) {
         return Ok((spends, anchor));
@@ -1791,20 +1800,36 @@ fn select_recorded_spends<S: ShieldedStore>(
 
     // Otherwise walk older checkpoints newest→oldest for the shallowest
     // recorded root.
+    let mut skipped_store_error: Option<String> = None;
     for depth in 1..MAX_ANCHOR_PROBE_DEPTH {
         match build_at_depth(depth, false)? {
-            Some((spends, anchor)) if recorded.contains(&anchor.to_bytes()) => {
+            DepthProbe::Built(spends, anchor) if recorded.contains(&anchor.to_bytes()) => {
                 return Ok((spends, anchor));
             }
             // A root exists at this depth but Platform didn't record it — try an
             // older checkpoint.
-            Some(_) => continue,
+            DepthProbe::Built(..) => continue,
             // A selected note isn't witnessable this deep; every deeper
             // checkpoint is older still, so none can cover it either.
-            None => break,
+            DepthProbe::NoteNotCovered => break,
+            // A store failure only invalidates this one depth's probe — a
+            // deeper checkpoint may still cover the notes, so keep walking,
+            // but remember the failure so an exhausted probe surfaces it
+            // instead of the misleading "no recorded anchor" outcome.
+            DepthProbe::StoreError(e) => {
+                skipped_store_error = Some(e);
+                continue;
+            }
         }
     }
 
+    if let Some(e) = skipped_store_error {
+        return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
+            format!(
+            "anchor probe skipped checkpoint depths on a store failure (last: {e}); retry the spend"
+        ),
+        ));
+    }
     Err(PlatformWalletError::ShieldedNoRecordedAnchor(
         "no recorded anchor covers the selected notes; wait for the next shielded sync".to_string(),
     ))

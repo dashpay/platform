@@ -286,14 +286,33 @@ impl PlatformAddressWallet {
         // The seam persists before returning, and the persist MUST
         // happen before `consume_asset_lock` so we never have a
         // Consumed lock paired with a stale balance row on disk.
-        // Persistence errors are logged inside the seam rather than
-        // propagated: Platform already accepted the transition, and a
-        // persistence hiccup shouldn't mask that.
-        let cs = self
-            .reconcile_address_infos(&address_infos, "fund from asset lock")
+        // Persistence errors don't propagate as `Err` (Platform
+        // already accepted the transition, and a persistence hiccup
+        // shouldn't mask that), but they DO gate the consume below:
+        // marking the lock `Consumed` over stale durable rows would
+        // leave `auto_select_inputs` under-budgeting after a restart
+        // with no Resumable lock left to repair it from.
+        let (cs, persisted) = self
+            .reconcile_address_infos_with_persistence(&address_infos, "fund from asset lock")
             .await;
 
         if let Some(out_point) = tracked_out_point {
+            if !persisted {
+                // Keep the lock row non-Consumed: it stays visible in
+                // the Resumable Funding list, and a user Resume gets
+                // Platform's deterministic 'lock already consumed'
+                // rejection — the same benign recovery path as a
+                // failed consume below — while the next
+                // platform-address sync repairs the stale rows.
+                tracing::error!(
+                    outpoint = %out_point,
+                    "skipping consume_asset_lock: the reconciled balance \
+                     changeset was not durably stored; the lock stays \
+                     non-Consumed (Resumable) rather than pairing a \
+                     Consumed lock with stale balance rows on disk"
+                );
+                return Ok(cs);
+            }
             // Platform DID accept the top-up — propagating an Err
             // here would misreport the protocol outcome, since the
             // caller's recipient(s) already have credits attested
