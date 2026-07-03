@@ -23,6 +23,22 @@ pub enum PlatformWalletError {
     #[error("failed to load persisted client state: {0}")]
     PersisterLoad(#[from] crate::changeset::PersistenceError),
 
+    /// `load_from_persistor` finished without loading every persisted
+    /// wallet: `loaded_count` loaded and `skipped` were passed over (a
+    /// corrupt row, or one already registered). Produced only by
+    /// converting a non-`Loaded` [`LoadOutcome`] via `Result::from`; the
+    /// load call itself returns the richer [`LoadOutcome`] directly so
+    /// callers that tolerate a partial load keep the per-wallet detail.
+    ///
+    /// [`LoadOutcome`]: crate::manager::load_outcome::LoadOutcome
+    #[error("persisted wallet load incomplete: {loaded_count} loaded, {} skipped", skipped.len())]
+    LoadIncomplete {
+        /// How many wallets loaded before the skips.
+        loaded_count: usize,
+        /// The skipped `(wallet_id, reason)` set, in load order.
+        skipped: Vec<([u8; 32], crate::manager::load_outcome::SkipReason)>,
+    },
+
     /// The persisted wallet has UTXOs to restore but no funds-bearing
     /// account in its reconstructed account collection to hold them.
     /// Fail-closed rather than reconstructing a silent zero balance —

@@ -36,24 +36,31 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// # Skip vs hard-fail
     ///
-    /// - **Per-row decode/projection failure** (empty manifest, malformed
-    ///   xpub, duplicate `account_type`, …): the wallet is **skipped** —
-    ///   never inserted into `wallet_manager` / `self.wallets`, recorded
-    ///   in [`LoadOutcome::skipped`] with a structural
+    /// Returns a [`LoadOutcome`] describing the pass:
+    /// [`Loaded`](LoadOutcome::Loaded) (all wallets loaded),
+    /// [`Partial`](LoadOutcome::Partial) (some loaded, some skipped), or
+    /// [`NoneUsable`](LoadOutcome::NoneUsable) (rows present, all skipped).
+    ///
+    /// - **Per-row decode failure** (empty manifest, malformed xpub,
+    ///   snapshot/row mismatch, …): the wallet is **skipped** — never
+    ///   inserted into `wallet_manager` / `self.wallets`, recorded in the
+    ///   outcome's skip set with a structural
     ///   [`SkipReason::CorruptPersistedRow`], and
     ///   [`on_wallet_skipped_on_load`](crate::PlatformEventHandler::on_wallet_skipped_on_load)
-    ///   is called on each registered handler. One bad row
-    ///   never aborts the others; the call still returns `Ok`.
+    ///   fires on each registered handler. One bad row never aborts the
+    ///   others; the call still returns `Ok`.
+    /// - **Already present** (a repeat restore or a runtime-created
+    ///   wallet, detected either at the pre-reconstruction idempotency
+    ///   check or as `WalletExists` at insert): the wallet is **skipped**
+    ///   with [`SkipReason::AlreadyRegistered`] and left untouched — kept
+    ///   out of the rollback set so a later hard-fail never evicts it. A
+    ///   second `load_from_persistor` is therefore idempotent, and the
+    ///   caller can tell an already-present wallet from one freshly loaded.
     /// - **Whole-load failure** (persister I/O, programmer error,
     ///   registering a persisted wallet in `WalletManager`):
     ///   `Err(_)` — every wallet inserted earlier in this pass is
     ///   rolled back. Skipped wallets never entered the maps so the
     ///   rollback path never sees them.
-    /// - **Already present** (`WalletExists` from `insert_wallet`, e.g. a
-    ///   repeat restore or a runtime-created wallet): treated as
-    ///   already-satisfied — counted as loaded, left untouched, and kept
-    ///   out of the rollback set so a later hard-fail never evicts it. A
-    ///   second `load_from_persistor` is therefore idempotent.
     ///
     /// Platform-address provider state is restored per wallet via
     /// [`initialize_from_persisted`](crate::wallet::platform_addresses::PlatformAddressWallet::initialize_from_persisted),
@@ -88,7 +95,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let mut inserted_in_manager: Vec<WalletId> = Vec::new();
         let mut inserted_in_wallets: Vec<WalletId> = Vec::new();
         let mut load_error: Option<PlatformWalletError> = None;
-        let mut outcome = LoadOutcome::default();
+        let mut loaded: Vec<WalletId> = Vec::new();
+        let mut skipped: Vec<(WalletId, SkipReason)> = Vec::new();
 
         // Rows the persister rejected as corrupt before reconstruction
         // (e.g. a malformed xpub that aborts FFI decode) never reach the
@@ -97,7 +105,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         for (wallet_id, reason) in persister_skipped {
             self.event_manager
                 .on_wallet_skipped_on_load(wallet_id, &reason);
-            outcome.skipped.push((wallet_id, reason));
+            skipped.push((wallet_id, reason));
         }
 
         'load: for (expected_wallet_id, wallet_state) in wallets {
@@ -115,15 +123,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             } = wallet_state;
 
             // Idempotency, checked FIRST: a wallet already registered (a
-            // prior load pass, or a runtime create) is already-satisfied.
-            // Checking before any reconstruction work matters — the
-            // rebuild below derives eager gap windows (and possibly a
-            // deep discovery scan), all of which the `WalletExists` arm
-            // at insert time would only throw away.
+            // prior load pass, or a runtime create) is not freshly loaded
+            // by this pass — report it as an `AlreadyRegistered` skip so
+            // the caller can tell it apart from a genuine load. Checking
+            // before any reconstruction work matters — the rebuild below
+            // derives eager gap windows (and possibly a deep discovery
+            // scan), all of which the `WalletExists` arm at insert time
+            // would only throw away.
             {
                 let wm = self.wallet_manager.read().await;
                 if wm.get_wallet(&expected_wallet_id).is_some() {
-                    outcome.loaded.push(expected_wallet_id);
+                    let reason = SkipReason::AlreadyRegistered;
+                    self.event_manager
+                        .on_wallet_skipped_on_load(expected_wallet_id, &reason);
+                    skipped.push((expected_wallet_id, reason));
                     continue 'load;
                 }
             }
@@ -140,7 +153,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 Ok(w) => w,
                 Err(kind) => {
                     let reason = SkipReason::CorruptPersistedRow { kind };
-                    outcome.skipped.push((expected_wallet_id, reason.clone()));
+                    skipped.push((expected_wallet_id, reason.clone()));
                     self.event_manager
                         .on_wallet_skipped_on_load(expected_wallet_id, &reason);
                     continue 'load;
@@ -165,7 +178,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     let reason = SkipReason::CorruptPersistedRow {
                         kind: CorruptKind::SnapshotIdentityMismatch,
                     };
-                    outcome.skipped.push((expected_wallet_id, reason.clone()));
+                    skipped.push((expected_wallet_id, reason.clone()));
                     self.event_manager
                         .on_wallet_skipped_on_load(expected_wallet_id, &reason);
                     continue 'load;
@@ -212,14 +225,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 match wm.insert_wallet(wallet, platform_info) {
                     Ok(id) => id,
                     Err(key_wallet_manager::WalletError::WalletExists(_)) => {
-                        // Idempotent restore: a prior `load_from_persistor`
-                        // (or a runtime create) already registered this
-                        // wallet. Re-registering must not abort the batch —
-                        // treat it as already-satisfied: record it as loaded
-                        // and continue. It was NOT inserted by this pass, so
-                        // it stays out of the rollback set and a later
-                        // hard-fail never evicts the pre-existing wallet.
-                        outcome.loaded.push(expected_wallet_id);
+                        // Idempotent restore, lost the insert race: a
+                        // concurrent pass (or a runtime create) registered
+                        // this wallet after our pre-reconstruction check.
+                        // Re-registering must not abort the batch — record
+                        // it as an `AlreadyRegistered` skip and continue. It
+                        // was NOT inserted by this pass, so it stays out of
+                        // the rollback set and a later hard-fail never evicts
+                        // the pre-existing wallet.
+                        let reason = SkipReason::AlreadyRegistered;
+                        self.event_manager
+                            .on_wallet_skipped_on_load(expected_wallet_id, &reason);
+                        skipped.push((expected_wallet_id, reason));
                         continue 'load;
                     }
                     Err(e) => {
@@ -267,7 +284,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             wallets_guard.insert(wallet_id, platform_wallet);
             drop(wallets_guard);
             inserted_in_wallets.push(wallet_id);
-            outcome.loaded.push(wallet_id);
+            loaded.push(wallet_id);
         }
 
         if let Some(err) = load_error {
@@ -286,7 +303,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             return Err(err);
         }
 
-        Ok(outcome)
+        Ok(LoadOutcome::from_parts(loaded, skipped))
     }
 }
 

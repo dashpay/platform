@@ -32,7 +32,7 @@ use platform_wallet::error::PlatformWalletError;
 use platform_wallet::events::{EventHandler, PlatformEventHandler};
 use platform_wallet::manager::load_outcome::CorruptKind;
 use platform_wallet::wallet::platform_wallet::WalletId;
-use platform_wallet::{PlatformWalletManager, SkipReason};
+use platform_wallet::{LoadOutcome, PlatformWalletManager, SkipReason};
 
 // ---- test doubles ----
 
@@ -208,8 +208,8 @@ async fn rt_wo_watch_only_roundtrip() {
     let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
     let outcome = mgr.load_from_persistor().await.expect("Ok");
 
-    assert_eq!(outcome.loaded, vec![id]);
-    assert!(outcome.skipped.is_empty());
+    assert_eq!(outcome.loaded(), vec![id].as_slice());
+    assert!(outcome.skipped().is_empty());
     assert!(
         mgr.get_wallet(&id).await.is_some(),
         "watch-only restored wallet must be registered"
@@ -219,9 +219,9 @@ async fn rt_wo_watch_only_roundtrip() {
 
 /// RT-Idem: a second `load_from_persistor` with the wallet already
 /// registered (a repeat restore, or a wallet created at runtime) must be
-/// idempotent. `WalletExists` from `insert_wallet` is treated as
-/// already-satisfied — counted as loaded — not a fatal `WalletCreation`
-/// that aborts the whole batch.
+/// idempotent — never a hard error. The already-present wallet is
+/// reported as an `AlreadyRegistered` skip (not a fresh load), so the
+/// caller can tell it apart from one this pass genuinely loaded.
 #[tokio::test]
 async fn rt_idempotent_repeat_restore() {
     let seed = [0x55; 64];
@@ -235,21 +235,31 @@ async fn rt_idempotent_repeat_restore() {
     let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
 
     let first = mgr.load_from_persistor().await.expect("first load Ok");
-    assert_eq!(first.loaded, vec![id]);
-    assert!(first.skipped.is_empty());
+    assert_eq!(first.loaded(), vec![id].as_slice());
+    assert!(first.skipped().is_empty());
+    assert!(
+        matches!(first, LoadOutcome::Loaded { .. }),
+        "a clean first load is the Loaded variant"
+    );
 
-    // Second load: the wallet is already registered. Must NOT hard-error.
+    // Second load: the wallet is already registered. Must NOT hard-error;
+    // the row is reported as an AlreadyRegistered skip, not freshly loaded.
     let second = mgr
         .load_from_persistor()
         .await
         .expect("repeat load must be idempotent, not a hard error");
     assert!(
-        second.loaded.contains(&id),
-        "already-present wallet is reported loaded (already-satisfied)"
+        !second.loaded().contains(&id),
+        "an already-registered wallet is not reported as freshly loaded"
+    );
+    assert_eq!(
+        second.skipped(),
+        [(id, SkipReason::AlreadyRegistered)].as_slice(),
+        "the already-present wallet surfaces as an AlreadyRegistered skip"
     );
     assert!(
-        second.skipped.is_empty(),
-        "an idempotent re-load is not a skip"
+        matches!(second, LoadOutcome::NoneUsable { .. }),
+        "nothing freshly loaded on the repeat pass"
     );
     assert!(
         mgr.get_wallet(&id).await.is_some(),
@@ -288,12 +298,12 @@ async fn rt_persister_skipped_folds_into_outcome() {
         .expect("Ok despite a persister-rejected row");
 
     assert!(
-        outcome.loaded.contains(&id_ok),
+        outcome.loaded().contains(&id_ok),
         "healthy wallet still loads"
     );
-    assert!(!outcome.loaded.contains(&bad_id));
-    assert_eq!(outcome.skipped.len(), 1, "the rejected row surfaces once");
-    assert_eq!(outcome.skipped[0], (bad_id, reason.clone()));
+    assert!(!outcome.loaded().contains(&bad_id));
+    assert_eq!(outcome.skipped().len(), 1, "the rejected row surfaces once");
+    assert_eq!(outcome.skipped()[0], (bad_id, reason.clone()));
     assert!(mgr.get_wallet(&id_ok).await.is_some());
     assert!(
         mgr.get_wallet(&bad_id).await.is_none(),
@@ -334,10 +344,13 @@ async fn rt_corrupt_row_skipped_and_other_loads() {
         .await
         .expect("Ok despite per-row skip");
 
-    assert!(outcome.loaded.contains(&id_a), "A loads fully");
-    assert!(!outcome.loaded.contains(&id_b), "B is skipped, not loaded");
-    assert_eq!(outcome.skipped.len(), 1);
-    let (skipped_id, skipped_reason) = &outcome.skipped[0];
+    assert!(outcome.loaded().contains(&id_a), "A loads fully");
+    assert!(
+        !outcome.loaded().contains(&id_b),
+        "B is skipped, not loaded"
+    );
+    assert_eq!(outcome.skipped().len(), 1);
+    let (skipped_id, skipped_reason) = &outcome.skipped()[0];
     assert_eq!(*skipped_id, id_b);
     assert!(matches!(
         skipped_reason,
@@ -389,7 +402,7 @@ async fn rt_z_secret_hygiene_surfaces() {
     // 0xAB seed bytes must not appear hex-rendered anywhere.
     assert!(!dbg.to_lowercase().contains(&"ab".repeat(10)));
     // The structural skip reason renders without any row bytes.
-    for (_, reason) in &outcome.skipped {
+    for (_, reason) in outcome.skipped() {
         let rendered = format!("{reason} {reason:?}");
         assert!(!rendered.to_lowercase().contains(&"ab".repeat(10)));
     }
@@ -529,8 +542,8 @@ async fn rt_snapshot_preserves_attribution_and_pools() {
 
     let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
     let outcome = mgr.load_from_persistor().await.expect("Ok");
-    assert_eq!(outcome.loaded, vec![id]);
-    assert!(outcome.skipped.is_empty());
+    assert_eq!(outcome.loaded(), vec![id].as_slice());
+    assert!(outcome.skipped().is_empty());
 
     let rows = {
         let mgr = Arc::clone(&mgr);
@@ -589,9 +602,9 @@ async fn rt_snapshot_wallet_id_mismatch_is_skipped() {
     let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
     let outcome = mgr.load_from_persistor().await.expect("Ok");
 
-    assert!(outcome.loaded.is_empty(), "mismatched row must not load");
-    assert_eq!(outcome.skipped.len(), 1);
-    let (skipped_id, reason) = &outcome.skipped[0];
+    assert!(outcome.loaded().is_empty(), "mismatched row must not load");
+    assert_eq!(outcome.skipped().len(), 1);
+    let (skipped_id, reason) = &outcome.skipped()[0];
     assert_eq!(*skipped_id, id_a);
     assert!(matches!(
         reason,
@@ -644,11 +657,11 @@ async fn rt_snapshot_account_set_mismatch_is_skipped() {
     let outcome = mgr.load_from_persistor().await.expect("Ok");
 
     assert!(
-        outcome.loaded.is_empty(),
+        outcome.loaded().is_empty(),
         "account-set mismatch must not load"
     );
-    assert_eq!(outcome.skipped.len(), 1);
-    let (skipped_id, reason) = &outcome.skipped[0];
+    assert_eq!(outcome.skipped().len(), 1);
+    let (skipped_id, reason) = &outcome.skipped()[0];
     assert_eq!(*skipped_id, id_a);
     assert!(matches!(
         reason,
@@ -707,9 +720,13 @@ async fn rt_snapshot_mismatch_skip_coexists_with_healthy_load() {
         .await
         .expect("Ok despite the per-row snapshot mismatch");
 
-    assert_eq!(outcome.loaded, vec![id_ok], "only the healthy row loads");
-    assert_eq!(outcome.skipped.len(), 1);
-    let (skipped_id, reason) = &outcome.skipped[0];
+    assert_eq!(
+        outcome.loaded(),
+        vec![id_ok].as_slice(),
+        "only the healthy row loads"
+    );
+    assert_eq!(outcome.skipped().len(), 1);
+    let (skipped_id, reason) = &outcome.skipped()[0];
     assert_eq!(*skipped_id, id_bad);
     assert!(matches!(
         reason,
