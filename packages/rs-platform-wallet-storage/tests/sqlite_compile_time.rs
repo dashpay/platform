@@ -77,6 +77,12 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "accounts.rs",
         "SELECT account_type, account_index, key_class, user_identity_id, friend_identity_id,",
     ),
+    // Manifest-integrity read paths: verify recompute + backfill NULL scan.
+    (
+        "accounts.rs",
+        "SELECT length(account_xpub_bytes), account_xpub_bytes, checksum",
+    ),
+    ("accounts.rs", "SELECT rowid, wallet_id, account_xpub_bytes"),
     (
         "core_state.rs",
         "SELECT length(record_blob), record_blob FROM core_transactions",

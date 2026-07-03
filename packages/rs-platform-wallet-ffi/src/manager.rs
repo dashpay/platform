@@ -183,6 +183,10 @@ pub const LOAD_SKIP_REASON_MALFORMED_XPUB: u32 = 101;
 /// `reason_code`: any other structural decode / projection failure on
 /// the persisted row.
 pub const LOAD_SKIP_REASON_DECODE_ERROR: u32 = 102;
+/// `reason_code`: a persisted account-manifest row failed its integrity
+/// checksum (`SHA-256(wallet_id ‖ account_xpub_bytes)` mismatch — a row
+/// bound to the wrong wallet or a blob mutated in place).
+pub const LOAD_SKIP_REASON_MANIFEST_INTEGRITY_MISMATCH: u32 = 103;
 /// `reason_code`: an unrecognized `CorruptKind` — forward-compat
 /// fallback until this crate maps a newly added corrupt-row family.
 pub const LOAD_SKIP_REASON_CORRUPT_OTHER: u32 = 199;
@@ -203,6 +207,7 @@ pub struct SkippedWalletFFI {
     /// constants: [`LOAD_SKIP_REASON_MISSING_MANIFEST`] (100),
     /// [`LOAD_SKIP_REASON_MALFORMED_XPUB`] (101),
     /// [`LOAD_SKIP_REASON_DECODE_ERROR`] (102),
+    /// [`LOAD_SKIP_REASON_MANIFEST_INTEGRITY_MISMATCH`] (103),
     /// [`LOAD_SKIP_REASON_CORRUPT_OTHER`] (199), or
     /// [`LOAD_SKIP_REASON_OTHER`] (200). No secret material is ever
     /// carried.
@@ -235,6 +240,7 @@ fn skip_reason_code(reason: &platform_wallet::SkipReason) -> u32 {
             CorruptKind::MissingManifest => LOAD_SKIP_REASON_MISSING_MANIFEST,
             CorruptKind::MalformedXpub => LOAD_SKIP_REASON_MALFORMED_XPUB,
             CorruptKind::DecodeError(_) => LOAD_SKIP_REASON_DECODE_ERROR,
+            CorruptKind::ManifestIntegrityMismatch => LOAD_SKIP_REASON_MANIFEST_INTEGRITY_MISMATCH,
             // `CorruptKind` is #[non_exhaustive]; a future variant maps to a
             // generic corrupt-row code until this mapping is extended.
             _ => LOAD_SKIP_REASON_CORRUPT_OTHER,
@@ -587,6 +593,7 @@ mod tests {
         assert_eq!(LOAD_SKIP_REASON_MISSING_MANIFEST, 100);
         assert_eq!(LOAD_SKIP_REASON_MALFORMED_XPUB, 101);
         assert_eq!(LOAD_SKIP_REASON_DECODE_ERROR, 102);
+        assert_eq!(LOAD_SKIP_REASON_MANIFEST_INTEGRITY_MISMATCH, 103);
         assert_eq!(LOAD_SKIP_REASON_CORRUPT_OTHER, 199);
         assert_eq!(LOAD_SKIP_REASON_OTHER, 200);
     }
@@ -608,6 +615,10 @@ mod tests {
         assert_eq!(
             skip_reason_code(&corrupt(CorruptKind::DecodeError("boom".into()))),
             LOAD_SKIP_REASON_DECODE_ERROR
+        );
+        assert_eq!(
+            skip_reason_code(&corrupt(CorruptKind::ManifestIntegrityMismatch)),
+            LOAD_SKIP_REASON_MANIFEST_INTEGRITY_MISMATCH
         );
     }
 
