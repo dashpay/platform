@@ -968,6 +968,9 @@ impl PlatformWalletPersistence for SqlitePersister {
                     network,
                     birth_height,
                     account_manifest,
+                    // SQLite rehydration replays the keyless projection onto a
+                    // fresh skeleton; it mints no full snapshot.
+                    core_wallet_info: None,
                     core_state,
                     identity_manager,
                     unused_asset_locks,
