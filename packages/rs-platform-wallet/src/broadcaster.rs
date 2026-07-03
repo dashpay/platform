@@ -22,11 +22,12 @@ use crate::spv::SpvRuntime;
 pub trait TransactionBroadcaster: Send + Sync {
     /// Error contract:
     /// [`TransactionBroadcast`](PlatformWalletError::TransactionBroadcast) and
-    /// [`SpvError`](PlatformWalletError::SpvError) mean the submission was
-    /// rejected pre-send — the network never accepted the transaction — so
-    /// callers may release its reserved inputs and retry. Any other `Err` is
-    /// ambiguous: the transaction may already have been accepted, so callers
-    /// must keep the reservation rather than risk a double-spend on retry.
+    /// [`SpvError`](PlatformWalletError::SpvError) are treated as observed
+    /// pre-send rejections: callers may release reserved inputs and retry.
+    /// Implementations must not use these variants for ambiguous transport
+    /// failures where the transaction may already have reached the network.
+    /// Any other `Err` is ambiguous, so callers must keep the reservation
+    /// rather than risk a double-spend on retry.
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, PlatformWalletError>;
 }
 
