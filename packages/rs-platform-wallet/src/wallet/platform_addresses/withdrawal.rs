@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
@@ -13,6 +13,8 @@ use super::InputSelection;
 use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFunds;
+use dash_sdk::platform::FetchMany;
+use dash_sdk::query_types::AddressInfo;
 
 /// The fully-planned shape of an AUTO withdrawal, computed by
 /// [`PlatformAddressWallet::plan_withdrawal`] without any signing, broadcast,
@@ -27,11 +29,21 @@ use dash_sdk::platform::transition::address_credit_withdrawal::WithdrawAddressFu
 /// path can never drift — there is no second, parallel fee/min computation to
 /// fall out of sync with the protocol version.
 ///
-/// Constructing a plan is a pure, in-memory computation over the account's
-/// cached balances and the active platform version; it does **not** touch the
-/// Core receive pool (the fee estimate depends only on the input/output
-/// *counts*, not on any destination script), so a preflight can be run on
-/// every input change without burning a receive address.
+/// Every per-input amount in [`inputs`](Self::inputs) is sized from the
+/// address's **authoritative on-chain balance** — the value
+/// [`plan_withdrawal`](PlatformAddressWallet::plan_withdrawal) fetches with
+/// `AddressInfo::fetch_many`, which is the SAME balance the spend path
+/// re-fetches and hard-checks in `fetch_inputs_with_nonce` before signing.
+/// The plan is therefore never built from the wallet's cached
+/// `address_credit_balance` (which a stale or racing sync could double or lag
+/// behind chain), so a preflight can never approve — nor the AUTO spend
+/// select — an input amount that exceeds what the address actually holds,
+/// which would otherwise fail with `AddressNotEnoughFundsError`.
+///
+/// Constructing a plan issues one `fetch_many` proof query over the account's
+/// funded addresses; it does **not** touch the Core receive pool (the fee
+/// estimate depends only on the input/output *counts*, not on any destination
+/// script), so a preflight can be run without burning a receive address.
 #[derive(Debug, Clone)]
 pub struct WithdrawalPlan {
     /// The adjusted **withdraw-amount** map: each chosen input address mapped
@@ -187,6 +199,11 @@ impl PlatformAddressWallet {
     /// **current** platform version, without signing, broadcasting, or
     /// touching the Core receive pool.
     ///
+    /// Issues one `AddressInfo::fetch_many` proof query to read the account's
+    /// authoritative on-chain balances (see
+    /// [`plan_withdrawal`](Self::plan_withdrawal)); it does not sign,
+    /// broadcast, or consume a receive address.
+    ///
     /// This is the public preflight entry point: it resolves the version from
     /// the wallet's SDK (the same network-floored, protocol-version-tracking
     /// source the real spend runs under) and delegates to
@@ -215,6 +232,24 @@ impl PlatformAddressWallet {
     /// withdrawal amount — the complete planning phase shared by the UI
     /// preflight and the real `withdraw(...)` spend path. NO signing,
     /// broadcast, or receive-address consumption happens here.
+    ///
+    /// # Balance source: on-chain, not the cache
+    ///
+    /// The account's derived address pool supplies the *set* of candidate
+    /// addresses, but every candidate's **balance** is read from an
+    /// `AddressInfo::fetch_many` proof query — the SAME authoritative value
+    /// the spend path re-fetches in `fetch_inputs_with_nonce` and hard-checks
+    /// with `ensure_address_balance` before signing. The wallet's cached
+    /// `address_credit_balance` is deliberately NOT used to size inputs: a
+    /// stale cache (lagging the chain) or a doubled cache (a sync/reconcile
+    /// race writing a balance larger than reality) would let the planner
+    /// select an input amount the spend path then rejects with
+    /// `AddressNotEnoughFundsError` (the account's balance looked fundable in
+    /// preflight, but the per-input on-chain balance was short). Sizing the
+    /// plan from the same on-chain truth the spend fetches is what makes the
+    /// "single source of truth" guarantee hold even when the cache is wrong.
+    /// Addresses the proof reports as absent or missing (no on-chain balance)
+    /// are treated as zero and filtered out as dust.
     ///
     /// Only addresses whose balance reaches `min_input_amount` are selected:
     /// DPP's `AddressCreditWithdrawalTransition` v0 validator rejects the
@@ -259,41 +294,68 @@ impl PlatformAddressWallet {
         account_index: u32,
         platform_version: &PlatformVersion,
     ) -> Result<WithdrawalPlan, PlatformWalletError> {
-        let wm = self.wallet_manager.read().await;
-        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-            PlatformWalletError::WalletNotFound(format!(
-                "Wallet {:?} not found in wallet manager",
-                hex::encode(self.wallet_id)
-            ))
-        })?;
-
-        let account = info
-            .core_wallet
-            .platform_payment_managed_account_at_index(account_index)
-            .ok_or_else(|| {
-                PlatformWalletError::AddressSync(format!(
-                    "No platform payment account at index {}",
-                    account_index
+        // Enumerate the account's derived addresses to get the candidate SET.
+        // Balances are read from the chain below, NOT from the account cache —
+        // the cache only tells us *which* addresses belong to this account.
+        // Drop the read lock before the network fetch so a concurrent sync /
+        // reconcile can't be blocked behind a proof round-trip.
+        let candidate_addresses: BTreeSet<PlatformAddress> = {
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(format!(
+                    "Wallet {:?} not found in wallet manager",
+                    hex::encode(self.wallet_id)
                 ))
             })?;
+
+            let account = info
+                .core_wallet
+                .platform_payment_managed_account_at_index(account_index)
+                .ok_or_else(|| {
+                    PlatformWalletError::AddressSync(format!(
+                        "No platform payment account at index {}",
+                        account_index
+                    ))
+                })?;
+
+            account
+                .addresses
+                .addresses
+                .values()
+                .filter_map(|addr_info| {
+                    PlatformP2PKHAddress::from_address(&addr_info.address)
+                        .ok()
+                        .map(|p2pkh| PlatformAddress::P2pkh(p2pkh.to_bytes()))
+                })
+                .collect()
+        };
+
+        if candidate_addresses.is_empty() {
+            return Err(PlatformWalletError::AddressOperation(
+                "No funded addresses available for withdrawal".to_string(),
+            ));
+        }
+
+        // Read the authoritative on-chain balance for each candidate. This is
+        // the exact query the spend path runs in `fetch_inputs_with_nonce`
+        // (`AddressInfo::fetch_many` over a `BTreeSet<PlatformAddress>`), so
+        // the amounts the plan reserves per input match what the spend will
+        // re-fetch and hard-check — a stale or doubled cache can no longer
+        // make the planner over-request. An address the proof reports as
+        // absent / missing (`None`) has no on-chain balance and maps to 0,
+        // which the dust filter then drops.
+        let on_chain: dash_sdk::query_types::AddressInfos =
+            AddressInfo::fetch_many(self.sdk.as_ref(), candidate_addresses).await?;
 
         // Collect every funded address's (PlatformAddress, on-chain balance)
         // pair, then let the helper apply the per-input-minimum filter and
         // classify the dust-only case. Keeping the filter in a free function
         // mirrors the transfer path and makes the dust policy unit-testable
         // without a live wallet.
-        let funded = account
-            .addresses
-            .addresses
-            .values()
-            .filter_map(|addr_info| {
-                PlatformP2PKHAddress::from_address(&addr_info.address)
-                    .ok()
-                    .map(|p2pkh| {
-                        let balance = account.address_credit_balance(&p2pkh);
-                        (PlatformAddress::P2pkh(p2pkh.to_bytes()), balance)
-                    })
-            });
+        let funded = on_chain.into_iter().map(|(address, info)| {
+            let balance = info.map(|i| i.balance).unwrap_or(0);
+            (address, balance)
+        });
 
         let selected = select_withdrawable_inputs(funded, platform_version)?;
 
@@ -985,5 +1047,178 @@ mod tests {
             matches!(err, PlatformWalletError::AddressOperation(_)),
             "no-funds case is the generic error, not OnlyDustInputs"
         );
+    }
+
+    // ---- ADDR-04 spendability regression ------------------------------------
+    //
+    // The withdrawal that fails at spend time does so because an input's
+    // planned withdraw amount exceeds the address's on-chain balance, so the
+    // spend path's `ensure_address_balance(on_chain, requested)` throws
+    // `AddressNotEnoughFundsError`. The planner math itself never over-
+    // requests: a non-fee-source input is planned at exactly its balance and
+    // the fee-source input at `balance − fee`. These tests pin that invariant
+    // — "every per-input requested amount ≤ that input's balance" — so a
+    // future change to `reserve_withdrawal_fee_on_largest_input` can't
+    // reintroduce an over-request. The doubled-balance ADDR-04 repro was a
+    // WRONG INPUT to this function (a stale/doubled cached balance was passed
+    // in); `plan_withdrawal` now sources balances from the same on-chain
+    // `AddressInfo::fetch_many` proof the spend re-checks, so the values fed
+    // here are the authoritative ones.
+
+    /// Assert the plan is spendable: for every input, the planned withdraw
+    /// amount is ≤ the balance that input was selected with. `balances` maps
+    /// each address to the full balance passed into
+    /// `reserve_withdrawal_fee_on_largest_input`.
+    fn assert_plan_spendable(plan: &WithdrawalPlan, balances: &BTreeMap<PlatformAddress, Credits>) {
+        for (addr, &requested) in plan.inputs.iter() {
+            let balance = balances
+                .get(addr)
+                .copied()
+                .expect("every planned input was among the selected balances");
+            assert!(
+                requested <= balance,
+                "planned withdraw amount {requested} for {addr} exceeds its balance \
+                 {balance} — the spend path would reject this with \
+                 AddressNotEnoughFundsError",
+            );
+        }
+    }
+
+    /// Mandated multi-input plan test: one input sits at *exactly*
+    /// `min_input_amount` (the smallest a withdrawable input can be) alongside
+    /// a comfortably larger fee-source input. The plan must:
+    ///   * withdraw the exactly-minimum input at its FULL balance (never
+    ///     doubled, never more than it holds),
+    ///   * reserve the fee on the larger input (`balance − fee`),
+    ///   * be spendable: every per-input requested amount ≤ that input's
+    ///     balance.
+    #[test]
+    fn plan_min_input_amount_input_is_spendable_at_full_balance() {
+        let pv = PlatformVersion::latest();
+        let fee = estimated_fee(2, pv);
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+
+        // The exactly-minimum input, and a larger fee-source input that can
+        // absorb the fee while clearing every minimum.
+        let min_amount = min_input;
+        let large = fee + dpp::dash_to_credits!(1.0);
+
+        let mut balances = BTreeMap::new();
+        balances.insert(addr(1), min_amount); // lex-smallest, exactly the minimum
+        balances.insert(addr(9), large); // larger → fee source
+
+        let plan = reserve_withdrawal_fee_on_largest_input(balances.clone(), pv)
+            .expect("an exactly-minimum input beside a fundable fee source must plan");
+
+        // The exactly-minimum input is withdrawn at its FULL balance — not
+        // reduced (it isn't the fee source) and never doubled.
+        assert_eq!(
+            plan.inputs.get(&addr(1)).copied(),
+            Some(min_amount),
+            "the exactly-min_input_amount input is planned at its full balance"
+        );
+        // The fee is reserved on the larger input.
+        assert_eq!(
+            plan.inputs.get(&addr(9)).copied(),
+            Some(large - fee),
+            "the fee is reserved on the larger fee-source input"
+        );
+        assert_eq!(
+            plan.fee_strategy,
+            vec![AddressFundsFeeStrategyStep::DeductFromInput(1)],
+            "the emitted DeductFromInput index points at the larger input (BTreeMap index 1)"
+        );
+        assert_eq!(plan.estimated_fee, fee);
+        assert_eq!(plan.net_withdrawable, min_amount + large - fee);
+
+        // Core spendability invariant: nothing is requested beyond balance.
+        assert_plan_spendable(&plan, &balances);
+    }
+
+    /// ADDR-04 shape regression: the recipient of a prior small transfer holds
+    /// exactly 100_000_000 credits and is a NON-fee-source input beside the
+    /// large origin address that pays the fee. The recipient input must be
+    /// planned at exactly 100_000_000 — the bug reserved a *doubled*
+    /// 200_000_000 (its balance had been cached at 2× reality), which the
+    /// spend path rejected because on-chain it only held 100_000_000. With the
+    /// correct balance fed in, the plan requests exactly the balance and is
+    /// spendable.
+    #[test]
+    fn plan_does_not_over_request_small_recipient_input() {
+        let pv = PlatformVersion::latest();
+        let fee = estimated_fee(2, pv);
+
+        // Addr#1: the ADDR-02 transfer recipient, 0.001 DASH.
+        let recipient_balance: Credits = 100_000_000;
+        // Addr#0: the topped-up origin, comfortably the largest → fee source.
+        let origin_balance = fee + dpp::dash_to_credits!(0.0488);
+
+        let mut balances = BTreeMap::new();
+        balances.insert(addr(1), recipient_balance);
+        balances.insert(addr(9), origin_balance);
+
+        let plan = reserve_withdrawal_fee_on_largest_input(balances.clone(), pv)
+            .expect("both inputs clear the minimums and the origin absorbs the fee");
+
+        assert_eq!(
+            plan.inputs.get(&addr(1)).copied(),
+            Some(recipient_balance),
+            "the recipient input is planned at its true balance, never doubled"
+        );
+        assert_ne!(
+            plan.inputs.get(&addr(1)).copied(),
+            Some(recipient_balance * 2),
+            "the recipient input must NOT be planned at 2x its balance (ADDR-04)"
+        );
+        assert_eq!(
+            plan.inputs.get(&addr(9)).copied(),
+            Some(origin_balance - fee),
+            "the origin (fee source) keeps fee headroom"
+        );
+
+        // Every input is spendable against its balance — the exact property
+        // the spend path's `ensure_address_balance` enforces.
+        assert_plan_spendable(&plan, &balances);
+    }
+
+    /// Generalised spendability: across a mix of input sizes, EVERY planned
+    /// per-input amount stays ≤ that input's balance, and only the fee-source
+    /// input is reduced (by exactly the fee). This is the invariant that keeps
+    /// the preflight/plan from ever approving what the spend rejects, provided
+    /// the balances fed in are the on-chain truth (which `plan_withdrawal` now
+    /// guarantees by fetching them).
+    #[test]
+    fn plan_every_input_is_spendable_and_only_fee_source_is_reduced() {
+        let pv = PlatformVersion::latest();
+        let fee = estimated_fee(4, pv);
+
+        let mut balances = BTreeMap::new();
+        balances.insert(addr(1), dpp::dash_to_credits!(0.01));
+        balances.insert(addr(4), dpp::dash_to_credits!(0.05));
+        balances.insert(addr(7), dpp::dash_to_credits!(5.0)); // largest → fee source
+        balances.insert(addr(9), dpp::dash_to_credits!(0.02));
+
+        let plan = reserve_withdrawal_fee_on_largest_input(balances.clone(), pv)
+            .expect("a spread of fundable inputs must plan");
+
+        assert_plan_spendable(&plan, &balances);
+
+        // The fee source (addr(7), the largest) is the only reduced input.
+        let fee_source = addr(7);
+        for (addr, &requested) in plan.inputs.iter() {
+            let balance = balances[addr];
+            if *addr == fee_source {
+                assert_eq!(
+                    requested,
+                    balance - fee,
+                    "the fee source is reduced by exactly the fee"
+                );
+            } else {
+                assert_eq!(
+                    requested, balance,
+                    "a non-fee-source input is withdrawn at its full balance"
+                );
+            }
+        }
     }
 }

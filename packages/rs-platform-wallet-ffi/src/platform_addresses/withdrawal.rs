@@ -11,7 +11,7 @@ use rs_sdk_ffi::{SignerHandle, VTableSigner};
 use std::os::raw::c_char;
 use std::str::FromStr;
 
-use super::{parse_input_selection, runtime};
+use super::parse_input_selection;
 use crate::runtime::block_on_worker;
 
 /// Withdraw platform credits to a Core L1 address.
@@ -202,12 +202,16 @@ pub unsafe extern "C" fn platform_address_wallet_withdraw_to_address(
 ///
 /// Runs the same Rust planning phase the real withdraw path executes
 /// (`PlatformAddressWallet::preflight_withdrawal` →
-/// `plan_withdrawal`/`reserve_withdrawal_fee_on_largest_input`): it drops
+/// `plan_withdrawal`/`reserve_withdrawal_fee_on_largest_input`): it reads the
+/// account's authoritative on-chain balances (one `AddressInfo::fetch_many`
+/// proof query — the SAME balances the spend re-fetches and hard-checks), drops
 /// sub-`min_input_amount` dust, estimates the transition fee from the selected
 /// input count (NOT from any destination script — no Core address is needed or
 /// touched), reserves that fee on the largest-balance input, and verifies the
-/// net clears `system_limits.min_withdrawal_amount`. Gating a UI submit button
-/// on the result keeps it in lockstep with what the spend path will accept.
+/// net clears `system_limits.min_withdrawal_amount`. Because the plan is sized
+/// from on-chain balances rather than the wallet cache, gating a UI submit
+/// button on the result keeps it in lockstep with what the spend path accepts
+/// even when the cached balance is stale or doubled.
 ///
 /// On success `out` is written with `can_withdraw = true` and the net /
 /// estimated-fee figures, and the call returns [`PlatformWalletFFIResult::ok`].
@@ -239,11 +243,17 @@ pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out);
 
-    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
-        runtime().block_on(wallet.preflight_withdrawal(account_index))
-    });
-    // `None` → invalid handle (mapped to NotFound by the blanket Option impl).
-    let result = unwrap_option_or_return!(option);
+    // Clone the wallet out of handle storage so the read lock is released
+    // before the fetch, then poll on a worker thread (8 MB stack). The
+    // preflight now issues an `AddressInfo::fetch_many` proof query to read
+    // authoritative on-chain balances (so the gate can't approve what the
+    // spend rejects), and GroveDB proof verification recurses past the
+    // ~512 KB stacks of iOS dispatch / Swift-concurrency threads (see
+    // runtime.rs) — polling it on the calling thread would crash with
+    // EXC_BAD_ACCESS, the same reason the withdraw path uses the worker.
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| wallet.clone());
+    let wallet = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move { wallet.preflight_withdrawal(account_index).await });
 
     match result {
         Ok(plan) => {
