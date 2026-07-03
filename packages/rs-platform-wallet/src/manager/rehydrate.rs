@@ -36,16 +36,26 @@ use crate::manager::load_outcome::CorruptKind;
 ///
 /// # Trust boundary
 ///
-/// `expected_wallet_id` is stamped in verbatim and is **not** cryptographically
-/// bound to the manifest: the id hashes the *root* xpub, but only account-level
-/// (hardened, one-way) xpubs are persisted, so the root cannot be recovered to
-/// re-derive and verify it. Only structural decode runs here, so a well-formed
-/// but wrong xpub (corrupted/tampered store) is accepted and yields receive
-/// addresses from the wrong key under the original id — the caller must ensure
-/// the persisted manifest for `expected_wallet_id` is authentic. A real binding
-/// (a MAC/commitment over `{wallet_id, network, manifest}` keyed to a
-/// secure-enclave secret, verified fail-closed on load) needs a storage-schema
-/// change and is tracked as a follow-up.
+/// `expected_wallet_id` is stamped onto the reconstructed [`Wallet`]
+/// verbatim and is **not** cryptographically bound to the manifest: the
+/// id hashes the *root* xpub, but only account-level (hardened, one-way)
+/// xpubs are persisted, so the root cannot be recovered here to re-derive
+/// and verify the id. Only a structural decode runs, so a well-formed but
+/// **wrong** `account_xpub` is accepted.
+///
+/// Concretely, the attack this leaves open: an attacker who can write to
+/// the backing store (or a malicious/rolled-back backup restored into it)
+/// substitutes a valid xpub of their own for a wallet's `account_xpub`,
+/// leaving `expected_wallet_id` unchanged. The wallet is rebuilt under the
+/// original id but now derives its receive addresses from the attacker's
+/// key, so future incoming funds are silently redirected — the id looks
+/// unchanged to the user while the money flows elsewhere. This crate
+/// **does not** defend against it: closing the gap requires the storage
+/// layer to authenticate the manifest (a persisted commitment/MAC over
+/// `{wallet_id, network, manifest}`, verified fail-closed on load), which
+/// is a storage-schema change tracked in the `platform-wallet-storage`
+/// crate. See the trust-boundary note on
+/// [`PlatformWalletPersistence::load`](crate::changeset::PlatformWalletPersistence::load).
 pub(super) fn build_watch_only_wallet(
     network: Network,
     expected_wallet_id: [u8; 32],
