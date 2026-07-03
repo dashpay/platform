@@ -20,6 +20,8 @@ use crate::spv::SpvRuntime;
 /// Implementations may use DAPI (gRPC), SPV (P2P peers), or Core RPC.
 #[async_trait]
 pub trait TransactionBroadcaster: Send + Sync {
+    /// Contract: `Err` must mean the transaction was **not** accepted by the
+    /// network, so callers may safely release its reserved inputs and retry.
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, PlatformWalletError>;
 }
 
