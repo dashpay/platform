@@ -5,40 +5,23 @@ use key_wallet::account::StandardAccountType;
 use key_wallet::managed_account::address_pool::AddressPoolType;
 use key_wallet::Network;
 
-use crate::manager::load_outcome::CorruptKind;
-
-/// Per-row failure surfacing during watch-only rehydration of a single
-/// persisted wallet. Maps 1:1 to [`CorruptKind`] for the
-/// [`SkipReason`](crate::manager::load_outcome::SkipReason) the load loop
-/// records.
-#[derive(Debug)]
-pub(crate) enum RehydrateRowError {
-    /// Manifest was empty — no account to rebuild the wallet around.
-    MissingManifest,
-    /// Building a watch-only [`Account`](key_wallet::account::Account) from a
-    /// manifest entry failed (xpub structurally malformed for its
-    /// [`AccountType`](key_wallet::account::AccountType)).
-    MalformedXpub,
-    /// `AccountCollection::insert` rejected an account (typically a
-    /// duplicate `account_type` within the manifest).
-    DecodeError(String),
-}
-
-impl From<RehydrateRowError> for CorruptKind {
-    fn from(e: RehydrateRowError) -> Self {
-        match e {
-            RehydrateRowError::MissingManifest => CorruptKind::MissingManifest,
-            RehydrateRowError::MalformedXpub => CorruptKind::MalformedXpub,
-            RehydrateRowError::DecodeError(s) => CorruptKind::DecodeError(s),
-        }
-    }
-}
-
 /// Errors that can occur in platform wallet operations
 #[derive(Debug, thiserror::Error)]
 pub enum PlatformWalletError {
     #[error("Wallet creation failed: {0}")]
     WalletCreation(String),
+
+    /// The persister failed to load the client start state during
+    /// rehydration. Carries the typed [`PersistenceError`] so callers keep
+    /// its retry classification (`is_transient()` /
+    /// [`PersistenceErrorKind`]) instead of a flattened string — a
+    /// transient backend hiccup (e.g. `SQLITE_BUSY`) stays distinguishable
+    /// from a permanent failure and can be retried.
+    ///
+    /// [`PersistenceError`]: crate::changeset::PersistenceError
+    /// [`PersistenceErrorKind`]: crate::changeset::PersistenceErrorKind
+    #[error("failed to load persisted client state: {0}")]
+    PersisterLoad(#[from] crate::changeset::PersistenceError),
 
     /// The persisted wallet has UTXOs to restore but no funds-bearing
     /// account in its reconstructed account collection to hold them.

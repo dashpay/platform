@@ -42,6 +42,14 @@ pub enum CorruptKind {
     /// One or more manifest `account_xpub` bytes failed to parse as a
     /// well-formed extended public key.
     MalformedXpub,
+    /// The carried [`ManagedWalletInfo`] snapshot does not describe the
+    /// persisted row it is attached to: its `wallet_id`/`network` differ
+    /// from the row, or its account set diverges from the row's account
+    /// manifest. This is a wrong-row/structurally-inconsistent snapshot —
+    /// distinct from unreadable bytes ([`Self::DecodeError`]).
+    ///
+    /// [`ManagedWalletInfo`]: key_wallet::wallet::managed_wallet_info::ManagedWalletInfo
+    SnapshotIdentityMismatch,
     /// Any other structural decode / projection failure surfaced by the
     /// persister. The string is a structural projection — never a raw
     /// row byte slice or a hex-encoded key.
@@ -59,6 +67,9 @@ impl std::fmt::Display for CorruptKind {
         match self {
             Self::MissingManifest => f.write_str("missing account manifest"),
             Self::MalformedXpub => f.write_str("malformed account xpub"),
+            Self::SnapshotIdentityMismatch => {
+                f.write_str("snapshot does not match its persisted row")
+            }
             Self::DecodeError(s) => write!(f, "decode error: {s}"),
             Self::ManifestIntegrityMismatch => f.write_str("manifest integrity mismatch"),
         }
