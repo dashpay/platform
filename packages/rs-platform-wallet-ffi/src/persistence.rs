@@ -1550,7 +1550,7 @@ impl PlatformWalletPersistence for FFIPersister {
                     }
                 }
                 Err(e) => {
-                    // One corrupt SwiftData row must never abort the whole
+                    // One corrupt persisted row must never abort the whole
                     // restore. Errors from `build_wallet_start_state` are
                     // inherently per-row (decode / projection of THIS entry,
                     // e.g. a malformed account xpub), so record the wallet as
@@ -2873,10 +2873,17 @@ fn build_wallet_start_state(
         let (account_xpub, _): (ExtendedPubKey, usize) =
             bincode::decode_from_slice(xpub_bytes, config::standard())
                 .map_err(|e| PersistenceError::backend(MalformedXpubError(e.to_string())))?;
+        // Same xpub-failure family as the bincode-decode above: a
+        // well-decoded xpub that `Account::from_xpub` still rejects is a
+        // malformed key, so mark it so `corrupt_kind_from_build_err`
+        // classifies it as MalformedXpub (101), not the generic
+        // decode-error reason code (102).
         let account =
             Account::from_xpub(Some(entry.wallet_id), account_type, account_xpub, network)
                 .map_err(|e| {
-                    PersistenceError::backend(format!("Account::from_xpub failed: {:?}", e))
+                    PersistenceError::backend(MalformedXpubError(format!(
+                        "Account::from_xpub failed: {e:?}"
+                    )))
                 })?;
         accounts.insert(account).map_err(|e| {
             PersistenceError::backend(format!("AccountCollection::insert failed: {}", e))
@@ -2910,9 +2917,8 @@ fn build_wallet_start_state(
     }
 
     // Persisted `last_applied_chain_lock` — bincode-decoded from the
-    // bytes Swift handed back onto the local `wallet_info`. It is then
-    // carried into the keyless `CoreChangeSet` below and re-applied by
-    // `apply_persisted_core_state`, so the asset-lock-resume
+    // bytes Swift handed back onto the local `wallet_info` metadata. The
+    // manager consumes this snapshot verbatim, so the asset-lock-resume
     // CL-from-metadata fallback (`proof.rs`) fires at app launch on any
     // tracked lock whose funding block height is `<= cl.block_height`,
     // without waiting for SPV to re-apply a fresh CL. SPV persists its
@@ -3452,9 +3458,10 @@ fn build_wallet_start_state(
     let unused_asset_locks = build_unused_asset_locks(entry)?;
 
     // Hand the fully-restored `wallet_info` across as the keyless
-    // snapshot (SECRETS.md: no `Wallet`/seed crosses `load()` —
-    // `ManagedWalletInfo` carries balances / pools / UTXOs, never key
-    // material). The manager rebuilds a watch-only wallet from the
+    // snapshot: no `Wallet`, seed, private key, unencrypted seed, or
+    // password ever crosses `load()` — `ManagedWalletInfo` carries only
+    // balances / pools / UTXOs, never key material. The manager rebuilds
+    // a watch-only wallet from the
     // manifest via `Wallet::new_watch_only` and consumes this snapshot
     // directly, so everything the decode blocks above restored survives
     // verbatim: per-account UTXO and tx-record attribution (including
@@ -3485,22 +3492,15 @@ fn build_wallet_start_state(
     // would need a new cross-boundary struct field + Swift wiring,
     // tracked as a follow-up. Empty slots make `apply_contacts_and_keys`
     // a no-op for this path, preserving the established iOS behaviour.
-    //
-    // `core_state` / `used_core_addresses` stay empty: they are the
-    // projection fallback for persisters that cannot reconstruct a full
-    // snapshot (the SQLite path until dashpay/platform#3968), and the
-    // manager ignores them when `core_wallet_info` is `Some`.
     let wallet_state = ClientWalletStartState {
         network,
         birth_height: entry.birth_height,
         account_manifest,
-        core_wallet_info: Some(Box::new(wallet_info)),
-        core_state: Default::default(),
+        core_wallet_info: Box::new(wallet_info),
         identity_manager,
         unused_asset_locks,
         contacts: Default::default(),
         identity_keys: Default::default(),
-        used_core_addresses: Vec::new(),
     };
 
     let platform_address_state = if per_account.is_empty()
@@ -3982,13 +3982,17 @@ fn is_legacy_removed_account_tag(type_tag: u8) -> bool {
 
 /// Read `len` bytes from a Swift-owned pointer as a `&[u8]`.
 ///
+/// A host-supplied `len` exceeding `isize::MAX` (the `from_raw_parts`
+/// bound) is treated as a corrupt length and yields an empty slice rather
+/// than being handed to `from_raw_parts` (UB).
+///
 /// # Safety
 ///
 /// `ptr` must point to at least `len` valid bytes for the duration of
 /// the callback. Caller holds the callback window open via
 /// `LoadGuard`.
 unsafe fn slice_from_raw<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
-    if ptr.is_null() || len == 0 {
+    if ptr.is_null() || len == 0 || len > isize::MAX as usize {
         &[]
     } else {
         slice::from_raw_parts(ptr, len)
