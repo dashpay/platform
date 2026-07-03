@@ -1,52 +1,11 @@
 use dashcore::{Address as DashAddress, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::signer::Signer;
 
 use crate::broadcaster::TransactionBroadcaster;
-use crate::wallet::platform_wallet::PlatformWalletInfo;
+use crate::wallet::reservations::broadcast_releasing_on_rejection;
 use crate::{CoreWallet, PlatformWalletError};
-
-/// Funds account for `account_type`/`account_index`, or `None` if it is not
-/// present.
-fn funds_account(
-    info: &PlatformWalletInfo,
-    account_type: StandardAccountType,
-    account_index: u32,
-) -> Option<&ManagedCoreFundsAccount> {
-    match account_type {
-        StandardAccountType::BIP44Account => info
-            .core_wallet
-            .accounts
-            .standard_bip44_accounts
-            .get(&account_index),
-        StandardAccountType::BIP32Account => info
-            .core_wallet
-            .accounts
-            .standard_bip32_accounts
-            .get(&account_index),
-    }
-}
-
-/// Whether a failed broadcast is unambiguously *pre-send* — the transaction was
-/// rejected by the submission endpoint or the local transport and never
-/// accepted by the network — so its reserved inputs are safe to release for an
-/// immediate retry.
-///
-/// Backed by the [`TransactionBroadcaster::broadcast`] contract that `Err`
-/// means "not accepted by the network". Only the variants a broadcaster emits
-/// for a rejected submission are listed; anything else — notably the
-/// `*Unconfirmed` results that signal the transaction *may* already have reached
-/// the network, and any unforeseen future variant — is treated conservatively
-/// as *possibly accepted*, keeping the reservation for the TTL backstop to
-/// reclaim rather than risking a double-spend on retry.
-fn broadcast_failure_is_pre_send(error: &PlatformWalletError) -> bool {
-    matches!(
-        error,
-        PlatformWalletError::TransactionBroadcast(_) | PlatformWalletError::SpvError(_)
-    )
-}
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// Broadcast a signed transaction to the network.
@@ -63,7 +22,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         &self,
         transaction: &Transaction,
     ) -> Result<dashcore::Txid, PlatformWalletError> {
-        self.broadcaster.broadcast(transaction).await
+        self.broadcaster
+            .broadcast(transaction)
+            .await
+            .map_err(Into::into)
     }
 
     /// Build, sign, and broadcast a payment to the given addresses.
@@ -184,34 +146,15 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             tx
         };
 
-        if let Err(e) = self.broadcast_transaction(&tx).await {
-            // Release the abandoned build's reserved inputs so an immediate retry
-            // can reselect them, but only when the failure is unambiguously
-            // pre-send (see `broadcast_failure_is_pre_send`). `release_reservation`
-            // takes `&self` and the manager map is untouched, so a read lock
-            // suffices — this cleanup does not serialize concurrent sends.
-            if broadcast_failure_is_pre_send(&e) {
-                let wm = self.wallet_manager.read().await;
-                match wm.get_wallet_and_info(&self.wallet_id) {
-                    Some((_, info)) => match funds_account(info, account_type, account_index) {
-                        Some(managed_account) => managed_account.release_reservation(&tx),
-                        None => tracing::warn!(
-                            wallet_id = %hex::encode(self.wallet_id),
-                            ?account_type,
-                            account_index,
-                            "could not release UTXO reservation after failed broadcast: \
-                             funds account not found"
-                        ),
-                    },
-                    None => tracing::warn!(
-                        wallet_id = %hex::encode(self.wallet_id),
-                        "could not release UTXO reservation after failed broadcast: \
-                         wallet not found"
-                    ),
-                }
-            }
-            return Err(e);
-        }
+        broadcast_releasing_on_rejection(
+            self.broadcaster.as_ref(),
+            &self.wallet_manager,
+            &self.wallet_id,
+            account_type,
+            account_index,
+            &tx,
+        )
+        .await?;
         Ok(tx)
     }
 }
@@ -232,19 +175,20 @@ mod tests {
     use key_wallet_manager::WalletManager;
     use tokio::sync::RwLock;
 
-    use crate::broadcaster::TransactionBroadcaster;
+    use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
     use crate::wallet::core::{CoreWallet, WalletBalance};
     use crate::wallet::identity::IdentityManager;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
     use crate::PlatformWalletError;
 
-    /// Broadcaster that fails its first call and succeeds afterwards, to model
-    /// a transient broadcast error followed by a user retry.
-    struct FailFirstBroadcaster {
+    /// Broadcaster whose first call fails with a definitive pre-send
+    /// rejection and which succeeds afterwards, to model a transient
+    /// broadcast error followed by a user retry.
+    struct RejectFirstBroadcaster {
         failed_once: AtomicBool,
     }
 
-    impl FailFirstBroadcaster {
+    impl RejectFirstBroadcaster {
         fn new() -> Self {
             Self {
                 failed_once: AtomicBool::new(false),
@@ -253,14 +197,14 @@ mod tests {
     }
 
     #[async_trait]
-    impl TransactionBroadcaster for FailFirstBroadcaster {
-        async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, PlatformWalletError> {
+    impl TransactionBroadcaster for RejectFirstBroadcaster {
+        async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
             if self.failed_once.swap(true, Ordering::SeqCst) {
                 Ok(transaction.txid())
             } else {
-                Err(PlatformWalletError::TransactionBroadcast(
-                    "simulated broadcast failure".to_string(),
-                ))
+                Err(BroadcastError::Rejected {
+                    reason: "simulated pre-send rejection".to_string(),
+                })
             }
         }
     }
@@ -268,13 +212,12 @@ mod tests {
     /// Broadcaster that always fails with an *ambiguous* result — the network
     /// may already have accepted the transaction — so its inputs must NOT be
     /// released on failure.
-    struct AlwaysUnconfirmedBroadcaster;
+    struct AlwaysMaybeSentBroadcaster;
 
     #[async_trait]
-    impl TransactionBroadcaster for AlwaysUnconfirmedBroadcaster {
-        async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, PlatformWalletError> {
-            Err(PlatformWalletError::ShieldedSpendUnconfirmed {
-                operation: "transfer",
+    impl TransactionBroadcaster for AlwaysMaybeSentBroadcaster {
+        async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            Err(BroadcastError::MaybeSent {
                 reason: "simulated ambiguous broadcast".to_string(),
             })
         }
@@ -329,25 +272,14 @@ mod tests {
         account_type: StandardAccountType,
         broadcaster: Arc<B>,
     ) -> (CoreWallet<B>, WalletSigner, Vec<(DashAddress, u64)>) {
-        use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
+        use key_wallet::transaction_checking::TransactionContext;
 
         let mut ctx = TestWalletContext::new_random();
 
+        // `new_random()` already derives a BIP44 receive address; only the
+        // BIP32 arm needs a hand-rolled derivation.
         let receive_address = match account_type {
-            StandardAccountType::BIP44Account => {
-                let xpub = ctx
-                    .wallet
-                    .accounts
-                    .standard_bip44_accounts
-                    .get(&0)
-                    .expect("bip44 account")
-                    .account_xpub;
-                ctx.managed_wallet
-                    .first_bip44_managed_account_mut()
-                    .expect("bip44 managed account")
-                    .next_receive_address(Some(&xpub), true)
-                    .expect("bip44 receive address")
-            }
+            StandardAccountType::BIP44Account => ctx.receive_address.clone(),
             StandardAccountType::BIP32Account => {
                 let xpub = ctx
                     .wallet
@@ -366,14 +298,7 @@ mod tests {
 
         let funding_tx = Transaction::dummy(&receive_address, 0..1, &[10_000_000]);
         let result = ctx
-            .managed_wallet
-            .check_core_transaction(
-                &funding_tx,
-                TransactionContext::Mempool,
-                &mut ctx.wallet,
-                true,
-                true,
-            )
+            .check_transaction(&funding_tx, TransactionContext::Mempool)
             .await;
         assert!(
             result.is_relevant,
@@ -416,7 +341,7 @@ mod tests {
             StandardAccountType::BIP44Account,
             StandardAccountType::BIP32Account,
         ] {
-            let broadcaster = Arc::new(FailFirstBroadcaster::new());
+            let broadcaster = Arc::new(RejectFirstBroadcaster::new());
             let (core, signer, outputs) = funded_core_wallet(account_type, broadcaster).await;
 
             // First attempt: build + sign succeed, broadcast fails.
@@ -452,14 +377,17 @@ mod tests {
             StandardAccountType::BIP44Account,
             StandardAccountType::BIP32Account,
         ] {
-            let broadcaster = Arc::new(AlwaysUnconfirmedBroadcaster);
+            let broadcaster = Arc::new(AlwaysMaybeSentBroadcaster);
             let (core, signer, outputs) = funded_core_wallet(account_type, broadcaster).await;
 
             let first = core
                 .send_to_addresses(account_type, 0, outputs.clone(), &signer)
                 .await;
             assert!(
-                matches!(first, Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })),
+                matches!(
+                    first,
+                    Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
+                ),
                 "first send should surface the ambiguous failure for {account_type:?}, got {first:?}"
             );
 

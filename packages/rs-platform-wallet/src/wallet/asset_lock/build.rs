@@ -345,8 +345,20 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             "Asset lock tracked as Built and queued for persistence; broadcasting."
         );
 
-        // 3. Broadcast.
-        self.broadcaster.broadcast(&tx).await?;
+        // 3. Broadcast, releasing the build's UTXO reservation if the
+        //    broadcast is definitively rejected pre-send (the asset-lock
+        //    builder funds from the BIP44 account at `account_index`). The
+        //    tracked lock stays `Built`, so a later resume can still re-drive
+        //    the same transaction while its inputs remain unspent.
+        crate::wallet::reservations::broadcast_releasing_on_rejection(
+            self.broadcaster.as_ref(),
+            &self.wallet_manager,
+            &self.wallet_id,
+            key_wallet::account::account_type::StandardAccountType::BIP44Account,
+            account_index,
+            &tx,
+        )
+        .await?;
 
         // 4. Transition to Broadcast and queue the changeset.
         let cs_broadcast = self

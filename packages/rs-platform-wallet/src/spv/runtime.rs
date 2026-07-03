@@ -15,6 +15,7 @@ use dash_spv::{ClientConfig, DashSpvClient, EventHandler, Hash};
 
 use key_wallet_manager::WalletManager;
 
+use crate::broadcaster::BroadcastError;
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -92,19 +93,36 @@ impl SpvRuntime {
     }
 
     /// Broadcast a transaction to all connected SPV peers.
+    ///
+    /// Failures are classified per the [`TransactionBroadcaster::broadcast`]
+    /// contract: an unstarted client and dash-spv's zero-peer
+    /// `NetworkError::NotConnected` both fire before any bytes leave the
+    /// process, so they are [`BroadcastError::Rejected`]; any later failure
+    /// may follow a partial peer send and is [`BroadcastError::MaybeSent`].
+    ///
+    /// [`TransactionBroadcaster::broadcast`]: crate::broadcaster::TransactionBroadcaster::broadcast
     pub(crate) async fn broadcast_transaction(
         &self,
         tx: &Transaction,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<(), BroadcastError> {
+        use dash_spv::error::{NetworkError, SpvError};
+
         let client_guard = self.client.read().await;
-        let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
-            "SPV Client not started".to_string(),
-        ))?;
+        let client = client_guard.as_ref().ok_or(BroadcastError::Rejected {
+            reason: "SPV client not started".to_string(),
+        })?;
 
         client
             .broadcast_transaction(tx)
             .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+            .map_err(|e| match e {
+                SpvError::Network(NetworkError::NotConnected) => BroadcastError::Rejected {
+                    reason: "SPV broadcast failed: no connected peers".to_string(),
+                },
+                other => BroadcastError::MaybeSent {
+                    reason: format!("SPV broadcast failed: {}", other),
+                },
+            })?;
 
         Ok(())
     }
