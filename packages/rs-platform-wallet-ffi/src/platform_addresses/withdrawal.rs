@@ -228,6 +228,16 @@ pub unsafe extern "C" fn platform_address_wallet_withdraw_to_address(
 /// explanation can read it without mirroring protocol constants in Swift). The
 /// authoritative signal is `can_withdraw`; the message is advisory.
 ///
+/// A **transient** network / proof-verification failure — the planner's
+/// `AddressInfo::fetch_many` balance query couldn't reach a node or its proof
+/// failed to verify (`PlatformWalletError::Sdk`) — is ALSO reported as
+/// `can_withdraw = false` with a Success code and the SDK error's message,
+/// NOT as a structural FFI error. Rationale: from the UI's perspective this is
+/// "can't confirm you can withdraw right now" (retry when connectivity
+/// returns), not "this handle/account is broken." Surfacing it as a normal
+/// disabled-with-reason result lets the caller show a retryable explanation
+/// instead of a silent structural throw indistinguishable from a bad handle.
+///
 /// Only a **structural** failure — a bad/destroyed handle, or a missing
 /// account at `account_index` (`WalletNotFound` / `AddressSync`) — is reported
 /// as an FFI error code with `out` left untouched.
@@ -264,10 +274,10 @@ pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal(
             };
             PlatformWalletFFIResult::ok()
         }
-        // "Can't fund" is a NORMAL result, not an FFI error: the account simply
-        // has nothing withdrawable at this version. Report it as
-        // `can_withdraw = false` with zeroed figures so the UI can disable
-        // submit and explain why, without treating it as a failure.
+        // "Can't fund" (and "can't confirm right now") is a NORMAL result, not
+        // an FFI error: report it as `can_withdraw = false` with zeroed figures
+        // so the UI can disable submit and explain why, without treating it as
+        // a failure.
         //
         // `OnlyDustInputs` (every funded address below `min_input_amount`) and
         // `AddressOperation` (the fee / per-input / min-withdrawal headroom
@@ -275,9 +285,18 @@ pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal(
         // `reserve_withdrawal_fee_on_largest_input`, plus the "no funded
         // addresses" case in `select_withdrawable_inputs`) are all genuine
         // can't-fund states.
+        //
+        // `Sdk(_)` is the planner's `AddressInfo::fetch_many` balance query
+        // failing transiently (node unreachable / proof didn't verify). That is
+        // "can't confirm you can withdraw right now" — a retryable, non-
+        // structural condition — so it belongs here rather than on the error
+        // path where it would be indistinguishable from a bad handle and leave
+        // the UI with a silently-disabled button and no reason. The SDK error's
+        // `Display` is surfaced verbatim as the reason.
         Err(
             e @ (PlatformWalletError::OnlyDustInputs { .. }
-            | PlatformWalletError::AddressOperation(_)),
+            | PlatformWalletError::AddressOperation(_)
+            | PlatformWalletError::Sdk(_)),
         ) => {
             *out = WithdrawalPreflightFFI {
                 can_withdraw: false,
@@ -291,8 +310,9 @@ pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal(
             // the code).
             PlatformWalletFFIResult::success_with_message(e.to_string())
         }
-        // Structural failures (missing wallet/account) stay FFI errors with
-        // `out` untouched, mapped via the blanket `From<PlatformWalletError>`.
+        // Structural failures (bad handle / missing wallet / missing account)
+        // stay FFI errors with `out` untouched, mapped via the blanket
+        // `From<PlatformWalletError>`.
         Err(other) => other.into(),
     }
 }
