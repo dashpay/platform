@@ -2093,6 +2093,56 @@ fn is_nullifier_already_spent(e: &dash_sdk::Error) -> bool {
     )
 }
 
+/// Pure outcome classification for one re-broadcast attempt. Extracted
+/// from the redrive loop so the arm ORDER — `AlreadyExecuted` must win
+/// over the generic consensus-rejection check, since
+/// `NullifierAlreadySpent` is itself a consensus error — is pinned by
+/// unit tests without needing a broadcast-mockable network seam.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RedriveBroadcastOutcome {
+    /// Relay accepted the re-broadcast; the next scan detects a landing.
+    Accepted,
+    /// `NullifierAlreadySpent`: the ORIGINAL broadcast executed — a
+    /// success signal, never a failure.
+    AlreadyExecuted,
+    /// Any other consensus verdict: the transition can never execute.
+    DefinitiveRejection,
+    /// Transport noise / `AlreadyExists` / anything non-definitive.
+    Inconclusive,
+}
+
+fn classify_redrive_broadcast(result: &Result<(), dash_sdk::Error>) -> RedriveBroadcastOutcome {
+    match result {
+        Ok(()) => RedriveBroadcastOutcome::Accepted,
+        Err(e) if is_nullifier_already_spent(e) => RedriveBroadcastOutcome::AlreadyExecuted,
+        Err(e) if carries_consensus_rejection(e) => RedriveBroadcastOutcome::DefinitiveRejection,
+        Err(_) => RedriveBroadcastOutcome::Inconclusive,
+    }
+}
+
+/// Bump a redrive attempt counter, logging (rather than discarding) a
+/// persistence failure. On `Err` the durable counter did not advance and
+/// the file store's persist-first ordering leaves memory untouched, so
+/// the same attempt slot is retried on the next pass — the log line is
+/// what makes that visible.
+async fn bump_redrive_attempts_logged<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    activity_id: &[u8; 32],
+) -> u32 {
+    match store.write().await.bump_redrive_attempts(id, activity_id) {
+        Ok(attempts) => attempts,
+        Err(e) => {
+            warn!(
+                error = %e,
+                "redrive: failed to persist the attempt counter; the attempt will be \
+                 retried on the next pass"
+            );
+            0
+        }
+    }
+}
+
 /// Sync-time re-drive for `id`'s armed unconfirmed spends: for each
 /// [`PendingRedrive`] whose anchor is still in Platform's `recorded`
 /// set and whose attempt budget remains, re-broadcast the stored
@@ -2151,28 +2201,38 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
                 continue;
             }
         };
-        match st.broadcast(sdk, None).await {
-            Ok(()) => {
-                let attempts = store
-                    .write()
-                    .await
-                    .bump_redrive_attempts(id, &redrive.activity_id)
-                    .unwrap_or(0);
+        let broadcast_result = st.broadcast(sdk, None).await;
+        let err_display = broadcast_result
+            .as_ref()
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        match classify_redrive_broadcast(&broadcast_result) {
+            RedriveBroadcastOutcome::Accepted => {
+                let attempts = bump_redrive_attempts_logged(store, id, &redrive.activity_id).await;
                 info!(
                     attempts,
                     max = MAX_REDRIVE_ATTEMPTS,
                     "redrive: re-broadcast accepted; the next scan detects the landing"
                 );
             }
-            Err(e) if is_nullifier_already_spent(&e) => {
+            RedriveBroadcastOutcome::AlreadyExecuted => {
+                // Success signal — but still consume an attempt: the scan
+                // normally confirms the landing and drops the record, and
+                // if it lags, this arm must not re-broadcast unboundedly
+                // on every pass. The cap parks the record for the scan /
+                // prune passes to settle.
+                let attempts = bump_redrive_attempts_logged(store, id, &redrive.activity_id).await;
                 info!(
+                    attempts,
+                    max = MAX_REDRIVE_ATTEMPTS,
                     "redrive: transition already executed on-chain; the next scan confirms \
                      the notes spent"
                 );
             }
-            Err(e) if carries_consensus_rejection(&e) => {
+            RedriveBroadcastOutcome::DefinitiveRejection => {
                 warn!(
-                    error = %e,
+                    error = %err_display,
                     "redrive: definitive consensus rejection; the spend can never execute — \
                      releasing the reservation"
                 );
@@ -2196,19 +2256,15 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
                 )
                 .await;
             }
-            Err(e) => {
+            RedriveBroadcastOutcome::Inconclusive => {
                 // `AlreadyExists` (still in a mempool after a lost-ACK
                 // retry) or transport noise: inconclusive; counts toward
                 // the cap.
-                let attempts = store
-                    .write()
-                    .await
-                    .bump_redrive_attempts(id, &redrive.activity_id)
-                    .unwrap_or(0);
+                let attempts = bump_redrive_attempts_logged(store, id, &redrive.activity_id).await;
                 debug!(
                     attempts,
                     max = MAX_REDRIVE_ATTEMPTS,
-                    error = %e,
+                    error = %err_display,
                     "redrive: re-broadcast inconclusive"
                 );
             }
@@ -2488,6 +2544,59 @@ mod redrive_tests {
             "waiting".to_string(),
         );
         assert!(!is_nullifier_already_spent(&other));
+    }
+
+    /// The re-broadcast outcome classifier, arm order included:
+    /// `NullifierAlreadySpent` is itself a consensus error, so the
+    /// `AlreadyExecuted` arm must win over `DefinitiveRejection`.
+    #[test]
+    fn redrive_broadcast_classification_matrix() {
+        assert_eq!(
+            classify_redrive_broadcast(&Ok(())),
+            RedriveBroadcastOutcome::Accepted
+        );
+
+        let already_spent = ConsensusError::StateError(StateError::NullifierAlreadySpentError(
+            NullifierAlreadySpentError::new([1u8; 32]),
+        ));
+        let already_spent_err =
+            dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+                code: 1,
+                message: "state error".to_string(),
+                cause: Some(already_spent),
+            });
+        assert_eq!(
+            classify_redrive_broadcast(&Err(already_spent_err)),
+            RedriveBroadcastOutcome::AlreadyExecuted,
+            "already-spent must classify as success BEFORE the generic rejection arm"
+        );
+
+        let other_rejection = ConsensusError::BasicError(
+            dpp::consensus::basic::BasicError::ProtocolVersionParsingError(
+                dpp::consensus::basic::decode::ProtocolVersionParsingError::new(
+                    "bad version".to_string(),
+                ),
+            ),
+        );
+        let rejection_err =
+            dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+                code: 1,
+                message: "state error".to_string(),
+                cause: Some(other_rejection),
+            });
+        assert_eq!(
+            classify_redrive_broadcast(&Err(rejection_err)),
+            RedriveBroadcastOutcome::DefinitiveRejection
+        );
+
+        let timeout = dash_sdk::Error::TimeoutReached(
+            std::time::Duration::from_secs(1),
+            "waiting".to_string(),
+        );
+        assert_eq!(
+            classify_redrive_broadcast(&Err(timeout)),
+            RedriveBroadcastOutcome::Inconclusive
+        );
     }
 
     /// Decision paths that must NOT touch the network (the mock SDK has

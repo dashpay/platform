@@ -642,6 +642,11 @@ impl SubwalletState {
         self.redrives.values().cloned().collect()
     }
 
+    /// Current attempt count for `activity_id`'s redrive, if armed.
+    pub(super) fn redrive_attempts(&self, activity_id: &[u8; 32]) -> Option<u32> {
+        self.redrives.get(activity_id).map(|r| r.attempts)
+    }
+
     /// Bump the attempt counter; `0` when no such record exists.
     pub(super) fn bump_redrive_attempts(&mut self, activity_id: &[u8; 32]) -> u32 {
         self.redrives

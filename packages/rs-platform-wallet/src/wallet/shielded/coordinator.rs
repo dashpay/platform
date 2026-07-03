@@ -655,20 +655,28 @@ impl NetworkShieldedCoordinator {
         // Runs before the balance read so freed notes are reflected in
         // this pass's balances.
         if let Some((snapshot, recorded)) = stranded_release {
-            {
+            // Snapshot the per-wallet persisters BEFORE the loop and drop
+            // the read guard: `redrive_pending_spends` performs network
+            // broadcasts, and holding the persisters lock across those
+            // awaits would block wallet register/unregister for the
+            // duration of the round trips.
+            let subwallet_persisters: Vec<(SubwalletId, Option<WalletPersister>)> = {
                 let persisters = self.persisters.read().await;
-                for (id, _) in &subwallets {
-                    let persister = persisters.get(&id.wallet_id).cloned();
-                    super::operations::redrive_pending_spends(
-                        &self.sdk,
-                        &self.store,
-                        persister.as_ref(),
-                        id.wallet_id,
-                        *id,
-                        &recorded,
-                    )
-                    .await;
-                }
+                subwallets
+                    .iter()
+                    .map(|(id, _)| (*id, persisters.get(&id.wallet_id).cloned()))
+                    .collect()
+            };
+            for (id, persister) in &subwallet_persisters {
+                super::operations::redrive_pending_spends(
+                    &self.sdk,
+                    &self.store,
+                    persister.as_ref(),
+                    id.wallet_id,
+                    *id,
+                    &recorded,
+                )
+                .await;
             }
             self.release_stranded_spends(snapshot, &recorded).await;
         }

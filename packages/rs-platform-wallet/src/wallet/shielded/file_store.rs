@@ -216,6 +216,12 @@ impl FileBackedShieldedStore {
             conn.pragma_update(None, k, v)
                 .map_err(|e| FileShieldedStoreError(format!("PRAGMA {k}={v}: {e}")))?;
         }
+        // Two writer connections share this file (the commitment tree's and
+        // `pending_conn`). WAL allows one writer at a time; without a busy
+        // timeout a write colliding with the other connection's write txn
+        // fails immediately with SQLITE_BUSY instead of briefly waiting.
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e| FileShieldedStoreError(format!("busy_timeout: {e}")))?;
         Ok(conn)
     }
 
@@ -292,8 +298,19 @@ impl ShieldedStore for FileBackedShieldedStore {
         let marked = sw.mark_spent(nullifier);
         if marked {
             // `SubwalletState::mark_spent` dropped any redrive carrying
-            // this nullifier from memory; mirror the deletions.
-            self.delete_redrive_rows_containing(id, nullifier)?;
+            // this nullifier from memory; mirror the deletions. The
+            // in-memory transition already happened, so a SQLite failure
+            // must not abort the call — log it and keep the trait
+            // behavior consistent. A surviving stale row rehydrates a
+            // reservation on the next open, which the reconcile / prune
+            // passes then clear.
+            if let Err(e) = self.delete_redrive_rows_containing(id, nullifier) {
+                tracing::warn!(
+                    error = %e,
+                    "redrive row deletion failed after mark_spent; a stale row may \
+                     rehydrate on the next open (self-heals via reconcile/prune)"
+                );
+            }
         }
         Ok(marked)
     }
@@ -316,7 +333,14 @@ impl ShieldedStore for FileBackedShieldedStore {
         };
         let removed = sw.clear_pending(nullifier);
         if removed {
-            self.delete_redrive_rows_containing(id, nullifier)?;
+            // Same log-don't-abort rationale as `mark_spent` above.
+            if let Err(e) = self.delete_redrive_rows_containing(id, nullifier) {
+                tracing::warn!(
+                    error = %e,
+                    "redrive row deletion failed after clear_pending; a stale row may \
+                     rehydrate on the next open (self-heals via reconcile/prune)"
+                );
+            }
         }
         Ok(removed)
     }
@@ -379,12 +403,18 @@ impl ShieldedStore for FileBackedShieldedStore {
         id: SubwalletId,
         activity_id: &[u8; 32],
     ) -> Result<u32, Self::Error> {
-        let attempts = self
+        // Persist FIRST, mutate memory only on success: the reverse order
+        // would leave the in-memory counter ahead of the durable row on a
+        // SQLite failure, and a restart would rewind the attempt budget.
+        let Some(next) = self
             .subwallets
-            .get_mut(&id)
-            .map(|sw| sw.bump_redrive_attempts(activity_id))
-            .unwrap_or(0);
-        if attempts > 0 {
+            .get(&id)
+            .and_then(|sw| sw.redrive_attempts(activity_id))
+            .map(|attempts| attempts + 1)
+        else {
+            return Ok(0);
+        };
+        {
             let conn = self.pending_conn.lock().expect("pending_conn mutex");
             conn.execute(
                 "UPDATE shielded_pending_spends SET attempts = ?4 \
@@ -393,11 +423,16 @@ impl ShieldedStore for FileBackedShieldedStore {
                     id.wallet_id.as_slice(),
                     id.account_index,
                     activity_id.as_slice(),
-                    attempts,
+                    next,
                 ],
             )
             .map_err(|e| FileShieldedStoreError(format!("bump redrive attempts: {e}")))?;
         }
+        let attempts = self
+            .subwallets
+            .get_mut(&id)
+            .map(|sw| sw.bump_redrive_attempts(activity_id))
+            .unwrap_or(0);
         Ok(attempts)
     }
 
