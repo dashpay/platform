@@ -1550,7 +1550,7 @@ impl PlatformWalletPersistence for FFIPersister {
                     }
                 }
                 Err(e) => {
-                    // One corrupt SwiftData row must never abort the whole
+                    // One corrupt persisted row must never abort the whole
                     // restore. Errors from `build_wallet_start_state` are
                     // inherently per-row (decode / projection of THIS entry,
                     // e.g. a malformed account xpub), so record the wallet as
@@ -2873,10 +2873,17 @@ fn build_wallet_start_state(
         let (account_xpub, _): (ExtendedPubKey, usize) =
             bincode::decode_from_slice(xpub_bytes, config::standard())
                 .map_err(|e| PersistenceError::backend(MalformedXpubError(e.to_string())))?;
+        // Same xpub-failure family as the bincode-decode above: a
+        // well-decoded xpub that `Account::from_xpub` still rejects is a
+        // malformed key, so mark it so `corrupt_kind_from_build_err`
+        // classifies it as MalformedXpub (101), not the generic
+        // decode-error reason code (102).
         let account =
             Account::from_xpub(Some(entry.wallet_id), account_type, account_xpub, network)
                 .map_err(|e| {
-                    PersistenceError::backend(format!("Account::from_xpub failed: {:?}", e))
+                    PersistenceError::backend(MalformedXpubError(format!(
+                        "Account::from_xpub failed: {e:?}"
+                    )))
                 })?;
         accounts.insert(account).map_err(|e| {
             PersistenceError::backend(format!("AccountCollection::insert failed: {}", e))
@@ -3451,9 +3458,10 @@ fn build_wallet_start_state(
     let unused_asset_locks = build_unused_asset_locks(entry)?;
 
     // Hand the fully-restored `wallet_info` across as the keyless
-    // snapshot (SECRETS.md: no `Wallet`/seed crosses `load()` —
-    // `ManagedWalletInfo` carries balances / pools / UTXOs, never key
-    // material). The manager rebuilds a watch-only wallet from the
+    // snapshot: no `Wallet`, seed, private key, unencrypted seed, or
+    // password ever crosses `load()` — `ManagedWalletInfo` carries only
+    // balances / pools / UTXOs, never key material. The manager rebuilds
+    // a watch-only wallet from the
     // manifest via `Wallet::new_watch_only` and consumes this snapshot
     // directly, so everything the decode blocks above restored survives
     // verbatim: per-account UTXO and tx-record attribution (including
@@ -3974,13 +3982,17 @@ fn is_legacy_removed_account_tag(type_tag: u8) -> bool {
 
 /// Read `len` bytes from a Swift-owned pointer as a `&[u8]`.
 ///
+/// A host-supplied `len` exceeding `isize::MAX` (the `from_raw_parts`
+/// bound) is treated as a corrupt length and yields an empty slice rather
+/// than being handed to `from_raw_parts` (UB).
+///
 /// # Safety
 ///
 /// `ptr` must point to at least `len` valid bytes for the duration of
 /// the callback. Caller holds the callback window open via
 /// `LoadGuard`.
 unsafe fn slice_from_raw<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
-    if ptr.is_null() || len == 0 {
+    if ptr.is_null() || len == 0 || len > isize::MAX as usize {
         &[]
     } else {
         slice::from_raw_parts(ptr, len)
