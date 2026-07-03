@@ -992,6 +992,10 @@ impl PlatformWalletPersistence for SqlitePersister {
                     network,
                     birth_height,
                     account_manifest,
+                    // The SQLite persister rehydrates via the account-manifest
+                    // skeleton + core-state projection; the full snapshot path
+                    // is the FFI/iOS persister's.
+                    core_wallet_info: None,
                     core_state,
                     identity_manager,
                     unused_asset_locks,
