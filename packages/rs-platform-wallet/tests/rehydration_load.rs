@@ -15,6 +15,10 @@
 //!   fires on the registered handler, `load` returns `Ok`.
 //! - RT-Z: no key/seed material in any `LoadOutcome` / `SkipReason`
 //!   surface (the structural-only contract).
+//! - RT-Snapshot: a carried `core_wallet_info` snapshot is consumed
+//!   verbatim — per-account UTXO attribution and derived-but-unused
+//!   deep pool addresses survive the reload; a snapshot whose
+//!   `wallet_id` mismatches its row is skipped as corrupt.
 
 use std::sync::{Arc, Mutex};
 
@@ -22,8 +26,9 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::Wallet;
 use platform_wallet::changeset::{
     AccountRegistrationEntry, ClientStartState, ClientWalletStartState, CoreChangeSet,
-    PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
+use platform_wallet::error::PlatformWalletError;
 use platform_wallet::events::{EventHandler, PlatformEventHandler};
 use platform_wallet::manager::load_outcome::CorruptKind;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -69,6 +74,7 @@ impl PlatformWalletPersistence for FixedLoadPersister {
                             network: w.network,
                             birth_height: w.birth_height,
                             account_manifest: w.account_manifest.clone(),
+                            core_wallet_info: w.core_wallet_info.clone(),
                             core_state: w.core_state.clone(),
                             identity_manager: Default::default(),
                             unused_asset_locks: Default::default(),
@@ -81,6 +87,31 @@ impl PlatformWalletPersistence for FixedLoadPersister {
                 out.skipped = s.skipped.clone();
                 Ok(out)
             }
+        }
+    }
+}
+
+/// Persister whose `load()` always fails with a chosen [`PersistenceError`],
+/// to exercise the typed error propagation out of `load_from_persistor`.
+struct FailingLoadPersister {
+    transient: bool,
+}
+
+impl PlatformWalletPersistence for FailingLoadPersister {
+    fn store(&self, _: WalletId, _: PlatformWalletChangeSet) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+    fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
+        Ok(())
+    }
+    fn load(&self) -> Result<ClientStartState, PersistenceError> {
+        if self.transient {
+            Err(PersistenceError::backend_with_kind(
+                PersistenceErrorKind::Transient,
+                "backend busy",
+            ))
+        } else {
+            Err(PersistenceError::backend("schema corrupt"))
         }
     }
 }
@@ -129,6 +160,7 @@ fn slice(seed: [u8; 64]) -> (WalletId, ClientWalletStartState) {
             network: key_wallet::Network::Testnet,
             birth_height: 1,
             account_manifest: manifest,
+            core_wallet_info: None,
             core_state: CoreChangeSet::default(),
             identity_manager: Default::default(),
             unused_asset_locks: Default::default(),
@@ -280,6 +312,7 @@ async fn rt_corrupt_row_skipped_and_other_loads() {
         network: key_wallet::Network::Testnet,
         birth_height: 1,
         account_manifest: Vec::new(),
+        core_wallet_info: None,
         core_state: CoreChangeSet::default(),
         identity_manager: Default::default(),
         unused_asset_locks: Default::default(),
@@ -347,6 +380,7 @@ async fn rt_z_secret_hygiene_surfaces() {
         network: key_wallet::Network::Testnet,
         birth_height: 1,
         account_manifest: Vec::new(),
+        core_wallet_info: None,
         core_state: CoreChangeSet::default(),
         identity_manager: Default::default(),
         unused_asset_locks: Default::default(),
@@ -367,5 +401,390 @@ async fn rt_z_secret_hygiene_surfaces() {
     for (_, reason) in &outcome.skipped {
         let rendered = format!("{reason} {reason:?}");
         assert!(!rendered.to_lowercase().contains(&"ab".repeat(10)));
+    }
+}
+
+/// RT-Snapshot: a carried `core_wallet_info` snapshot is consumed
+/// verbatim. Two properties the projection replay could NOT provide:
+/// - per-account UTXO attribution — a CoinJoin-account UTXO stays on the
+///   CoinJoin account (the fallback path routed every UTXO to the first
+///   funds account, zeroing non-first-account balances);
+/// - derived-but-unused deep pool addresses (idx 40, past the eager gap
+///   window) stay in the pool, so the SPV watch set still covers a
+///   handed-out-but-unpaid receive address after restart.
+#[tokio::test]
+async fn rt_snapshot_preserves_attribution_and_pools() {
+    use key_wallet::account::AccountType;
+    use key_wallet::managed_account::address_pool::KeySource;
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+    let seed = [0x66; 64];
+    let wallet = Wallet::from_seed_bytes(
+        seed,
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let id = wallet.compute_wallet_id();
+    let manifest: Vec<AccountRegistrationEntry> = wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .map(|a| AccountRegistrationEntry {
+            account_type: a.account_type,
+            account_xpub: a.account_xpub,
+        })
+        .collect();
+
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+
+    // A UTXO on the CoinJoin account's own idx-0 address, inserted where
+    // the persisted rows put it: on the CoinJoin account.
+    let cj_value = 250_000u64;
+    let (cj_type, cj_addr) = {
+        let cj = info
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .find(|a| {
+                matches!(
+                    a.managed_account_type().to_account_type(),
+                    AccountType::CoinJoin { .. }
+                )
+            })
+            .expect("Default creation includes a CoinJoin account");
+        let addr = cj
+            .managed_account_type()
+            .address_pools()
+            .first()
+            .expect("CoinJoin account has a pool")
+            .address_at_index(0)
+            .expect("eager window covers idx 0");
+        (cj.managed_account_type().to_account_type(), addr)
+    };
+    {
+        let cj = info
+            .accounts
+            .all_funding_accounts_mut()
+            .into_iter()
+            .find(|a| a.managed_account_type().to_account_type() == cj_type)
+            .unwrap();
+        cj.utxos.insert(
+            dashcore::OutPoint {
+                txid: dashcore::Txid::from([0x42u8; 32]),
+                vout: 0,
+            },
+            key_wallet::Utxo {
+                outpoint: dashcore::OutPoint {
+                    txid: dashcore::Txid::from([0x42u8; 32]),
+                    vout: 0,
+                },
+                txout: dashcore::TxOut {
+                    value: cj_value,
+                    script_pubkey: cj_addr.script_pubkey(),
+                },
+                address: cj_addr,
+                height: 1,
+                is_coinbase: false,
+                is_confirmed: true,
+                is_instantlocked: false,
+                is_locked: false,
+                is_trusted: false,
+            },
+        );
+    }
+
+    // Extend the FIRST funds account's first pool to idx 40 — a
+    // derived-but-UNUSED deep address (handed out, not yet paid).
+    let (first_type, deep_keys_total) = {
+        let first = info
+            .accounts
+            .all_funding_accounts_mut()
+            .into_iter()
+            .next()
+            .expect("a first funds account exists");
+        let first_type = first.managed_account_type().to_account_type();
+        let xpub = manifest
+            .iter()
+            .find(|e| e.account_type == first_type)
+            .map(|e| e.account_xpub)
+            .expect("first funds account xpub in manifest");
+        let pools = first.managed_account_type_mut().address_pools_mut();
+        let pool = pools.into_iter().next().expect("first pool");
+        let highest = pool.highest_generated.expect("eager window derived");
+        assert!(
+            highest < 40,
+            "fixture: idx 40 must be past the eager window"
+        );
+        pool.generate_addresses(40 - highest, &KeySource::Public(xpub), true)
+            .unwrap();
+        assert!(
+            pool.address_at_index(40).is_some(),
+            "fixture: idx 40 derived"
+        );
+        (first_type, pool.addresses.len() as u32)
+    };
+    info.update_balance();
+
+    let (_, mut s) = slice(seed);
+    s.core_wallet_info = Some(Box::new(info));
+    let p = Arc::new(FixedLoadPersister::new());
+    let h = Arc::new(RecordingHandler::default());
+    let mut st = ClientStartState::default();
+    st.wallets.insert(id, s);
+    p.set(st);
+
+    let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
+    let outcome = mgr.load_from_persistor().await.expect("Ok");
+    assert_eq!(outcome.loaded, vec![id]);
+    assert!(outcome.skipped.is_empty());
+
+    let rows = {
+        let mgr = Arc::clone(&mgr);
+        tokio::task::spawn_blocking(move || mgr.account_balances_blocking(&id))
+            .await
+            .unwrap()
+    };
+    let cj_row = rows
+        .iter()
+        .find(|r| r.account_type == cj_type)
+        .expect("CoinJoin account row");
+    assert_eq!(
+        cj_row.balance.total(),
+        cj_value,
+        "CoinJoin UTXO must stay attributed to the CoinJoin account"
+    );
+    let first_row = rows
+        .iter()
+        .find(|r| r.account_type == first_type)
+        .expect("first funds account row");
+    assert!(
+        first_row.keys_total >= deep_keys_total,
+        "derived-but-unused deep addresses must survive the reload \
+         (watch-set coverage): got {} keys, snapshot had {}",
+        first_row.keys_total,
+        deep_keys_total,
+    );
+}
+
+/// RT-Snapshot-Mismatch: a snapshot whose `wallet_id` does not match its
+/// row key is a corrupt row — skipped with `SnapshotIdentityMismatch`,
+/// never registered, and the batch continues.
+#[tokio::test]
+async fn rt_snapshot_wallet_id_mismatch_is_skipped() {
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+    let seed = [0x77; 64];
+    let other_seed = [0x78; 64];
+    let p = Arc::new(FixedLoadPersister::new());
+    let h = Arc::new(RecordingHandler::default());
+
+    // Row keyed by wallet A, snapshot built from wallet B.
+    let (id_a, mut s) = slice(seed);
+    let wallet_b = Wallet::from_seed_bytes(
+        other_seed,
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    s.core_wallet_info = Some(Box::new(ManagedWalletInfo::from_wallet(&wallet_b, 1)));
+
+    let mut st = ClientStartState::default();
+    st.wallets.insert(id_a, s);
+    p.set(st);
+
+    let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
+    let outcome = mgr.load_from_persistor().await.expect("Ok");
+
+    assert!(outcome.loaded.is_empty(), "mismatched row must not load");
+    assert_eq!(outcome.skipped.len(), 1);
+    let (skipped_id, reason) = &outcome.skipped[0];
+    assert_eq!(*skipped_id, id_a);
+    assert!(matches!(
+        reason,
+        SkipReason::CorruptPersistedRow {
+            kind: CorruptKind::SnapshotIdentityMismatch
+        }
+    ));
+    assert!(mgr.get_wallet(&id_a).await.is_none());
+    assert_eq!(h.skipped.lock().unwrap().len(), 1);
+}
+
+/// RT-Snapshot-AccountMismatch: a snapshot whose `wallet_id`/`network`
+/// agree with the row but whose account set diverges from the row's
+/// account manifest is a wrong-row snapshot — skipped with
+/// `SnapshotIdentityMismatch`, never registered.
+#[tokio::test]
+async fn rt_snapshot_account_set_mismatch_is_skipped() {
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+    let seed = [0x79; 64];
+    let p = Arc::new(FixedLoadPersister::new());
+    let h = Arc::new(RecordingHandler::default());
+
+    // Row keyed by wallet A with a full snapshot of A, but the row's
+    // manifest is truncated to a single account — the account sets diverge
+    // even though wallet_id and network match.
+    let wallet_a = Wallet::from_seed_bytes(
+        seed,
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let id_a = wallet_a.compute_wallet_id();
+    let (full_manifest, _) = manifest_and_id(seed);
+    assert!(
+        full_manifest.len() > 1,
+        "fixture: Default creation yields more than one account"
+    );
+    let truncated_manifest = vec![full_manifest[0].clone()];
+
+    let (_, mut s) = slice(seed);
+    s.account_manifest = truncated_manifest;
+    s.core_wallet_info = Some(Box::new(ManagedWalletInfo::from_wallet(&wallet_a, 1)));
+
+    let mut st = ClientStartState::default();
+    st.wallets.insert(id_a, s);
+    p.set(st);
+
+    let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
+    let outcome = mgr.load_from_persistor().await.expect("Ok");
+
+    assert!(
+        outcome.loaded.is_empty(),
+        "account-set mismatch must not load"
+    );
+    assert_eq!(outcome.skipped.len(), 1);
+    let (skipped_id, reason) = &outcome.skipped[0];
+    assert_eq!(*skipped_id, id_a);
+    assert!(matches!(
+        reason,
+        SkipReason::CorruptPersistedRow {
+            kind: CorruptKind::SnapshotIdentityMismatch
+        }
+    ));
+    assert!(mgr.get_wallet(&id_a).await.is_none());
+    assert_eq!(h.skipped.lock().unwrap().len(), 1);
+}
+
+/// RT-Snapshot-Mismatch-Combined: a snapshot-identity-mismatch skip and a
+/// healthy snapshot load in the SAME batch. The mismatched row is skipped
+/// with `SnapshotIdentityMismatch`; the healthy row loads fully; the batch
+/// returns `Ok` and notifies the handler exactly once. Mirrors
+/// `rt_corrupt_row_skipped_and_other_loads` for the snapshot path.
+#[tokio::test]
+async fn rt_snapshot_mismatch_skip_coexists_with_healthy_load() {
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+    let seed_ok = [0x81; 64];
+    let seed_bad = [0x82; 64];
+    let seed_other = [0x83; 64];
+    let p = Arc::new(FixedLoadPersister::new());
+    let h = Arc::new(RecordingHandler::default());
+
+    // Healthy row: snapshot built from its own wallet, matching its row.
+    let wallet_ok = Wallet::from_seed_bytes(
+        seed_ok,
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let id_ok = wallet_ok.compute_wallet_id();
+    let (_, mut s_ok) = slice(seed_ok);
+    s_ok.core_wallet_info = Some(Box::new(ManagedWalletInfo::from_wallet(&wallet_ok, 1)));
+
+    // Mismatched row: keyed by wallet BAD, snapshot built from wallet OTHER.
+    let (id_bad, mut s_bad) = slice(seed_bad);
+    let wallet_other = Wallet::from_seed_bytes(
+        seed_other,
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    s_bad.core_wallet_info = Some(Box::new(ManagedWalletInfo::from_wallet(&wallet_other, 1)));
+
+    let mut st = ClientStartState::default();
+    st.wallets.insert(id_ok, s_ok);
+    st.wallets.insert(id_bad, s_bad);
+    p.set(st);
+
+    let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
+    let outcome = mgr
+        .load_from_persistor()
+        .await
+        .expect("Ok despite the per-row snapshot mismatch");
+
+    assert_eq!(outcome.loaded, vec![id_ok], "only the healthy row loads");
+    assert_eq!(outcome.skipped.len(), 1);
+    let (skipped_id, reason) = &outcome.skipped[0];
+    assert_eq!(*skipped_id, id_bad);
+    assert!(matches!(
+        reason,
+        SkipReason::CorruptPersistedRow {
+            kind: CorruptKind::SnapshotIdentityMismatch
+        }
+    ));
+    assert!(mgr.get_wallet(&id_ok).await.is_some());
+    assert!(
+        mgr.get_wallet(&id_bad).await.is_none(),
+        "mismatched row must be absent, not a degraded placeholder"
+    );
+
+    let skipped = h.skipped.lock().unwrap();
+    assert_eq!(skipped.len(), 1, "exactly one skip notification");
+    assert_eq!(skipped[0].0, id_bad);
+}
+
+/// RT-PersisterLoad-Transient: a transient persister load failure
+/// propagates as a typed `PersisterLoad` error whose retry classification
+/// survives — `is_transient()` is `true` so callers may back off and retry.
+#[tokio::test]
+async fn rt_persister_load_transient_error_is_typed_and_retryable() {
+    let p = Arc::new(FailingLoadPersister { transient: true });
+    let h = Arc::new(RecordingHandler::default());
+    let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+    let mgr = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&p), h));
+
+    let err = mgr
+        .load_from_persistor()
+        .await
+        .expect_err("transient backend failure must surface");
+    match err {
+        PlatformWalletError::PersisterLoad(inner) => {
+            assert!(
+                inner.is_transient(),
+                "transient classification must survive propagation"
+            );
+            assert_eq!(inner.kind(), Some(PersistenceErrorKind::Transient));
+        }
+        other => panic!("expected PersisterLoad, got {other:?}"),
+    }
+}
+
+/// RT-PersisterLoad-Permanent: a fatal persister load failure propagates as
+/// a typed `PersisterLoad` error classified non-transient, so callers do
+/// not retry a permanent failure.
+#[tokio::test]
+async fn rt_persister_load_permanent_error_is_typed_and_not_retryable() {
+    let p = Arc::new(FailingLoadPersister { transient: false });
+    let h = Arc::new(RecordingHandler::default());
+    let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+    let mgr = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&p), h));
+
+    let err = mgr
+        .load_from_persistor()
+        .await
+        .expect_err("fatal backend failure must surface");
+    match err {
+        PlatformWalletError::PersisterLoad(inner) => {
+            assert!(
+                !inner.is_transient(),
+                "fatal failure must not read as retryable"
+            );
+            assert_eq!(inner.kind(), Some(PersistenceErrorKind::Fatal));
+        }
+        other => panic!("expected PersisterLoad, got {other:?}"),
     }
 }
