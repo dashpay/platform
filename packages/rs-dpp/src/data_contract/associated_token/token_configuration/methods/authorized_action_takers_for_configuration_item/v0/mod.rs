@@ -105,7 +105,9 @@ impl TokenConfigurationV0 {
             TokenConfigurationChangeItem::EmergencyActionAdminGroup(_) => {
                 *self.emergency_action_rules.admin_action_takers()
             }
-            TokenConfigurationChangeItem::MainControlGroup(_) => AuthorizedActionTakers::NoOne,
+            TokenConfigurationChangeItem::MainControlGroup(_) => {
+                self.main_control_group_can_be_modified
+            }
             TokenConfigurationChangeItem::MarketplaceTradeMode(_) => *self
                 .marketplace_rules
                 .trade_mode_change_rules()
@@ -267,16 +269,33 @@ mod tests {
     }
 
     #[test]
-    fn main_control_group_always_returns_no_one() {
-        // Per implementation, MainControlGroup change items always return NoOne,
-        // regardless of config. This is important because modifying the main
-        // control group is governed by main_control_group_can_be_modified, not
-        // by any of the change_control_rules.
-        let c = config_with_all_owner_rules();
+    fn main_control_group_returns_no_one_by_default() {
+        // default_most_restrictive leaves main_control_group_can_be_modified as NoOne
+        let c = TokenConfigurationV0::default_most_restrictive();
         let result = c.authorized_action_takers_for_configuration_item(
             &TokenConfigurationChangeItem::MainControlGroup(Some(3)),
         );
         assert_eq!(result, AuthorizedActionTakers::NoOne);
+    }
+
+    #[test]
+    fn main_control_group_returns_configured_can_be_modified() {
+        // Modifying the main control group is governed by
+        // main_control_group_can_be_modified, not by any of the
+        // change_control_rules, so that is what must be reported here.
+        for takers in [
+            AuthorizedActionTakers::ContractOwner,
+            AuthorizedActionTakers::MainGroup,
+            AuthorizedActionTakers::Group(0),
+            AuthorizedActionTakers::Identity(Identifier::from([7u8; 32])),
+        ] {
+            let mut c = TokenConfigurationV0::default_most_restrictive();
+            c.set_main_control_group_can_be_modified(takers);
+            let result = c.authorized_action_takers_for_configuration_item(
+                &TokenConfigurationChangeItem::MainControlGroup(Some(3)),
+            );
+            assert_eq!(result, takers);
+        }
     }
 
     #[test]
