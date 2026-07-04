@@ -42,15 +42,6 @@ const ALLOWLIST: &[&str] = &[
     "public material",
     "do not derive private keys",
     "private keys are NOT",
-    // `IdentityKeyEntry.private_key` is the in-memory-only changeset
-    // field (`#[serde(skip)]`, never written to a column). These three
-    // expressions construct or inspect that struct in `into_entry` and
-    // its round-trip regression test — each needle is specific enough
-    // that it can only match a Rust struct-literal/field access, never a
-    // persisted column definition.
-    "private_key: None",
-    "private_key: Some(zeroize::Zeroizing",
-    "restored.private_key.is_none()",
 ];
 
 fn line_is_allowlisted(line: &str) -> bool {

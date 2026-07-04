@@ -72,18 +72,6 @@ pub const SIGN_WITH_RESOLVER_ERR_RESOLVER_FAILED: u8 = 10;
 /// NOT produced — this guards against signing with a wrong/stale key.
 pub const SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH: u8 = 11;
 
-/// RAII guard that scrubs an [`ExtendedPrivKey`]'s secret scalar on drop, so an
-/// early `return`, `?`, or panic between derivation and use can't leak it (the
-/// type has no upstream `Drop`/`Zeroize`). Mirrors `WipingXprv` in
-/// `rs-sdk-ffi/src/mnemonic_resolver_core_signer.rs`.
-struct WipingXprv(ExtendedPrivKey);
-
-impl Drop for WipingXprv {
-    fn drop(&mut self) {
-        self.0.private_key.non_secure_erase();
-    }
-}
-
 /// Sign `data` with the ECDSA secp256k1 private key derived from
 /// `(mnemonic-via-resolver, derivation_path)`. Mnemonic, seed and
 /// derived secret bytes all stay in `Zeroizing` buffers and are
@@ -171,6 +159,16 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
         return fail(SIGN_WITH_RESOLVER_ERR_NULL_POINTER);
     }
 
+    // `expected_key_data` and its length must agree: `(null, 0)` is the
+    // intentional opt-out of the derived-key binding; `(non-null, > 0)`
+    // requests it. A mismatched pair — a null pointer with a non-zero length,
+    // or a real pointer with length 0 — is a cross-language marshaling
+    // contract violation that would silently skip the impersonation-resistance
+    // check below and sign unbound, so fail closed instead.
+    if expected_key_data.is_null() != (expected_key_data_len == 0) {
+        return fail(SIGN_WITH_RESOLVER_ERR_NULL_POINTER);
+    }
+
     // secp256k1-only entry point: both ECDSA key types sign identically
     // (the type only describes the on-chain pubkey representation). Anything
     // else (BLS, EdDSA, script-hash) is a contract violation.
@@ -234,19 +232,19 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
     };
 
     let kw_network: Network = network.into();
-    // `WipingXprv` scrubs both scalars on drop, covering the early `return`
-    // below (master is guarded the moment it is built) and any panic between
-    // here and signing. (Upstream `ExtendedPrivKey` has no `Drop`/`Zeroize`.)
+    // The master and derived `ExtendedPrivKey`s self-wipe their secret scalar
+    // on `Drop` (upstream key-wallet), covering the early `return` below and any
+    // panic between here and signing.
     let master = match ExtendedPrivKey::new_master(kw_network, seed.as_ref()) {
-        Ok(m) => WipingXprv(m),
+        Ok(m) => m,
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
     };
     let secp = Secp256k1::new();
-    let derived = match master.0.derive_priv(&secp, &path) {
-        Ok(d) => WipingXprv(d),
+    let derived = match master.derive_priv(&secp, &path) {
+        Ok(d) => d,
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
     };
-    let secret_bytes: Zeroizing<[u8; 32]> = Zeroizing::new(derived.0.private_key.secret_bytes());
+    let secret_bytes: Zeroizing<[u8; 32]> = Zeroizing::new(derived.private_key.secret_bytes());
 
     // ---- Bind the derived key to the expected on-chain key -------------------
     // Reject before signing if the key derived here doesn't reproduce the
@@ -257,11 +255,23 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
     // `validate_private_key_bytes` decision (33-byte expected = compressed
     // pubkey equality; 20-byte expected = `ripemd160_sha256` of it).
     if !expected_key_data.is_null() && expected_key_data_len > 0 {
-        let expected = std::slice::from_raw_parts(expected_key_data, expected_key_data_len);
-        let derived_pubkey = key_wallet::bip32::ExtendedPubKey::from_priv(&secp, &derived.0)
+        let derived_pubkey = key_wallet::bip32::ExtendedPubKey::from_priv(&secp, &derived)
             .public_key
             .serialize();
-        if !platform_wallet::pubkey_binds_expected_key_data(&derived_pubkey, expected) {
+        // Build the expected slice only for the two lengths the binding
+        // policy accepts (33 or 20), never from the caller-supplied
+        // `expected_key_data_len` directly: a malformed huge length must not
+        // widen the `from_raw_parts` read into UB. Any other length takes the
+        // `_` arm and never dereferences — same fail-closed answer the helper
+        // gives for unknown lengths.
+        let matches = match expected_key_data_len {
+            33 | 20 => {
+                let expected = std::slice::from_raw_parts(expected_key_data, expected_key_data_len);
+                platform_wallet::pubkey_binds_expected_key_data(&derived_pubkey, expected)
+            }
+            _ => false,
+        };
+        if !matches {
             return fail(SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH);
         }
     }
@@ -616,6 +626,71 @@ mod tests {
         assert_eq!(rc, -1);
         assert_eq!(err, SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH);
         assert_eq!(sig_len, 0, "malformed binding length must fail closed");
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// A mismatched `expected_key_data` pointer/length pair must fail closed.
+    /// `(null, 0)` opts out of the derived-key binding and `(non-null, > 0)`
+    /// requests it; a null pointer with a non-zero length, or a real pointer
+    /// with length 0, is a marshaling contract violation that would otherwise
+    /// silently skip the impersonation-resistance check and sign unbound.
+    #[test]
+    fn inconsistent_expected_key_data_pointer_length_fails_closed() {
+        let resolver = make_resolver(english_resolve);
+        let path = CString::new("m/9'/1'/5'/0'/0'/3'/2'").unwrap();
+        let wallet_id = [0u8; 32];
+        let data = b"x";
+        let key = [0x02u8; 33];
+        let mut sig_buf = [0u8; 128];
+
+        // (a) null pointer with a non-zero length.
+        let mut sig_len: usize = 0;
+        let mut err: u8 = 0;
+        let rc = unsafe {
+            dash_sdk_sign_with_mnemonic_resolver_and_path(
+                resolver,
+                wallet_id.as_ptr(),
+                path.as_ptr(),
+                data.as_ptr(),
+                data.len(),
+                0,
+                FFINetwork::Testnet,
+                std::ptr::null(),
+                33,
+                sig_buf.as_mut_ptr(),
+                sig_buf.len(),
+                &mut sig_len,
+                &mut err,
+            )
+        };
+        assert_eq!(rc, -1);
+        assert_eq!(err, SIGN_WITH_RESOLVER_ERR_NULL_POINTER);
+        assert_eq!(sig_len, 0, "null ptr + non-zero len must not sign");
+
+        // (b) real pointer with length zero.
+        let mut sig_len2: usize = 0;
+        let mut err2: u8 = 0;
+        let rc2 = unsafe {
+            dash_sdk_sign_with_mnemonic_resolver_and_path(
+                resolver,
+                wallet_id.as_ptr(),
+                path.as_ptr(),
+                data.as_ptr(),
+                data.len(),
+                0,
+                FFINetwork::Testnet,
+                key.as_ptr(),
+                0,
+                sig_buf.as_mut_ptr(),
+                sig_buf.len(),
+                &mut sig_len2,
+                &mut err2,
+            )
+        };
+        assert_eq!(rc2, -1);
+        assert_eq!(err2, SIGN_WITH_RESOLVER_ERR_NULL_POINTER);
+        assert_eq!(sig_len2, 0, "non-null ptr + zero len must not sign");
+
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
 

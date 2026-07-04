@@ -333,7 +333,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 "failed to persist wallet registration changeset"
             );
             let mut wm = self.wallet_manager.write().await;
-            let _ = wm.remove_wallet(&wallet_id);
+            if let Err(e) = wm.remove_wallet(&wallet_id) {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "rollback: remove_wallet failed while unwinding a failed wallet registration"
+                );
+            }
             return Err(PlatformWalletError::WalletCreation(format!(
                 "Failed to persist wallet registration changeset: {}",
                 e
@@ -376,7 +382,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Ok(state) => state,
             Err(e) => {
                 let mut wm = self.wallet_manager.write().await;
-                let _ = wm.remove_wallet(&wallet_id);
+                if let Err(e) = wm.remove_wallet(&wallet_id) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "rollback: remove_wallet failed while unwinding a failed wallet setup"
+                    );
+                }
                 return Err(PlatformWalletError::WalletCreation(format!(
                     "Failed to load persisted wallet state: {}",
                     e
@@ -391,7 +403,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .await
             {
                 let mut wm = self.wallet_manager.write().await;
-                let _ = wm.remove_wallet(&wallet_id);
+                if let Err(e) = wm.remove_wallet(&wallet_id) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "rollback: remove_wallet failed while unwinding a failed wallet setup"
+                    );
+                }
                 return Err(PlatformWalletError::WalletCreation(format!(
                     "Failed to restore persisted platform address state: {}",
                     e
@@ -452,7 +470,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .unwrap_or_default(),
                 None => Vec::new(),
             };
-            let _ = wm.remove_wallet(wallet_id);
+            if let Err(e) = wm.remove_wallet(wallet_id) {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "remove_wallet: inner wallet-manager removal failed (state may be inconsistent)"
+                );
+            }
             ids
         };
 

@@ -186,8 +186,10 @@ mod tests {
     }
 
     /// `IdentityKeyEntry` carries no key material by construction
-    /// (derive-sign-destroy removed the carried scalar), so the wire shape
-    /// only has the breadcrumb metadata to preserve. Pins that a
+    /// (derive-sign-destroy removed the carried scalar; the client derives it
+    /// on demand from the keychain), so the "no key material at rest outside
+    /// the keychain" guarantee is enforced at the type level and the wire
+    /// shape only has the breadcrumb metadata to preserve. Pins that a
     /// `from_entry` → `into_entry` round-trip keeps the `(wallet_id,
     /// derivation_indices)` breadcrumb intact.
     #[test]
@@ -217,6 +219,7 @@ mod tests {
         let wire = IdentityKeyWire::from_entry(&entry).expect("encode wire");
         let restored = wire.into_entry().expect("decode wire");
 
+        // The breadcrumb metadata survives the round-trip.
         assert_eq!(restored.wallet_id, entry.wallet_id);
         assert_eq!(restored.derivation_indices, entry.derivation_indices);
     }

@@ -97,11 +97,12 @@ pub unsafe extern "C" fn managed_identity_send_contact_request(
     let request = unwrap_option_or_return!(request_result);
 
     let option = MANAGED_IDENTITY_STORAGE.with_item_mut(identity_handle, |identity| {
-        // In-memory managed-identity handle: `ffi_noop_persister` never writes,
-        // so the mutator's store is infallible here — no error to surface.
-        let _ = identity.add_sent_contact_request(request, &ffi_noop_persister());
+        // Return the persist result so a failure surfaces through the FFI
+        // result instead of being swallowed — correct for any persister on this
+        // handle path (today the infallible `ffi_noop_persister`).
+        identity.add_sent_contact_request(request, &ffi_noop_persister())
     });
-    unwrap_option_or_return!(option);
+    unwrap_result_or_return!(unwrap_option_or_return!(option));
     PlatformWalletFFIResult::ok()
 }
 
@@ -118,11 +119,12 @@ pub unsafe extern "C" fn managed_identity_accept_contact_request(
     let request = unwrap_option_or_return!(request_result);
 
     let option = MANAGED_IDENTITY_STORAGE.with_item_mut(identity_handle, |identity| {
-        // In-memory managed-identity handle: `ffi_noop_persister` never writes,
-        // so the mutator's store is infallible here — no error to surface.
-        let _ = identity.add_incoming_contact_request(request, &ffi_noop_persister());
+        // Return the persist result so a failure surfaces through the FFI
+        // result instead of being swallowed — correct for any persister on this
+        // handle path (today the infallible `ffi_noop_persister`).
+        identity.add_incoming_contact_request(request, &ffi_noop_persister())
     });
-    unwrap_option_or_return!(option);
+    unwrap_result_or_return!(unwrap_option_or_return!(option));
     PlatformWalletFFIResult::ok()
 }
 
@@ -140,8 +142,11 @@ pub unsafe extern "C" fn managed_identity_ignore_contact_sender(
     let id = unwrap_result_or_return!(unsafe { read_identifier(sender_id) });
 
     let option = MANAGED_IDENTITY_STORAGE.with_item_mut(identity_handle, |identity| {
-        // Drop the returned changeset — this handle has no persister.
-        let _ = identity.ignore_sender(&id);
+        // `ignore_sender` returns a `ContactChangeSet`, not a `Result` — there is
+        // no error to surface. This handle has no persister, so the changeset is
+        // intentionally dropped; the durable `platform_wallet_ignore_contact_sender`
+        // path persists it.
+        drop(identity.ignore_sender(&id));
     });
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()

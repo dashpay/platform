@@ -902,7 +902,10 @@ mod tests {
                 &xprv.private_key,
             ))
         }
+    }
 
+    #[async_trait::async_trait]
+    impl key_wallet::signer::ExtendedPubKeySigner for SeedSigner {
         async fn extended_public_key(
             &self,
             path: &key_wallet::bip32::DerivationPath,
