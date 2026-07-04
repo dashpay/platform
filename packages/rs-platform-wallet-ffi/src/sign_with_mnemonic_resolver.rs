@@ -72,18 +72,6 @@ pub const SIGN_WITH_RESOLVER_ERR_RESOLVER_FAILED: u8 = 10;
 /// NOT produced — this guards against signing with a wrong/stale key.
 pub const SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH: u8 = 11;
 
-/// RAII guard that scrubs an [`ExtendedPrivKey`]'s secret scalar on drop, so an
-/// early `return`, `?`, or panic between derivation and use can't leak it (the
-/// type has no upstream `Drop`/`Zeroize`). Mirrors `WipingXprv` in
-/// `rs-sdk-ffi/src/mnemonic_resolver_core_signer.rs`.
-struct WipingXprv(ExtendedPrivKey);
-
-impl Drop for WipingXprv {
-    fn drop(&mut self) {
-        self.0.private_key.non_secure_erase();
-    }
-}
-
 /// Sign `data` with the ECDSA secp256k1 private key derived from
 /// `(mnemonic-via-resolver, derivation_path)`. Mnemonic, seed and
 /// derived secret bytes all stay in `Zeroizing` buffers and are
@@ -234,19 +222,19 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
     };
 
     let kw_network: Network = network.into();
-    // `WipingXprv` scrubs both scalars on drop, covering the early `return`
-    // below (master is guarded the moment it is built) and any panic between
-    // here and signing. (Upstream `ExtendedPrivKey` has no `Drop`/`Zeroize`.)
+    // The master and derived `ExtendedPrivKey`s self-wipe their secret scalar
+    // on `Drop` (upstream key-wallet), covering the early `return` below and any
+    // panic between here and signing.
     let master = match ExtendedPrivKey::new_master(kw_network, seed.as_ref()) {
-        Ok(m) => WipingXprv(m),
+        Ok(m) => m,
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
     };
     let secp = Secp256k1::new();
-    let derived = match master.0.derive_priv(&secp, &path) {
-        Ok(d) => WipingXprv(d),
+    let derived = match master.derive_priv(&secp, &path) {
+        Ok(d) => d,
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
     };
-    let secret_bytes: Zeroizing<[u8; 32]> = Zeroizing::new(derived.0.private_key.secret_bytes());
+    let secret_bytes: Zeroizing<[u8; 32]> = Zeroizing::new(derived.private_key.secret_bytes());
 
     // ---- Bind the derived key to the expected on-chain key -------------------
     // Reject before signing if the key derived here doesn't reproduce the
@@ -256,7 +244,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
     // compressed pubkey equality; 20-byte expected = `ripemd160_sha256` of it.
     if !expected_key_data.is_null() && expected_key_data_len > 0 {
         let expected = std::slice::from_raw_parts(expected_key_data, expected_key_data_len);
-        let derived_pubkey = key_wallet::bip32::ExtendedPubKey::from_priv(&secp, &derived.0)
+        let derived_pubkey = key_wallet::bip32::ExtendedPubKey::from_priv(&secp, &derived)
             .public_key
             .serialize();
         let matches = match expected_key_data_len {

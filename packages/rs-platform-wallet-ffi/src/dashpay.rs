@@ -609,7 +609,7 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
         &self,
         path: &key_wallet::bip32::DerivationPath,
     ) -> Result<key_wallet::bip32::ExtendedPubKey, platform_wallet::PlatformWalletError> {
-        use key_wallet::signer::Signer;
+        use key_wallet::signer::ExtendedPubKeySigner;
         self.signer
             .extended_public_key(path)
             .await

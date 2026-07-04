@@ -39,26 +39,25 @@
 //! # Zeroization
 //!
 //! Every intermediate that carries key material is wiped before the
-//! method returns. Two mechanisms cover the different ownership
+//! method returns. Three mechanisms cover the different ownership
 //! shapes:
 //!
-//! - **`Zeroizing` wrappers** scrub on `Drop` for the byte-buffer
-//!   intermediates: the resolver mnemonic buffer, the BIP-39 seed,
-//!   and the final derived 32-byte scalar.
-//! - **The `WipingXprv` RAII guard** scrubs the
-//!   [`secp256k1::SecretKey`] scalars inside the two intermediate
-//!   [`ExtendedPrivKey`] values (master + derived) on `Drop`.
-//!   `ExtendedPrivKey` has no `Drop` / `Zeroize` impl in `key-wallet`,
-//!   so falling out of scope alone would leave those scalars resident;
-//!   wrapping them in the guard wipes on **every** exit path — normal
-//!   return, `?` error propagation, and panic unwind — so the shared
-//!   `resolve_derived_xprv` helper and every consumer (`derive_priv`,
-//!   `extended_public_key`, `ecdh_shared_secret`) inherit the wipe
-//!   without hand-placed calls. Same defense is applied at the sign-site
-//!   for the `SecretKey` copy `from_slice` creates. A proper fix is a
-//!   `Zeroize` / `ZeroizeOnDrop` impl in `dashpay/rust-dashcore`'s
-//!   `key-wallet/src/bip32.rs`; until that ships, the guard keeps the
-//!   no-residue invariant true.
+//! - **[`ExtendedPrivKey`] self-wipes on `Drop`.** The master and
+//!   derived extended keys zero their secret material when they leave
+//!   scope, on every exit path — success, `?`-early-return, and
+//!   panic-unwind. The type is not `Copy`, so each move is a real move
+//!   that leaves no stray bitwise duplicate behind.
+//! - **`Zeroizing` wrappers** scrub the plain byte buffers that carry
+//!   no `Drop` of their own: the resolver mnemonic buffer, the BIP-39
+//!   seed, and the final derived 32-byte scalar.
+//! - **The `WipingSecretKey` RAII guard** scrubs the raw
+//!   [`secp256k1::SecretKey`] copies at the two sign sites, where the
+//!   scalar comes back out of `SecretKey::from_slice`. `SecretKey` is an
+//!   upstream secp256k1 type with no `Zeroize` impl (only
+//!   `non_secure_erase()`), so it can't ride a `Zeroizing` wrapper; the
+//!   guard wipes it on every exit path — normal return, `?`-early-return,
+//!   and panic-unwind — closing the one leak window a bare inline erase
+//!   would leave open between construction and the scrub.
 //!
 //! Combined, no private key bytes survive past the trait-method
 //! boundary.
@@ -69,7 +68,7 @@ use std::os::raw::c_char;
 use async_trait::async_trait;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::dashcore::secp256k1::{self, Secp256k1};
-use key_wallet::signer::{Signer, SignerMethod};
+use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::Network;
 use thiserror::Error;
 use zeroize::Zeroizing;
@@ -225,29 +224,37 @@ impl MnemonicResolverCoreSigner {
         }
     }
 
-    /// Resolve the mnemonic from the Swift-side callback and derive the
-    /// BIP-32 [`ExtendedPrivKey`] at `path`, returning `(master, derived)`.
+    /// Resolve the mnemonic from the Swift-side callback, derive the BIP-32
+    /// extended private key at `path`, and hand it *by reference* to
+    /// `extract`, returning whatever `extract` produces.
     ///
-    /// Single source of truth for the resolve → parse → seed → master →
-    /// `derive_priv` chain shared by [`Self::derive_priv`] (which reads the
-    /// derived scalar) and the [`Signer::extended_public_key`] method (which
-    /// computes the public xpub). All intermediate byte buffers (mnemonic,
-    /// seed) are dropped — and zeroed via `Zeroizing` — before this method
-    /// returns.
+    /// This is the single entry-point for all private-key material in this
+    /// signer. It handles the full stack: resolver FFI call → result-code
+    /// mapping → UTF-8 + word-list validation → BIP-39 seed → master
+    /// `ExtendedPrivKey` → child `ExtendedPrivKey` at `path`.
     ///
     /// # Zeroization contract
     ///
-    /// The returned `master` / `derived` are each wrapped in [`WipingXprv`],
-    /// whose `Drop` scrubs the inner `secp256k1::SecretKey` scalar (which
-    /// [`ExtendedPrivKey`] does not wipe on its own). So both scalars are wiped
-    /// on **every** exit path of the caller — normal return, `?` error
-    /// propagation, and panic unwind — with no hand-placed `non_secure_erase`
-    /// required. `master` is wrapped the instant it exists, so it is scrubbed
-    /// even if the path derivation below fails.
-    fn resolve_derived_xprv(
+    /// Both the `master` and `derived` extended keys wipe their secret
+    /// material when they leave this scope — [`ExtendedPrivKey`] zeroizes on
+    /// `Drop` and is not `Copy`, so each move is a real move that leaves no
+    /// bitwise duplicate behind. The
+    /// key never crosses the call boundary — `extract` only borrows it — so it
+    /// cannot outlive the derivation. `extract` returns public material
+    /// (`ExtendedPubKey`) or a `Zeroizing` scalar copy; the caller wipes the
+    /// latter on its own drop. The mnemonic and seed buffers are plain arrays
+    /// and ride [`Zeroizing`] wrappers for the same guarantee.
+    ///
+    /// # Errors
+    ///
+    /// Propagates [`MnemonicResolverSignerError`] for every failure mode:
+    /// null handle, resolver FFI errors, encoding/parse failures, and BIP-32
+    /// derivation errors.
+    fn resolve_and_derive<T>(
         &self,
         path: &DerivationPath,
-    ) -> Result<(WipingXprv, WipingXprv), MnemonicResolverSignerError> {
+        extract: impl FnOnce(&ExtendedPrivKey) -> T,
+    ) -> Result<T, MnemonicResolverSignerError> {
         if self.resolver_addr == 0 {
             return Err(MnemonicResolverSignerError::NullHandle);
         }
@@ -305,42 +312,30 @@ impl MnemonicResolverCoreSigner {
         drop(mnemonic);
 
         let secp = Secp256k1::new();
-        // Wrap `master` in its wiping guard the instant it exists, so its scalar
-        // is scrubbed even if the path derivation below returns `Err`.
-        let master = WipingXprv(
-            ExtendedPrivKey::new_master(self.network, seed.as_ref()).map_err(|e| {
-                MnemonicResolverSignerError::DerivationFailed(format!("master: {e}"))
-            })?,
-        );
-        let derived =
-            WipingXprv(master.key().derive_priv(&secp, path).map_err(|e| {
-                MnemonicResolverSignerError::DerivationFailed(format!("path: {e}"))
-            })?);
+        let master = ExtendedPrivKey::new_master(self.network, seed.as_ref())
+            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(format!("master: {e}")))?;
+        let derived = master
+            .derive_priv(&secp, path)
+            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(format!("path: {e}")))?;
 
-        Ok((master, derived))
+        Ok(extract(&derived))
     }
 
-    /// Resolve the mnemonic from the Swift-side callback, then
-    /// derive the secp256k1 private key at `path`. Returns the raw
-    /// 32-byte scalar in a `Zeroizing` wrapper so the caller's last
-    /// drop point zeros it.
+    /// Resolve the mnemonic and derive the raw 32-byte scalar at `path`.
     ///
-    /// All other intermediate buffers (mnemonic, seed) are dropped
-    /// (and zeroed) before this method returns — only the final
-    /// derived scalar leaks out, and even that is `Zeroizing`-wrapped.
+    /// Returns the scalar in a `Zeroizing` wrapper so the caller's last
+    /// drop point wipes it. The intermediate `ExtendedPrivKey` values,
+    /// mnemonic, and seed are wiped inside [`Self::resolve_and_derive`]
+    /// before this returns.
     fn derive_priv(
         &self,
         path: &DerivationPath,
     ) -> Result<Zeroizing<[u8; 32]>, MnemonicResolverSignerError> {
-        let (_master, derived) = self.resolve_derived_xprv(path)?;
-
-        // `secret_bytes()` returns a plain `[u8; 32]`; wrap in `Zeroizing` so
-        // the caller (and any panic-unwind path) wipes it on drop. The
-        // `WipingXprv` guards scrub `master`/`derived`'s scalars when they drop
-        // at the end of this scope, on every exit path.
-        let bytes = Zeroizing::new(derived.key().private_key.secret_bytes());
-
-        Ok(bytes)
+        // `secret_bytes()` copies the scalar out of the borrowed key; the
+        // `ExtendedPrivKey` itself never leaves `resolve_and_derive`.
+        self.resolve_and_derive(path, |derived| {
+            Zeroizing::new(derived.private_key.secret_bytes())
+        })
     }
 
     /// Export the raw auto-accept private scalar at `path` (DIP-15 QR
@@ -381,7 +376,8 @@ impl MnemonicResolverCoreSigner {
     /// Reuses [`platform_encryption::derive_shared_key_ecdh`] — the single
     /// ECDH source (`SHA256((y&1|2) ‖ x)`) — so the result is byte-identical
     /// to the resident-seed path it replaces (pinned by a parity test). The
-    /// scalar is scrubbed by the [`WipingXprv`] guard before returning.
+    /// borrowed `ExtendedPrivKey` never leaves [`Self::resolve_and_derive`]
+    /// and self-wipes on `Drop`.
     ///
     /// Sync (the derivation is CPU-bound + the resolver call is synchronous);
     /// the [`EcdhProvider::ClientSide`] closure that consumes it wraps it in a
@@ -391,11 +387,12 @@ impl MnemonicResolverCoreSigner {
         path: &DerivationPath,
         peer_pubkey: &secp256k1::PublicKey,
     ) -> Result<Zeroizing<[u8; 32]>, MnemonicResolverSignerError> {
-        let (_master, derived) = self.resolve_derived_xprv(path)?;
-        // Read the scalar by reference; the `WipingXprv` guards scrub both
-        // scalars on drop.
-        let shared =
-            platform_encryption::derive_shared_key_ecdh(&derived.key().private_key, peer_pubkey);
+        // Read the scalar by reference inside the closure; the borrowed
+        // `ExtendedPrivKey` self-wipes on `Drop` when `resolve_and_derive`
+        // returns. Only the ECDH product crosses the boundary.
+        let shared = self.resolve_and_derive(path, |derived| {
+            platform_encryption::derive_shared_key_ecdh(&derived.private_key, peer_pubkey)
+        })?;
         Ok(Zeroizing::new(shared))
     }
 
@@ -403,9 +400,10 @@ impl MnemonicResolverCoreSigner {
     /// in-process. Derive the sender's ECDH private scalar at `path` and feed it
     /// (as the HMAC key) to [`platform_encryption::calculate_account_reference`]
     /// over the 69-byte compact xpub. This is the same scalar
-    /// [`Self::ecdh_shared_secret`] uses; it never leaves the signer (the stack
-    /// copy is `Zeroizing`-scrubbed and the derived key by the `WipingXprv`
-    /// guard), so the masked reference is produced without the resident seed.
+    /// [`Self::ecdh_shared_secret`] uses; it never leaves the signer (the derived
+    /// scalar is `Zeroizing`-scrubbed and the intermediate `ExtendedPrivKey`
+    /// self-wipes on `Drop`), so the masked reference is produced without the
+    /// resident seed.
     pub fn account_reference(
         &self,
         path: &DerivationPath,
@@ -413,8 +411,7 @@ impl MnemonicResolverCoreSigner {
         account_index: u32,
         version: u32,
     ) -> Result<u32, MnemonicResolverSignerError> {
-        let (_master, derived) = self.resolve_derived_xprv(path)?;
-        let secret = Zeroizing::new(derived.key().private_key.secret_bytes());
+        let secret = self.derive_priv(path)?;
         Ok(platform_encryption::calculate_account_reference(
             &secret,
             compact_xpub,
@@ -432,8 +429,7 @@ impl MnemonicResolverCoreSigner {
         compact_xpub: &[u8],
         account_reference: u32,
     ) -> Result<(u32, u32), MnemonicResolverSignerError> {
-        let (_master, derived) = self.resolve_derived_xprv(path)?;
-        let secret = Zeroizing::new(derived.key().private_key.secret_bytes());
+        let secret = self.derive_priv(path)?;
         Ok(platform_encryption::unmask_account_reference(
             account_reference,
             &secret,
@@ -443,8 +439,9 @@ impl MnemonicResolverCoreSigner {
 
     /// Derive the 32-byte AES key for one DIP-15 contactInfo feature
     /// (`encToUserId` = 65536, `privateData` = 65537) at
-    /// `root_path / feature' / derivation_index'`. The scalar is wiped by the
-    /// `WipingXprv` guard; the returned key bytes are `Zeroizing`-wrapped.
+    /// `root_path / feature' / derivation_index'`. The intermediate
+    /// `ExtendedPrivKey` self-wipes on `Drop`; the returned key bytes are
+    /// `Zeroizing`-wrapped.
     fn derive_contact_info_aes_key(
         &self,
         root_path: &DerivationPath,
@@ -459,8 +456,7 @@ impl MnemonicResolverCoreSigner {
                 MnemonicResolverSignerError::DerivationFailed(format!("contactInfo index: {e}"))
             })?,
         ]);
-        let (_master, derived) = self.resolve_derived_xprv(&path)?;
-        Ok(Zeroizing::new(derived.key().private_key.secret_bytes()))
+        self.derive_priv(&path)
     }
 
     /// DIP-15 contactInfo **seal**: encrypt `contact_id` (`encToUserId`,
@@ -527,36 +523,15 @@ pub struct ContactInfoOpened {
     pub private_data: Vec<u8>,
 }
 
-/// RAII guard that scrubs an [`ExtendedPrivKey`]'s secret scalar on drop.
+/// RAII guard that wipes a [`secp256k1::SecretKey`]'s scalar on `Drop`.
 ///
-/// `key_wallet::bip32::ExtendedPrivKey` has no `Drop` / `Zeroize` impl, so its
-/// inner `secp256k1::SecretKey` would otherwise survive in memory on *every*
-/// exit path — normal return, early `?` error propagation, and panic unwind.
-/// Moving the wipe into `Drop` makes it run on all of them, instead of only
-/// where a `non_secure_erase()` was hand-placed. (`non_secure_erase` is
-/// secp256k1's best-effort scrub — the strongest tool until `ExtendedPrivKey`
-/// gains a `ZeroizeOnDrop` upstream.) The sibling FFI at
-/// `rs-platform-wallet-ffi/src/sign_with_mnemonic_resolver.rs` has the same
-/// un-wiped-on-error gap and wants the same guard.
-struct WipingXprv(ExtendedPrivKey);
-
-impl WipingXprv {
-    #[inline]
-    fn key(&self) -> &ExtendedPrivKey {
-        &self.0
-    }
-}
-
-impl Drop for WipingXprv {
-    fn drop(&mut self) {
-        self.0.private_key.non_secure_erase();
-    }
-}
-
-/// RAII guard that scrubs a `secp256k1::SecretKey`'s scalar on drop. `from_slice`
-/// allocates a 32-byte scalar copy distinct from the `Zeroizing` source bytes,
-/// and `SecretKey` has no `Drop` wipe of its own — so without this the copy would
-/// survive a panic between construction and signing. `WipingXprv` for the leaf key.
+/// `SecretKey` is an upstream secp256k1 type with no `Zeroize` impl (only
+/// `non_secure_erase()`), so it can't ride a `Zeroizing` wrapper. Wrapping the
+/// `SecretKey::from_slice` copy here wipes it on every exit path — normal
+/// return, `?`-early-return, and panic-unwind — closing the leak window a bare
+/// inline `non_secure_erase()` would leave open between construction and the
+/// manual scrub. This is the one key intermediate that upstream key-wallet's
+/// `Zeroize`/`Drop` on `ExtendedPrivKey` cannot cover.
 struct WipingSecretKey(secp256k1::SecretKey);
 
 impl Drop for WipingSecretKey {
@@ -583,10 +558,10 @@ impl Signer for MnemonicResolverCoreSigner {
     ) -> Result<(secp256k1::ecdsa::Signature, secp256k1::PublicKey), Self::Error> {
         let secret_bytes = self.derive_priv(path)?;
         let secp = Secp256k1::new();
-        // `SecretKey::from_slice` validates the 32-byte scalar is a legitimate
-        // field element. The `WipingSecretKey` guard scrubs the SecretKey-owned
-        // copy on every exit path (incl. panic) — `Zeroizing<[u8;32]>` only
-        // covers `secret_bytes`, not the separate copy `from_slice` allocates.
+        // `SecretKey::from_slice` validates the 32-byte scalar is a
+        // legitimate field element. The `WipingSecretKey` guard scrubs this
+        // separate copy on every exit path, including a panic between here and
+        // the return — `Zeroizing<[u8;32]>` already covers `secret_bytes`.
         let secret = WipingSecretKey(
             secp256k1::SecretKey::from_slice(secret_bytes.as_ref())
                 .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?,
@@ -600,8 +575,8 @@ impl Signer for MnemonicResolverCoreSigner {
     async fn public_key(&self, path: &DerivationPath) -> Result<secp256k1::PublicKey, Self::Error> {
         let secret_bytes = self.derive_priv(path)?;
         let secp = Secp256k1::new();
-        // `WipingSecretKey` scrubs the SecretKey-owned scalar copy on every exit
-        // path including panic (see `sign_ecdsa`).
+        // `WipingSecretKey` scrubs this `from_slice` copy on every exit path,
+        // including panic-unwind — `Zeroizing<[u8;32]>` covers `secret_bytes`.
         let secret = WipingSecretKey(
             secp256k1::SecretKey::from_slice(secret_bytes.as_ref())
                 .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?,
@@ -609,19 +584,26 @@ impl Signer for MnemonicResolverCoreSigner {
         let pubkey = secp256k1::PublicKey::from_secret_key(&secp, &secret.0);
         Ok(pubkey)
     }
+}
 
+#[async_trait]
+impl ExtendedPubKeySigner for MnemonicResolverCoreSigner {
+    /// Derive the BIP-32 extended public key at `path`.
+    ///
+    /// Returns the full [`ExtendedPubKey`] (public point + chain code) so
+    /// callers can perform non-hardened child derivation locally without
+    /// additional round-trips to the resolver. All intermediate private-key
+    /// material is zeroized before this method returns (see
+    /// [`Self::resolve_and_derive`]); `ExtendedPubKey` carries only public
+    /// information and requires no further wiping.
     async fn extended_public_key(
         &self,
         path: &DerivationPath,
     ) -> Result<ExtendedPubKey, Self::Error> {
-        let (_master, derived) = self.resolve_derived_xprv(path)?;
         let secp = Secp256k1::new();
-        // The extended public key (point + chain code) carries no secret; it is
-        // safe to return. The `WipingXprv` guards scrub the private halves when
-        // they drop at the end of this scope, on every exit path.
-        let xpub = ExtendedPubKey::from_priv(&secp, derived.key());
-
-        Ok(xpub)
+        // `ExtendedPubKey` carries only public material (chain code + point);
+        // the borrowed private key never leaves `resolve_and_derive`.
+        self.resolve_and_derive(path, |derived| ExtendedPubKey::from_priv(&secp, derived))
     }
 }
 
@@ -775,6 +757,51 @@ mod tests {
         assert_eq!(
             xpub.public_key, pk_only,
             "extended_public_key().public_key must equal public_key() at the same path"
+        );
+
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    #[tokio::test]
+    async fn extended_public_key_matches_independent_derivation() {
+        let resolver = make_resolver(english_resolve);
+        let signer =
+            unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+
+        let path = test_path();
+        let xpub = signer
+            .extended_public_key(&path)
+            .await
+            .expect("extended_public_key succeeds");
+
+        // Independently derive the expected xpub straight from the known
+        // BIP-39 vector — same network + path, no resolver in the loop.
+        let secp = Secp256k1::new();
+        let mnemonic = parse_mnemonic_any_language(ENGLISH_PHRASE).expect("valid phrase");
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &mnemonic.to_seed(""))
+            .expect("master derivation");
+        let derived = master.derive_priv(&secp, &path).expect("path derivation");
+        let expected = ExtendedPubKey::from_priv(&secp, &derived);
+
+        // Field-level checks run first so a silently-dropped BIP-32 metadatum
+        // fails here with a precise message — not just the public point. The
+        // final full-struct assert then catches the remaining fields
+        // (parent_fingerprint, child_number). Ordering matters: a leading
+        // full-struct `assert_eq!` would short-circuit and make these
+        // per-field asserts unreachable (i.e. vacuous) on a metadata regression.
+        assert_eq!(
+            xpub.public_key, expected.public_key,
+            "public key must match"
+        );
+        assert_eq!(
+            xpub.chain_code, expected.chain_code,
+            "chain code must match"
+        );
+        assert_eq!(xpub.depth, expected.depth, "depth must match");
+        assert_eq!(xpub.network, expected.network, "network must match");
+        assert_eq!(
+            xpub, expected,
+            "full xpub must match independent derivation"
         );
 
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
