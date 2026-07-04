@@ -49,6 +49,17 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// atomically.
     private var inChangeset = false
 
+    /// Breadcrumb backfills that arrived on the serial queue while a
+    /// changeset round was open. The backfill both mutates
+    /// `backgroundContext` and saves it, so running it mid-round would
+    /// commit the round's staged (uncommitted) writes early and break the
+    /// "each Rust `store()` is one atomic transaction" invariant. Instead
+    /// the request is parked here and drained by `endChangeset` once the
+    /// round has committed/rolled back and `inChangeset` is clear — the
+    /// backfill still completes, just cleanly outside any open round.
+    /// Confined to `serialQueue` like all other mutable handler state.
+    private var deferredBackfills: [(walletId: Data, items: [KeychainManager.IdentityPrivateKeyMetadata])] = []
+
     public init(modelContainer: ModelContainer, network: Network? = nil) {
         self.modelContainer = modelContainer
         self.network = network
@@ -1073,7 +1084,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     func endChangeset(walletId: Data, success: Bool) -> Bool {
         onQueue {
             _ = walletId
-            defer { self.inChangeset = false }
+            // Clear the flag before draining deferred backfills so each one's
+            // save() lands cleanly outside the round; `drainDeferredBackfills`
+            // is guarded on `!inChangeset`, so the ordering inside this `defer`
+            // (clear, then drain) is load-bearing.
+            defer {
+                self.inChangeset = false
+                self.drainDeferredBackfills()
+            }
             if success {
                 do {
                     try backgroundContext.save()
@@ -1093,6 +1111,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 backgroundContext.rollback()
                 return false
             }
+        }
+    }
+
+    /// Run any breadcrumb backfills that were parked while a changeset
+    /// round was open. Must be called on `serialQueue` with `inChangeset`
+    /// already cleared so each `backfillCore` mutates + saves cleanly on
+    /// its own. Draining after the round's own `save()`/`rollback()` keeps
+    /// the backfill's writes out of the round's transaction.
+    private func drainDeferredBackfills() {
+        guard !inChangeset, !deferredBackfills.isEmpty else { return }
+        let pending = deferredBackfills
+        deferredBackfills.removeAll()
+        for request in pending {
+            _ = backfillCore(walletId: request.walletId, items: request.items)
         }
     }
 
@@ -1869,6 +1901,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     existing.contactNote = entry.contactNote
                     existing.contactHidden = entry.contactHidden
                     existing.contactAccountLabel = entry.contactAccountLabel
+                    existing.contactAcceptedAccounts = entry.contactAcceptedAccounts
                     if existing.owner !== owner {
                         existing.owner = owner
                     }
@@ -1892,6 +1925,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     row.contactNote = entry.contactNote
                     row.contactHidden = entry.contactHidden
                     row.contactAccountLabel = entry.contactAccountLabel
+                    row.contactAcceptedAccounts = entry.contactAcceptedAccounts
                     backgroundContext.insert(row)
                 }
             }
@@ -2072,6 +2106,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         /// The contact's decrypted account label — system-derived,
         /// incoming-row only (nil on outgoing / pending rows).
         let contactAccountLabel: String?
+        /// `EstablishedContact::accepted_accounts` — DIP-15 rotated-account
+        /// acceptances. Established rows only (replicated onto both
+        /// directions); empty for pending rows.
+        let contactAcceptedAccounts: [UInt32]
     }
 
     /// Owned snapshot of a `ContactRequestRemovalFFI` row. Carries
@@ -2270,6 +2308,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         items: [KeychainManager.IdentityPrivateKeyMetadata]
     ) -> (written: Int, skipped: Int, failed: Int) {
         guard !items.isEmpty else { return (0, 0, 0) }
+
+        // A backfill that lands mid-round must NOT touch `backgroundContext`:
+        // its save() would flush the round's staged writes early, and even a
+        // save-less mutation would ride the round's own `save()`/`rollback()`.
+        // Park the request and let `endChangeset` replay it once the round has
+        // settled. Nothing is written on this call — the caller (unlock path)
+        // is fire-and-forget, and the deletion-gate `failed` count is only read
+        // from the synchronous, out-of-round entry point.
+        if inChangeset {
+            deferredBackfills.append((walletId: walletId, items: items))
+            return (0, 0, 0)
+        }
 
         var written = 0
         var skipped = 0
@@ -4818,6 +4868,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         row.contact_account_label = UnsafePointer(duplicateCString(label, allocation: allocation))
                     }
 
+                    // Relationship-wide (both directions carry it): feed the
+                    // DIP-15 accepted-account acceptances back so the FFI row
+                    // rebuild restores them instead of resetting to empty.
+                    let accepted = contact.contactAcceptedAccounts
+                    if !accepted.isEmpty {
+                        let buf = UnsafeMutablePointer<UInt32>.allocate(capacity: accepted.count)
+                        accepted.withUnsafeBufferPointer { src in
+                            buf.initialize(from: src.baseAddress!, count: accepted.count)
+                        }
+                        row.accepted_accounts = UnsafePointer(buf)
+                        row.accepted_accounts_len = UInt(accepted.count)
+                        allocation.u32Buffers.append((buf, accepted.count))
+                    }
+
                     contactBuf[c] = row
                 }
                 entry.contacts = UnsafePointer(contactBuf)
@@ -5238,6 +5302,10 @@ private final class LoadAllocation {
         [(UnsafeMutablePointer<ContactProfileRestoreEntryFFI>, Int)] = []
     /// Byte buffers backing `root_xpub_bytes` and `account_xpub_bytes`.
     var scalarBuffers: [(UnsafeMutablePointer<UInt8>, Int)] = []
+    /// `u32` buffers backing `ContactRequestFFI::accepted_accounts` (the
+    /// DIP-15 rotated-account acceptances). Separate from `scalarBuffers`
+    /// because the element type differs; freed by `deallocate()`.
+    var u32Buffers: [(UnsafeMutablePointer<UInt32>, Int)] = []
     /// NUL-terminated c-string buffers carried by identity entries
     /// (`label`, dpns name labels, etc.). Allocated via plain
     /// `UnsafeMutablePointer<CChar>.allocate`, freed by `deallocate()`.
@@ -5312,6 +5380,9 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, _) in scalarBuffers {
+            ptr.deallocate()
+        }
+        for (ptr, _) in u32Buffers {
             ptr.deallocate()
         }
         for (ptr, _) in cStringBuffers {
@@ -6170,6 +6241,14 @@ private func persistContactsCallback(
             } else {
                 autoAcceptProof = nil
             }
+            let acceptedAccounts: [UInt32]
+            if let acceptedPtr = e.accepted_accounts, e.accepted_accounts_len > 0 {
+                acceptedAccounts = Array(
+                    UnsafeBufferPointer(start: acceptedPtr, count: Int(e.accepted_accounts_len))
+                )
+            } else {
+                acceptedAccounts = []
+            }
 
             upserts.append(.init(
                 ownerIdentityId: dataFromTuple32(e.owner_id),
@@ -6187,7 +6266,8 @@ private func persistContactsCallback(
                 contactAlias: e.alias.map { String(cString: $0) },
                 contactNote: e.note.map { String(cString: $0) },
                 contactHidden: e.is_hidden,
-                contactAccountLabel: e.contact_account_label.map { String(cString: $0) }
+                contactAccountLabel: e.contact_account_label.map { String(cString: $0) },
+                contactAcceptedAccounts: acceptedAccounts
             ))
         }
     }

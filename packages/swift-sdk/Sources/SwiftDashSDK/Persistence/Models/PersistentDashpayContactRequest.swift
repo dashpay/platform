@@ -132,6 +132,15 @@ public final class PersistentDashpayContactRequest {
     /// lightweight migration.
     public var contactAccountLabel: String?
 
+    /// `EstablishedContact::accepted_accounts` — the DIP-15
+    /// rotated-account acceptances for this relationship. Mirrors
+    /// `ContactRequestFFI::accepted_accounts`: a property of the
+    /// relationship (not one direction), so it is replicated onto
+    /// both directions like `paymentChannelBroken`; always empty for
+    /// pending rows. Defaulted to an empty array so existing rows
+    /// ride SwiftData's lightweight migration.
+    public var contactAcceptedAccounts: [UInt32] = []
+
     // MARK: - Relationships
 
     /// Owning identity — the wallet-managed identity this row's

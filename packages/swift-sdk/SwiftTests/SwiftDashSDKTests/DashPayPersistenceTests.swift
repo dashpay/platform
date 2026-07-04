@@ -57,7 +57,8 @@ final class DashPayContactPersistenceTests: XCTestCase {
         accountReference: UInt32 = 0,
         paymentChannelBroken: Bool = false,
         encryptedPublicKey: Data = Data(repeating: 0x11, count: 96),
-        encryptedAccountLabel: Data? = nil
+        encryptedAccountLabel: Data? = nil,
+        contactAcceptedAccounts: [UInt32] = []
     ) -> PlatformWalletPersistenceHandler.ContactRequestSnapshot {
         .init(
             ownerIdentityId: ownerId,
@@ -75,7 +76,8 @@ final class DashPayContactPersistenceTests: XCTestCase {
             contactAlias: nil,
             contactNote: nil,
             contactHidden: false,
-            contactAccountLabel: nil
+            contactAccountLabel: nil,
+            contactAcceptedAccounts: contactAcceptedAccounts
         )
     }
 
@@ -215,7 +217,8 @@ final class DashPayContactPersistenceTests: XCTestCase {
                 isOutgoing: true,
                 accountReference: 42,
                 encryptedPublicKey: key,
-                encryptedAccountLabel: label
+                encryptedAccountLabel: label,
+                contactAcceptedAccounts: [7, 42]
             )
         ])
 
@@ -234,6 +237,10 @@ final class DashPayContactPersistenceTests: XCTestCase {
         XCTAssertEqual(row.coreHeightCreatedAt, 1_234_567)
         XCTAssertEqual(row.createdAtMillis, 1_700_000_000_000)
         XCTAssertFalse(row.paymentChannelBroken)
+        XCTAssertEqual(
+            row.contactAcceptedAccounts, [7, 42],
+            "DIP-15 accepted-account acceptances must round-trip through the persist path"
+        )
         XCTAssertEqual(row.network, .testnet)
         XCTAssertEqual(row.owner.identityId, ownerId)
     }
@@ -298,7 +305,8 @@ final class DashPayContactPersistenceTests: XCTestCase {
             contactAlias: snapshot.contactAlias,
             contactNote: snapshot.contactNote,
             contactHidden: snapshot.contactHidden,
-            contactAccountLabel: snapshot.contactAccountLabel
+            contactAccountLabel: snapshot.contactAccountLabel,
+            contactAcceptedAccounts: snapshot.contactAcceptedAccounts
         )
         applyContacts(upserts: [snapshot])
 
@@ -423,6 +431,7 @@ final class DashPayContactPersistenceTests: XCTestCase {
 
         let encryptedKey = Data((0..<96).map { UInt8($0 ^ 0x5A) })
         let label = Data([0x01, 0x02, 0x03])
+        let accepted: [UInt32] = [7, 42]
 
         walletId.withUnsafeBytes { (widRaw: UnsafeRawBufferPointer) in
             guard let wid = widRaw.bindMemory(to: UInt8.self).baseAddress else {
@@ -433,6 +442,10 @@ final class DashPayContactPersistenceTests: XCTestCase {
 
             encryptedKey.withUnsafeBytes { (keyRaw: UnsafeRawBufferPointer) in
                 label.withUnsafeBytes { (labelRaw: UnsafeRawBufferPointer) in
+                    // Keep the accepted-accounts buffer alive for the whole
+                    // call — Rust owns it in production, but here the test
+                    // owns it and must outlive `contactsFn`.
+                    accepted.withUnsafeBufferPointer { acceptedPtr in
                     let keyPtr = keyRaw.bindMemory(to: UInt8.self).baseAddress
                     let labelPtr = labelRaw.bindMemory(to: UInt8.self).baseAddress
 
@@ -450,11 +463,17 @@ final class DashPayContactPersistenceTests: XCTestCase {
                     outgoing.core_height_created_at = 99
                     outgoing.created_at = 1_700_000_000_123
                     outgoing.payment_channel_broken = true
+                    outgoing.accepted_accounts = acceptedPtr.baseAddress
+                    outgoing.accepted_accounts_len = UInt(accepted.count)
 
                     var incoming = outgoing
                     incoming.is_outgoing = false
                     incoming.encrypted_account_label = nil
                     incoming.encrypted_account_label_len = 0
+                    // A null/0 accepted-accounts pointer must map to an
+                    // empty array (not a crash).
+                    incoming.accepted_accounts = nil
+                    incoming.accepted_accounts_len = 0
 
                     let rows = [outgoing, incoming]
                     rows.withUnsafeBufferPointer { rowsPtr in
@@ -468,6 +487,7 @@ final class DashPayContactPersistenceTests: XCTestCase {
                             nil, 0
                         )
                         XCTAssertEqual(rc, 0)
+                    }
                     }
                 }
             }
@@ -494,6 +514,14 @@ final class DashPayContactPersistenceTests: XCTestCase {
         XCTAssertNil(
             incomingRow.encryptedAccountLabel,
             "null label pointer must map to nil, not empty Data"
+        )
+        XCTAssertEqual(
+            outgoingRow.contactAcceptedAccounts, [7, 42],
+            "non-null accepted-accounts pointer must marshal into an owned [UInt32]"
+        )
+        XCTAssertEqual(
+            incomingRow.contactAcceptedAccounts, [],
+            "null/0 accepted-accounts pointer must map to an empty array"
         )
 
         // Ignore leg of the same callback: ignore the sender (drop the
@@ -526,6 +554,101 @@ final class DashPayContactPersistenceTests: XCTestCase {
         let afterIgnore = try fetchContactRows()
         XCTAssertEqual(afterIgnore.count, 1)
         XCTAssertTrue(try XCTUnwrap(afterIgnore.first).isOutgoing)
+    }
+
+    // MARK: accepted_accounts round-trip (F11)
+
+    /// An established contact's DIP-15 `accepted_accounts` must survive
+    /// the persist path — the FFI carries them as a `(u32*, len)` pair
+    /// replicated onto both direction rows, and the handler stores them
+    /// on `contactAcceptedAccounts`. Against the unfixed handler (which
+    /// ignored the field) the persisted rows come back empty.
+    func testPersistPreservesAcceptedAccounts() throws {
+        applyContacts(upserts: [
+            makeSnapshot(isOutgoing: true, contactAcceptedAccounts: [7, 42]),
+            makeSnapshot(isOutgoing: false, contactAcceptedAccounts: [7, 42]),
+        ])
+
+        let rows = try fetchContactRows()
+        XCTAssertEqual(rows.count, 2)
+        for row in rows {
+            XCTAssertEqual(
+                row.contactAcceptedAccounts, [7, 42],
+                "both direction rows must carry the relationship's accepted accounts"
+            )
+        }
+    }
+
+    /// The full relaunch restore: persist an established contact with
+    /// `accepted_accounts = [7, 42]`, then drive `loadWalletList()` (the
+    /// FFI load path the app runs on cold start) and assert the rebuilt
+    /// `ContactRequestFFI` rows carry them back. Against the unfixed
+    /// restore path (which rebuilt rows via `EstablishedContact::new`
+    /// and never set `accepted_accounts`) the rebuilt rows come back
+    /// empty, silently resetting the value every launch.
+    func testRestoreRebuildsAcceptedAccounts() throws {
+        // A restorable wallet needs at least one account carrying a
+        // non-empty extended pubkey, plus the owner identity linked to
+        // the wallet so `loadWalletList` walks its contact rows.
+        let context = ModelContext(container)
+        let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+        context.insert(wallet)
+        let account = PersistentAccount(
+            wallet: wallet,
+            accountType: 0,
+            accountIndex: 0,
+            accountTypeName: "standard"
+        )
+        account.accountExtendedPubKeyBytes = Data(repeating: 0xEE, count: 78)
+        context.insert(account)
+        let target = ownerId
+        let ownerDescriptor = FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == target }
+        )
+        let owner = try XCTUnwrap(try context.fetch(ownerDescriptor).first)
+        owner.wallet = wallet
+        try context.save()
+
+        // Persist an established contact carrying the accepted accounts.
+        applyContacts(upserts: [
+            makeSnapshot(isOutgoing: true, contactAcceptedAccounts: [7, 42]),
+            makeSnapshot(isOutgoing: false, contactAcceptedAccounts: [7, 42]),
+        ])
+
+        let (entries, count, errored) = handler.loadWalletList()
+        XCTAssertFalse(errored)
+        XCTAssertEqual(count, 1)
+        let entriesPtr = try XCTUnwrap(entries)
+        defer { handler.loadWalletListFree(entries: UnsafeRawPointer(entriesPtr)) }
+
+        var seen: [[UInt32]] = []
+        let walletEntry = entriesPtr[0]
+        XCTAssertGreaterThan(walletEntry.identities_count, 0)
+        for iIdx in 0..<Int(walletEntry.identities_count) {
+            let identity = walletEntry.identities![iIdx]
+            for cIdx in 0..<Int(identity.contacts_count) {
+                let contact = identity.contacts![cIdx]
+                if let acceptedPtr = contact.accepted_accounts,
+                   contact.accepted_accounts_len > 0 {
+                    seen.append(Array(
+                        UnsafeBufferPointer(
+                            start: acceptedPtr,
+                            count: Int(contact.accepted_accounts_len)
+                        )
+                    ))
+                } else {
+                    seen.append([])
+                }
+            }
+        }
+
+        XCTAssertEqual(seen.count, 2, "both direction rows must be rebuilt")
+        for accepted in seen {
+            XCTAssertEqual(
+                accepted, [7, 42],
+                "restore must rebuild accepted_accounts, not reset them to empty"
+            )
+        }
     }
 
     // MARK: Changeset atomicity vs app-facing writers
