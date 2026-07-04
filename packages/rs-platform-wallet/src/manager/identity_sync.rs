@@ -49,14 +49,13 @@
 use std::collections::BTreeMap;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc, Mutex as StdMutex,
+    Arc,
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use dpp::balances::credits::TokenAmount;
 use dpp::prelude::Identifier;
 use tokio::sync::RwLock;
-use tokio_util::sync::CancellationToken;
 
 use dash_sdk::platform::tokens::identity_token_balances::{
     IdentityTokenBalances, IdentityTokenBalancesQuery,
@@ -64,6 +63,7 @@ use dash_sdk::platform::tokens::identity_token_balances::{
 use dash_sdk::platform::FetchMany;
 
 use crate::changeset::{PlatformWalletPersistence, TokenBalanceChangeSet};
+use crate::manager::loop_cancel::LoopCancelGuard;
 use crate::wallet::platform_wallet::WalletId;
 
 /// Default cadence for the identity-token sync loop.
@@ -158,15 +158,9 @@ where
     /// over `P` so every `persister.store(...)` call on the hot sync
     /// loop dispatches statically.
     persister: Arc<P>,
-    /// Cancel token for the background loop, if running.
-    background_cancel: StdMutex<Option<CancellationToken>>,
-    /// Monotonic id bumped on every [`start`](Self::start). The background
-    /// loop captures its generation at install time and clears the stored
-    /// cancel token on exit **only if its generation is still current**
-    /// (see [`clear_cancel_if_current`](Self::clear_cancel_if_current)) —
-    /// the guard that prevents a stale, draining loop from nulling a newer
-    /// loop's token after a quick `stop()`+`start()`.
-    loop_generation: AtomicU64,
+    /// Generation-guarded cancel-token slot for the background loop —
+    /// see [`LoopCancelGuard`] for the stale-loop shutdown invariant.
+    cancel_guard: LoopCancelGuard,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
     /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
@@ -206,8 +200,7 @@ where
         Self {
             sdk,
             persister,
-            background_cancel: StdMutex::new(None),
-            loop_generation: AtomicU64::new(0),
+            cancel_guard: LoopCancelGuard::new(),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
             quiescing: AtomicBool::new(false),
@@ -323,10 +316,7 @@ where
 
     /// Whether the background loop is currently running.
     pub fn is_running(&self) -> bool {
-        self.background_cancel
-            .lock()
-            .map(|g| g.is_some())
-            .unwrap_or(false)
+        self.cancel_guard.is_running()
     }
 
     /// Whether a sync pass is in flight right now.
@@ -398,7 +388,7 @@ where
     /// The first pass runs immediately; subsequent passes fire every
     /// [`interval`](Self::interval).
     pub fn start(self: Arc<Self>) {
-        let Some((cancel, my_generation)) = self.install_cancel() else {
+        let Some((cancel, my_generation)) = self.cancel_guard.install() else {
             return;
         };
 
@@ -422,52 +412,10 @@ where
                         }
                     }
 
-                    this.clear_cancel_if_current(my_generation);
+                    this.cancel_guard.clear_if_current(my_generation);
                 });
             })
             .expect("failed to spawn identity-sync thread");
-    }
-
-    /// Install a fresh cancel token for a new background loop, returning
-    /// the token (for the loop to watch) and its **generation** (for the
-    /// loop to pass to [`clear_cancel_if_current`](Self::clear_cancel_if_current)
-    /// on exit). Returns `None` if a loop is already running — preserving
-    /// `start`'s idempotency.
-    ///
-    /// The generation bump happens under the same `background_cancel` lock
-    /// that stores the token, so a draining older loop reading the
-    /// generation under that lock always observes whether a newer loop has
-    /// since replaced it.
-    fn install_cancel(&self) -> Option<(CancellationToken, u64)> {
-        let mut guard = self.background_cancel.lock().expect("bg_cancel poisoned");
-        if guard.is_some() {
-            return None;
-        }
-        let cancel = CancellationToken::new();
-        *guard = Some(cancel.clone());
-        let generation = self
-            .loop_generation
-            .fetch_add(1, Ordering::AcqRel)
-            .wrapping_add(1);
-        Some((cancel, generation))
-    }
-
-    /// Clear the stored cancel token **only if it still belongs to the
-    /// loop identified by `my_generation`** — i.e. no later `start()` has
-    /// installed a replacement.
-    ///
-    /// Without this guard a `stop()` + quick `start()` is a use-after-free
-    /// hazard: `stop()` takes + cancels loop A's token and `start()`
-    /// installs loop B's token, but loop A keeps draining its in-flight
-    /// pass. When loop A finally exits, an unconditional `*guard = None`
-    /// would null **loop B's** live token, leaving loop B uncancellable —
-    /// a later shutdown `stop()`/`quiesce()` silently no-ops while loop B
-    /// keeps calling `persister.store(...)` through a freed FFI context.
-    fn clear_cancel_if_current(&self, my_generation: u64) {
-        let mut guard = self.background_cancel.lock().expect("bg_cancel poisoned");
-        if self.loop_generation.load(Ordering::Acquire) == my_generation {
-            *guard = None;
-        }
     }
 
     /// Stop the background sync loop. No-op if not running.
@@ -479,12 +427,7 @@ where
     /// by manager shutdown so the host can free the persister context —
     /// use [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
-        if let Some(token) = self
-            .background_cancel
-            .lock()
-            .expect("bg_cancel poisoned")
-            .take()
-        {
+        if let Some(token) = self.cancel_guard.take() {
             token.cancel();
         }
     }
@@ -991,70 +934,6 @@ mod tests {
         // later (post-quiesce) pass can still run.
         assert_eq!(persister.stores.load(AtomicOrdering::SeqCst), 0);
         assert!(!mgr.is_syncing());
-    }
-
-    /// Regression: a stale, draining loop's cleanup must **not** clobber a
-    /// newer loop's cancel token.
-    ///
-    /// The failure this pins is a use-after-free across the FFI persister.
-    /// `stop()` is cancel-only — it takes + cancels loop A's token but loop
-    /// A keeps draining its in-flight pass. A quick `start()` then installs
-    /// loop B's token. When loop A *finally* exits, the old code ran an
-    /// unconditional `*guard = None`, nulling **loop B's live token** —
-    /// after which `is_running()` lies (`false` while B runs) and a
-    /// shutdown `stop()`/`quiesce()` silently no-ops while loop B keeps
-    /// calling `persister.store(...)` through a freed context.
-    ///
-    /// We drive the token lifecycle directly (`install_cancel` /
-    /// `clear_cancel_if_current`) rather than spawning the real loop: the
-    /// loop runs on an OS thread under `Handle::block_on`, so its exit
-    /// timing can't be pinned deterministically. With the generation guard
-    /// removed (`*guard = None` unconditional) this test fails on the
-    /// final assertions; with the guard it passes.
-    #[tokio::test]
-    async fn stale_loop_cleanup_does_not_clobber_newer_loop_token() {
-        let mgr = make_manager();
-
-        // Loop A starts: installs token_A at generation G_A.
-        let (token_a, gen_a) = mgr.install_cancel().expect("first install starts a loop");
-        assert!(mgr.is_running());
-
-        // Shutdown of loop A: stop() cancels + takes token_A immediately
-        // (cancel-only), but loop A is still "draining" — its cleanup has
-        // not run yet.
-        mgr.stop();
-        assert!(token_a.is_cancelled());
-        assert!(
-            !mgr.is_running(),
-            "stop() clears the stored token immediately"
-        );
-
-        // Loop B starts BEFORE loop A's cleanup runs: installs token_B at a
-        // newer generation G_B.
-        let (token_b, _gen_b) = mgr
-            .install_cancel()
-            .expect("second install starts a new loop");
-        assert!(mgr.is_running());
-
-        // Loop A FINALLY drains and runs its cleanup with its own (now
-        // stale) generation. The guard must make this a no-op; the old
-        // unconditional clear would null loop B's token here.
-        mgr.clear_cancel_if_current(gen_a);
-
-        // Loop B's token must still be installed and uncancelled.
-        assert!(
-            mgr.is_running(),
-            "stale loop A cleanup must not clobber loop B's live token"
-        );
-        assert!(!token_b.is_cancelled());
-
-        // …and a real shutdown can still cancel loop B.
-        mgr.stop();
-        assert!(
-            token_b.is_cancelled(),
-            "loop B must remain cancellable after the stale cleanup"
-        );
-        assert!(!mgr.is_running());
     }
 
     /// Round-trip: register → read → update_watched_tokens → read.

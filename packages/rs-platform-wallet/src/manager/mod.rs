@@ -4,6 +4,7 @@ pub mod accessors;
 pub mod dashpay_sync;
 pub mod identity_sync;
 mod load;
+mod loop_cancel;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
