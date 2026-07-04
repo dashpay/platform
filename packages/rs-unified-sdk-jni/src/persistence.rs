@@ -238,7 +238,7 @@ where
         let ctx = &*(context as *const KotlinPersistenceCtx);
         let bridge = ctx.bridge.as_obj();
         let env: &mut JNIEnv = &mut env;
-        match f(env, bridge) {
+        match env.with_local_frame(64, |env| f(env, bridge)) {
             Ok(code) => code,
             Err(_) => {
                 let _ = env.exception_clear();
@@ -264,7 +264,7 @@ where
         let ctx = &*(context as *const KotlinPersistenceCtx);
         let bridge = ctx.bridge.as_obj();
         let env: &mut JNIEnv = &mut env;
-        match f(env, bridge) {
+        match env.with_local_frame(64, |env| f(env, bridge)) {
             Ok(v) => Some(v),
             Err(_) => {
                 let _ = env.exception_clear();
@@ -381,10 +381,10 @@ unsafe extern "C" fn tramp_persist_address_balances(
         let wid = id32(env, wallet_id)?;
         let slice = slice_or_empty(entries, count);
         for e in slice {
-            let PlatformAddressFFI { address_type, hash } = e.address;
-            let hash_arr = env.byte_array_from_slice(&hash)?;
-            let code = env
-                .call_method(
+            let code = env.with_local_frame(16, |env| {
+                let PlatformAddressFFI { address_type, hash } = e.address;
+                let hash_arr = env.byte_array_from_slice(&hash)?;
+                env.call_method(
                     bridge,
                     "onPersistAddressBalance",
                     "([BB[BJIII)I",
@@ -398,7 +398,8 @@ unsafe extern "C" fn tramp_persist_address_balances(
                         JValue::Int(e.address_index as i32),
                     ],
                 )?
-                .i()?;
+                .i()
+            })?;
             if code != 0 {
                 return Ok(code);
             }
@@ -471,7 +472,9 @@ unsafe extern "C" fn tramp_persist_account_registrations(
     with_bridge(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;
         for s in slice_or_empty(specs, count) {
-            let code = call_persist_account_registration(env, bridge, &wid, s)?;
+            let code = env.with_local_frame(16, |env| {
+                call_persist_account_registration(env, bridge, &wid, s)
+            })?;
             if code != 0 {
                 return Ok(code);
             }
@@ -520,15 +523,15 @@ unsafe extern "C" fn tramp_persist_account_address_pools(
         let wid = id32(env, wallet_id)?;
         for pool in slice_or_empty(pools, count) {
             let spec = &pool.account;
-            let user = env.byte_array_from_slice(&spec.user_identity_id)?;
-            let friend = env.byte_array_from_slice(&spec.friend_identity_id)?;
             let addrs = slice_or_empty(pool.addresses_ptr, pool.addresses_count);
             for a in addrs {
-                let pubkey = env.byte_array_from_slice(&a.public_key)?;
-                let base58 = cstr(env, a.address_base58)?;
-                let path = cstr(env, a.derivation_path)?;
-                let code = env
-                    .call_method(
+                let code = env.with_local_frame(32, |env| {
+                    let user = env.byte_array_from_slice(&spec.user_identity_id)?;
+                    let friend = env.byte_array_from_slice(&spec.friend_identity_id)?;
+                    let pubkey = env.byte_array_from_slice(&a.public_key)?;
+                    let base58 = cstr(env, a.address_base58)?;
+                    let path = cstr(env, a.derivation_path)?;
+                    env.call_method(
                         bridge,
                         "onPersistAccountAddressPoolEntry",
                         "([BBBIII[B[BB[BZBIZJLjava/lang/String;Ljava/lang/String;)I",
@@ -552,7 +555,8 @@ unsafe extern "C" fn tramp_persist_account_address_pools(
                             (&path).into(),
                         ],
                     )?
-                    .i()?;
+                    .i()
+                })?;
                 if code != 0 {
                     return Ok(code);
                 }
@@ -610,7 +614,8 @@ unsafe extern "C" fn tramp_persist_wallet_changeset(
         }
 
         for acc in slice_or_empty(cs.accounts, cs.accounts_count) {
-            let code = persist_changeset_account(env, bridge, &wid, acc)?;
+            let code =
+                env.with_local_frame(32, |env| persist_changeset_account(env, bridge, &wid, acc))?;
             if code != 0 {
                 return Ok(code);
             }
@@ -653,19 +658,22 @@ unsafe fn persist_changeset_account(
     }
 
     for u in slice_or_empty(acc.utxos_added, acc.utxos_added_count) {
-        let code = persist_changeset_utxo_added(env, bridge, wid, u)?;
+        let code =
+            env.with_local_frame(24, |env| persist_changeset_utxo_added(env, bridge, wid, u))?;
         if code != 0 {
             return Ok(code);
         }
     }
     for s in slice_or_empty(acc.utxos_spent, acc.utxos_spent_count) {
-        let code = persist_changeset_utxo_spent(env, bridge, wid, s)?;
+        let code =
+            env.with_local_frame(16, |env| persist_changeset_utxo_spent(env, bridge, wid, s))?;
         if code != 0 {
             return Ok(code);
         }
     }
     for t in slice_or_empty(acc.transactions, acc.transactions_count) {
-        let code = persist_changeset_transaction(env, bridge, wid, t)?;
+        let code =
+            env.with_local_frame(32, |env| persist_changeset_transaction(env, bridge, wid, t))?;
         if code != 0 {
             return Ok(code);
         }
@@ -781,21 +789,23 @@ unsafe extern "C" fn tramp_persist_identities(
     with_bridge(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;
         for e in slice_or_empty(upserts_ptr, upserts_count) {
-            let code = persist_identity_upsert(env, bridge, &wid, e)?;
+            let code =
+                env.with_local_frame(64, |env| persist_identity_upsert(env, bridge, &wid, e))?;
             if code != 0 {
                 return Ok(code);
             }
         }
         for id in slice_or_empty(removed_ptr, removed_count) {
-            let idb = env.byte_array_from_slice(id)?;
-            let code = env
-                .call_method(
+            let code = env.with_local_frame(16, |env| {
+                let idb = env.byte_array_from_slice(id)?;
+                env.call_method(
                     bridge,
                     "onPersistIdentityRemoval",
                     "([B[B)I",
                     &[(&wid).into(), (&idb).into()],
                 )?
-                .i()?;
+                .i()
+            })?;
             if code != 0 {
                 return Ok(code);
             }
@@ -821,8 +831,10 @@ unsafe fn persist_identity_upsert(
     if !e.dpns_names.is_null() {
         let name_ptrs = std::slice::from_raw_parts(e.dpns_names, e.dpns_names_count);
         for (i, &nptr) in name_ptrs.iter().enumerate() {
-            let s = cstr(env, nptr)?;
-            env.set_object_array_element(&dpns_arr, i as i32, &s)?;
+            env.with_local_frame(4, |env| {
+                let s = cstr(env, nptr)?;
+                env.set_object_array_element(&dpns_arr, i as i32, &s)
+            })?;
         }
     }
     if !e.dpns_names_acquired_at.is_null() {
@@ -887,21 +899,23 @@ unsafe extern "C" fn tramp_persist_identity_keys(
     with_bridge(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;
         for e in slice_or_empty(upserts_ptr, upserts_count) {
-            let code = persist_identity_key_upsert(env, bridge, &wid, e)?;
+            let code =
+                env.with_local_frame(32, |env| persist_identity_key_upsert(env, bridge, &wid, e))?;
             if code != 0 {
                 return Ok(code);
             }
         }
         for r in slice_or_empty(removed_ptr, removed_count) {
-            let idb = env.byte_array_from_slice(&r.identity_id)?;
-            let code = env
-                .call_method(
+            let code = env.with_local_frame(16, |env| {
+                let idb = env.byte_array_from_slice(&r.identity_id)?;
+                env.call_method(
                     bridge,
                     "onPersistIdentityKeyRemoval",
                     "([B[BI)I",
                     &[(&wid).into(), (&idb).into(), JValue::Int(r.key_id as i32)],
                 )?
-                .i()?;
+                .i()
+            })?;
             if code != 0 {
                 return Ok(code);
             }
@@ -964,10 +978,10 @@ unsafe extern "C" fn tramp_persist_token_balances(
     with_bridge(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;
         for u in slice_or_empty(upserts_ptr, upserts_count) {
-            let iid = env.byte_array_from_slice(&u.identity_id)?;
-            let tid = env.byte_array_from_slice(&u.token_id)?;
-            let code = env
-                .call_method(
+            let code = env.with_local_frame(16, |env| {
+                let iid = env.byte_array_from_slice(&u.identity_id)?;
+                let tid = env.byte_array_from_slice(&u.token_id)?;
+                env.call_method(
                     bridge,
                     "onPersistTokenBalanceUpsert",
                     "([B[B[BJ)I",
@@ -978,22 +992,24 @@ unsafe extern "C" fn tramp_persist_token_balances(
                         JValue::Long(u.balance as i64),
                     ],
                 )?
-                .i()?;
+                .i()
+            })?;
             if code != 0 {
                 return Ok(code);
             }
         }
         for r in slice_or_empty(removed_ptr, removed_count) {
-            let iid = env.byte_array_from_slice(&r.identity_id)?;
-            let tid = env.byte_array_from_slice(&r.token_id)?;
-            let code = env
-                .call_method(
+            let code = env.with_local_frame(16, |env| {
+                let iid = env.byte_array_from_slice(&r.identity_id)?;
+                let tid = env.byte_array_from_slice(&r.token_id)?;
+                env.call_method(
                     bridge,
                     "onPersistTokenBalanceRemoval",
                     "([B[B[B)I",
                     &[(&wid).into(), (&iid).into(), (&tid).into()],
                 )?
-                .i()?;
+                .i()
+            })?;
             if code != 0 {
                 return Ok(code);
             }
@@ -1017,21 +1033,24 @@ unsafe extern "C" fn tramp_persist_contacts(
     with_bridge(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;
         for c in slice_or_empty(upserts_ptr, upserts_count) {
-            let code = persist_contact_upsert(env, bridge, &wid, c)?;
+            let code =
+                env.with_local_frame(32, |env| persist_contact_upsert(env, bridge, &wid, c))?;
             if code != 0 {
                 return Ok(code);
             }
         }
         for r in slice_or_empty(removed_sent_ptr, removed_sent_count) {
-            let code =
-                persist_contact_removal(env, bridge, &wid, r, "onPersistContactRemovalSent")?;
+            let code = env.with_local_frame(16, |env| {
+                persist_contact_removal(env, bridge, &wid, r, "onPersistContactRemovalSent")
+            })?;
             if code != 0 {
                 return Ok(code);
             }
         }
         for r in slice_or_empty(removed_incoming_ptr, removed_incoming_count) {
-            let code =
-                persist_contact_removal(env, bridge, &wid, r, "onPersistContactRemovalIncoming")?;
+            let code = env.with_local_frame(16, |env| {
+                persist_contact_removal(env, bridge, &wid, r, "onPersistContactRemovalIncoming")
+            })?;
             if code != 0 {
                 return Ok(code);
             }
@@ -1108,11 +1127,11 @@ unsafe extern "C" fn tramp_persist_asset_locks(
     with_bridge(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;
         for e in slice_or_empty(upserts_ptr, upserts_count) {
-            let outpoint = env.byte_array_from_slice(&e.out_point)?;
-            let tx = bytes(env, e.transaction_bytes, e.transaction_bytes_len)?;
-            let proof = bytes_opt(env, e.proof_bytes, e.proof_bytes_len)?;
-            let code = env
-                .call_method(
+            let code = env.with_local_frame(24, |env| {
+                let outpoint = env.byte_array_from_slice(&e.out_point)?;
+                let tx = bytes(env, e.transaction_bytes, e.transaction_bytes_len)?;
+                let proof = bytes_opt(env, e.proof_bytes, e.proof_bytes_len)?;
+                env.call_method(
                     bridge,
                     "onPersistAssetLockUpsert",
                     "([B[B[BIBIJB[B)I",
@@ -1128,21 +1147,23 @@ unsafe extern "C" fn tramp_persist_asset_locks(
                         (&proof).into(),
                     ],
                 )?
-                .i()?;
+                .i()
+            })?;
             if code != 0 {
                 return Ok(code);
             }
         }
         for op in slice_or_empty(removed_ptr, removed_count) {
-            let opb = env.byte_array_from_slice(op)?;
-            let code = env
-                .call_method(
+            let code = env.with_local_frame(16, |env| {
+                let opb = env.byte_array_from_slice(op)?;
+                env.call_method(
                     bridge,
                     "onPersistAssetLockRemoval",
                     "([B[B)I",
                     &[(&wid).into(), (&opb).into()],
                 )?
-                .i()?;
+                .i()
+            })?;
             if code != 0 {
                 return Ok(code);
             }
@@ -1163,12 +1184,12 @@ unsafe extern "C" fn tramp_persist_shielded_notes(
     with_bridge(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;
         for e in slice_or_empty(entries, count) {
-            let nwid = env.byte_array_from_slice(&e.wallet_id)?;
-            let cmx = env.byte_array_from_slice(&e.cmx)?;
-            let nullifier = env.byte_array_from_slice(&e.nullifier)?;
-            let note_data = bytes(env, e.note_data_ptr, e.note_data_len)?;
-            let code = env
-                .call_method(
+            let code = env.with_local_frame(24, |env| {
+                let nwid = env.byte_array_from_slice(&e.wallet_id)?;
+                let cmx = env.byte_array_from_slice(&e.cmx)?;
+                let nullifier = env.byte_array_from_slice(&e.nullifier)?;
+                let note_data = bytes(env, e.note_data_ptr, e.note_data_len)?;
+                env.call_method(
                     bridge,
                     "onPersistShieldedNote",
                     "([B[BIJ[B[BJBJ[B)I",
@@ -1185,7 +1206,8 @@ unsafe extern "C" fn tramp_persist_shielded_notes(
                         (&note_data).into(),
                     ],
                 )?
-                .i()?;
+                .i()
+            })?;
             if code != 0 {
                 return Ok(code);
             }
@@ -1204,10 +1226,10 @@ unsafe extern "C" fn tramp_persist_shielded_nullifiers_spent(
     with_bridge(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;
         for e in slice_or_empty(entries, count) {
-            let nwid = env.byte_array_from_slice(&e.wallet_id)?;
-            let nullifier = env.byte_array_from_slice(&e.nullifier)?;
-            let code = env
-                .call_method(
+            let code = env.with_local_frame(16, |env| {
+                let nwid = env.byte_array_from_slice(&e.wallet_id)?;
+                let nullifier = env.byte_array_from_slice(&e.nullifier)?;
+                env.call_method(
                     bridge,
                     "onPersistShieldedNullifierSpent",
                     "([B[BI[B)I",
@@ -1218,7 +1240,8 @@ unsafe extern "C" fn tramp_persist_shielded_nullifiers_spent(
                         (&nullifier).into(),
                     ],
                 )?
-                .i()?;
+                .i()
+            })?;
             if code != 0 {
                 return Ok(code);
             }
@@ -1237,12 +1260,12 @@ unsafe extern "C" fn tramp_persist_shielded_outgoing_notes(
     with_bridge(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;
         for e in slice_or_empty(entries, count) {
-            let nwid = env.byte_array_from_slice(&e.wallet_id)?;
-            let cmx = env.byte_array_from_slice(&e.cmx)?;
-            let recipient = env.byte_array_from_slice(&e.recipient)?;
-            let memo = bytes(env, e.memo_ptr, e.memo_len)?;
-            let code = env
-                .call_method(
+            let code = env.with_local_frame(24, |env| {
+                let nwid = env.byte_array_from_slice(&e.wallet_id)?;
+                let cmx = env.byte_array_from_slice(&e.cmx)?;
+                let recipient = env.byte_array_from_slice(&e.recipient)?;
+                let memo = bytes(env, e.memo_ptr, e.memo_len)?;
+                env.call_method(
                     bridge,
                     "onPersistShieldedOutgoingNote",
                     "([B[BI[B[BJJ[B)I",
@@ -1257,7 +1280,8 @@ unsafe extern "C" fn tramp_persist_shielded_outgoing_notes(
                         (&memo).into(),
                     ],
                 )?
-                .i()?;
+                .i()
+            })?;
             if code != 0 {
                 return Ok(code);
             }
@@ -1276,9 +1300,9 @@ unsafe extern "C" fn tramp_persist_shielded_synced_indices(
     with_bridge(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;
         for e in slice_or_empty(entries, count) {
-            let nwid = env.byte_array_from_slice(&e.wallet_id)?;
-            let code = env
-                .call_method(
+            let code = env.with_local_frame(16, |env| {
+                let nwid = env.byte_array_from_slice(&e.wallet_id)?;
+                env.call_method(
                     bridge,
                     "onPersistShieldedSyncedIndex",
                     "([B[BIJ)I",
@@ -1289,7 +1313,8 @@ unsafe extern "C" fn tramp_persist_shielded_synced_indices(
                         JValue::Long(e.last_synced_index as i64),
                     ],
                 )?
-                .i()?;
+                .i()
+            })?;
             if code != 0 {
                 return Ok(code);
             }
@@ -1308,19 +1333,19 @@ unsafe extern "C" fn tramp_persist_shielded_activity(
     with_bridge(context, |env, bridge| {
         let wid = id32(env, wallet_id)?;
         for e in slice_or_empty(entries, count) {
-            let nwid = env.byte_array_from_slice(&e.wallet_id)?;
-            let entry_id = env.byte_array_from_slice(&e.entry_id)?;
-            let identity_id = env.byte_array_from_slice(&e.identity_id)?;
-            let counterparty = bytes(env, e.counterparty_ptr, e.counterparty_len)?;
-            let memo = bytes(env, e.memo_ptr, e.memo_len)?;
-            let cmxs = bytes(env, e.note_cmxs_ptr, e.note_cmxs_count.saturating_mul(32))?;
-            let nullifiers = bytes(
-                env,
-                e.spent_nullifiers_ptr,
-                e.spent_nullifiers_count.saturating_mul(32),
-            )?;
-            let code = env
-                .call_method(
+            let code = env.with_local_frame(32, |env| {
+                let nwid = env.byte_array_from_slice(&e.wallet_id)?;
+                let entry_id = env.byte_array_from_slice(&e.entry_id)?;
+                let identity_id = env.byte_array_from_slice(&e.identity_id)?;
+                let counterparty = bytes(env, e.counterparty_ptr, e.counterparty_len)?;
+                let memo = bytes(env, e.memo_ptr, e.memo_len)?;
+                let cmxs = bytes(env, e.note_cmxs_ptr, e.note_cmxs_count.saturating_mul(32))?;
+                let nullifiers = bytes(
+                    env,
+                    e.spent_nullifiers_ptr,
+                    e.spent_nullifiers_count.saturating_mul(32),
+                )?;
+                env.call_method(
                     bridge,
                     "onPersistShieldedActivity",
                     "([B[BI[BBBBJJZJZJ[BZ[B[B[B)I",
@@ -1346,7 +1371,8 @@ unsafe extern "C" fn tramp_persist_shielded_activity(
                         (&nullifiers).into(),
                     ],
                 )?
-                .i()?;
+                .i()
+            })?;
             if code != 0 {
                 return Ok(code);
             }
@@ -1375,8 +1401,14 @@ unsafe extern "C" fn tramp_load_wallet_list(
         let len = env.get_array_length(&arr)? as usize;
         let mut out: Vec<WalletRestoreEntryFFI> = Vec::with_capacity(len);
         for i in 0..len {
-            let h = env.get_object_array_element(&arr, i as i32)?;
-            out.push(build_wallet_restore_entry(env, &h)?);
+            let entry = env.with_local_frame(
+                64,
+                |env| -> Result<WalletRestoreEntryFFI, jni::errors::Error> {
+                    let h = env.get_object_array_element(&arr, i as i32)?;
+                    build_wallet_restore_entry(env, &h)
+                },
+            )?;
+            out.push(entry);
         }
         Ok(out)
     });
@@ -1431,8 +1463,11 @@ unsafe fn build_wallet_restore_entry(
     let specs_len = env.get_array_length(&specs_arr)? as usize;
     let mut specs: Vec<AccountSpecFFI> = Vec::with_capacity(specs_len);
     for i in 0..specs_len {
-        let s = env.get_object_array_element(&specs_arr, i as i32)?;
-        specs.push(build_account_spec(env, &s)?);
+        let spec = env.with_local_frame(32, |env| {
+            let s = env.get_object_array_element(&specs_arr, i as i32)?;
+            build_account_spec(env, &s)
+        })?;
+        specs.push(spec);
     }
     let (accounts_ptr, accounts_count) = vec_into_raw(specs);
 
@@ -1545,28 +1580,35 @@ unsafe extern "C" fn tramp_load_shielded_notes(
         let len = env.get_array_length(&arr)? as usize;
         let mut out: Vec<ShieldedNoteRestoreFFI> = Vec::with_capacity(len);
         for i in 0..len {
-            let h = env.get_object_array_element(&arr, i as i32)?;
-            let wallet_id = read_id32_field(env, &h, "walletId")?;
-            let account_index = env.get_field(&h, "accountIndex", "I")?.i()? as u32;
-            let position = env.get_field(&h, "position", "J")?.j()? as u64;
-            let cmx = read_id32_field(env, &h, "cmx")?;
-            let nullifier = read_id32_field(env, &h, "nullifier")?;
-            let block_height = env.get_field(&h, "blockHeight", "J")?.j()? as u64;
-            let is_spent = env.get_field(&h, "isSpent", "B")?.b()? as u8;
-            let value = env.get_field(&h, "value", "J")?.j()? as u64;
-            let (note_data_ptr, note_data_len) = read_bytes_field_into_raw(env, &h, "noteData")?;
-            out.push(ShieldedNoteRestoreFFI {
-                wallet_id,
-                account_index,
-                position,
-                cmx,
-                nullifier,
-                block_height,
-                is_spent,
-                value,
-                note_data_ptr,
-                note_data_len,
-            });
+            let entry = env.with_local_frame(
+                64,
+                |env| -> Result<ShieldedNoteRestoreFFI, jni::errors::Error> {
+                    let h = env.get_object_array_element(&arr, i as i32)?;
+                    let wallet_id = read_id32_field(env, &h, "walletId")?;
+                    let account_index = env.get_field(&h, "accountIndex", "I")?.i()? as u32;
+                    let position = env.get_field(&h, "position", "J")?.j()? as u64;
+                    let cmx = read_id32_field(env, &h, "cmx")?;
+                    let nullifier = read_id32_field(env, &h, "nullifier")?;
+                    let block_height = env.get_field(&h, "blockHeight", "J")?.j()? as u64;
+                    let is_spent = env.get_field(&h, "isSpent", "B")?.b()? as u8;
+                    let value = env.get_field(&h, "value", "J")?.j()? as u64;
+                    let (note_data_ptr, note_data_len) =
+                        read_bytes_field_into_raw(env, &h, "noteData")?;
+                    Ok(ShieldedNoteRestoreFFI {
+                        wallet_id,
+                        account_index,
+                        position,
+                        cmx,
+                        nullifier,
+                        block_height,
+                        is_spent,
+                        value,
+                        note_data_ptr,
+                        note_data_len,
+                    })
+                },
+            )?;
+            out.push(entry);
         }
         Ok(out)
     });
@@ -1603,24 +1645,30 @@ unsafe extern "C" fn tramp_load_shielded_outgoing_notes(
         let len = env.get_array_length(&arr)? as usize;
         let mut out: Vec<ShieldedOutgoingNoteRestoreFFI> = Vec::with_capacity(len);
         for i in 0..len {
-            let h = env.get_object_array_element(&arr, i as i32)?;
-            let wallet_id = read_id32_field(env, &h, "walletId")?;
-            let account_index = env.get_field(&h, "accountIndex", "I")?.i()? as u32;
-            let cmx = read_id32_field(env, &h, "cmx")?;
-            let recipient = read_bytes_field_fixed::<43>(env, &h, "recipient")?;
-            let value = env.get_field(&h, "value", "J")?.j()? as u64;
-            let block_height = env.get_field(&h, "blockHeight", "J")?.j()? as u64;
-            let (memo_ptr, memo_len) = read_bytes_field_into_raw(env, &h, "memo")?;
-            out.push(ShieldedOutgoingNoteRestoreFFI {
-                wallet_id,
-                account_index,
-                cmx,
-                recipient,
-                value,
-                block_height,
-                memo_ptr,
-                memo_len,
-            });
+            let entry = env.with_local_frame(
+                64,
+                |env| -> Result<ShieldedOutgoingNoteRestoreFFI, jni::errors::Error> {
+                    let h = env.get_object_array_element(&arr, i as i32)?;
+                    let wallet_id = read_id32_field(env, &h, "walletId")?;
+                    let account_index = env.get_field(&h, "accountIndex", "I")?.i()? as u32;
+                    let cmx = read_id32_field(env, &h, "cmx")?;
+                    let recipient = read_bytes_field_fixed::<43>(env, &h, "recipient")?;
+                    let value = env.get_field(&h, "value", "J")?.j()? as u64;
+                    let block_height = env.get_field(&h, "blockHeight", "J")?.j()? as u64;
+                    let (memo_ptr, memo_len) = read_bytes_field_into_raw(env, &h, "memo")?;
+                    Ok(ShieldedOutgoingNoteRestoreFFI {
+                        wallet_id,
+                        account_index,
+                        cmx,
+                        recipient,
+                        value,
+                        block_height,
+                        memo_ptr,
+                        memo_len,
+                    })
+                },
+            )?;
+            out.push(entry);
         }
         Ok(out)
     });
@@ -1655,15 +1703,21 @@ unsafe extern "C" fn tramp_load_shielded_sync_states(
         let len = env.get_array_length(&arr)? as usize;
         let mut out: Vec<ShieldedSubwalletSyncStateFFI> = Vec::with_capacity(len);
         for i in 0..len {
-            let h = env.get_object_array_element(&arr, i as i32)?;
-            let wallet_id = read_id32_field(env, &h, "walletId")?;
-            let account_index = env.get_field(&h, "accountIndex", "I")?.i()? as u32;
-            let last_synced_index = env.get_field(&h, "lastSyncedIndex", "J")?.j()? as u64;
-            out.push(ShieldedSubwalletSyncStateFFI {
-                wallet_id,
-                account_index,
-                last_synced_index,
-            });
+            let entry = env.with_local_frame(
+                32,
+                |env| -> Result<ShieldedSubwalletSyncStateFFI, jni::errors::Error> {
+                    let h = env.get_object_array_element(&arr, i as i32)?;
+                    let wallet_id = read_id32_field(env, &h, "walletId")?;
+                    let account_index = env.get_field(&h, "accountIndex", "I")?.i()? as u32;
+                    let last_synced_index = env.get_field(&h, "lastSyncedIndex", "J")?.j()? as u64;
+                    Ok(ShieldedSubwalletSyncStateFFI {
+                        wallet_id,
+                        account_index,
+                        last_synced_index,
+                    })
+                },
+            )?;
+            out.push(entry);
         }
         Ok(out)
     });
@@ -1698,51 +1752,58 @@ unsafe extern "C" fn tramp_load_shielded_activity(
         let len = env.get_array_length(&arr)? as usize;
         let mut out: Vec<ShieldedActivityRestoreFFI> = Vec::with_capacity(len);
         for i in 0..len {
-            let h = env.get_object_array_element(&arr, i as i32)?;
-            let wallet_id = read_id32_field(env, &h, "walletId")?;
-            let account_index = env.get_field(&h, "accountIndex", "I")?.i()? as u32;
-            let entry_id = read_id32_field(env, &h, "entryId")?;
-            let kind_tag = env.get_field(&h, "kindTag", "B")?.b()? as u8;
-            let direction = env.get_field(&h, "direction", "B")?.b()? as u8;
-            let status = env.get_field(&h, "status", "B")?.b()? as u8;
-            let amount = env.get_field(&h, "amount", "J")?.j()? as u64;
-            let fee = env.get_field(&h, "fee", "J")?.j()? as u64;
-            let has_fee = env.get_field(&h, "hasFee", "Z")?.z()? as u8;
-            let block_height = env.get_field(&h, "blockHeight", "J")?.j()? as u64;
-            let has_block_height = env.get_field(&h, "hasBlockHeight", "Z")?.z()? as u8;
-            let created_at_ms = env.get_field(&h, "createdAtMs", "J")?.j()? as u64;
-            let identity_id = read_id32_field(env, &h, "identityId")?;
-            let has_identity_id = env.get_field(&h, "hasIdentityId", "Z")?.z()? as u8;
-            let (counterparty_ptr, counterparty_len) =
-                read_bytes_field_into_raw(env, &h, "counterparty")?;
-            let (memo_ptr, memo_len) = read_bytes_field_into_raw(env, &h, "memo")?;
-            let (note_cmxs_ptr, cmxs_bytes) = read_bytes_field_into_raw(env, &h, "noteCmxs")?;
-            let (spent_nullifiers_ptr, nulls_bytes) =
-                read_bytes_field_into_raw(env, &h, "spentNullifiers")?;
-            out.push(ShieldedActivityRestoreFFI {
-                wallet_id,
-                account_index,
-                entry_id,
-                kind_tag,
-                direction,
-                status,
-                amount,
-                fee,
-                has_fee,
-                block_height,
-                has_block_height,
-                created_at_ms,
-                identity_id,
-                has_identity_id,
-                counterparty_ptr,
-                counterparty_len,
-                memo_ptr,
-                memo_len,
-                note_cmxs_ptr,
-                note_cmxs_count: cmxs_bytes / 32,
-                spent_nullifiers_ptr,
-                spent_nullifiers_count: nulls_bytes / 32,
-            });
+            let entry = env.with_local_frame(
+                80,
+                |env| -> Result<ShieldedActivityRestoreFFI, jni::errors::Error> {
+                    let h = env.get_object_array_element(&arr, i as i32)?;
+                    let wallet_id = read_id32_field(env, &h, "walletId")?;
+                    let account_index = env.get_field(&h, "accountIndex", "I")?.i()? as u32;
+                    let entry_id = read_id32_field(env, &h, "entryId")?;
+                    let kind_tag = env.get_field(&h, "kindTag", "B")?.b()? as u8;
+                    let direction = env.get_field(&h, "direction", "B")?.b()? as u8;
+                    let status = env.get_field(&h, "status", "B")?.b()? as u8;
+                    let amount = env.get_field(&h, "amount", "J")?.j()? as u64;
+                    let fee = env.get_field(&h, "fee", "J")?.j()? as u64;
+                    let has_fee = env.get_field(&h, "hasFee", "Z")?.z()? as u8;
+                    let block_height = env.get_field(&h, "blockHeight", "J")?.j()? as u64;
+                    let has_block_height = env.get_field(&h, "hasBlockHeight", "Z")?.z()? as u8;
+                    let created_at_ms = env.get_field(&h, "createdAtMs", "J")?.j()? as u64;
+                    let identity_id = read_id32_field(env, &h, "identityId")?;
+                    let has_identity_id = env.get_field(&h, "hasIdentityId", "Z")?.z()? as u8;
+                    let (counterparty_ptr, counterparty_len) =
+                        read_bytes_field_into_raw(env, &h, "counterparty")?;
+                    let (memo_ptr, memo_len) = read_bytes_field_into_raw(env, &h, "memo")?;
+                    let (note_cmxs_ptr, cmxs_bytes) =
+                        read_bytes_field_into_raw(env, &h, "noteCmxs")?;
+                    let (spent_nullifiers_ptr, nulls_bytes) =
+                        read_bytes_field_into_raw(env, &h, "spentNullifiers")?;
+                    Ok(ShieldedActivityRestoreFFI {
+                        wallet_id,
+                        account_index,
+                        entry_id,
+                        kind_tag,
+                        direction,
+                        status,
+                        amount,
+                        fee,
+                        has_fee,
+                        block_height,
+                        has_block_height,
+                        created_at_ms,
+                        identity_id,
+                        has_identity_id,
+                        counterparty_ptr,
+                        counterparty_len,
+                        memo_ptr,
+                        memo_len,
+                        note_cmxs_ptr,
+                        note_cmxs_count: cmxs_bytes / 32,
+                        spent_nullifiers_ptr,
+                        spent_nullifiers_count: nulls_bytes / 32,
+                    })
+                },
+            )?;
+            out.push(entry);
         }
         Ok(out)
     });

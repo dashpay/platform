@@ -6,9 +6,16 @@ on:
   pull_request:
     paths:
       - 'packages/kotlin-sdk/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'packages/rs-*/**'
       - 'packages/rs-unified-sdk-jni/**'
       - 'packages/rs-sdk-ffi/**'
       - 'packages/rs-platform-wallet-ffi/**'
+      - 'packages/dapi-grpc/**'
+      - 'packages/data-contracts/**'
+      - 'packages/*-contract/**'
+      - 'packages/simple-signer/**'
       - '.github/workflows/kotlin-sdk-build.yml'
 
 concurrency:

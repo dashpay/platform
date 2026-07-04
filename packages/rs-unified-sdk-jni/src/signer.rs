@@ -81,11 +81,16 @@ unsafe extern "C" fn sign_async_trampoline(
         // Copy the borrowed buffers before returning (callback-window rule).
         let pubkey = std::slice::from_raw_parts(pubkey_bytes, pubkey_len);
         let payload = std::slice::from_raw_parts(data, data_len);
+        if env.push_local_frame(16).is_err() {
+            let _ = env.exception_clear();
+            return Err(pending);
+        }
         let (Ok(jpubkey), Ok(jdata)) = (
             env.byte_array_from_slice(pubkey),
             env.byte_array_from_slice(payload),
         ) else {
             let _ = env.exception_clear();
+            let _ = env.pop_local_frame(&JObject::null());
             return Err(pending);
         };
 
@@ -103,9 +108,11 @@ unsafe extern "C" fn sign_async_trampoline(
         );
         if dispatched.is_err() {
             let _ = env.exception_clear();
+            let _ = env.pop_local_frame(&JObject::null());
             // Reclaim the token we just leaked and fail the request.
             return Err(Box::from_raw(token as *mut PendingSign));
         }
+        let _ = env.pop_local_frame(&JObject::null());
         Ok(())
     }));
 
@@ -135,21 +142,22 @@ unsafe extern "C" fn can_sign_trampoline(
             return false;
         };
         let pubkey = std::slice::from_raw_parts(pubkey_bytes, pubkey_len);
-        let Ok(jpubkey) = env.byte_array_from_slice(pubkey) else {
-            let _ = env.exception_clear();
-            return false;
-        };
-        env.call_method(
-            ctx.bridge.as_obj(),
-            "canSignWith",
-            "([BI)Z",
-            &[(&jpubkey).into(), (key_type as jint).into()],
-        )
-        .and_then(|v| v.z())
-        .unwrap_or_else(|_| {
-            let _ = env.exception_clear();
-            false
-        })
+        match env.with_local_frame(16, |env| {
+            let jpubkey = env.byte_array_from_slice(pubkey)?;
+            env.call_method(
+                ctx.bridge.as_obj(),
+                "canSignWith",
+                "([BI)Z",
+                &[(&jpubkey).into(), (key_type as jint).into()],
+            )?
+            .z()
+        }) {
+            Ok(can_sign) => can_sign,
+            Err(_) => {
+                let _ = env.exception_clear();
+                false
+            }
+        }
     }))
     .unwrap_or(false)
 }
