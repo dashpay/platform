@@ -253,14 +253,18 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
     // discovery-time `validate_private_key_bytes` decision: 33-byte expected =
     // compressed pubkey equality; 20-byte expected = `ripemd160_sha256` of it.
     if !expected_key_data.is_null() && expected_key_data_len > 0 {
-        let expected = std::slice::from_raw_parts(expected_key_data, expected_key_data_len);
         let derived_pubkey = key_wallet::bip32::ExtendedPubKey::from_priv(&secp, &derived)
             .public_key
             .serialize();
+        // Read only the exact number of bytes the accepted length names (33 or
+        // 20), never the caller-supplied `expected_key_data_len`: a malformed
+        // huge length must not widen the `from_raw_parts` read into UB. A length
+        // that is neither 33 nor 20 takes the `_` arm and never dereferences.
         let matches = match expected_key_data_len {
-            33 => derived_pubkey.as_slice() == expected,
+            33 => derived_pubkey.as_slice() == std::slice::from_raw_parts(expected_key_data, 33),
             20 => {
-                dash_sdk::dpp::util::hash::ripemd160_sha256(&derived_pubkey).as_slice() == expected
+                dash_sdk::dpp::util::hash::ripemd160_sha256(&derived_pubkey).as_slice()
+                    == std::slice::from_raw_parts(expected_key_data, 20)
             }
             _ => false,
         };
