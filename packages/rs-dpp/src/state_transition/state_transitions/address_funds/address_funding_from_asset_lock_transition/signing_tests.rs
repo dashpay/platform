@@ -205,7 +205,7 @@ async fn try_from_asset_lock_with_signers_produces_matching_signature() {
     use async_trait::async_trait;
     use dashcore::secp256k1::{ecdsa, Message};
     use key_wallet::bip32::{DerivationPath, ExtendedPubKey};
-    use key_wallet::signer::{Signer as KwSigner, SignerMethod};
+    use key_wallet::signer::{ExtendedPubKeySigner, Signer as KwSigner, SignerMethod};
 
     /// Fixed-key in-memory `key_wallet::signer::Signer`. Mirrors how the
     /// Swift KeychainSigner behaves: derive once, sign atomically. Path
@@ -237,7 +237,10 @@ async fn try_from_asset_lock_with_signers_produces_matching_signature() {
         async fn public_key(&self, _path: &DerivationPath) -> Result<RawPublicKey, Self::Error> {
             Ok(self.public)
         }
+    }
 
+    #[async_trait]
+    impl ExtendedPubKeySigner for FixedKeySigner {
         async fn extended_public_key(
             &self,
             _path: &DerivationPath,

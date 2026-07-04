@@ -3336,7 +3336,7 @@ mod tests {
             ecdsa, rand::rngs::OsRng, Message, PublicKey, Secp256k1, SecretKey,
         };
         use key_wallet::bip32::{DerivationPath, ExtendedPubKey};
-        use key_wallet::signer::{Signer as KwSigner, SignerMethod};
+        use key_wallet::signer::{ExtendedPubKeySigner, Signer as KwSigner, SignerMethod};
 
         /// Fixed-key in-memory signer used only by this test. Mirrors how a
         /// real KeychainSigner would behave: derive once, sign atomically,
@@ -3370,7 +3370,10 @@ mod tests {
             async fn public_key(&self, _path: &DerivationPath) -> Result<PublicKey, Self::Error> {
                 Ok(self.public)
             }
+        }
 
+        #[async_trait]
+        impl ExtendedPubKeySigner for FixedKeySigner {
             async fn extended_public_key(
                 &self,
                 _path: &DerivationPath,
