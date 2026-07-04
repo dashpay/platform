@@ -345,27 +345,27 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             "Asset lock tracked as Built and queued for persistence; broadcasting."
         );
 
-        // 3. Broadcast, releasing the build's UTXO reservation if the
-        //    broadcast is definitively rejected pre-send (the asset-lock
-        //    builder funds from the BIP44 account at `account_index`). On
-        //    rejection the `Built` row is untracked too: with the inputs
-        //    released for re-selection, leaving it resumable would let a
-        //    later `resume_asset_lock` re-broadcast a transaction whose
-        //    inputs may already be re-spent. A `MaybeSent` failure keeps
-        //    both the reservation and the resumable row.
-        if let Err(e) = crate::wallet::reservations::broadcast_releasing_on_rejection(
-            self.broadcaster.as_ref(),
-            &self.wallet_manager,
-            &self.wallet_id,
-            key_wallet::account::account_type::StandardAccountType::BIP44Account,
-            account_index,
-            &tx,
-        )
-        .await
-        {
+        // 3. Broadcast. On a definitive pre-send rejection, untrack the
+        //    `Built` row BEFORE releasing the funding reservation (the
+        //    asset-lock builder funds from the BIP44 account at
+        //    `account_index`): while the reservation is held the inputs
+        //    cannot be re-selected by a new build, and once the row is gone
+        //    `resume_asset_lock` can no longer re-drive the rejected
+        //    transaction — so at no point is the row resumable while its
+        //    inputs are re-spendable. A `MaybeSent` failure keeps both the
+        //    reservation and the resumable row.
+        if let Err(e) = self.broadcaster.broadcast(&tx).await {
             if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) {
                 let cs_untrack = self.untrack_asset_lock(&out_point).await;
                 self.queue_asset_lock_changeset(cs_untrack);
+                crate::wallet::reservations::release_reservation_after_rejected_broadcast(
+                    &self.wallet_manager,
+                    &self.wallet_id,
+                    key_wallet::account::account_type::StandardAccountType::BIP44Account,
+                    account_index,
+                    &tx,
+                )
+                .await;
             }
             return Err(e.into());
         }
@@ -400,5 +400,218 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         self.queue_asset_lock_changeset(cs_final);
 
         Ok((proof, path, out_point))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use dashcore::OutPoint;
+    use key_wallet::account::account_type::StandardAccountType;
+    use tokio::sync::Notify;
+
+    use crate::broadcaster::TransactionBroadcaster;
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::test_support::{
+        funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysRejectedBroadcaster, WalletSigner,
+    };
+    use crate::wallet::asset_lock::manager::AssetLockManager;
+    use crate::wallet::asset_lock::tracked::AssetLockStatus;
+    use crate::wallet::persister::WalletPersister;
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::{AssetLockFundingType, PlatformWalletError};
+
+    /// Persistence stub that records every stored changeset so tests can
+    /// assert what the asset-lock flow queued.
+    #[derive(Default)]
+    struct CapturingPersistence {
+        stored: Mutex<Vec<PlatformWalletChangeSet>>,
+    }
+
+    impl CapturingPersistence {
+        /// Outpoints queued for persisted-row deletion across all stored
+        /// changesets.
+        fn removed_outpoints(&self) -> Vec<OutPoint> {
+            self.stored
+                .lock()
+                .expect("capturing persistence mutex")
+                .iter()
+                .filter_map(|cs| cs.asset_locks.as_ref())
+                .flat_map(|al| al.removed.iter().copied())
+                .collect()
+        }
+    }
+
+    impl PlatformWalletPersistence for CapturingPersistence {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.stored
+                .lock()
+                .expect("capturing persistence mutex")
+                .push(changeset);
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// Builds an `AssetLockManager` over the shared BIP44-funded fixture.
+    async fn funded_asset_lock_manager<B: TransactionBroadcaster>(
+        broadcaster: Arc<B>,
+    ) -> (
+        Arc<AssetLockManager<B>>,
+        WalletSigner,
+        Arc<CapturingPersistence>,
+    ) {
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+
+        let persistence = Arc::new(CapturingPersistence::default());
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = Arc::new(AssetLockManager::new(
+            sdk,
+            wallet_manager,
+            wallet_id,
+            Arc::new(Notify::new()),
+            broadcaster,
+            WalletPersister::new(
+                wallet_id,
+                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        ));
+
+        (manager, signer, persistence)
+    }
+
+    /// A definitively rejected asset-lock broadcast must untrack the `Built`
+    /// row (in-memory and via the changeset's `removed` set) and release the
+    /// funding reservation, so nothing can resume the dead transaction and a
+    /// fresh funding attempt can reselect the inputs immediately.
+    #[tokio::test]
+    async fn rejected_asset_lock_broadcast_untracks_row_and_releases_reservation() {
+        let (manager, signer, persistence) =
+            funded_asset_lock_manager(Arc::new(AlwaysRejectedBroadcaster)).await;
+
+        let result = manager
+            .create_funded_asset_lock_proof(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::TransactionBroadcast(_))),
+            "rejected broadcast should surface as TransactionBroadcast, got {result:?}"
+        );
+
+        // The Built row is gone in memory…
+        {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet still present");
+            assert!(
+                info.tracked_asset_locks.is_empty(),
+                "rejected lock must be untracked, got {:?}",
+                info.tracked_asset_locks
+            );
+        }
+        // …and its persisted row was queued for deletion.
+        assert_eq!(
+            persistence.removed_outpoints().len(),
+            1,
+            "exactly the rejected lock's outpoint should be queued as removed"
+        );
+
+        // The funding reservation was released: a fresh build over the same
+        // single-UTXO wallet can reselect the inputs immediately.
+        let rebuild = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            rebuild.is_ok(),
+            "rebuild after a rejected broadcast should reselect the released \
+             inputs, got {rebuild:?}"
+        );
+    }
+
+    /// An *ambiguous* asset-lock broadcast failure must keep both the funding
+    /// reservation and the resumable `Built` row: the transaction may already
+    /// be propagating, so a retry must not double-spend and a resume must
+    /// stay possible.
+    #[tokio::test]
+    async fn ambiguous_asset_lock_broadcast_keeps_reservation_and_built_row() {
+        let (manager, signer, persistence) =
+            funded_asset_lock_manager(Arc::new(AlwaysMaybeSentBroadcaster)).await;
+
+        let result = manager
+            .create_funded_asset_lock_proof(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
+            ),
+            "ambiguous broadcast should surface as TransactionBroadcastUnconfirmed, got {result:?}"
+        );
+
+        // The Built row survives for a later resume…
+        {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet still present");
+            assert_eq!(info.tracked_asset_locks.len(), 1);
+            let lock = info.tracked_asset_locks.values().next().expect("built row");
+            assert_eq!(lock.status, AssetLockStatus::Built);
+        }
+        // …no persisted-row deletion was queued…
+        assert!(
+            persistence.removed_outpoints().is_empty(),
+            "ambiguous failure must not queue a row deletion"
+        );
+
+        // …and the reservation is kept: a fresh build cannot reselect the
+        // single reserved UTXO and fails at input selection.
+        let rebuild = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(rebuild, Err(PlatformWalletError::AssetLockTransaction(_))),
+            "rebuild must fail at input selection while the reservation is \
+             kept, got {rebuild:?}"
+        );
     }
 }

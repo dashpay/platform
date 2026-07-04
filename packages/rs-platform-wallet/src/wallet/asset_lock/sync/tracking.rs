@@ -37,14 +37,27 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// re-broadcast a transaction whose inputs may have been re-spent.
     ///
     /// Idempotent: returns an empty changeset if the outpoint is not
-    /// tracked. The caller queues the changeset (call sites live in
-    /// `asset_lock/build.rs`, inside the module).
+    /// tracked. Guarded on the row still being
+    /// [`Built`](AssetLockStatus::Built): if a concurrent flow advanced it
+    /// (e.g. a `resume_asset_lock` that re-broadcast in the window between
+    /// the rejected broadcast and this cleanup), the progress is kept
+    /// rather than clobbered. The caller queues the changeset (call sites
+    /// live in `asset_lock/build.rs`, inside the module).
     pub(crate) async fn untrack_asset_lock(&self, out_point: &OutPoint) -> AssetLockChangeSet {
         let mut wm = self.wallet_manager.write().await;
         let mut cs = AssetLockChangeSet::default();
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-            if info.tracked_asset_locks.remove(out_point).is_some() {
-                cs.removed.insert(*out_point);
+            match info.tracked_asset_locks.get(out_point) {
+                Some(entry) if entry.status == AssetLockStatus::Built => {
+                    info.tracked_asset_locks.remove(out_point);
+                    cs.removed.insert(*out_point);
+                }
+                Some(entry) => tracing::warn!(
+                    outpoint = %out_point,
+                    status = ?entry.status,
+                    "untrack_asset_lock: lock advanced past Built concurrently — leaving it tracked"
+                ),
+                None => {}
             }
         }
         cs
