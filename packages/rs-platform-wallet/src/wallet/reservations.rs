@@ -18,7 +18,6 @@ use tokio::sync::RwLock;
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
-use crate::PlatformWalletError;
 
 /// Broadcast `tx` and reconcile the funding account's UTXO reservation on
 /// failure.
@@ -34,6 +33,12 @@ use crate::PlatformWalletError;
 /// `account_type`/`account_index` identify the funding account whose
 /// `ReservationSet` holds the inputs — the same account handed to
 /// `set_funding` when the transaction was built.
+///
+/// Returns the still-typed [`BroadcastError`] so callers with
+/// rejection-specific cleanup of their own (e.g. the asset-lock flow
+/// untracking its `Built` row) can branch on the variant; `?` converts it
+/// into [`PlatformWalletError`](crate::PlatformWalletError) for everyone
+/// else.
 pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster + ?Sized>(
     broadcaster: &B,
     wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
@@ -41,7 +46,7 @@ pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster +
     account_type: StandardAccountType,
     account_index: u32,
     tx: &Transaction,
-) -> Result<Txid, PlatformWalletError> {
+) -> Result<Txid, BroadcastError> {
     match broadcaster.broadcast(tx).await {
         Ok(txid) => Ok(txid),
         Err(e) => {
@@ -71,7 +76,7 @@ pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster +
                     ),
                 }
             }
-            Err(e.into())
+            Err(e)
         }
     }
 }

@@ -347,10 +347,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         // 3. Broadcast, releasing the build's UTXO reservation if the
         //    broadcast is definitively rejected pre-send (the asset-lock
-        //    builder funds from the BIP44 account at `account_index`). The
-        //    tracked lock stays `Built`, so a later resume can still re-drive
-        //    the same transaction while its inputs remain unspent.
-        crate::wallet::reservations::broadcast_releasing_on_rejection(
+        //    builder funds from the BIP44 account at `account_index`). On
+        //    rejection the `Built` row is untracked too: with the inputs
+        //    released for re-selection, leaving it resumable would let a
+        //    later `resume_asset_lock` re-broadcast a transaction whose
+        //    inputs may already be re-spent. A `MaybeSent` failure keeps
+        //    both the reservation and the resumable row.
+        if let Err(e) = crate::wallet::reservations::broadcast_releasing_on_rejection(
             self.broadcaster.as_ref(),
             &self.wallet_manager,
             &self.wallet_id,
@@ -358,7 +361,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             account_index,
             &tx,
         )
-        .await?;
+        .await
+        {
+            if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) {
+                let cs_untrack = self.untrack_asset_lock(&out_point).await;
+                self.queue_asset_lock_changeset(cs_untrack);
+            }
+            return Err(e.into());
+        }
 
         // 4. Transition to Broadcast and queue the changeset.
         let cs_broadcast = self

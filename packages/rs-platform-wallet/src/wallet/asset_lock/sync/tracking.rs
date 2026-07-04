@@ -25,6 +25,31 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         cs
     }
 
+    /// Remove a tracked asset lock whose funding transaction was
+    /// definitively rejected at broadcast (never reached the network).
+    ///
+    /// Unlike [`consume_asset_lock`](Self::consume_asset_lock), the
+    /// persisted row is deleted too (via the changeset's `removed` set):
+    /// a rejected lock's funding transaction never existed on the
+    /// network, so the row has no historical value — and because the
+    /// rejection released the funding UTXO reservation, leaving the
+    /// `Built` row resumable would let a later `resume_asset_lock`
+    /// re-broadcast a transaction whose inputs may have been re-spent.
+    ///
+    /// Idempotent: returns an empty changeset if the outpoint is not
+    /// tracked. The caller queues the changeset (call sites live in
+    /// `asset_lock/build.rs`, inside the module).
+    pub(crate) async fn untrack_asset_lock(&self, out_point: &OutPoint) -> AssetLockChangeSet {
+        let mut wm = self.wallet_manager.write().await;
+        let mut cs = AssetLockChangeSet::default();
+        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+            if info.tracked_asset_locks.remove(out_point).is_some() {
+                cs.removed.insert(*out_point);
+            }
+        }
+        cs
+    }
+
     /// Mark a tracked asset lock as
     /// [`Consumed`](AssetLockStatus::Consumed) after a successful
     /// identity registration or top-up.
