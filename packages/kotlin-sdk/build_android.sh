@@ -102,7 +102,8 @@ done
 # on non-APFS volumes, which breaks proto-glob build scripts (tenderdash).
 # When the repo lives on such a volume, host the cargo target dir on an APFS
 # sparse image instead (created on first use, mounted on demand).
-if [[ -z "${CARGO_TARGET_DIR:-}" ]]; then
+# macOS-only: diskutil/hdiutil don't exist on Linux CI runners.
+if [[ "$(uname)" == "Darwin" && -z "${CARGO_TARGET_DIR:-}" ]]; then
     REPO_FS="$(diskutil info "$(df "$REPO_ROOT" | tail -1 | awk '{print $NF}')" 2>/dev/null \
         | sed -n 's/.*File System Personality: *//p')"
     if [[ -n "$REPO_FS" && "$REPO_FS" != *APFS* ]]; then
