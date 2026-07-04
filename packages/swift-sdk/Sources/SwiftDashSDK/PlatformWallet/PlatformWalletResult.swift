@@ -46,6 +46,13 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// shielded sync reach a confirmed state and try again. Distinct from
     /// `errorShieldedSpendUnconfirmed`, which must NOT be retried.
     case errorShieldedNoRecordedAnchor = 19
+    /// A core transaction broadcast (send, DashPay payment, or asset-lock
+    /// funding) failed with an ambiguous outcome — the transaction may
+    /// already be on the network. The wallet keeps the spent inputs' UTXO
+    /// reservation, so an immediate retry fails at input selection instead
+    /// of double-spending; the reservation TTL or a sync reconciles the
+    /// outcome. Do NOT auto-retry.
+    case errorTransactionBroadcastUnconfirmed = 20
     case notFound = 98
     case errorUnknown = 99
 
@@ -91,6 +98,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedSpendUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_NO_RECORDED_ANCHOR:
             self = .errorShieldedNoRecordedAnchor
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_UNCONFIRMED:
+            self = .errorTransactionBroadcastUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -193,6 +202,12 @@ public enum PlatformWalletError: LocalizedError {
     /// sync reaches a confirmed state. Distinct from `shieldedSpendUnconfirmed`,
     /// which must NOT be retried.
     case shieldedNoRecordedAnchor(String)
+    /// A core transaction broadcast was submitted but its outcome is
+    /// unknown — the transaction may already be on the network. The wallet
+    /// keeps the spent inputs reserved so a retry cannot double-spend; the
+    /// reservation TTL or a later sync reconciles the outcome. Do NOT
+    /// auto-retry. Core sibling of `shieldedSpendUnconfirmed`.
+    case transactionBroadcastUnconfirmed(String)
     case notFound(String)
     case unknown(String)
 
@@ -209,6 +224,7 @@ public enum PlatformWalletError: LocalizedError {
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m),
+             .transactionBroadcastUnconfirmed(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -240,6 +256,8 @@ public enum PlatformWalletError: LocalizedError {
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
         case .errorShieldedSpendUnconfirmed: self = .shieldedSpendUnconfirmed(detail)
         case .errorShieldedNoRecordedAnchor: self = .shieldedNoRecordedAnchor(detail)
+        case .errorTransactionBroadcastUnconfirmed:
+            self = .transactionBroadcastUnconfirmed(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

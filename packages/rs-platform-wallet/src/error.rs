@@ -60,6 +60,22 @@ pub enum PlatformWalletError {
     #[error("Transaction broadcast failed: {0}")]
     TransactionBroadcast(String),
 
+    /// A core transaction broadcast failed with an **ambiguous** outcome — the
+    /// transaction may already have reached the network (transport timeout
+    /// after delivery, partial peer send, or an internal multi-node retry
+    /// whose earlier attempt may have succeeded). The spent inputs'
+    /// reservation is intentionally kept, so an immediate retry fails at
+    /// input selection instead of double-spending; the reservation-TTL
+    /// backstop (or a sync observing the transaction) reconciles the outcome.
+    ///
+    /// The shielded sibling is [`Self::ShieldedSpendUnconfirmed`].
+    #[error(
+        "Transaction broadcast outcome unknown — it may already be on the \
+         network; its inputs stay reserved until a sync or the reservation \
+         TTL reconciles the outcome: {0}"
+    )]
+    TransactionBroadcastUnconfirmed(String),
+
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
 

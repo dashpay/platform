@@ -4,6 +4,7 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::Signer;
 
 use crate::broadcaster::TransactionBroadcaster;
+use crate::wallet::reservations::broadcast_releasing_on_rejection;
 use crate::{CoreWallet, PlatformWalletError};
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
@@ -21,7 +22,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         &self,
         transaction: &Transaction,
     ) -> Result<dashcore::Txid, PlatformWalletError> {
-        self.broadcaster.broadcast(transaction).await
+        self.broadcaster
+            .broadcast(transaction)
+            .await
+            .map_err(Into::into)
     }
 
     /// Build, sign, and broadcast a payment to the given addresses.
@@ -142,7 +146,121 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             tx
         };
 
-        self.broadcast_transaction(&tx).await?;
+        broadcast_releasing_on_rejection(
+            self.broadcaster.as_ref(),
+            &self.wallet_manager,
+            &self.wallet_id,
+            account_type,
+            account_index,
+            &tx,
+        )
+        .await?;
         Ok(tx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use dashcore::{Address as DashAddress, Network};
+    use key_wallet::account::account_type::StandardAccountType;
+
+    use crate::broadcaster::TransactionBroadcaster;
+    use crate::test_support::{
+        funded_wallet_manager, AlwaysMaybeSentBroadcaster, RejectFirstBroadcaster, WalletSigner,
+    };
+    use crate::wallet::core::CoreWallet;
+    use crate::PlatformWalletError;
+
+    /// Builds a testnet `CoreWallet` over the shared funded fixture and a
+    /// 1_000_000-duff payment to a dummy recipient.
+    async fn funded_core_wallet<B: TransactionBroadcaster>(
+        account_type: StandardAccountType,
+        broadcaster: Arc<B>,
+    ) -> (CoreWallet<B>, WalletSigner, Vec<(DashAddress, u64)>) {
+        let (wallet_manager, wallet_id, balance, signer) =
+            funded_wallet_manager(account_type).await;
+
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(sdk, wallet_manager, wallet_id, broadcaster, balance);
+
+        let recipient = DashAddress::dummy(Network::Testnet, 42);
+        let outputs = vec![(recipient, 1_000_000u64)];
+
+        (core, signer, outputs)
+    }
+
+    /// A pre-send broadcast failure must release the UTXO reservation taken while
+    /// building the transaction, so an immediate retry can reselect those inputs
+    /// instead of failing with spurious insufficient funds until the TTL backstop.
+    /// Covers both funds-account arms of the release path.
+    #[tokio::test]
+    async fn send_to_addresses_releases_reservation_on_broadcast_failure() {
+        for account_type in [
+            StandardAccountType::BIP44Account,
+            StandardAccountType::BIP32Account,
+        ] {
+            let broadcaster = Arc::new(RejectFirstBroadcaster::new());
+            let (core, signer, outputs) = funded_core_wallet(account_type, broadcaster).await;
+
+            // First attempt: build + sign succeed, broadcast fails.
+            let first = core
+                .send_to_addresses(account_type, 0, outputs.clone(), &signer)
+                .await;
+            assert!(
+                matches!(first, Err(PlatformWalletError::TransactionBroadcast(_))),
+                "first send should surface the broadcast failure for {account_type:?}, got {first:?}"
+            );
+
+            // Immediate retry: only succeeds if the failed broadcast released the
+            // reservation. With the leak, coin selection sees no spendable UTXO and
+            // this fails with a build error instead.
+            let second = core
+                .send_to_addresses(account_type, 0, outputs, &signer)
+                .await;
+            assert!(
+                second.is_ok(),
+                "retry after a failed broadcast should succeed once the reservation \
+                 is released for {account_type:?}, got {second:?}"
+            );
+        }
+    }
+
+    /// An *ambiguous* broadcast failure — the network may already have accepted
+    /// the transaction — must NOT release the reservation: retrying would risk a
+    /// double-spend. The reservation is kept, so an immediate retry fails at the
+    /// build stage (no spendable UTXO) rather than reaching broadcast again.
+    #[tokio::test]
+    async fn send_to_addresses_keeps_reservation_on_ambiguous_broadcast_failure() {
+        for account_type in [
+            StandardAccountType::BIP44Account,
+            StandardAccountType::BIP32Account,
+        ] {
+            let broadcaster = Arc::new(AlwaysMaybeSentBroadcaster);
+            let (core, signer, outputs) = funded_core_wallet(account_type, broadcaster).await;
+
+            let first = core
+                .send_to_addresses(account_type, 0, outputs.clone(), &signer)
+                .await;
+            assert!(
+                matches!(
+                    first,
+                    Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
+                ),
+                "first send should surface the ambiguous failure for {account_type:?}, got {first:?}"
+            );
+
+            // Reservation kept: the retry cannot reselect the reserved input and
+            // fails while building, never reaching the broadcaster again.
+            let second = core
+                .send_to_addresses(account_type, 0, outputs, &signer)
+                .await;
+            assert!(
+                matches!(second, Err(PlatformWalletError::TransactionBuild(_))),
+                "retry after an ambiguous failure must fail at build with the reservation \
+                 kept for {account_type:?}, got {second:?}"
+            );
+        }
     }
 }
