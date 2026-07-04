@@ -26,9 +26,17 @@ struct TransactionListView: View {
     /// output as "to-self" and reports ~0 for asset locks. The
     /// `amountDuffs` on the asset-lock row is the actual L1 burn.
     @Query private var assetLocks: [PersistentAssetLock]
+    /// This wallet's owning identities. The DashPay payment / contact
+    /// join below must be scoped to these — two identities in one store
+    /// (A pays B) each persist a row for the same txid, and joining by
+    /// txid alone would let B's incoming payment resolve to A's `.sent`
+    /// row (or the wrong counterparty name). `ownerIdentityIds` narrows
+    /// the join to this wallet's identities, leaving at most one payment
+    /// row per txid.
+    @Query private var walletIdentities: [PersistentIdentity]
     /// DashPay payments + the contact-name sources, to label a tx that is a
-    /// DashPay payment with who it's with (+ memo). Unscoped: the `txid` join
-    /// below already restricts these to this wallet's transactions.
+    /// DashPay payment with who it's with (+ memo). Scoped to this wallet's
+    /// identities in the joins below.
     @Query private var dashpayPayments: [PersistentDashpayPayment]
     @Query private var contactProfiles: [PersistentDashpayContactProfile]
     @Query private var contactRequests: [PersistentDashpayContactRequest]
@@ -44,6 +52,15 @@ struct TransactionListView: View {
             predicate: PersistentAssetLock.predicate(walletId: walletId)
         )
         _assetLocks = Query(assetLockDescriptor)
+        _walletIdentities = Query(
+            filter: #Predicate<PersistentIdentity> { $0.wallet?.walletId == walletId }
+        )
+    }
+
+    /// The owning identity ids of this wallet — the scope for the
+    /// DashPay payment / contact joins below.
+    private var ownerIdentityIds: Set<Data> {
+        Set(walletIdentities.map(\.identityId))
     }
 
     /// Lookup `txid (display-order hex) → total asset-lock amount in
@@ -68,18 +85,29 @@ struct TransactionListView: View {
     }
 
     /// `txid (display-order hex) → DashPay payment`, so a row can tell whether
-    /// the tx it's rendering is a DashPay payment (and to whom).
+    /// the tx it's rendering is a DashPay payment (and to whom). Scoped to
+    /// this wallet's identities so a txid another identity in the same store
+    /// also recorded (A pays B) can't resolve to the wrong direction/row.
     private var dashpayPaymentByTxid: [String: PersistentDashpayPayment] {
-        Dictionary(dashpayPayments.map { ($0.txid, $0) }, uniquingKeysWith: { first, _ in first })
+        let owners = ownerIdentityIds
+        let scoped = dashpayPayments.filter { owners.contains($0.ownerIdentityId) }
+        return Dictionary(scoped.map { ($0.txid, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// Resolve a counterparty identity id → best display name (alias > profile
-    /// > DPNS > truncated id), reusing the shared DashPay name helper.
+    /// > DPNS > truncated id), reusing the shared DashPay name helper. Scoped
+    /// to this wallet's identities so a contact row owned by a sibling
+    /// identity can't leak the wrong alias/name.
     private func dashpayCounterpartyName(for contactId: Data) -> String {
+        let owners = ownerIdentityIds
         let alias = contactRequests.first {
-            $0.contactIdentityId == contactId && ($0.contactAlias?.isEmpty == false)
+            owners.contains($0.ownerIdentityId)
+                && $0.contactIdentityId == contactId
+                && ($0.contactAlias?.isEmpty == false)
         }?.contactAlias
-        let profileName = contactProfiles.first { $0.contactIdentityId == contactId }?.displayName
+        let profileName = contactProfiles.first {
+            owners.contains($0.ownerIdentityId) && $0.contactIdentityId == contactId
+        }?.displayName
         return dashPayContactDisplayName(
             contactId: contactId,
             alias: alias,

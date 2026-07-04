@@ -243,6 +243,20 @@ struct DashPayTabView: View {
                             .environmentObject(appState)
                     }
                 }
+                // Value-based push for the hidden-contacts recovery
+                // screen. Declared on the stack root (not on ContactsView)
+                // so the destination builds only on navigate — a
+                // closure-based link inside the frequently-syncing
+                // Contacts list would rebuild it on every @Query
+                // re-render.
+                .navigationDestination(for: DashPayHiddenContactsRoute.self) { route in
+                    if let identity = eligibleIdentities.first(where: {
+                        $0.identityId == route.ownerIdentityId
+                    }) {
+                        HiddenContactsView(identity: identity)
+                            .environmentObject(walletManager)
+                    }
+                }
         }
         .environmentObject(contactMeta)
         .onAppear { tabVisible = true; refreshSyncCadence() }
