@@ -138,6 +138,17 @@ pub struct ContactRequestFFI {
     /// surfaced) and is null on the outgoing and pending rows. Released by
     /// [`free_contact_requests_ffi`].
     pub contact_account_label: *const std::os::raw::c_char,
+    /// Heap-allocated copy of `EstablishedContact::accepted_accounts`
+    /// (DIP-15 rotated-account acceptances), or `null` when empty. Like
+    /// [`Self::payment_channel_broken`]/[`Self::alias`]/[`Self::note`] this is a
+    /// property of the relationship, so it is replicated onto BOTH the outgoing
+    /// and incoming established rows; always `null` for pending
+    /// `sent_requests` / `incoming_requests` rows. Released by
+    /// [`free_contact_requests_ffi`].
+    pub accepted_accounts: *const u32,
+    /// Number of `u32` entries in [`Self::accepted_accounts`]; `0` when the
+    /// pointer is null.
+    pub accepted_accounts_len: usize,
 }
 
 /// Composite identifier for [`ContactChangeSet::removed_sent`] and
@@ -215,9 +226,11 @@ pub struct ContactIgnoredSenderFFI {
 //   168       is_hidden                      bool
 //   169..=175 (padding to 8)
 //   176..=183 contact_account_label          *const c_char
+//   184..=191 accepted_accounts              *const u32
+//   192..=199 accepted_accounts_len          usize
 //
-// Total size = 184, alignment = 8 (from u64 / pointer fields).
-const _: [u8; 184] = [0u8; std::mem::size_of::<ContactRequestFFI>()];
+// Total size = 200, alignment = 8 (from u64 / pointer fields).
+const _: [u8; 200] = [0u8; std::mem::size_of::<ContactRequestFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<ContactRequestFFI>()];
 
 // Expected `ContactRequestRemovalFFI` layout: 64 bytes, alignment 1.
@@ -274,7 +287,16 @@ impl ContactRequestFFI {
         request: &platform_wallet::ContactRequest,
     ) -> Self {
         Self::from_parts(
-            owner_id, contact_id, true, request, false, None, None, false, None,
+            owner_id,
+            contact_id,
+            true,
+            request,
+            false,
+            None,
+            None,
+            false,
+            None,
+            &[],
         )
     }
 
@@ -286,14 +308,23 @@ impl ContactRequestFFI {
         request: &platform_wallet::ContactRequest,
     ) -> Self {
         Self::from_parts(
-            owner_id, contact_id, false, request, false, None, None, false, None,
+            owner_id,
+            contact_id,
+            false,
+            request,
+            false,
+            None,
+            None,
+            false,
+            None,
+            &[],
         )
     }
 
     /// Build the **outgoing** row of an established contact, stamping
-    /// the relationship's `payment_channel_broken` flag and the
-    /// owner-private metadata (alias / note / hidden — contactInfo,
-    /// M3) onto the row.
+    /// the relationship's `payment_channel_broken` flag, the owner-private
+    /// metadata (alias / note / hidden — contactInfo, M3), and the DIP-15
+    /// `accepted_accounts` onto the row.
     ///
     /// Used by the persister's `established` projection (one outgoing +
     /// one incoming row per entry), where these are properties of the
@@ -307,6 +338,7 @@ impl ContactRequestFFI {
         alias: Option<&str>,
         note: Option<&str>,
         is_hidden: bool,
+        accepted_accounts: &[u32],
     ) -> Self {
         Self::from_parts(
             owner_id,
@@ -320,6 +352,7 @@ impl ContactRequestFFI {
             // The outgoing row never carries the contact's account label —
             // it is direction-specific (incoming-only).
             None,
+            accepted_accounts,
         )
     }
 
@@ -337,6 +370,7 @@ impl ContactRequestFFI {
         note: Option<&str>,
         is_hidden: bool,
         contact_account_label: Option<&str>,
+        accepted_accounts: &[u32],
     ) -> Self {
         Self::from_parts(
             owner_id,
@@ -348,6 +382,7 @@ impl ContactRequestFFI {
             note,
             is_hidden,
             contact_account_label,
+            accepted_accounts,
         )
     }
 
@@ -362,6 +397,7 @@ impl ContactRequestFFI {
         note: Option<&str>,
         is_hidden: bool,
         contact_account_label: Option<&str>,
+        accepted_accounts: &[u32],
     ) -> Self {
         let (encrypted_public_key, encrypted_public_key_len) =
             allocate_byte_buffer(&request.encrypted_public_key);
@@ -375,6 +411,7 @@ impl ContactRequestFFI {
             Some(bytes) => allocate_byte_buffer(bytes),
             None => (ptr::null(), 0),
         };
+        let (accepted_accounts, accepted_accounts_len) = allocate_u32_buffer(accepted_accounts);
         Self {
             owner_id,
             contact_id,
@@ -395,6 +432,8 @@ impl ContactRequestFFI {
             note: allocate_c_string(note),
             is_hidden,
             contact_account_label: allocate_c_string(contact_account_label),
+            accepted_accounts,
+            accepted_accounts_len,
         }
     }
 }
@@ -432,6 +471,18 @@ fn allocate_byte_buffer(bytes: &[u8]) -> (*const u8, usize) {
     let boxed: Box<[u8]> = bytes.to_vec().into_boxed_slice();
     let len = boxed.len();
     (Box::into_raw(boxed) as *const u8, len)
+}
+
+/// `u32` sibling of [`allocate_byte_buffer`] for
+/// [`ContactRequestFFI::accepted_accounts`]. Empty slices return `(null, 0)`;
+/// released by [`free_u32_buffer`].
+fn allocate_u32_buffer(values: &[u32]) -> (*const u32, usize) {
+    if values.is_empty() {
+        return (ptr::null(), 0);
+    }
+    let boxed: Box<[u32]> = values.to_vec().into_boxed_slice();
+    let len = boxed.len();
+    (Box::into_raw(boxed) as *const u32, len)
 }
 
 // ---------------------------------------------------------------------------
@@ -472,6 +523,10 @@ pub unsafe fn free_contact_requests_ffi(entries: *mut ContactRequestFFI, count: 
         free_c_string(&mut entry.alias);
         free_c_string(&mut entry.note);
         free_c_string(&mut entry.contact_account_label);
+        free_u32_buffer(
+            &mut entry.accepted_accounts,
+            &mut entry.accepted_accounts_len,
+        );
     }
 }
 
@@ -481,6 +536,18 @@ fn free_byte_buffer(slot: &mut *const u8, len_slot: &mut usize) {
     if !slot.is_null() && *len_slot > 0 {
         let slice = unsafe { std::slice::from_raw_parts_mut(*slot as *mut u8, *len_slot) };
         let _ = unsafe { Box::from_raw(slice as *mut [u8]) };
+    }
+    *slot = ptr::null();
+    *len_slot = 0;
+}
+
+/// `u32` sibling of [`free_byte_buffer`] for
+/// [`ContactRequestFFI::accepted_accounts`]. Idempotent on null / zero-length
+/// slots.
+fn free_u32_buffer(slot: &mut *const u32, len_slot: &mut usize) {
+    if !slot.is_null() && *len_slot > 0 {
+        let slice = unsafe { std::slice::from_raw_parts_mut(*slot as *mut u32, *len_slot) };
+        let _ = unsafe { Box::from_raw(slice as *mut [u32]) };
     }
     *slot = ptr::null();
     *len_slot = 0;
@@ -624,6 +691,7 @@ mod tests {
             Some("ally"),
             Some("a note"),
             true,
+            &[],
         );
         let mut inc = ContactRequestFFI::from_established_incoming(
             owner,
@@ -634,6 +702,7 @@ mod tests {
             Some("a note"),
             true,
             None,
+            &[],
         );
         assert!(out.is_outgoing);
         assert!(!inc.is_outgoing);
@@ -649,7 +718,14 @@ mod tests {
 
         // Healthy relationship without metadata: flag clear, strings null.
         let mut healthy = ContactRequestFFI::from_established_outgoing(
-            owner, contact, &request, false, None, None, false,
+            owner,
+            contact,
+            &request,
+            false,
+            None,
+            None,
+            false,
+            &[],
         );
         assert!(!healthy.payment_channel_broken);
         assert!(healthy.alias.is_null());
@@ -678,7 +754,14 @@ mod tests {
         let contact = [4u8; 32];
 
         let mut out = ContactRequestFFI::from_established_outgoing(
-            owner, contact, &request, false, None, None, false,
+            owner,
+            contact,
+            &request,
+            false,
+            None,
+            None,
+            false,
+            &[],
         );
         let mut inc = ContactRequestFFI::from_established_incoming(
             owner,
@@ -689,6 +772,7 @@ mod tests {
             None,
             false,
             Some("Main wallet"),
+            &[],
         );
 
         assert!(

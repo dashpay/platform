@@ -251,22 +251,17 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
     // ---- Bind the derived key to the expected on-chain key -------------------
     // Reject before signing if the key derived here doesn't reproduce the
     // caller's known key, so a stale/wrong path or a mis-mapped mnemonic can
-    // never yield a valid signature under the wrong key. Mirrors the
-    // discovery-time `validate_private_key_bytes` decision: 33-byte expected =
-    // compressed pubkey equality; 20-byte expected = `ripemd160_sha256` of it.
+    // never yield a valid signature under the wrong key. The 33-vs-20-byte
+    // binding policy lives in `platform_wallet::pubkey_binds_expected_key_data`
+    // so it stays byte-for-byte aligned with the discovery-time
+    // `validate_private_key_bytes` decision (33-byte expected = compressed
+    // pubkey equality; 20-byte expected = `ripemd160_sha256` of it).
     if !expected_key_data.is_null() && expected_key_data_len > 0 {
         let expected = std::slice::from_raw_parts(expected_key_data, expected_key_data_len);
         let derived_pubkey = key_wallet::bip32::ExtendedPubKey::from_priv(&secp, &derived.0)
             .public_key
             .serialize();
-        let matches = match expected_key_data_len {
-            33 => derived_pubkey.as_slice() == expected,
-            20 => {
-                dash_sdk::dpp::util::hash::ripemd160_sha256(&derived_pubkey).as_slice() == expected
-            }
-            _ => false,
-        };
-        if !matches {
+        if !platform_wallet::pubkey_binds_expected_key_data(&derived_pubkey, expected) {
             return fail(SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH);
         }
     }

@@ -620,10 +620,9 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
         &self,
         path: &key_wallet::bip32::DerivationPath,
         peer: &dashcore::secp256k1::PublicKey,
-    ) -> Result<[u8; 32], platform_wallet::PlatformWalletError> {
+    ) -> Result<zeroize::Zeroizing<[u8; 32]>, platform_wallet::PlatformWalletError> {
         self.signer
             .ecdh_shared_secret(path, peer)
-            .map(|z| *z)
             .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
     }
 
