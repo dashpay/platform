@@ -240,7 +240,7 @@ struct SendDashPayPaymentSheet: View {
 
                 if let successTxid = successTxid {
                     Section {
-                        Text("Sent! txid: \(successTxid.toHexString().prefix(16))…")
+                        Text("Sent! txid: \(txidDisplayHex(successTxid).prefix(16))…")
                             .font(.caption)
                             .foregroundColor(.green)
                     }
@@ -302,10 +302,11 @@ struct SendDashPayPaymentSheet: View {
         // Recipient is a contact: read the contact-profile cache first, with
         // an own-profile fallback for a recipient that is one of our own
         // identities. A miss leaves the fallback hex-id rendering.
-        recipientProfile = (try? wallet.getContactProfile(
+        recipientProfile = dashPayCachedProfile(
+            wallet: wallet,
             ownerIdentityId: senderIdentity.identityId,
-            contactIdentityId: contact.identityId
-        )) ?? (try? wallet.getDashPayProfile(identityId: contact.identityId)) ?? nil
+            contactId: contact.identityId
+        )
         do {
             let managed = try wallet.managedIdentity(identityId: contact.identityId)
             let names = (try? managed.getDpnsNames()) ?? []

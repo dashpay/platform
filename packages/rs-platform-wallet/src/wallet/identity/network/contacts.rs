@@ -76,6 +76,29 @@ pub enum RegisterExternalError {
     Transient(PlatformWalletError),
 }
 
+/// Outcome of a successful [`register_external_contact_account`] call.
+///
+/// The distinction matters to the rotation self-heal: only a [`Built`]
+/// outcome proves the account was (re)constructed from the payload the
+/// caller holds, so only [`Built`] may stamp the contact's
+/// `external_account_reference` marker. An [`AlreadyExisted`] row is keyed
+/// on `(index, user, friend)` — independent of `account_reference` — and
+/// may predate a rotation (stale xpub); stamping it as current would stop
+/// `external_account_needs_rebuild` from ever tearing it down.
+///
+/// [`Built`]: ExternalAccountRegistration::Built
+/// [`AlreadyExisted`]: ExternalAccountRegistration::AlreadyExisted
+/// [`register_external_contact_account`]: IdentityWallet::register_external_contact_account
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExternalAccountRegistration {
+    /// The account was decrypted and (re)built from the supplied encrypted
+    /// xpub by this call.
+    Built,
+    /// An account row already existed for the `(index, user, friend)` key;
+    /// nothing was decrypted or replaced.
+    AlreadyExisted,
+}
+
 impl RegisterExternalError {
     /// Whether this failure should permanently break the payment channel.
     pub fn is_permanent(&self) -> bool {
@@ -386,13 +409,16 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// transient/permanent payment-channel policy: a `Permanent` failure
     /// (malformed encrypted xpub, missing/non-secp key) breaks the channel;
     /// a `Transient` one (persistence/insert hiccup) leaves it for retry.
+    /// On success returns [`ExternalAccountRegistration`] so the caller can
+    /// tell a real (re)build from an already-existed no-op — only the former
+    /// may stamp the rotation self-heal marker (see the enum docs).
     pub async fn register_external_contact_account(
         &self,
         our_identity_id: &Identifier,
         contact_identity: &Identity,
         contact_encrypted_xpub: &[u8],
-        shared_key: [u8; 32],
-    ) -> Result<(), RegisterExternalError> {
+        shared_key: zeroize::Zeroizing<[u8; 32]>,
+    ) -> Result<ExternalAccountRegistration, RegisterExternalError> {
         use RegisterExternalError::{Permanent, Transient};
         let account_index: u32 = 0;
         let contact_identity_id = contact_identity.id();
@@ -417,7 +443,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .dashpay_external_accounts
                 .contains_key(&key)
             {
-                return Ok(());
+                return Ok(ExternalAccountRegistration::AlreadyExisted);
             }
         }
 
@@ -540,6 +566,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             "Registered DashpayExternalAccount for sending payments to contact"
         );
 
-        Ok(())
+        Ok(ExternalAccountRegistration::Built)
     }
 }

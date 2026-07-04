@@ -19,13 +19,14 @@ final class IdentityKeyBreadcrumbTests: XCTestCase {
         identityId: String,
         walletId: Data? = nil,
         derivationPath: String? = nil,
-        keychainId: String? = nil
+        keychainId: String? = nil,
+        keyType: KeyType = .ecdsaSecp256k1
     ) -> PersistentPublicKey {
         let row = PersistentPublicKey(
             keyId: keyId,
             purpose: .authentication,
             securityLevel: .high,
-            keyType: .ecdsaSecp256k1,
+            keyType: keyType,
             publicKeyData: publicKeyData,
             identityId: identityId
         )
@@ -115,6 +116,89 @@ final class IdentityKeyBreadcrumbTests: XCTestCase {
         XCTAssertNil(row.identityDerivationPath, "a drifted path must not be written")
     }
 
+    /// Regression: a breadcrumb backfill that lands while a Rust persister
+    /// round is open (between `beginChangeset` and `endChangeset`) must NOT
+    /// commit the round's half-applied writes early — the backfill's own
+    /// `save()` would otherwise flush the staged (uncommitted) round rows,
+    /// so a later `endChangeset(success: false)` could no longer roll the
+    /// round back cleanly. The deferred write must still complete once the
+    /// round closes, so the breadcrumb is not silently dropped.
+    func testBackfillDefersDuringOpenChangesetRoundAndCompletesAfter() throws {
+        let container = try DashModelContainer.createInMemory()
+        let seed = ModelContext(container)
+        // Owner identity so the mid-round `persistDashpayPayments` write has a
+        // row to attach to; the backfill target key is matched by pubkey.
+        let ownerId = Data(repeating: 0x01, count: 32)
+        let counterpartyId = Data(repeating: 0x02, count: 32)
+        seed.insert(PersistentIdentity(identityId: ownerId, isLocal: false, network: .testnet))
+        let pubKey = Data(repeating: 0x77, count: 33)
+        seed.insert(makeRow(keyId: 0, publicKeyData: pubKey, identityId: "id1",
+                            keychainId: "identity_privkey.x"))
+        try seed.save()
+
+        let canonical = try KeyDerivation.getIdentityAuthenticationPath(
+            network: .testnet, identityIndex: 3, keyIndex: 0)
+
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+
+        // Open a round and stage an (uncommitted) payment write.
+        handler.beginChangeset(walletId: walletId)
+        handler.persistDashpayPayments(
+            ownerIdentityId: ownerId,
+            payments: [
+                DashPayPayment(
+                    counterpartyId: counterpartyId,
+                    amountDuffs: 1_000,
+                    direction: .sent,
+                    status: .pending,
+                    txid: "0011223344556677"
+                )
+            ]
+        )
+
+        // Backfill lands mid-round. It must defer: no breadcrumb written yet,
+        // and — critically — nothing flushed to disk.
+        let midRound = handler.backfillIdentityKeyBreadcrumbs(
+            walletId: walletId,
+            items: [meta(keyId: 0, publicKey: pubKey, identityIndex: 3, derivationPath: canonical)]
+        )
+        XCTAssertEqual(midRound.written, 0, "a mid-round backfill must defer, not write")
+
+        // Neither the round's staged payment nor the backfill's breadcrumb may
+        // be visible from another context while the round is open.
+        let midContext = ModelContext(container)
+        XCTAssertEqual(
+            try midContext.fetch(FetchDescriptor<PersistentDashpayPayment>()).count, 0,
+            "a mid-round backfill must not flush the open changeset early"
+        )
+        let midRow = try XCTUnwrap(
+            midContext.fetch(FetchDescriptor<PersistentPublicKey>()).first
+        )
+        XCTAssertNil(
+            midRow.identityDerivationPath,
+            "the backfill breadcrumb must not be written during the open round"
+        )
+
+        // Fail the round — the staged payment must roll back, yet the deferred
+        // backfill (which never rode the round's transaction) must still
+        // complete once the round closes.
+        handler.endChangeset(walletId: walletId, success: false)
+
+        let afterContext = ModelContext(container)
+        XCTAssertEqual(
+            try afterContext.fetch(FetchDescriptor<PersistentDashpayPayment>()).count, 0,
+            "the failed round's staged payment must roll back"
+        )
+        let afterRow = try XCTUnwrap(
+            afterContext.fetch(FetchDescriptor<PersistentPublicKey>()).first
+        )
+        XCTAssertEqual(
+            afterRow.identityDerivationPath, canonical,
+            "the deferred backfill must still complete after the round closes"
+        )
+        XCTAssertEqual(afterRow.walletId, walletId)
+    }
+
     /// A row that already carries a path is skipped (idempotent), not rewritten
     /// or counted as failed.
     func testBackfillIsIdempotentForAlreadyMigratedRow() throws {
@@ -168,5 +252,73 @@ final class IdentityKeyBreadcrumbTests: XCTestCase {
                      "no breadcrumb → nil → caller falls back to the stored scalar")
         XCTAssertNil(signer.resolveIdentityKeyContext(publicKey: badWid),
                      "non-32-byte walletId must not resolve (FFI reads 32 bytes)")
+    }
+
+    // MARK: - canSign preflight ⇄ sign-time consistency
+
+    /// A breadcrumb-only row (no stored scalar) whose key type the resolver
+    /// does NOT derive-sign must NOT be reported signable: at sign time the
+    /// resolver returns `UNSUPPORTED_KEY_TYPE`, routing to the (absent) stored
+    /// scalar and failing with `publicKeyNotFound`. Preflight must agree.
+    func testCanSignRejectsBreadcrumbOnlyNonEcdsaKeyType() throws {
+        let container = try DashModelContainer.createInMemory()
+        let seed = ModelContext(container)
+        let path = "m/9'/1'/5'/0'/0'/0'/0'"
+        // Breadcrumb present, no `privateKeyKeychainIdentifier` (derive-only).
+        let pubKey = Data(repeating: 0x88, count: 33)
+        seed.insert(makeRow(keyId: 0, publicKeyData: pubKey, identityId: "id1",
+                            walletId: walletId, derivationPath: path,
+                            keyType: .eddsa25519Hash160))
+        try seed.save()
+
+        let signer = KeychainSigner(modelContainer: container, network: .testnet)
+
+        // Non-ECDSA type: the resolver-derivable gate short-circuits before the
+        // Keychain mnemonic read, so this is deterministic without a mnemonic.
+        XCTAssertFalse(
+            signer.canSign(publicKey: pubKey, keyType: KeyType.eddsa25519Hash160.rawValue),
+            "a breadcrumb-only non-ECDSA key must not preflight as signable"
+        )
+        XCTAssertFalse(
+            signer.canSign(publicKey: pubKey, keyType: KeyType.bls12_381.rawValue),
+            "a breadcrumb-only BLS key must not preflight as signable"
+        )
+    }
+
+    /// The stored-scalar branch is key-type independent (the scalar signs via
+    /// `ffiSign` regardless of the declared type), so a row carrying a keychain
+    /// identifier preflights as signable for any key type — the resolver gate
+    /// only governs the breadcrumb-only path. Deterministic: no mnemonic read.
+    func testCanSignAcceptsStoredScalarRegardlessOfKeyType() throws {
+        let container = try DashModelContainer.createInMemory()
+        let seed = ModelContext(container)
+        let pubKey = Data(repeating: 0x99, count: 33)
+        seed.insert(makeRow(keyId: 0, publicKeyData: pubKey, identityId: "id1",
+                            keychainId: "identity_privkey.x",
+                            keyType: .eddsa25519Hash160))
+        try seed.save()
+
+        let signer = KeychainSigner(modelContainer: container, network: .testnet)
+
+        XCTAssertTrue(
+            signer.canSign(publicKey: pubKey, keyType: KeyType.ecdsaSecp256k1.rawValue),
+            "a stored-scalar row is signable for an ECDSA type"
+        )
+        XCTAssertTrue(
+            signer.canSign(publicKey: pubKey, keyType: KeyType.eddsa25519Hash160.rawValue),
+            "a stored-scalar row is signable regardless of key type"
+        )
+    }
+
+    /// The Swift preflight wrapper forwards to the resolver's FFI predicate
+    /// `dash_sdk_resolver_supports_key_type`, which reports exactly the
+    /// wallet-derivable ECDSA key types (`ECDSA_SECP256K1 = 0`,
+    /// `ECDSA_HASH160 = 2`).
+    func testResolverCanDeriveSignMatchesRustSupportedSet() {
+        XCTAssertTrue(KeychainSigner.resolverCanDeriveSign(keyType: 0))  // ECDSA_SECP256K1
+        XCTAssertTrue(KeychainSigner.resolverCanDeriveSign(keyType: 2))  // ECDSA_HASH160
+        XCTAssertFalse(KeychainSigner.resolverCanDeriveSign(keyType: 1)) // BLS12_381
+        XCTAssertFalse(KeychainSigner.resolverCanDeriveSign(keyType: 3)) // BIP13_SCRIPT_HASH
+        XCTAssertFalse(KeychainSigner.resolverCanDeriveSign(keyType: 4)) // EDDSA_25519_HASH160
     }
 }

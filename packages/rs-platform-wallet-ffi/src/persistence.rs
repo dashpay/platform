@@ -1082,6 +1082,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         established.alias.as_deref(),
                         established.note.as_deref(),
                         established.is_hidden,
+                        &established.accepted_accounts,
                     ));
                     upserts.push(ContactRequestFFI::from_established_incoming(
                         key.owner_id.to_buffer(),
@@ -1094,6 +1095,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         // Direction-specific: the contact's account label
                         // rides only the incoming row.
                         established.contact_account_label.as_deref(),
+                        &established.accepted_accounts,
                     ));
                 }
                 let removed_sent: Vec<ContactRequestRemovalFFI> = contacts_cs
@@ -3973,6 +3975,7 @@ unsafe fn apply_contact_rows(
         note: Option<String>,
         is_hidden: bool,
         contact_account_label: Option<String>,
+        accepted_accounts: Vec<u32>,
     }
 
     let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
@@ -3987,6 +3990,13 @@ unsafe fn apply_contact_rows(
             None
         } else {
             Some(slice::from_raw_parts(ptr, len).to_vec())
+        }
+    };
+    let u32s = |ptr: *const u32, len: usize| -> Vec<u32> {
+        if ptr.is_null() || len == 0 {
+            Vec::new()
+        } else {
+            slice::from_raw_parts(ptr, len).to_vec()
         }
     };
 
@@ -4033,6 +4043,11 @@ unsafe fn apply_contact_rows(
         if acc.note.is_none() {
             acc.note = opt_string(row.note);
         }
+        // Relationship-level, replicated onto both rows — take the first
+        // non-empty projection.
+        if acc.accepted_accounts.is_empty() {
+            acc.accepted_accounts = u32s(row.accepted_accounts, row.accepted_accounts_len);
+        }
     }
 
     for (contact_id_bytes, acc) in by_contact {
@@ -4045,6 +4060,7 @@ unsafe fn apply_contact_rows(
                 contact.is_hidden = acc.is_hidden;
                 contact.payment_channel_broken = acc.payment_channel_broken;
                 contact.contact_account_label = acc.contact_account_label;
+                contact.accepted_accounts = acc.accepted_accounts;
                 managed.established_contacts.insert(contact_id, contact);
             }
             (Some(outgoing), None) => {
@@ -4969,6 +4985,7 @@ mod tests {
                 Some("ally"),
                 Some("a note"),
                 true,
+                &[7, 42],
             ),
             ContactRequestFFI::from_established_incoming(
                 owner.to_buffer(),
@@ -4979,6 +4996,7 @@ mod tests {
                 Some("a note"),
                 true,
                 Some("Main wallet"),
+                &[7, 42],
             ),
         ];
 
@@ -5036,6 +5054,11 @@ mod tests {
             e.contact_account_label.as_deref(),
             Some("Main wallet"),
             "contact_account_label must restore from the incoming row only"
+        );
+        assert_eq!(
+            e.accepted_accounts,
+            vec![7, 42],
+            "accepted_accounts must round-trip through the FFI rows (matching the SQLite backend)"
         );
         // Key indices restored without a swap (incoming sender=9, recipient=10).
         assert_eq!(

@@ -51,11 +51,24 @@ impl ManagedIdentity {
     /// contact per sweep, and an `EstablishedContact::new` for an
     /// already-established pair would wipe the user's alias / note /
     /// hide-flag / accepted-accounts. So this method is a **no-op** when
-    /// the recipient is already tracked as established or already in the
-    /// sent map (symmetric to the received-side dedup in
-    /// `sync_contact_requests`). When it must (re-)establish against a
-    /// pre-existing incoming request, it MERGES into any existing
-    /// `EstablishedContact` to preserve metadata.
+    /// the recipient is already tracked as established with the SAME
+    /// outgoing `accountReference` or already in the sent map (symmetric
+    /// to the received-side dedup in `sync_contact_requests`). When it
+    /// must (re-)establish against a pre-existing incoming request, it
+    /// MERGES into any existing `EstablishedContact` to preserve metadata.
+    ///
+    /// **Sent-side rotation supersede.** When we re-send to an
+    /// already-established contact with a *different* outgoing
+    /// `accountReference` (a re-key: we rotated our own receiving xpub and
+    /// broadcast a superseding request), the established contact's
+    /// `outgoing_request` is advanced in place — the mirror of
+    /// [`Self::apply_rotated_incoming_request`] on the receive side. Without
+    /// this the tracked outgoing reference stays frozen at the first send,
+    /// so the next rotation re-derives (un-mask → bump) from the stale
+    /// version and collides with the already-broadcast reference on the
+    /// contract's `($ownerId, toUserId, accountReference)` unique index,
+    /// permanently breaking rotation after one use. User metadata is
+    /// preserved (only `outgoing_request` moves).
     pub fn add_sent_contact_request(
         &mut self,
         request: ContactRequest,
@@ -64,10 +77,34 @@ impl ManagedIdentity {
         let owner_id = self.id();
         let recipient_id = request.recipient_id;
 
-        // Sent-side guard: already established → nothing to do. The
-        // on-platform request is immutable, so a re-ingest carries no new
-        // information; re-establishing would wipe user metadata.
-        if self.established_contacts.contains_key(&recipient_id) {
+        // Sent-side guard / rotation supersede: already established.
+        if let Some(existing) = self.established_contacts.get(&recipient_id) {
+            // Same outgoing reference → a re-ingest of a doc we already
+            // track carries no new information; re-establishing would wipe
+            // user metadata, so it's a no-op.
+            if existing.outgoing_request.account_reference == request.account_reference {
+                return Ok(());
+            }
+            // Different outgoing reference → a rotation re-send. Advance
+            // `outgoing_request` so the next rotation reads the fresh
+            // version, preserving all user metadata. Persist BEFORE
+            // committing to memory (same order as `set_contact_metadata`):
+            // if the store fails, memory must stay on the old reference so
+            // the retry sweep doesn't hit the same-reference no-op guard
+            // above and silently lose the rotation from disk for the
+            // process lifetime.
+            let mut updated = existing.clone();
+            updated.outgoing_request = request;
+            let mut cs = ContactChangeSet::default();
+            cs.established.insert(
+                SentContactRequestKey {
+                    owner_id,
+                    recipient_id,
+                },
+                updated.clone(),
+            );
+            persister.store(cs.into())?;
+            self.established_contacts.insert(recipient_id, updated);
             return Ok(());
         }
         // Already tracked as a pending sent request → no-op (no phantom
@@ -156,6 +193,83 @@ impl ManagedIdentity {
     /// list — including rotated (bumped-`accountReference`) ones.
     pub fn is_sender_ignored(&self, sender_id: &Identifier) -> bool {
         self.ignored_senders.contains(sender_id)
+    }
+
+    /// Marker key for the auto-accept verify-failed set:
+    /// `SHA256(sender_id ‖ proof_bytes)`. Keying on the proof bytes (not the
+    /// sender alone) means a DIFFERENT proof from the same sender is not
+    /// suppressed by a prior bad one.
+    pub fn auto_accept_verify_failed_key(sender_id: &Identifier, proof: &[u8]) -> [u8; 32] {
+        use dashcore::hashes::{sha256, Hash, HashEngine};
+        let mut engine = sha256::Hash::engine();
+        engine.input(&sender_id.to_buffer());
+        engine.input(proof);
+        sha256::Hash::from_engine(engine).to_byte_array()
+    }
+
+    /// Hard cap on [`Self::auto_accept_verify_failed`] (32 KiB of keys at
+    /// most). Every entry is attacker-funded (one distinct malformed
+    /// `contactRequest` document per key, each costing platform credits to
+    /// publish), so the set stays tiny in any legitimate wallet; the cap only
+    /// bounds memory against a griefer willing to keep paying. Evicting an
+    /// arbitrary entry over cap is safe — an evicted proof merely re-verifies
+    /// (and re-fails) on the next sweep, which the per-launch-retry design
+    /// already treats as harmless.
+    pub const AUTO_ACCEPT_VERIFY_FAILED_CAP: usize = 1024;
+
+    /// Record that `proof` (from `sender_id`) failed cryptographic verification
+    /// permanently, so the sync sweep's enqueue gate does not re-queue it. Only
+    /// PERMANENT failures should be marked; transient ones must stay retryable.
+    /// In-memory only — cleared on relaunch (retry once per launch). Bounded by
+    /// [`Self::AUTO_ACCEPT_VERIFY_FAILED_CAP`]: over cap, an arbitrary existing
+    /// entry is evicted to make room (see the cap docs for why that is safe).
+    pub fn mark_auto_accept_verify_failed(&mut self, sender_id: &Identifier, proof: &[u8]) {
+        while self.auto_accept_verify_failed.len() >= Self::AUTO_ACCEPT_VERIFY_FAILED_CAP {
+            self.auto_accept_verify_failed.pop_first();
+        }
+        self.auto_accept_verify_failed
+            .insert(Self::auto_accept_verify_failed_key(sender_id, proof));
+    }
+
+    /// Whether `proof` (from `sender_id`) has already failed verification this
+    /// launch — the enqueue gate consults this before re-queuing an
+    /// `AutoAccept` op.
+    pub fn is_auto_accept_verify_failed(&self, sender_id: &Identifier, proof: &[u8]) -> bool {
+        self.auto_accept_verify_failed
+            .contains(&Self::auto_accept_verify_failed_key(sender_id, proof))
+    }
+
+    /// Whether an inbound `request` from `sender_id` should be queued for the
+    /// next signer-present auto-accept drain. The signerless sweep can only do
+    /// cheap local checks here — the cryptographic verify runs in the drain:
+    ///
+    /// 1. Not already an established contact.
+    /// 2. Carries a structurally-valid `autoAcceptProof` (DIP-15 size band +
+    ///    the ECDSA key-type lead byte). The lower bound is the exact ECDSA
+    ///    proof length — `key_type(1) + timestamp(4) + sig_size(1) +
+    ///    signature(64) = 70` — so a shorter `0x00`-led byte run can't burn a
+    ///    drain round-trip before being discarded as malformed.
+    /// 3. Not a proof a prior drain already rejected cryptographically this
+    ///    launch (see [`Self::is_auto_accept_verify_failed`]). Keyed by
+    ///    `(sender, proof)`, so a DIFFERENT proof from the same sender still
+    ///    enqueues — only the exact bad blob is suppressed. Without this an
+    ///    attacker-published garbage proof would re-enqueue every sweep,
+    ///    keeping the "waiting to finish setup" banner permanently tripped.
+    pub fn should_enqueue_auto_accept(
+        &self,
+        sender_id: &Identifier,
+        request: &ContactRequest,
+    ) -> bool {
+        if self.established_contacts.contains_key(sender_id) {
+            return false;
+        }
+        let Some(proof) = request.auto_accept_proof.as_deref() else {
+            return false;
+        };
+        if !((70..=102).contains(&proof.len()) && proof[0] == 0x00) {
+            return false;
+        }
+        !self.is_auto_accept_verify_failed(sender_id, proof)
     }
 
     /// Un-ignore `sender_id` (reverse [`Self::ignore_sender`]).
@@ -390,6 +504,10 @@ impl ManagedIdentity {
                 // the new request rather than showing the old label against
                 // fresh key material.
                 contact.contact_account_label = None;
+                // The stale external account (built from the old reference)
+                // is torn down by the caller — reset the marker so the build
+                // sweep re-registers from the new xpub and re-stamps it.
+                contact.external_account_reference = None;
                 cs.established.insert(
                     SentContactRequestKey {
                         owner_id,
@@ -758,6 +876,52 @@ mod tests {
         );
     }
 
+    /// A rotation supersede whose persist fails must leave the in-memory
+    /// `outgoing_request` on the OLD reference — else the retry hits the
+    /// same-reference no-op guard and the rotation is silently lost from disk
+    /// for the process lifetime (only a restart re-fetching from platform
+    /// would heal it). Mirror of the `set_contact_metadata` persist-order
+    /// tests below.
+    #[test]
+    fn rotation_supersede_failed_persist_leaves_memory_on_old_reference() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = Identifier::from([1u8; 32]);
+        let contact_id = Identifier::from([2u8; 32]);
+        let outgoing = create_contact_request(our_id, contact_id, 1000);
+        let incoming = create_contact_request(contact_id, our_id, 1001);
+        managed.established_contacts.insert(
+            contact_id,
+            EstablishedContact::new(contact_id, outgoing.clone(), incoming),
+        );
+
+        // A superseding re-send with a bumped account_reference.
+        let mut rotated = create_contact_request(our_id, contact_id, 1002);
+        rotated.account_reference = outgoing.account_reference + 1;
+
+        let result = managed.add_sent_contact_request(rotated.clone(), &failing_persister());
+        assert!(result.is_err(), "a failed supersede persist must surface");
+        assert_eq!(
+            managed.established_contacts[&contact_id]
+                .outgoing_request
+                .account_reference,
+            outgoing.account_reference,
+            "memory must stay on the old reference so the retry re-persists"
+        );
+
+        // The retry against a working persister must take the supersede path
+        // (not the same-reference no-op) and commit the rotation.
+        managed
+            .add_sent_contact_request(rotated.clone(), &noop_persister())
+            .expect("retry persists");
+        assert_eq!(
+            managed.established_contacts[&contact_id]
+                .outgoing_request
+                .account_reference,
+            rotated.account_reference,
+            "the retried rotation must land in memory"
+        );
+    }
+
     /// A retry after a failed metadata persist must actually re-store — it must
     /// NOT be swallowed by the unchanged-equality short-circuit. Pre-fix,
     /// `set_contact_metadata` mutated memory BEFORE persisting, so a failed
@@ -1072,6 +1236,78 @@ mod tests {
         assert_eq!(established.is_hidden, true);
     }
 
+    /// Sent-side rotation supersede: re-sending to an already-established
+    /// contact with a DIFFERENT outgoing `accountReference` must advance
+    /// the established contact's `outgoing_request` in place (mirroring the
+    /// receive-side `apply_rotated_incoming_request`) while preserving user
+    /// metadata. Without this the tracked outgoing reference freezes at the
+    /// first send and the next rotation re-derives the same reference,
+    /// colliding on the contract's unique index. Two consecutive rotation
+    /// re-sends must therefore be tracked with DISTINCT references, and the
+    /// tracked reference must match the newest re-send.
+    #[test]
+    fn add_sent_contact_request_rotation_supersedes_outgoing_reference() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = Identifier::from([1u8; 32]);
+        let contact_id = Identifier::from([2u8; 32]);
+        let p = noop_persister();
+
+        // Establish, then attach user metadata.
+        managed
+            .add_incoming_contact_request(create_contact_request(contact_id, our_id, 1), &p)
+            .expect("setup persists");
+        let mut first_send = create_contact_request(our_id, contact_id, 2);
+        first_send.account_reference = 100; // R0
+        managed
+            .add_sent_contact_request(first_send, &p)
+            .expect("setup persists");
+        assert_eq!(managed.established_contacts.len(), 1);
+        let est = managed.established_contacts.get_mut(&contact_id).unwrap();
+        est.set_alias("Carol".to_string());
+        assert_eq!(est.outgoing_request.account_reference, 100);
+
+        // Rotation #1: re-send with a bumped reference R1.
+        let mut rotation1 = create_contact_request(our_id, contact_id, 3);
+        rotation1.account_reference = 101; // R1
+        managed
+            .add_sent_contact_request(rotation1, &p)
+            .expect("rotation #1 persists");
+        assert_eq!(
+            managed
+                .established_contacts
+                .get(&contact_id)
+                .unwrap()
+                .outgoing_request
+                .account_reference,
+            101,
+            "rotation #1 must advance the tracked outgoing reference (not freeze at R0)"
+        );
+
+        // Rotation #2: re-send with another bumped reference R2.
+        let mut rotation2 = create_contact_request(our_id, contact_id, 4);
+        rotation2.account_reference = 102; // R2
+        managed
+            .add_sent_contact_request(rotation2, &p)
+            .expect("rotation #2 persists");
+        let est = managed.established_contacts.get(&contact_id).unwrap();
+        assert_eq!(
+            est.outgoing_request.account_reference, 102,
+            "rotation #2 must advance to the newest reference — distinct across sends"
+        );
+        // User metadata survives the rotations.
+        assert_eq!(est.alias, Some("Carol".to_string()));
+        // Re-ingesting the SAME (newest) reference is a metadata-preserving
+        // no-op (the same-reference guard).
+        let mut resend_same = create_contact_request(our_id, contact_id, 5);
+        resend_same.account_reference = 102;
+        managed
+            .add_sent_contact_request(resend_same, &p)
+            .expect("same-reference re-ingest is a no-op");
+        let est = managed.established_contacts.get(&contact_id).unwrap();
+        assert_eq!(est.outgoing_request.account_reference, 102);
+        assert_eq!(est.alias, Some("Carol".to_string()));
+    }
+
     /// When a sent request auto-establishes against a pre-existing
     /// incoming, but the pair was previously established and we carry
     /// forward metadata — the re-establish must preserve it. (Covers the
@@ -1218,5 +1454,58 @@ mod tests {
         assert_eq!(managed.incoming_contact_requests.len(), 1); // Only contact3 left
         assert_eq!(managed.established_contacts.len(), 1); // contact1 established
         assert!(managed.established_contacts.contains_key(&contact1_id));
+    }
+
+    /// A structurally-valid but cryptographically-garbage `autoAcceptProof`
+    /// on an attacker-published contact request must be enqueued at most once:
+    /// after the drain marks it verify-failed, the next sweep's enqueue gate
+    /// must NOT re-pick it — otherwise the "waiting to finish setup" banner is
+    /// permanently re-tripped. A DIFFERENT proof from the same sender is not
+    /// suppressed by the prior bad one.
+    #[test]
+    fn verify_failed_auto_accept_proof_is_not_re_enqueued() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = Identifier::from([1u8; 32]);
+        let sender_id = Identifier::from([2u8; 32]);
+
+        // Minimal structurally-valid proof: 70 bytes, ECDSA lead byte 0x00.
+        let mk_request = |proof: Vec<u8>| {
+            let mut r = create_contact_request(sender_id, our_id, 1234567890);
+            r.auto_accept_proof = Some(proof);
+            r
+        };
+        let garbage = mk_request({
+            let mut p = vec![0x11u8; 70];
+            p[0] = 0x00;
+            p
+        });
+
+        // First sweep: structurally valid + unmarked → enqueue.
+        assert!(
+            managed.should_enqueue_auto_accept(&sender_id, &garbage),
+            "a structurally-valid, unmarked proof must enqueue"
+        );
+
+        // The drain fails cryptographic verification and marks it.
+        let proof_bytes = garbage.auto_accept_proof.clone().unwrap();
+        managed.mark_auto_accept_verify_failed(&sender_id, &proof_bytes);
+
+        // Next sweep: the same bad proof must NOT be re-enqueued.
+        assert!(
+            !managed.should_enqueue_auto_accept(&sender_id, &garbage),
+            "a proof a prior drain rejected must not be re-enqueued"
+        );
+
+        // A DIFFERENT proof from the SAME sender still enqueues — the marker
+        // is keyed by (sender, proof), not the sender alone.
+        let different = mk_request({
+            let mut p = vec![0x22u8; 70];
+            p[0] = 0x00;
+            p
+        });
+        assert!(
+            managed.should_enqueue_auto_accept(&sender_id, &different),
+            "a different proof from the same sender must still enqueue"
+        );
     }
 }

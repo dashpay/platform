@@ -113,6 +113,35 @@ func dashPayContactDisplayName(
     return String(contactId.toHexString().prefix(12)) + "…"
 }
 
+// MARK: - Cache-only profile read
+
+/// Cache-only DashPay profile read off a loaded wallet handle (no
+/// network). Prefers the per-contact `getContactProfile` entry, then
+/// falls back to the global `getDashPayProfile` for the same identity.
+/// Misses are common — a contact's profile only populates after a
+/// profile sync has seen them — so both throwing calls degrade to nil.
+func dashPayCachedProfile(
+    wallet: ManagedPlatformWallet,
+    ownerIdentityId: Data,
+    contactId: Data
+) -> DashPayProfile? {
+    (try? wallet.getContactProfile(
+        ownerIdentityId: ownerIdentityId,
+        contactIdentityId: contactId
+    )) ?? (try? wallet.getDashPayProfile(identityId: contactId)) ?? nil
+}
+
+// MARK: - Txid display order
+
+/// Hex-encode a raw 32-byte txid in canonical (reversed) display
+/// order, matching `PersistentTransaction.txidHex` and the tx list /
+/// payment history. The FFI hands back wire/internal byte order, so a
+/// bare `toHexString()` reads reversed from block explorers — this
+/// flip lines the toasted id up with everything else the user sees.
+func txidDisplayHex(_ txid: Data) -> String {
+    txid.reversed().map { String(format: "%02x", $0) }.joined()
+}
+
 // MARK: - Avatar
 
 /// Shared avatar bubble: AsyncImage when the profile has an

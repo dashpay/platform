@@ -3,6 +3,7 @@
 //! Validates that the sender and recipient identities have the correct key
 //! types and purposes before a contact request is submitted to the platform.
 
+use dash_sdk::platform::dashpay::recipient_key_purpose_is_valid;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, KeyType, Purpose};
@@ -218,16 +219,16 @@ pub fn validate_contact_request(
             // newest cohort's at a DECRYPTION key — both honest. Anything
             // else (AUTHENTICATION/MASTER/TRANSFER) is a non-permanent purpose
             // mismatch: legacy 2024 docs reference AUTHENTICATION keys, so we
-            // skip-and-retry rather than permanently break the channel.
-            match key.purpose() {
-                Purpose::ENCRYPTION | Purpose::DECRYPTION => {}
-                other => {
-                    validation.add_purpose_error(format!(
-                        "Recipient key {} has purpose {:?}, but ENCRYPTION or DECRYPTION is \
-                         required for contact requests",
-                        recipient_key_index, other,
-                    ));
-                }
+            // skip-and-retry rather than permanently break the channel. The
+            // accepted cohort is owned by the shared SDK predicate so this
+            // validator and the recipient-key selector cannot disagree.
+            if !recipient_key_purpose_is_valid(key.purpose()) {
+                validation.add_purpose_error(format!(
+                    "Recipient key {} has purpose {:?}, but ENCRYPTION or DECRYPTION is \
+                     required for contact requests",
+                    recipient_key_index,
+                    key.purpose(),
+                ));
             }
 
             // Must not be disabled.
@@ -248,6 +249,42 @@ pub fn validate_contact_request(
     }
 
     validation
+}
+
+/// Decide whether a derived compressed secp256k1 public key binds to the
+/// caller's known on-chain key data — the sign-time / verify-time
+/// public-key-binding policy, shared by every ECDSA key path so it cannot
+/// drift from the discovery-time ownership decision.
+///
+/// `derived_pubkey` is the 33-byte compressed pubkey re-derived at a
+/// breadcrumb path (`ExtendedPubKey::from_priv(..).public_key.serialize()`).
+/// `expected_key_data` is the on-chain key's `data`, discriminated by length:
+///
+/// - **33 bytes** → the on-chain key is an `ECDSA_SECP256K1` key whose `data`
+///   is the compressed pubkey; binds iff the two byte strings are equal.
+/// - **20 bytes** → the on-chain key is an `ECDSA_HASH160` key whose `data` is
+///   `ripemd160_sha256` of the compressed pubkey; binds iff that hash equals
+///   the expected bytes.
+/// - **any other length** → fails closed (`false`), never binds.
+///
+/// This is byte-for-byte the same decision
+/// `IdentityPublicKey::validate_private_key_bytes` makes from the secret
+/// scalar: for `ECDSA_SECP256K1` it compares `data` to the compressed pubkey,
+/// and for `ECDSA_HASH160` it compares `data` to `ripemd160_sha256` of that
+/// same compressed pubkey (`identity_public_key/v0/methods/mod.rs`). Length is
+/// the wire discriminator here because the caller (the FFI resolver-signing
+/// binding, `sign_with_mnemonic_resolver.rs`) holds raw expected bytes rather
+/// than a typed `IdentityPublicKey`; the 33/20 split is exactly the ECDSA
+/// arms' two representations, so the policies stay aligned. The
+/// `pubkey_reproduces` / `validate_private_key_bytes` equivalence is pinned in
+/// `discovery.rs::pubkey_verify_matches_scalar_verify_for_every_key`.
+pub fn pubkey_binds_expected_key_data(derived_pubkey: &[u8; 33], expected_key_data: &[u8]) -> bool {
+    use dpp::util::hash::ripemd160_sha256;
+    match expected_key_data.len() {
+        33 => derived_pubkey.as_slice() == expected_key_data,
+        20 => ripemd160_sha256(derived_pubkey.as_slice()).as_slice() == expected_key_data,
+        _ => false,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -598,5 +635,118 @@ mod tests {
         assert!(a.purpose_mismatch);
         assert!(a.hard_error);
         assert!(!a.is_purpose_only());
+    }
+
+    // -----------------------------------------------------------------------
+    // Pubkey-binding policy (`pubkey_binds_expected_key_data`). The 33/20 split
+    // is the sign-time / verify-time binding shared by the FFI resolver path;
+    // these pin that it matches AND fails closed on the wrong bytes, and that
+    // it is byte-for-byte identical to `validate_private_key_bytes`.
+    // -----------------------------------------------------------------------
+
+    /// Derive the compressed secp256k1 pubkey (`[u8; 33]`) for a fixed
+    /// in-range scalar — the shape a breadcrumb re-derivation produces.
+    fn fixed_scalar_and_compressed_pubkey() -> ([u8; 32], [u8; 33]) {
+        use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+        let mut scalar = [0u8; 32];
+        scalar[31] = 7;
+        let secp = Secp256k1::new();
+        let sk = SecretKey::from_slice(&scalar).expect("in-range scalar");
+        let pubkey = PublicKey::from_secret_key(&secp, &sk).serialize();
+        (scalar, pubkey)
+    }
+
+    #[test]
+    fn binds_matching_33_byte_pubkey() {
+        let (_scalar, pubkey) = fixed_scalar_and_compressed_pubkey();
+        assert!(pubkey_binds_expected_key_data(&pubkey, &pubkey));
+    }
+
+    #[test]
+    fn rejects_wrong_33_byte_pubkey() {
+        let (_scalar, pubkey) = fixed_scalar_and_compressed_pubkey();
+        // A syntactically valid compressed-pubkey prefix, wrong key.
+        let wrong = [0x02u8; 33];
+        assert!(!pubkey_binds_expected_key_data(&pubkey, &wrong));
+    }
+
+    #[test]
+    fn binds_matching_20_byte_hash() {
+        use dpp::util::hash::ripemd160_sha256;
+        let (_scalar, pubkey) = fixed_scalar_and_compressed_pubkey();
+        let hash = ripemd160_sha256(&pubkey);
+        assert!(pubkey_binds_expected_key_data(&pubkey, &hash));
+    }
+
+    #[test]
+    fn rejects_wrong_20_byte_hash() {
+        use dpp::util::hash::ripemd160_sha256;
+        let (_scalar, pubkey) = fixed_scalar_and_compressed_pubkey();
+        // ripemd160_sha256 of an unrelated pubkey — valid-shaped, wrong hash.
+        let wrong = ripemd160_sha256(&[0x03u8; 33]);
+        assert!(!pubkey_binds_expected_key_data(&pubkey, &wrong));
+    }
+
+    /// An expected length that is neither 33 nor 20 must fail closed — never
+    /// silently bind (guards a caller passing a 32-byte scalar or a 65-byte
+    /// uncompressed key by mistake).
+    #[test]
+    fn malformed_expected_length_fails_closed() {
+        let (_scalar, pubkey) = fixed_scalar_and_compressed_pubkey();
+        assert!(!pubkey_binds_expected_key_data(&pubkey, &[0x02u8; 32]));
+        assert!(!pubkey_binds_expected_key_data(&pubkey, &[0x02u8; 65]));
+        assert!(!pubkey_binds_expected_key_data(&pubkey, &[]));
+    }
+
+    /// The pubkey-only binding decision is byte-for-byte identical to
+    /// `IdentityPublicKey::validate_private_key_bytes` (which decides from the
+    /// secret scalar) for both ECDSA representations — the guarantee that the
+    /// FFI sign-time binding cannot drift from the discovery-time ownership
+    /// decision. Mirrors `discovery.rs::pubkey_verify_matches_scalar_verify_*`.
+    #[test]
+    fn binding_matches_validate_private_key_bytes_for_both_ecdsa_types() {
+        use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+        use dpp::util::hash::ripemd160_sha256;
+
+        let network = dashcore::Network::Testnet;
+        let (scalar, pubkey) = fixed_scalar_and_compressed_pubkey();
+
+        // ECDSA_SECP256K1: on-chain data = the 33-byte compressed pubkey.
+        let secp_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(pubkey.to_vec()),
+            disabled_at: None,
+        });
+        // ECDSA_HASH160: on-chain data = ripemd160_sha256 of the pubkey.
+        let hash160_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(ripemd160_sha256(&pubkey).to_vec()),
+            disabled_at: None,
+        });
+
+        for key in [&secp_key, &hash160_key] {
+            let expected = key.data().as_slice();
+            let scalar_decision = key
+                .validate_private_key_bytes(&scalar, network)
+                .unwrap_or(false);
+            let pubkey_decision = pubkey_binds_expected_key_data(&pubkey, expected);
+            assert_eq!(
+                scalar_decision,
+                pubkey_decision,
+                "pubkey-binding diverged from validate_private_key_bytes for {:?}",
+                key.key_type()
+            );
+            assert!(pubkey_decision, "the correct key must bind");
+        }
     }
 }

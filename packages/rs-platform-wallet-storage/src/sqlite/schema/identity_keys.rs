@@ -185,14 +185,15 @@ mod tests {
         );
     }
 
-    /// The wire round-trip preserves the watch-only fields. `IdentityKeyEntry`
-    /// carries no signing scalar at all — the client derives it on demand from
-    /// the keychain — so the "no key material at rest outside the keychain"
-    /// guarantee is now enforced at the type level: there is no scalar field a
-    /// future "serialize the whole entry straight to the blob" refactor could
-    /// start persisting.
+    /// `IdentityKeyEntry` carries no key material by construction
+    /// (derive-sign-destroy removed the carried scalar; the client derives it
+    /// on demand from the keychain), so the "no key material at rest outside
+    /// the keychain" guarantee is enforced at the type level and the wire
+    /// shape only has the breadcrumb metadata to preserve. Pins that a
+    /// `from_entry` → `into_entry` round-trip keeps the `(wallet_id,
+    /// derivation_indices)` breadcrumb intact.
     #[test]
-    fn wire_round_trip_preserves_watch_only_fields() {
+    fn wire_round_trip_preserves_breadcrumb_metadata() {
         let pk = IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id: 0,
             purpose: Purpose::AUTHENTICATION,

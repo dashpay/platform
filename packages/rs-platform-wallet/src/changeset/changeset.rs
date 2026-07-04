@@ -617,21 +617,20 @@ pub struct ReceivedContactRequestKey {
 /// pair, so `apply_changeset` can reconstruct the contact without
 /// access to any prior runtime state.
 ///
-/// # Merge ordering hazard
+/// # Merge reconciliation
 ///
-/// `ContactChangeSet::merge` is a pure `extend` over every field — it
-/// does NOT cancel an insert against a same-key tombstone in the
-/// opposing field. Callers must NOT merge a `removed_sent` for key K
-/// followed by a `sent_requests` insert for key K and expect the
-/// insert to win: apply runs inserts before removes, so the final
-/// state is "removed", losing the intended re-send. The same applies
-/// to `incoming_requests` vs `removed_incoming`.
-///
-/// In practice this is latent — every current emitter produces either
-/// an insert XOR a tombstone for a given key in a single mutation,
-/// not both. If a future caller needs the merged-cancellation
-/// semantics, the merge impl should resolve `sent_requests ∩
-/// removed_sent` by last-seen rather than carrying both.
+/// Every apply layer (in-memory, SQLite, FFI projection) runs all
+/// inserts before all removes, so a merged changeset that carried the
+/// same key in both an insert map and its opposing tombstone set would
+/// always resolve to "removed". `ContactChangeSet::merge` therefore
+/// reconciles each insert-vs-tombstone pair last-write-wins per key:
+/// the newer delta's action for a key cancels the older opposing action
+/// (a `sent_requests` insert clears a prior `removed_sent`, an un-ignore
+/// clears a prior ignore, and vice versa), keeping the two sets
+/// disjoint. This covers `sent_requests` vs `removed_sent`,
+/// `incoming_requests` vs `removed_incoming`, and `ignored` vs
+/// `unignored`. `established` has no opposing tombstone set and rides
+/// plain last-write-wins.
 #[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ContactChangeSet {
@@ -653,7 +652,7 @@ pub struct ContactChangeSet {
     /// keyed by `(owner, sender)`. Suppresses ALL of the sender's incoming
     /// requests (including rotated, bumped-`accountReference` ones) from the
     /// main pending list, and the suppression survives a recurring re-sync.
-    /// Set union on merge.
+    /// Reconciled last-write-wins against [`Self::unignored`] on merge.
     pub ignored: BTreeSet<(Identifier, Identifier)>,
     /// Senders **un-ignored** in this delta, keyed by `(owner, sender)`. The
     /// removal tombstone for [`Self::ignored`] — the persister deletes the
@@ -665,11 +664,40 @@ pub struct ContactChangeSet {
 
 impl Merge for ContactChangeSet {
     fn merge(&mut self, other: Self) {
+        // Insert-vs-tombstone pairs are reconciled last-write-wins per key:
+        // `other` is the newer delta, so a key it inserts cancels an older
+        // same-key tombstone and vice versa. Without this the two sets could
+        // both carry the same key and apply (which runs inserts before
+        // removes at every layer) would always resolve to "removed" — losing
+        // a re-send / re-ignore that happened after a remove / un-ignore.
+        // The three pairs share this idiom; `established` has no opposing
+        // tombstone set and rides plain last-write-wins.
+        for key in other.removed_sent.iter() {
+            self.sent_requests.remove(key);
+        }
+        for key in other.sent_requests.keys() {
+            self.removed_sent.remove(key);
+        }
         self.sent_requests.extend(other.sent_requests);
         self.removed_sent.extend(other.removed_sent);
+
+        for key in other.removed_incoming.iter() {
+            self.incoming_requests.remove(key);
+        }
+        for key in other.incoming_requests.keys() {
+            self.removed_incoming.remove(key);
+        }
         self.incoming_requests.extend(other.incoming_requests);
         self.removed_incoming.extend(other.removed_incoming);
+
         self.established.extend(other.established);
+
+        for key in other.unignored.iter() {
+            self.ignored.remove(key);
+        }
+        for key in other.ignored.iter() {
+            self.unignored.remove(key);
+        }
         self.ignored.extend(other.ignored);
         self.unignored.extend(other.unignored);
     }
@@ -1520,6 +1548,210 @@ mod tests {
         assert_eq!(a.balances.get(&(identity_b, token_x)), Some(&50));
         assert!(a.removed_balances.contains(&(identity_a, token_y)));
         assert!(a.removed_balances.contains(&(identity_b, token_y)));
+    }
+
+    fn ignore_key() -> (Identifier, Identifier) {
+        (Identifier::from([0xAA; 32]), Identifier::from([0xBB; 32]))
+    }
+
+    /// ignore → un-ignore for the same key resolves to exactly "un-ignored":
+    /// the newer un-ignore cancels the older ignore, so the key lands in
+    /// `unignored` only and never in `ignored`. Without cancellation the key
+    /// would sit in both sets and apply (inserts before removes) would drop
+    /// the block.
+    #[test]
+    fn contact_merge_ignore_then_unignore_last_write_wins() {
+        let key = ignore_key();
+
+        let mut base = ContactChangeSet {
+            ignored: BTreeSet::from([key]),
+            ..Default::default()
+        };
+        let newer = ContactChangeSet {
+            unignored: BTreeSet::from([key]),
+            ..Default::default()
+        };
+
+        base.merge(newer);
+
+        assert!(
+            !base.ignored.contains(&key),
+            "the newer un-ignore must clear the older ignore"
+        );
+        assert!(base.unignored.contains(&key), "the key ends up un-ignored");
+        assert_eq!(base.ignored.len(), 0);
+        assert_eq!(base.unignored.len(), 1);
+    }
+
+    /// un-ignore → re-ignore for the same key resolves to exactly "ignored":
+    /// the newer ignore cancels the older un-ignore (the F4 case — a
+    /// transient-flush re-merge of an un-ignore followed by a re-ignore must
+    /// keep the sender blocked).
+    #[test]
+    fn contact_merge_unignore_then_ignore_last_write_wins() {
+        let key = ignore_key();
+
+        let mut base = ContactChangeSet {
+            unignored: BTreeSet::from([key]),
+            ..Default::default()
+        };
+        let newer = ContactChangeSet {
+            ignored: BTreeSet::from([key]),
+            ..Default::default()
+        };
+
+        base.merge(newer);
+
+        assert!(
+            base.ignored.contains(&key),
+            "the newer re-ignore must win over the older un-ignore"
+        );
+        assert!(
+            !base.unignored.contains(&key),
+            "the newer re-ignore must clear the older un-ignore"
+        );
+        assert_eq!(base.ignored.len(), 1);
+        assert_eq!(base.unignored.len(), 0);
+    }
+
+    /// Cancellation is per key: an un-ignore of one sender must not disturb a
+    /// separate sender's ignore carried in the same merge.
+    #[test]
+    fn contact_merge_ignore_cancellation_is_per_key() {
+        let blocked = (Identifier::from([1u8; 32]), Identifier::from([2u8; 32]));
+        let unblocked = (Identifier::from([1u8; 32]), Identifier::from([3u8; 32]));
+
+        let mut base = ContactChangeSet {
+            ignored: BTreeSet::from([blocked, unblocked]),
+            ..Default::default()
+        };
+        let newer = ContactChangeSet {
+            unignored: BTreeSet::from([unblocked]),
+            ..Default::default()
+        };
+
+        base.merge(newer);
+
+        assert!(
+            base.ignored.contains(&blocked),
+            "untouched sender stays ignored"
+        );
+        assert!(!base.ignored.contains(&unblocked));
+        assert!(base.unignored.contains(&unblocked));
+    }
+
+    fn sent_key() -> SentContactRequestKey {
+        SentContactRequestKey {
+            owner_id: Identifier::from([1u8; 32]),
+            recipient_id: Identifier::from([2u8; 32]),
+        }
+    }
+
+    fn sent_entry() -> ContactRequestEntry {
+        ContactRequestEntry {
+            request: ContactRequest::new(
+                Identifier::from([1u8; 32]),
+                Identifier::from([2u8; 32]),
+                0,
+                0,
+                0,
+                vec![0u8; 96],
+                100_000,
+                0,
+            ),
+        }
+    }
+
+    /// remove-sent → re-send for the same key resolves to exactly "sent": the
+    /// newer insert cancels the older tombstone, so the re-send survives apply
+    /// (which runs inserts before removes).
+    #[test]
+    fn contact_merge_remove_sent_then_resend_last_write_wins() {
+        let key = sent_key();
+
+        let mut base = ContactChangeSet {
+            removed_sent: BTreeSet::from([key]),
+            ..Default::default()
+        };
+        let mut newer = ContactChangeSet::default();
+        newer.sent_requests.insert(key, sent_entry());
+
+        base.merge(newer);
+
+        assert!(
+            base.sent_requests.contains_key(&key),
+            "the newer re-send must win over the older tombstone"
+        );
+        assert!(
+            !base.removed_sent.contains(&key),
+            "the newer re-send must clear the older tombstone"
+        );
+    }
+
+    /// send → remove-sent for the same key resolves to exactly "removed": the
+    /// newer tombstone cancels the older insert.
+    #[test]
+    fn contact_merge_send_then_remove_sent_last_write_wins() {
+        let key = sent_key();
+
+        let mut base = ContactChangeSet::default();
+        base.sent_requests.insert(key, sent_entry());
+        let newer = ContactChangeSet {
+            removed_sent: BTreeSet::from([key]),
+            ..Default::default()
+        };
+
+        base.merge(newer);
+
+        assert!(
+            !base.sent_requests.contains_key(&key),
+            "the newer tombstone must clear the older insert"
+        );
+        assert!(base.removed_sent.contains(&key));
+    }
+
+    /// Same last-write-wins reconciliation for the incoming pair
+    /// (`incoming_requests` vs `removed_incoming`).
+    #[test]
+    fn contact_merge_incoming_insert_vs_tombstone_last_write_wins() {
+        let key = ReceivedContactRequestKey {
+            owner_id: Identifier::from([2u8; 32]),
+            sender_id: Identifier::from([1u8; 32]),
+        };
+        let entry = ContactRequestEntry {
+            request: ContactRequest::new(
+                Identifier::from([1u8; 32]),
+                Identifier::from([2u8; 32]),
+                0,
+                0,
+                0,
+                vec![0u8; 96],
+                100_000,
+                0,
+            ),
+        };
+
+        // tombstone then re-insert → insert wins.
+        let mut base = ContactChangeSet {
+            removed_incoming: BTreeSet::from([key]),
+            ..Default::default()
+        };
+        let mut newer = ContactChangeSet::default();
+        newer.incoming_requests.insert(key, entry.clone());
+        base.merge(newer);
+        assert!(base.incoming_requests.contains_key(&key));
+        assert!(!base.removed_incoming.contains(&key));
+
+        // insert then tombstone → tombstone wins.
+        let mut base = ContactChangeSet::default();
+        base.incoming_requests.insert(key, entry);
+        let newer = ContactChangeSet {
+            removed_incoming: BTreeSet::from([key]),
+            ..Default::default()
+        };
+        base.merge(newer);
+        assert!(!base.incoming_requests.contains_key(&key));
+        assert!(base.removed_incoming.contains(&key));
     }
 
     #[test]

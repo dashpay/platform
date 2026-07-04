@@ -84,6 +84,31 @@ pub struct ManagedIdentity {
     /// Map of incoming contact requests (not yet accepted) keyed by sender ID
     pub incoming_contact_requests: BTreeMap<Identifier, ContactRequest>,
 
+    /// DIP-15 auto-accept proofs that failed cryptographic verification (or
+    /// were expired / malformed) during a [`drain_auto_accepts`] pass, keyed by
+    /// `SHA256(sender_id ‖ proof_bytes)`. Consulted by the sync sweep's
+    /// auto-accept enqueue gate so a structurally-valid but cryptographically
+    /// bogus `autoAcceptProof` on an attacker-published contact request is not
+    /// re-enqueued every sweep (which would keep the "waiting to finish setup"
+    /// banner permanently tripped).
+    ///
+    /// Keying on `(sender, proof)` — not on the sender alone — means a
+    /// **different** proof from the same sender still enqueues (a genuine
+    /// re-issued proof is not blocked by a prior bad one). Only PERMANENT
+    /// failures (invalid signature / expired / malformed / bad index) are
+    /// recorded here; transient failures (provider unavailable, reciprocal-send
+    /// failure) stay retryable and are never marked.
+    ///
+    /// In-memory only (never persisted): a relaunch clears it, so a bad proof is
+    /// retried at most once per launch. The request stays manually acceptable
+    /// meanwhile, and the sender never establishes off a bogus proof — so
+    /// retrying once per launch is harmless and avoids a persisted tombstone for
+    /// attacker-controlled input. Capped at
+    /// [`Self::AUTO_ACCEPT_VERIFY_FAILED_CAP`] entries (arbitrary eviction over
+    /// cap) so a griefer paying credits for many distinct malformed proofs
+    /// can't grow it unboundedly for the process lifetime.
+    pub auto_accept_verify_failed: std::collections::BTreeSet<[u8; 32]>,
+
     /// Senders this identity has chosen to **ignore** (per-sender mute,
     /// reversible — the local-only equivalent of "block"). Keyed by the
     /// sender's identity id.

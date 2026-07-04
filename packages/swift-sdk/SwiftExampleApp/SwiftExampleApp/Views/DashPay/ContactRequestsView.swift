@@ -279,10 +279,11 @@ struct ContactRequestsView: View {
               let wallet = walletManager.wallet(for: walletId) else {
             return nil
         }
-        return (try? wallet.getContactProfile(
+        return dashPayCachedProfile(
+            wallet: wallet,
             ownerIdentityId: identity.identityId,
-            contactIdentityId: contactId
-        )) ?? (try? wallet.getDashPayProfile(identityId: contactId)) ?? nil
+            contactId: contactId
+        )
     }
 }
 

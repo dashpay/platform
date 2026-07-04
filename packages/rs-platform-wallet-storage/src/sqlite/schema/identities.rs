@@ -231,6 +231,9 @@ fn managed_identity_from_entry(
         // payment-history rescan; transient, so a cold restore starts empty
         // and the next sweep re-evaluates.
         dashpay_rescan_triggered: Default::default(),
+        // In-memory verify-failed auto-accept markers; transient, so a cold
+        // restore starts empty and a bad proof is retried once next launch.
+        auto_accept_verify_failed: Default::default(),
     }
 }
 

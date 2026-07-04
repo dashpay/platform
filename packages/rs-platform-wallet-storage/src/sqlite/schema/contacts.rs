@@ -345,6 +345,11 @@ pub(crate) fn load_state(
                         // no column for it, so it restores empty and re-derives
                         // on the next contact-info sweep.
                         contact_account_label: None,
+                        // Rotation self-heal marker; this backend has no column
+                        // for it, so it restores `None` — which conservatively
+                        // forces the next sweep to re-verify (tear down + rebuild)
+                        // the external account once, then re-stamp it.
+                        external_account_reference: None,
                     },
                 );
             }

@@ -7,8 +7,8 @@ mod contact_request;
 mod contact_request_queries;
 
 pub use contact_request::{
-    ContactRequestInput, ContactRequestResult, EcdhProvider, RecipientIdentity,
-    SendContactRequestInput, SendContactRequestResult,
+    recipient_key_purpose_is_valid, ContactRequestInput, ContactRequestResult, EcdhProvider,
+    RecipientIdentity, SendContactRequestInput, SendContactRequestResult,
 };
 pub use contact_request_queries::ContactRequestDocuments;
 

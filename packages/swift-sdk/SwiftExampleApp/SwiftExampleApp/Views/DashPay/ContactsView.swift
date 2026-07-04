@@ -79,7 +79,7 @@ struct ContactsView: View {
         }
     }
 
-    private var filteredContacts: [EstablishedContactItem] {
+    private func filtered(_ contacts: [EstablishedContactItem]) -> [EstablishedContactItem] {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return contacts }
         return contacts.filter { contact in
@@ -89,11 +89,28 @@ struct ContactsView: View {
         }
     }
 
+    /// Whether this identity has any hidden established contact — gates
+    /// the "Hidden contacts" recovery link (the only in-app way back to
+    /// a hidden contact's detail view, where the hide toggle lives).
+    private var hasHiddenContacts: Bool {
+        let byContact = Dictionary(grouping: requestRows, by: \.contactIdentityId)
+        return byContact.contains { _, rows in
+            rows.contains(where: { $0.isOutgoing })
+                && rows.contains(where: { !$0.isOutgoing })
+                && rows.contains(where: \.contactHidden)
+        }
+    }
+
     var body: some View {
+        // Derive the (filtered) row list once per body evaluation — the
+        // profile cascade behind `contacts` is expensive, so re-deriving
+        // it for the empty check, the header count, and the ForEach would
+        // triple the cost on every keystroke.
+        let rows = filtered(contacts)
         // `SwiftUI.Group` — unqualified `Group` resolves to the
         // Codable DPP type from SwiftDashSDK.
-        SwiftUI.Group {
-            if contacts.isEmpty {
+        return SwiftUI.Group {
+            if rows.isEmpty && searchText.isEmpty && !hasHiddenContacts {
                 List {
                     DashPayListEmptyRow(
                         icon: "person.2.slash",
@@ -106,7 +123,7 @@ struct ContactsView: View {
                 List {
                     Section {
                         searchField
-                        ForEach(filteredContacts) { contact in
+                        ForEach(rows) { contact in
                             NavigationLink {
                                 ContactDetailView(
                                     identity: identity,
@@ -120,7 +137,20 @@ struct ContactsView: View {
                             )
                         }
                     } header: {
-                        Text("Contacts (\(filteredContacts.count))")
+                        Text("Contacts (\(rows.count))")
+                    }
+
+                    if hasHiddenContacts {
+                        Section {
+                            NavigationLink(
+                                value: DashPayHiddenContactsRoute(
+                                    ownerIdentityId: identity.identityId
+                                )
+                            ) {
+                                Label("Hidden contacts", systemImage: "eye.slash")
+                            }
+                            .accessibilityIdentifier("dashpay.openHidden")
+                        }
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -160,10 +190,11 @@ struct ContactsView: View {
               let wallet = walletManager.wallet(for: walletId) else {
             return nil
         }
-        return (try? wallet.getContactProfile(
+        return dashPayCachedProfile(
+            wallet: wallet,
             ownerIdentityId: identity.identityId,
-            contactIdentityId: contactId
-        )) ?? (try? wallet.getDashPayProfile(identityId: contactId)) ?? nil
+            contactId: contactId
+        )
     }
 }
 

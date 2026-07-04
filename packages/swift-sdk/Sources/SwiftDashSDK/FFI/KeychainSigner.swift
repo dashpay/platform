@@ -333,6 +333,24 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         return captured
     }
 
+    /// Whether the mnemonic resolver derive-signs an identity `keyType`.
+    ///
+    /// Preflight-only. The sign trampoline itself does NOT consult this — it
+    /// attempts the resolver unconditionally and lets Rust decide via the
+    /// `UNSUPPORTED_KEY_TYPE` tag. But `canSign` has no data to sign and no
+    /// data-free way to ask Rust the same question, so it approximates the
+    /// resolver's supported set here to stay consistent with sign-time routing:
+    /// a breadcrumb-only row (no stored scalar) is only reported signable when
+    /// its type is one the resolver handles.
+    ///
+    /// Delegates the supported-set decision to the resolver's own FFI
+    /// predicate `dash_sdk_resolver_supports_key_type`, so this preflight
+    /// answer can never drift from the sign path's `UNSUPPORTED_KEY_TYPE`
+    /// rejection — both read the one Rust source of truth.
+    static func resolverCanDeriveSign(keyType: UInt8) -> Bool {
+        dash_sdk_resolver_supports_key_type(keyType)
+    }
+
     /// True iff this signer can produce a signature for the
     /// supplied `(publicKey, keyType)` pair. Mirrors the dispatch in
     /// [`signOnDemand`].
@@ -342,7 +360,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// per-wallet mnemonic Keychain item exist — the two inputs the
     /// derive-and-sign FFI requires. We do NOT actually derive a key
     /// here; the check is purely "are the prerequisites in place".
-    fileprivate func canSign(publicKey: Data, keyType: UInt8) -> Bool {
+    func canSign(publicKey: Data, keyType: UInt8) -> Bool {
         if keyType == Self.platformAddressHashKeyType {
             // Resolve the address row first (synchronous lookup);
             // mnemonic check is gated on having the wallet id.
@@ -378,8 +396,14 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                 // Resolver-derivable: a breadcrumb plus a readable mnemonic are
                 // the two inputs `signIdentityKeyOnDemand` needs to derive-sign.
                 // Match its `wid.count == 32` precondition so this preflight
-                // doesn't report a corrupt-walletId row as signable.
-                if let wid = row.walletId,
+                // doesn't report a corrupt-walletId row as signable. The key
+                // type must also be one the resolver actually derive-signs — a
+                // breadcrumb-only row (no stored scalar) whose type the resolver
+                // rejects would pass preflight but fail at sign time with
+                // `publicKeyNotFound` (the sign path routes an unsupported type
+                // to the — here absent — stored scalar).
+                if Self.resolverCanDeriveSign(keyType: keyType),
+                    let wid = row.walletId,
                     wid.count == 32,
                     let path = row.identityDerivationPath,
                     !path.isEmpty,
@@ -841,26 +865,28 @@ private func keychainSignerSignAsyncTrampoline(
     // Every fallback is logged so the zero-fallback acceptance gate can catch
     // un-migrated rows or resolver failures before the stored scalar is removed.
     //
-    // Only the two secp256k1 key types the resolver can derive+sign
-    // (ECDSA_SECP256K1=0, ECDSA_HASH160=2) attempt it; a non-ECDSA derivable
-    // key would only fail UNSUPPORTED there, so it skips straight to the stored
-    // scalar with no spurious resolver call or fallback log.
-    let isEcdsaKeyType = keyType == 0 || keyType == 2
-    if isEcdsaKeyType,
-        let resolverResult = signer.signIdentityKeyOnDemand(
-            publicKey: pubkeyData,
-            keyType: keyType,
-            data: dataToSign
-        )
-    {
-        switch resolverResult {
-        case .success(let sig):
-            reportSuccess(sig)
-            return
-        case .failure(let err):
-            print("⚠️ IDENTITY_SIGN_FALLBACK resolver-failed: \(err.localizedDescription)")
-        }
-    } else if isEcdsaKeyType {
+    // Rust owns the supported-key-type decision: we attempt the resolver for
+    // any identity key and treat its `UNSUPPORTED_KEY_TYPE` tag as the routing
+    // signal (fall through to the stored scalar silently, no fallback log —
+    // the resolver simply doesn't handle this type). This avoids mirroring the
+    // Rust ECDSA-only set in Swift, so a future Rust-derivable key type is
+    // automatically routed through the resolver without a matching Swift edit.
+    switch signer.signIdentityKeyOnDemand(
+        publicKey: pubkeyData,
+        keyType: keyType,
+        data: dataToSign
+    ) {
+    case .success(let sig)?:
+        reportSuccess(sig)
+        return
+    case .failure(.signWithMnemonicFailed(let tag))?
+    where tag == SignWithMnemonicResolverError.unsupportedKeyType.rawValue:
+        // Rust does not derive-sign this key type — route to the stored
+        // scalar with no spurious fallback log.
+        break
+    case .failure(let err)?:
+        print("⚠️ IDENTITY_SIGN_FALLBACK resolver-failed: \(err.localizedDescription)")
+    case nil:
         print("⚠️ IDENTITY_SIGN_FALLBACK no-breadcrumb")
     }
 

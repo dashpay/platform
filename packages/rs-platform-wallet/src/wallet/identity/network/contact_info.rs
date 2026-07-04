@@ -370,10 +370,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             upsert_pending_contact_crypto, PendingContactCrypto, PendingContactCryptoOp,
             PlatformWalletChangeSet,
         };
-        let enqueued_at_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+        let enqueued_at_ms = crate::util::now_ms();
         let entry = PendingContactCrypto {
             owner_identity_id: *owner_id,
             contact_id: *owner_id,
@@ -695,7 +692,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let enc_to_user_id = sealed.enc_to_user_id;
         let private_data = sealed.private_data;
 
-        // 5. Build + put the document through the write seam.
+        // 5. Build + put the document through the write helper.
         let mut properties = std::collections::BTreeMap::new();
         properties.insert("encToUserId".to_string(), Value::Bytes32(enc_to_user_id));
         properties.insert(

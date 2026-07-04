@@ -2,6 +2,19 @@ use crate::error::*;
 use crate::{check_ptr, unwrap_result_or_return};
 use std::os::raw::{c_char, c_uchar};
 
+/// RAII guard that scrubs a `secp256k1::SecretKey`'s scalar on drop. `from_slice`
+/// allocates a 32-byte scalar copy of the caller's private key, and `SecretKey`
+/// has no `Drop` wipe of its own — so without this the copy would survive on the
+/// stack after the call returns. Mirrors `WipingSecretKey` in
+/// `rs-sdk-ffi/src/mnemonic_resolver_core_signer.rs`.
+struct WipingSecretKey(dashcore::secp256k1::SecretKey);
+
+impl Drop for WipingSecretKey {
+    fn drop(&mut self) {
+        self.0.non_secure_erase();
+    }
+}
+
 /// Serialize any object to JSON bytes
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_serialize_to_json_bytes(
@@ -181,11 +194,15 @@ pub unsafe extern "C" fn platform_wallet_pubkey_hash_from_private_key(
 
     let sk_bytes = std::slice::from_raw_parts(private_key, 32);
     let secp = Secp256k1::new();
+    // `WipingSecretKey` scrubs the `from_slice`-allocated scalar copy on every
+    // exit path (the success return below, the `Err` early return, and any
+    // panic) — the caller's `private_key` bytes are theirs to manage, but this
+    // copy must not linger.
     let secret_key = match SecretKey::from_slice(sk_bytes) {
-        Ok(sk) => sk,
+        Ok(sk) => WipingSecretKey(sk),
         Err(_) => return -1,
     };
-    let pubkey = PublicKey::from_secret_key(&secp, &secret_key).serialize();
+    let pubkey = PublicKey::from_secret_key(&secp, &secret_key.0).serialize();
     let hash = dashcore::hashes::hash160::Hash::hash(&pubkey);
     let h: [u8; 20] = hash.to_byte_array();
     std::ptr::copy_nonoverlapping(h.as_ptr(), out_hash, 20);

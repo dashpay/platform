@@ -26,6 +26,8 @@ final class DashPayTabUITests: XCTestCase {
         static let segment = "dashpay.segment"
         static let addContactButton = "dashpay.addContact"
         static let refreshButton = "dashpay.refresh"
+        static let openIgnoredButton = "dashpay.openIgnored"
+        static let openHiddenLink = "dashpay.openHidden"
     }
 
     override func setUpWithError() throws {
@@ -95,6 +97,49 @@ final class DashPayTabUITests: XCTestCase {
                 "dashpay.refresh toolbar button must exist alongside the segment."
             )
         }
+    }
+
+    /// Hidden-contact recovery is gated on there being a hidden
+    /// contact: the "Hidden contacts" link (`dashpay.openHidden`) must
+    /// NOT appear when the active identity has none, while the Ignored
+    /// entry point (`dashpay.openIgnored`) is always reachable. This is
+    /// the network-free half of F16 — it proves the affordance is wired
+    /// and correctly gated; the full hide → recover round-trip needs two
+    /// funded, established testnet contacts and is covered manually (see
+    /// the funded-wallet TODO above).
+    @MainActor
+    func testHiddenRecoveryAffordanceIsGated() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        openDashPayTab(in: app)
+
+        let segment = app.descendants(matching: .any)
+            .matching(identifier: Identifier.segment).firstMatch
+        guard segment.waitForExistence(timeout: 30) else {
+            throw XCTSkip(
+                "No eligible identity on this simulator — the Contacts segment "
+                    + "is unreachable, so the Hidden affordance can't be asserted."
+            )
+        }
+
+        // The Ignored entry point is always present once an identity is
+        // active (toolbar), mirroring where Hidden recovery belongs.
+        let openIgnored = app.descendants(matching: .any)
+            .matching(identifier: Identifier.openIgnoredButton).firstMatch
+        XCTAssertTrue(
+            openIgnored.waitForExistence(timeout: 5),
+            "dashpay.openIgnored must be reachable whenever an identity is active."
+        )
+
+        // With no hidden contact in local state, the recovery link is
+        // gated off — it appears only once a contact is hidden.
+        let openHidden = app.descendants(matching: .any)
+            .matching(identifier: Identifier.openHiddenLink).firstMatch
+        XCTAssertFalse(
+            openHidden.exists,
+            "dashpay.openHidden must be hidden until the identity has a hidden contact."
+        )
     }
 
     /// State-1 deep link: with no wallet loaded, the "Open Wallets"

@@ -206,14 +206,21 @@ pub unsafe extern "C" fn platform_wallet_get_dashpay_profile(
 
     let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
 
+    // Clone only the `Option<DashPayProfile>` field, not the whole
+    // `ManagedIdentity` (which carries the full Identity plus the
+    // established/sent/incoming BTreeMaps and payment history). The two
+    // unwraps preserve the caller contract unchanged: a missing wallet or
+    // identity is a NotFound error, a present identity with no profile is a
+    // successful read with `has_profile == false`.
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let wm = wallet.wallet_manager().blocking_read();
         let info = wm.get_wallet_info(&wallet.wallet_id())?;
-        info.identity_manager.managed_identity(&id).cloned()
+        let managed = info.identity_manager.managed_identity(&id)?;
+        Some(managed.dashpay_profile.clone())
     });
     let inner = unwrap_option_or_return!(option);
-    let managed = unwrap_option_or_return!(inner);
-    match managed.dashpay_profile {
+    let profile = unwrap_option_or_return!(inner);
+    match profile {
         Some(profile) => unsafe {
             *out_profile = DashPayProfileFFI::from_profile(&profile);
             *out_has_profile = true;
