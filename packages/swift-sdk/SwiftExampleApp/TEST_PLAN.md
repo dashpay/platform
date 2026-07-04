@@ -163,7 +163,6 @@ The app is a full multi-wallet client: `PlatformWalletManager` holds N wallets c
 | ADDR-02 | Transfer credits address → address | Platform | Thorough | ✅ | `WalletDetailView` → Platform Balance row **⋯ menu → Transfer Credits** (sheet, `TransferPlatformAddressView`) → `ManagedPlatformAddressWallet.transfer` → `platform_address_wallet_transfer` (keychain-signed). Source = DIP-17 platform-payment account picker; destination = own-wallet address picker or pasted 20-byte P2PKH hash. Input selection (Auto), the `Σ inputs == Σ outputs` balancing, fee strategy, and nonce all happen Rust-side — surplus stays on the source addresses (credit-balance model), so there's no change address to pick, and no private-key entry. Submit gated on amount + fee ≤ account balance and recipient ∉ funded source inputs. On success a DIP-17 resync runs. (Also reachable via the 🧪 debug builder *Settings → Platform State Transitions → Address → Transfer Address Funds (raw)* → `dash_sdk_address_transfer_funds`, which pastes a raw 64-char private key.) |
 | ADDR-03 | Top up address from asset lock | Cross | Thorough | ✅ | `FundFromAssetLockPlatformAddressView` → `dash_sdk_address_top_up_from_asset_lock`. |
 | ADDR-04 | Withdraw address credits → Core L1 | Cross | Thorough | ✅ | `WalletDetailView` → Platform Balance row **⋯ menu → Withdraw to Core** (sheet, `WithdrawPlatformAddressView`) → `ManagedPlatformAddressWallet.withdraw` → `platform_address_wallet_withdraw_to_address` (keychain-signed). Source = DIP-17 platform-payment account picker; the **full** account balance is withdrawn (no per-address amount, no change). Core L1 destination = own wallet (`core_wallet_next_receive_address`) or pasted external address, network-checked Rust-side. `coreFeePerByte` defaults to 1. Gated on the Core (SPV) wallet being initialized — shows a "Core not ready" state otherwise. Identity/address credit balance drops; L1 payout is pooled and processed asynchronously (no immediate txid). On success a DIP-17 resync runs. (Also reachable via the 🧪 debug builder *Settings → Platform State Transitions → Address → Withdraw Address Funds (raw)* → `dash_sdk_address_withdraw_funds`, which pastes a raw 64-char private key.) |
-| ADDR-05 | Address balance-change history (recent / compacted / branch / trunk) | Platform | Uncommon | 🔌 | FFI `dash_sdk_address_fetch_recent_balance_changes` / `_compacted_balance_changes` / `_branch_state` / `_trunk_state`; no UI. |
 | ADDR-06 | Display / share your Platform receive address | Platform | Common | ✅ | "Receive Dash" sheet → **Platform** tab (`ReceiveAddressView`, `ReceiveAddressTab.platform`, "Your Platform Address"): QR + bech32m DIP-17 address + Copy. The receive counterpart to the credit-transfer / top-up funding paths. |
 
 ### 4.4 DPNS (usernames) — `Domain=DPNS`
@@ -452,10 +451,10 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 |---|---|---|---|
 | getAddressInfo | Common | ✅ | `ADDR-01` |
 | getAddressesInfos | Common | ✅ | `ADDR-01` |
-| getRecentAddressBalanceChanges | Uncommon | 🔌 | FFI only (`ADDR-05`) |
-| getRecentCompactedAddressBalanceChanges | Uncommon | 🔌 | FFI only (`ADDR-05`) |
-| getAddressesTrunkState | Uncommon | 🔌 | FFI only (`ADDR-05`) |
-| getAddressesBranchState | Uncommon | 🔌 | FFI only (`ADDR-05`) |
+| getRecentAddressBalanceChanges | Uncommon | 🔌 | FFI only (no UI) |
+| getRecentCompactedAddressBalanceChanges | Uncommon | 🔌 | FFI only (no UI) |
+| getAddressesTrunkState | Uncommon | 🔌 | FFI only (no UI) |
+| getAddressesBranchState | Uncommon | 🔌 | FFI only (no UI) |
 
 ### Shielded Pool
 | RPC | Tier | Status | Where |
@@ -474,7 +473,7 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 For completeness (the "everything gRPC + Core can do" requirement), these exist at the protocol/FFI level but have **no app entry point** today:
 
 **🔌 SDK-only (FFI/wrapper exists, no UI):**
-- `ADDR-05` address balance-change history (recent / compacted / branch / trunk)
+- address balance-change history (recent / compacted / branch / trunk) — FFI only, no UI
 - `SH-11` create identity from shielded pool (Type 20)
 
 **🚫 Not implemented anywhere:**
