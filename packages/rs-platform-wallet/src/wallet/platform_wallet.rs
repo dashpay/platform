@@ -24,8 +24,13 @@ use crate::broadcaster::SpvBroadcaster;
 use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
-#[cfg(feature = "shielded")]
 use crate::error::PlatformWalletError;
+use dash_sdk::platform::transition::put_settings::PutSettings;
+use dpp::address_funds::PlatformAddress;
+use dpp::fee::Credits;
+use dpp::identity::signer::Signer;
+use dpp::identity::{Identity, IdentityPublicKey};
+use dpp::prelude::Identifier;
 
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];
@@ -216,6 +221,128 @@ impl PlatformWallet {
             guard: self.wallet_manager.blocking_write(),
             wallet_id: self.wallet_id,
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Address-funded identity flows
+    //
+    // Composite orchestration: each flow spends or credits platform
+    // addresses through the identity sub-wallet, then routes the
+    // proof-attested `AddressInfos` through the platform-address
+    // sub-wallet's shared reconciliation seam
+    // (`PlatformAddressWallet::reconcile_address_infos`) so displayed
+    // balances and the next input selection reflect on-chain reality
+    // without waiting for the next BLAST sync round. Only this struct
+    // owns both sub-wallets, which is why the composition lives here.
+    // -----------------------------------------------------------------
+
+    /// Top up an existing identity's credit balance by spending platform
+    /// address balances, then reconcile the spent addresses' local
+    /// balances and nonces from the proof-attested post-spend
+    /// `AddressInfos`.
+    ///
+    /// See [`IdentityWallet::top_up_from_addresses`] for the identity-side
+    /// semantics. Reconciliation failures are logged inside the seam
+    /// rather than propagated — Platform already accepted the top-up, and
+    /// a later sync reconciles.
+    ///
+    /// Returns the identity's new credit balance.
+    pub async fn top_up_from_addresses<S: Signer<PlatformAddress> + Send + Sync>(
+        &self,
+        identity_id: &Identifier,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        address_signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<Credits, PlatformWalletError> {
+        let (address_infos, new_balance) = self
+            .identity
+            .top_up_from_addresses(identity_id, inputs, address_signer, settings)
+            .await?;
+        self.platform
+            .reconcile_address_infos(&address_infos, "identity top-up")
+            .await;
+        Ok(new_balance)
+    }
+
+    /// Register a new identity funded by platform-address balances, then
+    /// reconcile the spent funding addresses' local balances and nonces
+    /// from the proof-attested post-spend `AddressInfos`.
+    ///
+    /// See [`IdentityWallet::register_from_addresses`] for the
+    /// identity-side semantics (placeholder construction, signer
+    /// responsibilities, local-manager registration). Reconciliation
+    /// failures are logged inside the seam rather than propagated —
+    /// Platform already accepted the registration, and a later sync
+    /// reconciles.
+    ///
+    /// Returns the registered identity.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn register_from_addresses<IS, AS>(
+        &self,
+        identity: &Identity,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        output: Option<(PlatformAddress, Credits)>,
+        identity_index: u32,
+        identity_signer: &IS,
+        input_address_signer: &AS,
+        settings: Option<PutSettings>,
+    ) -> Result<Identity, PlatformWalletError>
+    where
+        IS: Signer<IdentityPublicKey>,
+        AS: Signer<PlatformAddress> + Send + Sync,
+    {
+        let (registered_identity, address_infos) = self
+            .identity
+            .register_from_addresses(
+                identity,
+                inputs,
+                output,
+                identity_index,
+                identity_signer,
+                input_address_signer,
+                settings,
+            )
+            .await?;
+        self.platform
+            .reconcile_address_infos(&address_infos, "identity registration")
+            .await;
+        Ok(registered_identity)
+    }
+
+    /// Transfer credits from an identity to platform addresses, then
+    /// reconcile any wallet-owned recipient addresses' local balances
+    /// from the proof-attested `AddressInfos` (recipients belonging to
+    /// third parties are skipped by the seam).
+    ///
+    /// See [`IdentityWallet::transfer_credits_to_addresses_with_external_signer`]
+    /// for the identity-side semantics. Reconciliation failures are
+    /// logged inside the seam rather than propagated — Platform already
+    /// accepted the transfer, and a later sync reconciles.
+    ///
+    /// Returns the sender identity's new credit balance.
+    pub async fn transfer_credits_to_addresses_with_external_signer<S>(
+        &self,
+        identity_id: &Identifier,
+        recipient_addresses: BTreeMap<PlatformAddress, Credits>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<Credits, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let (address_infos, new_balance) = self
+            .identity
+            .transfer_credits_to_addresses_with_external_signer(
+                identity_id,
+                recipient_addresses,
+                signer,
+                settings,
+            )
+            .await?;
+        self.platform
+            .reconcile_address_infos(&address_infos, "credit transfer to addresses")
+            .await;
+        Ok(new_balance)
     }
 
     /// Non-blocking read-lock. Returns `None` if the lock is currently

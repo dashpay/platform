@@ -124,6 +124,16 @@ pub enum PlatformWalletFFIResultCode {
     /// must NOT auto-retry — a retry would select different unreserved notes
     /// and could double-send if the original spend landed.
     ErrorShieldedSpendUnconfirmed = 18,
+    /// Maps `PlatformWalletError::ShieldedNoRecordedAnchor`. The wallet could
+    /// not build the spend against any Platform-recorded anchor yet: its local
+    /// commitment tree is mid-block (an index-chunk sync routinely stops
+    /// between block boundaries) while Platform records an anchor only at each
+    /// block boundary. The transition was NOT broadcast and any note
+    /// reservations were released, so this is RETRYABLE — the host should wait
+    /// for the next shielded sync (which advances the tree onto a recorded
+    /// boundary) and try again. Distinct from `ErrorShieldedSpendUnconfirmed`,
+    /// where a spend WAS broadcast and must NOT be retried.
+    ErrorShieldedNoRecordedAnchor = 19,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -161,6 +171,24 @@ impl PlatformWalletFFIResult {
         let c_msg = CString::new(msg).unwrap_or_else(|_| CString::new("<invalid UTF-8>").unwrap());
         Self {
             code,
+            message: c_msg.into_raw(),
+        }
+    }
+
+    /// A `Success`-coded result that still carries an advisory `message`.
+    ///
+    /// Used by non-error outcomes that want to convey a human-readable
+    /// explanation alongside an out-parameter — e.g. the withdrawal preflight's
+    /// "can't fund" case, where `can_withdraw = false` is the authoritative
+    /// signal and the message is the planner's typed reason. The `Success` code
+    /// keeps it off the error path (`.check()` on language bindings only
+    /// inspects the code); the message is freed like any other via
+    /// [`platform_wallet_ffi_result_free`] / `Drop`.
+    pub fn success_with_message(message: impl Into<String>) -> Self {
+        let msg = message.into();
+        let c_msg = CString::new(msg).unwrap_or_else(|_| CString::new("<invalid UTF-8>").unwrap());
+        Self {
+            code: PlatformWalletFFIResultCode::Success,
             message: c_msg.into_raw(),
         }
     }
@@ -236,6 +264,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedSpendUnconfirmed { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
+            }
+            PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
+                PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
