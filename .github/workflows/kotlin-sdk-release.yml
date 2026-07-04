@@ -59,10 +59,14 @@ jobs:
             kotlin-sdk-release-cargo-
             kotlin-sdk-cargo-
 
-      - name: Install cargo-ndk and protoc
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Install protoc v32.0 (repo-standard; apt's 3.21 breaks tenderdash-proto)
         run: |
-          cargo install cargo-ndk --locked
-          sudo apt-get update && sudo apt-get install -y protobuf-compiler
+          curl -fsSL -o /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-x86_64.zip
+          sudo unzip -o /tmp/protoc.zip -d /usr/local 'bin/protoc' 'include/*'
+          protoc --version
 
       - name: Build native library (both ABIs, release profile)
         working-directory: packages/kotlin-sdk
