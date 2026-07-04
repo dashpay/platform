@@ -32,9 +32,12 @@ use key_wallet_manager::WalletManager;
 
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+use crate::PlatformAddressBalanceEntry;
 use dash_sdk::platform::address_sync::{
     AddressFunds, AddressIndex, AddressProvider, AddressSyncResult,
 };
+use dash_sdk::query_types::AddressInfos;
+use dpp::address_funds::PlatformAddress;
 use tokio::sync::RwLock;
 
 /// DIP-17 address coordinates used as both the pending-bimap key and
@@ -202,6 +205,18 @@ pub(crate) struct PlatformPaymentAddressProvider {
 }
 
 impl PlatformPaymentAddressProvider {
+    /// The committed per-account index/balance state for one wallet, or
+    /// `None` if the provider doesn't cover it. Exposes the full persisted
+    /// `index <-> address` bijection — including addresses restored from
+    /// disk that are no longer in a live derived pool — so callers can map a
+    /// spent address back to its derivation index.
+    pub(crate) fn per_wallet_state(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Option<&PerWalletPlatformAddressState> {
+        self.per_wallet.get(wallet_id)
+    }
+
     /// Build a provider covering every platform payment account on
     /// each wallet in `wallet_ids`.
     ///
@@ -473,6 +488,36 @@ impl PlatformPaymentAddressProvider {
         self.sync_height = height;
         self.sync_timestamp = timestamp;
         self.last_known_recent_block = last_known_recent_block;
+    }
+
+    /// Reset the incremental-sync watermark and drop every cached
+    /// balance so the next `sync_balances` performs a full
+    /// trunk/branch/compact rescan from genesis instead of an
+    /// incremental catch-up.
+    ///
+    /// Backs the host's "Clear" flow. Zeroing the three watermark
+    /// scalars alone is not enough: `found` doubles as the
+    /// `current_balances()` seed for the next pass (and the `before`
+    /// snapshot for the persistence diff), so a non-empty `found`
+    /// would re-seed the very balances Clear is meant to wipe.
+    /// `sync_timestamp == 0` is what flips `last_sync_timestamp()`
+    /// back to `None` and the SDK back into full-scan mode.
+    ///
+    /// The `addresses` bijection is intentionally preserved —
+    /// `prepare_for_sync` rebuilds `pending` from it each pass, so
+    /// keeping it avoids needless re-derivation while still forcing a
+    /// full rescan.
+    pub(crate) fn reset_sync_state(&mut self) {
+        self.sync_height = 0;
+        self.sync_timestamp = 0;
+        self.last_known_recent_block = 0;
+        self.per_wallet_in_sync.clear();
+        for state in self.per_wallet.values_mut() {
+            for account_state in state.values_mut() {
+                account_state.found.clear();
+                account_state.absent.clear();
+            }
+        }
     }
 
     /// Diagnostic snapshot counts used by the read-only memory
@@ -781,6 +826,209 @@ impl AddressProvider for PlatformPaymentAddressProvider {
     }
 }
 
+/// Translate a state transition's proof-attested `address_infos` into
+/// persistence-changeset entries, resolving each address's
+/// `(account_index, address_index)` through `resolve_index`.
+///
+/// Non-P2PKH addresses and addresses the resolver doesn't recognise
+/// (external recipients, or addresses the wallet doesn't own) are skipped.
+/// Missing per-address info (`None`) maps to zero balance / zero nonce —
+/// the on-chain post-transition state for an address removed from state
+/// (e.g. a fully consumed input). Pure and lock-free so every caller's
+/// translation is unit-testable.
+///
+/// Callers supply the resolver so every reconciliation path can resolve
+/// through the provider's persisted `index <-> address` bijection —
+/// covering addresses restored from disk that are no longer in a live
+/// derived pool — with the live pool as fallback for addresses derived
+/// since the last sync (see
+/// [`PlatformPaymentAddressProvider::commit_reconciliation`]).
+pub(crate) fn build_address_balance_entries(
+    wallet_id: WalletId,
+    resolve_index: impl Fn(&PlatformP2PKHAddress) -> Option<(u32, AddressIndex)>,
+    address_infos: &AddressInfos,
+) -> Vec<PlatformAddressBalanceEntry> {
+    let mut entries = Vec::new();
+    for (addr, maybe_info) in address_infos.iter() {
+        let PlatformAddress::P2pkh(hash) = addr else {
+            continue;
+        };
+        let p2pkh = PlatformP2PKHAddress::new(*hash);
+        let Some((account_index, address_index)) = resolve_index(&p2pkh) else {
+            continue;
+        };
+        let funds = match maybe_info {
+            Some(ai) => AddressFunds {
+                balance: ai.balance,
+                nonce: ai.nonce,
+            },
+            None => AddressFunds {
+                balance: 0,
+                nonce: 0,
+            },
+        };
+        entries.push(PlatformAddressBalanceEntry {
+            wallet_id,
+            account_index,
+            address_index,
+            address: p2pkh,
+            funds,
+        });
+    }
+    entries
+}
+
+/// What [`PlatformPaymentAddressProvider::commit_reconciliation`] did with
+/// a proof-attested `address_infos` map: the entries that survived the
+/// freshness guard (already committed to the provider's `found` seed),
+/// plus counters so the caller can log why entries were dropped.
+#[derive(Default)]
+pub(crate) struct ReconciliationOutcome {
+    /// Entries to apply to the managed accounts and persist. Already
+    /// committed to the provider's `found` map / bijection.
+    pub(crate) entries: Vec<PlatformAddressBalanceEntry>,
+    /// How many proof addresses resolved to a wallet-owned slot at all
+    /// (before the freshness guard). Zero with a non-empty proof means
+    /// either every address belongs to a third party or resolution failed.
+    pub(crate) resolved: usize,
+    /// Resolved entries dropped because the committed `found` seed already
+    /// carries a higher nonce — a background sync (or a later transition)
+    /// committed fresher state after this proof was produced.
+    pub(crate) stale_skipped: usize,
+    /// Resolved entries dropped as no-ops (funds identical to the
+    /// committed seed) to avoid persister churn.
+    pub(crate) unchanged_skipped: usize,
+}
+
+impl PlatformPaymentAddressProvider {
+    /// Resolve a state transition's proof-attested `address_infos` for
+    /// `wallet_id`, apply the freshness guard, and commit the survivors to
+    /// the provider's `found` map (the sync-diff baseline and the seed
+    /// [`current_balances`](AddressProvider::current_balances) hands the
+    /// SDK) so reconciliation and the background sync cannot diverge.
+    ///
+    /// Resolution goes through the persisted `index <-> address` bijection
+    /// first — covering addresses restored from disk that are no longer in
+    /// a live derived pool — then falls back to `pool_indexes` (the live
+    /// pools, covering addresses derived since the last sync, e.g. a fresh
+    /// change address). The fallback is restricted to accounts the
+    /// provider tracks: every emitted entry is committed to the `found`
+    /// seed, so an account without per-account provider state resolves
+    /// to nothing (it reconciles once `initialize` / `add_provider`
+    /// re-snapshots the account set and the next sync runs).
+    /// Pool-resolved addresses are merged into the bijection so
+    /// `current_balances` can yield their committed funds.
+    ///
+    /// Freshness guard, per resolved entry:
+    /// * zero funds (balance 0, nonce 0 — the address was removed from
+    ///   Platform state, e.g. a fully consumed input) is an authoritative
+    ///   removal: always applied, and the address is dropped from `found`
+    ///   (mirroring the sync's absent handling);
+    /// * otherwise, an entry whose nonce is *below* the committed seed's
+    ///   nonce is stale — a concurrent sync pass or later transition
+    ///   already committed fresher state — and is dropped;
+    /// * entries identical to the committed seed are dropped as no-ops.
+    ///
+    /// Callers must hold the provider write lock (i.e. call through
+    /// `&mut self`) across this commit AND the managed-account balance
+    /// write that follows, so a background sync — which holds the same
+    /// lock across its scan — can never interleave between the two.
+    pub(crate) fn commit_reconciliation(
+        &mut self,
+        wallet_id: &WalletId,
+        address_infos: &AddressInfos,
+        pool_indexes: &BTreeMap<PlatformP2PKHAddress, (u32, AddressIndex)>,
+    ) -> ReconciliationOutcome {
+        let mut outcome = ReconciliationOutcome::default();
+        let Some(wallet_state) = self.per_wallet.get_mut(wallet_id) else {
+            return outcome;
+        };
+
+        let resolved_entries = build_address_balance_entries(
+            *wallet_id,
+            |p2pkh| {
+                for (&account_index, account_state) in wallet_state.iter() {
+                    if let Some(&address_index) = account_state.addresses.get_by_right(p2pkh) {
+                        return Some((account_index, address_index));
+                    }
+                }
+                // Pool fallback only for accounts the provider tracks —
+                // an account added to the live wallet after the provider
+                // snapshot has no per-account state to commit into, so
+                // resolving it here would break the contract that every
+                // emitted entry is committed to the `found` seed. Such
+                // addresses stay unresolved until `initialize` /
+                // `add_provider` re-snapshots the account set.
+                pool_indexes
+                    .get(p2pkh)
+                    .copied()
+                    .filter(|(account_index, _)| wallet_state.contains_key(account_index))
+            },
+            address_infos,
+        );
+        outcome.resolved = resolved_entries.len();
+
+        for entry in resolved_entries {
+            // The resolver only yields accounts present in `wallet_state`,
+            // so a miss here is unreachable; skip defensively rather than
+            // emit an entry the seed never committed.
+            let Some(state) = wallet_state.get_mut(&entry.account_index) else {
+                tracing::warn!(
+                    account_index = entry.account_index,
+                    address = %entry.address,
+                    "commit_reconciliation: resolved account has no tracked \
+                     provider state; dropping entry"
+                );
+                continue;
+            };
+            let existing = state.found.get(&entry.address).copied();
+            // Zero funds = the address no longer exists in Platform state.
+            // That removal is attested by the proof, so it bypasses the
+            // nonce guard (the pre-spend seed necessarily has a lower
+            // nonce than "gone").
+            let is_removal = entry.funds.balance == 0 && entry.funds.nonce == 0;
+            if !is_removal {
+                if let Some(existing) = existing {
+                    if existing.nonce > entry.funds.nonce {
+                        outcome.stale_skipped += 1;
+                        continue;
+                    }
+                    if existing == entry.funds {
+                        outcome.unchanged_skipped += 1;
+                        continue;
+                    }
+                }
+            }
+            if is_removal {
+                state.found.remove(&entry.address);
+            } else {
+                state.found.insert(entry.address, entry.funds);
+            }
+            // Merge pool-resolved addresses into the bijection so
+            // `current_balances` can pair the fresh funds with a
+            // derivation index. Never overwrite an existing pairing —
+            // `BiBTreeMap::insert` evicts conflicting pairs, which
+            // would orphan another address's `found` entry.
+            if state.addresses.get_by_right(&entry.address).is_none() {
+                if state.addresses.contains_left(&entry.address_index) {
+                    tracing::error!(
+                        account_index = entry.account_index,
+                        address_index = entry.address_index,
+                        address = %entry.address,
+                        "commit_reconciliation: derivation index already \
+                         maps to a different address — state drift; \
+                         leaving the bijection untouched"
+                    );
+                } else {
+                    state.addresses.insert(entry.address_index, entry.address);
+                }
+            }
+            outcome.entries.push(entry);
+        }
+        outcome
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -805,6 +1053,104 @@ mod tests {
 
     fn funds(balance: u64, nonce: u32) -> AddressFunds {
         AddressFunds { balance, nonce }
+    }
+
+    /// Regression for the top-up reconciliation: a spent platform address
+    /// that exists only in the persisted index bijection (restored from
+    /// disk — not in any live derived pool) must still be resolved to its
+    /// derivation index and recorded with the proof's post-spend balance.
+    /// The original fix scanned only the live pool, so it left restored
+    /// rows stale, preserving the phantom Platform Balance the PR targets.
+    #[test]
+    fn build_entries_resolves_restored_address_outside_live_pool() {
+        use dash_sdk::query_types::AddressInfo;
+
+        // Present in the persisted bijection at index 3, but NOT in a live
+        // derived address pool.
+        let restored = p2pkh(0x11);
+        let mut bimap: BiBTreeMap<AddressIndex, PlatformP2PKHAddress> = BiBTreeMap::new();
+        bimap.insert(3, restored);
+
+        // The top-up spent it; the proof attests post-spend balance 5,
+        // nonce bumped to 4.
+        let restored_addr = PlatformAddress::P2pkh([0x11; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            restored_addr,
+            Some(AddressInfo {
+                address: restored_addr,
+                nonce: 4,
+                balance: 5,
+            }),
+        );
+
+        let entries = build_address_balance_entries(
+            WALLET,
+            |p2pkh| bimap.get_by_right(p2pkh).map(|&idx| (ACCOUNT, idx)),
+            &address_infos,
+        );
+
+        assert_eq!(
+            entries.len(),
+            1,
+            "a restored spent address must still be reconciled"
+        );
+        let e = &entries[0];
+        assert_eq!(e.address, restored);
+        assert_eq!(e.account_index, ACCOUNT);
+        assert_eq!(
+            e.address_index, 3,
+            "index resolved from the persisted bijection, not the live pool"
+        );
+        assert_eq!(
+            e.funds.balance, 5,
+            "records the proof's post-spend balance, not a stale value"
+        );
+        assert_eq!(e.funds.nonce, 4, "records the bumped nonce");
+    }
+
+    /// `transfer_address_funds` returns address info for the full
+    /// `inputs ∪ outputs` set, including external recipients the wallet
+    /// does not own. The builder must keep entries only for addresses the
+    /// resolver recognises — persisting a recipient under a fabricated
+    /// derivation index would poison the account's address map on restore.
+    /// Missing per-address info maps to zero funds (the post-transition
+    /// state for a fully consumed input elided from the proved set).
+    #[test]
+    fn build_entries_drops_unresolved_and_zeroes_missing_info() {
+        use dash_sdk::query_types::AddressInfo;
+
+        let owned = p2pkh(0x01);
+        let mut bimap: BiBTreeMap<AddressIndex, PlatformP2PKHAddress> = BiBTreeMap::new();
+        bimap.insert(7, owned);
+
+        let owned_addr = PlatformAddress::P2pkh([0x01; 20]);
+        let external_addr = PlatformAddress::P2pkh([0xEE; 20]);
+        let mut address_infos = AddressInfos::new();
+        // Fully consumed input: drive elides the info.
+        address_infos.insert(owned_addr, None);
+        // External recipient: resolver won't know it.
+        address_infos.insert(
+            external_addr,
+            Some(AddressInfo {
+                address: external_addr,
+                nonce: 0,
+                balance: 5_000_000,
+            }),
+        );
+
+        let entries = build_address_balance_entries(
+            WALLET,
+            |p2pkh| bimap.get_by_right(p2pkh).map(|&idx| (ACCOUNT, idx)),
+            &address_infos,
+        );
+
+        assert_eq!(entries.len(), 1, "external recipient must be filtered out");
+        let e = &entries[0];
+        assert_eq!(e.address, owned);
+        assert_eq!(e.address_index, 7);
+        assert_eq!(e.funds.balance, 0, "missing info means removed from state");
+        assert_eq!(e.funds.nonce, 0);
     }
 
     /// Build a provider whose committed `per_wallet` tracks a single
@@ -1103,6 +1449,377 @@ mod tests {
             account.address_credit_balance(&addr),
             0,
             "on_address_absent must zero the in-memory managed-account balance"
+        );
+    }
+
+    /// Records every changeset handed to `store`, so a test can assert what
+    /// the reconciliation actually persisted.
+    #[derive(Default)]
+    struct CapturingPersister {
+        stored: std::sync::Mutex<Vec<crate::changeset::PlatformWalletChangeSet>>,
+    }
+
+    impl crate::changeset::PlatformWalletPersistence for CapturingPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            self.stored.lock().expect("persister mutex").push(changeset);
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(crate::changeset::ClientStartState::default())
+        }
+    }
+
+    /// Integration regression for the reconciliation *contract* — not
+    /// just the pure entry builder. `reconcile_address_infos` must build
+    /// AND **persist** a `PlatformAddressChangeSet` carrying the proof's
+    /// post-spend balance for a spent address resolved via the provider's
+    /// persisted state. The reported bug was the *missing persist* (the SDK's
+    /// `address_infos` were discarded), so this pins that `store` actually
+    /// fires with the decremented entry — a helper-only test would still pass
+    /// if `reconcile_address_infos` stopped persisting.
+    #[tokio::test]
+    async fn reconcile_address_infos_persists_decremented_balance() {
+        use crate::broadcaster::SpvBroadcaster;
+        use crate::events::PlatformEventManager;
+        use crate::spv::SpvRuntime;
+        use crate::wallet::asset_lock::manager::AssetLockManager;
+        use crate::wallet::persister::WalletPersister;
+        use crate::wallet::platform_addresses::PlatformAddressWallet;
+        use dash_sdk::query_types::AddressInfo;
+        use tokio::sync::Notify;
+
+        let recorder = Arc::new(CapturingPersister::default());
+
+        // Wallet wired to the capturing persister. The rest mirrors the
+        // short-circuit fixture — `reconcile_address_infos` only touches
+        // provider / wallet_manager / persister.
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
+        let persister = WalletPersister::new(WALLET, recorder.clone());
+        let event_manager = Arc::new(PlatformEventManager::new(Vec::new()));
+        let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallet_manager), event_manager));
+        let broadcaster = Arc::new(SpvBroadcaster::new(spv));
+        let asset_locks = Arc::new(AssetLockManager::new(
+            Arc::clone(&sdk),
+            Arc::clone(&wallet_manager),
+            WALLET,
+            Arc::new(Notify::new()),
+            broadcaster,
+            persister.clone(),
+        ));
+        let wallet = PlatformAddressWallet::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            WALLET,
+            asset_locks,
+            persister,
+        );
+
+        // The provider knows the spent address via its persisted bijection
+        // (pre-spend balance 100).
+        let addr = p2pkh(0x11);
+        let provider =
+            provider_tracking_address(Arc::clone(&wallet_manager), WALLET, addr, funds(100, 1));
+        *wallet.provider.write().await = Some(provider);
+
+        // The top-up spent it; the proof attests post-spend balance 5, nonce 4.
+        let spent = PlatformAddress::P2pkh([0x11; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            spent,
+            Some(AddressInfo {
+                address: spent,
+                nonce: 4,
+                balance: 5,
+            }),
+        );
+
+        wallet
+            .reconcile_address_infos(&address_infos, "test top-up")
+            .await;
+
+        // The reconciliation must have PERSISTED the decremented entry — the
+        // contract the original bug broke by discarding `address_infos`.
+        // Scope the std mutex guard so it isn't held across the provider
+        // read await below.
+        {
+            let stored = recorder.stored.lock().expect("persister mutex");
+            let entry = stored
+                .iter()
+                .filter_map(|cs| cs.platform_addresses.as_ref())
+                .flat_map(|pa| pa.addresses.iter())
+                .find(|e| e.address == addr)
+                .expect("a persisted platform-address entry for the spent address");
+            assert_eq!(entry.account_index, ACCOUNT);
+            assert_eq!(
+                entry.funds.balance, 5,
+                "persists the proof's post-spend balance, not the stale pre-spend value"
+            );
+            assert_eq!(entry.funds.nonce, 4, "persists the bumped nonce");
+        }
+
+        // ...and the provider's committed `found` seed — the sync-diff
+        // baseline and the seed `current_balances()` hands the SDK — must
+        // agree with what was just applied, so reconciliation and the
+        // background sync stop diverging.
+        let guard = wallet.provider.read().await;
+        let seed: Vec<_> = guard
+            .as_ref()
+            .expect("provider present")
+            .current_balances()
+            .collect();
+        assert_eq!(seed.len(), 1);
+        assert_eq!(
+            seed[0].2,
+            funds(5, 4),
+            "committed found seed must carry the reconciled funds"
+        );
+    }
+
+    /// Freshness guard: an entry whose nonce is below the committed seed's
+    /// (a background sync — or a later transition — already committed
+    /// fresher state) must be dropped, not applied over the fresher value.
+    #[test]
+    fn commit_reconciliation_drops_stale_nonce() {
+        use dash_sdk::query_types::AddressInfo;
+
+        let addr = p2pkh(0x11);
+        // Committed seed already at nonce 5 (e.g. the 15s background sync
+        // landed a fresher state while the proof was in flight).
+        let mut provider = provider_with_one_funded_address(addr, funds(700, 5));
+
+        let spent = PlatformAddress::P2pkh([0x11; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            spent,
+            Some(AddressInfo {
+                address: spent,
+                nonce: 3,
+                balance: 100,
+            }),
+        );
+
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &BTreeMap::new());
+
+        assert_eq!(outcome.resolved, 1);
+        assert_eq!(outcome.stale_skipped, 1);
+        assert!(
+            outcome.entries.is_empty(),
+            "stale entry must not be applied"
+        );
+        // The fresher committed funds survive.
+        let seed: Vec<_> = provider.current_balances().collect();
+        assert_eq!(seed.len(), 1);
+        assert_eq!(seed[0].2, funds(700, 5));
+    }
+
+    /// An entry identical to the committed seed is a no-op and is dropped
+    /// to avoid persister churn.
+    #[test]
+    fn commit_reconciliation_drops_unchanged_entry() {
+        use dash_sdk::query_types::AddressInfo;
+
+        let addr = p2pkh(0x11);
+        let mut provider = provider_with_one_funded_address(addr, funds(700, 5));
+
+        let same = PlatformAddress::P2pkh([0x11; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            same,
+            Some(AddressInfo {
+                address: same,
+                nonce: 5,
+                balance: 700,
+            }),
+        );
+
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &BTreeMap::new());
+
+        assert_eq!(outcome.resolved, 1);
+        assert_eq!(outcome.unchanged_skipped, 1);
+        assert!(outcome.entries.is_empty());
+    }
+
+    /// A fresh entry (nonce at or above the seed's) is applied and
+    /// committed to `found`, replacing the older funds.
+    #[test]
+    fn commit_reconciliation_commits_fresh_entry_to_found() {
+        use dash_sdk::query_types::AddressInfo;
+
+        let addr = p2pkh(0x11);
+        let mut provider = provider_with_one_funded_address(addr, funds(700, 3));
+
+        let spent = PlatformAddress::P2pkh([0x11; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            spent,
+            Some(AddressInfo {
+                address: spent,
+                nonce: 4,
+                balance: 50,
+            }),
+        );
+
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &BTreeMap::new());
+
+        assert_eq!(outcome.entries.len(), 1);
+        assert_eq!(outcome.entries[0].funds, funds(50, 4));
+        assert_eq!(outcome.entries[0].address_index, 0);
+        let seed: Vec<_> = provider.current_balances().collect();
+        assert_eq!(seed.len(), 1);
+        assert_eq!(seed[0].2, funds(50, 4));
+    }
+
+    /// Zero funds (balance 0, nonce 0) means the address was removed from
+    /// Platform state (fully consumed input). That removal is authoritative:
+    /// it bypasses the nonce guard and drops the address from the committed
+    /// `found` seed, mirroring the sync's absent handling.
+    #[test]
+    fn commit_reconciliation_zero_funds_removes_from_found() {
+        let addr = p2pkh(0x11);
+        let mut provider = provider_with_one_funded_address(addr, funds(700, 5));
+
+        let consumed = PlatformAddress::P2pkh([0x11; 20]);
+        let mut address_infos = AddressInfos::new();
+        // Drive elides the info for a fully consumed input.
+        address_infos.insert(consumed, None);
+
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &BTreeMap::new());
+
+        assert_eq!(outcome.entries.len(), 1);
+        assert_eq!(outcome.entries[0].funds, funds(0, 0));
+        assert!(
+            provider.current_balances().next().is_none(),
+            "consumed address must be dropped from the found seed"
+        );
+    }
+
+    /// The live-pool fallback must NOT resolve addresses belonging to an
+    /// account the provider doesn't track: there is no per-account state
+    /// to commit the funds into, so emitting the entry would violate the
+    /// contract that every emitted entry is committed to the `found` seed
+    /// (the applied balance would silently diverge from the sync-diff
+    /// baseline).
+    #[test]
+    fn commit_reconciliation_pool_fallback_skips_untracked_account() {
+        use dash_sdk::query_types::AddressInfo;
+
+        let known = p2pkh(0x11);
+        let mut provider = provider_with_one_funded_address(known, funds(700, 3));
+
+        // Live-pool address on an account (7) the provider has no state for.
+        let untracked = p2pkh(0x33);
+        let mut pool_indexes = BTreeMap::new();
+        pool_indexes.insert(untracked, (7u32, 0u32));
+
+        let untracked_addr = PlatformAddress::P2pkh([0x33; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            untracked_addr,
+            Some(AddressInfo {
+                address: untracked_addr,
+                nonce: 0,
+                balance: 9_999,
+            }),
+        );
+
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &pool_indexes);
+
+        assert_eq!(
+            outcome.resolved, 0,
+            "an untracked account's pool address must stay unresolved"
+        );
+        assert!(outcome.entries.is_empty());
+    }
+
+    /// An address missing from the provider bijection (derived since the
+    /// last sync, e.g. a fresh change address) resolves through the
+    /// live-pool fallback, and the pair is merged into the bijection so
+    /// `current_balances` can yield its committed funds.
+    #[test]
+    fn commit_reconciliation_pool_fallback_extends_bijection() {
+        use dash_sdk::query_types::AddressInfo;
+
+        let known = p2pkh(0x11);
+        let mut provider = provider_with_one_funded_address(known, funds(700, 3));
+
+        // Fresh change address: NOT in the bijection, only in the live pool.
+        let fresh = p2pkh(0x22);
+        let mut pool_indexes = BTreeMap::new();
+        pool_indexes.insert(fresh, (ACCOUNT, 9u32));
+
+        let fresh_addr = PlatformAddress::P2pkh([0x22; 20]);
+        let mut address_infos = AddressInfos::new();
+        address_infos.insert(
+            fresh_addr,
+            Some(AddressInfo {
+                address: fresh_addr,
+                nonce: 0,
+                balance: 1_234,
+            }),
+        );
+
+        let outcome = provider.commit_reconciliation(&WALLET, &address_infos, &pool_indexes);
+
+        assert_eq!(outcome.entries.len(), 1);
+        assert_eq!(
+            outcome.entries[0].address_index, 9,
+            "index resolved from the live-pool fallback"
+        );
+        // The bijection gained the pair, so the committed funds are part
+        // of the next sync's seed.
+        let seed: Vec<_> = provider.current_balances().collect();
+        let fresh_row = seed
+            .iter()
+            .find(|(_, a, _)| *a == fresh)
+            .expect("fresh address must appear in the found seed");
+        assert_eq!(fresh_row.0, (WALLET, ACCOUNT, 9));
+        assert_eq!(fresh_row.2, funds(1_234, 0));
+    }
+
+    /// `reset_sync_state` must zero the incremental watermark AND drop
+    /// the cached `found` seed, so the next pass is a full rescan rather
+    /// than an incremental catch-up. This is the core of the platform
+    /// "Clear" fix — without the seed drop, a non-empty `found` would
+    /// re-seed the balances the next incremental round, and a non-zero
+    /// `sync_timestamp` would keep the SDK out of full-scan mode.
+    #[tokio::test]
+    async fn reset_sync_state_clears_watermark_and_seed() {
+        let addr = p2pkh(1);
+        let mut provider = provider_with_one_funded_address(addr, funds(294_627_247_940, 5));
+
+        // Simulate a wallet mid-incremental-sync: non-zero watermark and
+        // a populated balance seed.
+        provider.set_stored_sync_state(10, 20, 30);
+        assert_eq!(provider.last_sync_height(), 10);
+        assert_eq!(provider.last_sync_timestamp(), Some(20));
+        assert_eq!(provider.last_known_recent_block(), 30);
+        assert_eq!(provider.current_balances().count(), 1);
+
+        provider.reset_sync_state();
+
+        // Watermark fully zeroed → SDK drops back to full-scan mode
+        // (`last_sync_timestamp() == None` is the full-scan trigger).
+        assert_eq!(provider.last_sync_height(), 0);
+        assert_eq!(provider.last_sync_timestamp(), None);
+        assert_eq!(provider.last_known_recent_block(), 0);
+        // Seed emptied → nothing re-seeds the next incremental pass.
+        assert_eq!(
+            provider.current_balances().count(),
+            0,
+            "reset must drop the cached `found` seed"
         );
     }
 }

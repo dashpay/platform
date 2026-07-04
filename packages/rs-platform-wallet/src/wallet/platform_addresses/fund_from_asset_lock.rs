@@ -25,7 +25,6 @@
 //!    tracked outpoint so the row is marked `Consumed` (terminal)
 //!    and dropped from the in-memory tracked-lock map.
 
-use crate::changeset::Merge;
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
     ResolvedFunding, CL_FALLBACK_TIMEOUT,
@@ -273,39 +272,26 @@ impl PlatformAddressWallet {
         // or all recipients.
         validate_address_infos_complete(&addresses, &address_infos)?;
 
-        let cs = self
-            .write_address_balances_changeset(platform_account_index, &address_infos)
-            .await;
-
-        // Mirror `transfer.rs` / `sync.rs`: push the post-submit
-        // balances through the persister so any external store stays
-        // in sync with the in-memory account state we just updated.
-        // Without this, persisted rows for these recipients stay
-        // frozen at pre-top-up values until the next BLAST sync
-        // overwrites them. On the next process start before that
-        // sync, `initialize_from_persisted` would seed
+        // The shared seam applies the proof-attested balances to the
+        // managed accounts, updates the provider's sync seed, and
+        // persists — without the persist, rows for these recipients
+        // stay frozen at pre-top-up values until the next BLAST sync;
+        // on a process restart before that sync,
+        // `initialize_from_persisted` would seed
         // `account.address_credit_balance` from the stale rows while
-        // the asset-lock record is already `Consumed` — leaving
+        // the asset-lock record is already `Consumed`, leaving
         // `auto_select_inputs` to under-budget and produce
         // protocol-level rejections until a sync repairs them.
         //
-        // The persist MUST happen before `consume_asset_lock` so
-        // we never have a Consumed lock paired with a stale balance
-        // row on disk.
-        //
-        // Log-on-error rather than propagate: Platform already
-        // accepted the transition, and a persistence hiccup shouldn't
-        // mask that. A subsequent sync reconciles.
-        if !cs.is_empty() {
-            if let Err(e) = self.persister.store(cs.clone().into()) {
-                tracing::error!(
-                    error = %e,
-                    "Failed to persist fund-from-asset-lock changeset; \
-                     in-memory balances are updated but durable rows are stale \
-                     until the next BLAST sync"
-                );
-            }
-        }
+        // The seam persists before returning, and the persist MUST
+        // happen before `consume_asset_lock` so we never have a
+        // Consumed lock paired with a stale balance row on disk.
+        // Persistence errors are logged inside the seam rather than
+        // propagated: Platform already accepted the transition, and a
+        // persistence hiccup shouldn't mask that.
+        let cs = self
+            .reconcile_address_infos(&address_infos, "fund from asset lock")
+            .await;
 
         if let Some(out_point) = tracked_out_point {
             // Platform DID accept the top-up — propagating an Err
@@ -347,97 +333,6 @@ impl PlatformAddressWallet {
         }
 
         Ok(cs)
-    }
-
-    /// Apply proof-attested credit balances to the
-    /// `ManagedPlatformAccount` for each recipient address, emitting
-    /// a `PlatformAddressChangeSet` describing the new balances.
-    async fn write_address_balances_changeset(
-        &self,
-        platform_account_index: u32,
-        address_infos: &AddressInfos,
-    ) -> PlatformAddressChangeSet {
-        let key_source = {
-            let guard = self.provider.read().await;
-            guard
-                .as_ref()
-                .and_then(|p| p.key_source(&self.wallet_id, platform_account_index))
-        };
-
-        let mut wm = self.wallet_manager.write().await;
-        let mut cs = PlatformAddressChangeSet::default();
-        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-            if let Some(account) = info
-                .core_wallet
-                .platform_payment_managed_account_at_index_mut(platform_account_index)
-            {
-                for (addr, maybe_info) in address_infos.iter() {
-                    let PlatformAddress::P2pkh(hash) = *addr else {
-                        continue;
-                    };
-                    let p2pkh = PlatformP2PKHAddress::new(hash);
-                    // Platform's proof must carry an `AddressInfo`
-                    // for every recipient we asked to fund. A `None`
-                    // is a protocol-contract violation, not a
-                    // zero-credit funding — skip and log so a missed
-                    // recipient is visible to operators instead of
-                    // silently writing a "credited 0" row.
-                    let Some(ai) = maybe_info else {
-                        tracing::error!(
-                            address = %p2pkh,
-                            "Platform proof returned None AddressInfo for a recipient that should have been credited; skipping balance write to avoid recording 'credited 0'"
-                        );
-                        continue;
-                    };
-                    let funds = dash_sdk::platform::address_sync::AddressFunds {
-                        balance: ai.balance,
-                        nonce: ai.nonce,
-                    };
-                    // The recipient must exist in the account's
-                    // address pool — `validate_recipient_addresses`
-                    // verified that upstream. A miss here would
-                    // mean the pool was mutated between pre-flight
-                    // and now; skip and log rather than mis-attribute
-                    // credits to whichever address lives at slot 0.
-                    //
-                    // Look this up BEFORE mutating the in-memory
-                    // balance: if we mutated first and then `continue`d
-                    // on a pool miss, the changeset would be missing
-                    // this recipient's entry while the in-memory state
-                    // already carried the new balance — defeating the
-                    // persist-before-consume invariant the caller
-                    // relies on (the persisted row would stay stale
-                    // while the asset lock is consumed regardless).
-                    let Some(address_index) =
-                        account
-                            .addresses
-                            .addresses
-                            .iter()
-                            .find_map(|(&idx, ainfo)| {
-                                PlatformP2PKHAddress::from_address(&ainfo.address)
-                                    .ok()
-                                    .filter(|found| *found == p2pkh)
-                                    .map(|_| idx)
-                            })
-                    else {
-                        tracing::error!(
-                            address = %p2pkh,
-                            "Recipient address not found in account address pool; skipping balance write to avoid mis-attributing credits to slot 0"
-                        );
-                        continue;
-                    };
-                    account.set_address_credit_balance(p2pkh, funds.balance, key_source.as_ref());
-                    cs.addresses.push(crate::PlatformAddressBalanceEntry {
-                        wallet_id: self.wallet_id,
-                        account_index: platform_account_index,
-                        address_index,
-                        address: p2pkh,
-                        funds,
-                    });
-                }
-            }
-        }
-        cs
     }
 }
 

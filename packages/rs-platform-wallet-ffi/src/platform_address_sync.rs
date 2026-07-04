@@ -195,3 +195,29 @@ pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_sync_now(
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
 }
+
+/// Reset the platform-address (BLAST/DIP-17) incremental-sync watermark
+/// and drop every cached balance across all registered wallets, forcing
+/// a full rescan on the next sync. Backs the SwiftExampleApp "Clear"
+/// button.
+///
+/// `reset_platform_address_sync_state` quiesces the background sync loop
+/// before resetting so no in-flight pass can re-write the watermark. The
+/// loop is left stopped (not restarted) — the host re-arms it via
+/// `..._start`, or uses one-shot `..._sync_now`, afterward.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_platform_address_sync_reset(
+    handle: Handle,
+) -> PlatformWalletFFIResult {
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.reset_platform_address_sync_state())
+    });
+    let result = unwrap_option_or_return!(option);
+    if let Err(e) = result {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("reset_platform_address_sync_state failed: {e}"),
+        );
+    }
+    PlatformWalletFFIResult::ok()
+}
