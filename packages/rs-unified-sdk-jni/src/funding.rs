@@ -395,17 +395,20 @@ unsafe extern "C" fn seed_pool_progress_trampoline(
         };
         // SAFETY: `context` is a live GlobalRef pinned for the call duration.
         let bridge = &*(context as *const GlobalRef);
-        let call = env.call_method(
-            bridge.as_obj(),
-            "onProgress",
-            "(JJJJ)V",
-            &[
-                jni::objects::JValue::Long(batch_index as i64),
-                jni::objects::JValue::Long(batches_total_estimate as i64),
-                jni::objects::JValue::Long(pool_notes_now as i64),
-                jni::objects::JValue::Long(target as i64),
-            ],
-        );
+        let call = env.with_local_frame(8, |env| -> Result<(), jni::errors::Error> {
+            env.call_method(
+                bridge.as_obj(),
+                "onProgress",
+                "(JJJJ)V",
+                &[
+                    jni::objects::JValue::Long(batch_index as i64),
+                    jni::objects::JValue::Long(batches_total_estimate as i64),
+                    jni::objects::JValue::Long(pool_notes_now as i64),
+                    jni::objects::JValue::Long(target as i64),
+                ],
+            )?;
+            Ok(())
+        });
         if call.is_err() {
             let _ = env.exception_clear();
         }

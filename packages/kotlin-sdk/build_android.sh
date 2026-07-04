@@ -65,6 +65,10 @@ FEATURES=""
 if [[ $SHIELDED -eq 1 ]]; then
     FEATURES="shielded"
 fi
+FEATURE_ARGS=()
+if [[ -n "$FEATURES" ]]; then
+    FEATURE_ARGS+=(--features "$FEATURES")
+fi
 
 # --- Toolchain checks -------------------------------------------------------
 
@@ -148,7 +152,7 @@ done
 
 cargo ndk "${CARGO_NDK_ARGS[@]}" -o "$JNILIBS_DIR" -P "$MIN_SDK" \
     build -p "$PACKAGE" --profile "$CARGO_PROFILE" \
-    ${FEATURES:+--features "$FEATURES"} --no-default-features
+    "${FEATURE_ARGS[@]}" --no-default-features
 
 # cargo-ndk copies every built .so, including the standalone cdylibs the FFI
 # dependency crates also produce (librs_sdk_ffi.so, libplatform_wallet_ffi.so,

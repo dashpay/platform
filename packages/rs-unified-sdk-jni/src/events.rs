@@ -81,7 +81,7 @@ where
         let ctx = &*(context as *const KotlinEventCtx);
         let bridge = ctx.bridge.as_obj();
         let env: &mut JNIEnv = &mut env;
-        if f(env, bridge).is_err() {
+        if env.with_local_frame(32, |env| f(env, bridge)).is_err() {
             let _ = env.exception_clear();
         }
     }));
@@ -173,24 +173,27 @@ unsafe extern "C" fn tramp_platform_address_sync_completed(
 ) {
     with_bridge(context, |env, bridge| {
         for r in slice_or_empty(results, count) {
-            let wid = id32(env, &r.wallet_id)?;
-            let err = cstr_opt(env, r.error_message)?;
-            env.call_method(
-                bridge,
-                "onPlatformAddressSyncCompleted",
-                "([BZJJJJJJLjava/lang/String;)V",
-                &[
-                    (&wid).into(),
-                    JValue::Bool(r.success as u8),
-                    JValue::Long(r.found_count as i64),
-                    JValue::Long(r.absent_count as i64),
-                    JValue::Long(r.checkpoint_height as i64),
-                    JValue::Long(r.new_sync_height as i64),
-                    JValue::Long(r.new_sync_timestamp as i64),
-                    JValue::Long(r.last_known_recent_block as i64),
-                    (&err).into(),
-                ],
-            )?;
+            env.with_local_frame(16, |env| -> Result<(), jni::errors::Error> {
+                let wid = id32(env, &r.wallet_id)?;
+                let err = cstr_opt(env, r.error_message)?;
+                env.call_method(
+                    bridge,
+                    "onPlatformAddressSyncCompleted",
+                    "([BZJJJJJJLjava/lang/String;)V",
+                    &[
+                        (&wid).into(),
+                        JValue::Bool(r.success as u8),
+                        JValue::Long(r.found_count as i64),
+                        JValue::Long(r.absent_count as i64),
+                        JValue::Long(r.checkpoint_height as i64),
+                        JValue::Long(r.new_sync_height as i64),
+                        JValue::Long(r.new_sync_timestamp as i64),
+                        JValue::Long(r.last_known_recent_block as i64),
+                        (&err).into(),
+                    ],
+                )?;
+                Ok(())
+            })?;
         }
         env.call_method(
             bridge,
@@ -215,24 +218,27 @@ unsafe extern "C" fn tramp_shielded_sync_completed(
 ) {
     with_bridge(context, |env, bridge| {
         for r in slice_or_empty(results, count) {
-            let wid = id32(env, &r.wallet_id)?;
-            let err = cstr_opt(env, r.error_message)?;
-            env.call_method(
-                bridge,
-                "onShieldedSyncCompleted",
-                "([BZZZIJIJLjava/lang/String;)V",
-                &[
-                    (&wid).into(),
-                    JValue::Bool(r.success as u8),
-                    JValue::Bool(r.skipped as u8),
-                    JValue::Bool(r.cooldown_skip as u8),
-                    JValue::Int(r.new_notes as i32),
-                    JValue::Long(r.total_scanned as i64),
-                    JValue::Int(r.newly_spent as i32),
-                    JValue::Long(r.balance as i64),
-                    (&err).into(),
-                ],
-            )?;
+            env.with_local_frame(16, |env| -> Result<(), jni::errors::Error> {
+                let wid = id32(env, &r.wallet_id)?;
+                let err = cstr_opt(env, r.error_message)?;
+                env.call_method(
+                    bridge,
+                    "onShieldedSyncCompleted",
+                    "([BZZZIJIJLjava/lang/String;)V",
+                    &[
+                        (&wid).into(),
+                        JValue::Bool(r.success as u8),
+                        JValue::Bool(r.skipped as u8),
+                        JValue::Bool(r.cooldown_skip as u8),
+                        JValue::Int(r.new_notes as i32),
+                        JValue::Long(r.total_scanned as i64),
+                        JValue::Int(r.newly_spent as i32),
+                        JValue::Long(r.balance as i64),
+                        (&err).into(),
+                    ],
+                )?;
+                Ok(())
+            })?;
         }
         env.call_method(
             bridge,

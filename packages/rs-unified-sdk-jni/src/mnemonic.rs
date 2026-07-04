@@ -51,55 +51,51 @@ unsafe extern "C" fn resolve_trampoline(
             return RESULT_OTHER;
         };
 
-        let wallet_id = std::slice::from_raw_parts(wallet_id_bytes, 32);
-        let Ok(jwallet_id) = env.byte_array_from_slice(wallet_id) else {
-            let _ = env.exception_clear();
-            return RESULT_OTHER;
-        };
+        match env.with_local_frame(16, |env| -> Result<i32, jni::errors::Error> {
+            let wallet_id = std::slice::from_raw_parts(wallet_id_bytes, 32);
+            let jwallet_id = env.byte_array_from_slice(wallet_id)?;
+            let value = env
+                .call_method(
+                    ctx.bridge.as_obj(),
+                    "resolveMnemonic",
+                    "([B)Ljava/lang/String;",
+                    &[(&jwallet_id).into()],
+                )?
+                .l()?;
+            if value.is_null() {
+                return Ok(RESULT_NOT_FOUND);
+            }
 
-        let call = env.call_method(
-            ctx.bridge.as_obj(),
-            "resolveMnemonic",
-            "([B)Ljava/lang/String;",
-            &[(&jwallet_id).into()],
-        );
-        let value = match call.and_then(|v| v.l()) {
-            Ok(obj) => obj,
+            let jstr = JString::from(value);
+            let java_str = env.get_string(&jstr)?;
+            let mut bytes = java_str.to_bytes().to_vec();
+            drop(java_str);
+
+            let code = if bytes.len() + 1 > out_capacity {
+                RESULT_BUFFER_TOO_SMALL
+            } else {
+                std::ptr::copy_nonoverlapping(
+                    bytes.as_ptr(),
+                    out_mnemonic_utf8 as *mut u8,
+                    bytes.len(),
+                );
+                *(out_mnemonic_utf8.add(bytes.len())) = 0;
+                *out_len = bytes.len();
+                RESULT_OK
+            };
+
+            // Zero the intermediate Rust copy of the phrase. (The JVM String
+            // itself is garbage-collected — same residual exposure the iOS
+            // Swift String has.)
+            bytes.iter_mut().for_each(|b| *b = 0);
+            Ok(code)
+        }) {
+            Ok(code) => code,
             Err(_) => {
                 let _ = env.exception_clear();
-                return RESULT_OTHER;
+                RESULT_OTHER
             }
-        };
-        if value.is_null() {
-            return RESULT_NOT_FOUND;
         }
-
-        let jstr = JString::from(value);
-        let Ok(java_str) = env.get_string(&jstr) else {
-            let _ = env.exception_clear();
-            return RESULT_OTHER;
-        };
-        let mut bytes = java_str.to_bytes().to_vec();
-        drop(java_str);
-
-        let code = if bytes.len() + 1 > out_capacity {
-            RESULT_BUFFER_TOO_SMALL
-        } else {
-            std::ptr::copy_nonoverlapping(
-                bytes.as_ptr(),
-                out_mnemonic_utf8 as *mut u8,
-                bytes.len(),
-            );
-            *(out_mnemonic_utf8.add(bytes.len())) = 0;
-            *out_len = bytes.len();
-            RESULT_OK
-        };
-
-        // Zero the intermediate Rust copy of the phrase. (The JVM String
-        // itself is garbage-collected — same residual exposure the iOS
-        // Swift String has.)
-        bytes.iter_mut().for_each(|b| *b = 0);
-        code
     }));
     result.unwrap_or(RESULT_OTHER)
 }
