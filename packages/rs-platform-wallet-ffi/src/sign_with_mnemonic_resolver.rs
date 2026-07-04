@@ -159,6 +159,16 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
         return fail(SIGN_WITH_RESOLVER_ERR_NULL_POINTER);
     }
 
+    // `expected_key_data` and its length must agree: `(null, 0)` is the
+    // intentional opt-out of the derived-key binding; `(non-null, > 0)`
+    // requests it. A mismatched pair — a null pointer with a non-zero length,
+    // or a real pointer with length 0 — is a cross-language marshaling
+    // contract violation that would silently skip the impersonation-resistance
+    // check below and sign unbound, so fail closed instead.
+    if expected_key_data.is_null() != (expected_key_data_len == 0) {
+        return fail(SIGN_WITH_RESOLVER_ERR_NULL_POINTER);
+    }
+
     // secp256k1-only entry point: both ECDSA key types sign identically
     // (the type only describes the on-chain pubkey representation). Anything
     // else (BLS, EdDSA, script-hash) is a contract violation.
@@ -609,6 +619,71 @@ mod tests {
         assert_eq!(rc, -1);
         assert_eq!(err, SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH);
         assert_eq!(sig_len, 0, "malformed binding length must fail closed");
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// A mismatched `expected_key_data` pointer/length pair must fail closed.
+    /// `(null, 0)` opts out of the derived-key binding and `(non-null, > 0)`
+    /// requests it; a null pointer with a non-zero length, or a real pointer
+    /// with length 0, is a marshaling contract violation that would otherwise
+    /// silently skip the impersonation-resistance check and sign unbound.
+    #[test]
+    fn inconsistent_expected_key_data_pointer_length_fails_closed() {
+        let resolver = make_resolver(english_resolve);
+        let path = CString::new("m/9'/1'/5'/0'/0'/3'/2'").unwrap();
+        let wallet_id = [0u8; 32];
+        let data = b"x";
+        let key = [0x02u8; 33];
+        let mut sig_buf = [0u8; 128];
+
+        // (a) null pointer with a non-zero length.
+        let mut sig_len: usize = 0;
+        let mut err: u8 = 0;
+        let rc = unsafe {
+            dash_sdk_sign_with_mnemonic_resolver_and_path(
+                resolver,
+                wallet_id.as_ptr(),
+                path.as_ptr(),
+                data.as_ptr(),
+                data.len(),
+                0,
+                FFINetwork::Testnet,
+                std::ptr::null(),
+                33,
+                sig_buf.as_mut_ptr(),
+                sig_buf.len(),
+                &mut sig_len,
+                &mut err,
+            )
+        };
+        assert_eq!(rc, -1);
+        assert_eq!(err, SIGN_WITH_RESOLVER_ERR_NULL_POINTER);
+        assert_eq!(sig_len, 0, "null ptr + non-zero len must not sign");
+
+        // (b) real pointer with length zero.
+        let mut sig_len2: usize = 0;
+        let mut err2: u8 = 0;
+        let rc2 = unsafe {
+            dash_sdk_sign_with_mnemonic_resolver_and_path(
+                resolver,
+                wallet_id.as_ptr(),
+                path.as_ptr(),
+                data.as_ptr(),
+                data.len(),
+                0,
+                FFINetwork::Testnet,
+                key.as_ptr(),
+                0,
+                sig_buf.as_mut_ptr(),
+                sig_buf.len(),
+                &mut sig_len2,
+                &mut err2,
+            )
+        };
+        assert_eq!(rc2, -1);
+        assert_eq!(err2, SIGN_WITH_RESOLVER_ERR_NULL_POINTER);
+        assert_eq!(sig_len2, 0, "non-null ptr + zero len must not sign");
+
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
 
