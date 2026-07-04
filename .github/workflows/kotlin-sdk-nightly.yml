@@ -86,7 +86,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          emulator-options: -no-snapshot -no-window -no-audio -no-boot-anim -camera-back none
+          emulator-options: -no-snapshot -no-window -no-audio -no-boot-anim -camera-back none -dns-server 8.8.8.8,1.1.1.1
           working-directory: packages/kotlin-sdk
           # -Ptestnet=true lifts the TestnetGuard so the live-network
           # queries (identity fetch, DPNS resolve, contract fetch) run.
