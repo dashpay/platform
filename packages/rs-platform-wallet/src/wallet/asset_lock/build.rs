@@ -357,15 +357,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         if let Err(e) = self.broadcaster.broadcast(&tx).await {
             if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) {
                 let cs_untrack = self.untrack_asset_lock(&out_point).await;
+                // Release only when the Built row was actually removed. If
+                // the untrack guard fired instead — a concurrent
+                // `resume_asset_lock` advanced the row past `Built`, positive
+                // evidence the transaction reached the network after all —
+                // the inputs must stay reserved exactly like a `MaybeSent`
+                // outcome, or the still-tracked row would be resumable while
+                // its inputs are re-spendable.
+                let removed_built_row = cs_untrack.removed.contains(&out_point);
                 self.queue_asset_lock_changeset(cs_untrack);
-                crate::wallet::reservations::release_reservation_after_rejected_broadcast(
-                    &self.wallet_manager,
-                    &self.wallet_id,
-                    key_wallet::account::account_type::StandardAccountType::BIP44Account,
-                    account_index,
-                    &tx,
-                )
-                .await;
+                if removed_built_row {
+                    crate::wallet::reservations::release_reservation_after_rejected_broadcast(
+                        &self.wallet_manager,
+                        &self.wallet_id,
+                        key_wallet::account::account_type::StandardAccountType::BIP44Account,
+                        account_index,
+                        &tx,
+                    )
+                    .await;
+                }
             }
             return Err(e.into());
         }
@@ -411,7 +421,12 @@ mod tests {
     use key_wallet::account::account_type::StandardAccountType;
     use tokio::sync::Notify;
 
-    use crate::broadcaster::TransactionBroadcaster;
+    use async_trait::async_trait;
+    use dashcore::{Transaction, Txid};
+    use key_wallet_manager::WalletManager;
+    use tokio::sync::RwLock;
+
+    use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
     use crate::changeset::{
         ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
     };
@@ -421,6 +436,7 @@ mod tests {
     use crate::wallet::asset_lock::manager::AssetLockManager;
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
     use crate::wallet::persister::WalletPersister;
+    use crate::wallet::platform_wallet::PlatformWalletInfo;
     use crate::wallet::platform_wallet::WalletId;
     use crate::{AssetLockFundingType, PlatformWalletError};
 
@@ -612,6 +628,112 @@ mod tests {
             matches!(rebuild, Err(PlatformWalletError::AssetLockTransaction(_))),
             "rebuild must fail at input selection while the reservation is \
              kept, got {rebuild:?}"
+        );
+    }
+
+    /// Broadcaster that simulates the racing interleave the release gate
+    /// exists for: "during" the broadcast a concurrent `resume_asset_lock`
+    /// advances the tracked row to `Broadcast`, then the original call still
+    /// comes back `Rejected`. The advanced row is positive evidence the
+    /// transaction reached the network, so the cleanup must keep it AND keep
+    /// the funding reservation.
+    struct RejectAfterConcurrentResumeBroadcaster {
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for RejectAfterConcurrentResumeBroadcaster {
+        async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet present");
+            let lock = info
+                .tracked_asset_locks
+                .values_mut()
+                .next()
+                .expect("Built row tracked before broadcast");
+            lock.status = AssetLockStatus::Broadcast;
+            drop(wm);
+            Err(BroadcastError::Rejected {
+                reason: "simulated rejection racing a concurrent resume".to_string(),
+            })
+        }
+    }
+
+    /// If a concurrent resume advanced the row past `Built` in the rejection
+    /// window, the cleanup must keep the row (guard) AND keep the funding
+    /// reservation (release gate) — otherwise the still-tracked transaction
+    /// would be resumable while its inputs are re-spendable.
+    #[tokio::test]
+    async fn rejected_broadcast_racing_concurrent_resume_keeps_row_and_reservation() {
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+
+        let broadcaster = Arc::new(RejectAfterConcurrentResumeBroadcaster {
+            wallet_manager: Arc::clone(&wallet_manager),
+            wallet_id,
+        });
+        let persistence = Arc::new(CapturingPersistence::default());
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = Arc::new(AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            broadcaster,
+            WalletPersister::new(
+                wallet_id,
+                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        ));
+
+        let result = manager
+            .create_funded_asset_lock_proof(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::TransactionBroadcast(_))),
+            "rejection should still surface, got {result:?}"
+        );
+
+        // The concurrently-advanced row survives the cleanup…
+        {
+            let wm = wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet still present");
+            assert_eq!(info.tracked_asset_locks.len(), 1);
+            let lock = info.tracked_asset_locks.values().next().expect("row kept");
+            assert_eq!(lock.status, AssetLockStatus::Broadcast);
+        }
+        // …no persisted-row deletion was queued…
+        assert!(
+            persistence.removed_outpoints().is_empty(),
+            "advanced row must not be queued for deletion"
+        );
+
+        // …and the reservation was NOT released: a fresh build cannot
+        // reselect the single reserved UTXO.
+        let rebuild = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(rebuild, Err(PlatformWalletError::AssetLockTransaction(_))),
+            "rebuild must fail at input selection while the reservation is \
+             kept for the advanced row, got {rebuild:?}"
         );
     }
 }
