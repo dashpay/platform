@@ -74,10 +74,6 @@ impl IdentityKeyWire {
             public_key_hash: self.public_key_hash,
             wallet_id: self.wallet_id,
             derivation_indices: self.derivation_indices,
-            // The on-disk wire shape never carries key material — a row read
-            // back from storage is always watch-only at the changeset level
-            // (the materialized scalar lives only in the client keychain).
-            private_key: None,
         })
     }
 }
@@ -189,15 +185,14 @@ mod tests {
         );
     }
 
-    /// The on-disk wire shape must never carry the signing scalar. An
-    /// `IdentityKeyEntry` that holds a live scalar is transcribed
-    /// field-by-field into `IdentityKeyWire` (which has no scalar field by
-    /// construction), so a `from_entry` → `into_entry` round-trip drops the
-    /// scalar to `None`. Pins the "no key material at rest outside the
-    /// keychain" guarantee so a future "serialize the whole entry straight
-    /// to the blob" refactor can't start persisting it unnoticed.
+    /// The wire round-trip preserves the watch-only fields. `IdentityKeyEntry`
+    /// carries no signing scalar at all — the client derives it on demand from
+    /// the keychain — so the "no key material at rest outside the keychain"
+    /// guarantee is now enforced at the type level: there is no scalar field a
+    /// future "serialize the whole entry straight to the blob" refactor could
+    /// start persisting.
     #[test]
-    fn wire_round_trip_drops_signing_scalar() {
+    fn wire_round_trip_preserves_watch_only_fields() {
         let pk = IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id: 0,
             purpose: Purpose::AUTHENTICATION,
@@ -218,18 +213,12 @@ mod tests {
                 identity_index: 1,
                 key_index: 2,
             }),
-            // A live scalar on the in-memory entry.
-            private_key: Some(zeroize::Zeroizing::new([0xC7; 32])),
         };
 
         let wire = IdentityKeyWire::from_entry(&entry).expect("encode wire");
         let restored = wire.into_entry().expect("decode wire");
 
-        assert!(
-            restored.private_key.is_none(),
-            "the wire round-trip must drop the signing scalar"
-        );
-        // The breadcrumb metadata still survives the round-trip.
+        // The breadcrumb metadata survives the round-trip.
         assert_eq!(restored.wallet_id, entry.wallet_id);
         assert_eq!(restored.derivation_indices, entry.derivation_indices);
     }
