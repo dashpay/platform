@@ -229,10 +229,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpFr
 /// rows. Throws + returns None on a malformed blob. The struct is
 /// `Copy`, so the returned `Vec` fully owns its rows (no borrowed
 /// pointers escape).
-fn decode_inputs_blob(
-    env: &mut JNIEnv,
-    arr: &JByteArray,
-) -> Option<Vec<IdentityFundingInputFFI>> {
+fn decode_inputs_blob(env: &mut JNIEnv, arr: &JByteArray) -> Option<Vec<IdentityFundingInputFFI>> {
     let bytes = match env.convert_byte_array(arr) {
         Ok(b) => b,
         Err(_) => {

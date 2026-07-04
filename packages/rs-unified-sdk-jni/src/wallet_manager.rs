@@ -478,9 +478,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         // From here on, the core handle must be released on every exit path.
         let send_and_encode = |env: &mut JNIEnv| -> jbyteArray {
             // Marshal amounts (long[]) → Vec<u64>.
-            let count = match env.get_array_length(&unsafe {
-                jni::objects::JLongArray::from_raw(amounts)
-            }) {
+            let count = match env
+                .get_array_length(&unsafe { jni::objects::JLongArray::from_raw(amounts) })
+            {
                 Ok(n) if n >= 0 => n as usize,
                 _ => {
                     throw_sdk_exception(env, 1, "amounts array was null/invalid");
@@ -581,8 +581,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         let out = send_and_encode(env);
 
         // Release the transient core-wallet handle regardless of outcome.
-        let destroy_result =
-            unsafe { platform_wallet_ffi::core_wallet_destroy(core_handle) };
+        let destroy_result = unsafe { platform_wallet_ffi::core_wallet_destroy(core_handle) };
         // Only surface a destroy error if we don't already have a pending
         // exception / result to report.
         if !env.exception_check().unwrap_or(false) {
@@ -720,11 +719,19 @@ fn decode_funding_recipients(
     let mut remainder_index: Option<u16> = None;
     for i in 0..count {
         let Some(type_byte) = read(&mut cursor, 1) else {
-            throw_sdk_exception(env, 1, &format!("recipients blob truncated at row {i} type"));
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("recipients blob truncated at row {i} type"),
+            );
             return None;
         };
         let Some(hash_bytes) = read(&mut cursor, 20) else {
-            throw_sdk_exception(env, 1, &format!("recipients blob truncated at row {i} hash"));
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("recipients blob truncated at row {i} hash"),
+            );
             return None;
         };
         let Some(has_balance_byte) = read(&mut cursor, 1) else {

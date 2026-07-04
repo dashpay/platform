@@ -159,7 +159,11 @@ fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]
         }
     };
     if bytes.len() != 32 {
-        throw_sdk_exception(env, 1, &format!("{field} must be 32 bytes, got {}", bytes.len()));
+        throw_sdk_exception(
+            env,
+            1,
+            &format!("{field} must be 32 bytes, got {}", bytes.len()),
+        );
         return None;
     }
     let mut id = [0u8; 32];

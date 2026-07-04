@@ -420,8 +420,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_tokenGe
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
         let ids = require_cstr!(env, token_ids);
-        let result =
-            unsafe { dash_sdk_token_get_statuses(sdk as *const SDKHandle, ids.as_ptr()) };
+        let result = unsafe { dash_sdk_token_get_statuses(sdk as *const SDKHandle, ids.as_ptr()) };
         unsafe { unwrap_string(env, result) }
             .map(|s| s.into_raw())
             .unwrap_or(ptr::null_mut())

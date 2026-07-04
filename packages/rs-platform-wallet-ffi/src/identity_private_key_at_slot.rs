@@ -57,8 +57,8 @@ use std::ptr;
 
 use key_wallet::bip32::ExtendedPrivKey;
 use key_wallet::Wallet;
-use platform_wallet::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master;
 use platform_wallet::derive_identity_auth_keypair;
+use platform_wallet::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master;
 use zeroize::Zeroizing;
 
 use crate::error::*;
@@ -223,26 +223,20 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_private_key_at_slot(
                     }
                     None => {
                         let wm = loop_guard.insert(wallet.wallet_manager().blocking_read());
-                        let key_wallet: &Wallet =
-                            match wm.get_wallet(&wallet.wallet_id()) {
-                                Some(w) => w,
-                                None => {
-                                    return Err(PlatformWalletFFIResult::err(
-                                        PlatformWalletFFIResultCode::ErrorInvalidHandle,
-                                        "Wallet not found in wallet manager",
-                                    ));
-                                }
-                            };
-                        derive_identity_auth_keypair(
-                            key_wallet,
-                            network,
-                            identity_index,
-                            key_index,
-                        )
-                        .map(|(path, ext_priv, _public_key)| SlotMaterial {
-                            path: path.to_string(),
-                            private_key: Zeroizing::new(ext_priv.private_key.secret_bytes()),
-                        })
+                        let key_wallet: &Wallet = match wm.get_wallet(&wallet.wallet_id()) {
+                            Some(w) => w,
+                            None => {
+                                return Err(PlatformWalletFFIResult::err(
+                                    PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                                    "Wallet not found in wallet manager",
+                                ));
+                            }
+                        };
+                        derive_identity_auth_keypair(key_wallet, network, identity_index, key_index)
+                            .map(|(path, ext_priv, _public_key)| SlotMaterial {
+                                path: path.to_string(),
+                                private_key: Zeroizing::new(ext_priv.private_key.secret_bytes()),
+                            })
                     }
                 };
                 material.map_err(PlatformWalletFFIResult::from)
