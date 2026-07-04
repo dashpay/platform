@@ -1,34 +1,20 @@
-//! Object-safe seam over the SDK's DashPay write/broadcast surface.
+//! Concrete helper over the SDK's DashPay write/broadcast surface.
 //!
-//! The fetch half of the DashPay network layer is already testable
-//! through the dash-sdk built-in mock (`SdkBuilder::new_mock` +
-//! `expect_fetch`/`expect_fetch_many`, as the `identity_sync.rs` tests
-//! demonstrate). The *write* half is not: the two operations
-//! `IdentityWallet` performs over the SDK —
+//! The two operations `IdentityWallet` performs over the SDK —
 //! [`Sdk::send_contact_request`](dash_sdk::Sdk::send_contact_request)
-//! and a document put — cannot be reached through the mock and cannot
-//! be wrapped behind a `dyn` trait *as the SDK exposes them*.
-//! `send_contact_request` is generic over **seven** type parameters
-//! (the signer plus three ECDH/xpub closure pairs), so it is not
-//! object-safe; the document put rides on the signer-generic
+//! and a document put — cannot be expressed as plain method calls at
+//! the call sites: `send_contact_request` is generic over **seven**
+//! type parameters (the signer plus three ECDH/xpub closure pairs) and
+//! the document put rides on the signer-generic
 //! [`PutDocument`](dash_sdk::platform::transition::put_document::PutDocument)
-//! trait.
+//! trait. [`SdkWriter`] erases those generics behind two concrete
+//! methods that take by-value, already-derived inputs plus a borrowed
+//! `&dyn Signer<IdentityPublicKey>`.
 //!
-//! This module defines ONE object-safe trait,
-//! [`DashPaySdkWriter`], exposing exactly those two concrete
-//! operations. `IdentityWallet` keeps doing all of the derivation
-//! (key-index resolution, ECDH-key derivation, xpub derivation,
-//! avatar hashing, document construction); the seam receives the
-//! already-derived primitives plus a borrowed `&dyn
-//! Signer<IdentityPublicKey>` and performs the final SDK call.
-//! Production wallets hold the default [`SdkWriter`] (an `Arc<Sdk>`
-//! wrapper); tests substitute a recording / stubbing implementation
-//! to assert the broadcast inputs without a live network.
-//!
-//! Keeping the trait to two methods is deliberate: this is a test
-//! seam, not a refactor. Everything the SDK call needs that
-//! `IdentityWallet` can compute up front travels in by value so the
-//! trait stays `dyn`-compatible.
+//! `IdentityWallet` keeps doing all of the derivation (key-index
+//! resolution, ECDH-key derivation, xpub derivation, avatar hashing,
+//! document construction); this helper receives the already-derived
+//! primitives and performs the final SDK call.
 
 use std::sync::Arc;
 
@@ -48,8 +34,8 @@ use crate::error::PlatformWalletError;
 // Borrowed-signer adapter — same pattern used by `contact_requests.rs`
 // / `profile.rs`. Lets a `&dyn Signer<IdentityPublicKey>` satisfy the
 // owned, `Sized` `S: Signer<IdentityPublicKey>` bound the SDK input
-// types require, so the trait method below can stay object-safe while
-// still threading the host's signer to the SDK.
+// types require, so the helper methods below can take a borrowed signer
+// while still threading the host's signer to the SDK.
 struct SignerRef<'a, S: ?Sized>(&'a S);
 
 impl<'a, S: ?Sized> std::fmt::Debug for SignerRef<'a, S> {
@@ -87,21 +73,21 @@ where
 
 /// Pre-derived inputs for a single contact-request broadcast.
 ///
-/// Every field is resolved by `IdentityWallet` before the seam is
+/// Every field is resolved by `IdentityWallet` before the helper is
 /// called: key indices come from the sender / recipient identities,
 /// `shared_secret` is the ECDH secret already derived against the
 /// recipient's encryption key, `xpub_bytes` is the DashPay
 /// receiving-account xpub to share, and `signing_public_key` is the
 /// HIGH/CRITICAL authentication key the document state transition is
-/// signed with. The seam only assembles the SDK `EcdhProvider` + xpub
+/// signed with. The helper only assembles the SDK `EcdhProvider` + xpub
 /// closure and dispatches.
 ///
-/// The ECDH is performed by the caller (client-side), so the seam hands
+/// The ECDH is performed by the caller (client-side), so the helper hands
 /// the SDK the finished shared secret via [`EcdhProvider::ClientSide`] —
 /// no private key crosses into the SDK. Carrying the precomputed secret
-/// (rather than a derivation closure) keeps the params object-safe and
-/// lets the caller source it from either the resident seed or the
-/// Keychain signer without the seam knowing which.
+/// (rather than a derivation closure) lets the caller source it from
+/// either the resident seed or the Keychain signer without the helper
+/// knowing which.
 pub(crate) struct SendContactRequestParams<'a> {
     /// Sender (owner) identity — already loaded from local state.
     pub sender_identity: Identity,
@@ -119,11 +105,12 @@ pub(crate) struct SendContactRequestParams<'a> {
     pub auto_accept_proof: Option<Vec<u8>>,
     /// ECDH shared secret, already derived by the caller against the
     /// recipient's encryption key (client-side ECDH). The SDK encrypts
-    /// the shared xpub with this directly; no private key crosses the
-    /// seam.
-    pub shared_secret: [u8; 32],
+    /// the shared xpub with this directly; no private key crosses into
+    /// the helper. Held in [`zeroize::Zeroizing`] so it is scrubbed on
+    /// drop — it is only dereferenced when handed to the SDK's `ClientSide` closure.
+    pub shared_secret: zeroize::Zeroizing<[u8; 32]>,
     /// The recipient encryption public key the `shared_secret` was
-    /// derived against. The seam's `ClientSide` closure asserts the SDK
+    /// derived against. The helper's `ClientSide` closure asserts the SDK
     /// asks for ECDH against this exact key before handing back the
     /// secret — the client-side equivalent of the old SdkSide key-id
     /// guard, so a recipient-key mismatch fails loudly instead of
@@ -143,7 +130,7 @@ pub(crate) struct SendContactRequestParams<'a> {
 /// Pre-built inputs for a single DashPay document put.
 ///
 /// `IdentityWallet` builds the [`Document`] (profile create/update) and
-/// resolves the signing key + document type; the seam performs the
+/// resolves the signing key + document type; the helper performs the
 /// `put_to_platform_and_wait_for_response` broadcast.
 pub(crate) struct PutDocumentParams<'a> {
     /// Fully-built document to broadcast.
@@ -156,51 +143,24 @@ pub(crate) struct PutDocumentParams<'a> {
     pub signer: &'a (dyn Signer<IdentityPublicKey> + Send + Sync),
 }
 
-/// Object-safe seam over the SDK's DashPay write operations.
+/// Concrete DashPay write helper backed by a live [`Sdk`](dash_sdk::Sdk).
 ///
 /// Held as a field on [`IdentityWallet`](super::IdentityWallet),
-/// defaulting to the [`SdkWriter`] `Arc<Sdk>` wrapper so public
-/// construction paths and the FFI are untouched. Tests inject a
-/// stub/recording implementation.
+/// forwarding to the real SDK. Its two methods erase the SDK's
+/// generic write signatures (`send_contact_request`'s seven type
+/// params, the signer-generic `PutDocument`) behind concrete, by-value
+/// inputs so the call sites in `contact_requests.rs` / `profile.rs` /
+/// `contact_info.rs` stay simple.
 ///
-/// The returned futures are `Send` (the default `#[async_trait]`
-/// boxing): the write paths this seam serves
-/// (`send_contact_request_with_external_signer`, profile create/update)
-/// are driven through the FFI's `block_on_worker`, which requires
-/// `Future: Send`. (The DashPay *read*/sync path, which is `!Send` and
-/// runs on a dedicated thread, does not go through this seam.)
-#[async_trait]
-pub(crate) trait DashPaySdkWriter: std::fmt::Debug + Send + Sync {
-    /// Build the ECDH provider + xpub closure from the pre-derived
-    /// inputs and broadcast the contact-request document.
-    async fn send_contact_request(
-        &self,
-        params: SendContactRequestParams<'_>,
-    ) -> Result<SendContactRequestResult, PlatformWalletError>;
-
-    /// Broadcast a pre-built DashPay document and wait for the
-    /// confirmation proof.
-    async fn put_document(
-        &self,
-        params: PutDocumentParams<'_>,
-    ) -> Result<Document, PlatformWalletError>;
-}
-
-/// Default [`DashPaySdkWriter`] backed by a live [`Sdk`](dash_sdk::Sdk).
-///
-/// This is the production implementation; it simply forwards to the
-/// real SDK. Holding it behind the trait is what lets the network-layer
-/// tests substitute a mock writer.
+/// The methods' returned futures are `Send`: the write paths this
+/// helper serves (`send_contact_request_with_external_signer`, profile
+/// create/update) are driven through the FFI's `block_on_worker`, which
+/// requires `Future: Send`. (The DashPay *read*/sync path, which is
+/// `!Send` and runs on a dedicated thread, does not go through this
+/// helper.)
 #[derive(Clone)]
 pub(crate) struct SdkWriter {
     sdk: Arc<dash_sdk::Sdk>,
-}
-
-impl SdkWriter {
-    /// Wrap an SDK handle as the default writer.
-    pub(crate) fn new(sdk: Arc<dash_sdk::Sdk>) -> Self {
-        Self { sdk }
-    }
 }
 
 impl std::fmt::Debug for SdkWriter {
@@ -209,9 +169,15 @@ impl std::fmt::Debug for SdkWriter {
     }
 }
 
-#[async_trait]
-impl DashPaySdkWriter for SdkWriter {
-    async fn send_contact_request(
+impl SdkWriter {
+    /// Wrap an SDK handle.
+    pub(crate) fn new(sdk: Arc<dash_sdk::Sdk>) -> Self {
+        Self { sdk }
+    }
+
+    /// Build the ECDH provider + xpub closure from the pre-derived
+    /// inputs and broadcast the contact-request document.
+    pub(crate) async fn send_contact_request(
         &self,
         params: SendContactRequestParams<'_>,
     ) -> Result<SendContactRequestResult, PlatformWalletError> {
@@ -273,7 +239,7 @@ impl DashPaySdkWriter for SdkWriter {
                                 .to_string(),
                         ));
                     }
-                    Ok(shared_secret)
+                    Ok(*shared_secret)
                 }
             },
         };
@@ -287,7 +253,9 @@ impl DashPaySdkWriter for SdkWriter {
             .map_err(PlatformWalletError::Sdk)
     }
 
-    async fn put_document(
+    /// Broadcast a pre-built DashPay document and wait for the
+    /// confirmation proof.
+    pub(crate) async fn put_document(
         &self,
         params: PutDocumentParams<'_>,
     ) -> Result<Document, PlatformWalletError> {

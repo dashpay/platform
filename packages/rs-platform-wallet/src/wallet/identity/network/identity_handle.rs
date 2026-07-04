@@ -315,15 +315,13 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// `SpvBroadcaster`-pinned, while this one picks the broadcaster
     /// used by `send_payment` (static dispatch per call).
     pub(crate) broadcaster: Arc<B>,
-    /// Object-safe seam over the SDK's DashPay write operations
-    /// (contact-request broadcast, document put). Defaults to an
-    /// [`SdkWriter`](super::sdk_writer::SdkWriter) wrapping `sdk` so
-    /// public construction and the FFI are untouched; the network-layer
-    /// tests inject a recording/stub writer here. The write half of the
-    /// DashPay network layer can't ride the dash-sdk mock the way the
-    /// fetch half does (`Sdk::send_contact_request` is generic over
-    /// seven type params), so this trait object is the test seam for it.
-    pub(crate) sdk_writer: Arc<dyn super::sdk_writer::DashPaySdkWriter>,
+    /// Concrete helper over the SDK's DashPay write operations
+    /// (contact-request broadcast, document put), wrapping `sdk`. It
+    /// erases the SDK's generic write signatures (`send_contact_request`
+    /// is generic over seven type params; the document put rides the
+    /// signer-generic `PutDocument` trait) behind two by-value methods
+    /// so the call sites stay simple.
+    pub(crate) sdk_writer: Arc<super::sdk_writer::SdkWriter>,
 }
 
 // Manual `Debug`: the derive would require `B: Debug`, which is not part

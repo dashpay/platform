@@ -25,7 +25,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Fetch DashPay profile documents from Platform for all managed
     /// identities and cache them on [`ManagedIdentity`].
     ///
-    /// Returns the number of profiles that were successfully synced.
+    /// Fetches in `In`-chunks (one query per ≤`CONTACT_PROFILE_IN_CAP` ids, not
+    /// N+1) with per-chunk failure isolation, and persists only when the
+    /// fetched profile differs from the cached one — a `None` result clears the
+    /// cache only when a profile is currently stored (both arms guarded so a
+    /// no-change sweep writes nothing). Returns the number of identities whose
+    /// cached profile changed.
     pub async fn sync_profiles(&self) -> Result<u32, PlatformWalletError> {
         // 1. Collect all managed identity IDs under a short read lock.
         let identity_ids: Vec<Identifier> = {
@@ -48,95 +53,49 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         //    per-call re-parse, no network round-trip).
         let dashpay_contract = super::dashpay_contract()?;
 
-        let mut profiles_synced = 0u32;
-
-        // 3. For each identity fetch the profile document, then cache it.
-        for identity_id in &identity_ids {
+        // 3. Fetch (no guard held) in `In`-chunks. A chunk failure logs and
+        //    continues so the other chunks still land; an id present in the
+        //    chunk but absent from the result is confirmed-absent (`None`).
+        let mut fetched: std::collections::BTreeMap<Identifier, Option<DashPayProfile>> =
+            std::collections::BTreeMap::new();
+        for chunk in identity_ids.chunks(CONTACT_PROFILE_IN_CAP) {
             match self
-                .fetch_profile_document(&dashpay_contract, identity_id)
+                .fetch_contact_profiles_chunk(&dashpay_contract, chunk)
                 .await
             {
-                Ok(Some(profile)) => {
-                    let mut wm = self.wallet_manager.write().await;
-                    if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-                        if let Some(managed) =
-                            info.identity_manager.managed_identity_mut(identity_id)
-                        {
-                            managed.set_dashpay_profile(Some(profile), &self.persister);
-                            profiles_synced += 1;
-                        }
-                    }
-                }
-                Ok(None) => {
-                    // No profile on Platform — clear local cache only when one
-                    // is currently stored, to avoid needless writes.
-                    let mut wm = self.wallet_manager.write().await;
-                    if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-                        if let Some(managed) =
-                            info.identity_manager.managed_identity_mut(identity_id)
-                        {
-                            if managed.dashpay_profile.is_some() {
-                                managed.set_dashpay_profile(None, &self.persister);
-                            }
-                        }
+                Ok(found) => {
+                    for id in chunk {
+                        fetched.insert(*id, found.get(id).cloned().flatten());
                     }
                 }
                 Err(e) => {
                     tracing::warn!(
-                        identity = %identity_id,
                         error = %e,
-                        "Failed to fetch DashPay profile"
+                        "Failed to fetch an own-profile chunk; will retry next sweep"
                     );
                 }
             }
         }
 
-        Ok(profiles_synced)
-    }
-
-    /// Fetch a single `profile` document from the DashPay contract for
-    /// `identity_id` and convert it into a [`DashPayProfile`].
-    ///
-    /// Returns `Ok(None)` when no profile document exists on Platform.
-    async fn fetch_profile_document(
-        &self,
-        dashpay_contract: &Arc<dpp::data_contract::DataContract>,
-        identity_id: &Identifier,
-    ) -> Result<Option<crate::wallet::identity::DashPayProfile>, PlatformWalletError> {
-        use dash_sdk::drive::query::WhereClause;
-        use dash_sdk::drive::query::WhereOperator;
-        use dash_sdk::platform::FetchMany;
-        use dpp::document::Document;
-        use dpp::platform_value::platform_value;
-
-        // Build query: profile documents WHERE $ownerId = identity_id.
-        let query = dash_sdk::platform::DocumentQuery {
-            select: dash_sdk::drive::query::SelectProjection::documents(),
-            data_contract: Arc::clone(dashpay_contract),
-            document_type_name: "profile".to_string(),
-            where_clauses: vec![WhereClause {
-                field: "$ownerId".to_string(),
-                operator: WhereOperator::Equal,
-                value: platform_value!(identity_id),
-            }],
-            group_by: vec![],
-            having: vec![],
-            order_by_clauses: vec![],
-            limit: 1,
-            start: None,
+        // 4. Under the write guard: persist-on-change only (mirror the
+        //    None-arm's is_some guard for both directions).
+        let mut changed = 0u32;
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return Ok(0);
         };
+        for (identity_id, profile) in fetched {
+            let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) else {
+                continue;
+            };
+            if managed.dashpay_profile == profile {
+                continue;
+            }
+            managed.set_dashpay_profile(profile, &self.persister);
+            changed += 1;
+        }
 
-        let docs = Document::fetch_many(&self.sdk, query)
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
-
-        // Take the first result (profile is unique per $ownerId).
-        let doc = match docs.into_values().next() {
-            Some(Some(d)) => d,
-            _ => return Ok(None),
-        };
-
-        Ok(Some(profile_from_properties(doc.properties())))
+        Ok(changed)
     }
 }
 
@@ -319,26 +278,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         // 2. Fetch existing profile document for ID + revision + its
         //    current property map (seed for the read-modify-write merge).
         let (existing_doc_id, current_revision, existing_properties) = {
-            use dash_sdk::drive::query::WhereClause;
-            use dash_sdk::drive::query::WhereOperator;
             use dash_sdk::platform::FetchMany;
-            use dpp::platform_value::platform_value;
 
-            let query = dash_sdk::platform::DocumentQuery {
-                select: dash_sdk::drive::query::SelectProjection::documents(),
-                data_contract: Arc::clone(&dashpay_contract),
-                document_type_name: "profile".to_string(),
-                where_clauses: vec![WhereClause {
-                    field: "$ownerId".to_string(),
-                    operator: WhereOperator::Equal,
-                    value: platform_value!(identity_id),
-                }],
-                group_by: vec![],
-                having: vec![],
-                order_by_clauses: vec![],
-                limit: 1,
-                start: None,
-            };
+            let query = single_profile_query(&dashpay_contract, identity_id);
 
             let docs = Document::fetch_many(&self.sdk, query)
                 .await
@@ -552,15 +494,6 @@ const CONTACT_PROFILE_IN_CAP: usize = 100;
 /// incremental query.
 const CONTACT_PROFILE_REFRESH_MS: u64 = 60 * 60_000;
 
-/// Current UNIX time in ms. Used only to rate-limit re-fetches (gates cost,
-/// never correctness), so a clock anomaly is harmless.
-fn unix_now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
-}
-
 /// An `avatarUrl` is cached only if it is a bounded `https://` URL. An
 /// attacker-controlled `http:` / `file:` / `javascript:` / oversized URL is
 /// dropped before it can reach the persistent cache and the UI's image loader
@@ -616,7 +549,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// `dashpay_profile` is authoritative). Display-only: a failure never
     /// aborts the sweep. Returns the number of cache entries changed.
     pub async fn sync_contact_profiles(&self) -> Result<u32, PlatformWalletError> {
-        let now_ms = unix_now_ms();
+        let now_ms = crate::util::now_ms();
         let dashpay_contract = super::dashpay_contract()?;
 
         // 1. Under a read guard: per owner, the contact ids worth fetching
@@ -776,6 +709,34 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             out.insert(owner, entry);
         }
         Ok(out)
+    }
+}
+
+/// Build the single-owner `profile` fetch query WHERE `$ownerId = identity_id`
+/// (`limit 1` — profile is unique per owner). Used by the external-signer
+/// update's read-modify-write seed to fetch the current document's
+/// id/revision/properties.
+fn single_profile_query(
+    dashpay_contract: &Arc<dpp::data_contract::DataContract>,
+    identity_id: &Identifier,
+) -> dash_sdk::platform::DocumentQuery {
+    use dash_sdk::drive::query::{WhereClause, WhereOperator};
+    use dpp::platform_value::platform_value;
+
+    dash_sdk::platform::DocumentQuery {
+        select: dash_sdk::drive::query::SelectProjection::documents(),
+        data_contract: Arc::clone(dashpay_contract),
+        document_type_name: "profile".to_string(),
+        where_clauses: vec![WhereClause {
+            field: "$ownerId".to_string(),
+            operator: WhereOperator::Equal,
+            value: platform_value!(identity_id),
+        }],
+        group_by: vec![],
+        having: vec![],
+        order_by_clauses: vec![],
+        limit: 1,
+        start: None,
     }
 }
 

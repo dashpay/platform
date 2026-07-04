@@ -64,6 +64,29 @@ pub struct EstablishedContact {
     /// stale against new key material.
     #[cfg_attr(feature = "serde", serde(default))]
     pub contact_account_label: Option<String>,
+
+    /// The `incoming_request.account_reference` the currently-registered
+    /// `DashpayExternalAccount` (our outbound sending account for this
+    /// contact) was built from, or `None` when no external account is known
+    /// to be built for the current reference.
+    ///
+    /// Load-bearing for **rotation self-heal across restart**. When the
+    /// contact rotates their receiving xpub the sweep tears down the stale
+    /// external account and re-registers from the new xpub — but if the
+    /// rebuild is deferred (no signer) and the app restarts before it drains,
+    /// the persisted account-registration row (an upsert with no tombstone)
+    /// rebuilds the STALE xpub while `incoming_request` carries the new
+    /// reference. The account-build sweep would then skip the contact (the
+    /// account exists) forever, sending to addresses the contact no longer
+    /// watches. Comparing this marker against `incoming_request.account_reference`
+    /// lets the sweep detect a stale account and tear it down + rebuild.
+    ///
+    /// Reset to `None` on (re-)establish and on rotation (the account must be
+    /// rebuilt from the new key material). A cold restart that does not
+    /// restore this field leaves it `None`, which conservatively forces one
+    /// rebuild on the next sweep — self-healing either way.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub external_account_reference: Option<u32>,
 }
 
 impl EstablishedContact {
@@ -83,6 +106,7 @@ impl EstablishedContact {
             accepted_accounts: Vec::new(),
             payment_channel_broken: false,
             contact_account_label: None,
+            external_account_reference: None,
         }
     }
 
@@ -122,6 +146,10 @@ impl EstablishedContact {
             // request, not user metadata — drop it so it is re-derived
             // from the fresh request rather than carried over stale.
             contact_account_label: None,
+            // The external account must be rebuilt from the (possibly new)
+            // incoming request, so the marker resets — the sweep re-registers
+            // and re-stamps it.
+            external_account_reference: None,
         }
     }
 

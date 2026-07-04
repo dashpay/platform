@@ -17,3 +17,4 @@ pub use dip14::{
     calculate_account_reference, derive_contact_payment_address, derive_contact_payment_addresses,
     derive_contact_xpub, unmask_account_reference, ContactXpubData, DEFAULT_CONTACT_GAP_LIMIT,
 };
+pub use validation::pubkey_binds_expected_key_data;

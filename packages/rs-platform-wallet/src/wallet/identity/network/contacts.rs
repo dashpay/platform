@@ -391,7 +391,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         our_identity_id: &Identifier,
         contact_identity: &Identity,
         contact_encrypted_xpub: &[u8],
-        shared_key: [u8; 32],
+        shared_key: zeroize::Zeroizing<[u8; 32]>,
     ) -> Result<(), RegisterExternalError> {
         use RegisterExternalError::{Permanent, Transient};
         let account_index: u32 = 0;

@@ -60,36 +60,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             }
         }
 
-        let mut recorded = 0usize;
-        for ((owner, contact, txid), amount_duffs) in totals {
-            let Some(managed) = info.identity_manager.managed_identity_mut(&owner) else {
-                continue;
-            };
-            if managed.dashpay_payments.contains_key(&txid) {
-                continue;
-            }
-            tracing::info!(
-                owner = %owner,
-                contact = %contact,
-                %txid,
-                amount_duffs,
-                "Recording reconciled incoming DashPay payment"
-            );
-            // Self-healing path: a failed persist is re-derived from UTXOs
-            // on the next reconcile sweep, so log and continue.
-            if let Err(e) = managed.record_dashpay_payment(
-                txid,
-                crate::wallet::identity::types::dashpay::payment::PaymentEntry::new_received(
-                    contact,
-                    amount_duffs,
-                    None,
-                ),
-                &self.persister,
-            ) {
-                tracing::warn!(error = %e, "Failed to persist reconciled payment; will retry next sweep");
-            }
-            recorded += 1;
-        }
+        let recorded = record_received_payment_totals(
+            info,
+            &self.persister,
+            totals
+                .into_iter()
+                .map(|((owner, contact, txid), amount_duffs)| (owner, contact, txid, amount_duffs)),
+            "reconcile",
+        );
         Ok(recorded)
     }
 
@@ -355,7 +333,36 @@ pub(crate) async fn record_incoming_dashpay_payments(
         }
     }
 
-    for ((owner, contact), amount_duffs) in totals {
+    record_received_payment_totals(
+        info,
+        persister,
+        totals
+            .into_iter()
+            .map(|((owner, contact), amount_duffs)| (owner, contact, txid.clone(), amount_duffs)),
+        "live",
+    );
+}
+
+/// Record a `Received` [`PaymentEntry`] for each `(owner, contact, txid,
+/// amount_duffs)` total, applying the shared txid-dedup guard so an existing
+/// entry for a txid (including the owner's own `Sent` record when both
+/// identities live in one wallet) is never overwritten.
+///
+/// Shared by the live-detection path ([`record_incoming_dashpay_payments`],
+/// per-tx totals) and the reconcile sweep
+/// ([`IdentityWallet::reconcile_incoming_payments`], per-account totals), so
+/// the dedup guard and `PaymentEntry` construction cannot drift between them.
+/// A failed persist is logged and skipped — the reconcile sweep re-derives it
+/// from UTXOs next pass. `context` labels the log line for the calling path.
+/// Returns the number of newly recorded entries.
+fn record_received_payment_totals(
+    info: &mut PlatformWalletInfo,
+    persister: &crate::wallet::persister::WalletPersister,
+    totals: impl IntoIterator<Item = (Identifier, Identifier, String, u64)>,
+    context: &'static str,
+) -> usize {
+    let mut recorded = 0usize;
+    for (owner, contact, txid, amount_duffs) in totals {
         let Some(managed) = info.identity_manager.managed_identity_mut(&owner) else {
             continue;
         };
@@ -367,12 +374,13 @@ pub(crate) async fn record_incoming_dashpay_payments(
             contact = %contact,
             %txid,
             amount_duffs,
+            context,
             "Recording incoming DashPay payment"
         );
-        // Self-healing: a failed persist of a live-detected Received entry
-        // is re-derived from UTXOs by the next reconcile sweep.
+        // Self-healing path: a failed persist is re-derived from UTXOs
+        // on the next reconcile sweep, so log and continue.
         if let Err(e) = managed.record_dashpay_payment(
-            txid.clone(),
+            txid,
             crate::wallet::identity::types::dashpay::payment::PaymentEntry::new_received(
                 contact,
                 amount_duffs,
@@ -380,9 +388,11 @@ pub(crate) async fn record_incoming_dashpay_payments(
             ),
             persister,
         ) {
-            tracing::warn!(error = %e, "Failed to persist live incoming payment; will retry next sweep");
+            tracing::warn!(error = %e, context, "Failed to persist incoming payment; will retry next sweep");
         }
+        recorded += 1;
     }
+    recorded
 }
 
 /// Advance a sender's `Sent` [`PaymentEntry`] from `Pending` to
@@ -1313,6 +1323,70 @@ mod tests {
             Some(&preexisting),
             "reconcile must not overwrite the pre-existing entry"
         );
+    }
+
+    /// The shared totals-consume helper both incoming paths route through
+    /// (`record_incoming_dashpay_payments` live + `reconcile_incoming_payments`
+    /// sweep) must apply the txid-dedup guard and construct `Received` entries:
+    /// a total for a txid that already has an entry is skipped (never
+    /// clobbered), a total for a fresh txid is recorded, and the returned count
+    /// is exactly the number newly recorded.
+    #[tokio::test]
+    async fn record_received_payment_totals_dedups_by_txid() {
+        use crate::wallet::identity::types::dashpay::payment::{PaymentDirection, PaymentEntry};
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let wp = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+
+        let existing_txid = "aa".repeat(32);
+        let fresh_txid = "bb".repeat(32);
+
+        let mut wm = iw.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+        info.identity_manager
+            .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &wp)
+            .expect("add managed identity");
+
+        // Pre-record a Sent entry under existing_txid (the both-identities-in-
+        // one-wallet case that must survive an incoming total for the same tx).
+        let preexisting = PaymentEntry::new_sent(contact, 123, None);
+        info.identity_manager
+            .managed_identity_mut(&owner)
+            .expect("managed identity")
+            .record_dashpay_payment(existing_txid.clone(), preexisting.clone(), &wp)
+            .expect("record preexisting");
+
+        let recorded = super::record_received_payment_totals(
+            info,
+            &wp,
+            vec![
+                (owner, contact, existing_txid.clone(), 500_000),
+                (owner, contact, fresh_txid.clone(), 700_000),
+            ],
+            "test",
+        );
+        assert_eq!(recorded, 1, "only the fresh txid should be newly recorded");
+
+        let managed = info
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("managed identity");
+        assert_eq!(
+            managed.dashpay_payments.get(&existing_txid),
+            Some(&preexisting),
+            "the existing txid entry must be left untouched (no clobber)"
+        );
+        let fresh = managed
+            .dashpay_payments
+            .get(&fresh_txid)
+            .expect("fresh entry recorded");
+        assert_eq!(fresh.direction, PaymentDirection::Received);
+        assert_eq!(fresh.amount_duffs, 700_000);
     }
 
     /// Persister that succeeds until `armed`, then fails every store —
@@ -2391,9 +2465,14 @@ mod tests {
         // Bare contact identity: the `Some` path must NOT touch the contact's
         // encryption key (the signer derives the secret out-of-crate).
         let contact = bare_identity([0x22; 32]);
-        iw.register_external_contact_account(&owner_id, &contact, &encrypted, shared_key)
-            .await
-            .expect("register external with a signer-derived shared key");
+        iw.register_external_contact_account(
+            &owner_id,
+            &contact,
+            &encrypted,
+            zeroize::Zeroizing::new(shared_key),
+        )
+        .await
+        .expect("register external with a signer-derived shared key");
 
         let wm = iw.wallet_manager.read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("info");
@@ -2748,8 +2827,9 @@ mod tests {
                 &self,
                 _path: &key_wallet::bip32::DerivationPath,
                 _peer: &dashcore::secp256k1::PublicKey,
-            ) -> Result<[u8; 32], crate::error::PlatformWalletError> {
-                Ok([0u8; 32])
+            ) -> Result<zeroize::Zeroizing<[u8; 32]>, crate::error::PlatformWalletError>
+            {
+                Ok(zeroize::Zeroizing::new([0u8; 32]))
             }
             async fn export_auto_accept_private_key(
                 &self,
@@ -3049,9 +3129,14 @@ mod tests {
         let encrypted =
             platform_encryption::encrypt_extended_public_key(&shared_key, &iv, &compact);
         let contact = bare_identity([0x22; 32]);
-        iw.register_external_contact_account(&owner_id, &contact, &encrypted, shared_key)
-            .await
-            .expect("register external account");
+        iw.register_external_contact_account(
+            &owner_id,
+            &contact,
+            &encrypted,
+            zeroize::Zeroizing::new(shared_key),
+        )
+        .await
+        .expect("register external account");
 
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
             .expect("valid mnemonic")
