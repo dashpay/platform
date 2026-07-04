@@ -39,13 +39,16 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// outcome. Do NOT auto-retry — a retry would rebuild the bundle and
     /// could double-execute if the original landed.
     case errorShieldedSpendUnconfirmed = 18
+    // Raw value 19 is `errorShieldedNoRecordedAnchor` on v4.0-dev, arriving
+    // here via the next v4.0-dev → v4.1-dev sync; skipped to keep this
+    // mirror numerically identical across both release lines.
     /// A core transaction broadcast (send, DashPay payment, or asset-lock
     /// funding) failed with an ambiguous outcome — the transaction may
     /// already be on the network. The wallet keeps the spent inputs' UTXO
     /// reservation, so an immediate retry fails at input selection instead
     /// of double-spending; the reservation TTL or a sync reconciles the
     /// outcome. Do NOT auto-retry.
-    case errorTransactionBroadcastUnconfirmed = 19
+    case errorTransactionBroadcastUnconfirmed = 20
     case notFound = 98
     case errorUnknown = 99
 

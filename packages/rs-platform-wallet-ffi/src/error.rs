@@ -124,6 +124,11 @@ pub enum PlatformWalletFFIResultCode {
     /// must NOT auto-retry — a retry would select different unreserved notes
     /// and could double-send if the original spend landed.
     ErrorShieldedSpendUnconfirmed = 18,
+    // Slot 19 is `ErrorShieldedNoRecordedAnchor` on v4.0-dev, arriving here
+    // via the next v4.0-dev → v4.1-dev sync. Skipping it keeps the FFI codes
+    // (and the Swift/Kotlin mirror enums) numerically identical across both
+    // release lines — the same convention as the `ErrorArithmeticOverflow`
+    // reserved slot above.
     /// Maps `PlatformWalletError::TransactionBroadcastUnconfirmed`. A core
     /// transaction broadcast (send-to-addresses, DashPay payment, or
     /// asset-lock funding) failed with an AMBIGUOUS outcome — the transaction
@@ -134,7 +139,7 @@ pub enum PlatformWalletFFIResultCode {
     /// selection instead of double-spending; the reservation TTL or a sync
     /// observing the transaction reconciles the outcome. The host must NOT
     /// auto-retry. Shielded sibling: [`Self::ErrorShieldedSpendUnconfirmed`].
-    ErrorTransactionBroadcastUnconfirmed = 19,
+    ErrorTransactionBroadcastUnconfirmed = 20,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
