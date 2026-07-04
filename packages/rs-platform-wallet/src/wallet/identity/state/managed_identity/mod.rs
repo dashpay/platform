@@ -103,7 +103,10 @@ pub struct ManagedIdentity {
     /// retried at most once per launch. The request stays manually acceptable
     /// meanwhile, and the sender never establishes off a bogus proof — so
     /// retrying once per launch is harmless and avoids a persisted tombstone for
-    /// attacker-controlled input.
+    /// attacker-controlled input. Capped at
+    /// [`Self::AUTO_ACCEPT_VERIFY_FAILED_CAP`] entries (arbitrary eviction over
+    /// cap) so a griefer paying credits for many distinct malformed proofs
+    /// can't grow it unboundedly for the process lifetime.
     pub auto_accept_verify_failed: std::collections::BTreeSet<[u8; 32]>,
 
     /// Senders this identity has chosen to **ignore** (per-sender mute,

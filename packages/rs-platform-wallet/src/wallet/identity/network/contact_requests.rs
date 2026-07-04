@@ -12,7 +12,7 @@ use dpp::identity::SecurityLevel;
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 
-use super::contacts::RegisterExternalError;
+use super::contacts::{ExternalAccountRegistration, RegisterExternalError};
 use super::sdk_writer::SendContactRequestParams;
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
@@ -884,25 +884,28 @@ fn newest_sent_per_recipient(
     newest
 }
 
-/// Token-aware removal of drained queue entries. Removes from `queue` only
-/// those entries whose `(key, enqueued_at_ms)` still matches a `(key, token)`
-/// in `cleared_with_token` — the freshness token snapshotted before the
-/// lock-free drain. An entry a concurrent `upsert_pending_contact_crypto`
-/// refreshed mid-drain (a new payload → new `enqueued_at_ms`) is LEFT queued
-/// (its live token no longer matches the stale snapshot's), so a payload
-/// changed under the drain survives to the next drain instead of being
-/// clobbered by a key-only removal. Returns the keys actually removed, so the
-/// caller emits exactly those to the persisted `pending_contact_crypto_cleared`
+/// Snapshot-aware removal of drained queue entries. Removes from `queue`
+/// only those entries still **value-equal** to a snapshot in `drained` —
+/// the full entries snapshotted before the lock-free drain. An entry a
+/// concurrent `upsert_pending_contact_crypto` refreshed mid-drain is LEFT
+/// queued (its live value no longer equals the stale snapshot's), so a
+/// payload changed under the drain survives to the next drain instead of
+/// being clobbered by a key-only removal. Whole-value equality rather than
+/// an `enqueued_at_ms` freshness token: the timestamp is wall-clock
+/// milliseconds (documented as observability/ordering only), so a same-ms
+/// upsert or a clock rollback could alias a token that a changed payload
+/// can never alias. A refresh that reproduces the identical payload
+/// compares equal and is removed — fine, since the drain just processed
+/// exactly those bytes. Returns the keys actually removed, so the caller
+/// emits exactly those to the persisted `pending_contact_crypto_cleared`
 /// delta (never a key whose fresher entry is still queued).
-fn retain_drained_by_token(
+fn retain_drained_by_snapshot(
     queue: &mut Vec<crate::changeset::PendingContactCrypto>,
-    cleared_with_token: &[(crate::changeset::PendingContactCryptoKey, u64)],
+    drained: &[crate::changeset::PendingContactCrypto],
 ) -> Vec<crate::changeset::PendingContactCryptoKey> {
     let mut removed = Vec::new();
     queue.retain(|e| {
-        let stale_match = cleared_with_token
-            .iter()
-            .any(|(k, tok)| *k == e.key() && *tok == e.enqueued_at_ms);
+        let stale_match = drained.contains(e);
         if stale_match {
             removed.push(e.key());
         }
@@ -2013,15 +2016,23 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         )
                         .await
                     {
-                        Ok(()) => {
-                            // The external account is built from the current
-                            // incoming reference: stamp the rotation self-heal
-                            // marker and clear any stale broken-channel flag.
-                            self.note_external_account_registered(
-                                &entry.owner_identity_id,
-                                &entry.contact_id,
-                            )
-                            .await;
+                        Ok(registration) => {
+                            // Stamp the rotation self-heal marker and clear
+                            // any stale broken-channel flag — only when the
+                            // account was actually (re)built from this
+                            // entry's payload. An `AlreadyExisted` no-op may
+                            // have hit a pre-rotation row (the account key
+                            // ignores `account_reference`); stamping it as
+                            // current would suppress the sweep's teardown +
+                            // rebuild forever (same reasoning as the accept
+                            // path).
+                            if registration == ExternalAccountRegistration::Built {
+                                self.note_external_account_registered(
+                                    &entry.owner_identity_id,
+                                    &entry.contact_id,
+                                )
+                                .await;
+                            }
                             // Surface the contact's account label from the same
                             // ECDH shared key (best-effort, cosmetic — never
                             // fails the drain).
@@ -2092,32 +2103,26 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         }
 
         // The drain ran over a lock-free SNAPSHOT: a concurrent rotation sweep
-        // may have `upsert`ed a fresh payload for one of these keys mid-drain
-        // (refreshing `enqueued_at_ms`). Removal must be value-aware — key it on
-        // the snapshot's freshness token so a payload changed under us survives
-        // to the next drain. Pair each cleared key with the token it carried in
-        // the snapshot (the queue holds at most one entry per key, so the lookup
-        // is unambiguous).
-        let cleared_with_token: Vec<(PendingContactCryptoKey, u64)> = cleared
+        // may have `upsert`ed a fresh payload for one of these keys mid-drain.
+        // Removal must be value-aware — collect the full snapshot entries the
+        // drain actually processed so a payload changed under us survives to
+        // the next drain (the queue holds at most one entry per key, so the
+        // lookup is unambiguous).
+        let cleared_snapshots: Vec<crate::changeset::PendingContactCrypto> = cleared
             .iter()
-            .filter_map(|k| {
-                entries
-                    .iter()
-                    .find(|e| e.key() == *k)
-                    .map(|e| (*k, e.enqueued_at_ms))
-            })
+            .filter_map(|k| entries.iter().find(|e| e.key() == *k).cloned())
             .collect();
 
         // Remove the completed entries from the in-memory queue + persist the
         // removal so they don't replay after a restart. Only remove a live
-        // entry whose token STILL equals the snapshot's — a mid-drain upsert
-        // (fresher token) is left queued for the next drain rather than
+        // entry still value-equal to the snapshot's — a mid-drain upsert
+        // (changed payload) is left queued for the next drain rather than
         // clobbered by this stale snapshot.
         let removed: Vec<PendingContactCryptoKey> = {
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
                 Some(info) => {
-                    retain_drained_by_token(&mut info.pending_contact_crypto, &cleared_with_token)
+                    retain_drained_by_snapshot(&mut info.pending_contact_crypto, &cleared_snapshots)
                 }
                 None => Vec::new(),
             }
@@ -2447,9 +2452,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         if already_current && !contact.payment_channel_broken {
             return;
         }
-        contact.external_account_reference = Some(current_reference);
-        contact.payment_channel_broken = false;
-        let snapshot = contact.clone();
+        // Persist BEFORE committing to memory: if the store fails, the
+        // in-memory marker must stay stale so the `already_current` guard
+        // above and the sweep's `external_account_needs_rebuild` predicate
+        // keep retriggering until a persist succeeds — otherwise memory runs
+        // ahead of disk and nothing in-process ever retries (only a restart
+        // reloading the stale marker would heal it).
+        let mut updated = contact.clone();
+        updated.external_account_reference = Some(current_reference);
+        updated.payment_channel_broken = false;
 
         let mut cs = crate::changeset::ContactChangeSet::default();
         cs.established.insert(
@@ -2457,14 +2468,16 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 owner_id: *identity_id,
                 recipient_id: *contact_id,
             },
-            snapshot,
+            updated.clone(),
         );
         if let Err(e) = self.persister.store(cs.into()) {
             tracing::error!(
                 "Failed to persist external-account-registered changeset: {}",
                 e
             );
+            return;
         }
+        *contact = updated;
     }
 
     /// Decrypt the contact's incoming `encryptedAccountLabel` with the ECDH
@@ -2835,21 +2848,31 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         // network round). The accept path surfaces any failure to the
         // caller as a plain error — the transient/permanent split only
         // matters to the unattended sync sweep's broken-channel policy.
-        self.register_external_contact_account(
-            our_identity_id,
-            &contact_identity,
-            contact_encrypted_xpub,
-            shared.clone(),
-        )
-        .await
-        .map_err(RegisterExternalError::into_inner)?;
+        let registration = self
+            .register_external_contact_account(
+                our_identity_id,
+                &contact_identity,
+                contact_encrypted_xpub,
+                shared.clone(),
+            )
+            .await
+            .map_err(RegisterExternalError::into_inner)?;
 
-        // The external account is built from the current incoming reference:
-        // stamp the rotation self-heal marker and clear any stale
+        // Stamp the rotation self-heal marker and clear any stale
         // broken-channel flag (a user re-accept of a healed channel must stop
         // reporting broken — the sweep never re-registers broken contacts).
-        self.note_external_account_registered(our_identity_id, contact_id)
-            .await;
+        // ONLY when the account was actually (re)built from this request's
+        // payload: an `AlreadyExisted` no-op may have hit a row built from a
+        // PRE-rotation xpub (the account key ignores `account_reference`), and
+        // stamping it as current would make `external_account_needs_rebuild`
+        // skip the teardown + rebuild forever — `send_payment` would keep
+        // deriving from an xpub the contact no longer watches. Left unstamped,
+        // the sweep detects the stale marker and rebuilds; its build path
+        // stamps + clears broken then.
+        if registration == ExternalAccountRegistration::Built {
+            self.note_external_account_registered(our_identity_id, contact_id)
+                .await;
+        }
 
         // Surface the contact's account label from the same ECDH shared key
         // (best-effort, cosmetic — a label failure never fails the accept).

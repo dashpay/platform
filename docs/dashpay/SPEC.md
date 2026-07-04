@@ -585,10 +585,14 @@ Ordered so the test seam exists before the TDD-gated tasks that need it.
    document), held as a new `IdentityWallet` field defaulting to an
    `Arc<Sdk>`-backed impl so public construction and FFI are untouched.
    (`send_payment` already takes an injected `broadcaster: B`.)
-   **DONE (2026-06-10):** `DashPaySdkWriter` trait in `network/sdk_writer.rs` —
-   Send-boxed `#[async_trait]` (NOT `?Send`: the FFI drives the write paths via
-   `block_on_worker`, which requires `Send` futures; the `!Send` read/sync path
-   runs on the sync manager's dedicated thread and bypasses the seam).
+   **DONE (2026-06-10; revised 2026-07-04):** originally shipped as a
+   Send-boxed `#[async_trait]` `DashPaySdkWriter` trait; the trait was later
+   removed as an unused seam (no test ever injected it — the sync/establish
+   tests mock the fetch half via `SdkBuilder::new_mock` instead).
+   `network/sdk_writer.rs` now ships a concrete `SdkWriter` held as an
+   `Arc<Sdk>`-backed `IdentityWallet` field: it still erases the
+   7-type-param `send_contact_request` / `PutDocument` generics behind two
+   concrete methods, it just isn't swappable.
 2. **G12: fold DashPay sync into the recurring loop.** Per G12: inject the wallets
    map and iterate wallets calling `dashpay_sync()` — do **not** drive off the
    token registry; log-and-continue error semantics; keep the on-demand FFI entry

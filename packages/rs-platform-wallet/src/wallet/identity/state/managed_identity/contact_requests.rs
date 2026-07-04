@@ -86,22 +86,25 @@ impl ManagedIdentity {
                 return Ok(());
             }
             // Different outgoing reference → a rotation re-send. Advance
-            // `outgoing_request` in place so the next rotation reads the
-            // fresh version, preserving all user metadata.
-            let contact = self
-                .established_contacts
-                .get_mut(&recipient_id)
-                .expect("presence checked above");
-            contact.outgoing_request = request;
+            // `outgoing_request` so the next rotation reads the fresh
+            // version, preserving all user metadata. Persist BEFORE
+            // committing to memory (same order as `set_contact_metadata`):
+            // if the store fails, memory must stay on the old reference so
+            // the retry sweep doesn't hit the same-reference no-op guard
+            // above and silently lose the rotation from disk for the
+            // process lifetime.
+            let mut updated = existing.clone();
+            updated.outgoing_request = request;
             let mut cs = ContactChangeSet::default();
             cs.established.insert(
                 SentContactRequestKey {
                     owner_id,
                     recipient_id,
                 },
-                contact.clone(),
+                updated.clone(),
             );
             persister.store(cs.into())?;
+            self.established_contacts.insert(recipient_id, updated);
             return Ok(());
         }
         // Already tracked as a pending sent request → no-op (no phantom
@@ -204,11 +207,26 @@ impl ManagedIdentity {
         sha256::Hash::from_engine(engine).to_byte_array()
     }
 
+    /// Hard cap on [`Self::auto_accept_verify_failed`] (32 KiB of keys at
+    /// most). Every entry is attacker-funded (one distinct malformed
+    /// `contactRequest` document per key, each costing platform credits to
+    /// publish), so the set stays tiny in any legitimate wallet; the cap only
+    /// bounds memory against a griefer willing to keep paying. Evicting an
+    /// arbitrary entry over cap is safe — an evicted proof merely re-verifies
+    /// (and re-fails) on the next sweep, which the per-launch-retry design
+    /// already treats as harmless.
+    pub const AUTO_ACCEPT_VERIFY_FAILED_CAP: usize = 1024;
+
     /// Record that `proof` (from `sender_id`) failed cryptographic verification
     /// permanently, so the sync sweep's enqueue gate does not re-queue it. Only
     /// PERMANENT failures should be marked; transient ones must stay retryable.
-    /// In-memory only — cleared on relaunch (retry once per launch).
+    /// In-memory only — cleared on relaunch (retry once per launch). Bounded by
+    /// [`Self::AUTO_ACCEPT_VERIFY_FAILED_CAP`]: over cap, an arbitrary existing
+    /// entry is evicted to make room (see the cap docs for why that is safe).
     pub fn mark_auto_accept_verify_failed(&mut self, sender_id: &Identifier, proof: &[u8]) {
+        while self.auto_accept_verify_failed.len() >= Self::AUTO_ACCEPT_VERIFY_FAILED_CAP {
+            self.auto_accept_verify_failed.pop_first();
+        }
         self.auto_accept_verify_failed
             .insert(Self::auto_accept_verify_failed_key(sender_id, proof));
     }
@@ -855,6 +873,52 @@ mod tests {
         assert!(
             result.is_err(),
             "a failed metadata persist must surface, not report success"
+        );
+    }
+
+    /// A rotation supersede whose persist fails must leave the in-memory
+    /// `outgoing_request` on the OLD reference — else the retry hits the
+    /// same-reference no-op guard and the rotation is silently lost from disk
+    /// for the process lifetime (only a restart re-fetching from platform
+    /// would heal it). Mirror of the `set_contact_metadata` persist-order
+    /// tests below.
+    #[test]
+    fn rotation_supersede_failed_persist_leaves_memory_on_old_reference() {
+        let mut managed = create_test_identity([1u8; 32]);
+        let our_id = Identifier::from([1u8; 32]);
+        let contact_id = Identifier::from([2u8; 32]);
+        let outgoing = create_contact_request(our_id, contact_id, 1000);
+        let incoming = create_contact_request(contact_id, our_id, 1001);
+        managed.established_contacts.insert(
+            contact_id,
+            EstablishedContact::new(contact_id, outgoing.clone(), incoming),
+        );
+
+        // A superseding re-send with a bumped account_reference.
+        let mut rotated = create_contact_request(our_id, contact_id, 1002);
+        rotated.account_reference = outgoing.account_reference + 1;
+
+        let result = managed.add_sent_contact_request(rotated.clone(), &failing_persister());
+        assert!(result.is_err(), "a failed supersede persist must surface");
+        assert_eq!(
+            managed.established_contacts[&contact_id]
+                .outgoing_request
+                .account_reference,
+            outgoing.account_reference,
+            "memory must stay on the old reference so the retry re-persists"
+        );
+
+        // The retry against a working persister must take the supersede path
+        // (not the same-reference no-op) and commit the rotation.
+        managed
+            .add_sent_contact_request(rotated.clone(), &noop_persister())
+            .expect("retry persists");
+        assert_eq!(
+            managed.established_contacts[&contact_id]
+                .outgoing_request
+                .account_reference,
+            rotated.account_reference,
+            "the retried rotation must land in memory"
         );
     }
 

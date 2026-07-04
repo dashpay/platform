@@ -343,12 +343,12 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// a breadcrumb-only row (no stored scalar) is only reported signable when
     /// its type is one the resolver handles.
     ///
-    /// The set mirrors `dash_sdk_sign_with_mnemonic_resolver_and_path`
-    /// (`ECDSA_SECP256K1 = 0`, `ECDSA_HASH160 = 2`). This is the one remaining
-    /// Swift-side mirror of a Rust decision; a lightweight FFI predicate
-    /// (`dash_sdk_resolver_supports_key_type`) would let this drop too.
+    /// Delegates the supported-set decision to the resolver's own FFI
+    /// predicate `dash_sdk_resolver_supports_key_type`, so this preflight
+    /// answer can never drift from the sign path's `UNSUPPORTED_KEY_TYPE`
+    /// rejection — both read the one Rust source of truth.
     static func resolverCanDeriveSign(keyType: UInt8) -> Bool {
-        keyType == 0 || keyType == 2
+        dash_sdk_resolver_supports_key_type(keyType)
     }
 
     /// True iff this signer can produce a signature for the

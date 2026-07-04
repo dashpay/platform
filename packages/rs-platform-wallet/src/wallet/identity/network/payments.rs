@@ -2468,14 +2468,20 @@ mod tests {
         // Bare contact identity: the `Some` path must NOT touch the contact's
         // encryption key (the signer derives the secret out-of-crate).
         let contact = bare_identity([0x22; 32]);
-        iw.register_external_contact_account(
-            &owner_id,
-            &contact,
-            &encrypted,
-            zeroize::Zeroizing::new(shared_key),
-        )
-        .await
-        .expect("register external with a signer-derived shared key");
+        let registration = iw
+            .register_external_contact_account(
+                &owner_id,
+                &contact,
+                &encrypted,
+                zeroize::Zeroizing::new(shared_key),
+            )
+            .await
+            .expect("register external with a signer-derived shared key");
+        assert_eq!(
+            registration,
+            crate::wallet::identity::network::contacts::ExternalAccountRegistration::Built,
+            "a fresh registration must report Built (AlreadyExisted must not stamp the marker)"
+        );
 
         let wm = iw.wallet_manager.read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("info");

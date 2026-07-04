@@ -310,8 +310,9 @@ final class IdentityKeyBreadcrumbTests: XCTestCase {
         )
     }
 
-    /// The single remaining Swift preflight mirror must match the Rust
-    /// resolver's supported set exactly (`ECDSA_SECP256K1 = 0`,
+    /// The Swift preflight wrapper forwards to the resolver's FFI predicate
+    /// `dash_sdk_resolver_supports_key_type`, which reports exactly the
+    /// wallet-derivable ECDSA key types (`ECDSA_SECP256K1 = 0`,
     /// `ECDSA_HASH160 = 2`).
     func testResolverCanDeriveSignMatchesRustSupportedSet() {
         XCTAssertTrue(KeychainSigner.resolverCanDeriveSign(keyType: 0))  // ECDSA_SECP256K1

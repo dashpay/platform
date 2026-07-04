@@ -72,6 +72,40 @@ pub const SIGN_WITH_RESOLVER_ERR_RESOLVER_FAILED: u8 = 10;
 /// NOT produced — this guards against signing with a wrong/stale key.
 pub const SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH: u8 = 11;
 
+/// The set of DPP key types the mnemonic resolver can derive-and-sign for.
+///
+/// Both are secp256k1 ECDSA keys that sign identically — the type only
+/// describes the on-chain pubkey representation (`ECDSA_SECP256K1 = 0` is the
+/// compressed pubkey; `ECDSA_HASH160 = 2` is its `ripemd160_sha256`). BLS,
+/// EdDSA and script-hash keys are not wallet-derivable via this path.
+///
+/// Single source of truth for both the sign path's
+/// [`SIGN_WITH_RESOLVER_ERR_UNSUPPORTED_KEY_TYPE`] rejection and the
+/// [`dash_sdk_resolver_supports_key_type`] preflight predicate.
+fn resolver_supports_key_type(key_type: u8) -> bool {
+    const ECDSA_SECP256K1: u8 = 0;
+    const ECDSA_HASH160: u8 = 2;
+    key_type == ECDSA_SECP256K1 || key_type == ECDSA_HASH160
+}
+
+/// Whether the mnemonic resolver can derive-and-sign for a DPP `key_type`,
+/// without needing any data to sign.
+///
+/// Lets a Swift caller answer "would `dash_sdk_sign_with_mnemonic_resolver_and_path`
+/// accept this key type?" on a preflight path (e.g. a `canSign` check) instead
+/// of mirroring the supported set in Swift. Returns `true` exactly for the key
+/// types the sign path accepts; every other type would fail there with
+/// [`SIGN_WITH_RESOLVER_ERR_UNSUPPORTED_KEY_TYPE`].
+///
+/// # Safety
+/// Takes only a plain `u8` by value and touches no pointers — always safe to
+/// call. Declared `unsafe extern "C"` for a uniform FFI surface with its
+/// siblings in this module.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_resolver_supports_key_type(key_type: u8) -> bool {
+    resolver_supports_key_type(key_type)
+}
+
 /// Sign `data` with the ECDSA secp256k1 private key derived from
 /// `(mnemonic-via-resolver, derivation_path)`. Mnemonic, seed and
 /// derived secret bytes all stay in `Zeroizing` buffers and are
@@ -171,10 +205,11 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
 
     // secp256k1-only entry point: both ECDSA key types sign identically
     // (the type only describes the on-chain pubkey representation). Anything
-    // else (BLS, EdDSA, script-hash) is a contract violation.
-    const ECDSA_SECP256K1: u8 = 0;
-    const ECDSA_HASH160: u8 = 2;
-    if key_type != ECDSA_SECP256K1 && key_type != ECDSA_HASH160 {
+    // else (BLS, EdDSA, script-hash) is a contract violation. The supported
+    // set lives in `resolver_supports_key_type` so the preflight predicate
+    // `dash_sdk_resolver_supports_key_type` and this sign path can never
+    // disagree about which key types the resolver derives.
+    if !resolver_supports_key_type(key_type) {
         return fail(SIGN_WITH_RESOLVER_ERR_UNSUPPORTED_KEY_TYPE);
     }
 
@@ -729,6 +764,64 @@ mod tests {
         assert_eq!(rc, -1);
         assert_eq!(err, SIGN_WITH_RESOLVER_ERR_PUBKEY_MISMATCH);
         assert_eq!(sig_len, 0, "wrong HASH160 must fail closed");
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// The preflight predicate accepts exactly the two wallet-derivable ECDSA
+    /// key types (0, 2) and rejects everything else (BLS = 1, script-hash = 3,
+    /// the reserved 0xFF, etc.).
+    #[test]
+    fn predicate_reports_supported_key_types() {
+        assert!(unsafe { dash_sdk_resolver_supports_key_type(0) }); // ECDSA_SECP256K1
+        assert!(unsafe { dash_sdk_resolver_supports_key_type(2) }); // ECDSA_HASH160
+        assert!(!unsafe { dash_sdk_resolver_supports_key_type(1) }); // BLS12_381
+        assert!(!unsafe { dash_sdk_resolver_supports_key_type(3) }); // BIP13_SCRIPT_HASH
+        assert!(!unsafe { dash_sdk_resolver_supports_key_type(4) }); // EDDSA_25519_HASH160
+        assert!(!unsafe { dash_sdk_resolver_supports_key_type(0xFF) });
+    }
+
+    /// The preflight predicate and the sign path's UNSUPPORTED_KEY_TYPE
+    /// rejection must agree for every `u8`: the predicate returns `true`
+    /// iff the sign path does NOT reject that key type as unsupported. This
+    /// pins the single-source-of-truth contract so a future change to the
+    /// supported set can't drift the two apart.
+    #[test]
+    fn predicate_agrees_with_sign_path_for_all_key_types() {
+        let resolver = make_resolver(english_resolve);
+        let path = CString::new("m/9'/1'/5'/0'/0'/0'/0'").unwrap();
+        let wallet_id = [0u8; 32];
+        let data = b"x";
+
+        for key_type in 0u8..=u8::MAX {
+            let supported = unsafe { dash_sdk_resolver_supports_key_type(key_type) };
+
+            let mut sig_buf = [0u8; 128];
+            let mut sig_len: usize = 0;
+            let mut err: u8 = 0;
+            unsafe {
+                dash_sdk_sign_with_mnemonic_resolver_and_path(
+                    resolver,
+                    wallet_id.as_ptr(),
+                    path.as_ptr(),
+                    data.as_ptr(),
+                    data.len(),
+                    key_type,
+                    FFINetwork::Testnet,
+                    std::ptr::null(),
+                    0,
+                    sig_buf.as_mut_ptr(),
+                    sig_buf.len(),
+                    &mut sig_len,
+                    &mut err,
+                );
+            }
+            let rejected_unsupported = err == SIGN_WITH_RESOLVER_ERR_UNSUPPORTED_KEY_TYPE;
+            assert_eq!(
+                supported, !rejected_unsupported,
+                "predicate and sign path disagree for key_type {key_type}"
+            );
+        }
+
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
 }
