@@ -347,7 +347,7 @@ Membership of each feature category across **all** sections (primary section mem
 - **Core / Wallet** — `CORE-01..23`
 - **MultiWallet** — `CORE-14..23`, `MW-01..11`
 - **Identity** — `ID-01..13`, `SH-11`, `MW-01`, `MW-08`, `MW-09`, `MW-10`
-- **Address** (DIP-17 platform addresses) — `ADDR-01..06`, `ID-06`, `ID-08`, `ID-11`
+- **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..07`, `MW-05`
 - **Voting** — `VOTE-01..07`, `DPNS-05`, `MW-05`
 - **Contract** — `DC-01..04`
