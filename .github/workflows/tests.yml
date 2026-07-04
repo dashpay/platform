@@ -84,6 +84,7 @@ jobs:
               - .github/workflows/tests-rs-wallet.yml
               - .github/workflows/tests-rs-doctests.yml
               - .github/workflows/tests.yml
+              - .github/scripts/check-wallet-closure.py
 
       - name: Check for platform version change
         id: filter-version
@@ -208,6 +209,7 @@ jobs:
               - packages/rs-platform-versioning/**
               - packages/rs-platform-wallet/**
               - packages/rs-platform-wallet-ffi/**
+              - packages/rs-platform-wallet-storage/**
               - packages/rs-sdk/**
               - packages/rs-sdk-ffi/**
               - packages/rs-sdk-trusted-context-provider/**

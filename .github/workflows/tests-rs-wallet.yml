@@ -89,38 +89,12 @@ jobs:
 
       # Enforce the invariant the scoped --package lists below rely on: the
       # only workspace crate depending (transitively) on the wallet crates is
-      # rs-unified-sdk-ffi. If this fails, a new dependent was added — extend
-      # the clippy/nextest package lists in this file (and reconsider whether
-      # the fast path is still sound) before merging.
+      # rs-unified-sdk-ffi. The same check runs on the full workspace path,
+      # which is what catches the PR that introduces a new dependent (that PR
+      # necessarily touches a non-wallet crate and takes the full path); this
+      # copy protects against a stale scoped package list.
       - name: Verify wallet reverse-dependency closure
-        run: |
-          cargo metadata --format-version 1 --no-deps --locked > "$RUNNER_TEMP/cargo-metadata.json"
-          python3 - "$RUNNER_TEMP/cargo-metadata.json" <<'EOF'
-          import json, sys
-
-          meta = json.load(open(sys.argv[1]))
-          deps = {p["name"]: {d["name"] for d in p["dependencies"]} for p in meta["packages"]}
-
-          wallet = {"platform-wallet", "platform-wallet-ffi", "platform-wallet-storage"}
-          expected = {"rs-unified-sdk-ffi"}
-
-          # Transitive closure of workspace crates that depend on a wallet crate
-          reaches_wallet = set(wallet)
-          changed = True
-          while changed:
-              changed = False
-              for name, d in deps.items():
-                  if name not in reaches_wallet and d & reaches_wallet:
-                      reaches_wallet.add(name)
-                      changed = True
-
-          dependents = reaches_wallet - wallet
-          if dependents != expected:
-              print(f"Wallet reverse-dependency closure changed: expected {sorted(expected)}, got {sorted(dependents)}")
-              print("Update the scoped --package lists in .github/workflows/tests-rs-wallet.yml to cover the new dependents.")
-              sys.exit(1)
-          print(f"Closure OK: only {sorted(expected)} depends on the wallet crates")
-          EOF
+        run: python3 .github/scripts/check-wallet-closure.py
 
       - name: Check formatting
         run: cargo fmt --check --all
